@@ -1,0 +1,149 @@
+import { useEffect, useState } from 'react';
+import axios from 'axios';
+import { Plus, CaretLeft, CaretRight, MapPin, Clock } from '@phosphor-icons/react';
+import Layout from './Layout';
+
+export default function Events() {
+  const [events, setEvents] = useState([]);
+  const [view, setView] = useState('Month'); // Day, Week, Month
+  
+  // Modal State defaults configured for your workflow
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newEvent, setNewEvent] = useState({ date: '', time: '', branch: 'Bangalore', type: 'Placement Drive', location: '', title: '' });
+
+  useEffect(() => {
+    const fetchEvents = async () => {
+      try {
+        const response = await axios.get('http://localhost:5000/api/tpo/events');
+        if (response.data.success) setEvents(response.data.events);
+      } catch (error) {}
+    };
+    fetchEvents();
+  }, []);
+
+  const getEventColor = (type) => {
+    if (type.includes('Interview')) return '#10b981';
+    if (type.includes('Talentino')) return '#a855f7';
+    if (type.includes('Placement Drive')) return '#ef4444';
+    return '#38bdf8';
+  };
+
+  // Generate 30 days for mock month view
+  const daysInMonth = Array.from({length: 30}, (_, i) => i + 1);
+
+  return (
+    <Layout>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+        <h1 style={{ fontSize: '1.8rem', margin: 0 }}>Calendar</h1>
+        <button className="btn-action" style={{ width: 'auto', borderRadius: '20px' }} onClick={() => setIsModalOpen(true)}>
+          <Plus weight="bold" /> Add Event
+        </button>
+      </div>
+
+      <div className="calendar-layout">
+        
+        {/* LEFT SIDEBAR */}
+        <div>
+          <div className="cal-sidebar" style={{ marginBottom: '1rem' }}>
+            <h4 style={{ marginBottom: '15px' }}>Filters</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '0.85rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ width: 12, height: 12, borderRadius: '50%', background: '#ef4444' }}></div> Placement Drives</label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ width: 12, height: 12, borderRadius: '50%', background: '#10b981' }}></div> Interviews</label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ width: 12, height: 12, borderRadius: '50%', background: '#a855f7' }}></div> Talentino</label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><div style={{ width: 12, height: 12, borderRadius: '50%', background: '#38bdf8' }}></div> Other</label>
+            </div>
+          </div>
+
+          <div className="cal-sidebar">
+            <h4 style={{ marginBottom: '15px' }}>Upcoming Events</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {events.slice(0, 4).map((e, i) => (
+                <div key={i} style={{ padding: '10px', borderLeft: `3px solid ${getEventColor(e.type)}`, background: 'var(--bg-dark)', borderRadius: '6px' }}>
+                  <strong style={{ fontSize: '0.85rem', display: 'block' }}>{e.title}</strong>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{e.date} • {e.time}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* MAIN CALENDAR AREA */}
+        <div className="cal-main">
+          <div className="cal-toolbar">
+            <div className="view-toggles" style={{ borderRadius: '20px' }}>
+              {['Day', 'Week', 'Month'].map(v => (
+                <button key={v} className={`view-btn ${view === v ? 'active' : ''}`} onClick={() => setView(v)} style={{ padding: '0.4rem 1.2rem', fontSize: '0.85rem', borderRadius: '20px' }}>
+                  {v}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', fontWeight: 600 }}>
+              <CaretLeft size={20} style={{ cursor: 'pointer' }} />
+              August 2026
+              <CaretRight size={20} style={{ cursor: 'pointer' }} />
+            </div>
+          </div>
+
+          {view === 'Month' && (
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => <div key={day} className="cal-day-header">{day}</div>)}
+              </div>
+              <div className="cal-grid">
+                {daysInMonth.map(day => {
+                  const dayEvents = events.filter(e => new Date(e.date).getDate() === day);
+                  return (
+                    <div key={day} className="cal-cell">
+                      <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>{day}</div>
+                      {dayEvents.map((e, i) => (
+                        <div key={i} className="cal-event-pill" style={{ background: getEventColor(e.type) }}>
+                          {e.time} {e.title}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {view !== 'Month' && (
+            <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', height: '400px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              Select "Month" view. (Timeline grid architecture requires backend hour mapping)
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* CREATE EVENT MODAL */}
+      {isModalOpen && (
+        <div className="modal-overlay show" onClick={(e) => { if(e.target.className.includes('modal-overlay')) setIsModalOpen(false); }}>
+          <div className="modal-card" style={{ maxWidth: '500px', background: 'var(--card-bg)' }}>
+            <h3 style={{ marginBottom: '1.5rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '10px' }}>Add Event</h3>
+            <div className="grid-2col">
+              <div className="form-group"><label>Date</label><input type="date" className="sleek-input" style={{ width: '100%' }} onChange={e => setNewEvent({...newEvent, date: e.target.value})} /></div>
+              <div className="form-group"><label>Time</label><input type="time" className="sleek-input" style={{ width: '100%' }} onChange={e => setNewEvent({...newEvent, time: e.target.value})} /></div>
+              <div className="form-group">
+                <label>Branch</label>
+                <select className="sleek-select" style={{ width: '100%' }} value={newEvent.branch} onChange={e => setNewEvent({...newEvent, branch: e.target.value})}>
+                  <option value="Bangalore">Bangalore</option><option value="Trivandrum">Trivandrum</option><option value="Kochi">Kochi</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Event Type</label>
+                <select className="sleek-select" style={{ width: '100%' }} value={newEvent.type} onChange={e => setNewEvent({...newEvent, type: e.target.value})}>
+                  <option value="Placement Drive">Placement Drive</option><option value="Interview">Interview</option><option value="Talentino">Talentino</option>
+                </select>
+              </div>
+            </div>
+            <div className="form-group"><label>Event Title</label><input type="text" className="sleek-input" style={{ width: '100%' }} onChange={e => setNewEvent({...newEvent, title: e.target.value})} /></div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+              <button className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
+              <button className="btn-action" style={{ width: 'auto' }} onClick={() => setIsModalOpen(false)}>Save</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </Layout>
+  );
+}
