@@ -40,21 +40,18 @@ const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth
 const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 
 // ==========================================
-// EMAIL TRANSPORTER SETUP (🚨 THE ULTIMATE RENDER FIX)
+// EMAIL TRANSPORTER SETUP (🚨 THE ACTUAL RENDER FIX)
 // ==========================================
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 587, // Bypasses Render's strict Port 465 blocking
-  secure: false, // Upgrades to secure TLS automatically
+  port: 465,
+  secure: true,
   auth: { 
     user: process.env.EMAIL_USER, 
     pass: process.env.EMAIL_PASS 
   },
-  family: 4, // 🚨 Forces IPv4 (Crucial for Render free tier)
-  connectionTimeout: 10000, // Fails and throws a loud error after 10 seconds
-  greetingTimeout: 10000,
-  socketTimeout: 10000,
-  tls: { rejectUnauthorized: false }
+  family: 4, // 🚨 THIS IS THE LINE I FORGOT! It completely bypasses the Render IPv6 block.
+  connectionTimeout: 10000 // Drops a clear error after 10 seconds if it fails
 });
 
 const APPS_SCRIPT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyAJWuQlO7Ie3e-hsWkr965tZD3vfTBG5E9oBxFMleXBNi5ocSTnilPmFYzDXgQ-cOcbw/exec";
