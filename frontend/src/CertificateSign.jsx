@@ -72,7 +72,7 @@ export default function CertificateSign() {
     setIsSubmitting(true);
 
     try {
-      // 🚨 Wait 300 milliseconds for React to erase the borders from the screen
+      // Wait 300 milliseconds for React to erase the borders from the screen
       await new Promise(resolve => setTimeout(resolve, 300));
 
       const canvas = await html2canvas(certificateRef.current, { 
@@ -173,21 +173,22 @@ export default function CertificateSign() {
         }}
       >
         
-        {/* 🚨 THE WATERMARK */}
-        <div style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          backgroundImage: 'url(https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB)',
-          backgroundSize: '70%',
-          backgroundPosition: 'center',
-          backgroundRepeat: 'no-repeat',
-          opacity: 0.08,
-          zIndex: 0,
-          pointerEvents: 'none'
-        }} />
+        {/* 🚨 THE WATERMARK FIX: Rendered as a true image for html2canvas */}
+        <img 
+          src="https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB" 
+          crossOrigin="anonymous" 
+          alt="Watermark"
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '70%',
+            opacity: 0.08,
+            zIndex: 0,
+            pointerEvents: 'none'
+          }} 
+        />
 
         {/* CONTENT LAYER (Sits on top of the watermark) */}
         <div style={{ position: 'relative', zIndex: 1 }}>
@@ -246,15 +247,15 @@ export default function CertificateSign() {
           <h4 style={{ fontSize: '16px', marginBottom: '10px', textDecoration: 'underline', fontWeight: 'bold' }}>Acknowledgement</h4>
           <p style={{ marginBottom: '40px' }}>We, <strong>{client.companyName}</strong>, hereby acknowledge the above Hiring Partnership terms and express our willingness to collaborate with IPCS Global for our current and future recruitment requirements.</p>
 
-          {/* 🚨 ENLARGED SIGNATURE SECTION */}
+          {/* 🚨 ENLARGED & ALIGNED SIGNATURE SECTION */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: '50px' }}>
             
             <div style={{ width: '45%' }}>
               <p style={{ fontWeight: 'bold', marginBottom: '15px', fontSize: '16px' }}>{client.companyName}</p>
               
-              <div style={{ minHeight: '90px', marginBottom: '10px' }}>
+              <div style={{ height: '90px', marginBottom: '10px', display: 'flex', alignItems: 'flex-start' }}>
                 {sigPreview ? (
-                  <img src={sigPreview} style={{ height: '85px', objectFit: 'contain', maxWidth: '100%' }} crossOrigin="anonymous" alt="Signature" />
+                  <img src={sigPreview} style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} crossOrigin="anonymous" alt="Signature" />
                 ) : (
                   <label style={{ background: '#f8fafc', color: '#334155', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', border: '1px dashed #cbd5e1', display: isSubmitting ? 'none' : 'inline-block' }}>
                     Upload Signature
@@ -268,9 +269,10 @@ export default function CertificateSign() {
               <p style={{ margin: '0 0 15px 0' }}>Designation: {employerDesig || '__________________'}</p>
               <p style={{ margin: '0 0 15px 0' }}>Email: {client.email}</p>
 
-              <div style={{ minHeight: '85px' }}>
+              {/* 🚨 COMPANY LOGO - Perfect Alignment */}
+              <div style={{ height: '85px', display: 'flex', alignItems: 'flex-start' }}>
                 {logoPreview ? (
-                  <img src={logoPreview} style={{ height: '80px', objectFit: 'contain', maxWidth: '100%' }} crossOrigin="anonymous" alt="Logo" />
+                  <img src={logoPreview} style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} crossOrigin="anonymous" alt="Logo" />
                 ) : (
                   <label style={{ background: '#f8fafc', color: '#334155', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', border: '1px dashed #cbd5e1', display: isSubmitting ? 'none' : 'inline-block' }}>
                     Upload Company Logo
@@ -283,8 +285,8 @@ export default function CertificateSign() {
             <div style={{ width: '45%' }}>
               <p style={{ fontWeight: 'bold', marginBottom: '15px', fontSize: '16px' }}>IPCS Global</p>
               
-              <div style={{ height: '90px', marginBottom: '10px' }}>
-                <img src={ipcsSignature} alt="IPCS Signature" style={{ height: '100%', objectFit: 'contain' }} /> 
+              <div style={{ height: '90px', marginBottom: '10px', display: 'flex', alignItems: 'flex-start' }}>
+                <img src={ipcsSignature} alt="IPCS Signature" style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} /> 
               </div>
 
               <p style={{ margin: '0 0 5px 0' }}><strong>Authorized Signatory:</strong></p>
@@ -292,8 +294,9 @@ export default function CertificateSign() {
               <p style={{ margin: '0 0 15px 0' }}>Designation: Zonal Manager - Placements</p>
               <p style={{ margin: '0 0 15px 0' }}>Email: gifty@ipcsglobal.com</p>
 
-              <div style={{ height: '85px' }}>
-                <img src={ipcsLogo} alt="IPCS Logo" style={{ height: '100%', objectFit: 'contain' }} />
+              {/* 🚨 IPCS LOGO - Perfect Alignment */}
+              <div style={{ height: '85px', display: 'flex', alignItems: 'flex-start' }}>
+                <img src={ipcsLogo} alt="IPCS Logo" style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} />
               </div>
             </div>
 
