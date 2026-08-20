@@ -73,12 +73,15 @@ export default function Clients() {
     if(!client.email) return alert("Company Mail ID is missing. Please click 'Edit' and add an email first.");
     setSendingRequest(client.rowNumber);
     try {
-      await axios.post(`${API_BASE}/api/tpo/clients/request-mou`, {
+      const response = await axios.post(`${API_BASE}/api/tpo/clients/request-mou`, {
         rowNumber: client.rowNumber, companyEmail: client.email, companyName: client.companyName
       });
-      fetchClients(); 
+      if (response.data.success) {
+        alert(`✅ Email sent successfully to ${client.companyName}!`);
+        fetchClients(); 
+      }
     } catch (error) { 
-      alert(`Failed to send request: ${error.response?.data?.message || error.message}`); 
+      alert(`❌ Failed to send request: ${error.response?.data?.message || error.message}`); 
     } finally { 
       setSendingRequest(null); 
     }
