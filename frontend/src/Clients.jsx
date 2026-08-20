@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, PencilSimple, PaperPlaneRight, FilePdf, X, FloppyDisk } from '@phosphor-icons/react';
+import { CircleNotch, PencilSimple, PaperPlaneRight, FilePdf, X, FloppyDisk, CheckCircle, WarningCircle } from '@phosphor-icons/react';
 import Layout from './Layout';
 
 // 🚨 LIVE RENDER URL
@@ -17,6 +17,15 @@ export default function Clients() {
   const [editForm, setEditForm] = useState({});
   const [savingStatus, setSavingStatus] = useState(false);
   const [sendingRequest, setSendingRequest] = useState(null);
+  
+  // 🚨 NEW: Custom Notification State
+  const [notification, setNotification] = useState(null);
+
+  // 🚨 NEW: Helper function to show notifications
+  const showToast = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 4000); // Disappears after 4 seconds
+  };
 
   useEffect(() => { 
     if (tpoData) fetchClients(); 
@@ -60,28 +69,29 @@ export default function Clients() {
       const res = await axios.post(`${API_BASE}/api/tpo/clients/update`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       if(res.data.success) {
         setIsEditModalOpen(false);
+        showToast("Company details updated successfully!");
         fetchClients();
       }
     } catch (error) { 
-      alert(`Failed to update: ${error.response?.data?.message || error.message}`); 
+      showToast(`Failed to update: ${error.response?.data?.message || error.message}`, 'error'); 
     } finally { 
       setSavingStatus(false); 
     }
   };
 
   const sendRequest = async (client) => {
-    if(!client.email) return alert("Company Mail ID is missing. Please click 'Edit' and add an email first.");
+    if(!client.email) return showToast("Company Mail ID is missing. Please click 'Edit' and add an email first.", 'error');
     setSendingRequest(client.rowNumber);
     try {
       const response = await axios.post(`${API_BASE}/api/tpo/clients/request-mou`, {
         rowNumber: client.rowNumber, companyEmail: client.email, companyName: client.companyName
       });
       if (response.data.success) {
-        alert(`✅ Email sent successfully to ${client.companyName}!`);
+        showToast(`Email sent successfully to ${client.companyName}!`);
         fetchClients(); 
       }
     } catch (error) { 
-      alert(`❌ Failed to send request: ${error.response?.data?.message || error.message}`); 
+      showToast(`Failed to send request: ${error.response?.data?.message || error.message}`, 'error'); 
     } finally { 
       setSendingRequest(null); 
     }
@@ -165,6 +175,20 @@ export default function Clients() {
               {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> Save Updates</>}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* 🚨 THE NEW CUSTOM POPUP NOTIFICATION */}
+      {notification && (
+        <div style={{
+          position: 'fixed', bottom: '30px', right: '30px', zIndex: 999999,
+          backgroundColor: notification.type === 'success' ? '#10b981' : '#ef4444',
+          color: '#ffffff', padding: '16px 24px', borderRadius: '10px',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', gap: '12px',
+          fontSize: '1rem', fontWeight: 'bold', animation: 'fadeIn 0.3s ease-out'
+        }}>
+          {notification.type === 'success' ? <CheckCircle size={24} weight="fill" /> : <WarningCircle size={24} weight="fill" />}
+          {notification.message}
         </div>
       )}
     </Layout>

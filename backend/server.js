@@ -450,15 +450,16 @@ app.post('/api/tpo/clients/request-mou', async (req, res) => {
   const { rowNumber, companyEmail, companyName } = req.body;
   try {
     const signingLink = `https://ipcs-tpo-portal.vercel.app/sign-certificate/${rowNumber}`;
+    const refId = Math.floor(10000 + Math.random() * 90000); // 🚨 Random ID to stop Gmail threading
 
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`,
       to: companyEmail,
-      subject: `Action Required: IPCS Partnership Certificate for ${companyName}`,
+      subject: `Action Required: IPCS Partnership Certificate for ${companyName} [Ref: ${refId}]`, // 🚨 Unique Subject
       html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;"><h2 style="color: #ffffff; margin: 0;">IPCS PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${companyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Certificate of Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review & Sign Certificate</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, copy and paste this link into your browser: <br/>${signingLink}</p></div></div>`
     };
 
-    await sendIPCSMail(mailOptions); // 🚨 CALLING THE DUAL MODE TOGGLE
+    await sendIPCSMail(mailOptions); 
 
     const sheet = doc.sheetsByTitle["Clients"]; 
     const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
@@ -498,15 +499,40 @@ app.post('/api/tpo/clients/submit-mou', upload.any(), async (req, res) => {
     }
 
     const zonalManagerEmail = 'giftyipcsglobal@gmail.com'; 
+    const refId = Math.floor(10000 + Math.random() * 90000); // 🚨 Random ID to stop Gmail threading
+    
+    // 🚨 NEW: Beautiful Branded MOU Success Template
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`,
       to: [companyEmail, zonalManagerEmail, tpoEmail].filter(Boolean).join(','),
-      subject: `MOU Completed: Hiring Partnership Confirmation – IPCS GLOBAL`,
-      html: `<div style="font-family: Arial, sans-serif; padding: 30px;"><h2 style="color: #0f1523;">Partnership Successfully Established</h2><p>The Hiring Partnership Confirmation for <b>${companyName}</b> has been digitally signed and successfully processed.</p><p>You can view and download the official, hiring partnership letter below:</p><a href="${pdfLink}" style="background-color: #38bdf8; color: #0f1523; padding: 10px 20px; text-decoration: none; font-weight: bold; border-radius: 4px; display: inline-block; margin-top: 10px;">View Official Letter</a></div>`,
+      subject: `MOU Completed: Hiring Partnership Confirmation – ${companyName} [Ref: ${refId}]`, // 🚨 Unique Subject
+      html: `
+        <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+          <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #10b981;">
+            <h2 style="color: #ffffff; margin: 0; font-size: 22px; letter-spacing: 1px;">PARTNERSHIP CONFIRMED</h2>
+          </div>
+          <div style="padding: 30px; background-color: #ffffff;">
+            <p style="font-size: 16px; margin-top: 0;">Dear <b>${companyName}</b> Team,</p>
+            <p style="font-size: 15px; line-height: 1.6; color: #475569;">The Hiring Partnership Confirmation has been digitally signed and successfully processed. We are incredibly excited to officially partner with you!</p>
+            <p style="font-size: 15px; line-height: 1.6; color: #475569;">You can securely view and download your official, countersigned partnership agreement below:</p>
+            
+            <div style="text-align: center; margin: 35px 0;">
+              <a href="${pdfLink}" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">View Official Agreement</a>
+            </div>
+            
+            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
+              <p style="margin: 0 0 5px 0;">Regards,</p>
+              <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">IPCS Placement Portal</p>
+              <p style="margin: 0;">Placement & Corporate Relations Department</p>
+              <p style="margin: 0;">IPCS Global</p>
+            </div>
+          </div>
+        </div>
+      `,
       attachments: [{ filename: `${companyName.replace(/\s+/g, '_')}_Agreement.pdf`, content: certFile.buffer }]
     };
     
-    await sendIPCSMail(mailOptions); // 🚨 CALLING THE DUAL MODE TOGGLE
+    await sendIPCSMail(mailOptions); 
     
     refreshCache(); res.json({ success: true, pdfLink });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
