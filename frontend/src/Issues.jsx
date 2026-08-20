@@ -16,7 +16,7 @@ export default function Issues() {
     if (!tpoData) return;
     const fetchIssues = async () => {
       try {
-        const response = await axios.post('http://localhost:5000/api/tpo/issues', {
+        const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/issues', {
           assignedBranchesArray: tpoData.assignedBranchesArray
         });
         if (response.data.success) {
@@ -46,7 +46,7 @@ export default function Issues() {
     setSavingStatus(prev => ({ ...prev, [rowNum]: 'saving' }));
 
     try {
-      const response = await axios.post('http://localhost:5000/api/tpo/issues/update', {
+      const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/issues/update', {
         rowNumber: rowNum,
         status: newStatus,
         remarks: newRemarks

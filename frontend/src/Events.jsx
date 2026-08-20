@@ -14,7 +14,7 @@ export default function Events() {
   useEffect(() => {
     const fetchEvents = async () => {
       try {
-        const response = await axios.get('http://localhost:5000/api/tpo/events');
+        const response = await axios.get('https://ipcs-tpo-portal.onrender.com/api/tpo/events');
         if (response.data.success) setEvents(response.data.events);
       } catch (error) {}
     };

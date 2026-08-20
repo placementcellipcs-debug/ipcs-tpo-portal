@@ -12,7 +12,7 @@ export default function Reports() {
     if (!tpoData) return;
     const fetchReportsData = async () => {
       try {
-        const response = await axios.post('http://localhost:5000/api/tpo/reports', {
+        const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/reports', {
           assignedBranchesArray: tpoData.assignedBranchesArray
         });
         if (response.data.success) {

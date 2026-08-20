@@ -23,7 +23,7 @@ export default function Login() {
 
     try {
       // Send login data to your Node.js backend
-      const response = await axios.post('http://localhost:5000/api/auth/login', {
+      const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/auth/login', {
         email,
         password
       });

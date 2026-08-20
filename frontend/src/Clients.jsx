@@ -21,7 +21,7 @@ export default function Clients() {
 
   const fetchClients = async () => {
     try {
-      const res = await axios.post('http://localhost:5000/api/tpo/clients', { tpoName: tpoData.name });
+      const res = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/clients', { tpoName: tpoData.name });
       if (res.data.success) setClients(res.data.clients);
     } catch (err) { 
       console.error("Failed to fetch clients:", err); 
@@ -55,7 +55,7 @@ export default function Clients() {
       formData.append('logo', selectedClient.logo);
       if (editForm.logoFile) formData.append('logoFile', editForm.logoFile);
 
-      const res = await axios.post('http://localhost:5000/api/tpo/clients/update', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      const res = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/clients/update', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       if(res.data.success) {
         setIsEditModalOpen(false);
         fetchClients();
@@ -71,7 +71,7 @@ export default function Clients() {
     if(!client.email) return alert("Company Mail ID is missing. Please click 'Edit' and add an email first.");
     setSendingRequest(client.rowNumber);
     try {
-      await axios.post('http://localhost:5000/api/tpo/clients/request-mou', {
+      await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/clients/request-mou', {
         rowNumber: client.rowNumber, companyEmail: client.email, companyName: client.companyName
       });
       fetchClients(); 

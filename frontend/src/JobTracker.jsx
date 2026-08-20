@@ -25,7 +25,7 @@ export default function JobTracker() {
     if (!tpoData) return;
     const fetchData = async () => {
       try {
-        const response = await axios.post('http://localhost:5000/api/tpo/applications', { 
+        const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/applications', { 
           assignedBranchesArray: tpoData.assignedBranchesArray,
           tpoName: tpoData.name 
         });
@@ -56,7 +56,7 @@ export default function JobTracker() {
     setSavingStatus(prev => ({ ...prev, [rowNum]: 'saving' }));
 
     try {
-      const response = await axios.post('http://localhost:5000/api/tpo/applications/update', {
+      const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/applications/update', {
         rowNumber: rowNum, 
         status: newStatus, 
         remarks: newRemarks,

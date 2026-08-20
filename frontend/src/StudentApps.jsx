@@ -16,7 +16,7 @@ export default function StudentApps() {
     if (!tpoData) return;
     const fetchApps = async () => {
       try {
-        const response = await axios.post('http://localhost:5000/api/tpo/applications', { 
+        const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/applications', { 
           assignedBranchesArray: tpoData.assignedBranchesArray 
         });
         if (response.data.success) {

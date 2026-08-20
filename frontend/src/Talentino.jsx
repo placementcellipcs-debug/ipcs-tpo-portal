@@ -13,7 +13,7 @@ export default function Talentino() {
     if (!tpoData) return;
     const fetchTalentino = async () => {
       try {
-        const response = await axios.post('http://localhost:5000/api/tpo/talentino', {
+        const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/talentino', {
           assignedBranchesArray: tpoData.assignedBranchesArray
         });
         if (response.data.success) {

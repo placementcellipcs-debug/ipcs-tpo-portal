@@ -37,8 +37,8 @@ export default function StudentsDirectory() {
     const fetchData = async () => {
       try {
         const [stuRes, statRes] = await Promise.all([
-          axios.post('http://localhost:5000/api/tpo/students', { assignedBranchesArray: tpoData.assignedBranchesArray }),
-          axios.post('http://localhost:5000/api/tpo/dashboard-stats', { assignedBranchesArray: tpoData.assignedBranchesArray })
+          axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/students', { assignedBranchesArray: tpoData.assignedBranchesArray }),
+          axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/dashboard-stats', { assignedBranchesArray: tpoData.assignedBranchesArray })
         ]);
         if (stuRes.data.success) {
           setStudents(stuRes.data.students);
@@ -98,7 +98,7 @@ export default function StudentsDirectory() {
   const saveStudentUpdates = async () => {
     setSavingStatus(true);
     try {
-      const response = await axios.post('http://localhost:5000/api/tpo/students/update-student', {
+      const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/students/update-student', {
         rowNumber: selectedStudent.rowIdx,
         vacOpen: localVacState,
         placementStatus: localPlacementState
