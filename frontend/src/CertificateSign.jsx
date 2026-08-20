@@ -22,7 +22,6 @@ export default function CertificateSign() {
   const [employerDesig, setEmployerDesig] = useState('');
   const [companyAddress, setCompanyAddress] = useState('');
   const [gstin, setGstin] = useState('');
-  const [employerMobile, setEmployerMobile] = useState('');
 
   // File states
   const [logoFile, setLogoFile] = useState(null);
@@ -40,7 +39,6 @@ export default function CertificateSign() {
         if (res.data.success) {
           setClient(res.data.client);
           setEmployerName(res.data.client.contactPerson || '');
-          setEmployerMobile(res.data.client.contact || '');
           
           if (res.data.client.logo && typeof res.data.client.logo === 'string') {
             const match = res.data.client.logo.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
@@ -70,10 +68,19 @@ export default function CertificateSign() {
       return alert("Please complete all required fields (Address, Logo, Signature, Name, and Designation) before submitting.");
     }
     
+    // 🚨 Trigger state to hide all dotted lines BEFORE taking the picture
     setIsSubmitting(true);
 
     try {
-      const canvas = await html2canvas(certificateRef.current, { scale: 2, useCORS: true, backgroundColor: '#ffffff' });
+      // 🚨 Wait 300 milliseconds for React to erase the borders from the screen
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      const canvas = await html2canvas(certificateRef.current, { 
+        scale: 2, 
+        useCORS: true, 
+        backgroundColor: '#ffffff',
+        allowTaint: true 
+      });
       const imgData = canvas.toDataURL('image/jpeg', 1.0);
       
       const pdf = new jsPDF({
@@ -98,14 +105,22 @@ export default function CertificateSign() {
     } catch (error) {
       console.error(error);
       alert(`Submission Error: ${error.response?.data?.message || error.message}`);
-    } finally {
-      setIsSubmitting(false);
+      setIsSubmitting(false); // Only reset if it fails, otherwise keep lines hidden
     }
   };
 
+  // 🚨 Dynamic Input Style: The border vanishes completely when isSubmitting is true
   const inputStyle = {
-    flex: 1, border: 'none', borderBottom: '1px dashed #64748b', outline: 'none', 
-    background: 'transparent', fontSize: '14px', fontFamily: 'inherit', color: '#000', padding: '2px 0'
+    flex: 1, 
+    border: 'none', 
+    borderBottom: isSubmitting ? '1px solid transparent' : '1px dashed #94a3b8', 
+    outline: 'none', 
+    background: 'transparent', 
+    fontSize: '15px', 
+    fontFamily: 'inherit', 
+    color: '#000000', 
+    padding: '2px 0',
+    transition: 'border-color 0.2s'
   };
 
   if (loading) return (
@@ -122,7 +137,6 @@ export default function CertificateSign() {
     </div>
   );
 
-  // LOCKOUT SCREEN
   if (client.documentStatus === 'Completed' || isSuccess) return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', color: '#333', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center' }}>
       <CheckCircle size={80} color="#10b981" weight="fill" style={{ marginBottom: '20px' }} />
@@ -134,129 +148,156 @@ export default function CertificateSign() {
   return (
     <div style={{ minHeight: '100vh', background: '#e2e8f0', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '40px 20px', fontFamily: '"Segoe UI", Arial, sans-serif' }}>
       
-      <div style={{ background: '#fff', padding: '15px 30px', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', marginBottom: '30px', textAlign: 'center', maxWidth: '800px' }}>
-        <h3 style={{ margin: '0 0 10px 0', color: '#0f172a' }}>Please complete your details</h3>
-        <p style={{ margin: 0, color: '#64748b', fontSize: '0.9rem' }}>Fill in your Company Address, GSTIN, and Designation. Then upload your Logo and Signature at the bottom before submitting.</p>
-      </div>
+      {!isSubmitting && (
+        <div style={{ background: '#fff', padding: '15px 30px', borderRadius: '8px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', marginBottom: '30px', textAlign: 'center', maxWidth: '800px' }}>
+          <h3 style={{ margin: '0 0 10px 0', color: '#0f172a' }}>Please complete your details</h3>
+          <p style={{ margin: 0, color: '#64748b', fontSize: '0.9rem' }}>Fill in your Company Address, GSTIN, and Designation. Then upload your Logo and Signature at the bottom before submitting.</p>
+        </div>
+      )}
 
+      {/* 🚨 PROFESSIONAL CONTRACT CONTAINER */}
       <div 
         ref={certificateRef} 
-        style={{ width: '850px', background: '#ffffff', padding: '70px 80px', color: '#1a1a1a', boxShadow: '0 20px 40px rgba(0,0,0,0.1)', position: 'relative', fontSize: '14.5px', lineHeight: '1.7', fontFamily: 'Arial, sans-serif', textAlign: 'justify' }}
+        style={{ 
+          width: '850px', 
+          background: '#ffffff', 
+          padding: '80px', 
+          color: '#000000', 
+          boxShadow: '0 20px 40px rgba(0,0,0,0.1)', 
+          position: 'relative', 
+          fontSize: '15px', 
+          lineHeight: '1.8', 
+          fontFamily: '"Georgia", "Times New Roman", serif', 
+          textAlign: 'justify',
+          overflow: 'hidden'
+        }}
       >
         
-        <div style={{ marginBottom: '30px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-          <div>
+        {/* 🚨 THE WATERMARK */}
+        <div style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          backgroundImage: 'url(https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB)',
+          backgroundSize: '70%',
+          backgroundPosition: 'center',
+          backgroundRepeat: 'no-repeat',
+          opacity: 0.08,
+          zIndex: 0,
+          pointerEvents: 'none'
+        }} />
+
+        {/* CONTENT LAYER (Sits on top of the watermark) */}
+        <div style={{ position: 'relative', zIndex: 1 }}>
+          <div style={{ marginBottom: '35px' }}>
             <p style={{ margin: '0 0 15px 0' }}><strong>Date:</strong> {currentDate}</p>
-            <p style={{ margin: '0 0 5px 0' }}><strong>To</strong></p>
-            <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', fontSize: '16px' }}>{client.companyName}</p>
+            <p style={{ margin: '0 0 5px 0' }}><strong>To,</strong></p>
+            <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', fontSize: '18px' }}>{client.companyName}</p>
             
-            <input type="text" placeholder="[Enter Company Address]" value={companyAddress} onChange={e => setCompanyAddress(e.target.value)} style={{ ...inputStyle, width: '300px', display: 'block', marginBottom: '5px' }} />
+            <input type="text" placeholder={isSubmitting ? "" : "[Enter Company Address]"} value={companyAddress} onChange={e => setCompanyAddress(e.target.value)} style={{ ...inputStyle, width: '350px', display: 'block', marginBottom: '8px' }} />
             
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '5px', width: '300px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', width: '350px' }}>
               <strong>GSTIN:</strong> 
-              <input type="text" placeholder="[Enter GSTIN]" value={gstin} onChange={e => setGstin(e.target.value)} style={{ ...inputStyle, marginLeft: '5px' }} />
+              <input type="text" placeholder={isSubmitting ? "" : "[Enter GSTIN]"} value={gstin} onChange={e => setGstin(e.target.value)} style={{ ...inputStyle, marginLeft: '8px' }} />
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '5px', width: '300px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', width: '350px' }}>
               <strong>Kind Attn:</strong> 
-              <input type="text" placeholder="[Authorized Person]" value={employerName} onChange={e => setEmployerName(e.target.value)} style={{ ...inputStyle, marginLeft: '5px' }} />
+              <input type="text" placeholder={isSubmitting ? "" : "[Authorized Person]"} value={employerName} onChange={e => setEmployerName(e.target.value)} style={{ ...inputStyle, marginLeft: '8px' }} />
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '5px', width: '300px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', width: '350px' }}>
               <strong>Designation:</strong> 
-              <input type="text" placeholder="[Enter Designation]" value={employerDesig} onChange={e => setEmployerDesig(e.target.value)} style={{ ...inputStyle, marginLeft: '5px' }} />
-            </div>
-          </div>
-        </div>
-
-        <h3 style={{ textAlign: 'center', textDecoration: 'underline', marginBottom: '25px', fontSize: '16px', fontWeight: 'bold' }}>Subject: Hiring Partnership Confirmation - IPCS Global</h3>
-
-        <p style={{ marginBottom: '10px' }}>Dear Sir/Madam,</p>
-        <p style={{ marginBottom: '15px' }}>Greetings from IPCS Global.</p>
-        <p style={{ marginBottom: '15px' }}>We are pleased to establish <strong>{client.companyName}</strong> as a Hiring Partner of IPCS Global for sourcing and recruiting skilled and trained candidates from our institution based on your organization's manpower requirements.</p>
-        <p style={{ marginBottom: '25px' }}>As part of this association, IPCS Global will coordinate with your organization and facilitate suitable candidate profiles based on the job roles, eligibility criteria, skills and recruitment requirements communicated by your HR/Recruitment team.</p>
-
-        <h4 style={{ fontSize: '15px', marginBottom: '10px', textDecoration: 'underline' }}>Scope of Hiring Partnership</h4>
-        <ol style={{ paddingLeft: '20px', marginBottom: '25px' }}>
-          <li style={{ marginBottom: '8px' }}><strong>Candidate Sourcing:</strong> IPCS Global will share suitable candidate profiles based on the requirements communicated by the employer.</li>
-          <li style={{ marginBottom: '8px' }}><strong>Recruitment Requirements:</strong> The employer will communicate current and future vacancies, job descriptions, eligibility criteria, salary range and other relevant requirements to IPCS Global.</li>
-          <li style={{ marginBottom: '8px' }}><strong>Candidate Selection:</strong> Final selection, interview, salary negotiation and appointment of candidates shall remain entirely at the discretion of the employer.</li>
-          <li style={{ marginBottom: '8px' }}><strong>Placement Assistance:</strong> IPCS Global will provide placement coordination and candidate support; however, placement or employment shall not be considered guaranteed unless specifically confirmed by the employer.</li>
-          <li style={{ marginBottom: '8px' }}><strong>Candidate Information:</strong> Candidate profiles shared by IPCS Global shall be used solely for recruitment and employment purposes.</li>
-        </ol>
-
-        <h4 style={{ fontSize: '15px', marginBottom: '10px', textDecoration: 'underline' }}>Conditions of Hiring Partnership</h4>
-        <ol style={{ paddingLeft: '20px', marginBottom: '25px' }}>
-          <li style={{ marginBottom: '8px' }}><strong>Direct Communication:</strong> The employer agrees to maintain proper communication with the designated IPCS Global Placement/Corporate Relations representative regarding recruitment requirements and interview schedules.</li>
-          <li style={{ marginBottom: '8px' }}><strong>Interview & Selection Updates:</strong> The employer is requested to provide timely updates regarding interview results, candidate selection and joining status to enable IPCS Global to maintain accurate placement records.</li>
-          <li style={{ marginBottom: '8px' }}><strong>Recruitment Information:</strong> The employer shall provide accurate information regarding job role, location, working hours, salary/CTC, eligibility criteria and other relevant employment conditions before commencing recruitment.</li>
-          <li style={{ marginBottom: '8px' }}><strong>No Candidate Guarantee:</strong> IPCS Global does not guarantee that every recruitment requirement will result in a successful placement. Candidate selection shall be based on the employer's recruitment process and requirements.</li>
-          <li style={{ marginBottom: '8px' }}><strong>Confidentiality:</strong> Both parties shall maintain confidentiality regarding candidate information, company information and other sensitive recruitment-related information shared during the association.</li>
-          <li style={{ marginBottom: '8px' }}><strong>Non-Exclusivity:</strong> This hiring partnership is non-exclusive unless otherwise agreed upon in writing by both parties.</li>
-          <li style={{ marginBottom: '8px' }}><strong>No Recruitment Fee / Recruitment Charges:</strong> No recruitment fee shall be charged to the employer for candidates sourced through IPCS Global, unless otherwise mutually agreed in writing.</li>
-        </ol>
-
-        <h4 style={{ fontSize: '15px', marginBottom: '10px', textDecoration: 'underline' }}>Acknowledgement</h4>
-        <p style={{ marginBottom: '40px' }}>We, <strong>{client.companyName}</strong>, hereby acknowledge the above Hiring Partnership terms and express our willingness to collaborate with IPCS Global for our current and future recruitment requirements.</p>
-
-        {/* SIGNATURE SECTION */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: '40px' }}>
-          
-          <div style={{ width: '45%' }}>
-            <p style={{ fontWeight: 'bold', marginBottom: '15px' }}>For {client.companyName}</p>
-            
-            <div style={{ minHeight: '60px', marginBottom: '10px' }}>
-              {sigPreview ? (
-                <img src={sigPreview} style={{ height: '50px', objectFit: 'contain' }} crossOrigin="anonymous" alt="Signature" />
-              ) : (
-                <label style={{ background: '#f8fafc', color: '#334155', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', border: '1px dashed #cbd5e1' }}>
-                  Upload Signature
-                  <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, setSigPreview, null)} style={{ display: 'none' }} />
-                </label>
-              )}
-            </div>
-            
-            <p style={{ margin: '0 0 5px 0' }}><strong>Authorized Signatory:</strong></p>
-            <p style={{ margin: '0 0 5px 0' }}>Name: {employerName || '__________________'}</p>
-            <p style={{ margin: '0 0 5px 0' }}>Designation: {employerDesig || '__________________'}</p>
-            
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '5px' }}>
-              <span>Mobile:</span> 
-              <input type="text" value={employerMobile} onChange={e => setEmployerMobile(e.target.value)} style={{ ...inputStyle, marginLeft: '5px' }} />
-            </div>
-            <p style={{ margin: '0 0 15px 0' }}>Email: {client.email}</p>
-
-            <div style={{ minHeight: '50px' }}>
-              {logoPreview ? (
-                <img src={logoPreview} style={{ height: '45px', objectFit: 'contain' }} crossOrigin="anonymous" alt="Logo" />
-              ) : (
-                <label style={{ background: '#f8fafc', color: '#334155', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', border: '1px dashed #cbd5e1' }}>
-                  Upload Company Logo
-                  <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, setLogoPreview, setLogoFile)} style={{ display: 'none' }} />
-                </label>
-              )}
+              <input type="text" placeholder={isSubmitting ? "" : "[Enter Designation]"} value={employerDesig} onChange={e => setEmployerDesig(e.target.value)} style={{ ...inputStyle, marginLeft: '8px' }} />
             </div>
           </div>
 
-          <div style={{ width: '45%' }}>
-            <p style={{ fontWeight: 'bold', marginBottom: '15px' }}>IPCS Global</p>
+          <h3 style={{ textAlign: 'center', marginBottom: '35px', fontSize: '19px', fontWeight: 'bold', color: '#000000', letterSpacing: '0.5px' }}>
+            Hiring Partnership Confirmation - IPCS Global
+          </h3>
+
+          <p style={{ marginBottom: '10px' }}>Dear Sir/Madam,</p>
+          <p style={{ marginBottom: '15px' }}>Greetings from IPCS Global.</p>
+          <p style={{ marginBottom: '15px' }}>We are pleased to establish <strong>{client.companyName}</strong> as a Hiring Partner of IPCS Global for sourcing and recruiting skilled and trained candidates from our institution based on your organization's manpower requirements.</p>
+          <p style={{ marginBottom: '25px' }}>As part of this association, IPCS Global will coordinate with your organization and facilitate suitable candidate profiles based on the job roles, eligibility criteria, skills and recruitment requirements communicated by your HR/Recruitment team.</p>
+
+          <h4 style={{ fontSize: '16px', marginBottom: '10px', textDecoration: 'underline', fontWeight: 'bold' }}>Scope of Hiring Partnership</h4>
+          <ol style={{ paddingLeft: '25px', marginBottom: '25px' }}>
+            <li style={{ marginBottom: '8px' }}><strong>Candidate Sourcing:</strong> IPCS Global will share suitable candidate profiles based on the requirements communicated by the employer.</li>
+            <li style={{ marginBottom: '8px' }}><strong>Recruitment Requirements:</strong> The employer will communicate current and future vacancies, job descriptions, eligibility criteria, salary range and other relevant requirements to IPCS Global.</li>
+            <li style={{ marginBottom: '8px' }}><strong>Candidate Selection:</strong> Final selection, interview, salary negotiation and appointment of candidates shall remain entirely at the discretion of the employer.</li>
+            <li style={{ marginBottom: '8px' }}><strong>Placement Assistance:</strong> IPCS Global will provide placement coordination and candidate support; however, placement or employment shall not be considered guaranteed unless specifically confirmed by the employer.</li>
+            <li style={{ marginBottom: '8px' }}><strong>Candidate Information:</strong> Candidate profiles shared by IPCS Global shall be used solely for recruitment and employment purposes.</li>
+          </ol>
+
+          <h4 style={{ fontSize: '16px', marginBottom: '10px', textDecoration: 'underline', fontWeight: 'bold' }}>Conditions of Hiring Partnership</h4>
+          <ol style={{ paddingLeft: '25px', marginBottom: '25px' }}>
+            <li style={{ marginBottom: '8px' }}><strong>Direct Communication:</strong> The employer agrees to maintain proper communication with the designated IPCS Global Placement/Corporate Relations representative regarding recruitment requirements and interview schedules.</li>
+            <li style={{ marginBottom: '8px' }}><strong>Interview & Selection Updates:</strong> The employer is requested to provide timely updates regarding interview results, candidate selection and joining status to enable IPCS Global to maintain accurate placement records.</li>
+            <li style={{ marginBottom: '8px' }}><strong>Recruitment Information:</strong> The employer shall provide accurate information regarding job role, location, working hours, salary/CTC, eligibility criteria and other relevant employment conditions before commencing recruitment.</li>
+            <li style={{ marginBottom: '8px' }}><strong>No Candidate Guarantee:</strong> IPCS Global does not guarantee that every recruitment requirement will result in a successful placement. Candidate selection shall be based on the employer's recruitment process and requirements.</li>
+            <li style={{ marginBottom: '8px' }}><strong>Confidentiality:</strong> Both parties shall maintain confidentiality regarding candidate information, company information and other sensitive recruitment-related information shared during the association.</li>
+            <li style={{ marginBottom: '8px' }}><strong>Non-Exclusivity:</strong> This hiring partnership is non-exclusive unless otherwise agreed upon in writing by both parties.</li>
+            <li style={{ marginBottom: '8px' }}><strong>No Recruitment Fee / Recruitment Charges:</strong> No recruitment fee shall be charged to the employer for candidates sourced through IPCS Global, unless otherwise mutually agreed in writing.</li>
+          </ol>
+
+          <h4 style={{ fontSize: '16px', marginBottom: '10px', textDecoration: 'underline', fontWeight: 'bold' }}>Acknowledgement</h4>
+          <p style={{ marginBottom: '40px' }}>We, <strong>{client.companyName}</strong>, hereby acknowledge the above Hiring Partnership terms and express our willingness to collaborate with IPCS Global for our current and future recruitment requirements.</p>
+
+          {/* 🚨 ENLARGED SIGNATURE SECTION */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: '50px' }}>
             
-            <div style={{ height: '60px', marginBottom: '10px' }}>
-              {/* 🚨 LOCALLY IMPORTED SIGNATURE */}
-              <img src={ipcsSignature} alt="IPCS Signature" style={{ height: '100%' }} /> 
+            <div style={{ width: '45%' }}>
+              <p style={{ fontWeight: 'bold', marginBottom: '15px', fontSize: '16px' }}>{client.companyName}</p>
+              
+              <div style={{ minHeight: '90px', marginBottom: '10px' }}>
+                {sigPreview ? (
+                  <img src={sigPreview} style={{ height: '85px', objectFit: 'contain', maxWidth: '100%' }} crossOrigin="anonymous" alt="Signature" />
+                ) : (
+                  <label style={{ background: '#f8fafc', color: '#334155', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', border: '1px dashed #cbd5e1', display: isSubmitting ? 'none' : 'inline-block' }}>
+                    Upload Signature
+                    <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, setSigPreview, null)} style={{ display: 'none' }} />
+                  </label>
+                )}
+              </div>
+              
+              <p style={{ margin: '0 0 5px 0' }}><strong>Authorized Signatory:</strong></p>
+              <p style={{ margin: '0 0 5px 0' }}>Name: {employerName || '__________________'}</p>
+              <p style={{ margin: '0 0 15px 0' }}>Designation: {employerDesig || '__________________'}</p>
+              <p style={{ margin: '0 0 15px 0' }}>Email: {client.email}</p>
+
+              <div style={{ minHeight: '85px' }}>
+                {logoPreview ? (
+                  <img src={logoPreview} style={{ height: '80px', objectFit: 'contain', maxWidth: '100%' }} crossOrigin="anonymous" alt="Logo" />
+                ) : (
+                  <label style={{ background: '#f8fafc', color: '#334155', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', border: '1px dashed #cbd5e1', display: isSubmitting ? 'none' : 'inline-block' }}>
+                    Upload Company Logo
+                    <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, setLogoPreview, setLogoFile)} style={{ display: 'none' }} />
+                  </label>
+                )}
+              </div>
             </div>
 
-            <p style={{ margin: '0 0 5px 0' }}><strong>Authorized Signatory:</strong></p>
-            <p style={{ margin: '0 0 5px 0' }}>Name: Gifty KP</p>
-            <p style={{ margin: '0 0 5px 0' }}>Designation: Zonal Manager - Placements</p>
-            <p style={{ margin: '0 0 15px 0' }}>Email: gifty@ipcsglobal.com</p>
+            <div style={{ width: '45%' }}>
+              <p style={{ fontWeight: 'bold', marginBottom: '15px', fontSize: '16px' }}>IPCS Global</p>
+              
+              <div style={{ height: '90px', marginBottom: '10px' }}>
+                <img src={ipcsSignature} alt="IPCS Signature" style={{ height: '100%', objectFit: 'contain' }} /> 
+              </div>
 
-            <div style={{ height: '50px' }}>
-              {/* 🚨 LOCALLY IMPORTED LOGO */}
-              <img src={ipcsLogo} alt="IPCS Logo" style={{ height: '40px' }} />
+              <p style={{ margin: '0 0 5px 0' }}><strong>Authorized Signatory:</strong></p>
+              <p style={{ margin: '0 0 5px 0' }}>Name: Gifty KP</p>
+              <p style={{ margin: '0 0 15px 0' }}>Designation: Zonal Manager - Placements</p>
+              <p style={{ margin: '0 0 15px 0' }}>Email: gifty@ipcsglobal.com</p>
+
+              <div style={{ height: '85px' }}>
+                <img src={ipcsLogo} alt="IPCS Logo" style={{ height: '100%', objectFit: 'contain' }} />
+              </div>
             </div>
+
           </div>
-
         </div>
       </div>
 
