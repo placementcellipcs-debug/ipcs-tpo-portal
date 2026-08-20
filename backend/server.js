@@ -1,4 +1,9 @@
 require('dotenv').config();
+
+// 🚨 THE RENDER NETWORK FIX: Forces Node to use IPv4 instead of IPv6
+const dns = require('dns');
+dns.setDefaultResultOrder('ipv4first');
+
 const express = require('express');
 const cors = require('cors');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
@@ -16,33 +21,35 @@ app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
 // ==========================================
-// GOOGLE DRIVE FOLDER IDs (UPDATED)
+// GOOGLE DRIVE FOLDER IDs
 // ==========================================
 const FOLDER_OFFER_LETTERS = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5';
 const FOLDER_CLIENT_LOGOS = '11M8jGi1ISWP2mOpWRZncHhThHLoc7cDi'; 
-const FOLDER_MOU_CERTIFICATES = '1Hu1zPs56nFXyJPSl7PVfs-oFW4QrKqiD'; // NEW MOU FOLDER
+const FOLDER_MOU_CERTIFICATES = '1Hu1zPs56nFXyJPSl7PVfs-oFW4QrKqiD';
 
 // ==========================================
 // GOOGLE AUTHENTICATION
 // ==========================================
 const serviceAccountAuth = new JWT({
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-  key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-  scopes: [
-    'https://www.googleapis.com/auth/spreadsheets',
-    'https://www.googleapis.com/auth/drive' 
-  ],
+  key: process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') : '',
+  scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'],
 });
 
 const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth);
 const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 
 // ==========================================
-// EMAIL TRANSPORTER SETUP
+// EMAIL TRANSPORTER SETUP (UPDATED FOR RENDER)
 // ==========================================
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+  host: 'smtp.gmail.com', // Explicitly setting host
+  port: 465,              // Explicitly setting port
+  secure: true,
+  auth: { 
+    user: process.env.EMAIL_USER, 
+    pass: process.env.EMAIL_PASS 
+  }
 });
 
 // ==========================================

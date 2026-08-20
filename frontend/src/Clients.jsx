@@ -3,6 +3,9 @@ import axios from 'axios';
 import { CircleNotch, PencilSimple, PaperPlaneRight, FilePdf, X, FloppyDisk } from '@phosphor-icons/react';
 import Layout from './Layout';
 
+// 🚨 LIVE RENDER URL
+const API_BASE = "https://ipcs-tpo-portal.onrender.com";
+
 export default function Clients() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
   const [clients, setClients] = useState([]);
@@ -21,7 +24,7 @@ export default function Clients() {
 
   const fetchClients = async () => {
     try {
-      const res = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/clients', { tpoName: tpoData.name });
+      const res = await axios.post(`${API_BASE}/api/tpo/clients`, { tpoName: tpoData.name });
       if (res.data.success) setClients(res.data.clients);
     } catch (err) { 
       console.error("Failed to fetch clients:", err); 
@@ -30,7 +33,6 @@ export default function Clients() {
     }
   };
 
-  // 🚨 FIXED: Using Google's Thumbnail API, which is the safest for dashboards
   const getDriveImage = (url) => {
     if (!url) return null;
     const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
@@ -55,7 +57,7 @@ export default function Clients() {
       formData.append('logo', selectedClient.logo);
       if (editForm.logoFile) formData.append('logoFile', editForm.logoFile);
 
-      const res = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/clients/update', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      const res = await axios.post(`${API_BASE}/api/tpo/clients/update`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       if(res.data.success) {
         setIsEditModalOpen(false);
         fetchClients();
@@ -71,7 +73,7 @@ export default function Clients() {
     if(!client.email) return alert("Company Mail ID is missing. Please click 'Edit' and add an email first.");
     setSendingRequest(client.rowNumber);
     try {
-      await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/clients/request-mou', {
+      await axios.post(`${API_BASE}/api/tpo/clients/request-mou`, {
         rowNumber: client.rowNumber, companyEmail: client.email, companyName: client.companyName
       });
       fetchClients(); 
@@ -101,7 +103,6 @@ export default function Clients() {
                 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                   <div style={{ width: '60px', height: '60px', borderRadius: '8px', background: '#fff', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    {/* 🚨 REMOVED THE crossOrigin="anonymous" TAG HERE! */}
                     {client.logo ? <img src={getDriveImage(client.logo)} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} alt="Logo" /> : <span style={{ color: '#000', fontWeight: 'bold' }}>{client.companyName.charAt(0)}</span>}
                   </div>
                   <div>
