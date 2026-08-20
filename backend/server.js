@@ -40,16 +40,20 @@ const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth
 const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 
 // ==========================================
-// EMAIL TRANSPORTER SETUP (UPDATED FOR RENDER)
+// EMAIL TRANSPORTER SETUP (STRICT TIMEOUTS & IPV4)
 // ==========================================
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com', // Explicitly setting host
-  port: 465,              // Explicitly setting port
+  host: 'smtp.gmail.com',
+  port: 465,
   secure: true,
   auth: { 
     user: process.env.EMAIL_USER, 
     pass: process.env.EMAIL_PASS 
-  }
+  },
+  family: 4, // 🚨 Hard-forces IPv4 to bypass Render's network blocks
+  connectionTimeout: 10000, // Fails and throws an error after 10 seconds
+  greetingTimeout: 10000, 
+  socketTimeout: 10000
 });
 
 // ==========================================
