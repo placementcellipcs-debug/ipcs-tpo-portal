@@ -40,17 +40,21 @@ const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth
 const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 
 // ==========================================
-// EMAIL TRANSPORTER SETUP (🚨 BULLETPROOF FIX)
+// EMAIL TRANSPORTER SETUP (🚨 THE ULTIMATE RENDER FIX)
 // ==========================================
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 587, // Bypasses Render's strict Port 465 blocking
+  secure: false, // Upgrades to secure TLS automatically
   auth: { 
     user: process.env.EMAIL_USER, 
     pass: process.env.EMAIL_PASS 
   },
-  family: 4, // THIS IS CRITICAL TO BYPASS RENDER NETWORK BLOCKS
-  connectionTimeout: 8000, // Forces an error after 8 seconds if Gmail blocks it
-  socketTimeout: 8000
+  family: 4, // 🚨 Forces IPv4 (Crucial for Render free tier)
+  connectionTimeout: 10000, // Fails and throws a loud error after 10 seconds
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
+  tls: { rejectUnauthorized: false }
 });
 
 const APPS_SCRIPT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyAJWuQlO7Ie3e-hsWkr965tZD3vfTBG5E9oBxFMleXBNi5ocSTnilPmFYzDXgQ-cOcbw/exec";
@@ -419,12 +423,12 @@ app.post('/api/tpo/clients/update', upload.single('logoFile'), async (req, res) 
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// 🚨 UPDATED REQUEST ROUTE: Includes error catching for missing passwords
 app.post('/api/tpo/clients/request-mou', async (req, res) => {
   const { rowNumber, companyEmail, companyName } = req.body;
   try {
+    // Fail instantly if env variables are missing
     if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      throw new Error("Missing EMAIL_PASS in Render Environment Variables!");
+      throw new Error("Missing EMAIL_PASS in Render Environment Variables! Make sure you pasted your 16-letter App Password with NO SPACES in Render.");
     }
 
     const signingLink = `https://ipcs-tpo-portal.vercel.app/sign-certificate/${rowNumber}`;
@@ -445,8 +449,7 @@ app.post('/api/tpo/clients/request-mou', async (req, res) => {
       const statusCol = headers.find(h => h.toLowerCase().includes('mail status'));
       if (statusCol) { rows[0].assign({ [statusCol]: 'Request Sent' }); await rows[0].save(); }
     }
-    refreshCache(); 
-    res.json({ success: true });
+    refreshCache(); res.json({ success: true });
   } catch (error) { 
     console.error("Email Error:", error);
     res.status(500).json({ success: false, message: error.message }); 
