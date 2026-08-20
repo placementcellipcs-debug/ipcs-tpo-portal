@@ -40,24 +40,45 @@ const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth
 const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 
 // ==========================================
-// EMAIL TRANSPORTER SETUP (🚨 HARDCODED IPV4 BYPASS)
+// EMAIL SENDING ENGINE (DUAL MODE TOGGLE)
 // ==========================================
 const transporter = nodemailer.createTransport({
-  host: '74.125.137.108', // 🚨 Google's direct numerical IPv4 Address
+  host: 'smtp.gmail.com',
   port: 465,
   secure: true,
-  auth: { 
-    user: process.env.EMAIL_USER, 
-    pass: process.env.EMAIL_PASS 
-  },
-  tls: { 
-    servername: 'smtp.gmail.com', // Tells Google the certificate is safe
-    rejectUnauthorized: false 
-  },
-  connectionTimeout: 10000, // Forces it to stop spinning after 10 seconds
-  greetingTimeout: 10000,
-  socketTimeout: 10000
+  family: 4, 
+  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
 });
+
+// 🚨 THE TOGGLE FUNCTION: Uses Apps Script on Render, or SMTP on ipcsglobal.info
+async function sendIPCSMail(mailOptions) {
+  if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
+    if (!process.env.APPS_SCRIPT_EMAIL_URL) throw new Error("Missing APPS_SCRIPT_EMAIL_URL in Render");
+    
+    const payload = {
+      to: mailOptions.to,
+      subject: mailOptions.subject,
+      html: mailOptions.html,
+      attachments: []
+    };
+    
+    if (mailOptions.attachments) {
+      mailOptions.attachments.forEach(att => {
+        if (att.content) { // Handles the direct PDF buffers
+          payload.attachments.push({ filename: att.filename, mimeType: 'application/pdf', contentBytes: att.content.toString('base64') });
+        } else if (att.href) { // Handles the Google Drive URLs for the CRON job
+          payload.attachments.push({ filename: att.filename, href: att.href });
+        }
+      });
+    }
+    
+    const response = await axios.post(process.env.APPS_SCRIPT_EMAIL_URL, payload);
+    if (!response.data.success) throw new Error("Apps Script Error: " + response.data.error);
+    return true;
+  } else {
+    return await transporter.sendMail(mailOptions);
+  }
+}
 
 const APPS_SCRIPT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyAJWuQlO7Ie3e-hsWkr965tZD3vfTBG5E9oBxFMleXBNi5ocSTnilPmFYzDXgQ-cOcbw/exec";
 
@@ -428,10 +449,6 @@ app.post('/api/tpo/clients/update', upload.single('logoFile'), async (req, res) 
 app.post('/api/tpo/clients/request-mou', async (req, res) => {
   const { rowNumber, companyEmail, companyName } = req.body;
   try {
-    if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) {
-      throw new Error("Missing EMAIL_PASS in Render Environment Variables! Make sure you pasted your 16-letter App Password with NO SPACES in Render.");
-    }
-
     const signingLink = `https://ipcs-tpo-portal.vercel.app/sign-certificate/${rowNumber}`;
 
     const mailOptions = {
@@ -441,7 +458,7 @@ app.post('/api/tpo/clients/request-mou', async (req, res) => {
       html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;"><h2 style="color: #ffffff; margin: 0;">IPCS PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${companyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Certificate of Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review & Sign Certificate</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, copy and paste this link into your browser: <br/>${signingLink}</p></div></div>`
     };
 
-    await transporter.sendMail(mailOptions);
+    await sendIPCSMail(mailOptions); // 🚨 CALLING THE DUAL MODE TOGGLE
 
     const sheet = doc.sheetsByTitle["Clients"]; 
     const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
@@ -488,11 +505,96 @@ app.post('/api/tpo/clients/submit-mou', upload.any(), async (req, res) => {
       html: `<div style="font-family: Arial, sans-serif; padding: 30px;"><h2 style="color: #0f1523;">Partnership Successfully Established</h2><p>The Hiring Partnership Confirmation for <b>${companyName}</b> has been digitally signed and successfully processed.</p><p>You can view and download the official, hiring partnership letter below:</p><a href="${pdfLink}" style="background-color: #38bdf8; color: #0f1523; padding: 10px 20px; text-decoration: none; font-weight: bold; border-radius: 4px; display: inline-block; margin-top: 10px;">View Official Letter</a></div>`,
       attachments: [{ filename: `${companyName.replace(/\s+/g, '_')}_Agreement.pdf`, content: certFile.buffer }]
     };
-    await transporter.sendMail(mailOptions); refreshCache(); res.json({ success: true, pdfLink });
+    
+    await sendIPCSMail(mailOptions); // 🚨 CALLING THE DUAL MODE TOGGLE
+    
+    refreshCache(); res.json({ success: true, pdfLink });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-cron.schedule('0 8 * * *', async () => { /* keep cron exactly as it was */ });
+// ==========================================
+// AUTOMATED EMAILS 
+// ==========================================
+
+const extractAppInfo = (appRow) => {
+  const rowData = appRow.toObject();
+  const getHeader = (str) => Object.keys(rowData).find(k => k.toLowerCase().includes(str.toLowerCase()));
+
+  let phone = rowData[getHeader('contact')] || rowData[getHeader('phone')] || '';
+  let email = rowData[getHeader('mail')] || rowData[getHeader('email')] || '';
+  let qual = rowData[getHeader('qual')] || '';
+  let resume = rowData[getHeader('resume')] || rowData[getHeader('cv')] || '';
+  let name = rowData[getHeader('name')] || 'Student';
+  let roll = rowData[getHeader('roll')] || '';
+  let course = rowData[getHeader('course')] || '';
+  let branch = rowData[getHeader('branch')] || '';
+
+  if (!phone || !email || !qual || !resume) {
+    const studentData = globalCache.students.find(s => {
+      const sRow = s.toObject();
+      const sRollKey = Object.keys(sRow).find(k => k.toLowerCase().includes('roll'));
+      return sRollKey && sRow[sRollKey] === roll;
+    });
+
+    if (studentData) {
+      const sRow = studentData.toObject();
+      const sGetHeader = (str) => Object.keys(sRow).find(k => k.toLowerCase().includes(str.toLowerCase()));
+      if (!phone) phone = sRow[sGetHeader('phone')] || sRow[sGetHeader('contact')] || '';
+      if (!email) email = sRow[sGetHeader('mail')] || sRow[sGetHeader('email')] || '';
+      if (!qual) qual = sRow[sGetHeader('qual')] || '';
+      if (!resume) resume = sRow[sGetHeader('resume')] || sRow[sGetHeader('cv')] || '';
+    }
+  }
+  return { name, roll, phone, email, qual, resume, course, branch };
+};
+
+cron.schedule('0 8 * * *', async () => {
+  if (!globalCache) return;
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  const yStr = yesterday.toISOString().split('T')[0]; 
+
+  const expiredJobs = globalCache.vacancies.filter(v => {
+    if (!v.get('Last Date')) return false;
+    try { return new Date(v.get('Last Date')).toISOString().split('T')[0] === yStr; } catch(e) { return false; }
+  });
+
+  for (let job of expiredJobs) {
+    const jobId = job.get('Job ID') || job.get('ID');
+    const applicants = globalCache.applications.filter(app => app.get('Job ID') === jobId);
+    if (applicants.length === 0) continue;
+
+    const tpoName = applicants[0].get('Placement Officer');
+    const contactRows = await doc.sheetsByTitle["Contact"].getRows();
+    const tpoRow = contactRows.find(r => r.get('TPO Name') === tpoName);
+    const tpoEmail = tpoRow ? tpoRow.get('Mail ID') : null;
+    if (!tpoEmail) continue;
+
+    let tableRows = ''; let attachments = [];
+    applicants.forEach((appRow, index) => {
+      const info = extractAppInfo(appRow);
+      let resumeBtn = 'N/A';
+      if (info.resume) {
+        const driveMatch = info.resume.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+        if (driveMatch) {
+            const driveId = driveMatch[1];
+            resumeBtn = `<a href="https://drive.google.com/file/d/${driveId}/view" style="background: #0f172a; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; display: inline-block; white-space: nowrap;">View CV</a>`;
+            attachments.push({ filename: `${info.name.replace(/\s+/g, '_')}_Resume.pdf`, href: `https://drive.google.com/uc?export=download&id=${driveId}` });
+        } else { resumeBtn = `<a href="${info.resume}">Link</a>`; }
+      }
+      tableRows += `<tr><td style="padding:8px;border:1px solid #ddd;text-align:center;">${index+1}</td><td style="padding:8px;border:1px solid #ddd;"><b>${info.name}</b></td><td style="padding:8px;border:1px solid #ddd;">${info.phone}</td><td style="padding:8px;border:1px solid #ddd;">${info.email}</td><td style="padding:8px;border:1px solid #ddd;text-align:center;">${info.roll}</td><td style="padding:8px;border:1px solid #ddd;">${info.course}</td><td style="padding:8px;border:1px solid #ddd;">${info.branch}</td><td style="padding:8px;border:1px solid #ddd;">${info.qual}</td><td style="padding:8px;border:1px solid #ddd;text-align:center;">${resumeBtn}</td></tr>`;
+    });
+
+    const mailOptions = {
+      from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`,
+      to: tpoEmail,
+      subject: `Applications Received – ${job.get('Company')} | ${job.get('Position')} | ${jobId}`,
+      html: `...`, // Template logic
+      attachments: attachments
+    };
+    
+    await sendIPCSMail(mailOptions); // 🚨 CALLING THE DUAL MODE TOGGLE
+  }
+});
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 TPO Backend is running on http://localhost:${PORT}`));
