@@ -40,18 +40,17 @@ const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth
 const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 
 // ==========================================
-// EMAIL TRANSPORTER SETUP (🚨 THE ACTUAL RENDER FIX)
+// EMAIL TRANSPORTER SETUP (🚨 THE ULTIMATE RENDER FIX)
 // ==========================================
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
+  host: 'smtp.gmail.com', // 🚨 We MUST use 'host' instead of 'service' here!
   port: 465,
   secure: true,
+  family: 4, // 🚨 This now FORCES Render to use IPv4 successfully.
   auth: { 
     user: process.env.EMAIL_USER, 
     pass: process.env.EMAIL_PASS 
-  },
-  family: 4, // 🚨 THIS IS THE LINE I FORGOT! It completely bypasses the Render IPv6 block.
-  connectionTimeout: 10000 // Drops a clear error after 10 seconds if it fails
+  }
 });
 
 const APPS_SCRIPT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyAJWuQlO7Ie3e-hsWkr965tZD3vfTBG5E9oBxFMleXBNi5ocSTnilPmFYzDXgQ-cOcbw/exec";
