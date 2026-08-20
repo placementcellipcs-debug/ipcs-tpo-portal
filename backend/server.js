@@ -43,19 +43,16 @@ const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth
 const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 
 // ==========================================
-// EMAIL TRANSPORTER SETUP (PORT 587 FIX)
+// EMAIL TRANSPORTER SETUP (STABLE IPV4 FIX)
 // ==========================================
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
-  port: 587, // STARTTLS port
-  secure: false, // Must be false for 587
-  requireTLS: true,
+  port: 465,
+  secure: true,
+  family: 4, // 🚨 Forces Node to use the IPv4 network
   auth: { 
     user: process.env.EMAIL_USER, 
     pass: process.env.EMAIL_PASS 
-  },
-  tls: {
-    rejectUnauthorized: false
   }
 });
 
