@@ -152,8 +152,8 @@ app.post('/api/auth/login', async (req, res) => {
     const assignedRaw = tpoRow.get('Assigned Branches') || '';
     let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
     
-    // 🚨 FETCH PHONE NUMBER FROM THE SHEET
-    const phoneNum = tpoRow.get('Contact') || tpoRow.get('Phone No.') || tpoRow.get('Phone Number') || tpoRow.get('Phone') || 'Not Provided';
+    // 🚨 FIXED: Looking for exactly "Contact Number" as shown in your sheet
+    const phoneNum = tpoRow.get('Contact Number') || tpoRow.get('Contact') || tpoRow.get('Phone No.') || 'Not Provided';
 
     return res.json({ 
       success: true, 
@@ -163,7 +163,7 @@ app.post('/api/auth/login', async (req, res) => {
         sittingBranch: tpoRow.get('Sitting Branch') || 'N/A', 
         assignedBranchesArray: assignedArray.length > 0 ? assignedArray : ['all'], 
         photo: tpoRow.get('Profile Photo') || '',
-        phone: phoneNum // 🚨 NOW SENT TO FRONTEND
+        phone: phoneNum
       }
     });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
@@ -789,6 +789,35 @@ cron.schedule('0 8 * * *', async () => {
     };
     
     await sendIPCSMail(mailOptions); 
+  }
+});
+
+// ==========================================
+// UPDATE TPO PROFILE PHOTO
+// ==========================================
+app.post('/api/tpo/profile/update-photo', upload.single('photo'), async (req, res) => {
+  const { email } = req.body;
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: "No file provided" });
+    
+    // Upload image to Drive
+    const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
+    
+    // Update the Contact sheet
+    const sheet = doc.sheetsByTitle["Contact"];
+    const rows = await sheet.getRows();
+    const cleanEmail = email.trim().toLowerCase();
+    const tpoRow = rows.find(row => (row.get('Mail ID') || '').toString().trim().toLowerCase() === cleanEmail);
+    
+    if (tpoRow) {
+      tpoRow.assign({ 'Profile Photo': photoLink });
+      await tpoRow.save();
+      res.json({ success: true, photoUrl: photoLink });
+    } else {
+      res.status(404).json({ success: false, message: "TPO not found." });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
