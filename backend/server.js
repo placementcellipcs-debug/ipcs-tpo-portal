@@ -375,27 +375,62 @@ app.get('/api/tpo/vacancies', (req, res) => {
   res.json({ success: true, vacancies: vacs.reverse() });
 });
 
+// ==========================================
+// EVENTS ROUTING (EXACT MAPPING TO SHEET)
+// ==========================================
 app.get('/api/tpo/events', (req, res) => {
-  let allEvents = globalCache.events.map(row => ({
-    date: row.get('Date') || '', branch: row.get('Branch') || 'Bangalore', title: row.get('Title') || 'Placement Drive', type: row.get('Type') || 'Placement Drive', time: row.get('Time') || '', location: row.get('Location') || ''
-  }));
-  res.json({ success: true, events: allEvents.reverse() });
+  let allEvents = globalCache.events.map(row => {
+    const rowData = row.toObject();
+    const getVal = (possibleKeys) => {
+      for(let key of Object.keys(rowData)) {
+         if (possibleKeys.includes(key.trim())) return rowData[key];
+      }
+      return '';
+    };
+
+    return {
+      date: getVal(['Date of the Event', 'Date']),
+      tpo: getVal(['TPO', 'Placement Officer']),
+      branch: getVal(['Branch']),
+      type: getVal(['Event', 'Type']),
+      title: getVal(['Title']),
+      description: getVal(['Descripation', 'Description']),
+      time: getVal(['Time of the Event', 'Time']),
+      location: getVal(['Event Happening in', 'Location']),
+      poster: getVal(['Poster Link', 'Poster'])
+    };
+  });
+
+  // Filter out completely empty rows
+  allEvents = allEvents.filter(e => e.date && e.title);
+  
+  res.json({ success: true, events: allEvents });
 });
 
-// 🚨 NEWLY ADDED: ROUTE TO SAVE EVENTS TO THE GOOGLE SHEET
-app.post('/api/tpo/events/add', async (req, res) => {
-  const { date, time, branch, type, title, location } = req.body;
+// Using multer memory storage for the poster upload
+app.post('/api/tpo/events/add', upload.single('posterFile'), async (req, res) => {
+  const { date, tpo, branch, type, title, description, time, location } = req.body;
   try {
     const eventSheet = doc.sheetsByTitle["Event"];
     if (!eventSheet) throw new Error("Event sheet not found in Google Spreadsheets");
     
+    let posterLink = '';
+    // If a file was uploaded, send it to Google Drive
+    if (req.file) {
+      // You can define a specific folder for posters or use a general one
+      posterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS); 
+    }
+
     await eventSheet.addRow({
-      'Date': date,
-      'Time': time,
+      'Date of the Event': date,
+      'TPO': tpo,
       'Branch': branch,
-      'Type': type,
+      'Event': type,
       'Title': title,
-      'Location': location || 'TBA'
+      'Descripation': description || '',
+      'Time of the Event': time || '',
+      'Event Happening in': location || '',
+      'Poster Link': posterLink
     });
     
     refreshCache();
