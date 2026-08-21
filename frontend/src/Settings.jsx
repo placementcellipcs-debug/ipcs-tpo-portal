@@ -75,7 +75,9 @@ export default function Settings() {
                   <div className="form-group"><label>Full Name</label><input type="text" className="sleek-input" value={tpoData.name} readOnly style={{ opacity: 0.7 }} /></div>
                   <div className="form-group"><label>Job Title</label><input type="text" className="sleek-input" value="Placement Officer" readOnly style={{ opacity: 0.7 }} /></div>
                   <div className="form-group"><label>Official Email</label><input type="text" className="sleek-input" value={tpoData.email} readOnly style={{ opacity: 0.7 }} /></div>
-                  <div className="form-group"><label>Phone Number</label><input type="text" className="sleek-input" value={tpoData.phone} readOnly style={{ opacity: 0.7 }} /></div>
+                  
+                  {/* 🚨 SAFELY BIND THE PHONE NUMBER */}
+                  <div className="form-group"><label>Phone Number</label><input type="text" className="sleek-input" value={tpoData.phone || 'Not Provided'} readOnly style={{ opacity: 0.7 }} /></div>
                 </div>
 
                 <div className="form-group">

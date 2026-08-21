@@ -151,7 +151,21 @@ app.post('/api/auth/login', async (req, res) => {
     
     const assignedRaw = tpoRow.get('Assigned Branches') || '';
     let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
-    return res.json({ success: true, tpo: { name: tpoRow.get('TPO Name') || 'Officer', email: cleanEmail, sittingBranch: tpoRow.get('Sitting Branch') || 'N/A', assignedBranchesArray: assignedArray.length > 0 ? assignedArray : ['all'], photo: tpoRow.get('Profile Photo') || '' }});
+    
+    // 🚨 FETCH PHONE NUMBER FROM THE SHEET
+    const phoneNum = tpoRow.get('Contact') || tpoRow.get('Phone No.') || tpoRow.get('Phone Number') || tpoRow.get('Phone') || 'Not Provided';
+
+    return res.json({ 
+      success: true, 
+      tpo: { 
+        name: tpoRow.get('TPO Name') || 'Officer', 
+        email: cleanEmail, 
+        sittingBranch: tpoRow.get('Sitting Branch') || 'N/A', 
+        assignedBranchesArray: assignedArray.length > 0 ? assignedArray : ['all'], 
+        photo: tpoRow.get('Profile Photo') || '',
+        phone: phoneNum // 🚨 NOW SENT TO FRONTEND
+      }
+    });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
