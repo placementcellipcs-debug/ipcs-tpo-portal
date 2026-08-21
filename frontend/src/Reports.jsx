@@ -17,7 +17,8 @@ export default function Reports() {
 
   const [students, setStudents] = useState([]);
   const [applications, setApplications] = useState([]);
-  const [vacancies, setVacancies] = useState([]); // Used for NewsLetter stats
+  const [vacancies, setVacancies] = useState([]); 
+  const [events, setEvents] = useState([]);
 
   useEffect(() => {
     if (!tpoData) return;
@@ -28,6 +29,7 @@ export default function Reports() {
           setStudents(res.data.students || []);
           setApplications(res.data.applications || []);
           setVacancies(res.data.vacancies || []);
+          setEvents(res.data.events || []);
         }
       } catch (error) {
         console.error("Failed to fetch reports", error);
@@ -203,20 +205,27 @@ export default function Reports() {
   });
 
   // ==========================================
-  // TAB 4: TPO ACTIVITY LOGS
+  // 🚨 TAB 4: TPO ACTIVITY LOGS (FLASHING FIXED)
   // ==========================================
   const tpoActivity = activeTPOs.map(t => {
+    // 1. Applications handled by this TPO
     const apps = applications.filter(a => a.tpoName === t && checkMonth(a.date));
-    const placed = apps.filter(a => (a.status || '').toLowerCase().includes('placed')).length;
     const joined = apps.filter(a => (a.status || '').toLowerCase().includes('join')).length;
     const notJoined = apps.filter(a => (a.status || '').toLowerCase().includes('reject') || (a.status || '').toLowerCase().includes('not attend')).length;
     
+    // 2. Real data calculation for Companies Visited
+    const uniqueCompanies = new Set(apps.map(a => a.company).filter(Boolean));
+
+    // 3. Real data calculation for Drives Conducted (From Events Sheet)
+    const tpoEvents = events.filter(e => e.tpo === t && checkMonth(e.date));
+    const drivesConducted = tpoEvents.filter(e => (e.type || '').toLowerCase().includes('drive')).length;
+
     return {
       tpo: t,
-      companiesVisited: Math.floor(apps.length / 4), // Proxied analytics
-      drivesConducted: Math.floor(placed / 8), 
-      postersMade: Math.floor(Math.random() * 8) + 1,
-      videosMade: Math.floor(Math.random() * 4),
+      companiesVisited: uniqueCompanies.size, // REAL DATA
+      drivesConducted: drivesConducted,       // REAL DATA
+      postersMade: 0,                         // 🚨 Set to 0 to stop flashing!
+      videosMade: 0,                          // 🚨 Set to 0 to stop flashing!
       joining: joined,
       notJoining: notJoined,
       totalApps: apps.length
