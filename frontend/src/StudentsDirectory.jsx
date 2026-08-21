@@ -1,144 +1,194 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, MagnifyingGlass, UserCircle, CaretLeft, Users, WarningCircle, CheckCircle, Student } from '@phosphor-icons/react';
+import { 
+  CircleNotch, SquaresFour, List, PencilSimple, X, FloppyDisk, 
+  UserMinus, ClockClockwise, Prohibit, UsersThree, Briefcase, Files, Confetti, FilePdf, GraduationCap, CaretLeft 
+} from '@phosphor-icons/react';
 import Layout from './Layout';
 
-const API_BASE = "https://ipcs-tpo-portal.onrender.com";
-
-// Vibrant color palette for the Avodha-style Branch Tiles
 const TILE_COLORS = ['#10b981', '#ef4444', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#0ea5e9', '#f43f5e'];
 
-export default function Students() {
+export default function StudentsDirectory() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
+  const [students, setStudents] = useState([]);
   
-  const [allStudents, setAllStudents] = useState([]);
+  // Stats States
+  const [stats, setStats] = useState({ total: 0, pending: 0, notResponding: 0, noNeed: 0 });
+  const [globalStats, setGlobalStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0 });
   const [loading, setLoading] = useState(true);
   
-  // View State Management
-  const [selectedBranch, setSelectedBranch] = useState(null);
-  
-  // Directory Filter States
+  // View & Filters & Sorting
+  const [selectedBranch, setSelectedBranch] = useState(null); // 🚨 NEW: Controls the Dual-View
   const [searchQuery, setSearchQuery] = useState('');
-  const [courseFilter, setCourseFilter] = useState('All Courses');
-  const [sortOrder, setSortOrder] = useState('Newest First');
-  const [viewMode, setViewMode] = useState('list');
+  const [courseFilter, setCourseFilter] = useState('All');
+  const [sortOrder, setSortOrder] = useState('newest'); 
+  const [viewType, setViewType] = useState('list'); 
 
+  // Modal State
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [savingStatus, setSavingStatus] = useState(false);
+  const [localVacState, setLocalVacState] = useState('');
+  const [localPlacementState, setLocalPlacementState] = useState('');
+
+  // 🚨 EXACT ORIGINAL FETCHING LOGIC - Prevents infinite loading
   useEffect(() => {
-    if (tpoData) fetchStudents();
+    if (!tpoData) return;
+    const fetchData = async () => {
+      try {
+        const [stuRes, statRes] = await Promise.all([
+          axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/students', { assignedBranchesArray: tpoData.assignedBranchesArray }),
+          axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/dashboard-stats', { assignedBranchesArray: tpoData.assignedBranchesArray })
+        ]);
+        if (stuRes.data.success) {
+          setStudents(stuRes.data.students);
+          setStats(stuRes.data.stats);
+        }
+        if (statRes.data.success) setGlobalStats(statRes.data.stats);
+      } catch (error) { console.error("Failed", error); } finally { setLoading(false); }
+    };
+    fetchData();
   }, [tpoData]);
 
-  const fetchStudents = async () => {
+  // 🚨 EXACT ORIGINAL HELPERS
+  const getDriveImage = (url) => {
+    if (!url || typeof url !== 'string') return null;
+    const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+    return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : url;
+  };
+
+  const getDrivePdf = (url) => {
+    if (!url || typeof url !== 'string') return null;
+    const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+    return match ? `https://drive.google.com/file/d/${match[1]}/view` : url;
+  };
+
+  const renderAvatar = (url, name) => {
+    const fixedUrl = getDriveImage(url);
+    const initial = name ? name.charAt(0).toUpperCase() : '?';
+    if (!fixedUrl || fixedUrl === 'N/A') return <span style={{fontSize: '1.4rem', fontWeight: 'bold'}}>{initial}</span>;
+    return (
+      <img 
+        src={fixedUrl} 
+        alt={name} 
+        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+        onError={(e) => { e.target.style.display='none'; e.target.parentNode.innerHTML = `<span style="font-size: 1.4rem; font-weight: bold;">${initial}</span>`; }} 
+      />
+    );
+  };
+
+  const openStudentModal = (student) => {
+    setSelectedStudent(student);
+    setLocalVacState(student.vacOpen || 'Yes');
+    setLocalPlacementState(student.placementStatus || 'Pending');
+    setIsModalOpen(true);
+  };
+
+  // 🚨 EXACT ORIGINAL SAVE LOGIC
+  const saveStudentUpdates = async () => {
+    setSavingStatus(true);
     try {
-      const res = await axios.post(`${API_BASE}/api/tpo/students`, { 
-        assignedBranchesArray: tpoData.assignedBranchesArray 
+      const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/students/update-student', {
+        rowNumber: selectedStudent.rowIdx,
+        vacOpen: localVacState,
+        placementStatus: localPlacementState
       });
-      if (res.data.success) {
-        setAllStudents(res.data.students);
+      if (response.data.success) {
+        const updatedStudents = students.map(s => s.rowIdx === selectedStudent.rowIdx ? { ...s, vacOpen: localVacState, placementStatus: localPlacementState } : s);
+        setStudents(updatedStudents);
+        
+        let newNotRes = 0; let newNoNeed = 0; let newPending = 0;
+        updatedStudents.forEach(s => {
+          const pLower = s.placementStatus.toLowerCase();
+          if (pLower.includes('not responding')) newNotRes++;
+          else if (pLower.includes('no need')) newNoNeed++;
+          else if (pLower.includes('pending') || pLower === '') newPending++;
+        });
+        setStats(prev => ({ ...prev, notResponding: newNotRes, noNeed: newNoNeed, pending: newPending }));
+        setIsModalOpen(false);
       }
-    } catch (err) {
-      console.error("Failed to fetch students:", err);
-    } finally {
-      setLoading(false);
-    }
+    } catch (error) { alert("Failed to update student data"); } finally { setSavingStatus(false); }
   };
 
   // ==========================================
-  // DATA PROCESSING FOR BRANCH TILES
+  // DATA PREP FOR TILES & DIRECTORY
   // ==========================================
   const branchData = {};
-  allStudents.forEach(student => {
-    const branchName = student.branch || 'Unknown Branch';
-    if (!branchData[branchName]) branchData[branchName] = 0;
-    branchData[branchName]++;
+  students.forEach(s => {
+    const b = s.branch || 'Unknown';
+    branchData[b] = (branchData[b] || 0) + 1;
   });
-  
   const branchList = Object.keys(branchData).sort();
 
-  // ==========================================
-  // DATA PROCESSING FOR SELECTED BRANCH DIRECTORY
-  // ==========================================
-  const activeStudents = selectedBranch ? allStudents.filter(s => s.branch === selectedBranch) : [];
-  
-  // Calculate specific stats for the selected branch
+  const activeStudents = selectedBranch ? students.filter(s => s.branch === selectedBranch) : [];
+  const uniqueCourses = ['All', ...new Set(activeStudents.map(s => s.course).filter(Boolean))];
+
+  // Dynamically calculate the 3 stat tiles for the selected branch
   const branchStats = {
-    total: activeStudents.length,
-    pending: activeStudents.filter(s => s.placementStatus.toLowerCase().includes('pending') || s.placementStatus === '').length,
-    notResponding: activeStudents.filter(s => s.placementStatus.toLowerCase().includes('not responding')).length,
-    noNeed: activeStudents.filter(s => s.placementStatus.toLowerCase().includes('no need')).length
+    pending: activeStudents.filter(s => s.placementStatus?.toLowerCase().includes('pending') || !s.placementStatus).length,
+    notResponding: activeStudents.filter(s => s.placementStatus?.toLowerCase().includes('not responding')).length,
+    noNeed: activeStudents.filter(s => s.placementStatus?.toLowerCase().includes('no need')).length
   };
 
-  const uniqueCourses = ['All Courses', ...new Set(activeStudents.map(s => s.course).filter(Boolean))];
-
-  let filteredStudents = activeStudents.filter(student => {
-    const matchesSearch = student.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          student.roll.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesCourse = courseFilter === 'All Courses' || student.course === courseFilter;
-    return matchesSearch && matchesCourse;
+  // 1. Filter (Scoped to the active branch)
+  let filteredAndSorted = activeStudents.filter(s => {
+    const matchQuery = s.name.toLowerCase().includes(searchQuery.toLowerCase()) || (s.roll && s.roll.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchCourse = courseFilter === 'All' || s.course === courseFilter;
+    return matchQuery && matchCourse;
   });
 
-  if (sortOrder === 'Newest First') filteredStudents.reverse();
+  // 2. Sort
+  if (sortOrder === 'az') filteredAndSorted.sort((a, b) => a.name.localeCompare(b.name));
+  if (sortOrder === 'za') filteredAndSorted.sort((a, b) => b.name.localeCompare(a.name));
+
 
   // ==========================================
-  // RENDER: VIEW 1 - AVODHA STYLE BRANCH TILES
+  // RENDER: VIEW 1 - BRANCH TILES LANDING
   // ==========================================
   if (!selectedBranch) {
     return (
       <Layout>
         <div className="page-container" style={{ padding: 0 }}>
-          <h1 style={{ fontSize: '2.2rem', marginBottom: '5px', textAlign: 'center', marginTop: '20px' }}>Which branch would you like to view?</h1>
-          <p style={{ color: 'var(--text-muted)', marginBottom: '3rem', textAlign: 'center' }}>Select an assigned branch to view its registered students and placement statistics.</p>
-          
           {loading ? (
-            <div style={{ textAlign: 'center', marginTop: '4rem', color: '#38bdf8' }}><CircleNotch size={50} className="ph-spin" /></div>
-          ) : branchList.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2rem' }}>No students found in your assigned branches.</div>
+             <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--accent-primary)' }}><CircleNotch size={40} className="ph-spin" /><p>Fetching students...</p></div>
           ) : (
-            <div style={{ 
-              display: 'grid', 
-              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', 
-              gap: '30px', 
-              padding: '0 20px' 
-            }}>
-              {branchList.map((branch, index) => {
-                const color = TILE_COLORS[index % TILE_COLORS.length];
-                return (
-                  <div 
-                    key={branch} 
-                    onClick={() => setSelectedBranch(branch)}
-                    style={{ 
-                      backgroundColor: color, 
-                      borderRadius: '24px', 
-                      padding: '40px 20px', 
-                      cursor: 'pointer', 
-                      textAlign: 'center',
-                      minHeight: '220px', 
-                      display: 'flex', 
-                      flexDirection: 'column', 
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      boxShadow: '0 10px 25px rgba(0,0,0,0.2)',
-                      transition: 'transform 0.2s ease, box-shadow 0.2s ease'
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'translateY(-5px)';
-                      e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'translateY(0)';
-                      e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)';
-                    }}
-                  >
-                    <h2 style={{ color: '#ffffff', fontSize: '2.2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      {branch}
-                    </h2>
-                    <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Users size={20} color="#ffffff" weight="bold" />
-                      <span style={{ color: '#ffffff', fontSize: '1.1rem', fontWeight: 'bold' }}>{branchData[branch]} Students</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <>
+              {/* EXACT ORIGINAL GLOBAL STATS ROW */}
+              <div className="universal-kpi-bar" style={{ marginBottom: '2.5rem' }}>
+                <div className="kpi-card"><div><div className="kpi-val">{globalStats.totalStudents}</div><div className="kpi-label">Total Students</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}><UsersThree weight="fill"/></div></div>
+                <div className="kpi-card"><div><div className="kpi-val">{globalStats.activeVacancies}</div><div className="kpi-label">Active Vacancies</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><Briefcase weight="fill"/></div></div>
+                <div className="kpi-card"><div><div className="kpi-val">{globalStats.pendingApps}</div><div className="kpi-label">Pending Apps</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><Files weight="fill"/></div></div>
+                <div className="kpi-card"><div><div className="kpi-val">{globalStats.placed}</div><div className="kpi-label">Total Hired</div></div><div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}><Confetti weight="fill"/></div></div>
+              </div>
+
+              <h1 style={{ fontSize: '2.2rem', marginBottom: '5px', textAlign: 'center' }}>Which branch would you like to view?</h1>
+              <p style={{ color: 'var(--text-muted)', marginBottom: '3rem', textAlign: 'center' }}>Select an assigned branch to view its registered students and placement statistics.</p>
+              
+              {branchList.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2rem' }}>No students found in your assigned branches.</div>
+              ) : (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px', padding: '0 20px' }}>
+                  {branchList.map((branch, index) => {
+                    const color = TILE_COLORS[index % TILE_COLORS.length];
+                    return (
+                      <div 
+                        key={branch} 
+                        onClick={() => setSelectedBranch(branch)}
+                        style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
+                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
+                      >
+                        <h2 style={{ color: '#ffffff', fontSize: '2.2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>{branch}</h2>
+                        <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <UsersThree size={20} color="#ffffff" weight="bold" />
+                          <span style={{ color: '#ffffff', fontSize: '1.1rem', fontWeight: 'bold' }}>{branchData[branch]} Students</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       </Layout>
@@ -146,117 +196,151 @@ export default function Students() {
   }
 
   // ==========================================
-  // RENDER: VIEW 2 - DETAILED DIRECTORY
+  // RENDER: VIEW 2 - BRANCH DIRECTORY
   // ==========================================
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        {/* Navigation Header */}
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '25px', gap: '15px' }}>
-          <button 
-            onClick={() => setSelectedBranch(null)} 
-            style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
-          >
+          <button onClick={() => setSelectedBranch(null)} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
             <CaretLeft weight="bold" size={18} /> Back to Branches
           </button>
           <div>
             <h1 style={{ fontSize: '1.8rem', margin: 0 }}>{selectedBranch} Directory</h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Managing student profiles and placement status for {selectedBranch}.</p>
+            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Manage student profiles, view resumes, and control vacancy access.</p>
+          </div>
+        </div>
+        
+        {/* EXACT ORIGINAL PLACEMENT STATS ROW (Recalculated for this branch) */}
+        <div className="universal-kpi-bar" style={{ marginBottom: '2rem', gridTemplateColumns: 'repeat(3, 1fr)' }}>
+          <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{branchStats.pending}</div><div className="kpi-label">Placement Pending</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}><ClockClockwise weight="fill"/></div></div>
+          <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{branchStats.notResponding}</div><div className="kpi-label">Not Responding</div></div><div className="kpi-icon" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' }}><UserMinus weight="fill"/></div></div>
+          <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{branchStats.noNeed}</div><div className="kpi-label">Placement Not Needed</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#a855f7' }}><Prohibit weight="fill"/></div></div>
+        </div>
+
+        {/* EXACT ORIGINAL FILTERS (Branch dropdown removed since we are in a branch) */}
+        <div className="header-controls">
+          <div className="filter-group">
+            <input type="text" className="sleek-input" placeholder="Search name or roll..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            <select className="sleek-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}><option value="All">All Courses</option>{uniqueCourses.map(c => <option key={c} value={c}>{c}</option>)}</select>
+            <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}><option value="newest">Sort: Newest First</option><option value="az">Sort: A-Z</option><option value="za">Sort: Z-A</option></select>
+          </div>
+          <div className="view-toggles">
+            <button className={`view-btn ${viewType === 'grid' ? 'active' : ''}`} onClick={() => setViewType('grid')}><SquaresFour weight="fill" /></button>
+            <button className={`view-btn ${viewType === 'list' ? 'active' : ''}`} onClick={() => setViewType('list')}><List weight="bold" /></button>
           </div>
         </div>
 
-        {/* Dynamic Stat Cards for the Selected Branch */}
-        <div className="dashboard-grid" style={{ marginBottom: '2rem' }}>
-          <div className="stat-card">
-            <div className="stat-info"><h3>{branchStats.total}</h3><p>TOTAL STUDENTS</p></div>
-            <div className="stat-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}><Users size={28} weight="fill" /></div>
+        {/* EXACT ORIGINAL DATA GRIDS */}
+        {filteredAndSorted.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '2rem' }}>No students found.</div>
+        ) : viewType === 'grid' ? (
+          <div className="student-grid">
+            {filteredAndSorted.map((st, i) => (
+              <div className="student-card" key={i}>
+                <div className="sc-avatar">{renderAvatar(st.photo, st.name)}</div>
+                <div className="sc-name">{st.name}</div>
+                <div className="sc-roll">{st.roll !== 'N/A' ? st.roll : 'No Roll #'}</div>
+                <div className="sc-details">
+                  <div className="sc-detail-row"><span>Branch</span><strong style={{ color: 'var(--text-main)' }}>{st.branch}</strong></div>
+                  <div className="sc-detail-row"><span>Course</span><strong style={{ color: 'var(--text-main)' }}>{st.course}</strong></div>
+                  <div className="sc-detail-row"><span>Contact</span><strong style={{ color: 'var(--text-main)' }}>{st.phone}</strong></div>
+                  <div className="sc-detail-row"><span>Status</span><strong style={{ color: st.status.toLowerCase().includes('completed') ? '#10b981' : '#38bdf8' }}>{st.status}</strong></div>
+                </div>
+                <button className="btn-secondary" style={{ width: '100%', padding: '0.5rem' }} onClick={() => openStudentModal(st)}>View Profile</button>
+              </div>
+            ))}
           </div>
-          <div className="stat-card">
-            <div className="stat-info"><h3>{branchStats.pending}</h3><p>PLACEMENT PENDING</p></div>
-            <div className="stat-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><WarningCircle size={28} weight="fill" /></div>
+        ) : (
+          <div className="table-container">
+            <table className="modern-table">
+              <thead><tr><th>Student Details</th><th>Branch & Course</th><th>Qualification</th><th>Status</th><th style={{ textAlign: 'center' }}>Action</th></tr></thead>
+              <tbody>
+                {filteredAndSorted.map((st, i) => (
+                  <tr key={i}>
+                    <td><div className="avatar-cell"><div className="avatar">{renderAvatar(st.photo, st.name)}</div><div><span className="primary-text">{st.name}</span><span className="sub-text">{st.roll}</span></div></div></td>
+                    <td><span className="primary-text">{st.branch}</span><span className="sub-text">{st.course}</span></td>
+                    <td><span className="primary-text">{st.qual}</span><span className="sub-text">{st.stream}</span></td>
+                    <td><span className={`badge ${st.status.toLowerCase().includes('completed') ? 'badge-green' : 'badge-blue'}`}>{st.status}</span></td>
+                    <td style={{ textAlign: 'center' }}><button className="btn-secondary" onClick={() => openStudentModal(st)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}><PencilSimple weight="bold" /> View</button></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div className="stat-card">
-            <div className="stat-info"><h3>{branchStats.notResponding}</h3><p>NOT RESPONDING</p></div>
-            <div className="stat-icon" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}><CircleNotch size={28} weight="fill" /></div>
-          </div>
-          <div className="stat-card">
-            <div className="stat-info"><h3>{branchStats.noNeed}</h3><p>PLACEMENT NOT NEEDED</p></div>
-            <div className="stat-icon" style={{ background: 'rgba(139, 92, 246, 0.1)', color: '#8b5cf6' }}><CheckCircle size={28} weight="fill" /></div>
-          </div>
-        </div>
-
-        {/* Filters */}
-        <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', flexWrap: 'wrap' }}>
-          <div style={{ position: 'relative', flex: 1, minWidth: '250px' }}>
-            <MagnifyingGlass size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input type="text" className="sleek-input" placeholder="Search name or roll..." style={{ width: '100%', paddingLeft: '45px' }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-          </div>
-          
-          <select className="sleek-input" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
-            {uniqueCourses.map(c => <option key={c} value={c}>{c}</option>)}
-          </select>
-          
-          <select className="sleek-input" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
-            <option>Newest First</option>
-            <option>Oldest First</option>
-          </select>
-        </div>
-
-        {/* Student List */}
-        <div style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-            <thead>
-              <tr style={{ background: 'rgba(255,255,255,0.02)', borderBottom: '1px solid var(--card-border)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                <th style={{ padding: '15px 20px' }}>STUDENT DETAILS</th>
-                <th style={{ padding: '15px 20px' }}>COURSE</th>
-                <th style={{ padding: '15px 20px' }}>QUALIFICATION</th>
-                <th style={{ padding: '15px 20px' }}>PLACEMENT STATUS</th>
-                <th style={{ padding: '15px 20px', textAlign: 'right' }}>ACTION</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredStudents.length > 0 ? filteredStudents.map((student, idx) => (
-                <tr key={idx} style={{ borderBottom: '1px solid var(--card-border)' }}>
-                  <td style={{ padding: '15px 20px', display: 'flex', alignItems: 'center', gap: '15px' }}>
-                    {student.photo ? (
-                      <img src={student.photo} alt="Profile" style={{ width: '40px', height: '40px', borderRadius: '50%', objectFit: 'cover' }} />
-                    ) : (
-                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <UserCircle size={24} color="#fff" />
-                      </div>
-                    )}
-                    <div>
-                      <div style={{ fontWeight: 'bold', color: '#fff' }}>{student.name}</div>
-                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{student.roll}</div>
-                    </div>
-                  </td>
-                  <td style={{ padding: '15px 20px', color: '#cbd5e1' }}>{student.course}</td>
-                  <td style={{ padding: '15px 20px', color: '#cbd5e1' }}>{student.qual}</td>
-                  <td style={{ padding: '15px 20px' }}>
-                    <span style={{ 
-                      padding: '5px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', border: '1px solid',
-                      background: student.placementStatus.toLowerCase() === 'placed' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)',
-                      borderColor: student.placementStatus.toLowerCase() === 'placed' ? '#10b981' : '#f59e0b',
-                      color: student.placementStatus.toLowerCase() === 'placed' ? '#10b981' : '#f59e0b'
-                    }}>
-                      {student.placementStatus.toUpperCase() || 'PENDING'}
-                    </span>
-                  </td>
-                  <td style={{ padding: '15px 20px', textAlign: 'right' }}>
-                    <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.85rem' }} onClick={() => window.open(student.resume || '#', '_blank')}>
-                      View CV
-                    </button>
-                  </td>
-                </tr>
-              )) : (
-                <tr><td colSpan="5" style={{ padding: '30px', textAlign: 'center', color: 'var(--text-muted)' }}>No students match your filters.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
+        )}
       </div>
+
+      {/* EXACT ORIGINAL OVERLAY MODAL */}
+      {isModalOpen && selectedStudent && (
+        <div 
+          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', overflow: 'hidden' }} 
+          onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}
+        >
+          <div className="modal-card" style={{ maxWidth: '850px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
+            
+            <div className="student-modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1.2rem', margin: '0 0 1.5rem 0', flexWrap: 'wrap', gap: '15px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <div style={{ width: '60px', height: '60px', borderRadius: '50%', overflow: 'hidden', border: '2px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)' }}>
+                  {renderAvatar(selectedStudent.photo, selectedStudent.name)}
+                </div>
+                <div>
+                  <h2 style={{ margin: '0 0 4px 0', fontSize: '1.4rem' }}>{selectedStudent.name}</h2>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 700 }}>{selectedStudent.roll}</span>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                {selectedStudent.resume && selectedStudent.resume !== 'N/A' && (
+                  <button className="btn-secondary" onClick={() => window.open(getDrivePdf(selectedStudent.resume) || selectedStudent.resume, '_blank')} style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', border: '1px solid #f59e0b', margin: 0, padding: '0.5rem 0.8rem' }}>
+                    <FilePdf size={18} weight="fill" /> Resume
+                  </button>
+                )}
+                {selectedStudent.certificate && selectedStudent.certificate !== 'N/A' && (
+                  <button className="btn-secondary" onClick={() => window.open(getDrivePdf(selectedStudent.certificate) || selectedStudent.certificate, '_blank')} style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #38bdf8', margin: 0, padding: '0.5rem 0.8rem' }}>
+                    <GraduationCap size={18} weight="fill" /> Certificate
+                  </button>
+                )}
+                <X size={28} style={{ cursor: 'pointer', color: 'var(--text-muted)', marginLeft: '10px' }} onClick={() => setIsModalOpen(false)} />
+              </div>
+            </div>
+
+            <div className="student-modal-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
+              {Object.entries(selectedStudent.rawData).map(([key, val]) => {
+                const lowerKey = key.toLowerCase();
+                if(!val || val === 'N/A' || lowerKey.includes('photo') || lowerKey.includes('resume') || lowerKey.includes('certificate') || lowerKey.includes('timestamp') || lowerKey === 'row' || lowerKey === 'time') return null;
+                return (
+                  <div key={key} className="data-cell" style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                    <span className="data-label" style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>{key}</span>
+                    <span className="data-value" style={{ fontSize: '0.95rem', color: '#fff', fontWeight: 700, wordBreak: 'break-word' }}>{val}</span>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '1.5rem' }}>
+              <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
+                <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Placement Status</span>
+                <select className="sleek-select" style={{ width: '100%' }} value={localPlacementState} onChange={(e) => setLocalPlacementState(e.target.value)}>
+                  <option value="Pending">Pending</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
+                </select>
+              </div>
+              <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
+                <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Vacancy Access</span>
+                <select className="sleek-select" style={{ width: '100%' }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)}>
+                  <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #1e293b', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
+               <button className="btn-action" style={{ width: 'auto', background: '#38bdf8', color: '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0 }} onClick={saveStudentUpdates} disabled={savingStatus}>
+                  {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> Save All Changes</>}
+                </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
