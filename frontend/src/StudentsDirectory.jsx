@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   CircleNotch, SquaresFour, List, PencilSimple, X, FloppyDisk, 
-  UserMinus, ClockClockwise, Prohibit, UsersThree, Briefcase, Files, Confetti, FilePdf, GraduationCap, CaretLeft 
+  UserMinus, ClockClockwise, Prohibit, UsersThree, Briefcase, Files, Confetti, 
+  FilePdf, GraduationCap, CaretLeft, Phone, WhatsappLogo, EnvelopeSimple, LinkedinLogo 
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -18,7 +19,7 @@ export default function StudentsDirectory() {
   const [loading, setLoading] = useState(true);
   
   // View & Filters & Sorting
-  const [selectedBranch, setSelectedBranch] = useState(null); // 🚨 NEW: Controls the Dual-View
+  const [selectedBranch, setSelectedBranch] = useState(null); 
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
   const [sortOrder, setSortOrder] = useState('newest'); 
@@ -31,7 +32,6 @@ export default function StudentsDirectory() {
   const [localVacState, setLocalVacState] = useState('');
   const [localPlacementState, setLocalPlacementState] = useState('');
 
-  // 🚨 EXACT ORIGINAL FETCHING LOGIC - Prevents infinite loading
   useEffect(() => {
     if (!tpoData) return;
     const fetchData = async () => {
@@ -50,7 +50,6 @@ export default function StudentsDirectory() {
     fetchData();
   }, [tpoData]);
 
-  // 🚨 EXACT ORIGINAL HELPERS
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
     const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
@@ -84,7 +83,6 @@ export default function StudentsDirectory() {
     setIsModalOpen(true);
   };
 
-  // 🚨 EXACT ORIGINAL SAVE LOGIC
   const saveStudentUpdates = async () => {
     setSavingStatus(true);
     try {
@@ -123,23 +121,33 @@ export default function StudentsDirectory() {
   const activeStudents = selectedBranch ? students.filter(s => s.branch === selectedBranch) : [];
   const uniqueCourses = ['All', ...new Set(activeStudents.map(s => s.course).filter(Boolean))];
 
-  // Dynamically calculate the 3 stat tiles for the selected branch
   const branchStats = {
     pending: activeStudents.filter(s => s.placementStatus?.toLowerCase().includes('pending') || !s.placementStatus).length,
     notResponding: activeStudents.filter(s => s.placementStatus?.toLowerCase().includes('not responding')).length,
     noNeed: activeStudents.filter(s => s.placementStatus?.toLowerCase().includes('no need')).length
   };
 
-  // 1. Filter (Scoped to the active branch)
   let filteredAndSorted = activeStudents.filter(s => {
     const matchQuery = s.name.toLowerCase().includes(searchQuery.toLowerCase()) || (s.roll && s.roll.toLowerCase().includes(searchQuery.toLowerCase()));
     const matchCourse = courseFilter === 'All' || s.course === courseFilter;
     return matchQuery && matchCourse;
   });
 
-  // 2. Sort
   if (sortOrder === 'az') filteredAndSorted.sort((a, b) => a.name.localeCompare(b.name));
   if (sortOrder === 'za') filteredAndSorted.sort((a, b) => b.name.localeCompare(a.name));
+
+  // ==========================================
+  // EXTRACT LINKEDIN HELPER
+  // ==========================================
+  const getLinkedInUrl = (rawData) => {
+    if (!rawData) return null;
+    const key = Object.keys(rawData).find(k => k.toLowerCase().includes('linkedin'));
+    let url = key ? rawData[key] : null;
+    if (url && url !== 'N/A' && !url.startsWith('http')) {
+      url = 'https://' + url;
+    }
+    return url && url !== 'N/A' ? url : null;
+  };
 
 
   // ==========================================
@@ -153,7 +161,6 @@ export default function StudentsDirectory() {
              <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--accent-primary)' }}><CircleNotch size={40} className="ph-spin" /><p>Fetching students...</p></div>
           ) : (
             <>
-              {/* EXACT ORIGINAL GLOBAL STATS ROW */}
               <div className="universal-kpi-bar" style={{ marginBottom: '2.5rem' }}>
                 <div className="kpi-card"><div><div className="kpi-val">{globalStats.totalStudents}</div><div className="kpi-label">Total Students</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}><UsersThree weight="fill"/></div></div>
                 <div className="kpi-card"><div><div className="kpi-val">{globalStats.activeVacancies}</div><div className="kpi-label">Active Vacancies</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><Briefcase weight="fill"/></div></div>
@@ -212,14 +219,12 @@ export default function StudentsDirectory() {
           </div>
         </div>
         
-        {/* EXACT ORIGINAL PLACEMENT STATS ROW (Recalculated for this branch) */}
         <div className="universal-kpi-bar" style={{ marginBottom: '2rem', gridTemplateColumns: 'repeat(3, 1fr)' }}>
           <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{branchStats.pending}</div><div className="kpi-label">Placement Pending</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}><ClockClockwise weight="fill"/></div></div>
           <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{branchStats.notResponding}</div><div className="kpi-label">Not Responding</div></div><div className="kpi-icon" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' }}><UserMinus weight="fill"/></div></div>
           <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{branchStats.noNeed}</div><div className="kpi-label">Placement Not Needed</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#a855f7' }}><Prohibit weight="fill"/></div></div>
         </div>
 
-        {/* EXACT ORIGINAL FILTERS (Branch dropdown removed since we are in a branch) */}
         <div className="header-controls">
           <div className="filter-group">
             <input type="text" className="sleek-input" placeholder="Search name or roll..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
@@ -232,7 +237,6 @@ export default function StudentsDirectory() {
           </div>
         </div>
 
-        {/* EXACT ORIGINAL DATA GRIDS */}
         {filteredAndSorted.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '2rem' }}>No students found.</div>
         ) : viewType === 'grid' ? (
@@ -272,7 +276,6 @@ export default function StudentsDirectory() {
         )}
       </div>
 
-      {/* EXACT ORIGINAL OVERLAY MODAL */}
       {isModalOpen && selectedStudent && (
         <div 
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', overflow: 'hidden' }} 
@@ -280,16 +283,44 @@ export default function StudentsDirectory() {
         >
           <div className="modal-card" style={{ maxWidth: '850px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
             
-            <div className="student-modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1.2rem', margin: '0 0 1.5rem 0', flexWrap: 'wrap', gap: '15px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+            <div className="student-modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #1e293b', paddingBottom: '1.2rem', margin: '0 0 1.5rem 0', flexWrap: 'wrap', gap: '15px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
                 <div style={{ width: '60px', height: '60px', borderRadius: '50%', overflow: 'hidden', border: '2px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)' }}>
                   {renderAvatar(selectedStudent.photo, selectedStudent.name)}
                 </div>
                 <div>
                   <h2 style={{ margin: '0 0 4px 0', fontSize: '1.4rem' }}>{selectedStudent.name}</h2>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 700 }}>{selectedStudent.roll}</span>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{selectedStudent.roll}</span>
+                  
+                  {/* 🚨 THE NEW QUICK ACTION BUTTONS */}
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    
+                    {/* Call Button */}
+                    <a href={`tel:${selectedStudent.phone}`} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(14, 165, 233, 0.15)', color: '#0ea5e9', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none' }}>
+                      <Phone size={14} weight="fill" /> Call
+                    </a>
+
+                    {/* WhatsApp Button */}
+                    <a href={`https://api.whatsapp.com/send?phone=${selectedStudent.phone ? (selectedStudent.phone.replace(/\D/g, '').length === 10 ? '91' + selectedStudent.phone.replace(/\D/g, '') : selectedStudent.phone.replace(/\D/g, '')) : ''}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(37, 211, 102, 0.15)', color: '#25D366', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none' }}>
+                      <WhatsappLogo size={14} weight="fill" /> WhatsApp
+                    </a>
+
+                    {/* Email Button */}
+                    <a href={`mailto:${selectedStudent.email}`} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(234, 67, 53, 0.15)', color: '#ea4335', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none' }}>
+                      <EnvelopeSimple size={14} weight="fill" /> Mail
+                    </a>
+
+                    {/* Dynamic LinkedIn Button */}
+                    {getLinkedInUrl(selectedStudent.rawData) && (
+                      <a href={getLinkedInUrl(selectedStudent.rawData)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(10, 102, 194, 0.15)', color: '#4facfe', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none' }}>
+                        <LinkedinLogo size={14} weight="fill" /> LinkedIn
+                      </a>
+                    )}
+                  </div>
+
                 </div>
               </div>
+
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 {selectedStudent.resume && selectedStudent.resume !== 'N/A' && (
                   <button className="btn-secondary" onClick={() => window.open(getDrivePdf(selectedStudent.resume) || selectedStudent.resume, '_blank')} style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', border: '1px solid #f59e0b', margin: 0, padding: '0.5rem 0.8rem' }}>
@@ -308,7 +339,7 @@ export default function StudentsDirectory() {
             <div className="student-modal-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
               {Object.entries(selectedStudent.rawData).map(([key, val]) => {
                 const lowerKey = key.toLowerCase();
-                if(!val || val === 'N/A' || lowerKey.includes('photo') || lowerKey.includes('resume') || lowerKey.includes('certificate') || lowerKey.includes('timestamp') || lowerKey === 'row' || lowerKey === 'time') return null;
+                if(!val || val === 'N/A' || lowerKey.includes('photo') || lowerKey.includes('resume') || lowerKey.includes('certificate') || lowerKey.includes('timestamp') || lowerKey === 'row' || lowerKey === 'time' || lowerKey.includes('linkedin')) return null;
                 return (
                   <div key={key} className="data-cell" style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '8px', border: '1px solid #1e293b' }}>
                     <span className="data-label" style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>{key}</span>
