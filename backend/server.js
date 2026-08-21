@@ -459,12 +459,26 @@ app.post('/api/tpo/issues/update', async (req, res) => {
 app.post('/api/tpo/reports', (req, res) => {
   const { assignedBranchesArray } = req.body;
   let students = [], applications = [], issues = [], talentino = [];
-  globalCache.students.forEach(row => { if (checkBranchMatch(row.get('Branch'), assignedBranchesArray)) students.push({ name: row.get('Name'), roll: row.get('Roll Number'), branch: row.get('Branch'), course: row.get('Course'), status: row.get('Status') }); });
-  globalCache.applications.forEach(row => { if (checkBranchMatch(row.get('Branch'), assignedBranchesArray)) applications.push({ name: row.get('Student Name'), roll: row.get('Roll Number'), jobId: row.get('Job ID'), company: row.get('Company Name'), date: row.get('TimeStamp'), status: row.get('Status'), remarks: row.get('Remarks') }); });
+  
+  // We send ALL students so the frontend can filter by assigned branches for enrollment, but see all branches for placement
+  globalCache.students.forEach(row => students.push({ 
+    name: row.get('Name'), roll: row.get('Roll Number'), branch: row.get('Branch'), course: row.get('Course'), status: row.get('Status'), placementStatus: row.get('Placement Stat') || row.get('Placement Status') 
+  }));
+  
+  globalCache.applications.forEach(row => applications.push({ 
+    name: row.get('Student Name'), roll: row.get('Roll Number'), jobId: row.get('Job ID'), company: row.get('Company Name'), date: row.get('TimeStamp'), status: row.get('Status'), remarks: row.get('Remarks'), tpoName: row.get('Placement Officer'), branch: row.get('Branch'), course: row.get('Course') 
+  }));
+  
   globalCache.issues.forEach(row => { if (checkBranchMatch(row.get('Branch'), assignedBranchesArray)) issues.push({ name: row.get('Name'), branch: row.get('Branch'), details: row.get('Issue Details'), status: row.get('Status'), remarks: row.get('Remarks') }); });
+  
   globalCache.tAtt.forEach(row => { if (checkBranchMatch(row.get('Branch'), assignedBranchesArray)) talentino.push({ name: row.get('Name'), branch: row.get('Branch'), date: row.get('Check-in') || row.get('Date'), rating: row.get('Rating'), notes: row.get('Notes') }); });
-  let vacancies = globalCache.vacancies.map(row => ({ id: row.get('Job ID') || row.get('ID') || '', company: row.get('Company') || '', location: row.get('Location') || '', mode: row.get('Mode') || '', status: row.get('Status') || 'Open' }));
+  
+  let vacancies = globalCache.vacancies.map(row => ({ 
+    id: row.get('Job ID') || row.get('ID') || '', company: row.get('Company') || '', location: row.get('Location') || '', mode: row.get('Mode') || '', status: row.get('Status') || 'Open', course: row.get('Course') || '', date: row.get('Last Date') || row.get('Date') || '' 
+  }));
+  
   let events = globalCache.events.map(row => ({ date: row.get('Date') || '' }));
+  
   res.json({ success: true, students, applications, issues, talentino, vacancies, events });
 });
 
