@@ -484,21 +484,36 @@ app.post('/api/tpo/reports', (req, res) => {
 
 app.post('/api/tpo/talentino', (req, res) => {
   const { assignedBranchesArray } = req.body;
-  let dates = new Set();
-  globalCache.tSched.forEach(row => { const d = row.get('Date'); if (d) dates.add(d.trim()); });
   
   let records = globalCache.tAtt.filter(row => checkBranchMatch(row.get('Branch'), assignedBranchesArray)).map(row => {
-    // Check all possible names for the Date column
-    const d = row.get('Timestamp') || row.get('TimeStamp') || row.get('Check-in') || row.get('Date') || '';
+    const rowData = row.toObject();
+    
+    // Bulletproof case-insensitive data mapping
+    const getVal = (searchStrings) => {
+      for (let key of Object.keys(rowData)) {
+        for (let str of searchStrings) {
+          if (key.toLowerCase().includes(str.toLowerCase())) return rowData[key];
+        }
+      }
+      return '';
+    };
+
     return {
-      name: row.get('Name') || '', 
-      branch: row.get('Branch'), 
-      date: d, 
-      rating: row.get('Rating') || '', 
-      notes: row.get('Notes') || '' 
+      name: getVal(['name', 'student']), 
+      branch: getVal(['branch']), 
+      date: getVal(['present check-ins date', 'timestamp', 'date', 'time']), // 🚨 EXACT SHEET MAPPING
+      rating: getVal(['rating']), 
+      notes: getVal(['notes', 'remark']) 
     };
   });
-  
+
+  // 🚨 Dynamically generate the dropdown list from actual attendance dates!
+  let dates = new Set();
+  records.forEach(r => {
+    const cleanDate = (r.date || '').split(' ')[0].trim();
+    if (cleanDate && cleanDate !== 'N/A') dates.add(cleanDate);
+  });
+
   res.json({ success: true, dates: Array.from(dates).sort().reverse(), records: records.reverse() });
 });
 
