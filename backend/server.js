@@ -382,6 +382,29 @@ app.get('/api/tpo/events', (req, res) => {
   res.json({ success: true, events: allEvents.reverse() });
 });
 
+// 🚨 NEWLY ADDED: ROUTE TO SAVE EVENTS TO THE GOOGLE SHEET
+app.post('/api/tpo/events/add', async (req, res) => {
+  const { date, time, branch, type, title, location } = req.body;
+  try {
+    const eventSheet = doc.sheetsByTitle["Event"];
+    if (!eventSheet) throw new Error("Event sheet not found in Google Spreadsheets");
+    
+    await eventSheet.addRow({
+      'Date': date,
+      'Time': time,
+      'Branch': branch,
+      'Type': type,
+      'Title': title,
+      'Location': location || 'TBA'
+    });
+    
+    refreshCache();
+    res.json({ success: true, message: "Event added successfully" });
+  } catch (error) { 
+    res.status(500).json({ success: false, message: error.message }); 
+  }
+});
+
 app.post('/api/tpo/issues', (req, res) => {
   const { assignedBranchesArray } = req.body;
   let issuesList = globalCache.issues.filter(row => checkBranchMatch(row.get('Branch'), assignedBranchesArray)).map(row => ({ rowNumber: row.rowNumber, name: row.get('Name') || 'Student', branch: row.get('Branch'), details: row.get('Issue Details') || '', status: row.get('Status') || 'Pending', remarks: row.get('Remarks') || '' }));
