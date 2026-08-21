@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree } from '@phosphor-icons/react';
+import { CircleNotch, FilePdf, Trophy, Buildings, PresentationChart, CheckCircle, WarningCircle, UserPlus, UsersThree } from '@phosphor-icons/react';
 import Layout from './Layout';
 
 const API_BASE = "https://ipcs-tpo-portal.onrender.com";
@@ -9,31 +9,28 @@ const COURSES = ['Automation', 'BMS', 'IT', 'DM', 'Embedded'];
 export default function Reports() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState(1);
 
-  // Global Filter
-  const currentMonthStr = new Date().toISOString().slice(0, 7); // YYYY-MM
+  // Global Month Filter (Defaults to Current Month)
+  const currentMonthStr = new Date().toISOString().slice(0, 7); 
   const [monthFilter, setMonthFilter] = useState(currentMonthStr);
 
   const [students, setStudents] = useState([]);
   const [applications, setApplications] = useState([]);
-  const [vacancies, setVacancies] = useState([]); // Used for NewsLetter stats
+  const [vacancies, setVacancies] = useState([]);
+  const [events, setEvents] = useState([]);
 
   useEffect(() => {
     if (!tpoData) return;
     const fetchAllData = async () => {
       try {
-        const res = await axios.post(`${API_BASE}/api/tpo/reports`, { assignedBranchesArray: tpoData.assignedBranchesArray });
+        const res = await axios.post(`${API_BASE}/api/tpo/reports`, { assignedBranchesArray: ['all'] });
         if (res.data.success) {
           setStudents(res.data.students);
           setApplications(res.data.applications);
           setVacancies(res.data.vacancies);
+          setEvents(res.data.events);
         }
-      } catch (error) {
-        console.error("Failed to fetch reports", error);
-      } finally {
-        setLoading(false);
-      }
+      } catch (error) { console.error("Failed to fetch reports", error); } finally { setLoading(false); }
     };
     fetchAllData();
   }, [tpoData]);
@@ -53,19 +50,15 @@ export default function Reports() {
   };
 
   const checkMonth = (dateStr) => {
-    if (!monthFilter) return true;
-    if (!dateStr) return false;
-    // Handle both DD/MM/YYYY and ISO timestamps
+    if (!monthFilter || !dateStr) return false;
     let year, month;
     if (dateStr.includes('/')) {
       const parts = dateStr.split(' ')[0].split('/');
-      year = parts[2];
-      month = parts[1];
+      year = parts[2]; month = parts[1];
     } else {
       const d = new Date(dateStr);
       if (isNaN(d)) return false;
-      year = d.getFullYear();
-      month = String(d.getMonth() + 1).padStart(2, '0');
+      year = d.getFullYear(); month = String(d.getMonth() + 1).padStart(2, '0');
     }
     return `${year}-${month}` === monthFilter;
   };
@@ -75,399 +68,342 @@ export default function Reports() {
     return tpoData.assignedBranchesArray.some(assigned => (b || '').toLowerCase().includes(assigned.toLowerCase()));
   };
 
-  const getHashId = (email) => {
-    let hash = 0;
-    for (let i = 0; i < email.length; i++) hash = email.charCodeAt(i) + ((hash << 5) - hash);
-    return Math.abs(hash).toString().substring(0, 4);
-  };
+  if (loading) return (
+    <Layout>
+      <div style={{ textAlign: 'center', marginTop: '5rem', color: '#38bdf8' }}>
+        <CircleNotch size={50} className="ph-spin" />
+        <p style={{ marginTop: '15px', color: 'var(--text-muted)', fontWeight: 'bold' }}>Generating Executive Report...</p>
+      </div>
+    </Layout>
+  );
 
   // ==========================================
-  // TAB 1: MY TARGET REPORT
+  // 1. DATA AGGREGATION (Filtered by Month)
   // ==========================================
   const displayMonthName = new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
   const tpoNameLower = (tpoData?.name || '').toLowerCase();
+
+  // A. Placements & Applications
+  const monthlyApps = applications.filter(a => checkMonth(a.date));
+  const myMonthlyApps = monthlyApps.filter(a => (a.tpoName || '').toLowerCase() === tpoNameLower);
   
-  const myFilteredApps = applications.filter(a => (a.tpoName || '').toLowerCase() === tpoNameLower && checkMonth(a.date));
-  const myPlacementCounts = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0 };
-  let myTotalPlacements = 0;
-
-  myFilteredApps.forEach(a => {
+  const placedApps = [];
+  const notJoinedApps = [];
+  
+  myMonthlyApps.forEach(a => {
     const stat = (a.status || '').toLowerCase();
-    if (stat.includes('placed') || stat.includes('join') || stat.includes('offer')) {
-      const c = getCourse(a.course);
-      if (myPlacementCounts[c] !== undefined) myPlacementCounts[c]++;
-      myTotalPlacements++;
-    }
+    if (stat.includes('placed') || stat.includes('join') || stat.includes('offer')) placedApps.push(a);
+    if (stat.includes('reject') || stat.includes('not join') || stat.includes('not attend')) notJoinedApps.push(a);
   });
 
-  const targetGoal = 20;
-  const progressPercent = Math.min((myTotalPlacements / targetGoal) * 100, 100);
+  const totalPlacements = placedApps.length;
 
-  // ==========================================
-  // TAB 2: BRANCH MATRICES
-  // ==========================================
-  // Enrollment: ONLY ASSIGNED BRANCHES
-  const assignedBranches = [...new Set(students.filter(s => isAssignedBranch(s.branch)).map(s => s.branch))].filter(Boolean).sort();
-  const branchEnrolls = {};
-  assignedBranches.forEach(b => branchEnrolls[b] = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Total: 0 });
-
-  students.forEach(s => {
-    if (isAssignedBranch(s.branch) && branchEnrolls[s.branch]) {
-      const c = getCourse(s.course);
-      if (branchEnrolls[s.branch][c] !== undefined) {
-        branchEnrolls[s.branch][c]++;
-        branchEnrolls[s.branch].Total++;
-      }
-    }
+  // B. Dual & Multi Placement Logic
+  const studentAppCounts = {};
+  placedApps.forEach(a => {
+    const key = a.roll || a.name;
+    studentAppCounts[key] = (studentAppCounts[key] || 0) + 1;
   });
 
-  // Placements: ALL BRANCHES (Filtered by Month & based on applications)
-  const allBranches = [...new Set(students.map(s => s.branch))].filter(b => b && b !== 'Unknown').sort();
-  const branchPlaces = {};
-  allBranches.forEach(b => branchPlaces[b] = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Total: 0 });
+  let joinedCount = 0;
+  let dualCount = 0;
+  let multiCount = 0;
 
-  applications.forEach(a => {
-    const b = a.branch;
-    if (branchPlaces[b] && checkMonth(a.date)) {
-      const stat = (a.status || '').toLowerCase();
-      if(stat.includes('placed') || stat.includes('join') || stat.includes('offer')) {
-        const c = getCourse(a.course);
-        if (branchPlaces[b][c] !== undefined) {
-          branchPlaces[b][c]++;
-          branchPlaces[b].Total++;
-        }
-      }
-    }
-  });
-
-  // TPO vs Branch: ALL BRANCHES
-  const activeTPOs = [...new Set(applications.map(a => a.tpoName))].filter(t => t && t !== 'Unknown').sort();
-  const branchTPO = {};
-  allBranches.forEach(b => {
-    branchTPO[b] = { Total: 0 };
-    activeTPOs.forEach(t => branchTPO[b][t] = 0);
-  });
-
-  applications.forEach(a => {
-    const b = a.branch;
-    const t = a.tpoName;
-    if (branchTPO[b] && branchTPO[b][t] !== undefined && checkMonth(a.date)) {
-      const stat = (a.status || '').toLowerCase();
-      if(stat.includes('placed') || stat.includes('join') || stat.includes('offer')) {
-        branchTPO[b][t]++;
-        branchTPO[b].Total++;
-      }
-    }
-  });
-
-  // ==========================================
-  // TAB 3: PLACEMENT TRACKER
-  // ==========================================
-  // Table 1: Global Pipeline (From Applications)
-  const pipeline = {};
-  COURSES.forEach(c => pipeline[c] = { placed: 0, joined: 0, notJoined: 0 });
-
-  applications.forEach(a => {
-    if (!checkMonth(a.date)) return;
-    const c = getCourse(a.course);
-    if (!pipeline[c]) return;
+  const processedPlacedStudents = placedApps.map(a => {
+    const key = a.roll || a.name;
+    const count = studentAppCounts[key];
     const stat = (a.status || '').toLowerCase();
     
-    if (stat.includes('placed') || stat.includes('offer')) pipeline[c].placed++;
-    else if (stat.includes('join')) { pipeline[c].placed++; pipeline[c].joined++; }
-    else if (stat.includes('reject') || stat.includes('not attend')) pipeline[c].notJoined++;
+    let tag = 'Normal';
+    let color = '#38bdf8'; // Default Blue-ish
+    
+    if (count === 2) { tag = 'Dual Placement'; color = '#f97316'; dualCount++; } // Orange
+    else if (count > 2) { tag = 'Multi Placement'; color = '#3b82f6'; multiCount++; } // Blue
+    else if (stat.includes('join')) { tag = 'Joined'; color = '#10b981'; joinedCount++; } // Green
+    
+    return { ...a, displayTag: tag, tagColor: color };
   });
 
-  // Table 2: Placement Pending (From Data Sheet - Assigned Branches only)
-  const pendingByCourse = {};
-  assignedBranches.forEach(b => {
-    pendingByCourse[b] = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Total: 0 };
-  });
+  // Since dual/multi counts track total rows, divide to get distinct student instances if needed
+  dualCount = dualCount / 2; 
+  multiCount = Math.floor(multiCount / 3); // Approximation for >2
 
-  students.forEach(s => {
-    if (isAssignedBranch(s.branch) && pendingByCourse[s.branch]) {
-      const stat = (s.placementStatus || '').toLowerCase();
-      if (stat.includes('pending') || stat === '') {
-        const c = getCourse(s.course);
-        if (pendingByCourse[s.branch][c] !== undefined) {
-          pendingByCourse[s.branch][c]++;
-          pendingByCourse[s.branch].Total++;
-        }
-      }
+  // C. Placement Matrix (By Course)
+  const myPlacementCourseCounts = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0 };
+  placedApps.forEach(a => myPlacementCourseCounts[getCourse(a.course)]++);
+
+  // D. Newsletter Matrix (Vacancies Created)
+  const monthlyVacs = vacancies.filter(v => checkMonth(v.date));
+  const myNewsletterCounts = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0, Total: 0 };
+  const connectedCompanies = new Set();
+  
+  monthlyVacs.forEach(v => {
+    myNewsletterCounts[getCourse(v.course)]++;
+    myNewsletterCounts.Total++;
+    if (v.company) connectedCompanies.add(v.company);
+  });
+  
+  myMonthlyApps.forEach(a => { if (a.company) connectedCompanies.add(a.company); });
+
+  // E. Highlights (Events & Drives)
+  const monthlyEvents = events.filter(e => checkMonth(e.date));
+  const driveCount = monthlyEvents.filter(e => (e.type || e.title || '').toLowerCase().includes('drive')).length;
+
+  // F. Center-wise Placements (All TPOs)
+  const branchPlaces = {};
+  monthlyApps.forEach(a => {
+    const stat = (a.status || '').toLowerCase();
+    if (stat.includes('placed') || stat.includes('join') || stat.includes('offer')) {
+      const b = a.branch || 'Unknown';
+      const c = getCourse(a.course);
+      if (!branchPlaces[b]) branchPlaces[b] = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0, Total: 0 };
+      branchPlaces[b][c]++;
+      branchPlaces[b].Total++;
     }
   });
 
-  // Table 3: NewsLetter Vacancies Created by Course
-  const newsLetterStats = {};
-  COURSES.forEach(c => newsLetterStats[c] = 0);
-  
-  vacancies.forEach(v => {
-    if (!checkMonth(v.date)) return;
-    const c = getCourse(v.course);
-    if (newsLetterStats[c] !== undefined) newsLetterStats[c]++;
+  // G. TPO Wise Placement (Current TPO only)
+  const myBranchPlaces = {};
+  placedApps.forEach(a => {
+    const b = a.branch || 'Unknown';
+    myBranchPlaces[b] = (myBranchPlaces[b] || 0) + 1;
+  });
+
+  // H. Placement Awaiting (Assigned Branches only)
+  const pendingByBranch = {};
+  students.forEach(s => {
+    if (isAssignedBranch(s.branch)) {
+      const stat = (s.placementStatus || '').toLowerCase();
+      if (stat.includes('pending') || stat === '') {
+        const b = s.branch || 'Unknown';
+        const c = getCourse(s.course);
+        if (!pendingByBranch[b]) pendingByBranch[b] = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0, Total: 0 };
+        pendingByBranch[b][c]++;
+        pendingByBranch[b].Total++;
+      }
+    }
   });
 
   // ==========================================
   // STYLES
   // ==========================================
   const reportStyles = `
-    .rt-tabs { display: flex; gap: 12px; margin-bottom: 25px; overflow-x: auto; padding-bottom: 10px; }
-    .rt-tab { background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text-muted); padding: 12px 24px; border-radius: 30px; cursor: pointer; white-space: nowrap; font-weight: bold; transition: all 0.2s; display: flex; align-items: center; gap: 8px; }
-    .rt-tab:hover { background: #1e293b; color: #fff; }
-    .rt-tab.active { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: #38bdf8; box-shadow: 0 4px 15px rgba(56, 189, 248, 0.2); }
+    .exec-report { background: #0f1523; color: #e2e8f0; font-family: Arial, sans-serif; padding: 40px; border-radius: 12px; border: 1px solid #1e293b; box-shadow: 0 10px 40px rgba(0,0,0,0.3); }
+    .er-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #38bdf8; padding-bottom: 20px; margin-bottom: 30px; }
+    .er-greeting { font-size: 1.1rem; line-height: 1.6; margin-bottom: 30px; }
     
-    .hero-card { background: #0f1523; border: 1px solid #1e293b; border-radius: 16px; overflow: hidden; margin-bottom: 2rem; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
-    .hc-header { background: linear-gradient(90deg, #0284c7, #3b82f6); color: #fff; padding: 18px 25px; font-size: 1.2rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; display: flex; justify-content: space-between; align-items: center; }
-    .hc-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1px; background: #1e293b; }
-    .hc-item { background: #0f1523; padding: 20px 25px; }
-    .hc-label { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px; font-weight: bold; letter-spacing: 0.5px; }
-    .hc-value { font-size: 1.15rem; color: #fff; font-weight: 600; word-break: break-word; }
-    .hc-subheader { background: #161e2e; color: #38bdf8; padding: 15px 25px; font-weight: bold; border-top: 1px solid #1e293b; border-bottom: 1px solid #1e293b; display: flex; align-items: center; gap: 10px; }
+    .er-section-title { font-size: 1.2rem; font-weight: bold; color: #38bdf8; margin: 30px 0 15px 0; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #1e293b; padding-bottom: 8px; }
     
-    .data-table-wrap { background: #0f1523; border: 1px solid #1e293b; border-radius: 12px; overflow: hidden; margin-bottom: 2rem; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
-    .data-table-head { background: #161e2e; padding: 18px 20px; font-weight: bold; color: #fff; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; }
-    .dt { width: 100%; border-collapse: collapse; }
-    .dt th { background: #0f1523; color: #94a3b8; padding: 14px 15px; text-align: center; font-size: 0.8rem; text-transform: uppercase; border-bottom: 1px solid #1e293b; white-space: nowrap; font-weight: 800; border-right: 1px solid #1e293b; }
-    .dt th:first-child { text-align: left; }
-    .dt td { padding: 14px 15px; color: #cbd5e1; border-bottom: 1px solid #1e293b; font-size: 0.95rem; text-align: center; border-right: 1px solid #1e293b; font-weight: 600; }
-    .dt td:first-child { text-align: left; color: #fff; }
-    .dt tr:hover td { background: #161e2e; }
-    .dt .dt-total { color: #38bdf8; font-weight: 800; background: rgba(56, 189, 248, 0.05); }
-    .dt .dt-zero { color: #475569; font-weight: 400; }
+    .er-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 0.9rem; background: #161e2e; }
+    .er-table th { background: #1e293b; color: #fff; padding: 12px; text-align: left; font-weight: bold; border: 1px solid #334155; }
+    .er-table td { padding: 10px 12px; border: 1px solid #334155; color: #cbd5e1; }
+    .er-table .t-total { font-weight: bold; color: #fff; background: rgba(56, 189, 248, 0.1); }
+    
+    .status-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 30px; }
+    .ss-card { background: #161e2e; padding: 15px; border-radius: 8px; border: 1px solid #1e293b; border-left: 4px solid #38bdf8; }
+    .ss-title { font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; font-weight: bold; margin-bottom: 5px; }
+    .ss-value { font-size: 1.5rem; font-weight: bold; color: #fff; }
+    
+    .highlight-box { background: rgba(16, 185, 129, 0.05); border: 1px solid #10b981; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+    .highlight-box ul { margin: 0; padding-left: 20px; color: #a7f3d0; line-height: 1.8; }
   `;
-
-  if (loading) return (
-    <Layout>
-      <div style={{ textAlign: 'center', marginTop: '5rem', color: '#38bdf8' }}>
-        <CircleNotch size={50} className="ph-spin" />
-        <p style={{ marginTop: '15px', color: 'var(--text-muted)', fontWeight: 'bold' }}>Compiling Analytics & Matrices...</p>
-      </div>
-    </Layout>
-  );
 
   return (
     <Layout>
       <style>{reportStyles}</style>
       <div className="page-container" style={{ padding: 0 }}>
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
+        {/* TOP CONTROLS */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', background: '#161e2e', padding: '15px 25px', borderRadius: '12px', border: '1px solid #1e293b' }}>
           <div>
-            <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0' }}>Live Analytics Reports</h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Comprehensive tracking, matrices, and placement data.</p>
+            <h1 style={{ fontSize: '1.5rem', margin: 0, color: '#fff' }}>Executive Report Generator</h1>
+            <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>Auto-compiled monthly performance report.</p>
           </div>
-          <div>
+          <div style={{ display: 'flex', gap: '15px' }}>
             <input type="month" className="sleek-input" style={{ background: '#0f1523', border: '1px solid #38bdf8', color: '#38bdf8' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
+            <button className="btn-action" style={{ display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => window.print()}>
+              <FilePdf size={18} weight="fill" /> Export PDF
+            </button>
           </div>
         </div>
 
-        <div className="rt-tabs">
-          <button className={`rt-tab ${activeTab === 1 ? 'active' : ''}`} onClick={() => setActiveTab(1)}><Target size={20} weight={activeTab === 1 ? "fill" : "regular"} /> My Target Report</button>
-          <button className={`rt-tab ${activeTab === 2 ? 'active' : ''}`} onClick={() => setActiveTab(2)}><Buildings size={20} weight={activeTab === 2 ? "fill" : "regular"} /> Branch Matrices</button>
-          <button className={`rt-tab ${activeTab === 3 ? 'active' : ''}`} onClick={() => setActiveTab(3)}><ChartLineUp size={20} weight={activeTab === 3 ? "fill" : "regular"} /> Placement Tracker</button>
+        {/* ========================================== */}
+        {/* THE EXECUTIVE REPORT DOCUMENT              */}
+        {/* ========================================== */}
+        <div className="exec-report" id="printable-report">
+          
+          <div className="er-header">
+            <div>
+              <h1 style={{ margin: '0 0 5px 0', fontSize: '2rem', color: '#fff' }}>Monthly Report - {displayMonthName}</h1>
+              <div style={{ color: 'var(--text-muted)' }}>From: {tpoData?.name} &lt;{tpoData?.email}&gt;</div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#10b981' }}>{totalPlacements}</div>
+              <div style={{ color: '#a7f3d0', textTransform: 'uppercase', fontSize: '0.85rem', fontWeight: 'bold', letterSpacing: '1px' }}>Total Placements</div>
+            </div>
+          </div>
+
+          <div className="er-greeting">
+            Hi Team,<br/><br/>
+            Greetings of the day!<br/>
+            I'm glad to share that I have successfully achieved <strong style={{color: '#10b981'}}>{totalPlacements} Placements</strong> for the month of {displayMonthName}.<br/>
+            Please find the detailed placement report for the month below:
+          </div>
+
+          {/* HIGHLIGHTS */}
+          <div className="er-section-title"><Trophy size={22} weight="fill" /> Highlights of the Month</div>
+          <div className="highlight-box">
+            <ul>
+              <li>Conducted {driveCount} Placement Drive(s) across assigned branches.</li>
+              <li>Connected with {connectedCompanies.size} companies to establish new collaborations and vacancies.</li>
+              <li>Successfully secured placements for {joinedCount} students who have officially joined.</li>
+            </ul>
+          </div>
+
+          {/* PLACEMENT & NEWSLETTER SUMMARY */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px' }}>
+            <div>
+              <div className="er-section-title" style={{ marginTop: 0 }}><PresentationChart size={20} weight="fill" /> Placement Status</div>
+              <table className="er-table">
+                <thead><tr>{COURSES.map(c => <th key={c}>{c}</th>)}<th className="t-total">Total</th></tr></thead>
+                <tbody>
+                  <tr>
+                    {COURSES.map(c => <td key={c}>{myPlacementCourseCounts[c] || 0}</td>)}
+                    <td className="t-total">{totalPlacements}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <div className="er-section-title" style={{ marginTop: 0 }}><Briefcase size={20} weight="fill" /> Newsletter Status</div>
+              <table className="er-table">
+                <thead><tr><th>Auto</th><th>BMS</th><th>IT</th><th>DM</th><th>Other</th><th className="t-total">Total</th></tr></thead>
+                <tbody>
+                  <tr>
+                    <td>{myNewsletterCounts.Automation}</td>
+                    <td>{myNewsletterCounts.BMS}</td>
+                    <td>{myNewsletterCounts.IT}</td>
+                    <td>{myNewsletterCounts.DM}</td>
+                    <td>{myNewsletterCounts.Embedded + myNewsletterCounts.Others}</td>
+                    <td className="t-total">{myNewsletterCounts.Total}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* PLACED STUDENTS DETAILS */}
+          <div className="er-section-title"><UsersThree size={22} weight="fill" /> Placed Students Details</div>
+          <table className="er-table">
+            <thead>
+              <tr><th>S.No</th><th>Name</th><th>Branch</th><th>Course</th><th>Company</th><th>Role</th><th>Package</th><th>Tag</th></tr>
+            </thead>
+            <tbody>
+              {processedPlacedStudents.length === 0 ? (
+                <tr><td colSpan="8" style={{ textAlign: 'center', padding: '20px' }}>No placements recorded for this month yet.</td></tr>
+              ) : (
+                processedPlacedStudents.map((app, i) => (
+                  <tr key={i}>
+                    <td>{i + 1}</td>
+                    <td style={{ fontWeight: 'bold', color: '#fff' }}>{app.name}</td>
+                    <td>{app.branch}</td>
+                    <td>{app.course}</td>
+                    <td style={{ color: '#38bdf8' }}>{app.company}</td>
+                    <td>{app.position || 'N/A'}</td>
+                    <td>{app.packageLpa ? `${app.packageLpa} LPA` : 'N/A'}</td>
+                    <td style={{ color: app.tagColor, fontWeight: 'bold' }}>{app.displayTag}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+
+          {/* STATUS SUMMARY COUNTS */}
+          <div className="er-section-title"><CheckCircle size={22} weight="fill" /> Placement Status Breakdown</div>
+          <div className="status-summary">
+            <div className="ss-card" style={{ borderLeftColor: '#38bdf8' }}><div className="ss-title">Total Placed</div><div className="ss-value">{totalPlacements}</div></div>
+            <div className="ss-card" style={{ borderLeftColor: '#10b981' }}><div className="ss-title">Students Joined</div><div className="ss-value">{joinedCount}</div></div>
+            <div className="ss-card" style={{ borderLeftColor: '#ef4444' }}><div className="ss-title">Not Joined / Rejected</div><div className="ss-value">{notJoinedApps.length}</div></div>
+            <div className="ss-card" style={{ borderLeftColor: '#f97316' }}><div className="ss-title">Dual Placements</div><div className="ss-value">{dualCount}</div></div>
+            <div className="ss-card" style={{ borderLeftColor: '#3b82f6' }}><div className="ss-title">Multi Placements</div><div className="ss-value">{multiCount}</div></div>
+          </div>
+
+          {/* MATRICES: BRANCH TOTALS */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '30px' }}>
+            <div>
+              <div className="er-section-title"><Buildings size={22} weight="fill" /> Center-wise Placement (All TPOs)</div>
+              <table className="er-table">
+                <thead><tr><th>Branch</th><th>Auto</th><th>BMS</th><th>IT</th><th>DM</th><th className="t-total">Total</th></tr></thead>
+                <tbody>
+                  {Object.keys(branchPlaces).length === 0 ? <tr><td colSpan="6" style={{textAlign:'center'}}>No Data</td></tr> : 
+                    Object.keys(branchPlaces).sort().map(b => (
+                    <tr key={`cw-${b}`}>
+                      <td style={{ fontWeight: 'bold', color: '#fff' }}>{b}</td>
+                      <td>{branchPlaces[b].Automation || 0}</td>
+                      <td>{branchPlaces[b].BMS || 0}</td>
+                      <td>{branchPlaces[b].IT || 0}</td>
+                      <td>{branchPlaces[b].DM || 0}</td>
+                      <td className="t-total">{branchPlaces[b].Total}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div>
+              <div className="er-section-title"><UserPlus size={22} weight="fill" /> TPO Wise Placement (My Spread)</div>
+              <table className="er-table">
+                <thead><tr><th>Branch</th><th className="t-total">My Placements</th></tr></thead>
+                <tbody>
+                  {Object.keys(myBranchPlaces).length === 0 ? <tr><td colSpan="2" style={{textAlign:'center'}}>No Data</td></tr> : 
+                    Object.keys(myBranchPlaces).sort().map(b => (
+                    <tr key={`tw-${b}`}>
+                      <td style={{ fontWeight: 'bold', color: '#fff' }}>{b}</td>
+                      <td className="t-total">{myBranchPlaces[b]}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* PLACEMENT AWAITING LIST */}
+          <div className="er-section-title"><WarningCircle size={22} weight="fill" /> Placement Awaiting List (My Branches)</div>
+          <table className="er-table">
+            <thead>
+              <tr><th>Branch</th><th>Automation</th><th>BMS</th><th>IT</th><th>DM</th><th>Embedded/Others</th><th className="t-total">Total Pending</th></tr>
+            </thead>
+            <tbody>
+              {Object.keys(pendingByBranch).length === 0 ? (
+                <tr><td colSpan="7" style={{ textAlign: 'center', padding: '20px' }}>No pending students in assigned branches.</td></tr>
+              ) : (
+                Object.keys(pendingByBranch).sort().map(b => (
+                  <tr key={`pa-${b}`}>
+                    <td style={{ fontWeight: 'bold', color: '#fff' }}>{b}</td>
+                    <td>{pendingByBranch[b].Automation || 0}</td>
+                    <td>{pendingByBranch[b].BMS || 0}</td>
+                    <td>{pendingByBranch[b].IT || 0}</td>
+                    <td>{pendingByBranch[b].DM || 0}</td>
+                    <td>{(pendingByBranch[b].Embedded || 0) + (pendingByBranch[b].Others || 0)}</td>
+                    <td className="t-total" style={{ color: '#ef4444' }}>{pendingByBranch[b].Total}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+
+          {/* SIGNATURE FOOTER */}
+          <div style={{ marginTop: '50px', borderTop: '1px solid #1e293b', paddingTop: '20px', fontSize: '0.9rem', color: '#94a3b8' }}>
+            Thank you all for your continuous support throughout.<br/>
+            Feel free to let me know if any additional details are required from my end.<br/><br/>
+            <strong style={{ color: '#fff', fontSize: '1rem' }}>{tpoData?.name}</strong><br/>
+            PLACEMENT OFFICER<br/>
+            IPCS GLOBAL<br/>
+            {tpoData?.email}
+          </div>
+
         </div>
-
-        {/* ========================================== */}
-        {/* TAB 1: MY TARGET REPORT                    */}
-        {/* ========================================== */}
-        {activeTab === 1 && (
-          <div className="hero-card fade-in">
-            <div className="hc-header">
-              <span>Placement Report</span>
-              <span style={{ color: '#bae6fd' }}>{displayMonthName.toUpperCase()}</span>
-            </div>
-            
-            <div className="hc-grid">
-              <div className="hc-item"><div className="hc-label">Name of the Employee</div><div className="hc-value">{tpoData?.name || 'Officer'}</div></div>
-              <div className="hc-item"><div className="hc-label">Sitting Branch</div><div className="hc-value">{tpoData?.sittingBranch || 'N/A'}</div></div>
-              <div className="hc-item"><div className="hc-label">Emp ID</div><div className="hc-value">IPCS-EMP-{getHashId(tpoData?.email || 'a')}</div></div>
-              <div className="hc-item"><div className="hc-label">Assigned Branches</div><div className="hc-value" style={{ fontSize: '0.85rem' }}>{tpoData?.assignedBranchesArray.join(', ').toUpperCase()}</div></div>
-              <div className="hc-item" style={{ background: 'rgba(16, 185, 129, 0.05)' }}>
-                <div className="hc-label" style={{ color: '#10b981' }}>Target For The Month</div>
-                <div className="hc-value" style={{ color: '#10b981', fontSize: '1.6rem' }}>{targetGoal}</div>
-              </div>
-            </div>
-
-            <div className="hc-subheader"><Briefcase size={20} weight="fill" /> Current Status On Placements</div>
-            
-            <div className="hc-grid" style={{ gridTemplateColumns: 'repeat(5, 1fr)' }}>
-              {COURSES.map(c => (
-                <div key={c} className="hc-item" style={{ textAlign: 'center' }}>
-                  <div className="hc-label">{c}</div>
-                  <div className="hc-value" style={{ fontSize: '1.8rem', color: myPlacementCounts[c] > 0 ? '#38bdf8' : '#475569' }}>{myPlacementCounts[c]}</div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ background: '#0f1523', padding: '20px 25px', borderTop: '1px solid #1e293b' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <span style={{ color: 'var(--text-muted)', fontWeight: 'bold' }}>Progress to Target</span>
-                <span style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 'bold' }}>{myTotalPlacements} / {targetGoal} Hires</span>
-              </div>
-              <div style={{ width: '100%', height: '12px', background: '#1e293b', borderRadius: '10px', overflow: 'hidden' }}>
-                <div style={{ width: `${progressPercent}%`, height: '100%', background: progressPercent >= 100 ? '#10b981' : '#38bdf8', transition: 'width 1s ease-in-out' }}></div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ========================================== */}
-        {/* TAB 2: BRANCH MATRICES                     */}
-        {/* ========================================== */}
-        {activeTab === 2 && (
-          <div className="fade-in">
-            <div className="data-table-wrap">
-              <div className="data-table-head">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><UsersThree size={22} color="#f59e0b" weight="fill"/> Branchwise Student Enrollment</div>
-                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>My Assigned Branches</div>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="dt">
-                  <thead>
-                    <tr><th>Branch Name</th>{COURSES.map(c => <th key={c}>{c}</th>)}<th className="dt-total">Total Students</th></tr>
-                  </thead>
-                  <tbody>
-                    {assignedBranches.map(b => (
-                      <tr key={`en-${b}`}>
-                        <td>{b}</td>
-                        {COURSES.map(c => <td key={c} className={branchEnrolls[b][c] === 0 ? 'dt-zero' : ''}>{branchEnrolls[b][c]}</td>)}
-                        <td className="dt-total">{branchEnrolls[b].Total}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="data-table-wrap">
-              <div className="data-table-head">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Target size={22} color="#10b981" weight="fill"/> Branchwise Placement Matrix</div>
-                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>All Branches • {displayMonthName}</div>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="dt">
-                  <thead>
-                    <tr><th>Branch Name</th>{COURSES.map(c => <th key={c}>{c}</th>)}<th className="dt-total" style={{ color: '#10b981' }}>Total Placed</th></tr>
-                  </thead>
-                  <tbody>
-                    {allBranches.map(b => (
-                      <tr key={`pl-${b}`}>
-                        <td>{b}</td>
-                        {COURSES.map(c => <td key={c} className={branchPlaces[b][c] === 0 ? 'dt-zero' : ''}>{branchPlaces[b][c]}</td>)}
-                        <td className="dt-total" style={{ color: '#10b981' }}>{branchPlaces[b].Total}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="data-table-wrap">
-              <div className="data-table-head">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Buildings size={22} color="#8b5cf6" weight="fill"/> Branch vs TPO Status</div>
-                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>All Branches • {displayMonthName}</div>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="dt">
-                  <thead>
-                    <tr><th>Branch Name</th>{activeTPOs.map(t => <th key={t}>{t}</th>)}<th className="dt-total" style={{ color: '#8b5cf6' }}>Branch Total</th></tr>
-                  </thead>
-                  <tbody>
-                    {allBranches.map(b => (
-                      <tr key={`tpo-${b}`}>
-                        <td>{b}</td>
-                        {activeTPOs.map(t => <td key={t} className={branchTPO[b][t] === 0 ? 'dt-zero' : ''}>{branchTPO[b][t]}</td>)}
-                        <td className="dt-total" style={{ color: '#8b5cf6' }}>{branchTPO[b].Total}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ========================================== */}
-        {/* TAB 3: PLACEMENT TRACKER                   */}
-        {/* ========================================== */}
-        {activeTab === 3 && (
-          <div className="fade-in">
-            <div className="data-table-wrap">
-              <div className="data-table-head">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><ChartLineUp size={22} color="#ec4899" weight="fill"/> Placement Data Tracking</div>
-                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>{displayMonthName}</div>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="dt">
-                  <thead>
-                    <tr>
-                      <th>Course Name</th>
-                      <th style={{ color: '#10b981' }}>Total Placed</th>
-                      <th>Students Joined</th>
-                      <th>Not Joined</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {COURSES.map(c => {
-                      const d = pipeline[c];
-                      return (
-                        <tr key={`trk-${c}`}>
-                          <td>{c}</td>
-                          <td style={{ color: '#10b981', fontWeight: 'bold' }} className={d.placed === 0 ? 'dt-zero' : ''}>{d.placed}</td>
-                          <td className={d.joined === 0 ? 'dt-zero' : ''}>{d.joined}</td>
-                          <td className={d.notJoined === 0 ? 'dt-zero' : ''}>{d.notJoined}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="data-table-wrap">
-              <div className="data-table-head">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><CircleNotch size={22} color="#f59e0b" weight="fill"/> Placement Pending Students</div>
-                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>My Assigned Branches</div>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="dt">
-                  <thead>
-                    <tr><th>Branch Name</th>{COURSES.map(c => <th key={c}>{c}</th>)}<th className="dt-total" style={{ color: '#f59e0b' }}>Total Pending</th></tr>
-                  </thead>
-                  <tbody>
-                    {assignedBranches.map(b => (
-                      <tr key={`pend-${b}`}>
-                        <td>{b}</td>
-                        {COURSES.map(c => <td key={c} className={pendingByCourse[b][c] === 0 ? 'dt-zero' : ''}>{pendingByCourse[b][c]}</td>)}
-                        <td className="dt-total" style={{ color: '#f59e0b' }}>{pendingByCourse[b].Total}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <div className="data-table-wrap">
-              <div className="data-table-head">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Briefcase size={22} color="#3b82f6" weight="fill"/> NewsLetter Jobs Created</div>
-                <div style={{ fontSize: '0.85rem', color: '#94a3b8' }}>{displayMonthName}</div>
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <table className="dt">
-                  <thead>
-                    <tr>{COURSES.map(c => <th key={c}>{c}</th>)}</tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      {COURSES.map(c => <td key={c} className={newsLetterStats[c] === 0 ? 'dt-zero' : ''}>{newsLetterStats[c]}</td>)}
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            
-          </div>
-        )}
-
       </div>
     </Layout>
   );
