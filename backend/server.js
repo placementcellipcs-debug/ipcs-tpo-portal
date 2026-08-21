@@ -103,17 +103,18 @@ async function refreshCache() {
     await doc.loadInfo();
     const getSheet = (title) => doc.sheetsByIndex.find(s => s.title.trim().toLowerCase() === title.toLowerCase());
 
-    const [stuSheet, appSheet, vacSheet, eventSheet, issueSheet, tSchedSheet, tAttSheet, clientSheet] = [
-      getSheet("Data"), getSheet("Opening_Applied"), getSheet("NewsLetter"), getSheet("Event"), getSheet("Issues"), getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients") 
+    // 🚨 ADDED TPO_LOG TO THE SYNC LIST
+    const [stuSheet, appSheet, vacSheet, eventSheet, issueSheet, tSchedSheet, tAttSheet, clientSheet, tpoLogSheet] = [
+      getSheet("Data"), getSheet("Opening_Applied"), getSheet("NewsLetter"), getSheet("Event"), getSheet("Issues"), getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients"), getSheet("TPO_Log")
     ];
 
-    const [stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows] = await Promise.all([
+    const [stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows] = await Promise.all([
       stuSheet ? stuSheet.getRows() : [], appSheet ? appSheet.getRows() : [], vacSheet ? vacSheet.getRows() : [],
       eventSheet ? eventSheet.getRows() : [], issueSheet ? issueSheet.getRows() : [], tSchedSheet ? tSchedSheet.getRows() : [], 
-      tAttSheet ? tAttSheet.getRows() : [], clientSheet ? clientSheet.getRows() : []
+      tAttSheet ? tAttSheet.getRows() : [], clientSheet ? clientSheet.getRows() : [], tpoLogSheet ? tpoLogSheet.getRows() : []
     ]);
 
-    globalCache = { students: stuRows, applications: appRows, vacancies: vacRows, events: eventRows, issues: issueRows, tSched: tSchedRows, tAtt: tAttRows, clients: clientRows };
+    globalCache = { students: stuRows, applications: appRows, vacancies: vacRows, events: eventRows, issues: issueRows, tSched: tSchedRows, tAtt: tAttRows, clients: clientRows, tpoLogs: tpoLogRows };
     console.log(`✅ Cache updated! Found ${clientRows.length} clients in the sheet.`);
   } catch (err) { console.error("❌ Cache sync failed:", err.message); }
 }
@@ -159,13 +160,17 @@ app.post('/api/tpo/dashboard-stats', (req, res) => {
   let studentCount = 0, pendingApps = 0, placedCount = 0, activeVacs = 0;
 
   globalCache.students.forEach(row => { if (checkBranchMatch(row.get('Branch'), assignedBranchesArray)) studentCount++; });
-  globalCache.applications.forEach(row => {
+  
+  // 🚨 USE TPO LOGS FOR ACCURATE STATS
+  const appSource = (globalCache.tpoLogs && globalCache.tpoLogs.length > 0) ? globalCache.tpoLogs : globalCache.applications;
+  appSource.forEach(row => {
     if (checkBranchMatch(row.get('Branch'), assignedBranchesArray)) {
       const stat = (row.get('Status') || '').toString().toLowerCase();
       if (stat === 'applied') pendingApps++;
       if (stat.includes('placed') || stat.includes('joined') || stat.includes('offer')) placedCount++;
     }
   });
+  
   globalCache.vacancies.forEach(row => {
     const stat = (row.get('Status') || 'Open').toString().toLowerCase();
     if (stat.includes('open') || stat.includes('yes')) activeVacs++;
@@ -240,10 +245,13 @@ app.post('/api/tpo/students/update-student', async (req, res) => {
 
 app.post('/api/tpo/applications', (req, res) => {
   const { assignedBranchesArray, tpoName } = req.body;
-  let apps = [];
+  let appsMap = {}; 
   const cleanTpoName = (tpoName || '').toString().toLowerCase().trim();
   
-  globalCache.applications.forEach((row) => {
+  // 🚨 USE TPO_LOG FOR EXACT DATA MAPPING
+  const sourceData = (globalCache.tpoLogs && globalCache.tpoLogs.length > 0) ? globalCache.tpoLogs : globalCache.applications;
+
+  sourceData.forEach((row) => {
     const rowData = row.toObject();
     const getHeader = (searchString) => Object.keys(rowData).find(k => k.toLowerCase().includes(searchString.toLowerCase()));
     
@@ -253,35 +261,37 @@ app.post('/api/tpo/applications', (req, res) => {
     const officerName = officerKey && rowData[officerKey] ? rowData[officerKey].toString().toLowerCase().trim() : '';
 
     if (checkBranchMatch(branch, assignedBranchesArray) || (cleanTpoName !== '' && officerName === cleanTpoName)) {
-      const rollKey = getHeader('roll');
-      const roll = rollKey && rowData[rollKey] ? rowData[rollKey] : '';
+      const roll = rowData[getHeader('roll')] || '';
+      const jobId = rowData[getHeader('job id') || getHeader('jobid')] || '';
       
       let phone = rowData[getHeader('contact')] || rowData[getHeader('phone')] || '';
       let email = rowData[getHeader('mail')] || rowData[getHeader('email')] || '';
       let resume = rowData[getHeader('resume')] || rowData[getHeader('cv')] || '';
       let qual = rowData[getHeader('qual')] || '';
 
-      const studentData = globalCache.students.find(s => {
-        const sRow = s.toObject();
-        const sRollKey = Object.keys(sRow).find(k => k.toLowerCase().includes('roll'));
-        return sRollKey && sRow[sRollKey] === roll;
-      });
+      if (!phone || !email) {
+        const studentData = globalCache.students.find(s => {
+          const sRow = s.toObject();
+          const sRollKey = Object.keys(sRow).find(k => k.toLowerCase().includes('roll'));
+          return sRollKey && sRow[sRollKey] === roll;
+        });
 
-      if (studentData) {
-        const sRow = studentData.toObject();
-        const sGetHeader = (str) => Object.keys(sRow).find(k => k.toLowerCase().includes(str.toLowerCase()));
-        if (!phone) phone = sRow[sGetHeader('phone')] || sRow[sGetHeader('contact')] || '';
-        if (!email) email = sRow[sGetHeader('mail')] || sRow[sGetHeader('email')] || '';
-        if (!resume) resume = sRow[sGetHeader('resume')] || sRow[sGetHeader('cv')] || '';
-        if (!qual) qual = sRow[sGetHeader('qual')] || '';
+        if (studentData) {
+          const sRow = studentData.toObject();
+          const sGetHeader = (str) => Object.keys(sRow).find(k => k.toLowerCase().includes(str.toLowerCase()));
+          if (!phone) phone = sRow[sGetHeader('phone')] || sRow[sGetHeader('contact')] || '';
+          if (!email) email = sRow[sGetHeader('mail')] || sRow[sGetHeader('email')] || '';
+          if (!resume) resume = sRow[sGetHeader('resume')] || sRow[sGetHeader('cv')] || '';
+          if (!qual) qual = sRow[sGetHeader('qual')] || '';
+        }
       }
 
-      apps.push({
-        rowNumber: row.rowNumber, name: rowData[getHeader('name')] || '', roll: roll, branch: branch, course: rowData[getHeader('course')] || '', qual: qual || 'Not Specified', jobId: rowData[getHeader('job id')] || '', company: rowData[getHeader('company')] || 'Unknown Company', position: rowData[getHeader('position')] || 'Unknown Position', date: rowData[getHeader('time')] || rowData[getHeader('date')] || '', status: rowData[getHeader('status')] || 'Applied', remarks: rowData[getHeader('remarks')] || '', tpoName: rowData[getHeader('placement officer')] || '', phone: phone, email: email, resume: resume, datePlaced: rowData[getHeader('date placed')] || '', packageLpa: rowData[getHeader('package')] || '', offerLetter: rowData[getHeader('offer letter')] || '', joiningStatus: rowData[getHeader('joining status')] || ''
-      });
+      appsMap[`${roll}_${jobId}`] = {
+        rowNumber: row.rowNumber, name: rowData[getHeader('name')] || '', roll: roll, branch: branch, course: rowData[getHeader('course')] || '', qual: qual || 'Not Specified', jobId: jobId, company: rowData[getHeader('company')] || 'Unknown Company', position: rowData[getHeader('position')] || 'Unknown Position', date: rowData[getHeader('time')] || rowData[getHeader('date')] || '', status: rowData[getHeader('status')] || 'Applied', remarks: rowData[getHeader('remarks')] || '', tpoName: rowData[getHeader('placement officer')] || '', phone: phone, email: email, resume: resume, datePlaced: rowData[getHeader('date placed')] || '', packageLpa: rowData[getHeader('package')] || '', offerLetter: rowData[getHeader('offer letter')] || '', joiningStatus: rowData[getHeader('joining status')] || ''
+      };
     }
   });
-  res.json({ success: true, applications: apps });
+  res.json({ success: true, applications: Object.values(appsMap) });
 });
 
 app.post('/api/tpo/applications/update', upload.single('offerLetterFile'), async (req, res) => {
@@ -334,10 +344,34 @@ app.post('/api/tpo/applications/add', upload.single('offerLetterFile'), async (r
 // OTHER DATA ROUTES
 // ==========================================
 
+// 🚨 EXACT MAPPING FOR NEWSLETTER JOB VACANCIES
 app.get('/api/tpo/vacancies', (req, res) => {
-  let vacs = globalCache.vacancies.map((row, i) => ({
-    id: row.get('Job ID') || row.get('ID') || `JOB-${i+1}`, company: row.get('Company') || '', position: row.get('Position') || row.get('Role') || '', location: row.get('Location') || '', state: row.get('State') || 'OTHER', mode: row.get('Mode') || '', lastDate: row.get('Last Date') || '', status: row.get('Status') || 'Open', course: row.get('Course') || 'All'
-  }));
+  let vacs = globalCache.vacancies.map((row, i) => {
+    const rowData = row.toObject();
+    const getVal = (possibleKeys) => {
+       for(let key of Object.keys(rowData)) {
+          if (possibleKeys.includes(key.trim())) return rowData[key];
+       }
+       return '';
+    };
+
+    return {
+      id: getVal(['JOBID', 'Job ID', 'ID']) || `JOB-${i+1}`,
+      company: getVal(['Company Name', 'Company']),
+      position: getVal(['Position', 'Role']),
+      location: getVal(['Opening AT ( Location )', 'Opening AT( Location )', 'Location']),
+      state: getVal(['State']),
+      mode: getVal(['Work Mode', 'Mode']),
+      lastDate: getVal(['Last Date']),
+      course: getVal(['Course']),
+      qualification: getVal(['Qualification']),
+      description: getVal(['Job Description']),
+      experience: getVal(['Experience']),
+      salary: getVal(['Salary']),
+      gender: getVal(['Gender Preference']),
+      status: getVal(['Status']) || 'Open'
+    };
+  });
   res.json({ success: true, vacancies: vacs.reverse() });
 });
 
@@ -450,12 +484,12 @@ app.post('/api/tpo/clients/request-mou', async (req, res) => {
   const { rowNumber, companyEmail, companyName } = req.body;
   try {
     const signingLink = `https://ipcs-tpo-portal.vercel.app/sign-certificate/${rowNumber}`;
-    const refId = Math.floor(10000 + Math.random() * 90000); // 🚨 Random ID to stop Gmail threading
+    const refId = Math.floor(10000 + Math.random() * 90000); 
 
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`,
       to: companyEmail,
-      subject: `Action Required: IPCS Partnership Certificate for ${companyName} [Ref: ${refId}]`, // 🚨 Unique Subject
+      subject: `Action Required: IPCS Partnership Certificate for ${companyName} [Ref: ${refId}]`, 
       html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;"><h2 style="color: #ffffff; margin: 0;">IPCS PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${companyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Certificate of Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review & Sign Certificate</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, copy and paste this link into your browser: <br/>${signingLink}</p></div></div>`
     };
 
@@ -499,13 +533,12 @@ app.post('/api/tpo/clients/submit-mou', upload.any(), async (req, res) => {
     }
 
     const zonalManagerEmail = 'giftyipcsglobal@gmail.com'; 
-    const refId = Math.floor(10000 + Math.random() * 90000); // 🚨 Random ID to stop Gmail threading
+    const refId = Math.floor(10000 + Math.random() * 90000); 
     
-    // 🚨 NEW: Beautiful Branded MOU Success Template
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`,
       to: [companyEmail, zonalManagerEmail, tpoEmail].filter(Boolean).join(','),
-      subject: `MOU Completed: Hiring Partnership Confirmation – ${companyName} [Ref: ${refId}]`, // 🚨 Unique Subject
+      subject: `MOU Completed: Hiring Partnership Confirmation – ${companyName} [Ref: ${refId}]`, 
       html: `
         <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
           <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #10b981;">
@@ -607,18 +640,42 @@ cron.schedule('0 8 * * *', async () => {
             attachments.push({ filename: `${info.name.replace(/\s+/g, '_')}_Resume.pdf`, href: `https://drive.google.com/uc?export=download&id=${driveId}` });
         } else { resumeBtn = `<a href="${info.resume}">Link</a>`; }
       }
-      tableRows += `<tr><td style="padding:8px;border:1px solid #ddd;text-align:center;">${index+1}</td><td style="padding:8px;border:1px solid #ddd;"><b>${info.name}</b></td><td style="padding:8px;border:1px solid #ddd;">${info.phone}</td><td style="padding:8px;border:1px solid #ddd;">${info.email}</td><td style="padding:8px;border:1px solid #ddd;text-align:center;">${info.roll}</td><td style="padding:8px;border:1px solid #ddd;">${info.course}</td><td style="padding:8px;border:1px solid #ddd;">${info.branch}</td><td style="padding:8px;border:1px solid #ddd;">${info.qual}</td><td style="padding:8px;border:1px solid #ddd;text-align:center;">${resumeBtn}</td></tr>`;
+      tableRows += `<tr><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${index+1}</td><td style="padding:10px;border:1px solid #cbd5e1;"><b>${info.name}</b></td><td style="padding:10px;border:1px solid #cbd5e1;">${info.phone}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.email}</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${info.roll}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.course}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.branch}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.qual}</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${resumeBtn}</td></tr>`;
     });
 
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`,
       to: tpoEmail,
-      subject: `Applications Received – ${job.get('Company')} | ${job.get('Position')} | ${jobId}`,
-      html: `...`, // Template logic
+      subject: `Applications Received – ${job.get('Company Name') || job.get('Company')} | ${job.get('Position')} | ${jobId}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; color: #333; max-width: 800px; margin: 0 auto;">
+          <h2 style="color: #0f1523;">Applications Received</h2>
+          <p>Please find attached the resumes for the applicants to <b>${job.get('Company Name') || job.get('Company')}</b> for the position of ${job.get('Position')}.</p>
+          <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+            <thead>
+              <tr style="background-color: #f1f5f9; text-align: left;">
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">#</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Name</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Phone</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Email</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Roll No</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Course</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Branch</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Qual.</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Resume</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${tableRows}
+            </tbody>
+          </table>
+          <p style="margin-top: 20px; font-size: 12px; color: #64748b;">This is an automated report generated by the IPCS Placement Portal.</p>
+        </div>
+      `,
       attachments: attachments
     };
     
-    await sendIPCSMail(mailOptions); // 🚨 CALLING THE DUAL MODE TOGGLE
+    await sendIPCSMail(mailOptions); 
   }
 });
 

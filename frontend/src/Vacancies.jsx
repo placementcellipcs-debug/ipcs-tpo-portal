@@ -5,17 +5,24 @@ import Layout from './Layout';
 
 const API_BASE = "https://ipcs-tpo-portal.onrender.com";
 
+// Reusable UI Box for Job Details
+const DetailBox = ({ label, value }) => (
+  <div style={{ background: '#161e2e', padding: '12px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>{label}</div>
+    <div style={{ fontWeight: 'bold', color: '#fff' }}>{value || 'Not Specified'}</div>
+  </div>
+);
+
 export default function Vacancies() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
   
   const [vacancies, setVacancies] = useState([]);
-  const [applications, setApplications] = useState([]); // 🚨 NEW: To track who applied
+  const [applications, setApplications] = useState([]); 
   const [loading, setLoading] = useState(true);
   
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
 
-  // Modal States
   const [selectedJob, setSelectedJob] = useState(null);
   const [isJobDetailsModalOpen, setIsJobDetailsModalOpen] = useState(false);
   const [isApplicantsModalOpen, setIsApplicantsModalOpen] = useState(false);
@@ -24,7 +31,6 @@ export default function Vacancies() {
     if (!tpoData) return;
     const fetchAllData = async () => {
       try {
-        // 🚨 Fetch BOTH Vacancies and the TPO's branch applications simultaneously
         const [vacRes, appRes] = await Promise.all([
           axios.get(`${API_BASE}/api/tpo/vacancies`),
           axios.post(`${API_BASE}/api/tpo/applications`, { 
@@ -36,17 +42,13 @@ export default function Vacancies() {
         if (vacRes.data.success) setVacancies(vacRes.data.vacancies);
         if (appRes.data.success) setApplications(appRes.data.applications);
 
-      } catch (error) { 
-        console.error("Failed to fetch data", error); 
-      } finally { 
-        setLoading(false); 
-      }
+      } catch (error) { console.error("Failed to fetch data", error); } finally { setLoading(false); }
     };
     fetchAllData();
   }, [tpoData]);
 
   // ==========================================
-  // MAP APPLICATIONS TO JOB IDs FOR FAST COUNTING
+  // DATA PREP & FILTERING
   // ==========================================
   const appsByJobId = {};
   applications.forEach(app => {
@@ -55,9 +57,6 @@ export default function Vacancies() {
     appsByJobId[jobId].push(app);
   });
 
-  // ==========================================
-  // FILTER & GROUP VACANCIES
-  // ==========================================
   const filteredVacs = vacancies.filter(v => {
     const matchQuery = (v.id || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                        (v.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -73,24 +72,23 @@ export default function Vacancies() {
     groupedVacs[loc].push(v);
   });
 
-  // ==========================================
-  // HELPER TO OPEN MODALS
-  // ==========================================
-  const openJobDetails = (job) => {
-    setSelectedJob(job);
-    setIsJobDetailsModalOpen(true);
+  // 🚨 DATE PARSING LOGIC TO AUTO-EXPIRE JOBS
+  const parseDate = (dateStr) => {
+    if (!dateStr) return new Date(8640000000000000); // Never expires if empty
+    if (dateStr.includes('/')) {
+      const parts = dateStr.split('/');
+      return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`); // Converts DD/MM/YYYY
+    }
+    return new Date(dateStr);
   };
-
-  const openApplicantsList = (job) => {
-    setSelectedJob(job);
-    setIsApplicantsModalOpen(true);
-  };
+  
+  const today = new Date();
+  today.setHours(0,0,0,0);
 
   return (
     <Layout>
       <div className="page-container">
         
-        {/* Header Section */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '15px', flexWrap: 'wrap', gap: '15px' }}>
           <div>
             <h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>Active Job Vacancies</h1>
@@ -101,7 +99,6 @@ export default function Vacancies() {
           </button>
         </div>
 
-        {/* Filters */}
         <div className="header-controls" style={{ justifyContent: 'flex-start' }}>
           <input type="text" className="sleek-input" placeholder="Search ID or Company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           <select className="sleek-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
@@ -113,9 +110,8 @@ export default function Vacancies() {
           </select>
         </div>
 
-        {/* Data Rendering */}
         {loading ? (
-          <div style={{ textAlign: 'center', marginTop: '3rem', color: '#38bdf8' }}><CircleNotch size={40} className="ph-spin" /><p>Fetching vacancies & applications...</p></div>
+          <div style={{ textAlign: 'center', marginTop: '3rem', color: '#38bdf8' }}><CircleNotch size={40} className="ph-spin" /><p>Fetching vacancies...</p></div>
         ) : Object.keys(groupedVacs).length === 0 ? (
           <div style={{ textAlign: 'center', padding: '2rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>No active vacancies match your filters.</div>
         ) : (
@@ -139,14 +135,15 @@ export default function Vacancies() {
                   </thead>
                   <tbody>
                     {groupedVacs[state].map((v, i) => {
-                      const s = (v.status || '').toLowerCase();
-                      const isExpired = s.includes('expire');
+                      
+                      // 🚨 EXPIRY MATH: Instantly lock jobs if the deadline passed
+                      const deadline = parseDate(v.lastDate);
+                      const isExpired = deadline < today || (v.status || '').toLowerCase().includes('expire');
                       
                       let statBadge = <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Open</span>;
-                      if(s.includes('close') || s.includes('no')) statBadge = <span style={{ background: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Closed</span>;
+                      if((v.status || '').toLowerCase().includes('close') || (v.status || '').toLowerCase().includes('no')) statBadge = <span style={{ background: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Closed</span>;
                       if(isExpired) statBadge = <span style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Expired</span>;
 
-                      // Calculate applicants from TPO's branch
                       const myApplicants = appsByJobId[v.id] || [];
                       const applicantCount = myApplicants.length;
 
@@ -168,7 +165,6 @@ export default function Vacancies() {
                             </span>
                           </td>
                           
-                          {/* 🚨 THE APPLICANT COUNT COLUMN */}
                           <td style={{ textAlign: 'center' }}>
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: applicantCount > 0 ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.05)', color: applicantCount > 0 ? '#38bdf8' : 'var(--text-muted)', padding: '6px 12px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold' }}>
                               <Users size={16} weight={applicantCount > 0 ? "fill" : "regular"} />
@@ -176,28 +172,24 @@ export default function Vacancies() {
                             </div>
                           </td>
 
-                          {/* 🚨 THE ACTIONS COLUMN */}
                           <td style={{ textAlign: 'right' }}>
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                              
                               <button 
                                 className="btn-secondary" 
                                 style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '5px', opacity: isExpired ? 0.5 : 1, cursor: isExpired ? 'not-allowed' : 'pointer' }} 
-                                onClick={() => !isExpired && openJobDetails(v)}
+                                onClick={() => !isExpired && setSelectedJob(v) || !isExpired && setIsJobDetailsModalOpen(true)}
                                 disabled={isExpired}
                                 title={isExpired ? "Job Details unavailable for expired openings" : "View Job Details"}
                               >
                                 {isExpired ? <Prohibit weight="bold" size={14}/> : <Eye weight="bold" size={14} />} Details
                               </button>
-
                               <button 
                                 className="btn-action" 
                                 style={{ background: applicantCount > 0 ? '#3b82f6' : '#1e293b', color: '#fff', padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '5px' }} 
-                                onClick={() => openApplicantsList(v)}
+                                onClick={() => { setSelectedJob(v); setIsApplicantsModalOpen(true); }}
                               >
                                 <Users weight="bold" size={14} /> View List
                               </button>
-
                             </div>
                           </td>
                         </tr>
@@ -212,11 +204,11 @@ export default function Vacancies() {
       </div>
 
       {/* ========================================== */}
-      {/* MODAL 1: JOB DETAILS (Read Only) */}
+      {/* MODAL 1: JOB DETAILS (Now with all mapped data) */}
       {/* ========================================== */}
       {isJobDetailsModalOpen && selectedJob && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsJobDetailsModalOpen(false); }}>
-          <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
+          <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', borderBottom: '1px solid #1e293b', paddingBottom: '1rem' }}>
               <div>
                 <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', color: '#fff' }}>{selectedJob.position}</h2>
@@ -226,23 +218,22 @@ export default function Vacancies() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '1.5rem' }}>
-              <div style={{ background: '#161e2e', padding: '12px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Job ID</div>
-                <div style={{ fontWeight: 'bold', color: '#fff' }}>{selectedJob.id}</div>
-              </div>
-              <div style={{ background: '#161e2e', padding: '12px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Location</div>
-                <div style={{ fontWeight: 'bold', color: '#fff' }}>{selectedJob.location}</div>
-              </div>
-              <div style={{ background: '#161e2e', padding: '12px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Mode</div>
-                <div style={{ fontWeight: 'bold', color: '#fff' }}>{selectedJob.mode}</div>
-              </div>
-              <div style={{ background: '#161e2e', padding: '12px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Eligible Course</div>
-                <div style={{ fontWeight: 'bold', color: '#fff' }}>{selectedJob.course}</div>
-              </div>
+              <DetailBox label="Job ID" value={selectedJob.id} />
+              <DetailBox label="Location" value={selectedJob.location} />
+              <DetailBox label="Mode" value={selectedJob.mode} />
+              <DetailBox label="Eligible Course" value={selectedJob.course} />
+              <DetailBox label="Salary" value={selectedJob.salary} />
+              <DetailBox label="Experience" value={selectedJob.experience} />
+              <DetailBox label="Qualification" value={selectedJob.qualification} />
+              <DetailBox label="Gender Pref." value={selectedJob.gender} />
             </div>
+
+            {selectedJob.description && (
+              <div style={{ background: '#161e2e', padding: '15px', borderRadius: '8px', border: '1px solid #1e293b', marginBottom: '1.5rem' }}>
+                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>Job Description</div>
+                <div style={{ color: '#fff', fontSize: '0.9rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{selectedJob.description}</div>
+              </div>
+            )}
 
             <div style={{ textAlign: 'right' }}>
               <button className="btn-secondary" onClick={() => setIsJobDetailsModalOpen(false)}>Close</button>
@@ -321,11 +312,9 @@ export default function Vacancies() {
                 </tbody>
               </table>
             </div>
-
           </div>
         </div>
       )}
-
     </Layout>
   );
 }
