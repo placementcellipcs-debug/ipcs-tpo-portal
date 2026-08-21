@@ -56,8 +56,8 @@ export default function Talentino() {
   // ==========================================
   const activeRecords = selectedBranch ? data.records.filter(r => r.branch === selectedBranch) : [];
   
-  // Get unique dates specifically for the selected branch
-  const uniqueDates = ['All Dates', ...new Set(activeRecords.map(r => (r.date || '').split(' ')[0]).filter(Boolean))].sort((a, b) => b.localeCompare(a));
+  // 🚨 FIX: Use the dates provided directly by the backend (from Talentino_Schedule)
+  const uniqueDates = ['All Dates', ...data.dates];
 
   const filteredRecords = activeRecords.filter(r => {
     const matchDate = dateFilter === 'All Dates' || (r.date || '').includes(dateFilter);
@@ -147,7 +147,6 @@ export default function Talentino() {
           </div>
         </div>
 
-        {/* Data List (Styled like Applications screenshot) */}
         <div style={{ width: '100%', overflowX: 'auto' }}>
           
           {/* Header Row */}
@@ -160,9 +159,12 @@ export default function Talentino() {
           </div>
 
           {filteredRecords.length > 0 ? filteredRecords.map((r, idx) => {
-            // Clean up rating to display nicely (e.g. "5 / 5 STARS")
-            let rawRating = r.rating ? r.rating.toString().replace(/[^0-9.]/g, '') : '-';
-            if (rawRating === '') rawRating = '-';
+            // 🚨 FIX: Safely extract only the FIRST sequence of numbers (so "5/5" becomes "5")
+            let rawRating = '-';
+            if (r.rating) {
+              const match = r.rating.toString().match(/[\d.]+/);
+              if (match) rawRating = match[0];
+            }
 
             return (
               <div 

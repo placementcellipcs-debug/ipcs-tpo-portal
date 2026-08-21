@@ -486,7 +486,19 @@ app.post('/api/tpo/talentino', (req, res) => {
   const { assignedBranchesArray } = req.body;
   let dates = new Set();
   globalCache.tSched.forEach(row => { const d = row.get('Date'); if (d) dates.add(d.trim()); });
-  let records = globalCache.tAtt.filter(row => checkBranchMatch(row.get('Branch'), assignedBranchesArray)).map(row => ({ name: row.get('Name') || '', branch: row.get('Branch'), date: row.get('Check-in') || row.get('Date') || '', rating: row.get('Rating') || '', notes: row.get('Notes') || '' }));
+  
+  let records = globalCache.tAtt.filter(row => checkBranchMatch(row.get('Branch'), assignedBranchesArray)).map(row => {
+    // Check all possible names for the Date column
+    const d = row.get('Timestamp') || row.get('TimeStamp') || row.get('Check-in') || row.get('Date') || '';
+    return {
+      name: row.get('Name') || '', 
+      branch: row.get('Branch'), 
+      date: d, 
+      rating: row.get('Rating') || '', 
+      notes: row.get('Notes') || '' 
+    };
+  });
+  
   res.json({ success: true, dates: Array.from(dates).sort().reverse(), records: records.reverse() });
 });
 
