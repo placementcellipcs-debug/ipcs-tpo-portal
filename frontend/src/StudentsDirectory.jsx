@@ -32,14 +32,26 @@ export default function StudentsDirectory() {
   const [localVacState, setLocalVacState] = useState('');
   const [localPlacementState, setLocalPlacementState] = useState('');
 
+  // 🚨 EXTRACT ROLE AND COURSE FOR API PAYLOAD
+  const isRTH = tpoData?.role === 'RTH';
+  const displayCourse = tpoData?.assignedCourse || '';
+
   useEffect(() => {
     if (!tpoData) return;
     const fetchData = async () => {
       try {
+        // 🚨 ADDED ROLE AND ASSIGNED COURSE TO API REQUESTS
+        const payload = { 
+          assignedBranchesArray: tpoData.assignedBranchesArray,
+          role: tpoData.role,
+          assignedCourse: tpoData.assignedCourse
+        };
+
         const [stuRes, statRes] = await Promise.all([
-          axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/students', { assignedBranchesArray: tpoData.assignedBranchesArray }),
-          axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/dashboard-stats', { assignedBranchesArray: tpoData.assignedBranchesArray })
+          axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/students', payload),
+          axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/dashboard-stats', payload)
         ]);
+        
         if (stuRes.data.success) {
           setStudents(stuRes.data.students);
           setStats(stuRes.data.stats);
@@ -149,7 +161,6 @@ export default function StudentsDirectory() {
     return url && url !== 'N/A' ? url : null;
   };
 
-
   // ==========================================
   // RENDER: VIEW 1 - BRANCH TILES LANDING
   // ==========================================
@@ -161,6 +172,7 @@ export default function StudentsDirectory() {
              <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--accent-primary)' }}><CircleNotch size={40} className="ph-spin" /><p>Fetching students...</p></div>
           ) : (
             <>
+              {/* KPIs apply globally for the user's role */}
               <div className="universal-kpi-bar" style={{ marginBottom: '2.5rem' }}>
                 <div className="kpi-card"><div><div className="kpi-val">{globalStats.totalStudents}</div><div className="kpi-label">Total Students</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}><UsersThree weight="fill"/></div></div>
                 <div className="kpi-card"><div><div className="kpi-val">{globalStats.activeVacancies}</div><div className="kpi-label">Active Vacancies</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><Briefcase weight="fill"/></div></div>
@@ -168,11 +180,16 @@ export default function StudentsDirectory() {
                 <div className="kpi-card"><div><div className="kpi-val">{globalStats.placed}</div><div className="kpi-label">Total Hired</div></div><div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}><Confetti weight="fill"/></div></div>
               </div>
 
-              <h1 style={{ fontSize: '2.2rem', marginBottom: '5px', textAlign: 'center' }}>Which branch would you like to view?</h1>
-              <p style={{ color: 'var(--text-muted)', marginBottom: '3rem', textAlign: 'center' }}>Select an assigned branch to view its registered students and placement statistics.</p>
+              {/* 🚨 DYNAMIC HEADINGS BASED ON ROLE */}
+              <h1 style={{ fontSize: '2.2rem', marginBottom: '5px', textAlign: 'center' }}>
+                {isRTH ? `Branches with ${displayCourse} Students` : 'Which branch would you like to view?'}
+              </h1>
+              <p style={{ color: 'var(--text-muted)', marginBottom: '3rem', textAlign: 'center' }}>
+                {isRTH ? `Select a branch to manage registered students for your course.` : 'Select an assigned branch to view its registered students and placement statistics.'}
+              </p>
               
               {branchList.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '2rem' }}>No students found in your assigned branches.</div>
+                <div style={{ textAlign: 'center', padding: '2rem' }}>No students found matching your criteria.</div>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px', padding: '0 20px' }}>
                   {branchList.map((branch, index) => {
@@ -214,7 +231,7 @@ export default function StudentsDirectory() {
             <CaretLeft weight="bold" size={18} /> Back to Branches
           </button>
           <div>
-            <h1 style={{ fontSize: '1.8rem', margin: 0 }}>{selectedBranch} Directory</h1>
+            <h1 style={{ fontSize: '1.8rem', margin: 0 }}>{selectedBranch} {isRTH ? `(${displayCourse})` : 'Directory'}</h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Manage student profiles, view resumes, and control vacancy access.</p>
           </div>
         </div>
@@ -228,7 +245,10 @@ export default function StudentsDirectory() {
         <div className="header-controls">
           <div className="filter-group">
             <input type="text" className="sleek-input" placeholder="Search name or roll..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-            <select className="sleek-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}><option value="All">All Courses</option>{uniqueCourses.map(c => <option key={c} value={c}>{c}</option>)}</select>
+            <select className="sleek-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
+              <option value="All">All {isRTH ? 'Sub-Courses' : 'Courses'}</option>
+              {uniqueCourses.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
             <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}><option value="newest">Sort: Newest First</option><option value="az">Sort: A-Z</option><option value="za">Sort: Z-A</option></select>
           </div>
           <div className="view-toggles">
@@ -292,32 +312,22 @@ export default function StudentsDirectory() {
                   <h2 style={{ margin: '0 0 4px 0', fontSize: '1.4rem' }}>{selectedStudent.name}</h2>
                   <span style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{selectedStudent.roll}</span>
                   
-                  {/* 🚨 THE NEW QUICK ACTION BUTTONS */}
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    
-                    {/* Call Button */}
                     <a href={`tel:${selectedStudent.phone}`} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(14, 165, 233, 0.15)', color: '#0ea5e9', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none' }}>
                       <Phone size={14} weight="fill" /> Call
                     </a>
-
-                    {/* WhatsApp Button */}
                     <a href={`https://api.whatsapp.com/send?phone=${selectedStudent.phone ? (selectedStudent.phone.replace(/\D/g, '').length === 10 ? '91' + selectedStudent.phone.replace(/\D/g, '') : selectedStudent.phone.replace(/\D/g, '')) : ''}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(37, 211, 102, 0.15)', color: '#25D366', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none' }}>
                       <WhatsappLogo size={14} weight="fill" /> WhatsApp
                     </a>
-
-                    {/* Email Button */}
                     <a href={`mailto:${selectedStudent.email}`} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(234, 67, 53, 0.15)', color: '#ea4335', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none' }}>
                       <EnvelopeSimple size={14} weight="fill" /> Mail
                     </a>
-
-                    {/* Dynamic LinkedIn Button */}
                     {getLinkedInUrl(selectedStudent.rawData) && (
                       <a href={getLinkedInUrl(selectedStudent.rawData)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(10, 102, 194, 0.15)', color: '#4facfe', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none' }}>
                         <LinkedinLogo size={14} weight="fill" /> LinkedIn
                       </a>
                     )}
                   </div>
-
                 </div>
               </div>
 
