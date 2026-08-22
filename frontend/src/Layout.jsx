@@ -1,23 +1,29 @@
-import { useEffect, useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
-  SignOut, Bell, Moon, Sun, X, SquaresFour, Trophy, ListChecks, Headset, 
-  UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake
+  SquaresFour, Users, Briefcase, CalendarBlank, 
+  WarningCircle, ChartBar, Handshake, Gear, SignOut, List, X,
+  Moon, Sun, BookOpen, NotePencil, GraduationCap
 } from '@phosphor-icons/react';
 
 export default function Layout({ children }) {
-  const navigate = useNavigate();
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
-  
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [theme, setTheme] = useState(document.body.getAttribute('data-theme') || 'dark');
+  
+  // 🚨 EXTRACT ROLE FROM LOCAL STORAGE (Defaults to TPO)
+  const role = tpoData?.role || 'TPO'; 
 
   useEffect(() => {
-    if (!tpoData) navigate('/');
+    if (!tpoData) navigate('/login');
   }, [tpoData, navigate]);
 
-  if (!tpoData) return null;
+  const handleLogout = () => {
+    localStorage.removeItem('tpoData');
+    navigate('/login');
+  };
 
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
@@ -25,112 +31,106 @@ export default function Layout({ children }) {
     setTheme(newTheme);
   };
 
-  // Improved Drive Image Extractor
-  const getDriveImage = (url) => {
-    if (!url || typeof url !== 'string') return null;
-    const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
-    return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : url;
-  };
-  
-  const profilePhotoUrl = getDriveImage(tpoData.photo);
-  const isActive = (path) => location.pathname === path ? 'var(--accent-primary)' : 'var(--text-muted)';
+  const isActive = (path) => location.pathname === path;
 
-  const handleLogout = () => {
-    localStorage.removeItem('tpoData');
-    navigate('/');
-  };
+  // ==========================================
+  // 🚨 DYNAMIC SIDEBAR ROUTING BASED ON ROLE
+  // ==========================================
+  const sidebarLinks = [];
 
-  // Bulletproof Avatar Renderer
-  const renderAvatar = () => {
-    const initial = tpoData.name ? tpoData.name.charAt(0).toUpperCase() : '?';
-    if (!profilePhotoUrl || profilePhotoUrl === 'N/A') {
-      return <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{initial}</span>;
-    }
-    return (
-      <img 
-        src={profilePhotoUrl} 
-        alt="Profile" 
-        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-        onError={(e) => { 
-          e.target.style.display = 'none'; 
-          e.target.parentNode.innerHTML = `<span style="font-size: 1.2rem; font-weight: bold;">${initial}</span>`; 
-        }} 
-      />
+  if (role === 'RTH') {
+    sidebarLinks.push(
+      { name: 'Dashboard', path: '/', icon: <SquaresFour size={22} weight={isActive('/') ? "fill" : "regular"} /> },
+      { name: 'Course Students', path: '/students', icon: <GraduationCap size={22} weight={isActive('/students') ? "fill" : "regular"} /> },
+      { name: 'Study Materials', path: '/materials', icon: <BookOpen size={22} weight={isActive('/materials') ? "fill" : "regular"} /> },
+      { name: 'Exam Access', path: '/exams', icon: <NotePencil size={22} weight={isActive('/exams') ? "fill" : "regular"} /> },
+      { name: 'Settings', path: '/settings', icon: <Gear size={22} weight={isActive('/settings') ? "fill" : "regular"} /> }
     );
-  };
+  } else if (role === 'SUPER ADMIN' || role === 'ADMIN') {
+    sidebarLinks.push(
+      { name: 'Master Dashboard', path: '/', icon: <SquaresFour size={22} weight={isActive('/') ? "fill" : "regular"} /> },
+      { name: 'All Students', path: '/students', icon: <Users size={22} weight={isActive('/students') ? "fill" : "regular"} /> },
+      { name: 'All Applications', path: '/applications', icon: <Briefcase size={22} weight={isActive('/applications') ? "fill" : "regular"} /> },
+      { name: 'Global Vacancies', path: '/vacancies', icon: <ChartBar size={22} weight={isActive('/vacancies') ? "fill" : "regular"} /> },
+      { name: 'Global Reports', path: '/reports', icon: <ChartBar size={22} weight={isActive('/reports') ? "fill" : "regular"} /> },
+      { name: 'Settings', path: '/settings', icon: <Gear size={22} weight={isActive('/settings') ? "fill" : "regular"} /> }
+    );
+  } else {
+    // Default TPO Links
+    sidebarLinks.push(
+      { name: 'Dashboard', path: '/', icon: <SquaresFour size={22} weight={isActive('/') ? "fill" : "regular"} /> },
+      { name: 'Directory', path: '/students', icon: <Users size={22} weight={isActive('/students') ? "fill" : "regular"} /> },
+      { name: 'Applications', path: '/applications', icon: <Briefcase size={22} weight={isActive('/applications') ? "fill" : "regular"} /> },
+      { name: 'Job Vacancies', path: '/vacancies', icon: <ChartBar size={22} weight={isActive('/vacancies') ? "fill" : "regular"} /> },
+      { name: 'Calendar', path: '/events', icon: <CalendarBlank size={22} weight={isActive('/events') ? "fill" : "regular"} /> },
+      { name: 'Issues', path: '/issues', icon: <WarningCircle size={22} weight={isActive('/issues') ? "fill" : "regular"} /> },
+      { name: 'Reports', path: '/reports', icon: <ChartBar size={22} weight={isActive('/reports') ? "fill" : "regular"} /> },
+      { name: 'Talentino', path: '/talentino', icon: <Users size={22} weight={isActive('/talentino') ? "fill" : "regular"} /> },
+      { name: 'Clients (MOU)', path: '/clients', icon: <Handshake size={22} weight={isActive('/clients') ? "fill" : "regular"} /> },
+      { name: 'Settings', path: '/settings', icon: <Gear size={22} weight={isActive('/settings') ? "fill" : "regular"} /> }
+    );
+  }
 
   return (
-    <div className="app-layout">
-      <main className="main-content">
-        
-        <header className="top-header">
-          <div className="header-left">
-            {/* Fallback to IPCS official website logo if Drive link fails */}
-            <img 
-              src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" 
-              alt="IPCS Logo" 
-              style={{ height: '35px', objectFit: 'contain' }} 
-              onError={(e) => { e.target.src = 'https://ipcsglobal.com/wp-content/uploads/2023/12/IPCS-Global-Logo-1.png'; }}
-            />
-          </div>
-          <div className="header-actions">
-            <button className="icon-btn" onClick={toggleTheme} title="Dark/Light Mode">
-              {theme === 'dark' ? <Moon weight="fill" /> : <Sun weight="fill" />}
-            </button>
-            <button className="icon-btn" title="Notifications"><Bell weight="fill" /></button>
-            <button className="icon-btn" onClick={handleLogout} style={{ color: '#ef4444', marginLeft: '10px' }} title="Logout"><SignOut weight="fill" /></button>
-            <div className="header-profile" onClick={() => setIsDrawerOpen(true)}>
-              <div className="header-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)' }}>
-                {renderAvatar()}
-              </div>
+    <div className="layout-wrapper">
+      <div className={`sidebar ${isMobileMenuOpen ? 'mobile-open' : ''}`}>
+        <div className="sidebar-header">
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ width: '30px', height: '30px', borderRadius: '50%', background: 'linear-gradient(135deg, #0ea5e9, #3b82f6)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold', fontSize: '14px' }}>
+              I
             </div>
+            <h2 style={{ fontSize: '1.2rem', margin: 0, color: '#fff', letterSpacing: '1px' }}>IPCS <span style={{ color: '#38bdf8', fontWeight: 300 }}>GLOBAL</span></h2>
           </div>
-        </header>
-
-        <div className="page-container">
-          {children}
+          <button className="mobile-close-btn" onClick={() => setIsMobileMenuOpen(false)}>
+            <X size={24} color="#fff" />
+          </button>
         </div>
 
-      </main>
+        <div className="sidebar-nav">
+          {/* Label indicating which portal is active */}
+          <div style={{ padding: '0 20px', marginBottom: '10px', fontSize: '0.7rem', color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', fontWeight: 'bold' }}>
+            {role} PORTAL
+          </div>
+          
+          {sidebarLinks.map((link) => (
+            <Link key={link.name} to={link.path} className={`nav-item ${isActive(link.path) ? 'active' : ''}`} onClick={() => setIsMobileMenuOpen(false)}>
+              {link.icon} <span>{link.name}</span>
+            </Link>
+          ))}
+        </div>
 
-      {/* SIDEBAR DRAWER */}
-      <div className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} onClick={(e) => { if(e.target.className.includes('drawer-overlay')) setIsDrawerOpen(false); }}>
-        <div className="drawer-card">
-          <div className="drawer-header">
-            <div className="drawer-close-btn" onClick={() => setIsDrawerOpen(false)}><X size={16} /></div>
-            <div className="drawer-profile-row">
-              <div className="drawer-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)' }}>
-                {renderAvatar()}
-              </div>
-              <div>
-                <strong style={{ display: 'block', fontSize: '1.1rem', fontWeight: 700 }}>{tpoData.name}</strong>
-                <span style={{ fontSize: '0.8rem', opacity: 0.9 }}>Placement Officer</span>
-              </div>
+        <div className="sidebar-footer">
+          <div className="user-profile-mini">
+            <div className="avatar">{tpoData?.name ? tpoData.name.charAt(0).toUpperCase() : 'U'}</div>
+            <div className="user-info">
+              <span className="user-name">{tpoData?.name}</span>
+              <span className="user-role" style={{ color: '#38bdf8', fontWeight: 'bold' }}>{role}</span>
             </div>
           </div>
+          <button className="logout-btn" onClick={handleLogout} title="Logout">
+            <SignOut size={20} />
+          </button>
+        </div>
+      </div>
+
+      <div className="main-content">
+        <div className="top-navbar">
+          <button className="mobile-toggle-btn" onClick={() => setIsMobileMenuOpen(true)}>
+            <List size={26} color="var(--text-main)" />
+          </button>
           
-          <div className="drawer-menu">
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/dashboard'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><SquaresFour size={22} color={isActive('/dashboard')} /> Dashboard</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/students'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/students')} /> Students Directory</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/tracker'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Files size={22} color={isActive('/tracker')} /> Job Tracker (Action)</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/placed'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Trophy size={22} color={isActive('/placed')} /> Placed Students</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/applications'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ListChecks size={22} color={isActive('/applications')} /> Student Apps (View)</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/vacancies'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Briefcase size={22} color={isActive('/vacancies')} /> Vacancies</div><span>›</span></div>
-            
-            {/* BRAND NEW CLIENTS TAB */}
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/clients'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Handshake size={22} color={isActive('/clients')} /> Clients & Partners</div><span>›</span></div>
-            
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/events'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><CalendarStar size={22} color={isActive('/events')} /> Events</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/issues'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Headset size={22} color={isActive('/issues')} /> Issues</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/reports'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> Reports</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> Talentino</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/settings'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Gear size={22} color={isActive('/settings')} /> Settings</div><span>›</span></div>
+          <div className="top-nav-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '15px' }}>
+             <button onClick={toggleTheme} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}>
+                {theme === 'dark' ? <Sun size={22} weight="fill" /> : <Moon size={22} weight="fill" />}
+             </button>
+             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'var(--bg-dark)', padding: '5px 15px', borderRadius: '20px', border: '1px solid var(--card-border)' }}>
+               <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: 'var(--text-main)' }}>{tpoData?.name}</span>
+             </div>
           </div>
-          
-          <div className="drawer-footer">
-            <button className="btn-logout-drawer" onClick={handleLogout}>Log Out</button>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px' }}>Copyright © 2026 IPCS Global</div>
-          </div>
+        </div>
+        
+        <div className="content-scroll-area">
+          {children}
         </div>
       </div>
     </div>

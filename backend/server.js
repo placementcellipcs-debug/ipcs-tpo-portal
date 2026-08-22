@@ -138,32 +138,57 @@ app.use('/api/tpo', (req, res, next) => {
 // CORE ROUTES
 // ==========================================
 
+// ==========================================
+// 🚨 BULLETPROOF LOGIN ROUTE (UPDATED FOR RBAC & RTH)
+// ==========================================
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
     await doc.loadInfo();
     const sheet = doc.sheetsByTitle["Contact"];
     const rows = await sheet.getRows();
-    const cleanEmail = email.trim().toLowerCase();
-    const tpoRow = rows.find(row => (row.get('Mail ID') || '').toString().trim().toLowerCase() === cleanEmail && (row.get('Password') || '').toString().trim() === password);
-
-    if (!tpoRow) return res.status(401).json({ success: false, message: "Invalid credentials." });
+    const cleanInput = email.trim().toLowerCase(); // Can now be Email OR User Name
     
-    const assignedRaw = tpoRow.get('Assigned Branches') || '';
+    // Fuzzy matching to allow login via Email OR User Name
+    const userRow = rows.find(row => {
+      const rowObj = row.toObject();
+      const mailKey = Object.keys(rowObj).find(k => k.toLowerCase() === 'mail id' || k.toLowerCase().includes('email'));
+      const nameKey = Object.keys(rowObj).find(k => k.toLowerCase() === 'user name' || k.toLowerCase() === 'tpo name');
+      const passKey = Object.keys(rowObj).find(k => k.toLowerCase() === 'password');
+      
+      const mailMatch = mailKey && rowObj[mailKey].toString().trim().toLowerCase() === cleanInput;
+      const nameMatch = nameKey && rowObj[nameKey].toString().trim().toLowerCase() === cleanInput;
+      
+      return (mailMatch || nameMatch) && (rowObj[passKey] || '').toString().trim() === password;
+    });
+
+    if (!userRow) return res.status(401).json({ success: false, message: "Invalid credentials." });
+    
+    const rowObj = userRow.toObject();
+    const getHeader = (str) => Object.keys(rowObj).find(k => k.toLowerCase().includes(str.toLowerCase()));
+
+    const assignedRaw = rowObj[getHeader('assigned branches')] || '';
     let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
     
-    // 🚨 FIXED: Looking for exactly "Contact Number" as shown in your sheet
-    const phoneNum = tpoRow.get('Contact Number') || tpoRow.get('Contact') || tpoRow.get('Phone No.') || 'Not Provided';
+    const phoneNum = rowObj[getHeader('contact num') || getHeader('phone')] || 'Not Provided';
+    const photoUrl = rowObj[getHeader('profile photo') || getHeader('photo')] || '';
+    
+    // 🚨 EXTRACT ROLE AND COURSE FOR RBAC
+    const role = (rowObj[getHeader('role')] || 'TPO').toString().toUpperCase().trim();
+    const course = (rowObj[getHeader('course')] || 'All').toString().trim();
+    const finalEmail = rowObj[getHeader('mail id') || getHeader('email')] || cleanInput;
 
     return res.json({ 
       success: true, 
       tpo: { 
-        name: tpoRow.get('TPO Name') || 'Officer', 
-        email: cleanEmail, 
-        sittingBranch: tpoRow.get('Sitting Branch') || 'N/A', 
+        name: rowObj[getHeader('user name') || getHeader('tpo name')] || 'User', 
+        email: finalEmail, 
+        sittingBranch: rowObj[getHeader('sitting branch')] || 'N/A', 
         assignedBranchesArray: assignedArray.length > 0 ? assignedArray : ['all'], 
-        photo: tpoRow.get('Profile Photo') || '',
-        phone: phoneNum
+        photo: photoUrl,
+        phone: phoneNum,
+        role: role,             // 🚨 Sending Role to Frontend
+        assignedCourse: course  // 🚨 Sending Course to Frontend
       }
     });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
