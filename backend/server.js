@@ -40,7 +40,7 @@ const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth
 const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 
 // ==========================================
-// EMAIL SENDING ENGINE (DUAL MODE TOGGLE)
+// EMAIL SENDING ENGINE
 // ==========================================
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com',
@@ -90,7 +90,6 @@ let globalCache = null;
 
 async function refreshCache() {
   try {
-    console.log("🔄 Background Sync: Fetching fresh data from Google Sheets...");
     await doc.loadInfo();
     const getSheet = (title) => doc.sheetsByIndex.find(s => s.title.trim().toLowerCase() === title.toLowerCase());
 
@@ -105,7 +104,6 @@ async function refreshCache() {
     ]);
 
     globalCache = { students: stuRows, applications: appRows, vacancies: vacRows, events: eventRows, issues: issueRows, tSched: tSchedRows, tAtt: tAttRows, clients: clientRows, tpoLogs: tpoLogRows };
-    console.log(`✅ Cache updated! Found ${clientRows.length} clients in the sheet.`);
   } catch (err) { console.error("❌ Cache sync failed:", err.message); }
 }
 
@@ -139,15 +137,15 @@ function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCo
   if (!role) role = 'TPO'; 
   const upperRole = role.toUpperCase();
   
-  if (upperRole.includes('ADMIN')) return true; // Admins see everything
+  if (upperRole.includes('ADMIN')) return true; 
   
   if (upperRole === 'RTH') {
     const stdRowCourse = getStandardCourse(rowCourse);
     const stdAssignedCourse = getStandardCourse(assignedCourse);
-    return stdRowCourse === stdAssignedCourse; // Matches perfectly based on Main Course
+    return stdRowCourse === stdAssignedCourse; // RTH filters by Course
   }
   
-  return checkBranchMatch(rowBranch, assignedBranchesArray); // TPOs filter by Branch
+  return checkBranchMatch(rowBranch, assignedBranchesArray); 
 }
 
 app.use('/api/tpo', (req, res, next) => {
@@ -225,7 +223,10 @@ app.post('/api/auth/login', async (req, res) => {
     const assignedRaw = foundUser['assignedbranches'] || '';
     let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
     
-    if (role.includes('ADMIN') || assignedArray.length === 0) assignedArray = ['all'];
+    // 🚨 IF RTH OR ADMIN, FORCE BRANCH ARRAY TO "ALL"
+    if (role.includes('ADMIN') || role === 'RTH' || assignedArray.length === 0) {
+      assignedArray = ['all'];
+    }
 
     return res.json({ 
       success: true, 
@@ -241,10 +242,7 @@ app.post('/api/auth/login', async (req, res) => {
         assignedCourse: course  
       }
     });
-  } catch (error) { 
-    console.error("Login Error:", error);
-    res.status(500).json({ success: false, message: error.message }); 
-  }
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
 app.post('/api/tpo/dashboard-stats', (req, res) => {
@@ -505,15 +503,12 @@ app.post('/api/tpo/issues', (req, res) => {
   
   let issuesList = globalCache.issues.filter(row => {
     const rowBranch = row.get('Branch');
-    
-    // Cross-reference course from Data sheet if RTH
     if (role && role.toUpperCase() === 'RTH') {
        const studentName = row.get('Name') || '';
        const studentData = globalCache.students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
        const sCourse = studentData ? studentData.get('Course') : 'Unknown';
        return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
     }
-    
     return hasAccess(rowBranch, 'Unknown', role, assignedBranchesArray, assignedCourse);
   }).map(row => ({ rowNumber: row.rowNumber, name: row.get('Name') || 'Student', branch: row.get('Branch'), details: row.get('Issue Details') || '', status: row.get('Status') || 'Pending', remarks: row.get('Remarks') || '' }));
   

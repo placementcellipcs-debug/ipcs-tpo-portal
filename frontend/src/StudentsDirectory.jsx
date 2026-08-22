@@ -40,7 +40,7 @@ export default function StudentsDirectory() {
     if (!tpoData) return;
     const fetchData = async () => {
       try {
-        // 🚨 ADDED ROLE AND ASSIGNED COURSE TO API REQUESTS
+        // 🚨 THIS IS THE CRITICAL PAYLOAD THAT TELLS THE BACKEND TO FILTER RTH
         const payload = { 
           assignedBranchesArray: tpoData.assignedBranchesArray,
           role: tpoData.role,
@@ -148,9 +148,6 @@ export default function StudentsDirectory() {
   if (sortOrder === 'az') filteredAndSorted.sort((a, b) => a.name.localeCompare(b.name));
   if (sortOrder === 'za') filteredAndSorted.sort((a, b) => b.name.localeCompare(a.name));
 
-  // ==========================================
-  // EXTRACT LINKEDIN HELPER
-  // ==========================================
   const getLinkedInUrl = (rawData) => {
     if (!rawData) return null;
     const key = Object.keys(rawData).find(k => k.toLowerCase().includes('linkedin'));
@@ -161,9 +158,6 @@ export default function StudentsDirectory() {
     return url && url !== 'N/A' ? url : null;
   };
 
-  // ==========================================
-  // RENDER: VIEW 1 - BRANCH TILES LANDING
-  // ==========================================
   if (!selectedBranch) {
     return (
       <Layout>
@@ -172,7 +166,6 @@ export default function StudentsDirectory() {
              <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--accent-primary)' }}><CircleNotch size={40} className="ph-spin" /><p>Fetching students...</p></div>
           ) : (
             <>
-              {/* KPIs apply globally for the user's role */}
               <div className="universal-kpi-bar" style={{ marginBottom: '2.5rem' }}>
                 <div className="kpi-card"><div><div className="kpi-val">{globalStats.totalStudents}</div><div className="kpi-label">Total Students</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}><UsersThree weight="fill"/></div></div>
                 <div className="kpi-card"><div><div className="kpi-val">{globalStats.activeVacancies}</div><div className="kpi-label">Active Vacancies</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><Briefcase weight="fill"/></div></div>
@@ -219,13 +212,9 @@ export default function StudentsDirectory() {
     );
   }
 
-  // ==========================================
-  // RENDER: VIEW 2 - BRANCH DIRECTORY
-  // ==========================================
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
-        
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '25px', gap: '15px' }}>
           <button onClick={() => setSelectedBranch(null)} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
             <CaretLeft weight="bold" size={18} /> Back to Branches
