@@ -1,25 +1,20 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Eye, EyeSlash, CircleNotch } from '@phosphor-icons/react';
 import axios from 'axios';
 
 export default function Login() {
   const navigate = useNavigate();
-  const [loginId, setLoginId] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [status, setStatus] = useState({ type: '', message: '' });
   const [loading, setLoading] = useState(false);
 
-  // If already logged in, go straight to the dashboard
-  useEffect(() => {
-    if (localStorage.getItem('tpoData')) navigate('/');
-  }, [navigate]);
-
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (!loginId || !password) {
-      setStatus({ type: 'error', message: 'Please enter Login ID and password.' });
+    if (!email || !password) {
+      setStatus({ type: 'error', message: 'Please enter official email and password.' });
       return;
     }
 
@@ -29,7 +24,7 @@ export default function Login() {
     try {
       // Send login data to your Node.js backend
       const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/auth/login', {
-        email: loginId, // We still send it as 'email' so the backend receives it correctly
+        email,
         password
       });
 
@@ -40,11 +35,10 @@ export default function Login() {
         localStorage.setItem('tpoData', JSON.stringify(response.data.tpo));
         
         // 2. Redirect the user to the Dashboard page
-        navigate('/'); 
+        navigate('/dashboard');
       }
     } catch (error) {
-      // Safely catch and display the exact error from the backend
-      const errorMsg = error.response?.data?.message || 'Server connection failed. Please try again.';
+      const errorMsg = error.response?.data?.message || 'Server connection failed.';
       setStatus({ type: 'error', message: errorMsg });
     } finally {
       setLoading(false);
@@ -54,8 +48,6 @@ export default function Login() {
   return (
     <div className="auth-wrapper">
       <div className="auth-card">
-        
-        {/* 🚨 YOUR ORIGINAL LOGO RESTORED */}
         <div className="brand-logo-container">
           <img 
             src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" 
@@ -71,12 +63,12 @@ export default function Login() {
 
         <form onSubmit={handleLogin}>
           <div className="form-group">
-            <label>Login ID</label>
+            <label>Official Email ID</label>
             <input 
-              type="text" // 🚨 CHANGED TO 'text' TO ALLOW RTH_BMS
-              placeholder="e.g. RTH_DM or email" 
-              value={loginId}
-              onChange={(e) => setLoginId(e.target.value)}
+              type="email" 
+              placeholder="tpo@ipcsglobal.com" 
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
             />
           </div>
 
@@ -101,9 +93,8 @@ export default function Login() {
           </button>
         </form>
 
-        {/* YOUR ORIGINAL ERROR ALERTS */}
         {status.message && (
-          <div className={`alert alert-${status.type}`} style={{ marginTop: '15px' }}>
+          <div className={`alert alert-${status.type}`}>
             {status.message}
           </div>
         )}
