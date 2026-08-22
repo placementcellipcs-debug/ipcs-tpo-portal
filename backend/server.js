@@ -50,28 +50,19 @@ const transporter = nodemailer.createTransport({
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
 });
 
-// 🚨 THE TOGGLE FUNCTION: Uses Apps Script on Render, or SMTP on ipcsglobal.info
 async function sendIPCSMail(mailOptions) {
   if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
     if (!process.env.APPS_SCRIPT_EMAIL_URL) throw new Error("Missing APPS_SCRIPT_EMAIL_URL in Render");
-    
-    const payload = {
-      to: mailOptions.to,
-      subject: mailOptions.subject,
-      html: mailOptions.html,
-      attachments: []
-    };
-    
+    const payload = { to: mailOptions.to, subject: mailOptions.subject, html: mailOptions.html, attachments: [] };
     if (mailOptions.attachments) {
       mailOptions.attachments.forEach(att => {
-        if (att.content) { // Handles the direct PDF buffers
+        if (att.content) { 
           payload.attachments.push({ filename: att.filename, mimeType: 'application/pdf', contentBytes: att.content.toString('base64') });
-        } else if (att.href) { // Handles the Google Drive URLs for the CRON job
+        } else if (att.href) { 
           payload.attachments.push({ filename: att.filename, href: att.href });
         }
       });
     }
-    
     const response = await axios.post(process.env.APPS_SCRIPT_EMAIL_URL, payload);
     if (!response.data.success) throw new Error("Apps Script Error: " + response.data.error);
     return true;
@@ -121,11 +112,44 @@ async function refreshCache() {
 refreshCache();
 setInterval(refreshCache, 60000);
 
+// ==========================================
+// 🚨 ROLE-BASED ACCESS CONTROL (RBAC) ENGINE
+// ==========================================
+
+const getStandardCourse = (c) => {
+  if(!c) return 'Others';
+  const lower = c.toLowerCase();
+  if(lower.includes('auto')) return 'Automation';
+  if(lower.includes('bms') || lower.includes('cctv')) return 'BMS';
+  if(lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('information')) return 'IT';
+  if(lower.includes('digital') || lower.includes('dm')) return 'DM';
+  if(lower.includes('embed') || lower.includes('iot')) return 'Embedded';
+  return 'Others';
+};
+
 function checkBranchMatch(branch, tpoBranchesArray) {
   if (!branch || !tpoBranchesArray || !Array.isArray(tpoBranchesArray)) return false;
   let cleanSB = branch.toString().toLowerCase().trim();
   if (tpoBranchesArray.includes("all") || cleanSB === "all") return true;
   return tpoBranchesArray.some(b => cleanSB.includes(b) || b.includes(cleanSB));
+}
+
+function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCourse) {
+  if (!role) role = 'TPO'; 
+  const upperRole = role.toUpperCase();
+  
+  // 1. ADMINS see everything
+  if (upperRole.includes('ADMIN')) return true;
+  
+  // 2. RTH users filter specifically by Course
+  if (upperRole === 'RTH') {
+    const stdRowCourse = getStandardCourse(rowCourse);
+    const stdAssignedCourse = getStandardCourse(assignedCourse);
+    return stdRowCourse === stdAssignedCourse;
+  }
+  
+  // 3. TPOs filter specifically by assigned Branches
+  return checkBranchMatch(rowBranch, assignedBranchesArray);
 }
 
 app.use('/api/tpo', (req, res, next) => {
@@ -134,55 +158,102 @@ app.use('/api/tpo', (req, res, next) => {
 });
 
 // ==========================================
-// CORE ROUTES
+// 🚨 RBAC DUAL-SHEET LOGIN ROUTE
 // ==========================================
-
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
     await doc.loadInfo();
-    const sheet = doc.sheetsByTitle["Contact"];
-    const rows = await sheet.getRows();
-    const cleanEmail = email.trim().toLowerCase();
-    
-    // Safely find the user using fuzzy match to prevent hidden space errors
-    const tpoRow = rows.find(row => {
-        const mail = row.get('Mail ID') || row.get('Mail ID ') || '';
-        const pass = row.get('Password') || row.get('Password ') || '';
-        return mail.toString().trim().toLowerCase() === cleanEmail && pass.toString().trim() === password;
-    });
+    const cleanInput = (email || '').toString().trim().toLowerCase();
+    const cleanPass = (password || '').toString().trim();
 
-    if (!tpoRow) return res.status(401).json({ success: false, message: "Invalid credentials." });
-    
-    const assignedRaw = tpoRow.get('Assigned Branches') || '';
+    let foundUser = null;
+    let role = 'TPO';
+    let course = 'All';
+
+    // 1. Check Contact Sheet first
+    const contactSheet = doc.sheetsByTitle["Contact"];
+    if (contactSheet) {
+      const rows = await contactSheet.getRows();
+      for (let row of rows) {
+        const rowObj = row.toObject();
+        const cleanKeys = {};
+        for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
+        
+        const sheetLoginId = (cleanKeys['loginid'] || cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
+        const sheetPass = (cleanKeys['password'] || '').toString().trim();
+
+        if (sheetLoginId === cleanInput && sheetPass === cleanPass) {
+          foundUser = cleanKeys;
+          role = 'TPO';
+          break;
+        }
+      }
+    }
+
+    // 2. Check User Sheet if not found in Contact
+    if (!foundUser) {
+      const userSheet = doc.sheetsByTitle["User"];
+      if (userSheet) {
+        const rows = await userSheet.getRows();
+        for (let row of rows) {
+          const rowObj = row.toObject();
+          const cleanKeys = {};
+          for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
+          
+          const sheetLoginId = (cleanKeys['username'] || cleanKeys['loginid'] || cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
+          const sheetPass = (cleanKeys['password'] || '').toString().trim();
+
+          if (sheetLoginId === cleanInput && sheetPass === cleanPass) {
+            foundUser = cleanKeys;
+            role = (cleanKeys['role'] || 'RTH').toString().toUpperCase().trim();
+            course = (cleanKeys['course'] || 'All').toString().trim();
+            break;
+          }
+        }
+      }
+    }
+
+    if (!foundUser) {
+      return res.status(401).json({ success: false, message: "Invalid Login ID or Password." });
+    }
+
+    const assignedRaw = foundUser['assignedbranches'] || '';
     let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
     
-    const phoneNum = tpoRow.get('Contact Number') || tpoRow.get('Contact Number ') || 'Not Provided';
-    const photoUrl = tpoRow.get('Profile Photo') || tpoRow.get('Profile Photo ') || '';
+    if (role.includes('ADMIN') || assignedArray.length === 0) assignedArray = ['all'];
 
     return res.json({ 
       success: true, 
       tpo: { 
-        name: tpoRow.get('TPO Name') || 'Officer', 
-        email: cleanEmail, 
-        sittingBranch: tpoRow.get('Sitting Branch') || 'N/A', 
-        assignedBranchesArray: assignedArray.length > 0 ? assignedArray : ['all'], 
-        photo: photoUrl,
-        phone: phoneNum
+        name: foundUser['username'] || foundUser['tponame'] || foundUser['name'] || 'User', 
+        email: foundUser['mailid'] || foundUser['email'] || cleanInput, 
+        loginId: cleanInput, 
+        sittingBranch: foundUser['sittingbranch'] || 'N/A', 
+        assignedBranchesArray: assignedArray, 
+        photo: foundUser['profilephoto'] || foundUser['photo'] || '',
+        phone: foundUser['contactnumber'] || foundUser['contact'] || foundUser['phoneno'] || 'Not Provided',
+        role: role,             
+        assignedCourse: course  
       }
     });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+  } catch (error) { 
+    console.error("Login Error:", error);
+    res.status(500).json({ success: false, message: error.message }); 
+  }
 });
 
 app.post('/api/tpo/dashboard-stats', (req, res) => {
-  const { assignedBranchesArray } = req.body;
+  const { assignedBranchesArray, role, assignedCourse } = req.body;
   let studentCount = 0, pendingApps = 0, placedCount = 0, activeVacs = 0;
 
-  globalCache.students.forEach(row => { if (checkBranchMatch(row.get('Branch'), assignedBranchesArray)) studentCount++; });
+  globalCache.students.forEach(row => { 
+    if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) studentCount++; 
+  });
   
   const appSource = (globalCache.tpoLogs && globalCache.tpoLogs.length > 0) ? globalCache.tpoLogs : globalCache.applications;
   appSource.forEach(row => {
-    if (checkBranchMatch(row.get('Branch'), assignedBranchesArray)) {
+    if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) {
       const stat = (row.get('Status') || '').toString().toLowerCase();
       if (stat === 'applied') pendingApps++;
       if (stat.includes('placed') || stat.includes('joined') || stat.includes('offer')) placedCount++;
@@ -202,15 +273,18 @@ app.post('/api/tpo/dashboard-stats', (req, res) => {
 });
 
 app.post('/api/tpo/students', (req, res) => {
-  const { assignedBranchesArray } = req.body;
+  const { assignedBranchesArray, role, assignedCourse } = req.body;
   let students = [];
   let stats = { total: 0, pending: 0, notResponding: 0, noNeed: 0, branchCounts: {}, courseCounts: {} };
 
   globalCache.students.forEach(row => {
     const rowData = row.toObject();
     const getHeader = (searchString) => Object.keys(rowData).find(k => k.toLowerCase().includes(searchString.toLowerCase()));
+    
     const branch = rowData['Branch'] || 'Unknown';
-    if (checkBranchMatch(branch, assignedBranchesArray)) {
+    const course = rowData['Course'] || 'Unknown';
+
+    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse)) {
       stats.total++;
       const pStatKey = getHeader('placement stat');
       const pStatus = (pStatKey && rowData[pStatKey] ? rowData[pStatKey] : 'Pending').toString().trim();
@@ -221,7 +295,6 @@ app.post('/api/tpo/students', (req, res) => {
       else if (pLower.includes('pending') || pLower === '') stats.pending++;
 
       stats.branchCounts[branch] = (stats.branchCounts[branch] || 0) + 1;
-      const course = rowData['Course'] || 'Unknown';
       stats.courseCounts[course] = (stats.courseCounts[course] || 0) + 1;
 
       const phone = rowData['Phone No.'] || rowData['Phone No'] || 'N/A';
@@ -257,15 +330,10 @@ app.post('/api/tpo/students/update-student', async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// ==========================================
-// JOB TRACKER & PLACED STUDENTS
-// ==========================================
-
 app.post('/api/tpo/applications', (req, res) => {
-  const { assignedBranchesArray, tpoName } = req.body;
+  const { assignedBranchesArray, role, assignedCourse, tpoName } = req.body;
   let appsMap = {}; 
   const cleanTpoName = (tpoName || '').toString().toLowerCase().trim();
-  
   const sourceData = (globalCache.tpoLogs && globalCache.tpoLogs.length > 0) ? globalCache.tpoLogs : globalCache.applications;
 
   sourceData.forEach((row) => {
@@ -274,10 +342,14 @@ app.post('/api/tpo/applications', (req, res) => {
     
     const branchKey = getHeader('branch');
     const branch = branchKey && rowData[branchKey] ? rowData[branchKey] : 'Unknown';
+    const course = getHeader('course') ? rowData[getHeader('course')] : 'Unknown';
     const officerKey = getHeader('placement officer');
     const officerName = officerKey && rowData[officerKey] ? rowData[officerKey].toString().toLowerCase().trim() : '';
 
-    if (checkBranchMatch(branch, assignedBranchesArray) || (cleanTpoName !== '' && officerName === cleanTpoName)) {
+    // Allow override specifically for TPO if they want to see "My Placements"
+    const tpoMatch = (!role || role === 'TPO') && (cleanTpoName !== '' && officerName === cleanTpoName);
+
+    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse) || tpoMatch) {
       const roll = rowData[getHeader('roll')] || '';
       const jobId = rowData[getHeader('job id') || getHeader('jobid')] || '';
       
@@ -304,7 +376,7 @@ app.post('/api/tpo/applications', (req, res) => {
       }
 
       appsMap[`${roll}_${jobId}`] = {
-        rowNumber: row.rowNumber, name: rowData[getHeader('name')] || '', roll: roll, branch: branch, course: rowData[getHeader('course')] || '', qual: qual || 'Not Specified', jobId: jobId, company: rowData[getHeader('company')] || 'Unknown Company', position: rowData[getHeader('position')] || 'Unknown Position', date: rowData[getHeader('time')] || rowData[getHeader('date')] || '', status: rowData[getHeader('status')] || 'Applied', remarks: rowData[getHeader('remarks')] || '', tpoName: rowData[getHeader('placement officer')] || '', phone: phone, email: email, resume: resume, datePlaced: rowData[getHeader('date placed')] || '', packageLpa: rowData[getHeader('package')] || '', offerLetter: rowData[getHeader('offer letter')] || '', joiningStatus: rowData[getHeader('joining status')] || ''
+        rowNumber: row.rowNumber, name: rowData[getHeader('name')] || '', roll: roll, branch: branch, course: course, qual: qual || 'Not Specified', jobId: jobId, company: rowData[getHeader('company')] || 'Unknown Company', position: rowData[getHeader('position')] || 'Unknown Position', date: rowData[getHeader('time')] || rowData[getHeader('date')] || '', status: rowData[getHeader('status')] || 'Applied', remarks: rowData[getHeader('remarks')] || '', tpoName: rowData[getHeader('placement officer')] || '', phone: phone, email: email, resume: resume, datePlaced: rowData[getHeader('date placed')] || '', packageLpa: rowData[getHeader('package')] || '', offerLetter: rowData[getHeader('offer letter')] || '', joiningStatus: rowData[getHeader('joining status')] || ''
       };
     }
   });
@@ -356,10 +428,6 @@ app.post('/api/tpo/applications/add', upload.single('offerLetterFile'), async (r
     refreshCache(); res.json({ success: true, message: "Placement added manually." });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
-
-// ==========================================
-// OTHER DATA ROUTES
-// ==========================================
 
 app.get('/api/tpo/vacancies', (req, res) => {
   let vacs = globalCache.vacancies.map((row, i) => {
@@ -422,35 +490,30 @@ app.post('/api/tpo/events/add', upload.single('posterFile'), async (req, res) =>
   const { date, tpo, branch, type, title, description, time, location } = req.body;
   try {
     const eventSheet = doc.sheetsByTitle["Event"];
-    if (!eventSheet) throw new Error("Event sheet not found in Google Spreadsheets");
-    
     let posterLink = '';
-    if (req.file) {
-      posterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS); 
-    }
-
-    await eventSheet.addRow({
-      'Date of the Event': date,
-      'TPO': tpo,
-      'Branch': branch,
-      'Event': type,
-      'Title': title,
-      'Descripation': description || '',
-      'Time of the Event': time || '',
-      'Event Happening in': location || '',
-      'Poster Link': posterLink
-    });
-    
-    refreshCache();
-    res.json({ success: true, message: "Event added successfully" });
-  } catch (error) { 
-    res.status(500).json({ success: false, message: error.message }); 
-  }
+    if (req.file) posterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS); 
+    await eventSheet.addRow({ 'Date of the Event': date, 'TPO': tpo, 'Branch': branch, 'Event': type, 'Title': title, 'Descripation': description || '', 'Time of the Event': time || '', 'Event Happening in': location || '', 'Poster Link': posterLink });
+    refreshCache(); res.json({ success: true, message: "Event added successfully" });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
 app.post('/api/tpo/issues', (req, res) => {
-  const { assignedBranchesArray } = req.body;
-  let issuesList = globalCache.issues.filter(row => checkBranchMatch(row.get('Branch'), assignedBranchesArray)).map(row => ({ rowNumber: row.rowNumber, name: row.get('Name') || 'Student', branch: row.get('Branch'), details: row.get('Issue Details') || '', status: row.get('Status') || 'Pending', remarks: row.get('Remarks') || '' }));
+  const { assignedBranchesArray, role, assignedCourse } = req.body;
+  
+  let issuesList = globalCache.issues.filter(row => {
+    const rowBranch = row.get('Branch');
+    
+    // Cross-reference course from Data sheet if RTH
+    if (role && role.toUpperCase() === 'RTH') {
+       const studentName = row.get('Name') || '';
+       const studentData = globalCache.students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
+       const sCourse = studentData ? studentData.get('Course') : 'Unknown';
+       return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
+    }
+    
+    return hasAccess(rowBranch, 'Unknown', role, assignedBranchesArray, assignedCourse);
+  }).map(row => ({ rowNumber: row.rowNumber, name: row.get('Name') || 'Student', branch: row.get('Branch'), details: row.get('Issue Details') || '', status: row.get('Status') || 'Pending', remarks: row.get('Remarks') || '' }));
+  
   res.json({ success: true, issues: issuesList.reverse() });
 });
 
@@ -465,7 +528,7 @@ app.post('/api/tpo/issues/update', async (req, res) => {
 });
 
 app.post('/api/tpo/reports', (req, res) => {
-  const { assignedBranchesArray } = req.body;
+  // Reports frontend passes assignedBranchesArray: ['all'], so it requests all data to build matrices.
   let students = [], applications = [], issues = [], talentino = [];
   
   globalCache.students.forEach(row => students.push({ 
@@ -476,25 +539,36 @@ app.post('/api/tpo/reports', (req, res) => {
     name: row.get('Student Name'), roll: row.get('Roll Number'), jobId: row.get('Job ID'), company: row.get('Company Name'), date: row.get('TimeStamp'), status: row.get('Status'), remarks: row.get('Remarks'), tpoName: row.get('Placement Officer'), branch: row.get('Branch'), course: row.get('Course') 
   }));
   
-  globalCache.issues.forEach(row => { if (checkBranchMatch(row.get('Branch'), assignedBranchesArray)) issues.push({ name: row.get('Name'), branch: row.get('Branch'), details: row.get('Issue Details'), status: row.get('Status'), remarks: row.get('Remarks') }); });
+  globalCache.issues.forEach(row => { issues.push({ name: row.get('Name'), branch: row.get('Branch'), details: row.get('Issue Details'), status: row.get('Status'), remarks: row.get('Remarks') }); });
   
-  globalCache.tAtt.forEach(row => { if (checkBranchMatch(row.get('Branch'), assignedBranchesArray)) talentino.push({ name: row.get('Name'), branch: row.get('Branch'), date: row.get('Check-in') || row.get('Date'), rating: row.get('Rating'), notes: row.get('Notes') }); });
+  globalCache.tAtt.forEach(row => { talentino.push({ name: row.get('Name'), branch: row.get('Branch'), date: row.get('Check-in') || row.get('Date'), rating: row.get('Rating'), notes: row.get('Notes') }); });
   
   let vacancies = globalCache.vacancies.map(row => ({ 
     id: row.get('Job ID') || row.get('ID') || '', company: row.get('Company') || '', location: row.get('Location') || '', mode: row.get('Mode') || '', status: row.get('Status') || 'Open', course: row.get('Course') || '', date: row.get('Last Date') || row.get('Date') || '' 
   }));
   
-  let events = globalCache.events.map(row => ({ date: row.get('Date') || '' }));
+  let events = globalCache.events.map(row => ({ date: row.get('Date') || '', title: row.get('Title'), type: row.get('Type'), tpo: row.get('TPO') || row.get('Placement Officer') }));
   
   res.json({ success: true, students, applications, issues, talentino, vacancies, events });
 });
 
 app.post('/api/tpo/talentino', (req, res) => {
-  const { assignedBranchesArray } = req.body;
+  const { assignedBranchesArray, role, assignedCourse } = req.body;
   
-  let records = globalCache.tAtt.filter(row => checkBranchMatch(row.get('Branch'), assignedBranchesArray)).map(row => {
-    const rowData = row.toObject();
+  let records = globalCache.tAtt.filter(row => {
+    const rowBranch = row.get('Branch');
     
+    // Cross-reference course if RTH
+    if (role && role.toUpperCase() === 'RTH') {
+       const studentName = row.get('Name') || row.get('Student') || '';
+       const studentData = globalCache.students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
+       const sCourse = studentData ? studentData.get('Course') : 'Unknown';
+       return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
+    }
+    
+    return hasAccess(rowBranch, 'Unknown', role, assignedBranchesArray, assignedCourse);
+  }).map(row => {
+    const rowData = row.toObject();
     const getVal = (searchStrings) => {
       for (let key of Object.keys(rowData)) {
         for (let str of searchStrings) {
@@ -775,9 +849,6 @@ cron.schedule('0 8 * * *', async () => {
   }
 });
 
-// ==========================================
-// 🚨 UPDATE TPO PROFILE PHOTO ROUTE 
-// ==========================================
 app.post('/api/tpo/profile/update-photo', upload.single('photo'), async (req, res) => {
   const { email } = req.body;
   try {
@@ -785,22 +856,36 @@ app.post('/api/tpo/profile/update-photo', upload.single('photo'), async (req, re
 
     const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
     
-    const sheet = doc.sheetsByTitle["Contact"];
-    const rows = await sheet.getRows();
-    const cleanEmail = email.trim().toLowerCase();
+    // Check Contact Sheet
+    let sheet = doc.sheetsByTitle["Contact"];
+    let rows = await sheet.getRows();
+    let cleanEmail = email.trim().toLowerCase();
 
-    const tpoRow = rows.find(row => {
+    let targetRow = rows.find(row => {
        const mail = row.get('Mail ID') || row.get('Mail ID ') || '';
        return mail.toString().trim().toLowerCase() === cleanEmail;
     });
 
-    if (tpoRow) {
+    // Check User Sheet if not found
+    if (!targetRow) {
+       sheet = doc.sheetsByTitle["User"];
+       if (sheet) {
+          rows = await sheet.getRows();
+          targetRow = rows.find(row => {
+             const login = row.get('USER Name') || row.get('Mail ID') || '';
+             return login.toString().trim().toLowerCase() === cleanEmail;
+          });
+       }
+    }
+
+    if (targetRow) {
       const photoHeader = sheet.headerValues.find(h => h.trim() === 'Profile Photo') || 'Profile Photo';
-      tpoRow.assign({ [photoHeader]: photoLink });
-      await tpoRow.save();
+      targetRow.assign({ [photoHeader]: photoLink });
+      await targetRow.save();
+      refreshCache(); // Manually refresh cache so next login catches it
       res.json({ success: true, photoUrl: photoLink });
     } else {
-      res.status(404).json({ success: false, message: "TPO not found." });
+      res.status(404).json({ success: false, message: "User not found." });
     }
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
