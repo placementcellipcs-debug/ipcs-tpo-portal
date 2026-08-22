@@ -170,9 +170,8 @@ app.use('/api/tpo', (req, res, next) => {
 });
 
 // ==========================================
-// CORE ROUTES
+// 🚨 RBAC DUAL-SHEET LOGIN ROUTE (FIXED MULTI-FIELD MATCHING)
 // ==========================================
-
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -193,10 +192,12 @@ app.post('/api/auth/login', async (req, res) => {
         const cleanKeys = {};
         for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
         
-        const sheetLoginId = (cleanKeys['loginid'] || cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
+        const sheetMailId = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
+        const sheetLoginId = (cleanKeys['loginid'] || '').toString().trim().toLowerCase();
         const sheetPass = (cleanKeys['password'] || '').toString().trim();
 
-        if (sheetLoginId === cleanInput && sheetPass === cleanPass) {
+        // Check if input matches EITHER Mail ID OR Login ID
+        if ((sheetMailId === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
           foundUser = cleanKeys;
           role = 'TPO';
           break;
@@ -214,10 +215,13 @@ app.post('/api/auth/login', async (req, res) => {
           const cleanKeys = {};
           for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
           
-          const sheetLoginId = (cleanKeys['username'] || cleanKeys['loginid'] || cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
+          const sheetUsername = (cleanKeys['username'] || cleanKeys['name'] || '').toString().trim().toLowerCase();
+          const sheetMailId = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
+          const sheetLoginId = (cleanKeys['loginid'] || '').toString().trim().toLowerCase();
           const sheetPass = (cleanKeys['password'] || '').toString().trim();
 
-          if (sheetLoginId === cleanInput && sheetPass === cleanPass) {
+          // Check if input matches EITHER Username, Mail ID, OR Login ID
+          if ((sheetUsername === cleanInput || sheetMailId === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
             foundUser = cleanKeys;
             role = (cleanKeys['role'] || 'RTH').toString().toUpperCase().trim();
             course = (cleanKeys['course'] || 'All').toString().trim();
@@ -227,8 +231,10 @@ app.post('/api/auth/login', async (req, res) => {
       }
     }
 
-    if (!foundUser) return res.status(401).json({ success: false, message: "Invalid Login ID or Password." });
-    
+    if (!foundUser) {
+      return res.status(401).json({ success: false, message: "Invalid Login ID or Password." });
+    }
+
     const assignedRaw = foundUser['assignedbranches'] || '';
     let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
     
@@ -248,7 +254,10 @@ app.post('/api/auth/login', async (req, res) => {
         assignedCourse: course  
       }
     });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+  } catch (error) { 
+    console.error("Login Error:", error);
+    res.status(500).json({ success: false, message: error.message }); 
+  }
 });
 
 app.post('/api/tpo/dashboard-stats', (req, res) => {
