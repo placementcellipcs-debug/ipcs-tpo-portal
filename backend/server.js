@@ -139,7 +139,7 @@ app.use('/api/tpo', (req, res, next) => {
 // ==========================================
 
 // ==========================================
-// 🚨 BULLETPROOF LOGIN ROUTE (UPDATED FOR RBAC & RTH)
+// 🚨 BULLETPROOF LOGIN ROUTE (UPDATED FOR LOGIN ID)
 // ==========================================
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
@@ -147,19 +147,17 @@ app.post('/api/auth/login', async (req, res) => {
     await doc.loadInfo();
     const sheet = doc.sheetsByTitle["Contact"];
     const rows = await sheet.getRows();
-    const cleanInput = email.trim().toLowerCase(); // Can now be Email OR User Name
+    const cleanInput = email.trim().toLowerCase(); // This is the Login ID sent from frontend
     
-    // Fuzzy matching to allow login via Email OR User Name
+    // Exact matching for the new "Login ID" column
     const userRow = rows.find(row => {
       const rowObj = row.toObject();
-      const mailKey = Object.keys(rowObj).find(k => k.toLowerCase() === 'mail id' || k.toLowerCase().includes('email'));
-      const nameKey = Object.keys(rowObj).find(k => k.toLowerCase() === 'user name' || k.toLowerCase() === 'tpo name');
+      const loginKey = Object.keys(rowObj).find(k => k.toLowerCase() === 'login id');
       const passKey = Object.keys(rowObj).find(k => k.toLowerCase() === 'password');
       
-      const mailMatch = mailKey && rowObj[mailKey].toString().trim().toLowerCase() === cleanInput;
-      const nameMatch = nameKey && rowObj[nameKey].toString().trim().toLowerCase() === cleanInput;
+      const loginMatch = loginKey && rowObj[loginKey].toString().trim().toLowerCase() === cleanInput;
       
-      return (mailMatch || nameMatch) && (rowObj[passKey] || '').toString().trim() === password;
+      return loginMatch && (rowObj[passKey] || '').toString().trim() === password;
     });
 
     if (!userRow) return res.status(401).json({ success: false, message: "Invalid credentials." });
@@ -170,12 +168,13 @@ app.post('/api/auth/login', async (req, res) => {
     const assignedRaw = rowObj[getHeader('assigned branches')] || '';
     let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
     
-    const phoneNum = rowObj[getHeader('contact num') || getHeader('phone')] || 'Not Provided';
+    const phoneNum = rowObj[getHeader('contact number') || getHeader('contact num') || getHeader('phone')] || 'Not Provided';
     const photoUrl = rowObj[getHeader('profile photo') || getHeader('photo')] || '';
     
-    // 🚨 EXTRACT ROLE AND COURSE FOR RBAC
     const role = (rowObj[getHeader('role')] || 'TPO').toString().toUpperCase().trim();
     const course = (rowObj[getHeader('course')] || 'All').toString().trim();
+    
+    // We fetch the actual Mail ID for display in settings, falling back to the login ID if no email exists
     const finalEmail = rowObj[getHeader('mail id') || getHeader('email')] || cleanInput;
 
     return res.json({ 
@@ -183,12 +182,13 @@ app.post('/api/auth/login', async (req, res) => {
       tpo: { 
         name: rowObj[getHeader('user name') || getHeader('tpo name')] || 'User', 
         email: finalEmail, 
+        loginId: cleanInput, 
         sittingBranch: rowObj[getHeader('sitting branch')] || 'N/A', 
         assignedBranchesArray: assignedArray.length > 0 ? assignedArray : ['all'], 
         photo: photoUrl,
         phone: phoneNum,
-        role: role,             // 🚨 Sending Role to Frontend
-        assignedCourse: course  // 🚨 Sending Course to Frontend
+        role: role,             
+        assignedCourse: course  
       }
     });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }

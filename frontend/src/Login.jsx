@@ -1,103 +1,100 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Eye, EyeSlash, CircleNotch } from '@phosphor-icons/react';
 import axios from 'axios';
+import { CircleNotch, Eye, EyeSlash, WarningCircle } from '@phosphor-icons/react';
 
 export default function Login() {
-  const navigate = useNavigate();
-  const [email, setEmail] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [status, setStatus] = useState({ type: '', message: '' });
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (localStorage.getItem('tpoData')) navigate('/');
+  }, [navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
-    if (!email || !password) {
-      setStatus({ type: 'error', message: 'Please enter official email and password.' });
-      return;
-    }
-
     setLoading(true);
-    setStatus({ type: 'info', message: 'Authenticating Officer...' });
+    setError('');
 
     try {
-      // Send login data to your Node.js backend
-      const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/auth/login', {
-        email,
-        password
+      const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/auth/login', { 
+        email: loginId, // We still send it as 'email' in the payload to the backend
+        password 
       });
-
       if (response.data.success) {
-        setStatus({ type: '', message: '' });
-        
-        // 1. Save the TPO data to the browser's local storage
         localStorage.setItem('tpoData', JSON.stringify(response.data.tpo));
-        
-        // 2. Redirect the user to the Dashboard page
-        navigate('/dashboard');
+        navigate('/');
       }
-    } catch (error) {
-      const errorMsg = error.response?.data?.message || 'Server connection failed.';
-      setStatus({ type: 'error', message: errorMsg });
+    } catch (err) {
+      setError(err.response?.data?.message || 'Login failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="auth-wrapper">
-      <div className="auth-card">
-        <div className="brand-logo-container">
-          <img 
-            src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" 
-            alt="IPCS Global Logo" 
-            className="auth-logo-img" 
-          />
-        </div>
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0f1523', padding: '20px' }}>
+      <div style={{ width: '100%', maxWidth: '400px', backgroundColor: '#161e2e', borderRadius: '16px', padding: '40px 30px', boxShadow: '0 20px 40px rgba(0,0,0,0.4)', border: '1px solid #1e293b' }}>
         
-        <h2 style={{ textAlign: 'center', margin: '0 0 6px 0', fontSize: '1.6rem' }}>Placement Officer</h2>
-        <p style={{ color: '#38bdf8', fontWeight: '600', fontSize: '0.85rem', textAlign: 'center', marginTop: 0, marginBottom: '2rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
-          Secure Access Portal
-        </p>
+        <div style={{ textAlign: 'center', marginBottom: '30px' }}>
+          <h2 style={{ color: '#fff', fontSize: '1.6rem', margin: '0 0 5px 0' }}>IPCS Portal</h2>
+          <div style={{ color: '#38bdf8', fontSize: '0.8rem', fontWeight: 'bold', letterSpacing: '1px', textTransform: 'uppercase' }}>Secure Access System</div>
+        </div>
+
+        {error && (
+          <div style={{ backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '10px 15px', borderRadius: '8px', fontSize: '0.85rem', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '8px', border: '1px solid rgba(239, 68, 68, 0.3)' }}>
+            <WarningCircle size={18} weight="fill" /> {error}
+          </div>
+        )}
 
         <form onSubmit={handleLogin}>
-          <div className="form-group">
-            <label>Official Email ID</label>
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase' }}>
+              Login ID
+            </label>
             <input 
-              type="email" 
-              placeholder="tpo@ipcsglobal.com" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="text" // 🚨 CHANGED FROM 'email' TO 'text'
+              value={loginId}
+              onChange={(e) => setLoginId(e.target.value)}
+              style={{ width: '100%', padding: '12px 15px', backgroundColor: '#0f1523', border: '1px solid #38bdf8', borderRadius: '8px', color: '#fff', fontSize: '1rem', outline: 'none' }}
+              placeholder="Enter your Login ID"
+              required
             />
           </div>
 
-          <div className="form-group">
-            <label>Password</label>
-            <div className="pwd-wrapper">
-              <input 
-                type={showPassword ? "text" : "password"} 
-                placeholder="Enter password" 
-                style={{ paddingRight: '40px' }}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <span className="pwd-toggle" onClick={() => setShowPassword(!showPassword)}>
-                {showPassword ? <EyeSlash size={20} /> : <Eye size={20} />}
-              </span>
+          <div style={{ marginBottom: '30px', position: 'relative' }}>
+            <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase' }}>
+              Password
+            </label>
+            <input 
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              style={{ width: '100%', padding: '12px 15px', backgroundColor: '#0f1523', border: '1px solid #1e293b', borderRadius: '8px', color: '#fff', fontSize: '1rem', outline: 'none' }}
+              placeholder="••••••••"
+              required
+            />
+            <div 
+              style={{ position: 'absolute', right: '15px', top: '38px', cursor: 'pointer', color: 'var(--text-muted)' }}
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? <EyeSlash size={20} /> : <Eye size={20} />}
             </div>
           </div>
 
-          <button type="submit" className="btn-action" style={{ marginTop: '1rem' }} disabled={loading}>
-            {loading ? <CircleNotch size={20} className="ph-spin" /> : "Access Dashboard →"}
+          <button 
+            type="submit" 
+            disabled={loading}
+            style={{ width: '100%', padding: '14px', backgroundColor: '#38bdf8', color: '#0f1523', border: 'none', borderRadius: '8px', fontSize: '1rem', fontWeight: 'bold', cursor: loading ? 'not-allowed' : 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', transition: 'background 0.2s' }}
+          >
+            {loading ? <CircleNotch size={20} className="ph-spin" /> : 'Access Dashboard →'}
           </button>
         </form>
 
-        {status.message && (
-          <div className={`alert alert-${status.type}`}>
-            {status.message}
-          </div>
-        )}
       </div>
     </div>
   );
