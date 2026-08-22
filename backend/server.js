@@ -103,7 +103,6 @@ async function refreshCache() {
     await doc.loadInfo();
     const getSheet = (title) => doc.sheetsByIndex.find(s => s.title.trim().toLowerCase() === title.toLowerCase());
 
-    // 🚨 ADDED TPO_LOG TO THE SYNC LIST
     const [stuSheet, appSheet, vacSheet, eventSheet, issueSheet, tSchedSheet, tAttSheet, clientSheet, tpoLogSheet] = [
       getSheet("Data"), getSheet("Opening_Applied"), getSheet("NewsLetter"), getSheet("Event"), getSheet("Issues"), getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients"), getSheet("TPO_Log")
     ];
@@ -145,15 +144,21 @@ app.post('/api/auth/login', async (req, res) => {
     const sheet = doc.sheetsByTitle["Contact"];
     const rows = await sheet.getRows();
     const cleanEmail = email.trim().toLowerCase();
-    const tpoRow = rows.find(row => (row.get('Mail ID') || '').toString().trim().toLowerCase() === cleanEmail && (row.get('Password') || '').toString().trim() === password);
+    
+    // Safely find the user using fuzzy match to prevent hidden space errors
+    const tpoRow = rows.find(row => {
+        const mail = row.get('Mail ID') || row.get('Mail ID ') || '';
+        const pass = row.get('Password') || row.get('Password ') || '';
+        return mail.toString().trim().toLowerCase() === cleanEmail && pass.toString().trim() === password;
+    });
 
     if (!tpoRow) return res.status(401).json({ success: false, message: "Invalid credentials." });
     
     const assignedRaw = tpoRow.get('Assigned Branches') || '';
     let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
     
-    // 🚨 FIXED: Looking for exactly "Contact Number" as shown in your sheet
-    const phoneNum = tpoRow.get('Contact Number') || tpoRow.get('Contact') || tpoRow.get('Phone No.') || 'Not Provided';
+    const phoneNum = tpoRow.get('Contact Number') || tpoRow.get('Contact Number ') || 'Not Provided';
+    const photoUrl = tpoRow.get('Profile Photo') || tpoRow.get('Profile Photo ') || '';
 
     return res.json({ 
       success: true, 
@@ -162,7 +167,7 @@ app.post('/api/auth/login', async (req, res) => {
         email: cleanEmail, 
         sittingBranch: tpoRow.get('Sitting Branch') || 'N/A', 
         assignedBranchesArray: assignedArray.length > 0 ? assignedArray : ['all'], 
-        photo: tpoRow.get('Profile Photo') || '',
+        photo: photoUrl,
         phone: phoneNum
       }
     });
@@ -175,7 +180,6 @@ app.post('/api/tpo/dashboard-stats', (req, res) => {
 
   globalCache.students.forEach(row => { if (checkBranchMatch(row.get('Branch'), assignedBranchesArray)) studentCount++; });
   
-  // 🚨 USE TPO LOGS FOR ACCURATE STATS
   const appSource = (globalCache.tpoLogs && globalCache.tpoLogs.length > 0) ? globalCache.tpoLogs : globalCache.applications;
   appSource.forEach(row => {
     if (checkBranchMatch(row.get('Branch'), assignedBranchesArray)) {
@@ -262,7 +266,6 @@ app.post('/api/tpo/applications', (req, res) => {
   let appsMap = {}; 
   const cleanTpoName = (tpoName || '').toString().toLowerCase().trim();
   
-  // 🚨 USE TPO_LOG FOR EXACT DATA MAPPING
   const sourceData = (globalCache.tpoLogs && globalCache.tpoLogs.length > 0) ? globalCache.tpoLogs : globalCache.applications;
 
   sourceData.forEach((row) => {
@@ -358,7 +361,6 @@ app.post('/api/tpo/applications/add', upload.single('offerLetterFile'), async (r
 // OTHER DATA ROUTES
 // ==========================================
 
-// 🚨 EXACT MAPPING FOR NEWSLETTER JOB VACANCIES
 app.get('/api/tpo/vacancies', (req, res) => {
   let vacs = globalCache.vacancies.map((row, i) => {
     const rowData = row.toObject();
@@ -389,9 +391,6 @@ app.get('/api/tpo/vacancies', (req, res) => {
   res.json({ success: true, vacancies: vacs.reverse() });
 });
 
-// ==========================================
-// EVENTS ROUTING (EXACT MAPPING TO SHEET)
-// ==========================================
 app.get('/api/tpo/events', (req, res) => {
   let allEvents = globalCache.events.map(row => {
     const rowData = row.toObject();
@@ -415,13 +414,10 @@ app.get('/api/tpo/events', (req, res) => {
     };
   });
 
-  // Filter out completely empty rows
   allEvents = allEvents.filter(e => e.date && e.title);
-  
   res.json({ success: true, events: allEvents });
 });
 
-// Using multer memory storage for the poster upload
 app.post('/api/tpo/events/add', upload.single('posterFile'), async (req, res) => {
   const { date, tpo, branch, type, title, description, time, location } = req.body;
   try {
@@ -429,9 +425,7 @@ app.post('/api/tpo/events/add', upload.single('posterFile'), async (req, res) =>
     if (!eventSheet) throw new Error("Event sheet not found in Google Spreadsheets");
     
     let posterLink = '';
-    // If a file was uploaded, send it to Google Drive
     if (req.file) {
-      // You can define a specific folder for posters or use a general one
       posterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS); 
     }
 
@@ -474,7 +468,6 @@ app.post('/api/tpo/reports', (req, res) => {
   const { assignedBranchesArray } = req.body;
   let students = [], applications = [], issues = [], talentino = [];
   
-  // We send ALL students so the frontend can filter by assigned branches for enrollment, but see all branches for placement
   globalCache.students.forEach(row => students.push({ 
     name: row.get('Name'), roll: row.get('Roll Number'), branch: row.get('Branch'), course: row.get('Course'), status: row.get('Status'), placementStatus: row.get('Placement Stat') || row.get('Placement Status') 
   }));
@@ -502,7 +495,6 @@ app.post('/api/tpo/talentino', (req, res) => {
   let records = globalCache.tAtt.filter(row => checkBranchMatch(row.get('Branch'), assignedBranchesArray)).map(row => {
     const rowData = row.toObject();
     
-    // Bulletproof case-insensitive data mapping
     const getVal = (searchStrings) => {
       for (let key of Object.keys(rowData)) {
         for (let str of searchStrings) {
@@ -515,13 +507,12 @@ app.post('/api/tpo/talentino', (req, res) => {
     return {
       name: getVal(['name', 'student']), 
       branch: getVal(['branch']), 
-      date: getVal(['present check-ins date', 'timestamp', 'date', 'time']), // 🚨 EXACT SHEET MAPPING
+      date: getVal(['present check-ins date', 'timestamp', 'date', 'time']), 
       rating: getVal(['rating']), 
       notes: getVal(['notes', 'remark']) 
     };
   });
 
-  // 🚨 Dynamically generate the dropdown list from actual attendance dates!
   let dates = new Set();
   records.forEach(r => {
     const cleanDate = (r.date || '').split(' ')[0].trim();
@@ -530,10 +521,6 @@ app.post('/api/tpo/talentino', (req, res) => {
 
   res.json({ success: true, dates: Array.from(dates).sort().reverse(), records: records.reverse() });
 });
-
-// ==========================================
-// CLIENTS & MOU CERTIFICATE SYSTEM
-// ==========================================
 
 app.post('/api/tpo/clients', (req, res) => {
   if (!globalCache || !globalCache.clients) return res.status(503).json({ success: false });
@@ -684,10 +671,6 @@ app.post('/api/tpo/clients/submit-mou', upload.any(), async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// ==========================================
-// AUTOMATED EMAILS 
-// ==========================================
-
 const extractAppInfo = (appRow) => {
   const rowData = appRow.toObject();
   const getHeader = (str) => Object.keys(rowData).find(k => k.toLowerCase().includes(str.toLowerCase()));
@@ -793,24 +776,27 @@ cron.schedule('0 8 * * *', async () => {
 });
 
 // ==========================================
-// UPDATE TPO PROFILE PHOTO
+// 🚨 UPDATE TPO PROFILE PHOTO ROUTE 
 // ==========================================
 app.post('/api/tpo/profile/update-photo', upload.single('photo'), async (req, res) => {
   const { email } = req.body;
   try {
     if (!req.file) return res.status(400).json({ success: false, message: "No file provided" });
-    
-    // Upload image to Drive
+
     const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
     
-    // Update the Contact sheet
     const sheet = doc.sheetsByTitle["Contact"];
     const rows = await sheet.getRows();
     const cleanEmail = email.trim().toLowerCase();
-    const tpoRow = rows.find(row => (row.get('Mail ID') || '').toString().trim().toLowerCase() === cleanEmail);
-    
+
+    const tpoRow = rows.find(row => {
+       const mail = row.get('Mail ID') || row.get('Mail ID ') || '';
+       return mail.toString().trim().toLowerCase() === cleanEmail;
+    });
+
     if (tpoRow) {
-      tpoRow.assign({ 'Profile Photo': photoLink });
+      const photoHeader = sheet.headerValues.find(h => h.trim() === 'Profile Photo') || 'Profile Photo';
+      tpoRow.assign({ [photoHeader]: photoLink });
       await tpoRow.save();
       res.json({ success: true, photoUrl: photoLink });
     } else {
