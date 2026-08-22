@@ -114,14 +114,14 @@ setInterval(refreshCache, 60000);
 // 🚨 ROLE-BASED ACCESS CONTROL & SMART DICTIONARY
 // ==========================================
 const getStandardCourse = (c) => {
-  if(!c) return 'Others';
-  const lower = c.toLowerCase();
+  if (!c) return 'Others';
+  const lower = c.toLowerCase().trim();
   
-  if(lower.includes('bms') || lower.includes('cctv') || lower.includes('building management') || lower.includes('security system')) return 'BMS AND CCTV';
-  if(lower.includes('automation') || lower.includes('plc') || lower.includes('dcs') || lower.includes('scada') || lower.includes('vfd') || lower.includes('panel') || lower.includes('marine') || lower.includes('networking')) return 'Industrial Automation';
-  if(lower.includes('embed') || lower.includes('iot') || lower.includes('raspberry') || lower.includes('labview')) return 'Embedded and IoT';
-  if(lower.includes('digital') || lower.includes('dm') || lower.includes('seo') || lower.includes('social media') || lower.includes('affiliate') || lower.includes('blogging') || lower.includes('marketing')) return 'Digital Marketing';
-  if(lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('information') || lower.includes('data science') || lower.includes('full stack') || lower.includes('java') || lower.includes('stack')) return 'Information technology (IT)';
+  if (lower.includes('bms') || lower.includes('cctv') || lower.includes('building management') || lower.includes('security system')) return 'BMS AND CCTV';
+  if (lower.includes('automation') || lower.includes('plc') || lower.includes('dcs') || lower.includes('scada') || lower.includes('vfd') || lower.includes('panel') || lower.includes('marine') || lower.includes('networking')) return 'Industrial Automation';
+  if (lower.includes('embed') || lower.includes('iot') || lower.includes('raspberry') || lower.includes('labview')) return 'Embedded and IoT';
+  if (lower.includes('digital') || lower.includes('dm') || lower.includes('seo') || lower.includes('social media') || lower.includes('affiliate') || lower.includes('blogging') || lower.includes('marketing')) return 'Digital Marketing';
+  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('information') || lower.includes('data science') || lower.includes('full stack') || lower.includes('java') || lower.includes('stack') || lower.includes('artificial intelligence') || lower.includes('ai')) return 'Information technology (IT)';
   
   return 'Others';
 };
@@ -223,7 +223,6 @@ app.post('/api/auth/login', async (req, res) => {
     const assignedRaw = foundUser['assignedbranches'] || '';
     let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
     
-    // 🚨 IF RTH OR ADMIN, FORCE BRANCH ARRAY TO "ALL"
     if (role.includes('ADMIN') || role === 'RTH' || assignedArray.length === 0) {
       assignedArray = ['all'];
     }
@@ -242,7 +241,10 @@ app.post('/api/auth/login', async (req, res) => {
         assignedCourse: course  
       }
     });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+  } catch (error) { 
+    console.error("Login Error:", error);
+    res.status(500).json({ success: false, message: error.message }); 
+  }
 });
 
 app.post('/api/tpo/dashboard-stats', (req, res) => {
@@ -250,13 +252,23 @@ app.post('/api/tpo/dashboard-stats', (req, res) => {
   let studentCount = 0, pendingApps = 0, placedCount = 0, activeVacs = 0;
 
   globalCache.students.forEach(row => { 
-    if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) studentCount++; 
+    const rowData = row.toObject();
+    const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
+    const branch = rowData[getHeader('branch')] || 'Unknown';
+    const course = rowData[getHeader('course')] || 'Unknown';
+
+    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse)) studentCount++; 
   });
   
   const appSource = (globalCache.tpoLogs && globalCache.tpoLogs.length > 0) ? globalCache.tpoLogs : globalCache.applications;
   appSource.forEach(row => {
-    if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) {
-      const stat = (row.get('Status') || '').toString().toLowerCase();
+    const rowData = row.toObject();
+    const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
+    const branch = rowData[getHeader('branch')] || 'Unknown';
+    const course = rowData[getHeader('course')] || 'Unknown';
+
+    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse)) {
+      const stat = (rowData[getHeader('status')] || '').toString().toLowerCase();
       if (stat === 'applied') pendingApps++;
       if (stat.includes('placed') || stat.includes('joined') || stat.includes('offer')) placedCount++;
     }
@@ -281,14 +293,14 @@ app.post('/api/tpo/students', (req, res) => {
 
   globalCache.students.forEach(row => {
     const rowData = row.toObject();
-    const getHeader = (searchString) => Object.keys(rowData).find(k => k.toLowerCase().includes(searchString.toLowerCase()));
+    const getHeader = (searchString) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(searchString.toLowerCase().replace(/\s/g, '')));
     
-    const branch = rowData['Branch'] || 'Unknown';
-    const course = rowData['Course'] || 'Unknown';
+    const branch = rowData[getHeader('branch')] || 'Unknown';
+    const course = rowData[getHeader('course')] || 'Unknown';
 
     if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse)) {
       stats.total++;
-      const pStatKey = getHeader('placement stat');
+      const pStatKey = getHeader('placementstat');
       const pStatus = (pStatKey && rowData[pStatKey] ? rowData[pStatKey] : 'Pending').toString().trim();
       const pLower = pStatus.toLowerCase();
       
@@ -299,17 +311,28 @@ app.post('/api/tpo/students', (req, res) => {
       stats.branchCounts[branch] = (stats.branchCounts[branch] || 0) + 1;
       stats.courseCounts[course] = (stats.courseCounts[course] || 0) + 1;
 
-      const phone = rowData['Phone No.'] || rowData['Phone No'] || 'N/A';
-      const statusKey = getHeader('currently studying');
+      const phone = rowData[getHeader('phone')] || rowData[getHeader('contact')] || 'N/A';
+      const statusKey = getHeader('currentlystudying');
       const status = statusKey && rowData[statusKey] ? rowData[statusKey] : 'N/A';
-      const vacKey = getHeader('vacancy open') || getHeader('vaccancy open');
+      const vacKey = getHeader('vacancyopen') || getHeader('vaccancyopen');
 
       students.push({
-        rowIdx: row.rowNumber, name: rowData['Name'] || '', email: rowData['Mail ID'] || '', phone: phone,
-        roll: rowData['IPCS Roll Number'] || rowData['Roll Number'] || '', branch: branch, course: course,
-        photo: rowData['Profile Photo'] || '', qual: rowData['Qualification'] || '', stream: rowData['Stream'] || '',
-        status: status, resume: rowData['Resume'] || '', certificate: rowData['Certificate'] || '',
-        vacOpen: (vacKey && rowData[vacKey] ? rowData[vacKey] : 'Yes'), placementStatus: pStatus, rawData: rowData
+        rowIdx: row.rowNumber, 
+        name: rowData[getHeader('name')] || '', 
+        email: rowData[getHeader('mailid')] || rowData[getHeader('email')] || '', 
+        phone: phone,
+        roll: rowData[getHeader('ipcsrollnumber')] || rowData[getHeader('rollnumber')] || rowData[getHeader('roll')] || '', 
+        branch: branch, 
+        course: course,
+        photo: rowData[getHeader('profilephoto')] || rowData[getHeader('photo')] || '', 
+        qual: rowData[getHeader('qualification')] || '', 
+        stream: rowData[getHeader('stream')] || '',
+        status: status, 
+        resume: rowData[getHeader('resume')] || rowData[getHeader('cv')] || '', 
+        certificate: rowData[getHeader('certificate')] || '',
+        vacOpen: (vacKey && rowData[vacKey] ? rowData[vacKey] : 'Yes'), 
+        placementStatus: pStatus, 
+        rawData: rowData
       });
     }
   });
@@ -340,19 +363,18 @@ app.post('/api/tpo/applications', (req, res) => {
 
   sourceData.forEach((row) => {
     const rowData = row.toObject();
-    const getHeader = (searchString) => Object.keys(rowData).find(k => k.toLowerCase().includes(searchString.toLowerCase()));
+    const getHeader = (searchString) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(searchString.toLowerCase().replace(/\s/g, '')));
     
-    const branchKey = getHeader('branch');
-    const branch = branchKey && rowData[branchKey] ? rowData[branchKey] : 'Unknown';
-    const course = getHeader('course') ? rowData[getHeader('course')] : 'Unknown';
-    const officerKey = getHeader('placement officer');
+    const branch = rowData[getHeader('branch')] || 'Unknown';
+    const course = rowData[getHeader('course')] || 'Unknown';
+    const officerKey = getHeader('placementofficer');
     const officerName = officerKey && rowData[officerKey] ? rowData[officerKey].toString().toLowerCase().trim() : '';
 
     const tpoMatch = (!role || role === 'TPO') && (cleanTpoName !== '' && officerName === cleanTpoName);
 
     if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse) || tpoMatch) {
       const roll = rowData[getHeader('roll')] || '';
-      const jobId = rowData[getHeader('job id') || getHeader('jobid')] || '';
+      const jobId = rowData[getHeader('jobid')] || '';
       
       let phone = rowData[getHeader('contact')] || rowData[getHeader('phone')] || '';
       let email = rowData[getHeader('mail')] || rowData[getHeader('email')] || '';
@@ -377,7 +399,7 @@ app.post('/api/tpo/applications', (req, res) => {
       }
 
       appsMap[`${roll}_${jobId}`] = {
-        rowNumber: row.rowNumber, name: rowData[getHeader('name')] || '', roll: roll, branch: branch, course: course, qual: qual || 'Not Specified', jobId: jobId, company: rowData[getHeader('company')] || 'Unknown Company', position: rowData[getHeader('position')] || 'Unknown Position', date: rowData[getHeader('time')] || rowData[getHeader('date')] || '', status: rowData[getHeader('status')] || 'Applied', remarks: rowData[getHeader('remarks')] || '', tpoName: rowData[getHeader('placement officer')] || '', phone: phone, email: email, resume: resume, datePlaced: rowData[getHeader('date placed')] || '', packageLpa: rowData[getHeader('package')] || '', offerLetter: rowData[getHeader('offer letter')] || '', joiningStatus: rowData[getHeader('joining status')] || ''
+        rowNumber: row.rowNumber, name: rowData[getHeader('name')] || '', roll: roll, branch: branch, course: course, qual: qual || 'Not Specified', jobId: jobId, company: rowData[getHeader('company')] || 'Unknown Company', position: rowData[getHeader('position')] || 'Unknown Position', date: rowData[getHeader('time')] || rowData[getHeader('date')] || '', status: rowData[getHeader('status')] || 'Applied', remarks: rowData[getHeader('remarks')] || '', tpoName: rowData[getHeader('placementofficer')] || '', phone: phone, email: email, resume: resume, datePlaced: rowData[getHeader('dateplaced')] || '', packageLpa: rowData[getHeader('package')] || '', offerLetter: rowData[getHeader('offerletter')] || '', joiningStatus: rowData[getHeader('joiningstatus')] || ''
       };
     }
   });
@@ -503,13 +525,8 @@ app.post('/api/tpo/issues', (req, res) => {
   
   let issuesList = globalCache.issues.filter(row => {
     const rowBranch = row.get('Branch');
-    if (role && role.toUpperCase() === 'RTH') {
-       const studentName = row.get('Name') || '';
-       const studentData = globalCache.students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
-       const sCourse = studentData ? studentData.get('Course') : 'Unknown';
-       return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
-    }
-    return hasAccess(rowBranch, 'Unknown', role, assignedBranchesArray, assignedCourse);
+    const rowCourse = row.get('Course');
+    return hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCourse);
   }).map(row => ({ rowNumber: row.rowNumber, name: row.get('Name') || 'Student', branch: row.get('Branch'), details: row.get('Issue Details') || '', status: row.get('Status') || 'Pending', remarks: row.get('Remarks') || '' }));
   
   res.json({ success: true, issues: issuesList.reverse() });
@@ -558,15 +575,8 @@ app.post('/api/tpo/talentino', (req, res) => {
   
   let records = globalCache.tAtt.filter(row => {
     const rowBranch = row.get('Branch');
-    
-    if (role && role.toUpperCase() === 'RTH') {
-       const studentName = row.get('Name') || row.get('Student') || '';
-       const studentData = globalCache.students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
-       const sCourse = studentData ? studentData.get('Course') : 'Unknown';
-       return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
-    }
-    
-    return hasAccess(rowBranch, 'Unknown', role, assignedBranchesArray, assignedCourse);
+    const rowCourse = row.get('Course');
+    return hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCourse);
   }).map(row => {
     const rowData = row.toObject();
     const getVal = (searchStrings) => {

@@ -9,12 +9,21 @@ import Layout from './Layout';
 
 const TILE_COLORS = ['#10b981', '#ef4444', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#0ea5e9', '#f43f5e'];
 
+// 🚨 STANDARDIZED COURSE HELPER (Matches Backend)
+const getStandardCourse = (c) => {
+  if (!c) return 'Others';
+  const lower = c.toLowerCase().trim();
+  if (lower.includes('bms') || lower.includes('cctv') || lower.includes('building management') || lower.includes('security system')) return 'BMS AND CCTV';
+  if (lower.includes('automation') || lower.includes('plc') || lower.includes('dcs') || lower.includes('scada') || lower.includes('vfd') || lower.includes('panel') || lower.includes('marine') || lower.includes('networking')) return 'Industrial Automation';
+  if (lower.includes('embed') || lower.includes('iot') || lower.includes('raspberry') || lower.includes('labview')) return 'Embedded and IoT';
+  if (lower.includes('digital') || lower.includes('dm') || lower.includes('seo') || lower.includes('social media') || lower.includes('affiliate') || lower.includes('blogging') || lower.includes('marketing')) return 'Digital Marketing';
+  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('information') || lower.includes('data science') || lower.includes('full stack') || lower.includes('java') || lower.includes('stack') || lower.includes('artificial intelligence') || lower.includes('ai')) return 'Information technology (IT)';
+  return 'Others';
+};
+
 export default function StudentsDirectory() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
-  const [students, setStudents] = useState([]);
-  
-  // Stats States
-  const [stats, setStats] = useState({ total: 0, pending: 0, notResponding: 0, noNeed: 0 });
+  const [rawStudents, setRawStudents] = useState([]);
   const [globalStats, setGlobalStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0 });
   const [loading, setLoading] = useState(true);
   
@@ -32,7 +41,7 @@ export default function StudentsDirectory() {
   const [localVacState, setLocalVacState] = useState('');
   const [localPlacementState, setLocalPlacementState] = useState('');
 
-  // 🚨 EXTRACT ROLE AND COURSE FOR API PAYLOAD
+  // 🚨 ROLE & COURSE IDENTIFICATION
   const isRTH = tpoData?.role === 'RTH';
   const displayCourse = tpoData?.assignedCourse || '';
 
@@ -40,7 +49,6 @@ export default function StudentsDirectory() {
     if (!tpoData) return;
     const fetchData = async () => {
       try {
-        // 🚨 THIS IS THE CRITICAL PAYLOAD THAT TELLS THE BACKEND TO FILTER RTH
         const payload = { 
           assignedBranchesArray: tpoData.assignedBranchesArray,
           role: tpoData.role,
@@ -53,14 +61,21 @@ export default function StudentsDirectory() {
         ]);
         
         if (stuRes.data.success) {
-          setStudents(stuRes.data.students);
-          setStats(stuRes.data.stats);
+          setRawStudents(stuRes.data.students);
         }
         if (statRes.data.success) setGlobalStats(statRes.data.stats);
       } catch (error) { console.error("Failed", error); } finally { setLoading(false); }
     };
     fetchData();
   }, [tpoData]);
+
+  // 🚨 CLIENT-SIDE FILTERING GUARANTEE
+  const students = rawStudents.filter(s => {
+    if (isRTH) {
+      return getStandardCourse(s.course) === getStandardCourse(displayCourse);
+    }
+    return true;
+  });
 
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
@@ -104,17 +119,8 @@ export default function StudentsDirectory() {
         placementStatus: localPlacementState
       });
       if (response.data.success) {
-        const updatedStudents = students.map(s => s.rowIdx === selectedStudent.rowIdx ? { ...s, vacOpen: localVacState, placementStatus: localPlacementState } : s);
-        setStudents(updatedStudents);
-        
-        let newNotRes = 0; let newNoNeed = 0; let newPending = 0;
-        updatedStudents.forEach(s => {
-          const pLower = s.placementStatus.toLowerCase();
-          if (pLower.includes('not responding')) newNotRes++;
-          else if (pLower.includes('no need')) newNoNeed++;
-          else if (pLower.includes('pending') || pLower === '') newPending++;
-        });
-        setStats(prev => ({ ...prev, notResponding: newNotRes, noNeed: newNoNeed, pending: newPending }));
+        const updatedStudents = rawStudents.map(s => s.rowIdx === selectedStudent.rowIdx ? { ...s, vacOpen: localVacState, placementStatus: localPlacementState } : s);
+        setRawStudents(updatedStudents);
         setIsModalOpen(false);
       }
     } catch (error) { alert("Failed to update student data"); } finally { setSavingStatus(false); }
@@ -158,6 +164,9 @@ export default function StudentsDirectory() {
     return url && url !== 'N/A' ? url : null;
   };
 
+  // ==========================================
+  // RENDER: VIEW 1 - BRANCH TILES LANDING
+  // ==========================================
   if (!selectedBranch) {
     return (
       <Layout>
@@ -167,7 +176,7 @@ export default function StudentsDirectory() {
           ) : (
             <>
               <div className="universal-kpi-bar" style={{ marginBottom: '2.5rem' }}>
-                <div className="kpi-card"><div><div className="kpi-val">{globalStats.totalStudents}</div><div className="kpi-label">Total Students</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}><UsersThree weight="fill"/></div></div>
+                <div className="kpi-card"><div><div className="kpi-val">{students.length}</div><div className="kpi-label">{isRTH ? `${displayCourse} Students` : 'Total Students'}</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}><UsersThree weight="fill"/></div></div>
                 <div className="kpi-card"><div><div className="kpi-val">{globalStats.activeVacancies}</div><div className="kpi-label">Active Vacancies</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><Briefcase weight="fill"/></div></div>
                 <div className="kpi-card"><div><div className="kpi-val">{globalStats.pendingApps}</div><div className="kpi-label">Pending Apps</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><Files weight="fill"/></div></div>
                 <div className="kpi-card"><div><div className="kpi-val">{globalStats.placed}</div><div className="kpi-label">Total Hired</div></div><div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}><Confetti weight="fill"/></div></div>
@@ -178,11 +187,11 @@ export default function StudentsDirectory() {
                 {isRTH ? `Branches with ${displayCourse} Students` : 'Which branch would you like to view?'}
               </h1>
               <p style={{ color: 'var(--text-muted)', marginBottom: '3rem', textAlign: 'center' }}>
-                {isRTH ? `Select a branch to manage registered students for your course.` : 'Select an assigned branch to view its registered students and placement statistics.'}
+                {isRTH ? `Select a branch to manage registered students for ${displayCourse}.` : 'Select an assigned branch to view its registered students and placement statistics.'}
               </p>
               
               {branchList.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '2rem' }}>No students found matching your criteria.</div>
+                <div style={{ textAlign: 'center', padding: '2rem' }}>No {isRTH ? displayCourse : ''} students found in any branch.</div>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px', padding: '0 20px' }}>
                   {branchList.map((branch, index) => {
@@ -212,6 +221,9 @@ export default function StudentsDirectory() {
     );
   }
 
+  // ==========================================
+  // RENDER: VIEW 2 - BRANCH DIRECTORY
+  // ==========================================
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
@@ -236,7 +248,7 @@ export default function StudentsDirectory() {
             <input type="text" className="sleek-input" placeholder="Search name or roll..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             <select className="sleek-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
               <option value="All">All {isRTH ? 'Sub-Courses' : 'Courses'}</option>
-              {uniqueCourses.map(c => <option key={c} value={c}>{c}</option>)}
+              {uniqueCourses.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}><option value="newest">Sort: Newest First</option><option value="az">Sort: A-Z</option><option value="za">Sort: Z-A</option></select>
           </div>
@@ -247,7 +259,7 @@ export default function StudentsDirectory() {
         </div>
 
         {filteredAndSorted.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '2rem' }}>No students found.</div>
+          <div style={{ textAlign: 'center', padding: '2rem' }}>No students found for this filter.</div>
         ) : viewType === 'grid' ? (
           <div className="student-grid">
             {filteredAndSorted.map((st, i) => (
