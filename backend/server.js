@@ -115,25 +115,14 @@ setInterval(refreshCache, 60000);
 // ==========================================
 // 🚨 ROLE-BASED ACCESS CONTROL & SMART DICTIONARY
 // ==========================================
-
-// This dictionary reads ANY subcourse string and maps it to the 5 Main RTH Courses
 const getStandardCourse = (c) => {
   if(!c) return 'Others';
   const lower = c.toLowerCase();
   
-  // 1. BMS AND CCTV
   if(lower.includes('bms') || lower.includes('cctv') || lower.includes('building management') || lower.includes('security system')) return 'BMS AND CCTV';
-  
-  // 2. Industrial Automation
   if(lower.includes('automation') || lower.includes('plc') || lower.includes('dcs') || lower.includes('scada') || lower.includes('vfd') || lower.includes('panel') || lower.includes('marine') || lower.includes('networking')) return 'Industrial Automation';
-  
-  // 3. Embedded and IoT
   if(lower.includes('embed') || lower.includes('iot') || lower.includes('raspberry') || lower.includes('labview')) return 'Embedded and IoT';
-  
-  // 4. Digital Marketing
   if(lower.includes('digital') || lower.includes('dm') || lower.includes('seo') || lower.includes('social media') || lower.includes('affiliate') || lower.includes('blogging') || lower.includes('marketing')) return 'Digital Marketing';
-  
-  // 5. Information technology (IT)
   if(lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('information') || lower.includes('data science') || lower.includes('full stack') || lower.includes('java') || lower.includes('stack')) return 'Information technology (IT)';
   
   return 'Others';
@@ -146,7 +135,6 @@ function checkBranchMatch(branch, tpoBranchesArray) {
   return tpoBranchesArray.some(b => cleanSB.includes(b) || b.includes(cleanSB));
 }
 
-// Universal Access Engine
 function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCourse) {
   if (!role) role = 'TPO'; 
   const upperRole = role.toUpperCase();
@@ -154,14 +142,12 @@ function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCo
   if (upperRole.includes('ADMIN')) return true; // Admins see everything
   
   if (upperRole === 'RTH') {
-    // RTH filters precisely by translating sub-courses to main courses
     const stdRowCourse = getStandardCourse(rowCourse);
     const stdAssignedCourse = getStandardCourse(assignedCourse);
-    return stdRowCourse === stdAssignedCourse;
+    return stdRowCourse === stdAssignedCourse; // Matches perfectly based on Main Course
   }
   
-  // TPOs filter strictly by their assigned branches
-  return checkBranchMatch(rowBranch, assignedBranchesArray);
+  return checkBranchMatch(rowBranch, assignedBranchesArray); // TPOs filter by Branch
 }
 
 app.use('/api/tpo', (req, res, next) => {
@@ -170,8 +156,9 @@ app.use('/api/tpo', (req, res, next) => {
 });
 
 // ==========================================
-// 🚨 RBAC DUAL-SHEET LOGIN ROUTE (FIXED MULTI-FIELD MATCHING)
+// CORE ROUTES
 // ==========================================
+
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -182,8 +169,9 @@ app.post('/api/auth/login', async (req, res) => {
     let foundUser = null;
     let role = 'TPO';
     let course = 'All';
+    let nameField = 'username';
 
-    // 1. Check Contact Sheet first
+    // 1. Check Contact Sheet
     const contactSheet = doc.sheetsByTitle["Contact"];
     if (contactSheet) {
       const rows = await contactSheet.getRows();
@@ -192,20 +180,21 @@ app.post('/api/auth/login', async (req, res) => {
         const cleanKeys = {};
         for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
         
-        const sheetMailId = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
-        const sheetLoginId = (cleanKeys['loginid'] || '').toString().trim().toLowerCase();
+        const sheetMail = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
+        const sheetLoginId = (cleanKeys['loginid'] || cleanKeys['username'] || '').toString().trim().toLowerCase();
         const sheetPass = (cleanKeys['password'] || '').toString().trim();
 
-        // Check if input matches EITHER Mail ID OR Login ID
-        if ((sheetMailId === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
+        if ((sheetMail === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
           foundUser = cleanKeys;
-          role = 'TPO';
+          role = (cleanKeys['role'] || 'TPO').toString().toUpperCase().trim();
+          course = (cleanKeys['course'] || 'All').toString().trim();
+          nameField = 'tponame';
           break;
         }
       }
     }
 
-    // 2. Check User Sheet if not found in Contact
+    // 2. Check User Sheet
     if (!foundUser) {
       const userSheet = doc.sheetsByTitle["User"];
       if (userSheet) {
@@ -216,24 +205,22 @@ app.post('/api/auth/login', async (req, res) => {
           for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
           
           const sheetUsername = (cleanKeys['username'] || cleanKeys['name'] || '').toString().trim().toLowerCase();
-          const sheetMailId = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
+          const sheetMail = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
           const sheetLoginId = (cleanKeys['loginid'] || '').toString().trim().toLowerCase();
           const sheetPass = (cleanKeys['password'] || '').toString().trim();
 
-          // Check if input matches EITHER Username, Mail ID, OR Login ID
-          if ((sheetUsername === cleanInput || sheetMailId === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
+          if ((sheetUsername === cleanInput || sheetMail === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
             foundUser = cleanKeys;
             role = (cleanKeys['role'] || 'RTH').toString().toUpperCase().trim();
             course = (cleanKeys['course'] || 'All').toString().trim();
+            nameField = 'username';
             break;
           }
         }
       }
     }
 
-    if (!foundUser) {
-      return res.status(401).json({ success: false, message: "Invalid Login ID or Password." });
-    }
+    if (!foundUser) return res.status(401).json({ success: false, message: "Invalid Login ID or Password." });
 
     const assignedRaw = foundUser['assignedbranches'] || '';
     let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
@@ -243,7 +230,7 @@ app.post('/api/auth/login', async (req, res) => {
     return res.json({ 
       success: true, 
       tpo: { 
-        name: foundUser['username'] || foundUser['tponame'] || foundUser['name'] || 'User', 
+        name: foundUser[nameField] || foundUser['name'] || 'User', 
         email: foundUser['mailid'] || foundUser['email'] || cleanInput, 
         loginId: cleanInput, 
         sittingBranch: foundUser['sittingbranch'] || 'N/A', 
@@ -445,10 +432,6 @@ app.post('/api/tpo/applications/add', upload.single('offerLetterFile'), async (r
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// ==========================================
-// OTHER DATA ROUTES
-// ==========================================
-
 app.get('/api/tpo/vacancies', (req, res) => {
   let vacs = globalCache.vacancies.map((row, i) => {
     const rowData = row.toObject();
@@ -517,22 +500,22 @@ app.post('/api/tpo/events/add', upload.single('posterFile'), async (req, res) =>
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 });
 
-// 🚨 ISSUES ROUTE: Now properly directly reads Course and checks access!
 app.post('/api/tpo/issues', (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
   
   let issuesList = globalCache.issues.filter(row => {
     const rowBranch = row.get('Branch');
-    const rowCourse = row.get('Course'); 
-    return hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCourse);
-  }).map(row => ({ 
-    rowNumber: row.rowNumber, 
-    name: row.get('Name') || 'Student', 
-    branch: row.get('Branch'), 
-    details: row.get('Issue Details') || '', 
-    status: row.get('Status') || 'Pending', 
-    remarks: row.get('Remarks') || '' 
-  }));
+    
+    // Cross-reference course from Data sheet if RTH
+    if (role && role.toUpperCase() === 'RTH') {
+       const studentName = row.get('Name') || '';
+       const studentData = globalCache.students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
+       const sCourse = studentData ? studentData.get('Course') : 'Unknown';
+       return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
+    }
+    
+    return hasAccess(rowBranch, 'Unknown', role, assignedBranchesArray, assignedCourse);
+  }).map(row => ({ rowNumber: row.rowNumber, name: row.get('Name') || 'Student', branch: row.get('Branch'), details: row.get('Issue Details') || '', status: row.get('Status') || 'Pending', remarks: row.get('Remarks') || '' }));
   
   res.json({ success: true, issues: issuesList.reverse() });
 });
@@ -575,14 +558,20 @@ app.post('/api/tpo/reports', (req, res) => {
   res.json({ success: true, students, applications, issues, talentino, vacancies, events });
 });
 
-// 🚨 TALENTINO ROUTE: Now directly reads Course and correctly checks access!
 app.post('/api/tpo/talentino', (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
   
   let records = globalCache.tAtt.filter(row => {
     const rowBranch = row.get('Branch');
-    const rowCourse = row.get('Course');
-    return hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCourse);
+    
+    if (role && role.toUpperCase() === 'RTH') {
+       const studentName = row.get('Name') || row.get('Student') || '';
+       const studentData = globalCache.students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
+       const sCourse = studentData ? studentData.get('Course') : 'Unknown';
+       return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
+    }
+    
+    return hasAccess(rowBranch, 'Unknown', role, assignedBranchesArray, assignedCourse);
   }).map(row => {
     const rowData = row.toObject();
     const getVal = (searchStrings) => {
