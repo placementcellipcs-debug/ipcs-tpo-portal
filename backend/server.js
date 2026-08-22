@@ -139,51 +139,61 @@ app.use('/api/tpo', (req, res, next) => {
 // ==========================================
 
 // ==========================================
-// 🚨 BULLETPROOF LOGIN ROUTE (UPDATED FOR LOGIN ID)
+// 🚨 INDESTRUCTIBLE LOGIN ROUTE
 // ==========================================
 app.post('/api/auth/login', async (req, res) => {
   const { email, password } = req.body;
   try {
     await doc.loadInfo();
     const sheet = doc.sheetsByTitle["Contact"];
+    if (!sheet) throw new Error("Contact sheet not found");
+
     const rows = await sheet.getRows();
-    const cleanInput = email.trim().toLowerCase(); // This is the Login ID sent from frontend
-    
-    // Exact matching for the new "Login ID" column
-    const userRow = rows.find(row => {
+    const cleanInput = (email || '').toString().trim().toLowerCase();
+
+    let foundUser = null;
+
+    // Scan through rows and clean up all headers dynamically
+    for (let row of rows) {
       const rowObj = row.toObject();
-      const loginKey = Object.keys(rowObj).find(k => k.toLowerCase() === 'login id');
-      const passKey = Object.keys(rowObj).find(k => k.toLowerCase() === 'password');
+      const cleanKeys = {};
       
-      const loginMatch = loginKey && rowObj[loginKey].toString().trim().toLowerCase() === cleanInput;
-      
-      return loginMatch && (rowObj[passKey] || '').toString().trim() === password;
-    });
+      // Remove all spaces and lowercase every header (e.g. "Login ID " becomes "loginid")
+      for (let key in rowObj) {
+        cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
+      }
 
-    if (!userRow) return res.status(401).json({ success: false, message: "Invalid credentials." });
-    
-    const rowObj = userRow.toObject();
-    const getHeader = (str) => Object.keys(rowObj).find(k => k.toLowerCase().includes(str.toLowerCase()));
+      const sheetLoginId = (cleanKeys['loginid'] || cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
+      const sheetPass = (cleanKeys['password'] || '').toString().trim();
 
-    const assignedRaw = rowObj[getHeader('assigned branches')] || '';
+      if (sheetLoginId === cleanInput && sheetPass === password) {
+        foundUser = cleanKeys;
+        break;
+      }
+    }
+
+    if (!foundUser) {
+      return res.status(401).json({ success: false, message: "Invalid Login ID or Password." });
+    }
+
+    // Extract data using the indestructible cleaned keys
+    const assignedRaw = foundUser['assignedbranches'] || '';
     let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
     
-    const phoneNum = rowObj[getHeader('contact number') || getHeader('contact num') || getHeader('phone')] || 'Not Provided';
-    const photoUrl = rowObj[getHeader('profile photo') || getHeader('photo')] || '';
-    
-    const role = (rowObj[getHeader('role')] || 'TPO').toString().toUpperCase().trim();
-    const course = (rowObj[getHeader('course')] || 'All').toString().trim();
-    
-    // We fetch the actual Mail ID for display in settings, falling back to the login ID if no email exists
-    const finalEmail = rowObj[getHeader('mail id') || getHeader('email')] || cleanInput;
+    const phoneNum = foundUser['contactnumber'] || foundUser['contact'] || foundUser['phoneno'] || 'Not Provided';
+    const photoUrl = foundUser['profilephoto'] || foundUser['photo'] || '';
+    const role = (foundUser['role'] || 'TPO').toString().toUpperCase().trim();
+    const course = (foundUser['course'] || 'All').toString().trim();
+    const finalEmail = foundUser['mailid'] || foundUser['email'] || cleanInput;
+    const name = foundUser['username'] || foundUser['tponame'] || 'User';
 
     return res.json({ 
       success: true, 
       tpo: { 
-        name: rowObj[getHeader('user name') || getHeader('tpo name')] || 'User', 
+        name: name, 
         email: finalEmail, 
         loginId: cleanInput, 
-        sittingBranch: rowObj[getHeader('sitting branch')] || 'N/A', 
+        sittingBranch: foundUser['sittingbranch'] || 'N/A', 
         assignedBranchesArray: assignedArray.length > 0 ? assignedArray : ['all'], 
         photo: photoUrl,
         phone: phoneNum,
@@ -191,7 +201,10 @@ app.post('/api/auth/login', async (req, res) => {
         assignedCourse: course  
       }
     });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+  } catch (error) { 
+    console.error("Login Error:", error);
+    res.status(500).json({ success: false, message: error.message }); 
+  }
 });
 
 app.post('/api/tpo/dashboard-stats', (req, res) => {
