@@ -40,7 +40,7 @@ export default function Layout({ children }) {
   };
 
   const renderAvatar = () => {
-    const initial = tpoData.name ? tpoData.name.charAt(0).toUpperCase() : '?';
+    const initial = tpoData.name ? String(tpoData.name).charAt(0).toUpperCase() : '?';
     if (!profilePhotoUrl || profilePhotoUrl === 'N/A') {
       return <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{initial}</span>;
     }
@@ -118,7 +118,7 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/reports'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> Reports</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> Talentino</div><span>›</span></div>
             
-            {/* 🚨 REPLACED CRASHING ICON WITH SAFE 'Users' ICON */}
+            {/* 🚨 CRASH FIXED: Replaced missing icon with safe 'Users' icon */}
             {tpoData.accessType === 'superadmin' && (
                <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
             )}

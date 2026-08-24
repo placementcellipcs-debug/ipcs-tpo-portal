@@ -75,7 +75,7 @@ export default function UserManagement() {
     }
   };
 
-  // 🚨 SAFE ACCESS DENIED FALLBACK (No Icons, Cannot Crash)
+  // 🚨 SAFE ACCESS DENIED FALLBACK
   if (tpoData?.accessType !== 'superadmin') {
     return (
       <Layout>
@@ -83,9 +83,6 @@ export default function UserManagement() {
           <div style={{ fontSize: '4rem', marginBottom: '20px' }}>⛔</div>
           <h2>Access Denied</h2>
           <p>You do not have Super Admin privileges to view this page.</p>
-          <div style={{ marginTop: '20px', padding: '15px', background: 'rgba(245, 158, 11, 0.1)', border: '1px solid #f59e0b', borderRadius: '8px', color: '#f59e0b', maxWidth: '450px' }}>
-            <strong>Attention:</strong> If you ARE a Super Admin, you must <b>Log Out</b> and <b>Log In again</b> so the system can refresh your account permissions!
-          </div>
         </div>
       </Layout>
     );
