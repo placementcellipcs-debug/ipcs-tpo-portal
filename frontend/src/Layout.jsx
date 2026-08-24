@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   SignOut, Bell, Moon, Sun, X, SquaresFour, Trophy, ListChecks, Headset, 
-  UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake
+  UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake, ShieldCheck
 } from '@phosphor-icons/react';
 
 export default function Layout({ children }) {
@@ -25,7 +25,6 @@ export default function Layout({ children }) {
     setTheme(newTheme);
   };
 
-  // Improved Drive Image Extractor
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
     const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
@@ -40,7 +39,6 @@ export default function Layout({ children }) {
     navigate('/');
   };
 
-  // Bulletproof Avatar Renderer
   const renderAvatar = () => {
     const initial = tpoData.name ? tpoData.name.charAt(0).toUpperCase() : '?';
     if (!profilePhotoUrl || profilePhotoUrl === 'N/A') {
@@ -65,7 +63,6 @@ export default function Layout({ children }) {
         
         <header className="top-header">
           <div className="header-left">
-            {/* Fallback to IPCS official website logo if Drive link fails */}
             <img 
               src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" 
               alt="IPCS Logo" 
@@ -93,7 +90,6 @@ export default function Layout({ children }) {
 
       </main>
 
-      {/* SIDEBAR DRAWER */}
       <div className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} onClick={(e) => { if(e.target.className.includes('drawer-overlay')) setIsDrawerOpen(false); }}>
         <div className="drawer-card">
           <div className="drawer-header">
@@ -104,7 +100,7 @@ export default function Layout({ children }) {
               </div>
               <div>
                 <strong style={{ display: 'block', fontSize: '1.1rem', fontWeight: 700 }}>{tpoData.name}</strong>
-                <span style={{ fontSize: '0.8rem', opacity: 0.9 }}>Placement Officer</span>
+                <span style={{ fontSize: '0.8rem', opacity: 0.9 }}>{tpoData.role || 'Placement Officer'}</span>
               </div>
             </div>
           </div>
@@ -112,18 +108,21 @@ export default function Layout({ children }) {
           <div className="drawer-menu">
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/dashboard'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><SquaresFour size={22} color={isActive('/dashboard')} /> Dashboard</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/students'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/students')} /> Students Directory</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/tracker'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Files size={22} color={isActive('/tracker')} /> Job Tracker (Action)</div><span>›</span></div>
+            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/tracker'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Files size={22} color={isActive('/tracker')} /> Job Tracker</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/placed'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Trophy size={22} color={isActive('/placed')} /> Placed Students</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/applications'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ListChecks size={22} color={isActive('/applications')} /> Student Apps (View)</div><span>›</span></div>
+            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/applications'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ListChecks size={22} color={isActive('/applications')} /> Student Apps</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/vacancies'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Briefcase size={22} color={isActive('/vacancies')} /> Vacancies</div><span>›</span></div>
-            
-            {/* BRAND NEW CLIENTS TAB */}
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/clients'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Handshake size={22} color={isActive('/clients')} /> Clients & Partners</div><span>›</span></div>
-            
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/events'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><CalendarStar size={22} color={isActive('/events')} /> Events</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/issues'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Headset size={22} color={isActive('/issues')} /> Issues</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/reports'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> Reports</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> Talentino</div><span>›</span></div>
+            
+            {/* 🚨 ADMIN USER MANAGEMENT TAB */}
+            {tpoData.accessType === 'superadmin' && (
+               <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
+            )}
+
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/settings'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Gear size={22} color={isActive('/settings')} /> Settings</div><span>›</span></div>
           </div>
           

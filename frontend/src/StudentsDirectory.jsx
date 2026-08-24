@@ -41,9 +41,11 @@ export default function StudentsDirectory() {
   const [localVacState, setLocalVacState] = useState('');
   const [localPlacementState, setLocalPlacementState] = useState('');
 
-  // 🚨 ROLE & COURSE IDENTIFICATION
-  const isRTH = tpoData?.role === 'RTH';
+  // 🚨 ROLE, COURSE, AND ACCESS PERMISSIONS IDENTIFICATION
+  const upperRole = (tpoData?.role || '').toUpperCase();
+  const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD') || upperRole.includes('TTH') || upperRole.includes('TERRITORY TECHNICAL HEAD') || upperRole.includes('TRAINER');
   const displayCourse = tpoData?.assignedCourse || '';
+  const isViewOnly = tpoData?.accessType === 'view'; // Checks for View Only Mode
 
   useEffect(() => {
     if (!tpoData) return;
@@ -71,7 +73,7 @@ export default function StudentsDirectory() {
 
   // 🚨 CLIENT-SIDE FILTERING GUARANTEE
   const students = rawStudents.filter(s => {
-    if (isRTH) {
+    if (isCourseSpecific) {
       return getStandardCourse(s.course) === getStandardCourse(displayCourse);
     }
     return true;
@@ -176,7 +178,7 @@ export default function StudentsDirectory() {
           ) : (
             <>
               <div className="universal-kpi-bar" style={{ marginBottom: '2.5rem' }}>
-                <div className="kpi-card"><div><div className="kpi-val">{students.length}</div><div className="kpi-label">{isRTH ? `${displayCourse} Students` : 'Total Students'}</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}><UsersThree weight="fill"/></div></div>
+                <div className="kpi-card"><div><div className="kpi-val">{students.length}</div><div className="kpi-label">{isCourseSpecific ? `${displayCourse} Students` : 'Total Students'}</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}><UsersThree weight="fill"/></div></div>
                 <div className="kpi-card"><div><div className="kpi-val">{globalStats.activeVacancies}</div><div className="kpi-label">Active Vacancies</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><Briefcase weight="fill"/></div></div>
                 <div className="kpi-card"><div><div className="kpi-val">{globalStats.pendingApps}</div><div className="kpi-label">Pending Apps</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><Files weight="fill"/></div></div>
                 <div className="kpi-card"><div><div className="kpi-val">{globalStats.placed}</div><div className="kpi-label">Total Hired</div></div><div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}><Confetti weight="fill"/></div></div>
@@ -184,14 +186,14 @@ export default function StudentsDirectory() {
 
               {/* 🚨 DYNAMIC HEADINGS BASED ON ROLE */}
               <h1 style={{ fontSize: '2.2rem', marginBottom: '5px', textAlign: 'center' }}>
-                {isRTH ? `Branches with ${displayCourse} Students` : 'Which branch would you like to view?'}
+                {isCourseSpecific ? `Branches with ${displayCourse} Students` : 'Which branch would you like to view?'}
               </h1>
               <p style={{ color: 'var(--text-muted)', marginBottom: '3rem', textAlign: 'center' }}>
-                {isRTH ? `Select a branch to manage registered students for ${displayCourse}.` : 'Select an assigned branch to view its registered students and placement statistics.'}
+                {isCourseSpecific ? `Select a branch to view registered students for ${displayCourse}.` : 'Select an assigned branch to view its registered students and placement statistics.'}
               </p>
               
               {branchList.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '2rem' }}>No {isRTH ? displayCourse : ''} students found in any branch.</div>
+                <div style={{ textAlign: 'center', padding: '2rem' }}>No {isCourseSpecific ? displayCourse : ''} students found in any branch.</div>
               ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px', padding: '0 20px' }}>
                   {branchList.map((branch, index) => {
@@ -232,8 +234,8 @@ export default function StudentsDirectory() {
             <CaretLeft weight="bold" size={18} /> Back to Branches
           </button>
           <div>
-            <h1 style={{ fontSize: '1.8rem', margin: 0 }}>{selectedBranch} {isRTH ? `(${displayCourse})` : 'Directory'}</h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Manage student profiles, view resumes, and control vacancy access.</p>
+            <h1 style={{ fontSize: '1.8rem', margin: 0 }}>{selectedBranch} {isCourseSpecific ? `(${displayCourse})` : 'Directory'}</h1>
+            <p style={{ color: 'var(--text-muted)', margin: 0 }}>{isViewOnly ? 'View student profiles, resumes, and vacancy statuses.' : 'Manage student profiles, view resumes, and control vacancy access.'}</p>
           </div>
         </div>
         
@@ -247,7 +249,7 @@ export default function StudentsDirectory() {
           <div className="filter-group">
             <input type="text" className="sleek-input" placeholder="Search name or roll..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             <select className="sleek-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
-              <option value="All">All {isRTH ? 'Sub-Courses' : 'Courses'}</option>
+              <option value="All">All {isCourseSpecific ? 'Sub-Courses' : 'Courses'}</option>
               {uniqueCourses.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
             </select>
             <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}><option value="newest">Sort: Newest First</option><option value="az">Sort: A-Z</option><option value="za">Sort: Z-A</option></select>
@@ -361,25 +363,30 @@ export default function StudentsDirectory() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '1.5rem' }}>
+              
+              {/* 🚨 LOCKED CONTROLS FOR VIEW ONLY MODE */}
               <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
                 <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Placement Status</span>
-                <select className="sleek-select" style={{ width: '100%' }} value={localPlacementState} onChange={(e) => setLocalPlacementState(e.target.value)}>
+                <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localPlacementState} onChange={(e) => setLocalPlacementState(e.target.value)} disabled={isViewOnly}>
                   <option value="Pending">Pending</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
                 </select>
               </div>
               <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
                 <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Vacancy Access</span>
-                <select className="sleek-select" style={{ width: '100%' }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)}>
+                <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)} disabled={isViewOnly}>
                   <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
                 </select>
               </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid #1e293b', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
-               <button className="btn-action" style={{ width: 'auto', background: '#38bdf8', color: '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0 }} onClick={saveStudentUpdates} disabled={savingStatus}>
-                  {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> Save All Changes</>}
+            {/* 🚨 LOCKED SAVE BUTTON FOR VIEW ONLY MODE */}
+            <div style={{ display: 'flex', justifyContent: isViewOnly ? 'space-between' : 'flex-end', alignItems: 'center', borderTop: '1px solid #1e293b', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
+               {isViewOnly && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission</span>}
+               <button className="btn-action" style={{ width: 'auto', background: isViewOnly ? '#1e293b' : '#38bdf8', color: isViewOnly ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: isViewOnly ? 'not-allowed' : 'pointer' }} onClick={saveStudentUpdates} disabled={savingStatus || isViewOnly}>
+                  {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> {isViewOnly ? 'Edit Locked' : 'Save All Changes'}</>}
                 </button>
             </div>
+            
           </div>
         </div>
       )}

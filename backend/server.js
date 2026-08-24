@@ -133,19 +133,33 @@ function checkBranchMatch(branch, tpoBranchesArray) {
   return tpoBranchesArray.some(b => cleanSB.includes(b) || b.includes(cleanSB));
 }
 
+// 🚨 THE UNIVERSAL ACCESS ENGINE 🚨
 function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCourse) {
   if (!role) role = 'TPO'; 
   const upperRole = role.toUpperCase();
   
-  if (upperRole.includes('ADMIN')) return true; 
-  
-  if (upperRole === 'RTH') {
-    const stdRowCourse = getStandardCourse(rowCourse);
-    const stdAssignedCourse = getStandardCourse(assignedCourse);
-    return stdRowCourse === stdAssignedCourse; // RTH filters by Course
+  // 1. SUPER ADMINS (See everything)
+  if (upperRole.includes('ADMIN') || upperRole === 'GENERAL MANAGER' || upperRole === 'TECHNICAL HEAD' || upperRole === 'ZONAL PLACEMENT HEAD') {
+    return true; 
   }
   
-  return checkBranchMatch(rowBranch, assignedBranchesArray); 
+  const stdRowCourse = getStandardCourse(rowCourse);
+  const stdAssignedCourse = getStandardCourse(assignedCourse);
+  const matchCourse = (stdRowCourse === stdAssignedCourse) || stdAssignedCourse === 'OTHERS'; 
+  const matchBranch = checkBranchMatch(rowBranch, assignedBranchesArray);
+
+  // 2. REGIONAL TECHNICAL HEAD (Course Only)
+  if (upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD') {
+    return matchCourse; 
+  }
+  
+  // 3. TERRITORY TECHNICAL HEAD & TRAINER (Branch AND Course)
+  if (upperRole.includes('TTH') || upperRole === 'TERRITORY TECHNICAL HEAD' || upperRole.includes('TRAINER')) {
+    return matchBranch && matchCourse;
+  }
+
+  // 4. REGIONAL MGR, TERRITORY MGR, BRANCH MGR, TECH LEAD, TPO (Branch Only)
+  return matchBranch; 
 }
 
 app.use('/api/tpo', (req, res, next) => {
@@ -220,10 +234,25 @@ app.post('/api/auth/login', async (req, res) => {
 
     if (!foundUser) return res.status(401).json({ success: false, message: "Invalid Login ID or Password." });
 
-    const assignedRaw = foundUser['assignedbranches'] || '';
+    const assignedRaw = foundUser['assignedbranches'] || foundUser['sittingbranch'] || '';
     let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
     
-    if (role.includes('ADMIN') || role === 'RTH' || assignedArray.length === 0) {
+    const upperRole = role.toUpperCase();
+    
+    // Calculate accessType (Super Admin vs Edit vs View Only)
+    let accessType = 'edit';
+    const sheetAccess = (foundUser['access'] || '').toString().toUpperCase();
+    
+    if (upperRole.includes('ADMIN') || upperRole === 'GENERAL MANAGER' || upperRole === 'TECHNICAL HEAD' || upperRole === 'ZONAL PLACEMENT HEAD' || sheetAccess.includes('SUPER ADMIN')) {
+      accessType = 'superadmin';
+    } else if (sheetAccess.includes('VIEW ONLY') && !sheetAccess.includes('EDIT')) {
+      accessType = 'view';
+    } else if (sheetAccess.includes('VIEW & EDIT') || sheetAccess.includes('EDIT')) {
+      accessType = 'edit';
+    }
+
+    // Super Admins & RTHs need to see ALL branches in the landing page tiles
+    if (accessType === 'superadmin' || upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD' || assignedArray.length === 0) {
       assignedArray = ['all'];
     }
 
@@ -238,7 +267,8 @@ app.post('/api/auth/login', async (req, res) => {
         photo: foundUser['profilephoto'] || foundUser['photo'] || '',
         phone: foundUser['contactnumber'] || foundUser['contact'] || foundUser['phoneno'] || 'Not Provided',
         role: role,             
-        assignedCourse: course  
+        assignedCourse: course,
+        accessType: accessType // 🚨 Sends EXACT permissions to the frontend
       }
     });
   } catch (error) { 
@@ -256,7 +286,6 @@ app.post('/api/tpo/dashboard-stats', (req, res) => {
     const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
     const branch = rowData[getHeader('branch')] || 'Unknown';
     const course = rowData[getHeader('course')] || 'Unknown';
-
     if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse)) studentCount++; 
   });
   
@@ -525,8 +554,11 @@ app.post('/api/tpo/issues', (req, res) => {
   
   let issuesList = globalCache.issues.filter(row => {
     const rowBranch = row.get('Branch');
-    const rowCourse = row.get('Course');
-    return hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCourse);
+    const studentName = row.get('Name') || '';
+    const studentData = globalCache.students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
+    const sCourse = studentData ? studentData.get('Course') : 'Unknown';
+    
+    return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
   }).map(row => ({ rowNumber: row.rowNumber, name: row.get('Name') || 'Student', branch: row.get('Branch'), details: row.get('Issue Details') || '', status: row.get('Status') || 'Pending', remarks: row.get('Remarks') || '' }));
   
   res.json({ success: true, issues: issuesList.reverse() });
@@ -547,12 +579,12 @@ app.post('/api/tpo/reports', (req, res) => {
   let students = [], applications = [], issues = [], talentino = [];
   
   globalCache.students.forEach(row => {
-    if(role === 'RTH' && getStandardCourse(row.get('Course')) !== getStandardCourse(assignedCourse)) return;
+    if(!hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) return;
     students.push({ name: row.get('Name'), roll: row.get('Roll Number'), branch: row.get('Branch'), course: row.get('Course'), status: row.get('Status'), placementStatus: row.get('Placement Stat') || row.get('Placement Status') });
   });
   
   globalCache.applications.forEach(row => {
-    if(role === 'RTH' && getStandardCourse(row.get('Course')) !== getStandardCourse(assignedCourse)) return;
+    if(!hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) return;
     applications.push({ name: row.get('Student Name'), roll: row.get('Roll Number'), jobId: row.get('Job ID'), company: row.get('Company Name'), date: row.get('TimeStamp'), status: row.get('Status'), remarks: row.get('Remarks'), tpoName: row.get('Placement Officer'), branch: row.get('Branch'), course: row.get('Course') });
   });
   
@@ -575,8 +607,11 @@ app.post('/api/tpo/talentino', (req, res) => {
   
   let records = globalCache.tAtt.filter(row => {
     const rowBranch = row.get('Branch');
-    const rowCourse = row.get('Course');
-    return hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCourse);
+    const studentName = row.get('Name') || row.get('Student') || '';
+    const studentData = globalCache.students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
+    const sCourse = studentData ? studentData.get('Course') : 'Unknown';
+    
+    return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
   }).map(row => {
     const rowData = row.toObject();
     const getVal = (searchStrings) => {
@@ -898,6 +933,65 @@ app.post('/api/tpo/profile/update-photo', upload.single('photo'), async (req, re
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
+});
+
+// ==========================================
+// 🚨 ADMIN: USER MANAGEMENT API ROUTES 
+// ==========================================
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const userSheet = doc.sheetsByTitle["User"];
+    if (!userSheet) return res.json({ success: false, message: "User sheet not found" });
+    const rows = await userSheet.getRows();
+    const usersList = rows.map(r => ({
+      rowNumber: r.rowNumber,
+      userName: r.get('USER Name') || '',
+      contact: r.get('Contact Number') || '',
+      email: r.get('Mail ID') || '',
+      sittingBranch: r.get('Sitting Branch') || '',
+      assignedBranches: r.get('Assigned Branches') || '',
+      password: r.get('Password') || '',
+      role: r.get('Role') || '',
+      course: r.get('Course') || '',
+      access: r.get('Access') || ''
+    }));
+    res.json({ success: true, users: usersList.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+app.post('/api/admin/users/add', async (req, res) => {
+  try {
+    const userSheet = doc.sheetsByTitle["User"];
+    await userSheet.addRow({
+      'USER Name': req.body.userName || '',
+      'Contact Number': req.body.contact || '',
+      'Mail ID': req.body.email || '',
+      'Sitting Branch': req.body.sittingBranch || '',
+      'Assigned Branches': req.body.assignedBranches || '',
+      'Profile Photo': '',
+      'Password': req.body.password || '',
+      'Role': req.body.role || '',
+      'Course': req.body.course || '',
+      'Access': req.body.access || ''
+    });
+    refreshCache();
+    res.json({ success: true, message: "User added successfully" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+app.post('/api/admin/users/delete', async (req, res) => {
+  try {
+    const { rowNumber } = req.body;
+    const userSheet = doc.sheetsByTitle["User"];
+    const rows = await userSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (rows.length > 0) {
+      await rows[0].delete();
+      refreshCache();
+      res.json({ success: true, message: "User deleted" });
+    } else {
+      res.status(404).json({ success: false, message: "User not found" });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 const PORT = process.env.PORT || 5000;
