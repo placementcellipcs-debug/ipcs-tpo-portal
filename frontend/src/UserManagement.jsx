@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   ShieldCheck, UserPlus, Trash, CircleNotch, WarningCircle, 
-  UserGear, IdentificationBadge, MagnifyingGlass
+  UsersThree, IdentificationCard, MagnifyingGlass
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -78,7 +78,7 @@ export default function UserManagement() {
     }
   };
 
-  // If someone bypasses the UI and isn't a Super Admin, block them
+  // If someone bypasses the UI and isn't a Super Admin, block them safely
   if (tpoData?.accessType !== 'superadmin') {
     return (
       <Layout>
@@ -91,10 +91,11 @@ export default function UserManagement() {
     );
   }
 
+  // 🚨 SAFELY FILTER: Wraps everything in String() so it can't crash if the sheet sends a number
   const filteredUsers = users.filter(u => 
-    u.userName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    u.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    u.email.toLowerCase().includes(searchQuery.toLowerCase())
+    String(u.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+    String(u.role || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    String(u.email || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -105,7 +106,7 @@ export default function UserManagement() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
           <div>
             <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <UserGear color="var(--accent-primary)" weight="fill" /> User Management
+              <UsersThree color="var(--accent-primary)" weight="fill" /> User Management
             </h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Create, edit, and revoke portal access for Regional Heads, Managers, and Admins.</p>
           </div>
@@ -145,44 +146,50 @@ export default function UserManagement() {
               ) : filteredUsers.length === 0 ? (
                 <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem' }}>No users found matching your search.</td></tr>
               ) : (
-                filteredUsers.map((user, i) => (
-                  <tr key={i}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                        <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(56, 189, 248, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8', fontWeight: 'bold', border: '1px solid #0284c7' }}>
-                          {user.userName ? user.userName.charAt(0).toUpperCase() : '?'}
+                filteredUsers.map((user, i) => {
+                  // 🚨 SAFELY EXTRACT ACCESS TYPES
+                  const accessLvl = String(user.access || '').toLowerCase();
+                  
+                  return (
+                    <tr key={i}>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                          <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(56, 189, 248, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8', fontWeight: 'bold', border: '1px solid #0284c7' }}>
+                            {/* 🚨 SAFELY RENDER AVATAR INITIAL */}
+                            {user.userName ? String(user.userName).charAt(0).toUpperCase() : '?'}
+                          </div>
+                          <div>
+                            <span className="primary-text" style={{ fontSize: '1rem' }}>{user.userName || 'Unnamed User'}</span>
+                            <span className="sub-text">{user.email || 'No Email'} • {user.contact || 'No Contact'}</span>
+                          </div>
                         </div>
-                        <div>
-                          <span className="primary-text" style={{ fontSize: '1rem' }}>{user.userName || 'Unnamed User'}</span>
-                          <span className="sub-text">{user.email || 'No Email'} • {user.contact || 'No Contact'}</span>
-                        </div>
-                      </div>
-                    </td>
-                    <td>
-                      <span className="primary-text">{user.role || 'Unassigned'}</span>
-                      <span className={`badge ${user.access?.toLowerCase().includes('super') ? 'badge-blue' : user.access?.toLowerCase().includes('edit') ? 'badge-green' : ''}`} style={{ marginTop: '5px', background: user.access?.toLowerCase().includes('view only') ? 'rgba(245, 158, 11, 0.15)' : '', color: user.access?.toLowerCase().includes('view only') ? '#f59e0b' : '', border: user.access?.toLowerCase().includes('view only') ? '1px solid #f59e0b' : '' }}>
-                        {user.access || 'View Only'}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="primary-text">{user.course || 'All Courses'}</span>
-                      <span className="sub-text">{user.assignedBranches || user.sittingBranch || 'Global Scope'}</span>
-                    </td>
-                    <td>
-                      <span className="primary-text" style={{ fontFamily: 'monospace' }}>Login ID: {user.email || user.userName}</span>
-                      <span className="sub-text" style={{ fontFamily: 'monospace' }}>Pass: {user.password}</span>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      <button 
-                        onClick={() => handleDeleteUser(user.rowNumber, user.userName)}
-                        style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
-                        title="Delete User"
-                      >
-                        <Trash size={18} weight="fill" />
-                      </button>
-                    </td>
-                  </tr>
-                ))
+                      </td>
+                      <td>
+                        <span className="primary-text">{user.role || 'Unassigned'}</span>
+                        <span className={`badge ${accessLvl.includes('super') ? 'badge-blue' : accessLvl.includes('edit') ? 'badge-green' : ''}`} style={{ marginTop: '5px', background: accessLvl.includes('view only') ? 'rgba(245, 158, 11, 0.15)' : '', color: accessLvl.includes('view only') ? '#f59e0b' : '', border: accessLvl.includes('view only') ? '1px solid #f59e0b' : '' }}>
+                          {user.access || 'View Only'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="primary-text">{user.course || 'All Courses'}</span>
+                        <span className="sub-text">{user.assignedBranches || user.sittingBranch || 'Global Scope'}</span>
+                      </td>
+                      <td>
+                        <span className="primary-text" style={{ fontFamily: 'monospace' }}>Login: {user.email || user.userName}</span>
+                        <span className="sub-text" style={{ fontFamily: 'monospace' }}>Pass: {user.password}</span>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <button 
+                          onClick={() => handleDeleteUser(user.rowNumber, user.userName)}
+                          style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
+                          title="Delete User"
+                        >
+                          <Trash size={18} weight="fill" />
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -195,7 +202,7 @@ export default function UserManagement() {
           <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><IdentificationBadge color="var(--accent-primary)" /> Add New System User</h2>
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><IdentificationCard color="var(--accent-primary)" /> Add New System User</h2>
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsModalOpen(false)} />
             </div>
 
@@ -213,7 +220,7 @@ export default function UserManagement() {
                 </div>
                 <div className="form-group">
                   <label>Login Mail ID</label>
-                  <input type="email" name="email" value={formData.email} onChange={handleInputChange} required />
+                  <input type="text" name="email" value={formData.email} onChange={handleInputChange} required />
                 </div>
               </div>
 
