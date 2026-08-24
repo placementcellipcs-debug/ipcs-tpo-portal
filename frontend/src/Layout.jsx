@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   SignOut, Bell, Moon, Sun, X, SquaresFour, Trophy, ListChecks, Headset, 
-  UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake, LockKey
+  UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake
 } from '@phosphor-icons/react';
 
 export default function Layout({ children }) {
@@ -118,9 +118,9 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/reports'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> Reports</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> Talentino</div><span>›</span></div>
             
-            {/* 🚨 SAFE ICON USED FOR USER MANAGEMENT */}
+            {/* 🚨 REPLACED CRASHING ICON WITH SAFE 'Users' ICON */}
             {tpoData.accessType === 'superadmin' && (
-               <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><LockKey size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
+               <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
             )}
 
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/settings'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Gear size={22} color={isActive('/settings')} /> Settings</div><span>›</span></div>

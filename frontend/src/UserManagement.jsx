@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
-  LockKey, UserPlus, Trash, CircleNotch, WarningCircle, Users, 
-  IdentificationCard, MagnifyingGlass // 🚨 FIXED: Added the missing imports here!
+  Users, UserCheck, X, CircleNotch, Prohibit 
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -79,12 +78,12 @@ export default function UserManagement() {
     }
   };
 
-  // Block unauthorized access gracefully
+  // Safe Access Denied Fallback
   if (tpoData?.accessType !== 'superadmin') {
     return (
       <Layout>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--text-muted)' }}>
-          <LockKey size={64} color="#ef4444" weight="fill" style={{ marginBottom: '20px' }} />
+          <Prohibit size={64} color="#ef4444" weight="fill" style={{ marginBottom: '20px' }} />
           <h2>Access Denied</h2>
           <p>You do not have Super Admin privileges to view this page.</p>
         </div>
@@ -92,7 +91,8 @@ export default function UserManagement() {
     );
   }
 
-  const filteredUsers = users.filter(u => 
+  // Guaranteed safe filtering
+  const filteredUsers = (users || []).filter(u => 
     String(u.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
     String(u.role || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
     String(u.email || '').toLowerCase().includes(searchQuery.toLowerCase())
@@ -102,7 +102,6 @@ export default function UserManagement() {
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        {/* Header Section */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
           <div>
             <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -111,24 +110,21 @@ export default function UserManagement() {
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Create, edit, and revoke portal access for Regional Heads, Managers, and Admins.</p>
           </div>
           <button className="btn-action" onClick={() => setIsModalOpen(true)} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
-            <UserPlus size={20} weight="bold" /> Add New User
+            <UserCheck size={20} weight="bold" /> Add New User
           </button>
         </div>
 
-        {/* Search Bar */}
-        <div style={{ marginBottom: '20px', position: 'relative', maxWidth: '400px' }}>
-          <MagnifyingGlass size={20} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+        <div style={{ marginBottom: '20px', maxWidth: '400px' }}>
           <input 
             type="text" 
             placeholder="Search by name, role, or email..." 
             className="sleek-input" 
-            style={{ width: '100%', paddingLeft: '45px' }}
+            style={{ width: '100%' }}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </div>
 
-        {/* Users Data Table */}
         <div className="table-container">
           <table className="modern-table">
             <thead>
@@ -178,10 +174,10 @@ export default function UserManagement() {
                       <td style={{ textAlign: 'center' }}>
                         <button 
                           onClick={() => handleDeleteUser(user.rowNumber, user.userName)}
-                          style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
+                          style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s', fontWeight: 'bold' }}
                           title="Delete User"
                         >
-                          <Trash size={18} weight="fill" />
+                          <X size={16} weight="bold" />
                         </button>
                       </td>
                     </tr>
@@ -193,19 +189,18 @@ export default function UserManagement() {
         </div>
       </div>
 
-      {/* Add User Modal */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><IdentificationCard color="var(--accent-primary)" /> Add New System User</h2>
-              <span style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: '1.5rem', fontWeight: 'bold' }} onClick={() => setIsModalOpen(false)}>✕</span>
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><UserCheck color="var(--accent-primary)" /> Add New System User</h2>
+              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsModalOpen(false)} />
             </div>
 
             {error && (
               <div className="alert alert-error" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <WarningCircle size={20} /> {error}
+                <Prohibit size={20} /> {error}
               </div>
             )}
 
