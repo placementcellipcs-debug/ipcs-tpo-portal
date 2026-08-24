@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { 
+  Users, UserPlus, Trash, CircleNotch, WarningCircle, X, Prohibit 
+} from '@phosphor-icons/react';
 import Layout from './Layout';
 
 export default function UserManagement() {
@@ -75,12 +78,12 @@ export default function UserManagement() {
     }
   };
 
-  // 🚨 SAFE ACCESS DENIED FALLBACK
+  // Block unauthorized access
   if (tpoData?.accessType !== 'superadmin') {
     return (
       <Layout>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--text-muted)', textAlign: 'center' }}>
-          <div style={{ fontSize: '4rem', marginBottom: '20px' }}>⛔</div>
+          <Prohibit size={64} color="#ef4444" weight="fill" style={{ marginBottom: '20px' }} />
           <h2>Access Denied</h2>
           <p>You do not have Super Admin privileges to view this page.</p>
         </div>
@@ -102,22 +105,21 @@ export default function UserManagement() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
           <div>
             <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              👥 User Management
+              <Users color="var(--accent-primary)" weight="fill" /> User Management
             </h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Create, edit, and revoke portal access for Regional Heads, Managers, and Admins.</p>
           </div>
           <button className="btn-action" onClick={() => setIsModalOpen(true)} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
-            + Add New User
+            <UserPlus size={20} weight="bold" /> Add New User
           </button>
         </div>
 
-        <div style={{ marginBottom: '20px', maxWidth: '400px', position: 'relative' }}>
-          <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)' }}>🔍</span>
+        <div style={{ marginBottom: '20px', maxWidth: '400px' }}>
           <input 
             type="text" 
             placeholder="Search by name, role, or email..." 
             className="sleek-input" 
-            style={{ width: '100%', paddingLeft: '45px' }}
+            style={{ width: '100%' }}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -136,7 +138,7 @@ export default function UserManagement() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem' }}>⏳ Fetching Users...</td></tr>
+                <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="var(--accent-primary)" /></td></tr>
               ) : filteredUsers.length === 0 ? (
                 <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem' }}>No users found matching your search.</td></tr>
               ) : (
@@ -172,10 +174,10 @@ export default function UserManagement() {
                       <td style={{ textAlign: 'center' }}>
                         <button 
                           onClick={() => handleDeleteUser(user.rowNumber, user.userName)}
-                          style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s', fontWeight: 'bold' }}
+                          style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
                           title="Delete User"
                         >
-                          🗑️ Delete
+                          <Trash size={18} weight="fill" />
                         </button>
                       </td>
                     </tr>
@@ -187,18 +189,19 @@ export default function UserManagement() {
         </div>
       </div>
 
+      {/* Add User Modal */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>📋 Add New System User</h2>
-              <span style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: '1.5rem', fontWeight: 'bold' }} onClick={() => setIsModalOpen(false)}>✕</span>
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><UserPlus color="var(--accent-primary)" /> Add New System User</h2>
+              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsModalOpen(false)} />
             </div>
 
             {error && (
               <div className="alert alert-error" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                ⚠️ {error}
+                <WarningCircle size={20} /> {error}
               </div>
             )}
 
@@ -271,7 +274,7 @@ export default function UserManagement() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn-action" style={{ width: 'auto' }} disabled={isSubmitting}>
-                  {isSubmitting ? '⏳ Saving...' : 'Create User'}
+                  {isSubmitting ? <CircleNotch size={20} className="ph-spin" /> : 'Create User'}
                 </button>
               </div>
             </form>

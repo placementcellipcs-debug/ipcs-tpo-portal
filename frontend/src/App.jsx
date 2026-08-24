@@ -13,6 +13,7 @@ import Talentino from './Talentino';
 import Settings from './Settings';
 import Clients from './Clients';
 import CertificateSign from './CertificateSign';
+import UserManagement from './UserManagement'; // 🚨 IMPORT ADDED HERE
 
 function App() {
   return (
@@ -31,9 +32,10 @@ function App() {
         <Route path="/talentino" element={<Talentino />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/clients" element={<Clients />} />
-        
-        {/* 🚨 THE FIX IS HERE: Corrected the path and added /:id to catch the row number */}
         <Route path="/sign-certificate/:id" element={<CertificateSign />} />
+        
+        {/* 🚨 ROUTE ADDED HERE */}
+        <Route path="/users" element={<UserManagement />} />
       </Routes>
     </BrowserRouter>
   );
