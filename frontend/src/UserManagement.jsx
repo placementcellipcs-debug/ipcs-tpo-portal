@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
-  ShieldCheck, UserPlus, Trash, CircleNotch, WarningCircle, 
-  UsersThree, IdentificationCard, MagnifyingGlass
+  LockKey, UserPlus, Trash, CircleNotch, WarningCircle, Users
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -27,11 +26,13 @@ export default function UserManagement() {
   const fetchUsers = async () => {
     try {
       const res = await axios.get('https://ipcs-tpo-portal.onrender.com/api/admin/users');
-      if (res.data.success) {
-        setUsers(res.data.users);
+      if (res.data && res.data.success) {
+        // 🚨 SAFE FALLBACK to ensure it is an array
+        setUsers(res.data.users || []);
       }
     } catch (err) {
       console.error("Failed to load users", err);
+      setUsers([]);
     } finally {
       setLoading(false);
     }
@@ -56,7 +57,7 @@ export default function UserManagement() {
         setIsModalOpen(false);
         setFormData({ userName: '', email: '', contact: '', password: '', role: 'Regional Technical Head', course: '', sittingBranch: '', assignedBranches: '', access: 'View Only' });
         setLoading(true);
-        fetchUsers(); // Refresh the list
+        fetchUsers(); 
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to add user.');
@@ -78,12 +79,12 @@ export default function UserManagement() {
     }
   };
 
-  // If someone bypasses the UI and isn't a Super Admin, block them safely
+  // Block unauthorized access gracefully
   if (tpoData?.accessType !== 'superadmin') {
     return (
       <Layout>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', color: 'var(--text-muted)' }}>
-          <ShieldCheck size={64} color="#ef4444" weight="fill" style={{ marginBottom: '20px' }} />
+          <LockKey size={64} color="#ef4444" weight="fill" style={{ marginBottom: '20px' }} />
           <h2>Access Denied</h2>
           <p>You do not have Super Admin privileges to view this page.</p>
         </div>
@@ -91,7 +92,7 @@ export default function UserManagement() {
     );
   }
 
-  // 🚨 SAFELY FILTER: Wraps everything in String() so it can't crash if the sheet sends a number
+  // 🚨 SAFELY FILTER: Wraps everything in String() to prevent numeric crashes
   const filteredUsers = users.filter(u => 
     String(u.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
     String(u.role || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -106,7 +107,7 @@ export default function UserManagement() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
           <div>
             <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <UsersThree color="var(--accent-primary)" weight="fill" /> User Management
+              <Users color="var(--accent-primary)" weight="fill" /> User Management
             </h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Create, edit, and revoke portal access for Regional Heads, Managers, and Admins.</p>
           </div>
@@ -116,13 +117,12 @@ export default function UserManagement() {
         </div>
 
         {/* Search Bar */}
-        <div style={{ marginBottom: '20px', position: 'relative', maxWidth: '400px' }}>
-          <MagnifyingGlass size={20} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+        <div style={{ marginBottom: '20px', maxWidth: '400px' }}>
           <input 
             type="text" 
             placeholder="Search by name, role, or email..." 
             className="sleek-input" 
-            style={{ width: '100%', paddingLeft: '45px' }}
+            style={{ width: '100%' }}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -147,15 +147,12 @@ export default function UserManagement() {
                 <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem' }}>No users found matching your search.</td></tr>
               ) : (
                 filteredUsers.map((user, i) => {
-                  // 🚨 SAFELY EXTRACT ACCESS TYPES
                   const accessLvl = String(user.access || '').toLowerCase();
-                  
                   return (
                     <tr key={i}>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                           <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(56, 189, 248, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8', fontWeight: 'bold', border: '1px solid #0284c7' }}>
-                            {/* 🚨 SAFELY RENDER AVATAR INITIAL */}
                             {user.userName ? String(user.userName).charAt(0).toUpperCase() : '?'}
                           </div>
                           <div>
@@ -175,7 +172,7 @@ export default function UserManagement() {
                         <span className="sub-text">{user.assignedBranches || user.sittingBranch || 'Global Scope'}</span>
                       </td>
                       <td>
-                        <span className="primary-text" style={{ fontFamily: 'monospace' }}>Login: {user.email || user.userName}</span>
+                        <span className="primary-text" style={{ fontFamily: 'monospace' }}>Login ID: {user.email || user.userName}</span>
                         <span className="sub-text" style={{ fontFamily: 'monospace' }}>Pass: {user.password}</span>
                       </td>
                       <td style={{ textAlign: 'center' }}>
@@ -202,8 +199,8 @@ export default function UserManagement() {
           <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><IdentificationCard color="var(--accent-primary)" /> Add New System User</h2>
-              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsModalOpen(false)} />
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><UserPlus color="var(--accent-primary)" /> Add New System User</h2>
+              <span style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: '1.5rem', fontWeight: 'bold' }} onClick={() => setIsModalOpen(false)}>✕</span>
             </div>
 
             {error && (
