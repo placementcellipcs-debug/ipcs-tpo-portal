@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
-  LockKey, UserPlus, Trash, CircleNotch, WarningCircle, Users
+  LockKey, UserPlus, Trash, CircleNotch, WarningCircle, Users, 
+  IdentificationCard, MagnifyingGlass // 🚨 FIXED: Added the missing imports here!
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -27,7 +28,6 @@ export default function UserManagement() {
     try {
       const res = await axios.get('https://ipcs-tpo-portal.onrender.com/api/admin/users');
       if (res.data && res.data.success) {
-        // 🚨 SAFE FALLBACK to ensure it is an array
         setUsers(res.data.users || []);
       }
     } catch (err) {
@@ -92,7 +92,6 @@ export default function UserManagement() {
     );
   }
 
-  // 🚨 SAFELY FILTER: Wraps everything in String() to prevent numeric crashes
   const filteredUsers = users.filter(u => 
     String(u.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
     String(u.role || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -117,12 +116,13 @@ export default function UserManagement() {
         </div>
 
         {/* Search Bar */}
-        <div style={{ marginBottom: '20px', maxWidth: '400px' }}>
+        <div style={{ marginBottom: '20px', position: 'relative', maxWidth: '400px' }}>
+          <MagnifyingGlass size={20} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
           <input 
             type="text" 
             placeholder="Search by name, role, or email..." 
             className="sleek-input" 
-            style={{ width: '100%' }}
+            style={{ width: '100%', paddingLeft: '45px' }}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -199,7 +199,7 @@ export default function UserManagement() {
           <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><UserPlus color="var(--accent-primary)" /> Add New System User</h2>
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><IdentificationCard color="var(--accent-primary)" /> Add New System User</h2>
               <span style={{ cursor: 'pointer', color: 'var(--text-muted)', fontSize: '1.5rem', fontWeight: 'bold' }} onClick={() => setIsModalOpen(false)}>✕</span>
             </div>
 
