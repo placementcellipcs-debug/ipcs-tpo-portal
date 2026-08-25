@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   CircleNotch, FileText, Plus, CaretLeft, Question, ChartBar, CheckCircle, 
-  WarningCircle, X, FolderOpen, BookBookmark, ListChecks
+  WarningCircle, X, FolderOpen, BookBookmark, ListChecks, PencilSimple, Trash, Eye
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -52,10 +52,11 @@ export default function TechnicalExams() {
   const [viewLevel, setViewLevel] = useState(isSuperAdmin ? 'main_courses' : 'sub_courses');
   const [selectedMainCourse, setSelectedMainCourse] = useState(isSuperAdmin ? null : rthAssignedCourse);
   const [selectedSubCourse, setSelectedSubCourse] = useState(null);
-  const [activeTab, setActiveTab] = useState('questions'); // 'questions' or 'results'
+  const [activeTab, setActiveTab] = useState('questions'); 
 
-  // Modal State
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  // Modals State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [viewQuestionModal, setViewQuestionModal] = useState(null); // Stores question to view
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
@@ -64,9 +65,10 @@ export default function TechnicalExams() {
 
   const fetchData = async () => {
     try {
+      // 🚨 Ensure this uses your active Render URL
       const [qRes, rRes] = await Promise.all([
-        axios.get('https://ipcs-backend-v2.onrender.com/api/exams/questions'), // Ensure this matches your new Render URL!
-        axios.get('https://ipcs-backend-v2.onrender.com/api/exams/results')
+        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/questions'), 
+        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/results')
       ]);
       if (qRes.data.success) setQuestions(qRes.data.questions || []);
       if (rRes.data.success) setResults(rRes.data.results || []);
@@ -89,11 +91,11 @@ export default function TechnicalExams() {
     const randomId = `QST${Math.floor(10000 + Math.random() * 90000)}`;
     setFormData({
       id: randomId, 
-      course: selectedSubCourse || (COURSE_DICTIONARY[selectedMainCourse] ? COURSE_DICTIONARY[selectedMainCourse][0] : ''), 
+      course: selectedSubCourse || '', 
       question: '', optA: '', optB: '', optC: '', optD: '', correct: 'A', explanation: '', status: 'Active'
     });
     setError('');
-    setIsModalOpen(true);
+    setIsAddModalOpen(true);
   };
 
   const handleAddQuestion = async (e) => {
@@ -102,9 +104,9 @@ export default function TechnicalExams() {
     setError('');
 
     try {
-      const res = await axios.post('https://ipcs-backend-v2.onrender.com/api/exams/questions/add', formData);
+      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/questions/add', formData);
       if (res.data.success) {
-        setIsModalOpen(false);
+        setIsAddModalOpen(false);
         setLoading(true);
         fetchData(); 
       }
@@ -115,13 +117,31 @@ export default function TechnicalExams() {
     }
   };
 
+  const handleDeleteQuestion = async (id) => {
+    if(!window.confirm("Are you sure you want to delete this question?")) return;
+    
+    try {
+      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/questions/delete', { id });
+      if (res.data.success) {
+        setQuestions(questions.filter(q => q.id !== id));
+      }
+    } catch (err) {
+      alert("Failed to delete question.");
+    }
+  };
+
+  // 🚨 ADDED .trim() to ensure matching ignores accidental Google Sheets spaces
   const filteredQuestions = questions.filter(q => {
-    return q.course === selectedSubCourse && 
+    const qCourse = (q.course || '').trim();
+    const selCourse = (selectedSubCourse || '').trim();
+    return qCourse === selCourse && 
            (q.question || '').toLowerCase().includes(searchQuery.toLowerCase());
   });
 
   const filteredResults = results.filter(r => {
-    return r.course === selectedSubCourse && 
+    const rCourse = (r.course || '').trim();
+    const selCourse = (selectedSubCourse || '').trim();
+    return rCourse === selCourse && 
            ((r.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
             (r.rollNo || '').toLowerCase().includes(searchQuery.toLowerCase()));
   });
@@ -253,7 +273,7 @@ export default function TechnicalExams() {
                       <th>Question Details</th>
                       <th>Options</th>
                       <th style={{ textAlign: 'center' }}>Correct Answer</th>
-                      <th style={{ textAlign: 'center' }}>Status</th>
+                      <th style={{ textAlign: 'center' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -280,10 +300,22 @@ export default function TechnicalExams() {
                             </div>
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: q.status.toLowerCase() === 'active' ? '#10b981' : '#ef4444', fontWeight: 'bold', fontSize: '0.8rem' }}>
-                              {q.status.toLowerCase() === 'active' ? <CheckCircle size={16} weight="fill" /> : <WarningCircle size={16} weight="fill" />} 
-                              {q.status}
-                            </span>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                              <button 
+                                onClick={() => setViewQuestionModal(q)}
+                                style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
+                                title="View Question"
+                              >
+                                <Eye size={18} weight="bold" />
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteQuestion(q.id)}
+                                style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
+                                title="Delete Question"
+                              >
+                                <Trash size={18} weight="bold" />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -339,14 +371,47 @@ export default function TechnicalExams() {
 
       </div>
 
+      {/* ========================================== */}
+      {/* VIEW FULL QUESTION MODAL */}
+      {/* ========================================== */}
+      {viewQuestionModal && (
+         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+         <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
+           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+             <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><Eye color="var(--accent-primary)" /> Question Details</h2>
+             <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setViewQuestionModal(null)} />
+           </div>
+           
+           <div style={{ background: '#161e2e', padding: '15px', borderRadius: '8px', border: '1px solid #1e293b', marginBottom: '15px' }}>
+             <p style={{ margin: 0, fontSize: '1.1rem', lineHeight: 1.5 }}>{viewQuestionModal.question}</p>
+           </div>
+           
+           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
+             <div style={{ padding: '10px', background: viewQuestionModal.correct === 'A' ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-dark)', border: viewQuestionModal.correct === 'A' ? '1px solid #10b981' : '1px solid var(--card-border)', borderRadius: '8px' }}><b>A:</b> {viewQuestionModal.optA}</div>
+             <div style={{ padding: '10px', background: viewQuestionModal.correct === 'B' ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-dark)', border: viewQuestionModal.correct === 'B' ? '1px solid #10b981' : '1px solid var(--card-border)', borderRadius: '8px' }}><b>B:</b> {viewQuestionModal.optB}</div>
+             <div style={{ padding: '10px', background: viewQuestionModal.correct === 'C' ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-dark)', border: viewQuestionModal.correct === 'C' ? '1px solid #10b981' : '1px solid var(--card-border)', borderRadius: '8px' }}><b>C:</b> {viewQuestionModal.optC}</div>
+             <div style={{ padding: '10px', background: viewQuestionModal.correct === 'D' ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-dark)', border: viewQuestionModal.correct === 'D' ? '1px solid #10b981' : '1px solid var(--card-border)', borderRadius: '8px' }}><b>D:</b> {viewQuestionModal.optD}</div>
+           </div>
+
+           {viewQuestionModal.explanation && (
+             <div style={{ padding: '15px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid #0284c7', borderRadius: '8px', color: '#38bdf8', fontSize: '0.9rem' }}>
+               <b>Explanation:</b> {viewQuestionModal.explanation}
+             </div>
+           )}
+         </div>
+       </div>
+      )}
+
+      {/* ========================================== */}
       {/* ADD QUESTION MODAL */}
-      {isModalOpen && (
+      {/* ========================================== */}
+      {isAddModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="modal-card" style={{ maxWidth: '700px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
               <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><ListChecks color="var(--accent-primary)" /> Add Exam Question</h2>
-              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsModalOpen(false)} />
+              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsAddModalOpen(false)} />
             </div>
 
             {error && (
@@ -418,7 +483,7 @@ export default function TechnicalExams() {
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '1.5rem' }}>
-                <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
+                <button type="button" className="btn-secondary" onClick={() => setIsAddModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn-action" style={{ width: 'auto' }} disabled={isSubmitting}>
                   {isSubmitting ? <CircleNotch size={20} className="ph-spin" /> : 'Save Question'}
                 </button>

@@ -66,8 +66,10 @@ app.post('/api/admin/users/delete', controllers.deleteAdminUser);
 // 🚨 NEW LMS & EXAM ENGINE ROUTES
 app.get('/api/lms/materials', controllers.getMaterials);
 app.post('/api/lms/materials/add', controllers.addMaterial);
+
 app.get('/api/exams/questions', controllers.getQuestions);
 app.post('/api/exams/questions/add', controllers.addQuestion);
+app.post('/api/exams/questions/delete', controllers.deleteQuestion); // 🚨 ADD THIS LINE
 app.get('/api/exams/results', controllers.getResults);
 
 // ==========================================

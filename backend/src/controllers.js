@@ -651,13 +651,42 @@ exports.addQuestion = async (req, res) => {
     const { id, course, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
     const sheet = doc.sheetsByTitle["Tech_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const h = sheet.headerValues;
+    
+    // Using exact Google Sheet headers to prevent mapping errors
     await sheet.addRow({
-      [getFuzzyHeader(h, 'questionid')]: id, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA,
-      [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct,
-      [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active'
+      'Question ID': id,
+      'Course': course,
+      'Question': question,
+      'Option A': optA,
+      'Option B': optB,
+      'Option C': optC,
+      'Option D': optD,
+      'Correct Option': correct,
+      'Explanation': explanation,
+      'Status': status || 'Active'
     });
-    refreshCache(); res.json({ success: true, message: "Question added successfully!" });
+    
+    refreshCache();
+    res.json({ success: true, message: "Question added successfully!" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteQuestion = async (req, res) => {
+  try {
+    const { id } = req.body;
+    const sheet = doc.sheetsByTitle["Tech_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const rows = await sheet.getRows();
+    const rowToDelete = rows.find(r => r.get('Question ID') === id);
+    
+    if (rowToDelete) {
+      await rowToDelete.delete();
+      refreshCache();
+      res.json({ success: true, message: "Question deleted" });
+    } else {
+      res.status(404).json({ success: false, message: "Question not found" });
+    }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
