@@ -133,12 +133,11 @@ function checkBranchMatch(branch, tpoBranchesArray) {
   return tpoBranchesArray.some(b => cleanSB.includes(b) || b.includes(cleanSB));
 }
 
-// 🚨 THE UNIVERSAL ACCESS ENGINE 🚨
+// UNIVERSAL ACCESS ENGINE
 function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCourse) {
   if (!role) role = 'TPO'; 
   const upperRole = role.toUpperCase();
   
-  // 1. SUPER ADMINS (See everything)
   if (upperRole.includes('ADMIN') || upperRole === 'GENERAL MANAGER' || upperRole === 'TECHNICAL HEAD' || upperRole === 'ZONAL PLACEMENT HEAD') {
     return true; 
   }
@@ -148,17 +147,14 @@ function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCo
   const matchCourse = (stdRowCourse === stdAssignedCourse) || stdAssignedCourse === 'OTHERS'; 
   const matchBranch = checkBranchMatch(rowBranch, assignedBranchesArray);
 
-  // 2. REGIONAL TECHNICAL HEAD (Course Only)
   if (upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD') {
     return matchCourse; 
   }
   
-  // 3. TERRITORY TECHNICAL HEAD & TRAINER (Branch AND Course)
   if (upperRole.includes('TTH') || upperRole === 'TERRITORY TECHNICAL HEAD' || upperRole.includes('TRAINER')) {
     return matchBranch && matchCourse;
   }
 
-  // 4. REGIONAL MGR, TERRITORY MGR, BRANCH MGR, TECH LEAD, TPO (Branch Only)
   return matchBranch; 
 }
 
@@ -183,7 +179,6 @@ app.post('/api/auth/login', async (req, res) => {
     let course = 'All';
     let nameField = 'username';
 
-    // 1. Check Contact Sheet
     const contactSheet = doc.sheetsByTitle["Contact"];
     if (contactSheet) {
       const rows = await contactSheet.getRows();
@@ -206,7 +201,6 @@ app.post('/api/auth/login', async (req, res) => {
       }
     }
 
-    // 2. Check User Sheet
     if (!foundUser) {
       const userSheet = doc.sheetsByTitle["User"];
       if (userSheet) {
@@ -239,7 +233,6 @@ app.post('/api/auth/login', async (req, res) => {
     
     const upperRole = role.toUpperCase();
     
-    // Calculate accessType (Super Admin vs Edit vs View Only)
     let accessType = 'edit';
     const sheetAccess = (foundUser['access'] || '').toString().toUpperCase();
     
@@ -251,7 +244,6 @@ app.post('/api/auth/login', async (req, res) => {
       accessType = 'edit';
     }
 
-    // Super Admins & RTHs need to see ALL branches in the landing page tiles
     if (accessType === 'superadmin' || upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD' || assignedArray.length === 0) {
       assignedArray = ['all'];
     }
@@ -268,7 +260,7 @@ app.post('/api/auth/login', async (req, res) => {
         phone: foundUser['contactnumber'] || foundUser['contact'] || foundUser['phoneno'] || 'Not Provided',
         role: role,             
         assignedCourse: course,
-        accessType: accessType // 🚨 Sends EXACT permissions to the frontend
+        accessType: accessType 
       }
     });
   } catch (error) { 
@@ -938,52 +930,82 @@ app.post('/api/tpo/profile/update-photo', upload.single('photo'), async (req, re
 // ==========================================
 // 🚨 ADMIN: USER MANAGEMENT API ROUTES 
 // ==========================================
+
+// Helper for fuzzy header matching
+const getFuzzyHeader = (headers, target) => {
+  const cleanTarget = target.toLowerCase().replace(/\s/g, '');
+  return headers.find(h => h.toLowerCase().replace(/\s/g, '') === cleanTarget) || target;
+};
+
 app.get('/api/admin/users', async (req, res) => {
   try {
     await doc.loadInfo();
-    const contactSheet = doc.sheetsByTitle["Contact"];
-    const userSheet = doc.sheetsByTitle["User"];
     let allUsers = [];
 
     // 1. Fetch TPOs from Contact Sheet
+    const contactSheet = doc.sheetsByTitle["Contact"];
     if (contactSheet) {
       const cRows = await contactSheet.getRows();
+      const headers = contactSheet.headerValues;
+      const hName = getFuzzyHeader(headers, 'tponame');
+      const hMail = getFuzzyHeader(headers, 'mailid');
+      const hContact = getFuzzyHeader(headers, 'contactnumber');
+      const hBranch = getFuzzyHeader(headers, 'sittingbranch');
+      const hAssign = getFuzzyHeader(headers, 'assignedbranches');
+      const hPass = getFuzzyHeader(headers, 'password');
+
       cRows.forEach(r => {
-        if (r.get('Mail ID') || r.get('TPO Name')) {
+        const email = r.get(hMail) || '';
+        const name = r.get(hName) || '';
+        if (email.trim() !== '' || name.trim() !== '') {
           allUsers.push({
             sheet: 'Contact',
             rowNumber: r.rowNumber,
-            userName: r.get('TPO Name') || '',
-            contact: r.get('Contact Number') || '',
-            email: r.get('Mail ID') || '',
-            sittingBranch: r.get('Sitting Branch') || '',
-            assignedBranches: r.get('Assigned Branches') || '',
-            password: r.get('Password') || '',
+            userName: name,
+            contact: r.get(hContact) || '',
+            email: email,
+            sittingBranch: r.get(hBranch) || '',
+            assignedBranches: r.get(hAssign) || '',
+            password: r.get(hPass) || '',
             role: 'TPO',
-            course: 'All',
+            course: 'All Courses',
             access: 'View & Edit'
           });
         }
       });
     }
 
-    // 2. Fetch RTH, Admins, etc. from User Sheet
+    // 2. Fetch User Sheet
+    const userSheet = doc.sheetsByTitle["User"];
     if (userSheet) {
       const uRows = await userSheet.getRows();
+      const headers = userSheet.headerValues;
+      const hName = getFuzzyHeader(headers, 'username');
+      const hMail = getFuzzyHeader(headers, 'mailid');
+      const hContact = getFuzzyHeader(headers, 'contactnumber');
+      const hBranch = getFuzzyHeader(headers, 'sittingbranch');
+      const hAssign = getFuzzyHeader(headers, 'assignedbranches');
+      const hPass = getFuzzyHeader(headers, 'password');
+      const hRole = getFuzzyHeader(headers, 'role');
+      const hCourse = getFuzzyHeader(headers, 'course');
+      const hAccess = getFuzzyHeader(headers, 'access');
+
       uRows.forEach(r => {
-        if (r.get('Mail ID') || r.get('USER Name')) {
+        const email = r.get(hMail) || '';
+        const name = r.get(hName) || '';
+        if (email.trim() !== '' || name.trim() !== '') {
           allUsers.push({
             sheet: 'User',
             rowNumber: r.rowNumber,
-            userName: r.get('USER Name') || '',
-            contact: r.get('Contact Number') || '',
-            email: r.get('Mail ID') || '',
-            sittingBranch: r.get('Sitting Branch') || '',
-            assignedBranches: r.get('Assigned Branches') || '',
-            password: r.get('Password') || '',
-            role: r.get('Role') || '',
-            course: r.get('Course') || '',
-            access: r.get('Access') || ''
+            userName: name,
+            contact: r.get(hContact) || '',
+            email: email,
+            sittingBranch: r.get(hBranch) || '',
+            assignedBranches: r.get(hAssign) || '',
+            password: r.get(hPass) || '',
+            role: r.get(hRole) || 'Unassigned',
+            course: r.get(hCourse) || 'All Courses',
+            access: r.get(hAccess) || 'View Only'
           });
         }
       });
@@ -993,73 +1015,97 @@ app.get('/api/admin/users', async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-app.post('/api/admin/users/add', async (req, res) => {
-  try {
-    const { userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
-    
-    // If adding a TPO, save to Contact sheet. Otherwise, User sheet.
-    if (role === 'TPO') {
-      const contactSheet = doc.sheetsByTitle["Contact"];
-      await contactSheet.addRow({
-        'TPO Name': userName, 'Contact Number': contact, 'Mail ID': email,
-        'Sitting Branch': sittingBranch, 'Assigned Branches': assignedBranches, 'Password': password
-      });
-    } else {
-      const userSheet = doc.sheetsByTitle["User"];
-      await userSheet.addRow({
-        'USER Name': userName, 'Contact Number': contact, 'Mail ID': email,
-        'Sitting Branch': sittingBranch, 'Assigned Branches': assignedBranches, 'Profile Photo': '',
-        'Password': password, 'Role': role, 'Course': course, 'Access': access
-      });
-    }
-    
-    refreshCache();
-    res.json({ success: true, message: "User added successfully" });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-});
-
-app.post('/api/admin/users/update', async (req, res) => {
-  try {
-    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
-    const targetSheet = doc.sheetsByTitle[sheet];
-    if (!targetSheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-
-    const rows = await targetSheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    if (rows.length > 0) {
-      if (sheet === 'Contact') {
-        rows[0].assign({
-          'TPO Name': userName, 'Contact Number': contact, 'Mail ID': email,
-          'Sitting Branch': sittingBranch, 'Assigned Branches': assignedBranches, 'Password': password
-        });
-      } else {
-        rows[0].assign({
-          'USER Name': userName, 'Contact Number': contact, 'Mail ID': email,
-          'Sitting Branch': sittingBranch, 'Assigned Branches': assignedBranches,
-          'Password': password, 'Role': role, 'Course': course, 'Access': access
-        });
-      }
-      await rows[0].save();
-      refreshCache();
-      res.json({ success: true, message: "User updated successfully" });
-    } else {
-      res.status(404).json({ success: false, message: "User row not found" });
-    }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-});
-
 app.post('/api/admin/users/delete', async (req, res) => {
   try {
     const { sheet, rowNumber } = req.body;
     const targetSheet = doc.sheetsByTitle[sheet];
     if (!targetSheet) return res.status(404).json({ success: false, message: "Sheet not found" });
 
-    const rows = await targetSheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    if (rows.length > 0) {
-      await rows[0].delete();
+    const rows = await targetSheet.getRows();
+    const rowToDelete = rows.find(r => r.rowNumber === rowNumber);
+    
+    if (rowToDelete) {
+      await rowToDelete.delete();
       refreshCache();
       res.json({ success: true, message: "User deleted" });
     } else {
       res.status(404).json({ success: false, message: "User not found" });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+app.post('/api/admin/users/add', async (req, res) => {
+  try {
+    const { userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
+    
+    if (role === 'TPO') {
+      const s = doc.sheetsByTitle["Contact"];
+      const h = s.headerValues;
+      await s.addRow({
+        [getFuzzyHeader(h, 'tponame')]: userName,
+        [getFuzzyHeader(h, 'contactnumber')]: contact,
+        [getFuzzyHeader(h, 'mailid')]: email,
+        [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch,
+        [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches,
+        [getFuzzyHeader(h, 'password')]: password
+      });
+    } else {
+      const s = doc.sheetsByTitle["User"];
+      const h = s.headerValues;
+      await s.addRow({
+        [getFuzzyHeader(h, 'username')]: userName,
+        [getFuzzyHeader(h, 'contactnumber')]: contact,
+        [getFuzzyHeader(h, 'mailid')]: email,
+        [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch,
+        [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches,
+        [getFuzzyHeader(h, 'password')]: password,
+        [getFuzzyHeader(h, 'role')]: role,
+        [getFuzzyHeader(h, 'course')]: course,
+        [getFuzzyHeader(h, 'access')]: access
+      });
+    }
+    
+    refreshCache();
+    res.json({ success: true, message: "User added" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+app.post('/api/admin/users/update', async (req, res) => {
+  try {
+    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
+    const s = doc.sheetsByTitle[sheet];
+    const rows = await s.getRows();
+    const rowToUpdate = rows.find(r => r.rowNumber === rowNumber);
+    
+    if (rowToUpdate) {
+      const h = s.headerValues;
+      if (sheet === 'Contact') {
+        rowToUpdate.assign({
+          [getFuzzyHeader(h, 'tponame')]: userName,
+          [getFuzzyHeader(h, 'contactnumber')]: contact,
+          [getFuzzyHeader(h, 'mailid')]: email,
+          [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch,
+          [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches,
+          [getFuzzyHeader(h, 'password')]: password
+        });
+      } else {
+        rowToUpdate.assign({
+          [getFuzzyHeader(h, 'username')]: userName,
+          [getFuzzyHeader(h, 'contactnumber')]: contact,
+          [getFuzzyHeader(h, 'mailid')]: email,
+          [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch,
+          [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches,
+          [getFuzzyHeader(h, 'password')]: password,
+          [getFuzzyHeader(h, 'role')]: role,
+          [getFuzzyHeader(h, 'course')]: course,
+          [getFuzzyHeader(h, 'access')]: access
+        });
+      }
+      await rowToUpdate.save();
+      refreshCache();
+      res.json({ success: true, message: "User updated" });
+    } else {
+      res.status(404).json({ success: false, message: "User row not found" });
     }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
