@@ -754,3 +754,186 @@ exports.runDailyCron = async () => {
     await sendIPCSMail(mailOptions); 
   }
 };
+
+// ==========================================
+// 🚨 DYNAMIC COURSES
+// ==========================================
+exports.getCourses = (req, res) => {
+  try { res.json({ success: true, courses: getCache().coursesDict }); } 
+  catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addCourse = async (req, res) => {
+  try {
+    const { mainCourse, subCourse } = req.body;
+    const sheet = doc.sheetsByTitle["Courses"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    await sheet.addRow([mainCourse, subCourse]);
+    refreshCache(); res.json({ success: true, message: "Course saved" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteCourse = async (req, res) => {
+  try {
+    const { subCourse } = req.body;
+    const sheet = doc.sheetsByTitle["Courses"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    // Search column B for the exact subcourse name
+    const rowToDelete = rows.find(r => r._rawData[1] && r._rawData[1].trim() === subCourse.trim());
+    if (rowToDelete) {
+      await rowToDelete.delete();
+      refreshCache();
+      res.json({ success: true, message: "Course deleted" });
+    } else {
+      res.status(404).json({ success: false, message: "Course not found" });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+// ==========================================
+// 🚨 APTITUDE EXAMS
+// ==========================================
+exports.getAptQuestions = (req, res) => {
+  try {
+    let questions = getCache().aptQuestions.map(row => {
+      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      return {
+        id: rd[getH('qid')] || '', category: rd[getH('category')] || '', question: rd[getH('question')] || '',
+        optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '',
+        correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active', level: rd[getH('level')] || 'Easy'
+      };
+    });
+    res.json({ success: true, questions: questions.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.getAptResults = (req, res) => {
+  try {
+    let results = getCache().aptResults.map(row => {
+      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      return {
+        timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('email')] || rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', score: rd[getH('score')] || '', total: rd[getH('total')] || rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '', categoryBreakdown: rd[getH('categorybreakdown')] || ''
+      };
+    });
+    res.json({ success: true, results: results.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addAptQuestion = async (req, res) => {
+  try {
+    const { id, category, question, optA, optB, optC, optD, correct, explanation, status, level } = req.body;
+    const sheet = doc.sheetsByTitle["Aptitude_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const h = sheet.headerValues;
+    await sheet.addRow({
+      [getFuzzyHeader(h, 'qid')]: id,
+      [getFuzzyHeader(h, 'category')]: category,
+      [getFuzzyHeader(h, 'question')]: question,
+      [getFuzzyHeader(h, 'optiona')]: optA,
+      [getFuzzyHeader(h, 'optionb')]: optB,
+      [getFuzzyHeader(h, 'optionc')]: optC,
+      [getFuzzyHeader(h, 'optiond')]: optD,
+      [getFuzzyHeader(h, 'correctoption')]: correct,
+      [getFuzzyHeader(h, 'explanation')]: explanation,
+      [getFuzzyHeader(h, 'status')]: status || 'Active',
+      [getFuzzyHeader(h, 'level')]: level || 'Medium'
+    });
+    
+    refreshCache();
+    res.json({ success: true, message: "Question added" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteAptQuestion = async (req, res) => {
+  try {
+    const { id } = req.body;
+    const sheet = doc.sheetsByTitle["Aptitude_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const rows = await sheet.getRows();
+    const rowToDelete = rows.find(r => r.get('QID') === id || r.get('qid') === id);
+    
+    if (rowToDelete) {
+      await rowToDelete.delete();
+      refreshCache();
+      res.json({ success: true, message: "Question deleted" });
+    } else {
+      res.status(404).json({ success: false, message: "Question not found" });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+// ==========================================
+// 🚨 TALENTINO EXAMS
+// ==========================================
+exports.getTalExamQuestions = (req, res) => {
+  try {
+    let questions = getCache().talQuestions.map(row => {
+      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      return {
+        id: rd[getH('questionid')] || '', testNumber: rd[getH('textnumber')] || rd[getH('testnumber')] || '', question: rd[getH('question')] || '',
+        optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '',
+        correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active'
+      };
+    });
+    res.json({ success: true, questions: questions.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.getTalExamResults = (req, res) => {
+  try {
+    let results = getCache().talResults.map(row => {
+      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      return {
+        timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || rd[getH('email')] || '', branch: rd[getH('branch')] || '', testNumber: rd[getH('testnumbercompleted')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || ''
+      };
+    });
+    res.json({ success: true, results: results.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addTalExamQuestion = async (req, res) => {
+  try {
+    const { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
+    const sheet = doc.sheetsByTitle["Talentino_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const h = sheet.headerValues;
+    await sheet.addRow({
+      [getFuzzyHeader(h, 'questionid')]: id,
+      [getFuzzyHeader(h, 'testnumber')]: testNumber,
+      [getFuzzyHeader(h, 'question')]: question,
+      [getFuzzyHeader(h, 'optiona')]: optA,
+      [getFuzzyHeader(h, 'optionb')]: optB,
+      [getFuzzyHeader(h, 'optionc')]: optC,
+      [getFuzzyHeader(h, 'optiond')]: optD,
+      [getFuzzyHeader(h, 'correctoption')]: correct,
+      [getFuzzyHeader(h, 'explanation')]: explanation,
+      [getFuzzyHeader(h, 'status')]: status || 'Active'
+    });
+    
+    refreshCache();
+    res.json({ success: true, message: "Question added" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteTalExamQuestion = async (req, res) => {
+  try {
+    const { id } = req.body;
+    const sheet = doc.sheetsByTitle["Talentino_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const rows = await sheet.getRows();
+    const rowToDelete = rows.find(r => r.get('Question ID') === id || r.get('questionid') === id);
+    
+    if (rowToDelete) {
+      await rowToDelete.delete();
+      refreshCache();
+      res.json({ success: true, message: "Question deleted" });
+    } else {
+      res.status(404).json({ success: false, message: "Question not found" });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};

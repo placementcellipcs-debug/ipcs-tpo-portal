@@ -134,6 +134,22 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/reports'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> Reports</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> Talentino</div><span>›</span></div>
             
+            {/* 🚨 APTITUDE & TALENTINO EXAMS (RTH & Super Admin) */}
+            {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
+               <>
+                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/aptitude'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Brain size={22} color={isActive('/aptitude')} /> Aptitude Exams</div><span>›</span></div>
+                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino-exams'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><PenNib size={22} color={isActive('/talentino-exams')} /> Talentino Exams</div><span>›</span></div>
+               </>
+            )}
+
+            {/* 🚨 COURSES & USER MANAGEMENT (Super Admin ONLY) */}
+            {tpoData.accessType === 'superadmin' && (
+               <>
+                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/courses'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><BookBookmark size={22} color={isActive('/courses')} /> Manage Courses</div><span>›</span></div>
+                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
+               </>
+            )}
+            
             {/* 🚨 SAFELY IMPLEMENTED TABS */}
             {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
                <>

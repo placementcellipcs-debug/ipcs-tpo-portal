@@ -5,9 +5,6 @@ const { google } = require('googleapis');
 const nodemailer = require('nodemailer');
 const axios = require('axios');
 
-// ==========================================
-// GOOGLE AUTHENTICATION
-// ==========================================
 const serviceAccountAuth = new JWT({
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
   key: process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') : '',
@@ -17,9 +14,6 @@ const serviceAccountAuth = new JWT({
 const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth);
 const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 
-// ==========================================
-// CACHING ENGINE
-// ==========================================
 let globalCache = null;
 
 async function refreshCache() {
@@ -27,31 +21,65 @@ async function refreshCache() {
     await doc.loadInfo();
     const getSheet = (title) => doc.sheetsByIndex.find(s => s.title.trim().toLowerCase() === title.toLowerCase());
 
-    const [stuSheet, appSheet, vacSheet, eventSheet, issueSheet, tSchedSheet, tAttSheet, clientSheet, tpoLogSheet, matSheet, tqSheet, trSheet] = [
-      getSheet("Data"), getSheet("Opening_Applied"), getSheet("NewsLetter"), getSheet("Event"), getSheet("Issues"), getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients"), getSheet("TPO_Log"), getSheet("Study_Materials"), getSheet("Tech_Questions"), getSheet("Tech_Results")
+    const [
+      stuSheet, appSheet, vacSheet, eventSheet, issueSheet, tSchedSheet, tAttSheet, clientSheet, tpoLogSheet, 
+      matSheet, tqSheet, trSheet, aptQSheet, aptRSheet, talQSheet, talRSheet, courseSheet
+    ] = [
+      getSheet("Data"), getSheet("Opening_Applied"), getSheet("NewsLetter"), getSheet("Event"), getSheet("Issues"), 
+      getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients"), getSheet("TPO_Log"), 
+      getSheet("Study_Materials"), getSheet("Tech_Questions"), getSheet("Tech_Results"),
+      getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"), getSheet("Courses")
     ];
 
-    const [stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, matRows, tqRows, trRows] = await Promise.all([
-      stuSheet ? stuSheet.getRows() : [], appSheet ? appSheet.getRows() : [], vacSheet ? vacSheet.getRows() : [],
-      eventSheet ? eventSheet.getRows() : [], issueSheet ? issueSheet.getRows() : [], tSchedSheet ? tSchedSheet.getRows() : [], 
-      tAttSheet ? tAttSheet.getRows() : [], clientSheet ? clientSheet.getRows() : [], tpoLogSheet ? tpoLogSheet.getRows() : [],
-      matSheet ? matSheet.getRows() : [], tqSheet ? tqSheet.getRows() : [], trSheet ? trSheet.getRows() : []
+    const [
+      stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, 
+      matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows
+    ] = await Promise.all([
+      stuSheet?.getRows() || [], appSheet?.getRows() || [], vacSheet?.getRows() || [], eventSheet?.getRows() || [], 
+      issueSheet?.getRows() || [], tSchedSheet?.getRows() || [], tAttSheet?.getRows() || [], clientRows?.getRows() || [], 
+      tpoLogSheet?.getRows() || [], matSheet?.getRows() || [], tqSheet?.getRows() || [], trSheet?.getRows() || [],
+      aptQSheet?.getRows() || [], aptRSheet?.getRows() || [], talQSheet?.getRows() || [], talRSheet?.getRows() || []
     ]);
+
+    // 🚨 SMART PARSER FOR YOUR VISUAL COURSES SHEET
+    let coursesDict = {};
+    if (courseSheet) {
+      const cRows = await courseSheet.getRows();
+      let currentMain = "General";
+      
+      const headers = courseSheet.headerValues;
+      if (headers[0] && headers[0].trim() !== '') {
+         currentMain = headers[0].replace(/^\d+\.\s*/, '').trim();
+         coursesDict[currentMain] = [];
+      }
+      if (headers[1] && headers[1].trim() !== '') coursesDict[currentMain].push(headers[1].trim());
+
+      cRows.forEach(r => {
+         const valA = r._rawData[0];
+         const valB = r._rawData[1];
+         if (valA && valA.trim() !== '') {
+            currentMain = valA.replace(/^\d+\.\s*/, '').trim();
+            if (!coursesDict[currentMain]) coursesDict[currentMain] = [];
+         }
+         if (valB && valB.trim() !== '') {
+            if (!coursesDict[currentMain]) coursesDict[currentMain] = [];
+            coursesDict[currentMain].push(valB.trim());
+         }
+      });
+    }
 
     globalCache = { 
       students: stuRows, applications: appRows, vacancies: vacRows, events: eventRows, issues: issueRows, 
-      tSched: tSchedRows, tAtt: tAttRows, clients: clientRows, tpoLogs: tpoLogRows,
-      materials: matRows, techQuestions: tqRows, techResults: trRows
+      tSched: tSchedRows, tAtt: tAttRows, clients: clientRows, tpoLogs: tpoLogRows, materials: matRows, 
+      techQuestions: tqRows, techResults: trRows, aptQuestions: aptQRows, aptResults: aptRRows, 
+      talQuestions: talQRows, talResults: talRRows, coursesDict: coursesDict
     };
   } catch (err) { console.error("❌ Cache sync failed:", err.message); }
 }
 
 refreshCache();
-setInterval(refreshCache, 300000); // 5 Minutes bandwidth friendly
+setInterval(refreshCache, 300000); 
 
-// ==========================================
-// UTILITY FUNCTIONS (RBAC & Headers)
-// ==========================================
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
   const lower = c.toLowerCase().trim();
@@ -90,9 +118,6 @@ const getFuzzyHeader = (headers, target) => {
   return headers.find(h => h.toLowerCase().replace(/\s/g, '') === cleanTarget) || target;
 };
 
-// ==========================================
-// EMAIL & DRIVE
-// ==========================================
 const transporter = nodemailer.createTransport({
   host: 'smtp.gmail.com', port: 465, secure: true, family: 4, 
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
@@ -100,7 +125,6 @@ const transporter = nodemailer.createTransport({
 
 async function sendIPCSMail(mailOptions) {
   if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
-    if (!process.env.APPS_SCRIPT_EMAIL_URL) throw new Error("Missing APPS_SCRIPT_EMAIL_URL in Render");
     const payload = { to: mailOptions.to, subject: mailOptions.subject, html: mailOptions.html, attachments: [] };
     if (mailOptions.attachments) {
       mailOptions.attachments.forEach(att => {
@@ -108,12 +132,11 @@ async function sendIPCSMail(mailOptions) {
         else if (att.href) payload.attachments.push({ filename: att.filename, href: att.href });
       });
     }
-    const response = await axios.post(process.env.APPS_SCRIPT_EMAIL_URL, payload);
-    if (!response.data.success) throw new Error("Apps Script Error: " + response.data.error);
+    const res = await axios.post(process.env.APPS_SCRIPT_EMAIL_URL, payload);
+    if (!res.data.success) throw new Error("Apps Script Error");
     return true;
-  } else {
-    return await transporter.sendMail(mailOptions);
   }
+  return await transporter.sendMail(mailOptions);
 }
 
 const APPS_SCRIPT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyAJWuQlO7Ie3e-hsWkr965tZD3vfTBG5E9oBxFMleXBNi5ocSTnilPmFYzDXgQ-cOcbw/exec";

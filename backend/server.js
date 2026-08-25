@@ -72,6 +72,23 @@ app.post('/api/exams/questions/add', controllers.addQuestion);
 app.post('/api/exams/questions/delete', controllers.deleteQuestion); // 🚨 ADD THIS LINE
 app.get('/api/exams/results', controllers.getResults);
 
+// 🚨 NEW COURSES API
+app.get('/api/admin/courses', controllers.getCourses);
+app.post('/api/admin/courses/add', controllers.addCourse);
+app.post('/api/admin/courses/delete', controllers.deleteCourse); // 🚨 ADD THIS LINE
+
+// 🚨 APTITUDE EXAMS API
+app.get('/api/aptitude/questions', controllers.getAptQuestions);
+app.get('/api/aptitude/results', controllers.getAptResults);
+app.post('/api/aptitude/questions/add', controllers.addAptQuestion); // 🚨 ADDED
+app.post('/api/aptitude/questions/delete', controllers.deleteAptQuestion); // 🚨 ADDED
+
+// 🚨 TALENTINO EXAMS API
+app.get('/api/talentino-exams/questions', controllers.getTalExamQuestions);
+app.get('/api/talentino-exams/results', controllers.getTalExamResults);
+app.post('/api/talentino-exams/questions/add', controllers.addTalExamQuestion); // 🚨 ADDED
+app.post('/api/talentino-exams/questions/delete', controllers.deleteTalExamQuestion); // 🚨 ADDED
+
 // ==========================================
 // SCHEDULED JOBS
 // ==========================================

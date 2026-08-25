@@ -16,6 +16,9 @@ import CertificateSign from './CertificateSign';
 import UserManagement from './UserManagement';
 import StudyMaterials from './StudyMaterials';
 import TechnicalExams from './TechnicalExams';
+import Courses from './Courses';
+import Aptitude from './Aptitude';
+import TalentinoExams from './TalentinoExams';
 
 function App() {
   return (
@@ -40,6 +43,9 @@ function App() {
         {/* 🚨 NEW ROUTES */}
         <Route path="/study-materials" element={<StudyMaterials />} />
         <Route path="/exams" element={<TechnicalExams />} />
+        <Route path="/courses" element={<Courses />} />
+        <Route path="/aptitude" element={<Aptitude />} />
+        <Route path="/talentino-exams" element={<TalentinoExams />} />
       </Routes>
     </BrowserRouter>
   );
