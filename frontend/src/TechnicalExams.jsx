@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
-  CircleNotch, Exam, Plus, CaretLeft, Question, ChartBar, CheckCircle, 
+  CircleNotch, FileText, Plus, CaretLeft, Question, ChartBar, CheckCircle, 
   WarningCircle, X, FolderOpen, BookBookmark, ListChecks
 } from '@phosphor-icons/react';
 import Layout from './Layout';
@@ -65,8 +65,8 @@ export default function TechnicalExams() {
   const fetchData = async () => {
     try {
       const [qRes, rRes] = await Promise.all([
-        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/questions'),
-        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/results')
+        axios.get('https://ipcs-backend-v2.onrender.com/api/exams/questions'), // Ensure this matches your new Render URL!
+        axios.get('https://ipcs-backend-v2.onrender.com/api/exams/results')
       ]);
       if (qRes.data.success) setQuestions(qRes.data.questions || []);
       if (rRes.data.success) setResults(rRes.data.results || []);
@@ -102,7 +102,7 @@ export default function TechnicalExams() {
     setError('');
 
     try {
-      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/questions/add', formData);
+      const res = await axios.post('https://ipcs-backend-v2.onrender.com/api/exams/questions/add', formData);
       if (res.data.success) {
         setIsModalOpen(false);
         setLoading(true);
@@ -130,9 +130,7 @@ export default function TechnicalExams() {
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        {/* ========================================== */}
         {/* VIEW 1: SUPER ADMIN MAIN COURSES */}
-        {/* ========================================== */}
         {viewLevel === 'main_courses' && isSuperAdmin && (
           <>
             <div style={{ marginBottom: '30px' }}>
@@ -155,7 +153,7 @@ export default function TechnicalExams() {
                   >
                     <h2 style={{ color: '#ffffff', fontSize: '1.6rem', margin: '0 0 15px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)', lineHeight: 1.3 }}>{course}</h2>
                     <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Exam size={20} color="#ffffff" weight="bold" />
+                      <FileText size={20} color="#ffffff" weight="bold" />
                       <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: 'bold' }}>Manage Exams</span>
                     </div>
                   </div>
@@ -165,9 +163,7 @@ export default function TechnicalExams() {
           </>
         )}
 
-        {/* ========================================== */}
         {/* VIEW 2: SUB-COURSES GRID */}
-        {/* ========================================== */}
         {viewLevel === 'sub_courses' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '15px', flexWrap: 'wrap' }}>
@@ -201,9 +197,7 @@ export default function TechnicalExams() {
           </>
         )}
 
-        {/* ========================================== */}
         {/* VIEW 3: EXAM DASHBOARD (QUESTIONS / RESULTS) */}
-        {/* ========================================== */}
         {viewLevel === 'exam_dashboard' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
@@ -319,7 +313,7 @@ export default function TechnicalExams() {
                     ) : (
                       filteredResults.map((r, i) => {
                         const perc = parseFloat(r.percentage.replace('%', ''));
-                        const isPass = perc >= 50; // Simple logic: >= 50% is green
+                        const isPass = perc >= 50; 
                         return (
                           <tr key={i}>
                             <td>
@@ -345,9 +339,7 @@ export default function TechnicalExams() {
 
       </div>
 
-      {/* ========================================== */}
       {/* ADD QUESTION MODAL */}
-      {/* ========================================== */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="modal-card" style={{ maxWidth: '700px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
