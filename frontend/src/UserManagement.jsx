@@ -1,9 +1,18 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
-  Users, UserPlus, Trash, CircleNotch, WarningCircle, X, Prohibit 
+  Users, UserPlus, Trash, PencilSimple, CircleNotch, WarningCircle, X, Prohibit 
 } from '@phosphor-icons/react';
 import Layout from './Layout';
+
+// Master List of IPCS Branches for Dropdowns
+const ALL_BRANCHES = [
+  "Trivandrum", "Attingal", "Kollam", "Calicut", "Kannur", "Perinthalmanna", 
+  "Palakkad", "Kochi", "Kottayam", "Thrissur", "Coimbatore", "Trichy", 
+  "Salem", "Madurai", "Tirunelveli", "Tambaram", "Anna Nagar", "Chennai", 
+  "Bangalore", "Mysore", "Mangalore", "Pune", "Mumbai", "Ramwadi", 
+  "Nagpur", "Kolkata", "Bhopal", "Ranchi", "Global"
+];
 
 export default function UserManagement() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
@@ -11,17 +20,19 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Modal States
+  // Modal & Form States
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
   
-  // New User Form State
-  const [formData, setFormData] = useState({
-    userName: '', email: '', contact: '', password: '', 
+  const initialFormState = {
+    sheet: 'User', rowNumber: null, userName: '', email: '', contact: '', password: '', 
     role: 'Regional Technical Head', course: '', sittingBranch: '', 
-    assignedBranches: '', access: 'View Only'
-  });
+    assignedBranches: [], access: 'View Only'
+  };
+  const [formData, setFormData] = useState(initialFormState);
 
   const fetchUsers = async () => {
     try {
@@ -45,40 +56,83 @@ export default function UserManagement() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleAddUser = async (e) => {
+  const toggleBranchSelection = (branch) => {
+    setFormData(prev => {
+      const isSelected = prev.assignedBranches.includes(branch);
+      if (isSelected) {
+        return { ...prev, assignedBranches: prev.assignedBranches.filter(b => b !== branch) };
+      } else {
+        return { ...prev, assignedBranches: [...prev.assignedBranches, branch] };
+      }
+    });
+  };
+
+  const openAddModal = () => {
+    setFormData(initialFormState);
+    setIsEditMode(false);
+    setError('');
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (user) => {
+    setFormData({
+      sheet: user.sheet,
+      rowNumber: user.rowNumber,
+      userName: user.userName,
+      email: user.email,
+      contact: user.contact,
+      password: user.password,
+      role: user.role,
+      course: user.course,
+      sittingBranch: user.sittingBranch,
+      assignedBranches: user.assignedBranches ? user.assignedBranches.split(',').map(b => b.trim()) : [],
+      access: user.access
+    });
+    setIsEditMode(true);
+    setError('');
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError('');
 
+    const payload = {
+      ...formData,
+      assignedBranches: formData.assignedBranches.join(', ')
+    };
+
     try {
-      const res = await axios.post('https://ipcs-tpo-portal.onrender.com/api/admin/users/add', formData);
+      const endpoint = isEditMode 
+        ? 'https://ipcs-tpo-portal.onrender.com/api/admin/users/update' 
+        : 'https://ipcs-tpo-portal.onrender.com/api/admin/users/add';
+        
+      const res = await axios.post(endpoint, payload);
       if (res.data.success) {
         setIsModalOpen(false);
-        setFormData({ userName: '', email: '', contact: '', password: '', role: 'Regional Technical Head', course: '', sittingBranch: '', assignedBranches: '', access: 'View Only' });
         setLoading(true);
         fetchUsers(); 
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to add user.');
+      setError(err.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'add'} user.`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDeleteUser = async (rowNumber, userName) => {
+  const handleDeleteUser = async (sheet, rowNumber, userName) => {
     if (!window.confirm(`Are you sure you want to permanently delete user: ${userName}?`)) return;
-    
     try {
-      const res = await axios.post('https://ipcs-tpo-portal.onrender.com/api/admin/users/delete', { rowNumber });
+      const res = await axios.post('https://ipcs-tpo-portal.onrender.com/api/admin/users/delete', { sheet, rowNumber });
       if (res.data.success) {
-        setUsers(users.filter(u => u.rowNumber !== rowNumber));
+        setUsers(users.filter(u => u.rowNumber !== rowNumber || u.sheet !== sheet));
       }
     } catch (err) {
       alert("Failed to delete user.");
     }
   };
 
-  // Block unauthorized access
   if (tpoData?.accessType !== 'superadmin') {
     return (
       <Layout>
@@ -91,11 +145,14 @@ export default function UserManagement() {
     );
   }
 
-  // Guaranteed safe filtering
+  // 🚨 Guaranteed safe filtering AND hides the currently logged-in Super Admin
   const filteredUsers = (users || []).filter(u => 
-    String(u.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-    String(u.role || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    String(u.email || '').toLowerCase().includes(searchQuery.toLowerCase())
+    String(u.email || '').toLowerCase() !== String(tpoData.email).toLowerCase() && 
+    (
+      String(u.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+      String(u.role || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      String(u.email || '').toLowerCase().includes(searchQuery.toLowerCase())
+    )
   );
 
   return (
@@ -107,19 +164,20 @@ export default function UserManagement() {
             <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
               <Users color="var(--accent-primary)" weight="fill" /> User Management
             </h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Create, edit, and revoke portal access for Regional Heads, Managers, and Admins.</p>
+            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Manage access for TPOs, Regional Heads, Managers, and Admins.</p>
           </div>
-          <button className="btn-action" onClick={() => setIsModalOpen(true)} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
+          <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
             <UserPlus size={20} weight="bold" /> Add New User
           </button>
         </div>
 
-        <div style={{ marginBottom: '20px', maxWidth: '400px' }}>
+        <div style={{ marginBottom: '20px', maxWidth: '400px', position: 'relative' }}>
+          <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)' }}>🔍</span>
           <input 
             type="text" 
             placeholder="Search by name, role, or email..." 
             className="sleek-input" 
-            style={{ width: '100%' }}
+            style={{ width: '100%', paddingLeft: '45px' }}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
@@ -133,7 +191,7 @@ export default function UserManagement() {
                 <th>Role & Access</th>
                 <th>Scope (Course/Branch)</th>
                 <th>Credentials</th>
-                <th style={{ textAlign: 'center' }}>Action</th>
+                <th style={{ textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -168,17 +226,26 @@ export default function UserManagement() {
                         <span className="sub-text">{user.assignedBranches || user.sittingBranch || 'Global Scope'}</span>
                       </td>
                       <td>
-                        <span className="primary-text" style={{ fontFamily: 'monospace' }}>Login ID: {user.email || user.userName}</span>
+                        <span className="primary-text" style={{ fontFamily: 'monospace' }}>ID: {user.email || user.userName}</span>
                         <span className="sub-text" style={{ fontFamily: 'monospace' }}>Pass: {user.password}</span>
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        <button 
-                          onClick={() => handleDeleteUser(user.rowNumber, user.userName)}
-                          style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
-                          title="Delete User"
-                        >
-                          <Trash size={18} weight="fill" />
-                        </button>
+                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                          <button 
+                            onClick={() => openEditModal(user)}
+                            style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
+                            title="Edit User"
+                          >
+                            <PencilSimple size={18} weight="bold" />
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteUser(user.sheet, user.rowNumber, user.userName)}
+                            style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
+                            title="Delete User"
+                          >
+                            <Trash size={18} weight="bold" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
@@ -189,13 +256,16 @@ export default function UserManagement() {
         </div>
       </div>
 
-      {/* Add User Modal */}
+      {/* Add / Edit User Modal */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
+          <div className="modal-card" style={{ maxWidth: '650px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><UserPlus color="var(--accent-primary)" /> Add New System User</h2>
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                {isEditMode ? <PencilSimple color="var(--accent-primary)" /> : <UserPlus color="var(--accent-primary)" />} 
+                {isEditMode ? 'Edit System User' : 'Add New System User'}
+              </h2>
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsModalOpen(false)} />
             </div>
 
@@ -205,7 +275,7 @@ export default function UserManagement() {
               </div>
             )}
 
-            <form onSubmit={handleAddUser}>
+            <form onSubmit={handleSubmit}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
                 <div className="form-group">
                   <label>Full Name</label>
@@ -231,7 +301,8 @@ export default function UserManagement() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
                 <div className="form-group">
                   <label>Account Role</label>
-                  <select name="role" value={formData.role} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }}>
+                  <select name="role" value={formData.role} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }} disabled={formData.sheet === 'Contact'}>
+                    <option value="TPO">Placement Officer (TPO)</option>
                     <option value="Regional Technical Head">Regional Technical Head (RTH)</option>
                     <option value="Territory Technical Head">Territory Technical Head (TTH)</option>
                     <option value="Regional Manager">Regional Manager (RM)</option>
@@ -246,35 +317,70 @@ export default function UserManagement() {
                 </div>
                 <div className="form-group">
                   <label>Access Permissions</label>
-                  <select name="access" value={formData.access} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }}>
+                  <select name="access" value={formData.access} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }} disabled={formData.sheet === 'Contact'}>
                     <option value="View Only">View Only</option>
-                    <option value="View & Edit only">View & Edit</option>
+                    <option value="View & Edit">View & Edit</option>
                     <option value="SUPER ADMIN">SUPER ADMIN</option>
                   </select>
                 </div>
               </div>
 
-              <div className="form-group" style={{ marginBottom: '15px' }}>
-                <label>Assigned Course (Required for RTH & TTH)</label>
-                <select name="course" value={formData.course} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }}>
-                  <option value="">-- Leave blank for Global Scope --</option>
-                  <option value="BMS AND CCTV">BMS AND CCTV</option>
-                  <option value="Industrial Automation">Industrial Automation</option>
-                  <option value="Embedded and IoT">Embedded and IoT</option>
-                  <option value="Digital Marketing">Digital Marketing</option>
-                  <option value="Information technology (IT)">Information technology (IT)</option>
-                </select>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+                <div className="form-group">
+                  <label>Assigned Course (Required for RTH & TTH)</label>
+                  <select name="course" value={formData.course} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }} disabled={formData.sheet === 'Contact'}>
+                    <option value="">-- All Courses --</option>
+                    <option value="BMS AND CCTV">BMS AND CCTV</option>
+                    <option value="Industrial Automation">Industrial Automation</option>
+                    <option value="Embedded and IoT">Embedded and IoT</option>
+                    <option value="Digital Marketing">Digital Marketing</option>
+                    <option value="Information technology (IT)">Information technology (IT)</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>Sitting Branch</label>
+                  <select name="sittingBranch" value={formData.sittingBranch} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }}>
+                    <option value="">-- Select Sitting Branch --</option>
+                    {ALL_BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
+                  </select>
+                </div>
               </div>
 
-              <div className="form-group" style={{ marginBottom: '25px' }}>
-                <label>Assigned Branches (Comma separated)</label>
-                <input type="text" name="assignedBranches" placeholder="e.g. Calicut, Kannur, Palakkad" value={formData.assignedBranches} onChange={handleInputChange} />
+              {/* Multi-Select Dropdown for Assigned Branches */}
+              <div className="form-group" style={{ marginBottom: '25px', position: 'relative' }}>
+                <label>Assigned Branches</label>
+                <div 
+                  className="sleek-input" 
+                  style={{ width: '100%', minHeight: '45px', cursor: 'pointer', display: 'flex', alignItems: 'center', background: 'var(--input-bg)', flexWrap: 'wrap', gap: '5px' }}
+                  onClick={() => setIsBranchDropdownOpen(!isBranchDropdownOpen)}
+                >
+                  {formData.assignedBranches.length === 0 ? <span style={{ color: 'var(--text-muted)' }}>Select branches...</span> : formData.assignedBranches.map(b => (
+                    <span key={b} style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', border: '1px solid #0284c7' }}>{b}</span>
+                  ))}
+                </div>
+
+                {isBranchDropdownOpen && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '8px', marginTop: '5px', zIndex: 10, maxHeight: '200px', overflowY: 'auto', padding: '10px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
+                    {ALL_BRANCHES.map(branch => (
+                      <label key={branch} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', cursor: 'pointer', textTransform: 'none', color: 'var(--text-main)', fontWeight: 'normal', margin: 0, borderRadius: '4px' }}>
+                        <input 
+                          type="checkbox" 
+                          style={{ width: 'auto' }}
+                          checked={formData.assignedBranches.includes(branch)}
+                          onChange={() => toggleBranchSelection(branch)}
+                        />
+                        {branch}
+                      </label>
+                    ))}
+                    <button type="button" onClick={() => setIsBranchDropdownOpen(false)} style={{ width: '100%', background: 'var(--accent-primary)', color: '#000', border: 'none', padding: '8px', borderRadius: '6px', marginTop: '10px', cursor: 'pointer', fontWeight: 'bold' }}>Done</button>
+                  </div>
+                )}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn-action" style={{ width: 'auto' }} disabled={isSubmitting}>
-                  {isSubmitting ? <CircleNotch size={20} className="ph-spin" /> : 'Create User'}
+                  {isSubmitting ? <CircleNotch size={20} className="ph-spin" /> : (isEditMode ? 'Save Changes' : 'Create User')}
                 </button>
               </div>
             </form>

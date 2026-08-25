@@ -940,50 +940,120 @@ app.post('/api/tpo/profile/update-photo', upload.single('photo'), async (req, re
 // ==========================================
 app.get('/api/admin/users', async (req, res) => {
   try {
+    await doc.loadInfo();
+    const contactSheet = doc.sheetsByTitle["Contact"];
     const userSheet = doc.sheetsByTitle["User"];
-    if (!userSheet) return res.json({ success: false, message: "User sheet not found" });
-    const rows = await userSheet.getRows();
-    const usersList = rows.map(r => ({
-      rowNumber: r.rowNumber,
-      userName: r.get('USER Name') || '',
-      contact: r.get('Contact Number') || '',
-      email: r.get('Mail ID') || '',
-      sittingBranch: r.get('Sitting Branch') || '',
-      assignedBranches: r.get('Assigned Branches') || '',
-      password: r.get('Password') || '',
-      role: r.get('Role') || '',
-      course: r.get('Course') || '',
-      access: r.get('Access') || ''
-    }));
-    res.json({ success: true, users: usersList.reverse() });
+    let allUsers = [];
+
+    // 1. Fetch TPOs from Contact Sheet
+    if (contactSheet) {
+      const cRows = await contactSheet.getRows();
+      cRows.forEach(r => {
+        if (r.get('Mail ID') || r.get('TPO Name')) {
+          allUsers.push({
+            sheet: 'Contact',
+            rowNumber: r.rowNumber,
+            userName: r.get('TPO Name') || '',
+            contact: r.get('Contact Number') || '',
+            email: r.get('Mail ID') || '',
+            sittingBranch: r.get('Sitting Branch') || '',
+            assignedBranches: r.get('Assigned Branches') || '',
+            password: r.get('Password') || '',
+            role: 'TPO',
+            course: 'All',
+            access: 'View & Edit'
+          });
+        }
+      });
+    }
+
+    // 2. Fetch RTH, Admins, etc. from User Sheet
+    if (userSheet) {
+      const uRows = await userSheet.getRows();
+      uRows.forEach(r => {
+        if (r.get('Mail ID') || r.get('USER Name')) {
+          allUsers.push({
+            sheet: 'User',
+            rowNumber: r.rowNumber,
+            userName: r.get('USER Name') || '',
+            contact: r.get('Contact Number') || '',
+            email: r.get('Mail ID') || '',
+            sittingBranch: r.get('Sitting Branch') || '',
+            assignedBranches: r.get('Assigned Branches') || '',
+            password: r.get('Password') || '',
+            role: r.get('Role') || '',
+            course: r.get('Course') || '',
+            access: r.get('Access') || ''
+          });
+        }
+      });
+    }
+
+    res.json({ success: true, users: allUsers.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 app.post('/api/admin/users/add', async (req, res) => {
   try {
-    const userSheet = doc.sheetsByTitle["User"];
-    await userSheet.addRow({
-      'USER Name': req.body.userName || '',
-      'Contact Number': req.body.contact || '',
-      'Mail ID': req.body.email || '',
-      'Sitting Branch': req.body.sittingBranch || '',
-      'Assigned Branches': req.body.assignedBranches || '',
-      'Profile Photo': '',
-      'Password': req.body.password || '',
-      'Role': req.body.role || '',
-      'Course': req.body.course || '',
-      'Access': req.body.access || ''
-    });
+    const { userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
+    
+    // If adding a TPO, save to Contact sheet. Otherwise, User sheet.
+    if (role === 'TPO') {
+      const contactSheet = doc.sheetsByTitle["Contact"];
+      await contactSheet.addRow({
+        'TPO Name': userName, 'Contact Number': contact, 'Mail ID': email,
+        'Sitting Branch': sittingBranch, 'Assigned Branches': assignedBranches, 'Password': password
+      });
+    } else {
+      const userSheet = doc.sheetsByTitle["User"];
+      await userSheet.addRow({
+        'USER Name': userName, 'Contact Number': contact, 'Mail ID': email,
+        'Sitting Branch': sittingBranch, 'Assigned Branches': assignedBranches, 'Profile Photo': '',
+        'Password': password, 'Role': role, 'Course': course, 'Access': access
+      });
+    }
+    
     refreshCache();
     res.json({ success: true, message: "User added successfully" });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+app.post('/api/admin/users/update', async (req, res) => {
+  try {
+    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
+    const targetSheet = doc.sheetsByTitle[sheet];
+    if (!targetSheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+
+    const rows = await targetSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (rows.length > 0) {
+      if (sheet === 'Contact') {
+        rows[0].assign({
+          'TPO Name': userName, 'Contact Number': contact, 'Mail ID': email,
+          'Sitting Branch': sittingBranch, 'Assigned Branches': assignedBranches, 'Password': password
+        });
+      } else {
+        rows[0].assign({
+          'USER Name': userName, 'Contact Number': contact, 'Mail ID': email,
+          'Sitting Branch': sittingBranch, 'Assigned Branches': assignedBranches,
+          'Password': password, 'Role': role, 'Course': course, 'Access': access
+        });
+      }
+      await rows[0].save();
+      refreshCache();
+      res.json({ success: true, message: "User updated successfully" });
+    } else {
+      res.status(404).json({ success: false, message: "User row not found" });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 app.post('/api/admin/users/delete', async (req, res) => {
   try {
-    const { rowNumber } = req.body;
-    const userSheet = doc.sheetsByTitle["User"];
-    const rows = await userSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    const { sheet, rowNumber } = req.body;
+    const targetSheet = doc.sheetsByTitle[sheet];
+    if (!targetSheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+
+    const rows = await targetSheet.getRows({ offset: rowNumber - 2, limit: 1 });
     if (rows.length > 0) {
       await rows[0].delete();
       refreshCache();
