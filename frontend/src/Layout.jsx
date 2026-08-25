@@ -2,16 +2,28 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   SignOut, Bell, Moon, Sun, X, SquaresFour, Trophy, ListChecks, Headset, 
-  UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake
+  UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
+  ShieldCheck, BookOpenText, Exam
 } from '@phosphor-icons/react';
 
 export default function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const tpoData = JSON.parse(localStorage.getItem('tpoData'));
+  
+  // Safely parse localStorage to prevent app crashes on malformed data
+  const [tpoData] = useState(() => {
+    try {
+      const data = localStorage.getItem('tpoData');
+      return data ? JSON.parse(data) : null;
+    } catch (error) {
+      console.error("Failed to parse tpoData from localStorage", error);
+      return null;
+    }
+  });
   
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [theme, setTheme] = useState(document.body.getAttribute('data-theme') || 'dark');
+  const [imgError, setImgError] = useState(false); // Proper React state for broken images
 
   useEffect(() => {
     if (!tpoData) navigate('/');
@@ -41,18 +53,18 @@ export default function Layout({ children }) {
 
   const renderAvatar = () => {
     const initial = tpoData.name ? String(tpoData.name).charAt(0).toUpperCase() : '?';
-    if (!profilePhotoUrl || profilePhotoUrl === 'N/A') {
+    
+    // Safely fallback to text initial if no image URL or if the image failed to load
+    if (!profilePhotoUrl || profilePhotoUrl === 'N/A' || imgError) {
       return <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{initial}</span>;
     }
+    
     return (
       <img 
         src={profilePhotoUrl} 
         alt="Profile" 
         style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-        onError={(e) => { 
-          e.target.style.display = 'none'; 
-          e.target.parentNode.innerHTML = `<span style="font-size: 1.2rem; font-weight: bold;">${initial}</span>`; 
-        }} 
+        onError={() => setImgError(true)} // Safely update state instead of mutating DOM
       />
     );
   };
@@ -67,7 +79,10 @@ export default function Layout({ children }) {
               src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" 
               alt="IPCS Logo" 
               style={{ height: '35px', objectFit: 'contain' }} 
-              onError={(e) => { e.target.src = 'https://ipcsglobal.com/wp-content/uploads/2023/12/IPCS-Global-Logo-1.png'; }}
+              onError={(e) => { 
+                e.currentTarget.onerror = null; // Prevents infinite loop if fallback fails
+                e.currentTarget.src = 'https://ipcsglobal.com/wp-content/uploads/2023/12/IPCS-Global-Logo-1.png'; 
+              }}
             />
           </div>
           <div className="header-actions">
@@ -90,7 +105,10 @@ export default function Layout({ children }) {
 
       </main>
 
-      <div className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} onClick={(e) => { if(e.target.className.includes('drawer-overlay')) setIsDrawerOpen(false); }}>
+      <div 
+        className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} 
+        onClick={(e) => { if(e.target.classList.contains('drawer-overlay')) setIsDrawerOpen(false); }}
+      >
         <div className="drawer-card">
           <div className="drawer-header">
             <div className="drawer-close-btn" onClick={() => setIsDrawerOpen(false)}><X size={16} /></div>
@@ -118,9 +136,16 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/reports'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> Reports</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> Talentino</div><span>›</span></div>
             
-            {/* 🚨 CRASH FIXED: Replaced missing icon with safe 'Users' icon */}
+            {/* 🚨 STUDY MATERIALS & EXAM TABS (Only for RTH & Super Admin) */}
+            {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
+               <>
+                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/study-materials'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><BookOpenText size={22} color={isActive('/study-materials')} /> Study Materials</div><span>›</span></div>
+                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/exams'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Exam size={22} color={isActive('/exams')} /> Technical Exams</div><span>›</span></div>
+               </>
+            )}
+
             {tpoData.accessType === 'superadmin' && (
-               <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
+               <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
             )}
 
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/settings'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Gear size={22} color={isActive('/settings')} /> Settings</div><span>›</span></div>

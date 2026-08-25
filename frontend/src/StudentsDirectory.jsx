@@ -38,14 +38,18 @@ export default function StudentsDirectory() {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [savingStatus, setSavingStatus] = useState(false);
+  
+  // Access Control States
   const [localVacState, setLocalVacState] = useState('');
   const [localPlacementState, setLocalPlacementState] = useState('');
+  const [localStudyAccess, setLocalStudyAccess] = useState(''); // 🚨 NEW
+  const [localExamAccess, setLocalExamAccess] = useState(''); // 🚨 NEW
 
   // 🚨 ROLE, COURSE, AND ACCESS PERMISSIONS IDENTIFICATION
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD') || upperRole.includes('TTH') || upperRole.includes('TERRITORY TECHNICAL HEAD') || upperRole.includes('TRAINER');
   const displayCourse = tpoData?.assignedCourse || '';
-  const isViewOnly = tpoData?.accessType === 'view'; // Checks for View Only Mode
+  const isViewOnly = tpoData?.accessType === 'view'; 
 
   useEffect(() => {
     if (!tpoData) return;
@@ -71,7 +75,6 @@ export default function StudentsDirectory() {
     fetchData();
   }, [tpoData]);
 
-  // 🚨 CLIENT-SIDE FILTERING GUARANTEE
   const students = rawStudents.filter(s => {
     if (isCourseSpecific) {
       return getStandardCourse(s.course) === getStandardCourse(displayCourse);
@@ -109,6 +112,8 @@ export default function StudentsDirectory() {
     setSelectedStudent(student);
     setLocalVacState(student.vacOpen || 'Yes');
     setLocalPlacementState(student.placementStatus || 'Pending');
+    setLocalStudyAccess(student.studyAccess || 'No'); // 🚨 BIND NEW STATE
+    setLocalExamAccess(student.examAccess || 'No'); // 🚨 BIND NEW STATE
     setIsModalOpen(true);
   };
 
@@ -118,10 +123,19 @@ export default function StudentsDirectory() {
       const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/students/update-student', {
         rowNumber: selectedStudent.rowIdx,
         vacOpen: localVacState,
-        placementStatus: localPlacementState
+        placementStatus: localPlacementState,
+        studyAccess: localStudyAccess, // 🚨 INCLUDED IN PAYLOAD
+        examAccess: localExamAccess    // 🚨 INCLUDED IN PAYLOAD
       });
+      
       if (response.data.success) {
-        const updatedStudents = rawStudents.map(s => s.rowIdx === selectedStudent.rowIdx ? { ...s, vacOpen: localVacState, placementStatus: localPlacementState } : s);
+        const updatedStudents = rawStudents.map(s => s.rowIdx === selectedStudent.rowIdx ? { 
+          ...s, 
+          vacOpen: localVacState, 
+          placementStatus: localPlacementState,
+          studyAccess: localStudyAccess,
+          examAccess: localExamAccess
+        } : s);
         setRawStudents(updatedStudents);
         setIsModalOpen(false);
       }
@@ -184,7 +198,6 @@ export default function StudentsDirectory() {
                 <div className="kpi-card"><div><div className="kpi-val">{globalStats.placed}</div><div className="kpi-label">Total Hired</div></div><div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}><Confetti weight="fill"/></div></div>
               </div>
 
-              {/* 🚨 DYNAMIC HEADINGS BASED ON ROLE */}
               <h1 style={{ fontSize: '2.2rem', marginBottom: '5px', textAlign: 'center' }}>
                 {isCourseSpecific ? `Branches with ${displayCourse} Students` : 'Which branch would you like to view?'}
               </h1>
@@ -235,7 +248,7 @@ export default function StudentsDirectory() {
           </button>
           <div>
             <h1 style={{ fontSize: '1.8rem', margin: 0 }}>{selectedBranch} {isCourseSpecific ? `(${displayCourse})` : 'Directory'}</h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>{isViewOnly ? 'View student profiles, resumes, and vacancy statuses.' : 'Manage student profiles, view resumes, and control vacancy access.'}</p>
+            <p style={{ color: 'var(--text-muted)', margin: 0 }}>{isViewOnly ? 'View student profiles, resumes, and vacancy statuses.' : 'Manage student profiles, view resumes, and control access levels.'}</p>
           </div>
         </div>
         
@@ -299,6 +312,9 @@ export default function StudentsDirectory() {
         )}
       </div>
 
+      {/* ========================================== */}
+      {/* STUDENT PROFILE & ACCESS MODAL */}
+      {/* ========================================== */}
       {isModalOpen && selectedStudent && (
         <div 
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', overflow: 'hidden' }} 
@@ -362,24 +378,47 @@ export default function StudentsDirectory() {
               })}
             </div>
 
+            {/* 🚨 DYNAMIC ROLE-BASED CONTROL GRID */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '1.5rem' }}>
               
-              {/* 🚨 LOCKED CONTROLS FOR VIEW ONLY MODE */}
-              <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
-                <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Placement Status</span>
-                <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localPlacementState} onChange={(e) => setLocalPlacementState(e.target.value)} disabled={isViewOnly}>
-                  <option value="Pending">Pending</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
-                </select>
-              </div>
-              <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
-                <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Vacancy Access</span>
-                <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)} disabled={isViewOnly}>
-                  <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
-                </select>
-              </div>
+              {/* TPO & SUPER ADMIN: PLACEMENT CONTROLS */}
+              {(tpoData?.accessType === 'superadmin' || !isCourseSpecific) && (
+                <>
+                  <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
+                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Placement Status</span>
+                    <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localPlacementState} onChange={(e) => setLocalPlacementState(e.target.value)} disabled={isViewOnly}>
+                      <option value="Pending">Pending</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
+                    </select>
+                  </div>
+                  <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
+                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Vacancy Access</span>
+                    <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)} disabled={isViewOnly}>
+                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                    </select>
+                  </div>
+                </>
+              )}
+
+              {/* RTH & SUPER ADMIN: LMS CONTROLS */}
+              {(tpoData?.accessType === 'superadmin' || isCourseSpecific) && (
+                <>
+                  <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
+                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Study Material Access</span>
+                    <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localStudyAccess} onChange={(e) => setLocalStudyAccess(e.target.value)} disabled={isViewOnly}>
+                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                    </select>
+                  </div>
+                  <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
+                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Technical Exam Access</span>
+                    <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localExamAccess} onChange={(e) => setLocalExamAccess(e.target.value)} disabled={isViewOnly}>
+                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                    </select>
+                  </div>
+                </>
+              )}
+
             </div>
 
-            {/* 🚨 LOCKED SAVE BUTTON FOR VIEW ONLY MODE */}
             <div style={{ display: 'flex', justifyContent: isViewOnly ? 'space-between' : 'flex-end', alignItems: 'center', borderTop: '1px solid #1e293b', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
                {isViewOnly && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission</span>}
                <button className="btn-action" style={{ width: 'auto', background: isViewOnly ? '#1e293b' : '#38bdf8', color: isViewOnly ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: isViewOnly ? 'not-allowed' : 'pointer' }} onClick={saveStudentUpdates} disabled={savingStatus || isViewOnly}>
