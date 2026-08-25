@@ -13,6 +13,7 @@ import Talentino from './Talentino';
 import Settings from './Settings';
 import Clients from './Clients';
 import CertificateSign from './CertificateSign';
+import StudyMaterials from './StudyMaterials';
 import UserManagement from './UserManagement'; // 🚨 IMPORT ADDED HERE
 
 function App() {
@@ -33,7 +34,7 @@ function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/clients" element={<Clients />} />
         <Route path="/sign-certificate/:id" element={<CertificateSign />} />
-        
+        <Route path="/study-materials" element={<StudyMaterials />} />
         {/* 🚨 ROUTE ADDED HERE */}
         <Route path="/users" element={<UserManagement />} />
       </Routes>

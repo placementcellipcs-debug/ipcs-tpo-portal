@@ -1,0 +1,364 @@
+import { useEffect, useState } from 'react';
+import axios from 'axios';
+import { 
+  CircleNotch, BookOpenText, Plus, CaretLeft, Link as LinkIcon, 
+  FilePdf, FileImage, FileText, FileVideo, CheckCircle, WarningCircle, X,
+  FolderOpen, BookBookmark
+} from '@phosphor-icons/react';
+import Layout from './Layout';
+
+// Master Dictionary of IPCS Courses based on your Google Sheets
+const COURSE_DICTIONARY = {
+  'BMS AND CCTV': [
+    'Diploma In Building Management System', 'Certified BMS Engineer', 'CCTV & Security Systems', 'CCTV Training'
+  ],
+  'Industrial Automation': [
+    'Automation System Engineer', 'Professional Diploma in Industrial Automation', 'Advanced Automation System Professional', 
+    'Advanced PLC Program Professional', 'DCS Engineering & Maintenance', 'Electrical Control & Panel Designing', 
+    'Industrial Networking', 'Diploma in Marine Automation Systems', 'VFD Installation Professional', 'Customize programming PLC SCADA'
+  ],
+  'Embedded and IoT': [
+    'Certified Embedded Engineer', 'Embedded System Design (Crash)', 'Certified Raspberry Pi Programmer', 
+    'Certified Embedded System Engineer', 'Certified IoT Professional', 'LabView Course', 'Certified IIoT Professional'
+  ],
+  'Digital Marketing': [
+    'Professional Diploma in Digital Marketing', 'Advanced Course in Online Entrepreneurship', 'Advanced Certificate Course in Digital Marketing', 
+    'Search Engine Optimization Certification Course', 'Certificate Course in Digital Marketing', 'Search Engine Marketing Certification Course', 
+    'Social Media Marketing Certification Course', 'Online Money Making Courses', 'Digital Marketing Corporate Training', 
+    'Affiliate Marketing Certification Course', 'Certificate Course in Email Marketing', 'Video Blogging', 
+    'Google Analytics Fundamentals Course', 'International Web Professional', 'Inbound Marketing Certification Course', 'AI Digital Marketing'
+  ],
+  'Information technology (IT)': [
+    'PHP AND MYSQL', 'JAVA Full Stack', 'Web Designing and Development', 'Python & Data Science', 'Python Programming', 
+    'Data Science & Analytics', 'Android App Development', 'Python Full Stack Development', 'Artificial Intelligence', 
+    'Diploma in Artificial Intelligence', 'AI & Machine Learning with Python', 'Software Testing', 'Basics of Software Testing', 
+    'Advanced QA Automation Testing', 'Cyber Security', 'Cyber Security & Network Security Essentials', 'MERN Stack', 'Data Analytics'
+  ]
+};
+
+const MAIN_COURSES = Object.keys(COURSE_DICTIONARY);
+const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
+
+export default function StudyMaterials() {
+  const tpoData = JSON.parse(localStorage.getItem('tpoData'));
+  const isSuperAdmin = tpoData?.accessType === 'superadmin';
+  const rthAssignedCourse = tpoData?.assignedCourse || '';
+
+  const [materials, setMaterials] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Navigation State: 'main_courses' -> 'sub_courses' -> 'materials'
+  const [viewLevel, setViewLevel] = useState(isSuperAdmin ? 'main_courses' : 'sub_courses');
+  const [selectedMainCourse, setSelectedMainCourse] = useState(isSuperAdmin ? null : rthAssignedCourse);
+  const [selectedSubCourse, setSelectedSubCourse] = useState(null);
+
+  // Modal State
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [formData, setFormData] = useState({
+    id: '', course: '', module: '', title: '', fileType: 'pdf', link: '', status: 'Active'
+  });
+
+  const fetchMaterials = async () => {
+    try {
+      const res = await axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials');
+      if (res.data.success) setMaterials(res.data.materials || []);
+    } catch (err) {
+      console.error("Failed to load materials", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMaterials();
+  }, []);
+
+  const handleInputChange = (e) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
+
+  const openAddModal = () => {
+    // Generate a random Material ID
+    const randomId = `MAT${Math.floor(1000 + Math.random() * 9000)}`;
+    setFormData({
+      id: randomId, 
+      course: selectedSubCourse || (COURSE_DICTIONARY[selectedMainCourse] ? COURSE_DICTIONARY[selectedMainCourse][0] : ''), 
+      module: '', 
+      title: '', 
+      fileType: 'pdf', 
+      link: '', 
+      status: 'Active'
+    });
+    setError('');
+    setIsModalOpen(true);
+  };
+
+  const handleAddMaterial = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/add', formData);
+      if (res.data.success) {
+        setIsModalOpen(false);
+        setLoading(true);
+        fetchMaterials(); 
+      }
+    } catch (err) {
+      setError(err.response?.data?.message || 'Failed to add material.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const getFileIcon = (type) => {
+    const t = String(type).toLowerCase();
+    if (t.includes('pdf')) return <FilePdf size={24} color="#ef4444" weight="fill" />;
+    if (t.includes('pptx') || t.includes('ppt')) return <FileText size={24} color="#f59e0b" weight="fill" />;
+    if (t.includes('mp4') || t.includes('video')) return <FileVideo size={24} color="#3b82f6" weight="fill" />;
+    if (t.includes('jpg') || t.includes('png')) return <FileImage size={24} color="#10b981" weight="fill" />;
+    return <LinkIcon size={24} color="#8b5cf6" weight="fill" />;
+  };
+
+  const filteredMaterials = materials.filter(m => {
+    const matchSubCourse = m.course === selectedSubCourse;
+    const matchSearch = (m.title || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                        (m.module || '').toLowerCase().includes(searchQuery.toLowerCase());
+    return matchSubCourse && matchSearch;
+  });
+
+  return (
+    <Layout>
+      <div className="page-container" style={{ padding: 0 }}>
+        
+        {/* ========================================== */}
+        {/* VIEW 1: SUPER ADMIN MAIN COURSES */}
+        {/* ========================================== */}
+        {viewLevel === 'main_courses' && isSuperAdmin && (
+          <>
+            <div style={{ marginBottom: '30px' }}>
+              <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <FolderOpen color="var(--accent-primary)" weight="fill" /> LMS Repository
+              </h1>
+              <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select an engineering domain to manage its study materials and modules.</p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px' }}>
+              {MAIN_COURSES.map((course, index) => {
+                const color = TILE_COLORS[index % TILE_COLORS.length];
+                return (
+                  <div 
+                    key={course} 
+                    onClick={() => { setSelectedMainCourse(course); setViewLevel('sub_courses'); }}
+                    style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
+                  >
+                    <h2 style={{ color: '#ffffff', fontSize: '1.6rem', margin: '0 0 15px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)', lineHeight: 1.3 }}>{course}</h2>
+                    <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <BookOpenText size={20} color="#ffffff" weight="bold" />
+                      <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: 'bold' }}>View Modules</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* ========================================== */}
+        {/* VIEW 2: SUB-COURSES GRID */}
+        {/* ========================================== */}
+        {viewLevel === 'sub_courses' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '15px', flexWrap: 'wrap' }}>
+              {isSuperAdmin && (
+                <button onClick={() => { setViewLevel('main_courses'); setSelectedMainCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <CaretLeft weight="bold" size={18} /> Domains
+                </button>
+              )}
+              <div>
+                <h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedMainCourse}</h1>
+                <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a specific certification or diploma program to manage its files.</p>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+              {(COURSE_DICTIONARY[selectedMainCourse] || []).map((subCourse) => (
+                <div 
+                  key={subCourse}
+                  onClick={() => { setSelectedSubCourse(subCourse); setViewLevel('materials'); }}
+                  style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.5rem', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', gap: '15px' }}
+                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.transform = 'translateY(0)'; }}
+                >
+                  <div style={{ width: '45px', height: '45px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <BookBookmark size={24} weight="fill" />
+                  </div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-main)', lineHeight: 1.4 }}>{subCourse}</h3>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ========================================== */}
+        {/* VIEW 3: MATERIALS TABLE */}
+        {/* ========================================== */}
+        {viewLevel === 'materials' && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <button onClick={() => { setViewLevel('sub_courses'); setSelectedSubCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <CaretLeft weight="bold" size={18} /> Programs
+                </button>
+                <div>
+                  <h1 style={{ fontSize: '1.6rem', margin: 0 }}>{selectedSubCourse}</h1>
+                  <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>Upload presentations, PDFs, and notes for student access.</p>
+                </div>
+              </div>
+              <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
+                <Plus size={20} weight="bold" /> Upload Material
+              </button>
+            </div>
+
+            <div style={{ marginBottom: '20px', maxWidth: '400px', position: 'relative' }}>
+              <input 
+                type="text" 
+                placeholder="Search by topic or title..." 
+                className="sleek-input" 
+                style={{ width: '100%' }}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+              />
+            </div>
+
+            <div className="table-container">
+              <table className="modern-table">
+                <thead>
+                  <tr>
+                    <th>Module / Topic</th>
+                    <th>Document Title</th>
+                    <th>Format</th>
+                    <th>Drive Link</th>
+                    <th style={{ textAlign: 'center' }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? (
+                    <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="var(--accent-primary)" /></td></tr>
+                  ) : filteredMaterials.length === 0 ? (
+                    <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No study materials uploaded for this course yet.</td></tr>
+                  ) : (
+                    filteredMaterials.map((mat, i) => (
+                      <tr key={i}>
+                        <td>
+                          <span className="primary-text">{mat.module || 'General'}</span>
+                          <span className="sub-text">ID: {mat.id}</span>
+                        </td>
+                        <td><strong style={{ color: 'var(--text-main)' }}>{mat.title}</strong></td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>
+                            {getFileIcon(mat.fileType)} {mat.fileType}
+                          </div>
+                        </td>
+                        <td>
+                          <a href={mat.link} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                            <LinkIcon size={16} /> Open Resource
+                          </a>
+                        </td>
+                        <td style={{ textAlign: 'center' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: mat.status.toLowerCase() === 'active' ? '#10b981' : '#ef4444', fontWeight: 'bold', fontSize: '0.8rem' }}>
+                            {mat.status.toLowerCase() === 'active' ? <CheckCircle size={16} weight="fill" /> : <WarningCircle size={16} weight="fill" />} 
+                            {mat.status}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+      </div>
+
+      {/* ========================================== */}
+      {/* ADD MATERIAL MODAL */}
+      {/* ========================================== */}
+      {isModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+          <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><BookOpenText color="var(--accent-primary)" /> Upload Study Material</h2>
+              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsModalOpen(false)} />
+            </div>
+
+            {error && (
+              <div className="alert alert-error" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <WarningCircle size={20} /> {error}
+              </div>
+            )}
+
+            <form onSubmit={handleAddMaterial}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '15px', marginBottom: '15px' }}>
+                <div className="form-group">
+                  <label>Material ID</label>
+                  <input type="text" name="id" value={formData.id} readOnly style={{ background: 'var(--bg-dark)', opacity: 0.7 }} />
+                </div>
+                <div className="form-group">
+                  <label>Assigned Program</label>
+                  <select name="course" value={formData.course} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }} required>
+                    {(COURSE_DICTIONARY[selectedMainCourse] || []).map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '15px', marginBottom: '15px' }}>
+                <div className="form-group">
+                  <label>Module / Topic</label>
+                  <input type="text" name="module" placeholder="e.g. Module 01" value={formData.module} onChange={handleInputChange} required />
+                </div>
+                <div className="form-group">
+                  <label>Document Title</label>
+                  <input type="text" name="title" placeholder="e.g. Introduction to Networking" value={formData.title} onChange={handleInputChange} required />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '15px', marginBottom: '20px' }}>
+                <div className="form-group">
+                  <label>File Type</label>
+                  <select name="fileType" value={formData.fileType} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }}>
+                    <option value="pdf">PDF</option>
+                    <option value="pptx">PowerPoint (PPTX)</option>
+                    <option value="docx">Word (DOCX)</option>
+                    <option value="mp4">Video (MP4)</option>
+                    <option value="link">External Link</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>SharePoint / OneDrive Link</label>
+                  <input type="url" name="link" placeholder="https://ipcsglobal-my.sharepoint.com/..." value={formData.link} onChange={handleInputChange} required />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '1.5rem' }}>
+                <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
+                <button type="submit" className="btn-action" style={{ width: 'auto' }} disabled={isSubmitting}>
+                  {isSubmitting ? <CircleNotch size={20} className="ph-spin" /> : 'Publish Material'}
+                </button>
+              </div>
+            </form>
+
+          </div>
+        </div>
+      )}
+    </Layout>
+  );
+}
