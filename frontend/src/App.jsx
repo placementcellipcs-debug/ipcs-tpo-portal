@@ -14,6 +14,7 @@ import Settings from './Settings';
 import Clients from './Clients';
 import CertificateSign from './CertificateSign';
 import StudyMaterials from './StudyMaterials';
+import TechnicalExams from './TechnicalExams';
 import UserManagement from './UserManagement'; // 🚨 IMPORT ADDED HERE
 
 function App() {
@@ -35,6 +36,7 @@ function App() {
         <Route path="/clients" element={<Clients />} />
         <Route path="/sign-certificate/:id" element={<CertificateSign />} />
         <Route path="/study-materials" element={<StudyMaterials />} />
+        <Route path="/technical-exams" element={<TechnicalExams />} />
         {/* 🚨 ROUTE ADDED HERE */}
         <Route path="/users" element={<UserManagement />} />
       </Routes>
