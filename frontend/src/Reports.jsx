@@ -3,7 +3,7 @@ import axios from 'axios';
 import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree } from '@phosphor-icons/react';
 import Layout from './Layout';
 
-const API_BASE = "https://ipcs-tpo-portal.onrender.com";
+const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
 const COURSES = ['Automation', 'BMS', 'IT', 'DM', 'Embedded'];
 
 export default function Reports() {

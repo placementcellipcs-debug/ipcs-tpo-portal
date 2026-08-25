@@ -3,7 +3,7 @@ import axios from 'axios';
 import { User, LockKey, Palette, UploadSimple, CircleNotch } from '@phosphor-icons/react';
 import Layout from './Layout';
 
-const API_BASE = "https://ipcs-tpo-portal.onrender.com";
+const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
 
 export default function Settings() {
   const [localTpoData, setLocalTpoData] = useState(JSON.parse(localStorage.getItem('tpoData')));

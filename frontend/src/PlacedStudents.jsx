@@ -34,7 +34,7 @@ export default function PlacedStudents() {
 
   const fetchData = async () => {
     try {
-      const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/applications', { 
+      const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications', { 
         assignedBranchesArray: tpoData.assignedBranchesArray, tpoName: tpoData.name 
       });
       if (response.data.success) setApplications(response.data.applications);
@@ -81,7 +81,7 @@ export default function PlacedStudents() {
         formData.append('offerLetterFile', editForm.offerLetterFile);
       }
 
-      await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/applications/update', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications/update', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       setIsEditModalOpen(false);
       fetchData();
     } catch (error) { alert("Failed to save."); } finally { setSavingStatus(false); }
@@ -99,7 +99,7 @@ export default function PlacedStudents() {
         formData.append('offerLetterFile', addForm.offerLetterFile);
       }
 
-      await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/applications/add', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications/add', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       setIsAddModalOpen(false);
       setAddForm({ name: '', phone: '', email: '', roll: '', course: '', branch: '', company: '', position: '', status: 'Placed', remarks: '', datePlaced: new Date().toISOString().split('T')[0], packageLpa: '', joiningStatus: '', offerLetterFile: null });
       fetchData();

@@ -16,7 +16,7 @@ export default function Dashboard() {
     if (!tpoData) return;
     const fetchStats = async () => {
       try {
-        const response = await axios.post('https://ipcs-tpo-portal.onrender.com/api/tpo/dashboard-stats', {
+        const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/dashboard-stats', {
           assignedBranchesArray: tpoData.assignedBranchesArray
         });
         if (response.data.success) {

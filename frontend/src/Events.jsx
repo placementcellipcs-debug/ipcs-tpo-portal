@@ -3,7 +3,7 @@ import axios from 'axios';
 import { Plus, CaretLeft, CaretRight, X, CircleNotch, CalendarBlank, MapPin, Clock, Textbox } from '@phosphor-icons/react';
 import Layout from './Layout';
 
-const API_BASE = "https://ipcs-tpo-portal.onrender.com";
+const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
 
 export default function Events() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
