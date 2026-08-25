@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
-  Users, UserPlus, Trash, PencilSimple, CircleNotch, WarningCircle, X, Prohibit 
+  Users, UserPlus, Trash, PencilSimple, CircleNotch, WarningCircle, X, Prohibit,
+  CaretLeft, SquaresFour, List, IdentificationCard
 } from '@phosphor-icons/react';
 import Layout from './Layout';
+
+// Colors for the Position Tiles
+const TILE_COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#0ea5e9', '#ef4444', '#f43f5e'];
 
 // Master List of IPCS Branches for Dropdowns
 const ALL_BRANCHES = [
@@ -19,6 +23,10 @@ export default function UserManagement() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // View & Filtering States
+  const [selectedRole, setSelectedRole] = useState(null); 
+  const [viewType, setViewType] = useState('list');
   
   // Modal & Form States
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -133,13 +141,13 @@ export default function UserManagement() {
     }
   };
 
-  // 🚨 HELPER TO RENDER DRIVE IMAGES
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
     const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
     return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : url;
   };
 
+  // Safe Fallback for non-Super Admins
   if (tpoData?.accessType !== 'superadmin') {
     return (
       <Layout>
@@ -152,135 +160,235 @@ export default function UserManagement() {
     );
   }
 
-  const filteredUsers = (users || []).filter(u => 
-    String(u.email || '').toLowerCase() !== String(tpoData.email).toLowerCase() && 
-    (
-      String(u.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-      String(u.role || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      String(u.email || '').toLowerCase().includes(searchQuery.toLowerCase())
-    )
+  // ==========================================
+  // DATA PREP FOR TILES & DIRECTORY
+  // ==========================================
+  
+  // 1. Remove the logged-in super admin from the array so they don't see/edit themselves
+  const validUsers = (users || []).filter(u => String(u.email || '').toLowerCase() !== String(tpoData.email).toLowerCase());
+
+  // 2. Count users per Position/Role
+  const roleData = {};
+  validUsers.forEach(u => {
+    const r = u.role || 'Unassigned';
+    roleData[r] = (roleData[r] || 0) + 1;
+  });
+  const roleList = Object.keys(roleData).sort();
+
+  // 3. Filter data for the specific directory view
+  const activeUsers = selectedRole ? validUsers.filter(u => (u.role || 'Unassigned') === selectedRole) : [];
+  const filteredUsers = activeUsers.filter(u => 
+    String(u.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+    String(u.email || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
-          <div>
-            <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Users color="var(--accent-primary)" weight="fill" /> User Management
-            </h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Manage access for TPOs, Regional Heads, Managers, and Admins.</p>
-          </div>
-          <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
-            <UserPlus size={20} weight="bold" /> Add New User
-          </button>
-        </div>
+        {/* ========================================== */}
+        {/* VIEW 1: LANDING PAGE - POSITION TILES */}
+        {/* ========================================== */}
+        {!selectedRole ? (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
+              <div>
+                <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <Users color="var(--accent-primary)" weight="fill" /> User Management
+                </h1>
+                <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a position below to view and manage assigned staff members.</p>
+              </div>
+              <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
+                <UserPlus size={20} weight="bold" /> Add New User
+              </button>
+            </div>
 
-        <div style={{ marginBottom: '20px', maxWidth: '400px', position: 'relative' }}>
-          <span style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)' }}>🔍</span>
-          <input 
-            type="text" 
-            placeholder="Search by name, role, or email..." 
-            className="sleek-input" 
-            style={{ width: '100%', paddingLeft: '45px' }}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
+            {loading ? (
+              <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--accent-primary)' }}><CircleNotch size={40} className="ph-spin" /><p>Fetching portal users...</p></div>
+            ) : roleList.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2rem' }}>No other users exist in the system yet.</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px' }}>
+                {roleList.map((role, index) => {
+                  const color = TILE_COLORS[index % TILE_COLORS.length];
+                  return (
+                    <div 
+                      key={role} 
+                      onClick={() => setSelectedRole(role)}
+                      style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
+                    >
+                      <h2 style={{ color: '#ffffff', fontSize: '1.8rem', margin: '0 0 15px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)', lineHeight: 1.2 }}>{role}</h2>
+                      <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Users size={20} color="#ffffff" weight="bold" />
+                        <span style={{ color: '#ffffff', fontSize: '1.1rem', fontWeight: 'bold' }}>{roleData[role]} Users</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        ) : (
+          /* ========================================== */
+          /* VIEW 2: DIRECTORY DETAILS FOR SELECTED ROLE */
+          /* ========================================== */
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <button onClick={() => setSelectedRole(null)} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <CaretLeft weight="bold" size={18} /> Back to Roles
+                </button>
+                <div>
+                  <h1 style={{ fontSize: '1.8rem', margin: 0 }}>{selectedRole} Directory</h1>
+                  <p style={{ color: 'var(--text-muted)', margin: 0 }}>Manage access, reset passwords, or remove personnel.</p>
+                </div>
+              </div>
+              <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
+                <UserPlus size={20} weight="bold" /> Add New User
+              </button>
+            </div>
 
-        <div className="table-container">
-          <table className="modern-table">
-            <thead>
-              <tr>
-                <th>User Details</th>
-                <th>Role & Access</th>
-                <th>Scope (Course/Branch)</th>
-                <th>Credentials</th>
-                <th style={{ textAlign: 'center' }}>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="var(--accent-primary)" /></td></tr>
-              ) : filteredUsers.length === 0 ? (
-                <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem' }}>No users found matching your search.</td></tr>
-              ) : (
-                filteredUsers.map((user, i) => {
+            <div className="header-controls">
+              <div className="filter-group" style={{ position: 'relative', width: '300px' }}>
+                <input 
+                  type="text" 
+                  className="sleek-input" 
+                  placeholder={`Search ${selectedRole}s by name or email...`} 
+                  style={{ width: '100%' }}
+                  value={searchQuery} 
+                  onChange={(e) => setSearchQuery(e.target.value)} 
+                />
+              </div>
+              <div className="view-toggles">
+                <button className={`view-btn ${viewType === 'grid' ? 'active' : ''}`} onClick={() => setViewType('grid')}><SquaresFour weight="fill" /></button>
+                <button className={`view-btn ${viewType === 'list' ? 'active' : ''}`} onClick={() => setViewType('list')}><List weight="bold" /></button>
+              </div>
+            </div>
+
+            {filteredUsers.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2rem' }}>No users found for this position.</div>
+            ) : viewType === 'grid' ? (
+              <div className="student-grid">
+                {filteredUsers.map((user, i) => {
                   const accessLvl = String(user.access || '').toLowerCase();
-                  
-                  // 🚨 PREPARE PROFILE PHOTO
                   const photoUrl = getDriveImage(user.profilePhoto);
                   const initial = user.userName ? String(user.userName).charAt(0).toUpperCase() : '?';
 
                   return (
-                    <tr key={i}>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(56, 189, 248, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8', fontWeight: 'bold', border: '1px solid #0284c7', overflow: 'hidden', flexShrink: 0 }}>
-                            {/* 🚨 RENDERS PHOTO IF EXISTS, ELSE INITIAL */}
-                            {photoUrl ? (
-                              <img 
-                                src={photoUrl} 
-                                alt={user.userName} 
-                                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                                onError={(e) => { 
-                                  e.target.style.display = 'none'; 
-                                  e.target.parentNode.innerHTML = `<span style="font-size: 1rem; font-weight: bold;">${initial}</span>`; 
-                                }} 
-                              />
-                            ) : (
-                              initial
-                            )}
-                          </div>
-                          <div>
-                            <span className="primary-text" style={{ fontSize: '1rem' }}>{user.userName || 'Unnamed User'}</span>
-                            <span className="sub-text">{user.email || 'No Email'} • {user.contact || 'No Contact'}</span>
-                          </div>
-                        </div>
-                      </td>
-                      <td>
-                        <span className="primary-text">{user.role || 'Unassigned'}</span>
-                        <span className={`badge ${accessLvl.includes('super') ? 'badge-blue' : accessLvl.includes('edit') ? 'badge-green' : ''}`} style={{ marginTop: '5px', background: accessLvl.includes('view only') ? 'rgba(245, 158, 11, 0.15)' : '', color: accessLvl.includes('view only') ? '#f59e0b' : '', border: accessLvl.includes('view only') ? '1px solid #f59e0b' : '' }}>
-                          {user.access || 'View Only'}
-                        </span>
-                      </td>
-                      <td>
-                        <span className="primary-text">{user.course || 'All Courses'}</span>
-                        <span className="sub-text">{user.assignedBranches || user.sittingBranch || 'Global Scope'}</span>
-                      </td>
-                      <td>
-                        <span className="primary-text" style={{ fontFamily: 'monospace' }}>ID: {user.email || user.userName}</span>
-                        <span className="sub-text" style={{ fontFamily: 'monospace' }}>Pass: {user.password}</span>
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                          <button 
-                            onClick={() => openEditModal(user)}
-                            style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
-                            title="Edit User"
-                          >
-                            <PencilSimple size={18} weight="bold" />
-                          </button>
-                          <button 
-                            onClick={() => handleDeleteUser(user.sheet, user.rowNumber, user.userName)}
-                            style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
-                            title="Delete User"
-                          >
-                            <Trash size={18} weight="bold" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
+                    <div className="student-card" key={i}>
+                      <div className="sc-avatar" style={{ border: 'none', background: 'var(--accent-primary)', color: '#0f172a' }}>
+                        {photoUrl ? (
+                          <img 
+                            src={photoUrl} alt={user.userName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                            onError={(e) => { e.target.style.display='none'; e.target.parentNode.innerHTML = `<span style="font-size: 1.5rem; font-weight: bold;">${initial}</span>`; }} 
+                          />
+                        ) : initial}
+                      </div>
+                      <div className="sc-name">{user.userName || 'Unnamed User'}</div>
+                      <div className="sc-roll" style={{ textTransform: 'none', color: 'var(--text-muted)' }}>{user.email || 'No Email'}</div>
+                      
+                      <div className="sc-details" style={{ marginTop: '10px' }}>
+                        <div className="sc-detail-row"><span>Access</span><strong style={{ color: accessLvl.includes('super') ? '#38bdf8' : accessLvl.includes('edit') ? '#10b981' : '#f59e0b' }}>{user.access || 'View Only'}</strong></div>
+                        <div className="sc-detail-row"><span>Course</span><strong style={{ color: 'var(--text-main)' }}>{user.course === 'All Courses' ? 'Global Scope' : user.course}</strong></div>
+                        <div className="sc-detail-row"><span>Branches</span><strong style={{ color: 'var(--text-main)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.assignedBranches}>{user.assignedBranches || 'Global'}</strong></div>
+                        <div className="sc-detail-row"><span>Password</span><strong style={{ color: 'var(--text-main)' }}>{user.password}</strong></div>
+                      </div>
+                      
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', width: '100%' }}>
+                        <button className="btn-secondary" style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }} onClick={() => openEditModal(user)}>
+                          <PencilSimple weight="bold"/> Edit
+                        </button>
+                        <button className="btn-secondary" style={{ padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }} onClick={() => handleDeleteUser(user.sheet, user.rowNumber, user.userName)}>
+                          <Trash weight="bold"/> Remove
+                        </button>
+                      </div>
+                    </div>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
+                })}
+              </div>
+            ) : (
+              <div className="table-container">
+                <table className="modern-table">
+                  <thead>
+                    <tr>
+                      <th>User Details</th>
+                      <th>Access Level</th>
+                      <th>Scope (Course/Branch)</th>
+                      <th>Credentials</th>
+                      <th style={{ textAlign: 'center' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredUsers.map((user, i) => {
+                      const accessLvl = String(user.access || '').toLowerCase();
+                      const photoUrl = getDriveImage(user.profilePhoto);
+                      const initial = user.userName ? String(user.userName).charAt(0).toUpperCase() : '?';
+
+                      return (
+                        <tr key={i}>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(56, 189, 248, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8', fontWeight: 'bold', border: '1px solid #0284c7', overflow: 'hidden', flexShrink: 0 }}>
+                                {photoUrl ? (
+                                  <img 
+                                    src={photoUrl} alt={user.userName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                                    onError={(e) => { e.target.style.display='none'; e.target.parentNode.innerHTML = `<span style="font-size: 1rem; font-weight: bold;">${initial}</span>`; }} 
+                                  />
+                                ) : initial}
+                              </div>
+                              <div>
+                                <span className="primary-text" style={{ fontSize: '1rem' }}>{user.userName || 'Unnamed User'}</span>
+                                <span className="sub-text">{user.email || 'No Email'} • {user.contact || 'No Contact'}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td>
+                            <span className={`badge ${accessLvl.includes('super') ? 'badge-blue' : accessLvl.includes('edit') ? 'badge-green' : ''}`} style={{ background: accessLvl.includes('view only') ? 'rgba(245, 158, 11, 0.15)' : '', color: accessLvl.includes('view only') ? '#f59e0b' : '', border: accessLvl.includes('view only') ? '1px solid #f59e0b' : '' }}>
+                              {user.access || 'View Only'}
+                            </span>
+                          </td>
+                          <td>
+                            <span className="primary-text">{user.course || 'Global Scope'}</span>
+                            <span className="sub-text" style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.assignedBranches || user.sittingBranch}>{user.assignedBranches || user.sittingBranch || 'Global Scope'}</span>
+                          </td>
+                          <td>
+                            <span className="primary-text" style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>ID: {user.email || user.userName}</span>
+                            <span className="sub-text" style={{ fontFamily: 'monospace' }}>Pass: {user.password}</span>
+                          </td>
+                          <td style={{ textAlign: 'center' }}>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                              <button 
+                                onClick={() => openEditModal(user)}
+                                style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
+                                title="Edit User"
+                              >
+                                <PencilSimple size={18} weight="bold" />
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteUser(user.sheet, user.rowNumber, user.userName)}
+                                style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
+                                title="Delete User"
+                              >
+                                <Trash size={18} weight="bold" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
-      {/* Add / Edit User Modal */}
+      {/* ========================================== */}
+      {/* UNIVERSAL ADD/EDIT MODAL OVERLAY */}
+      {/* ========================================== */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="modal-card" style={{ maxWidth: '650px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
@@ -370,7 +478,6 @@ export default function UserManagement() {
                 </div>
               </div>
 
-              {/* Multi-Select Dropdown for Assigned Branches */}
               <div className="form-group" style={{ marginBottom: '25px', position: 'relative' }}>
                 <label>Assigned Branches</label>
                 <div 
