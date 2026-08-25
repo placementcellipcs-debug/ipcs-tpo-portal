@@ -133,6 +133,13 @@ export default function UserManagement() {
     }
   };
 
+  // 🚨 HELPER TO RENDER DRIVE IMAGES
+  const getDriveImage = (url) => {
+    if (!url || typeof url !== 'string') return null;
+    const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+    return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : url;
+  };
+
   if (tpoData?.accessType !== 'superadmin') {
     return (
       <Layout>
@@ -145,7 +152,6 @@ export default function UserManagement() {
     );
   }
 
-  // 🚨 Guaranteed safe filtering AND hides the currently logged-in Super Admin
   const filteredUsers = (users || []).filter(u => 
     String(u.email || '').toLowerCase() !== String(tpoData.email).toLowerCase() && 
     (
@@ -202,12 +208,30 @@ export default function UserManagement() {
               ) : (
                 filteredUsers.map((user, i) => {
                   const accessLvl = String(user.access || '').toLowerCase();
+                  
+                  // 🚨 PREPARE PROFILE PHOTO
+                  const photoUrl = getDriveImage(user.profilePhoto);
+                  const initial = user.userName ? String(user.userName).charAt(0).toUpperCase() : '?';
+
                   return (
                     <tr key={i}>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                          <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(56, 189, 248, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8', fontWeight: 'bold', border: '1px solid #0284c7' }}>
-                            {user.userName ? String(user.userName).charAt(0).toUpperCase() : '?'}
+                          <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(56, 189, 248, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8', fontWeight: 'bold', border: '1px solid #0284c7', overflow: 'hidden', flexShrink: 0 }}>
+                            {/* 🚨 RENDERS PHOTO IF EXISTS, ELSE INITIAL */}
+                            {photoUrl ? (
+                              <img 
+                                src={photoUrl} 
+                                alt={user.userName} 
+                                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                                onError={(e) => { 
+                                  e.target.style.display = 'none'; 
+                                  e.target.parentNode.innerHTML = `<span style="font-size: 1rem; font-weight: bold;">${initial}</span>`; 
+                                }} 
+                              />
+                            ) : (
+                              initial
+                            )}
                           </div>
                           <div>
                             <span className="primary-text" style={{ fontSize: '1rem' }}>{user.userName || 'Unnamed User'}</span>

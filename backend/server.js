@@ -953,6 +953,7 @@ app.get('/api/admin/users', async (req, res) => {
       const hBranch = getFuzzyHeader(headers, 'sittingbranch');
       const hAssign = getFuzzyHeader(headers, 'assignedbranches');
       const hPass = getFuzzyHeader(headers, 'password');
+      const hPhoto = getFuzzyHeader(headers, 'profilephoto'); // Add this!
 
       cRows.forEach(r => {
         const email = r.get(hMail) || '';
@@ -969,7 +970,8 @@ app.get('/api/admin/users', async (req, res) => {
             password: r.get(hPass) || '',
             role: 'TPO',
             course: 'All Courses',
-            access: 'View & Edit'
+            access: 'View & Edit',
+            profilePhoto: r.get(hPhoto) || r.get('Profile Photo') || ''
           });
         }
       });
@@ -989,6 +991,7 @@ app.get('/api/admin/users', async (req, res) => {
       const hRole = getFuzzyHeader(headers, 'role');
       const hCourse = getFuzzyHeader(headers, 'course');
       const hAccess = getFuzzyHeader(headers, 'access');
+      const hPhoto = getFuzzyHeader(headers, 'profilephoto'); // Add this!
 
       uRows.forEach(r => {
         const email = r.get(hMail) || '';
@@ -1005,7 +1008,8 @@ app.get('/api/admin/users', async (req, res) => {
             password: r.get(hPass) || '',
             role: r.get(hRole) || 'Unassigned',
             course: r.get(hCourse) || 'All Courses',
-            access: r.get(hAccess) || 'View Only'
+            access: r.get(hAccess) || 'View Only',
+            profilePhoto: r.get(hPhoto) || r.get('Profile Photo') || ''
           });
         }
       });
