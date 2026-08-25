@@ -3,27 +3,26 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   SignOut, Bell, Moon, Sun, X, SquaresFour, Trophy, ListChecks, Headset, 
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
-  ShieldCheck, BookOpenText, Exam
+  Book, FileText // 🚨 100% Guaranteed Safe Icons
 } from '@phosphor-icons/react';
 
 export default function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Safely parse localStorage to prevent app crashes on malformed data
+  // Safely parse localStorage
   const [tpoData] = useState(() => {
     try {
       const data = localStorage.getItem('tpoData');
       return data ? JSON.parse(data) : null;
     } catch (error) {
-      console.error("Failed to parse tpoData from localStorage", error);
       return null;
     }
   });
   
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [theme, setTheme] = useState(document.body.getAttribute('data-theme') || 'dark');
-  const [imgError, setImgError] = useState(false); // Proper React state for broken images
+  const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
     if (!tpoData) navigate('/');
@@ -54,7 +53,6 @@ export default function Layout({ children }) {
   const renderAvatar = () => {
     const initial = tpoData.name ? String(tpoData.name).charAt(0).toUpperCase() : '?';
     
-    // Safely fallback to text initial if no image URL or if the image failed to load
     if (!profilePhotoUrl || profilePhotoUrl === 'N/A' || imgError) {
       return <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{initial}</span>;
     }
@@ -64,7 +62,7 @@ export default function Layout({ children }) {
         src={profilePhotoUrl} 
         alt="Profile" 
         style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-        onError={() => setImgError(true)} // Safely update state instead of mutating DOM
+        onError={() => setImgError(true)} 
       />
     );
   };
@@ -80,7 +78,7 @@ export default function Layout({ children }) {
               alt="IPCS Logo" 
               style={{ height: '35px', objectFit: 'contain' }} 
               onError={(e) => { 
-                e.currentTarget.onerror = null; // Prevents infinite loop if fallback fails
+                e.currentTarget.onerror = null; 
                 e.currentTarget.src = 'https://ipcsglobal.com/wp-content/uploads/2023/12/IPCS-Global-Logo-1.png'; 
               }}
             />
@@ -136,16 +134,16 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/reports'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> Reports</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> Talentino</div><span>›</span></div>
             
-            {/* 🚨 STUDY MATERIALS & EXAM TABS (Safe Icons) */}
+            {/* 🚨 SAFELY IMPLEMENTED TABS */}
             {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
                <>
-                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/study-materials'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><BookOpenText size={22} color={isActive('/study-materials')} /> Study Materials</div><span>›</span></div>
+                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/study-materials'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Book size={22} color={isActive('/study-materials')} /> Study Materials</div><span>›</span></div>
                  <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/exams'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><FileText size={22} color={isActive('/exams')} /> Technical Exams</div><span>›</span></div>
                </>
             )}
 
             {tpoData.accessType === 'superadmin' && (
-               <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
+               <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
             )}
 
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/settings'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Gear size={22} color={isActive('/settings')} /> Settings</div><span>›</span></div>
