@@ -1,16 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
-  SignOut, Bell, Moon, Sun, X, SquaresFour, Trophy, ListChecks, Headset, 
+  Bell, X, SquaresFour, Trophy, ListChecks, Headset, 
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
-  Book, FileText, Brain, PencilSimple, Bookmarks // 🚨 All icons 100% verified and imported
+  Book, FileText, Brain, PencilSimple, Bookmarks, ShieldCheck
 } from '@phosphor-icons/react';
 
 export default function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   
-  // Safely parse localStorage
   const [tpoData] = useState(() => {
     try {
       const data = localStorage.getItem('tpoData');
@@ -21,20 +20,15 @@ export default function Layout({ children }) {
   });
   
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [theme, setTheme] = useState(document.body.getAttribute('data-theme') || 'dark');
   const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
     if (!tpoData) navigate('/');
+    // Enforce Dark Mode Permanently
+    document.body.setAttribute('data-theme', 'dark');
   }, [tpoData, navigate]);
 
   if (!tpoData) return null;
-
-  const toggleTheme = () => {
-    const newTheme = theme === 'dark' ? 'light' : 'dark';
-    document.body.setAttribute('data-theme', newTheme);
-    setTheme(newTheme);
-  };
 
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
@@ -52,11 +46,9 @@ export default function Layout({ children }) {
 
   const renderAvatar = () => {
     const initial = tpoData.name ? String(tpoData.name).charAt(0).toUpperCase() : '?';
-    
     if (!profilePhotoUrl || profilePhotoUrl === 'N/A' || imgError) {
-      return <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>{initial}</span>;
+      return <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#ffffff' }}>{initial}</span>;
     }
-    
     return (
       <img 
         src={profilePhotoUrl} 
@@ -71,7 +63,7 @@ export default function Layout({ children }) {
     <div className="app-layout">
       <main className="main-content">
         
-        <header className="top-header">
+        <header className="top-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
           <div className="header-left">
             <img 
               src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" 
@@ -84,11 +76,8 @@ export default function Layout({ children }) {
             />
           </div>
           <div className="header-actions">
-            <button className="icon-btn" onClick={toggleTheme} title="Dark/Light Mode">
-              {theme === 'dark' ? <Moon weight="fill" /> : <Sun weight="fill" />}
-            </button>
             <button className="icon-btn" title="Notifications"><Bell weight="fill" /></button>
-            <button className="icon-btn" onClick={handleLogout} style={{ color: '#ef4444', marginLeft: '10px' }} title="Logout"><SignOut weight="fill" /></button>
+            {/* Removed the extra SignOut button and Theme Toggle here */}
             <div className="header-profile" onClick={() => setIsDrawerOpen(true)}>
               <div className="header-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)' }}>
                 {renderAvatar()}
@@ -97,7 +86,7 @@ export default function Layout({ children }) {
           </div>
         </header>
 
-        <div className="page-container">
+        <div className="page-container" style={{ width: '100%', overflowX: 'hidden' }}>
           {children}
         </div>
 
@@ -124,7 +113,12 @@ export default function Layout({ children }) {
           <div className="drawer-menu">
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/dashboard'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><SquaresFour size={22} color={isActive('/dashboard')} /> Dashboard</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/students'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/students')} /> Students Directory</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/tracker'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Files size={22} color={isActive('/tracker')} /> Job Tracker</div><span>›</span></div>
+            
+            {/* 🚨 JOB TRACKER: Strictly limited to TPOs ONLY */}
+            {(tpoData.role || '').toUpperCase() === 'TPO' && (
+              <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/tracker'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Files size={22} color={isActive('/tracker')} /> Job Tracker</div><span>›</span></div>
+            )}
+
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/placed'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Trophy size={22} color={isActive('/placed')} /> Placed Students</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/applications'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ListChecks size={22} color={isActive('/applications')} /> Student Apps</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/vacancies'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Briefcase size={22} color={isActive('/vacancies')} /> Vacancies</div><span>›</span></div>
@@ -134,7 +128,6 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/reports'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> Reports</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> Talentino</div><span>›</span></div>
             
-            {/* 🚨 SAFELY IMPLEMENTED NEW TABS */}
             {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
                <>
                  <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/study-materials'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Book size={22} color={isActive('/study-materials')} /> Study Materials</div><span>›</span></div>
@@ -147,7 +140,7 @@ export default function Layout({ children }) {
             {tpoData.accessType === 'superadmin' && (
                <>
                  <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/courses'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Bookmarks size={22} color={isActive('/courses')} /> Manage Courses</div><span>›</span></div>
-                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
+                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
                </>
             )}
 

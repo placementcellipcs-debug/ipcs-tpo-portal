@@ -56,9 +56,9 @@ export default function Login() {
           />
         </div>
         
-        <h2 style={{ textAlign: 'center', margin: '0 0 6px 0', fontSize: '1.6rem' }}>Placement Officer</h2>
+        <h2 style={{ textAlign: 'center', margin: '0 0 6px 0', fontSize: '1.6rem' }}>IPCS PORTAL</h2>
         <p style={{ color: '#38bdf8', fontWeight: '600', fontSize: '0.85rem', textAlign: 'center', marginTop: 0, marginBottom: '2rem', textTransform: 'uppercase', letterSpacing: '1px' }}>
-          Secure Access Portal
+          SECURE ACCESS DASHBOARD
         </p>
 
         <form onSubmit={handleLogin}>

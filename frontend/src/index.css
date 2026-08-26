@@ -257,3 +257,23 @@ input:focus { border-color: var(--accent-primary); }
 .student-modal-grid::-webkit-scrollbar { width: 8px; }
 .student-modal-grid::-webkit-scrollbar-track { background: var(--bg-dark); border-radius: 8px; }
 .student-modal-grid::-webkit-scrollbar-thumb { background: #475569; border-radius: 8px; }
+
+/* Responsive Fixes */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.top-header {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .universal-kpi-bar {
+    grid-template-columns: 1fr;
+  }
+  .drawer-card {
+    width: 280px;
+  }
+}

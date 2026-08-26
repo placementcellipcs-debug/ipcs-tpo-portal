@@ -182,3 +182,23 @@
     border-right-color: var(--border);
   }
 }
+
+/* Responsive Fixes */
+.table-container {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.top-header {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 768px) {
+  .universal-kpi-bar {
+    grid-template-columns: 1fr;
+  }
+  .drawer-card {
+    width: 280px;
+  }
+}

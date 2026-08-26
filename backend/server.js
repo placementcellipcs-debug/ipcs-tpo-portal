@@ -89,6 +89,8 @@ app.get('/api/talentino-exams/results', controllers.getTalExamResults);
 app.post('/api/talentino-exams/questions/add', controllers.addTalExamQuestion); // 🚨 ADDED
 app.post('/api/talentino-exams/questions/delete', controllers.deleteTalExamQuestion); // 🚨 ADDED
 
+app.post('/api/tpo/profile/update-password', controllers.updatePassword);
+
 // ==========================================
 // SCHEDULED JOBS
 // ==========================================

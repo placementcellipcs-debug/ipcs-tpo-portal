@@ -937,3 +937,42 @@ exports.deleteTalExamQuestion = async (req, res) => {
     }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
+
+// ==========================================
+// 🚨 PROFILE / SETTINGS API
+// ==========================================
+exports.updatePassword = async (req, res) => {
+  const { email, newPassword } = req.body;
+  try {
+    let targetRow = null;
+    let targetSheet = null;
+
+    // Search in Contact Sheet first
+    const cSheet = doc.sheetsByTitle["Contact"];
+    if (cSheet) {
+      const rows = await cSheet.getRows();
+      targetRow = rows.find(r => (r.get('Mail ID') || '').toString().trim().toLowerCase() === email.toLowerCase().trim());
+      if (targetRow) targetSheet = cSheet;
+    }
+
+    // Search in User Sheet if not found
+    if (!targetRow) {
+      const uSheet = doc.sheetsByTitle["User"];
+      if (uSheet) {
+        const rows = await uSheet.getRows();
+        targetRow = rows.find(r => (r.get('Mail ID') || '').toString().trim().toLowerCase() === email.toLowerCase().trim());
+        if (targetRow) targetSheet = uSheet;
+      }
+    }
+
+    if (targetRow && targetSheet) {
+      const pHead = getFuzzyHeader(targetSheet.headerValues, 'password');
+      targetRow.assign({ [pHead]: newPassword });
+      await targetRow.save();
+      refreshCache();
+      res.json({ success: true, message: "Password updated successfully" });
+    } else {
+      res.status(404).json({ success: false, message: "User account not found in database." });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
