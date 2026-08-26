@@ -24,7 +24,9 @@ export default function StudentApps() {
       try {
         const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications', { 
           assignedBranchesArray: tpoData.assignedBranchesArray,
-          tpoName: tpoData.name 
+          tpoName: tpoData.name,
+          role: tpoData.role,
+          assignedCourse: tpoData.assignedCourse
         });
         if (response.data.success) {
           setApplications(response.data.applications);
@@ -49,7 +51,6 @@ export default function StudentApps() {
   // ==========================================
   const activeApps = selectedBranch ? applications.filter(a => a.branch === selectedBranch) : [];
 
-  // Exact Original Filtering Logic (Applied to active branch)
   const filteredApps = activeApps.filter(a => {
     let dateObj = new Date(a.date);
     let monthKey = !isNaN(dateObj) ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
@@ -66,12 +67,12 @@ export default function StudentApps() {
       <Layout>
         <div className="page-container" style={{ padding: 0 }}>
           <h1 style={{ fontSize: '2.2rem', marginBottom: '5px', textAlign: 'center', marginTop: '20px' }}>Which branch's applications?</h1>
-          <p style={{ color: 'var(--text-muted)', marginBottom: '3rem', textAlign: 'center' }}>Select an assigned branch to view all job applications submitted by its students.</p>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '3rem', textAlign: 'center' }}>Select a branch to view all job applications submitted by its students.</p>
           
           {loading ? (
             <div style={{ textAlign: 'center', marginTop: '4rem', color: '#3b82f6' }}><CircleNotch size={50} className="ph-spin" /></div>
           ) : branchList.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2rem' }}>No applications found in your assigned branches.</div>
+            <div style={{ textAlign: 'center', padding: '2rem' }}>No applications found in your branches.</div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px', padding: '0 20px' }}>
               {branchList.map((branch, index) => {
@@ -108,7 +109,6 @@ export default function StudentApps() {
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        {/* Navigation Header */}
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '25px', gap: '15px' }}>
           <button 
             onClick={() => setSelectedBranch(null)} 
@@ -122,7 +122,6 @@ export default function StudentApps() {
           </div>
         </div>
 
-        {/* Exact Original Filters */}
         <div className="header-controls" style={{ justifyContent: 'flex-start' }}>
           <input type="month" className="sleek-input" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
           <select className="sleek-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
@@ -134,7 +133,6 @@ export default function StudentApps() {
           </select>
         </div>
 
-        {/* Updated Table with Remarks Column */}
         <div className="table-container">
           <table className="modern-table">
             <thead>
@@ -144,7 +142,7 @@ export default function StudentApps() {
                 <th>Date</th>
                 <th>TPO Name</th>
                 <th>Status</th>
-                <th>Remarks</th> {/* 🚨 NEW REMARKS COLUMN */}
+                <th>Remarks</th>
               </tr>
             </thead>
             <tbody>
@@ -168,7 +166,7 @@ export default function StudentApps() {
                       <td><strong style={{ color: 'var(--text-main)', fontSize: '0.8rem' }}>{app.tpoName || 'N/A'}</strong></td>
                       <td><span className={`badge ${statClass}`}>{app.status || 'Applied'}</span></td>
                       <td style={{ fontSize: '0.85rem', color: '#cbd5e1', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={app.remarks}>
-                        {app.remarks || '-'} {/* 🚨 RENDERED REMARKS */}
+                        {app.remarks || '-'}
                       </td>
                     </tr>
                   );

@@ -1,11 +1,10 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, PlusCircle, Users, Eye, X, Prohibit, EnvelopeSimple, Phone } from '@phosphor-icons/react';
+import { CircleNotch, Users, Eye, X, Prohibit, EnvelopeSimple, Phone } from '@phosphor-icons/react';
 import Layout from './Layout';
 
 const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
 
-// Reusable UI Box for Job Details
 const DetailBox = ({ label, value }) => (
   <div style={{ background: '#161e2e', padding: '12px', borderRadius: '8px', border: '1px solid #1e293b' }}>
     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>{label}</div>
@@ -35,7 +34,9 @@ export default function Vacancies() {
           axios.get(`${API_BASE}/api/tpo/vacancies`),
           axios.post(`${API_BASE}/api/tpo/applications`, { 
             assignedBranchesArray: tpoData.assignedBranchesArray,
-            tpoName: tpoData.name 
+            tpoName: tpoData.name,
+            role: tpoData.role,
+            assignedCourse: tpoData.assignedCourse
           })
         ]);
         
@@ -47,9 +48,6 @@ export default function Vacancies() {
     fetchAllData();
   }, [tpoData]);
 
-  // ==========================================
-  // DATA PREP & FILTERING
-  // ==========================================
   const appsByJobId = {};
   applications.forEach(app => {
     const jobId = (app.jobId || '').toString().trim();
@@ -72,12 +70,11 @@ export default function Vacancies() {
     groupedVacs[loc].push(v);
   });
 
-  // 🚨 DATE PARSING LOGIC TO AUTO-EXPIRE JOBS
   const parseDate = (dateStr) => {
-    if (!dateStr) return new Date(8640000000000000); // Never expires if empty
+    if (!dateStr) return new Date(8640000000000000);
     if (dateStr.includes('/')) {
       const parts = dateStr.split('/');
-      return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`); // Converts DD/MM/YYYY
+      return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`); 
     }
     return new Date(dateStr);
   };
@@ -89,14 +86,9 @@ export default function Vacancies() {
     <Layout>
       <div className="page-container">
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '15px', flexWrap: 'wrap', gap: '15px' }}>
-          <div>
-            <h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>Active Job Vacancies</h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Current openings and applicant tracking for your branches.</p>
-          </div>
-          <button className="btn-action" style={{ width: 'auto' }} onClick={() => window.open('https://forms.gle/GLGBvxd7TFBF3ekV7', '_blank')}>
-            <PlusCircle weight="fill" size={20} /> Add Opening
-          </button>
+        <div style={{ marginBottom: '15px' }}>
+          <h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>Active Job Vacancies</h1>
+          <p style={{ color: 'var(--text-muted)', margin: 0 }}>Current openings and applicant tracking for your branches.</p>
         </div>
 
         <div className="header-controls" style={{ justifyContent: 'flex-start' }}>
@@ -129,14 +121,12 @@ export default function Vacancies() {
                       <th>Position & Company</th>
                       <th>Location & Mode</th>
                       <th>Status & Deadline</th>
-                      <th style={{ textAlign: 'center' }}>My Applicants</th>
+                      <th style={{ textAlign: 'center' }}>Applicants</th>
                       <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {groupedVacs[state].map((v, i) => {
-                      
-                      // 🚨 EXPIRY MATH: Instantly lock jobs if the deadline passed
                       const deadline = parseDate(v.lastDate);
                       const isExpired = deadline < today || (v.status || '').toLowerCase().includes('expire');
                       
@@ -203,9 +193,6 @@ export default function Vacancies() {
         )}
       </div>
 
-      {/* ========================================== */}
-      {/* MODAL 1: JOB DETAILS (Now with all mapped data) */}
-      {/* ========================================== */}
       {isJobDetailsModalOpen && selectedJob && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsJobDetailsModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
@@ -242,16 +229,13 @@ export default function Vacancies() {
         </div>
       )}
 
-      {/* ========================================== */}
-      {/* MODAL 2: APPLICANTS LIST */}
-      {/* ========================================== */}
       {isApplicantsModalOpen && selectedJob && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsApplicantsModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '900px', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
             
             <div style={{ padding: '1.5rem 2rem', background: '#161e2e', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h2 style={{ margin: '0 0 5px 0', fontSize: '1.3rem', color: '#fff' }}>Branch Applicants</h2>
+                <h2 style={{ margin: '0 0 5px 0', fontSize: '1.3rem', color: '#fff' }}>Applicants</h2>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{selectedJob.id} | {selectedJob.company}</div>
               </div>
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsApplicantsModalOpen(false)} />
@@ -305,7 +289,7 @@ export default function Vacancies() {
                     <tr>
                       <td colSpan="4" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
                         <Users size={32} style={{ opacity: 0.5, marginBottom: '10px' }} /><br/>
-                        No students from your branches have applied to this opening yet.
+                        No students have applied to this opening yet.
                       </td>
                     </tr>
                   )}

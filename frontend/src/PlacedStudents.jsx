@@ -30,24 +30,28 @@ export default function PlacedStudents() {
   useEffect(() => {
     if (!tpoData) return;
     fetchData();
-  }, []);
+  }, [tpoData]);
 
   const fetchData = async () => {
     try {
       const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications', { 
-        assignedBranchesArray: tpoData.assignedBranchesArray, tpoName: tpoData.name 
+        assignedBranchesArray: tpoData.assignedBranchesArray, tpoName: tpoData.name, role: tpoData.role, assignedCourse: tpoData.assignedCourse
       });
       if (response.data.success) setApplications(response.data.applications);
     } catch (error) { console.error("Failed to load", error); } finally { setLoading(false); }
   };
 
-  // FILTER & SORT
+  // 🚨 FILTER & SORT - Now smartly catches all placement variations
   const placedApps = applications.filter(a => {
-    const isPlaced = ['placed', 'got offer', 'selected & joined'].includes(a.status.toLowerCase());
+    const s = (a.status || '').toLowerCase();
+    const j = (a.joiningStatus || '').toLowerCase();
+    const isPlaced = s.includes('placed') || s.includes('got offer') || s.includes('join') || s.includes('offer') || j.includes('join');
+    
     let dateObj = new Date(a.datePlaced || a.date);
     let monthKey = !isNaN(dateObj) ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
     let mMatch = monthFilter ? monthKey === monthFilter : true;
-    let sMatch = searchQuery === '' || a.name.toLowerCase().includes(searchQuery.toLowerCase()) || a.company.toLowerCase().includes(searchQuery.toLowerCase()) || a.roll.toLowerCase().includes(searchQuery.toLowerCase());
+    let sMatch = searchQuery === '' || a.name.toLowerCase().includes(searchQuery.toLowerCase()) || a.company.toLowerCase().includes(searchQuery.toLowerCase()) || (a.roll || '').toLowerCase().includes(searchQuery.toLowerCase());
+    
     return isPlaced && mMatch && sMatch;
   }).sort((a, b) => {
     if(sortOrder === 'newest') return new Date(b.datePlaced || b.date) - new Date(a.datePlaced || a.date);
@@ -71,15 +75,13 @@ export default function PlacedStudents() {
       const formData = new FormData();
       formData.append('rowNumber', selectedApp.rowNumber);
       formData.append('fullApp', JSON.stringify(selectedApp));
-      formData.append('status', selectedApp.status); // Keep original status
+      formData.append('status', selectedApp.status); 
       formData.append('remarks', editForm.remarks || '');
       formData.append('datePlaced', editForm.datePlaced || '');
       formData.append('packageLpa', editForm.packageLpa || '');
       formData.append('joiningStatus', editForm.joiningStatus || '');
       
-      if (editForm.offerLetterFile) {
-        formData.append('offerLetterFile', editForm.offerLetterFile);
-      }
+      if (editForm.offerLetterFile) formData.append('offerLetterFile', editForm.offerLetterFile);
 
       await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications/update', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       setIsEditModalOpen(false);
@@ -95,9 +97,7 @@ export default function PlacedStudents() {
       formData.append('tpoName', tpoData.name);
       formData.append('appData', JSON.stringify(addForm));
       
-      if (addForm.offerLetterFile) {
-        formData.append('offerLetterFile', addForm.offerLetterFile);
-      }
+      if (addForm.offerLetterFile) formData.append('offerLetterFile', addForm.offerLetterFile);
 
       await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications/add', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       setIsAddModalOpen(false);
@@ -115,21 +115,19 @@ export default function PlacedStudents() {
             <h1 style={{ fontSize: '1.8rem', marginBottom: '5px' }}>Placed Students Data</h1>
             <p style={{ color: 'var(--text-muted)' }}>Manage placement details, upload offer letters directly to Drive, and log salary packages.</p>
           </div>
-          <button className="btn-action" style={{ background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => setIsAddModalOpen(true)}>
+          <button className="btn-action" style={{ background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px', width: 'auto' }} onClick={() => setIsAddModalOpen(true)}>
             <Plus weight="bold" /> Add Placement
           </button>
         </div>
         
-        <div className="header-controls">
-          <div className="filter-group">
-            <input type="text" className="sleek-input" placeholder="Search student or company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-            <input type="month" className="sleek-input" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
-            <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
-              <option value="newest">Sort: Date Placed</option>
-              <option value="az">Sort: Student A-Z</option>
-              <option value="za">Sort: Student Z-A</option>
-            </select>
-          </div>
+        <div className="header-controls" style={{ justifyContent: 'flex-start' }}>
+          <input type="text" className="sleek-input" placeholder="Search student or company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <input type="month" className="sleek-input" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
+          <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
+            <option value="newest">Sort: Date Placed</option>
+            <option value="az">Sort: Student A-Z</option>
+            <option value="za">Sort: Student Z-A</option>
+          </select>
         </div>
 
         <div style={{ marginTop: '1.5rem' }}>
@@ -167,7 +165,6 @@ export default function PlacedStudents() {
                   </div>
 
                   <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    {/* BUTTON MADE SMALLER */}
                     <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem', display: 'flex', justifyContent: 'center', gap: '6px' }} onClick={() => openEditModal(app)}>
                       <PencilSimple weight="bold" size={14} /> Edit
                     </button>
@@ -180,7 +177,6 @@ export default function PlacedStudents() {
         </div>
       </div>
 
-      {/* EDIT MODAL - Strict Fields + Upload */}
       {isEditModalOpen && selectedApp && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
@@ -214,7 +210,6 @@ export default function PlacedStudents() {
         </div>
       )}
 
-      {/* ADD PLACEMENT MODAL - Comprehensive Manual Form */}
       {isAddModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
