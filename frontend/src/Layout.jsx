@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   SignOut, Bell, Moon, Sun, X, SquaresFour, Trophy, ListChecks, Headset, 
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
-  Book, FileText // 🚨 100% Guaranteed Safe Icons
+  Book, FileText, Brain, PencilSimple, Bookmarks // 🚨 All icons 100% verified and imported
 } from '@phosphor-icons/react';
 
 export default function Layout({ children }) {
@@ -134,32 +134,21 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/reports'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> Reports</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> Talentino</div><span>›</span></div>
             
-            {/* 🚨 APTITUDE & TALENTINO EXAMS (RTH & Super Admin) */}
-            {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
-               <>
-                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/aptitude'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Brain size={22} color={isActive('/aptitude')} /> Aptitude Exams</div><span>›</span></div>
-                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino-exams'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><PenNib size={22} color={isActive('/talentino-exams')} /> Talentino Exams</div><span>›</span></div>
-               </>
-            )}
-
-            {/* 🚨 COURSES & USER MANAGEMENT (Super Admin ONLY) */}
-            {tpoData.accessType === 'superadmin' && (
-               <>
-                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/courses'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><BookBookmark size={22} color={isActive('/courses')} /> Manage Courses</div><span>›</span></div>
-                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
-               </>
-            )}
-            
-            {/* 🚨 SAFELY IMPLEMENTED TABS */}
+            {/* 🚨 SAFELY IMPLEMENTED NEW TABS */}
             {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
                <>
                  <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/study-materials'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Book size={22} color={isActive('/study-materials')} /> Study Materials</div><span>›</span></div>
                  <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/exams'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><FileText size={22} color={isActive('/exams')} /> Technical Exams</div><span>›</span></div>
+                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/aptitude'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Brain size={22} color={isActive('/aptitude')} /> Aptitude Exams</div><span>›</span></div>
+                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino-exams'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><PencilSimple size={22} color={isActive('/talentino-exams')} /> Talentino Exams</div><span>›</span></div>
                </>
             )}
 
             {tpoData.accessType === 'superadmin' && (
-               <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
+               <>
+                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/courses'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Bookmarks size={22} color={isActive('/courses')} /> Manage Courses</div><span>›</span></div>
+                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
+               </>
             )}
 
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/settings'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Gear size={22} color={isActive('/settings')} /> Settings</div><span>›</span></div>
