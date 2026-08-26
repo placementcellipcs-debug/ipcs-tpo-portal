@@ -36,7 +36,7 @@ async function refreshCache() {
       matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows
     ] = await Promise.all([
       stuSheet?.getRows() || [], appSheet?.getRows() || [], vacSheet?.getRows() || [], eventSheet?.getRows() || [], 
-      issueSheet?.getRows() || [], tSchedSheet?.getRows() || [], tAttSheet?.getRows() || [], clientRows?.getRows() || [], 
+      issueSheet?.getRows() || [], tSchedSheet?.getRows() || [], tAttSheet?.getRows() || [], clientSheet?.getRows() || [], 
       tpoLogSheet?.getRows() || [], matSheet?.getRows() || [], tqSheet?.getRows() || [], trSheet?.getRows() || [],
       aptQSheet?.getRows() || [], aptRSheet?.getRows() || [], talQSheet?.getRows() || [], talRSheet?.getRows() || []
     ]);
