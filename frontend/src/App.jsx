@@ -7,7 +7,6 @@ import PlacedStudents from './PlacedStudents';
 import StudentApps from './StudentApps';
 import Vacancies from './Vacancies';
 import Events from './Events';
-import Issues from './Issues';
 import Reports from './Reports';
 import Talentino from './Talentino';
 import Settings from './Settings';
@@ -16,9 +15,10 @@ import CertificateSign from './CertificateSign';
 import UserManagement from './UserManagement';
 import StudyMaterials from './StudyMaterials';
 import TechnicalExams from './TechnicalExams';
-import Courses from './Courses';
 import Aptitude from './Aptitude';
 import TalentinoExams from './TalentinoExams';
+import Courses from './Courses';
+import PlacementDrives from './PlacementDrives';
 
 function App() {
   return (
@@ -32,21 +32,17 @@ function App() {
         <Route path="/applications" element={<StudentApps />} />
         <Route path="/vacancies" element={<Vacancies />} />
         <Route path="/events" element={<Events />} />
-        <Route path="/issues" element={<Issues />} />
         <Route path="/reports" element={<Reports />} />
         <Route path="/talentino" element={<Talentino />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/clients" element={<Clients />} />
         <Route path="/sign-certificate/:id" element={<CertificateSign />} />
         <Route path="/users" element={<UserManagement />} />
-        <Route path="/placement-drives" element={<PlacementDrives />} />                    
-        
-        {/* 🚨 NEW ROUTES */}
         <Route path="/study-materials" element={<StudyMaterials />} />
         <Route path="/exams" element={<TechnicalExams />} />
-        <Route path="/courses" element={<Courses />} />
         <Route path="/aptitude" element={<Aptitude />} />
         <Route path="/talentino-exams" element={<TalentinoExams />} />
+        <Route path="/courses" element={<Courses />} />
         <Route path="/placement-drives" element={<PlacementDrives />} />
       </Routes>
     </BrowserRouter>

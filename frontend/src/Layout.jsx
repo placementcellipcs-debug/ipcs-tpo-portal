@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { 
-  Bell, X, SquaresFour, Trophy, ListChecks, Headset, 
+  Bell, X, SquaresFour, Trophy, ListChecks, 
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
-  Book, FileText, Brain, PencilSimple, Bookmarks, ShieldCheck
+  Book, FileText, Brain, PencilSimple, Bookmarks, ShieldCheck, IdentificationCard
 } from '@phosphor-icons/react';
 
 export default function Layout({ children }) {
@@ -130,8 +130,6 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/clients'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Handshake size={22} color={isActive('/clients')} /> Clients & Partners</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/events'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><CalendarStar size={22} color={isActive('/events')} /> Events</div><span>›</span></div>
             
-            {/* 🚨 REMOVED ISSUES TAB FROM HERE entirely */}
-
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> Talentino</div><span>›</span></div>
             
             {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (

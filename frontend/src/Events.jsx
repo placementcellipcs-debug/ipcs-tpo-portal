@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   Plus, CaretLeft, CaretRight, X, CircleNotch, CalendarBlank, MapPin, 
-  Clock, Buildings, CalendarStar, Briefcase, UserCheck, Chats, FilePdf, Image
+  Clock, Buildings, CalendarStar, Briefcase, UserCheck, FilePdf, Image
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -13,7 +13,7 @@ export default function Events() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Master Category Tabs: 'calendar' | 'Placement Drive' | 'Interview' | 'Talentino' | 'Other'
+  // Master Category Tabs: 'calendar' | 'Placement Drive' | 'Talentino' | 'Other'
   const [categoryTab, setCategoryTab] = useState('calendar');
   const [view, setView] = useState('Month'); 
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -22,7 +22,7 @@ export default function Events() {
   const [isSaving, setIsSaving] = useState(false);
   
   const [newEvent, setNewEvent] = useState({ 
-    date: '', time: '', branch: tpoData?.assignedBranchesArray?.[0] || 'All Branch', 
+    date: '', time: '', branch: tpoData?.assignedBranchesArray?.[0] || 'All Branches', 
     type: 'Placement Drive', title: '', description: '', location: '' 
   });
   const [posterFile, setPosterFile] = useState(null);
@@ -62,7 +62,7 @@ export default function Events() {
 
       if (res.data.success) {
         setIsModalOpen(false);
-        setNewEvent({ date: '', time: '', branch: tpoData?.assignedBranchesArray?.[0] || 'All Branch', type: 'Placement Drive', title: '', description: '', location: '' });
+        setNewEvent({ date: '', time: '', branch: tpoData?.assignedBranchesArray?.[0] || 'All Branches', type: 'Placement Drive', title: '', description: '', location: '' });
         setPosterFile(null);
         fetchEvents(); 
       }
@@ -75,7 +75,6 @@ export default function Events() {
 
   const getEventColor = (type) => {
     if (!type) return '#38bdf8';
-    if (type.includes('Interview')) return '#10b981';
     if (type.includes('Talentino')) return '#a855f7';
     if (type.includes('Placement Drive')) return '#ef4444';
     return '#38bdf8';
@@ -106,11 +105,11 @@ export default function Events() {
 
   const getMonthName = () => currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
 
-  // Categorized event filtering
+  // Categorized event filtering (Interviews removed)
   const categorizedEvents = events.filter(e => {
     if (categoryTab === 'calendar') return true;
     if (categoryTab === 'Other') {
-      return !['Placement Drive', 'Interview', 'Talentino'].some(t => (e.type || '').toLowerCase().includes(t.toLowerCase()));
+      return !['Placement Drive', 'Talentino'].some(t => (e.type || '').toLowerCase().includes(t.toLowerCase()));
     }
     return (e.type || '').toLowerCase().includes(categoryTab.toLowerCase());
   }).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
@@ -155,14 +154,14 @@ export default function Events() {
             <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
               <CalendarStar color="var(--accent-primary)" weight="fill" /> Schedule & Event Dashboard
             </h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Track corporate drives, interview schedules, and training sessions across branches.</p>
+            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Track corporate drives and training sessions across branches.</p>
           </div>
           <button className="btn-action" style={{ width: 'auto', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => setIsModalOpen(true)}>
             <Plus weight="bold" /> Add Event
           </button>
         </div>
 
-        {/* 🚨 CATEGORY NAVIGATION TABS */}
+        {/* 🚨 CATEGORY NAVIGATION TABS (Interview Removed) */}
         <div style={{ display: 'flex', gap: '10px', marginBottom: '25px', borderBottom: '1px solid var(--card-border)', paddingBottom: '10px', overflowX: 'auto' }}>
           <button 
             onClick={() => setCategoryTab('calendar')}
@@ -175,12 +174,6 @@ export default function Events() {
             style={{ background: categoryTab === 'Placement Drive' ? 'rgba(239, 68, 68, 0.1)' : 'transparent', color: categoryTab === 'Placement Drive' ? '#ef4444' : 'var(--text-muted)', border: 'none', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
           >
             <Briefcase size={18} weight={categoryTab === 'Placement Drive' ? "fill" : "regular"} /> Placement Drives
-          </button>
-          <button 
-            onClick={() => setCategoryTab('Interview')}
-            style={{ background: categoryTab === 'Interview' ? 'rgba(16, 185, 129, 0.1)' : 'transparent', color: categoryTab === 'Interview' ? '#10b981' : 'var(--text-muted)', border: 'none', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
-          >
-            <Chats size={18} weight={categoryTab === 'Interview' ? "fill" : "regular"} /> Interviews
           </button>
           <button 
             onClick={() => setCategoryTab('Talentino')}
@@ -270,7 +263,9 @@ export default function Events() {
 
       </div>
 
+      {/* ========================================== */}
       {/* ADD EVENT MODAL */}
+      {/* ========================================== */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '600px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
@@ -298,7 +293,21 @@ export default function Events() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
               <div className="form-group">
                 <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Event Type *</label>
-                <select className="sleek-input" style={{ width: '100%' }} value={newEvent.branch} onChange={e => setNewEvent({...newEvent, branch: e.target.value})}>
+                <select className="sleek-input" style={{ width: '100%' }} value={newEvent.type} onChange={e => setNewEvent({...newEvent, type: e.target.value})}>
+                  <option value="Placement Drive">Placement Drive</option>
+                  <option value="Talentino">Talentino</option>
+                  <option value="Training">Training</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Event Location</label>
+                <input type="text" className="sleek-input" style={{ width: '100%' }} value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} placeholder="e.g. Bangalore Branch, Online" />
+              </div>
+            </div>
+
+            <div className="form-group" style={{ marginBottom: '15px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Eligible Branch</label>
+              <select className="sleek-input" style={{ width: '100%' }} value={newEvent.branch} onChange={e => setNewEvent({...newEvent, branch: e.target.value})}>
                 <option value="All Branches">All Branches</option>
                 <option value="Bangalore">Bangalore</option>
                 <option value="Trivandrum">Trivandrum</option>
@@ -333,23 +342,6 @@ export default function Events() {
                 <option value="Malappuram">Malappuram</option>
                 <option value="Perinthalmanna">Perinthalmanna</option>
               </select>
-              </div>
-              <div className="form-group">
-                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Event Location</label>
-                <input type="text" className="sleek-input" style={{ width: '100%' }} value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} placeholder="e.g. Bangalore Branch, Online" />
-              </div>
-            </div>
-
-            <div className="form-group" style={{ marginBottom: '15px' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Eligible Branch</label>
-              <select className="sleek-input" style={{ width: '100%' }} value={newEvent.branch} onChange={e => setNewEvent({...newEvent, branch: e.target.value})}>
-                <option value="All Branch">All Branches</option>
-                <option value="Bangalore">Bangalore</option>
-                <option value="Trivandrum">Trivandrum</option>
-                <option value="Kochi">Kochi</option>
-                <option value="Calicut">Calicut</option>
-                <option value="Kannur">Kannur</option>
-              </select>
             </div>
 
             <div className="form-group" style={{ marginBottom: '20px' }}>
@@ -370,6 +362,7 @@ export default function Events() {
                 {isSaving ? <CircleNotch size={18} className="ph-spin" /> : "Save Event"}
               </button>
             </div>
+
           </div>
         </div>
       )}

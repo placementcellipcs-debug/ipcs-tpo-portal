@@ -8,8 +8,8 @@ export default function PlacedStudents() {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // 🚨 FIX 1: Default to empty
-  const [monthFilter, setMonthFilter] = useState('');
+  // 🚨 PROPERLY NAMED FILTERS
+  const [branchFilter, setBranchFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState('newest');
 
@@ -39,7 +39,7 @@ export default function PlacedStudents() {
     } catch (error) { console.error("Failed to load", error); } finally { setLoading(false); }
   };
 
-  // 🚨 FIX 2: Smart Date Parser
+  // Smart Date Parser for sorting variations of DD/MM/YYYY
   const parseDate = (dStr) => {
     if (!dStr) return null;
     if (dStr.includes('/')) {
@@ -55,12 +55,11 @@ export default function PlacedStudents() {
     const j = (a.joiningStatus || '').toLowerCase();
     const isPlaced = s.includes('placed') || s.includes('got offer') || s.includes('join') || s.includes('offer') || j.includes('join');
     
-    let dateObj = parseDate(a.datePlaced || a.date);
-    let monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
-    let mMatch = monthFilter === '' ? true : a.branch === monthFilter;
+    // 🚨 APPLYING THE BRANCH FILTER
+    let bMatch = branchFilter === '' ? true : a.branch === branchFilter;
     let sMatch = searchQuery === '' || (a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (a.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || (a.roll || '').toLowerCase().includes(searchQuery.toLowerCase());
     
-    return isPlaced && mMatch && sMatch;
+    return isPlaced && bMatch && sMatch;
   }).sort((a, b) => {
     if(sortOrder === 'newest') return new Date(b.datePlaced || b.date) - new Date(a.datePlaced || a.date);
     if(sortOrder === 'az') return (a.name || '').localeCompare(b.name || '');
@@ -131,8 +130,8 @@ export default function PlacedStudents() {
         <div className="header-controls" style={{ justifyContent: 'flex-start' }}>
           <input type="text" className="sleek-input" placeholder="Search student or company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           
-          {/* 🚨 NEW: Branch Filter Dropdown */}
-          <select className="sleek-select" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}>
+          {/* 🚨 DYNAMIC BRANCH DROPDOWN */}
+          <select className="sleek-select" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
             <option value="">All Branches</option>
             {[...new Set(applications.map(a => a.branch).filter(Boolean))].sort().map(b => (
               <option key={b} value={b}>{b}</option>
