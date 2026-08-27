@@ -5,7 +5,7 @@ import {
   Users, Briefcase, Files, Trophy, CalendarStar, CircleNotch, 
   TrendUp, BuildingOffice, GraduationCap, ChalkboardTeacher, 
   ShieldCheck, UserList, CaretRight, BookOpen, Clock, PresentationChart,
-  NotePencil, Desktop, FolderNotch, Bell, ChartLineUp, Student,
+  NotePencil, Desktop, FolderOpen, Bell, ChartLineUp, Student,
   CalendarCheck, ListChecks, ArrowUpRight
 } from '@phosphor-icons/react';
 import Layout from './Layout';
@@ -397,7 +397,7 @@ export default function Dashboard() {
                 </div>
                 
                 <div onClick={() => navigate('/clients')} className="quick-link-box">
-                  <div className="icon-wrap" style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.1)' }}><FolderNotch weight="fill" size={20}/></div>
+                  <div className="icon-wrap" style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.1)' }}><FolderOpen weight="fill" size={20}/></div>
                   <span>Documents</span>
                 </div>
                 
