@@ -3,7 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Bell, X, SquaresFour, Trophy, ListChecks, 
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
-  Book, FileText, Brain, PencilSimple, Bookmarks, ShieldCheck, IdentificationCard
+  Book, FileText, Brain, PencilSimple, Bookmarks, ShieldCheck, IdentificationCard,
+  MagnifyingGlass, ChatCircleDots, CaretDown, List
 } from '@phosphor-icons/react';
 
 export default function Layout({ children }) {
@@ -14,14 +15,10 @@ export default function Layout({ children }) {
     try {
       const data = localStorage.getItem('tpoData');
       return data ? JSON.parse(data) : null;
-    } catch (error) {
-      return null;
-    }
+    } catch (error) { return null; }
   });
   
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [isNotifOpen, setIsNotifOpen] = useState(false); // 🚨 NEW NOTIFICATION STATE
-  const [imgError, setImgError] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
     if (!tpoData) navigate('/');
@@ -37,165 +34,188 @@ export default function Layout({ children }) {
   };
   
   const profilePhotoUrl = getDriveImage(tpoData.photo);
-  const isActive = (path) => location.pathname === path ? 'var(--accent-primary)' : 'var(--text-muted)';
+  const isActive = (path) => location.pathname.startsWith(path);
 
   const handleLogout = () => {
     localStorage.removeItem('tpoData');
     navigate('/');
   };
 
-  const renderAvatar = () => {
-    const initial = tpoData.name ? String(tpoData.name).charAt(0).toUpperCase() : '?';
-    if (!profilePhotoUrl || profilePhotoUrl === 'N/A' || imgError) {
-      return <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#ffffff' }}>{initial}</span>;
-    }
+  const NavItem = ({ icon: Icon, label, path }) => {
+    const active = isActive(path) && path !== '/' || (path === '/dashboard' && location.pathname === '/dashboard');
     return (
-      <img 
-        src={profilePhotoUrl} 
-        alt="Profile" 
-        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-        onError={() => setImgError(true)} 
-      />
+      <div 
+        onClick={() => { navigate(path); setIsSidebarOpen(false); }}
+        className={`nav-item ${active ? 'active' : ''}`}
+      >
+        <Icon size={20} weight={active ? "fill" : "regular"} />
+        <span>{label}</span>
+      </div>
     );
   };
 
   return (
-    <div className="app-layout">
-      <main className="main-content">
+    <div className="enterprise-layout">
+      {/* ========================================== */}
+      {/* LEFT SIDEBAR */}
+      {/* ========================================== */}
+      <aside className={`enterprise-sidebar ${isSidebarOpen ? 'open' : ''}`}>
+        <div className="sidebar-header">
+          <img 
+            src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" 
+            alt="IPCS Logo" 
+            style={{ height: '28px', objectFit: 'contain' }} 
+            onError={(e) => { e.currentTarget.src = 'https://ipcsglobal.com/wp-content/uploads/2023/12/IPCS-Global-Logo-1.png'; }}
+          />
+          <X className="mobile-close" size={24} onClick={() => setIsSidebarOpen(false)} />
+        </div>
+
+        <div className="sidebar-scroll-area">
+          <NavItem icon={SquaresFour} label="Dashboard" path="/dashboard" />
+
+          <div className="sidebar-category">PLACEMENT & CR</div>
+          <NavItem icon={Users} label="Students" path="/students" />
+          <NavItem icon={IdentificationCard} label="Placement Drives" path="/placement-drives" />
+          <NavItem icon={ListChecks} label="Applications" path="/applications" />
+          <NavItem icon={Briefcase} label="Vacancies" path="/vacancies" />
+          <NavItem icon={Handshake} label="Clients & Partners" path="/clients" />
+          <NavItem icon={Trophy} label="Placed Students" path="/placed" />
+          {(tpoData.role || '').toUpperCase() === 'TPO' && <NavItem icon={Files} label="Job Tracker" path="/tracker" />}
+
+          {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
+            <>
+              <div className="sidebar-category">EXAMS & LMS</div>
+              <NavItem icon={Book} label="Study Materials" path="/study-materials" />
+              <NavItem icon={FileText} label="Exams Hub" path="/exams" />
+              <NavItem icon={UserCheck} label="Talentino Tracking" path="/talentino" />
+            </>
+          )}
+
+          <div className="sidebar-category">EVENTS & SCHEDULE</div>
+          <NavItem icon={CalendarStar} label="Global Calendar" path="/events" />
+
+          <div className="sidebar-category">ADMINISTRATION</div>
+          {(tpoData.role || '').toUpperCase() === 'TPO' && <NavItem icon={ChartBar} label="Reports" path="/reports" />}
+          {tpoData.accessType === 'superadmin' && (
+            <>
+              <NavItem icon={Bookmarks} label="Manage Courses" path="/courses" />
+              <NavItem icon={ShieldCheck} label="User Management" path="/users" />
+            </>
+          )}
+          <NavItem icon={Gear} label="Settings" path="/settings" />
+        </div>
+
+        <div className="sidebar-footer">
+          <button className="logout-btn" onClick={handleLogout}>Log Out</button>
+        </div>
+      </aside>
+
+      {/* ========================================== */}
+      {/* MAIN CONTENT AREA */}
+      {/* ========================================== */}
+      <div className="enterprise-main">
         
-        <header className="top-header" style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+        {/* TOP HEADER */}
+        <header className="enterprise-top-header">
           <div className="header-left">
-            <img 
-              src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" 
-              alt="IPCS Logo" 
-              style={{ height: '35px', objectFit: 'contain' }} 
-              onError={(e) => { 
-                e.currentTarget.onerror = null; 
-                e.currentTarget.src = 'https://ipcsglobal.com/wp-content/uploads/2023/12/IPCS-Global-Logo-1.png'; 
-              }}
-            />
-          </div>
-          <div className="header-actions">
-            
-            {/* 🚨 NOTIFICATION BELL DROPDOWN */}
-            <div style={{ position: 'relative' }}>
-              <button className="icon-btn" title="Notifications" onClick={() => setIsNotifOpen(!isNotifOpen)}>
-                <Bell weight="fill" />
-                <span style={{ position: 'absolute', top: '5px', right: '5px', width: '8px', height: '8px', background: '#ef4444', borderRadius: '50%', border: '2px solid var(--card-bg)' }}></span>
-              </button>
-
-              {isNotifOpen && (
-                <div style={{ position: 'absolute', top: '50px', right: '0', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '12px', width: '320px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', zIndex: 9999, overflow: 'hidden' }}>
-                  <div style={{ padding: '15px', borderBottom: '1px solid #1e293b', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff' }}>
-                    Notifications
-                    <span style={{ fontSize: '0.7rem', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '3px 8px', borderRadius: '10px' }}>2 New</span>
-                  </div>
-                  <div style={{ padding: '0', maxHeight: '300px', overflowY: 'auto' }}>
-                    <div style={{ padding: '15px', borderBottom: '1px solid #1e293b', display: 'flex', gap: '12px', background: 'rgba(56, 189, 248, 0.03)' }}>
-                      <div style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <ListChecks size={18} weight="bold" />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginBottom: '3px' }}>System Updated</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>The new Unified Exams Hub and Placement Drives are now live.</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', marginTop: '5px', fontWeight: 'bold' }}>Just now</div>
-                      </div>
-                    </div>
-                    <div style={{ padding: '15px', display: 'flex', gap: '12px' }}>
-                      <div style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Trophy size={18} weight="bold" />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginBottom: '3px' }}>Placement Data Synced</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>Latest global placement and application records have been successfully fetched.</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '5px' }}>1 hour ago</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
+            <List size={26} className="mobile-menu-btn" onClick={() => setIsSidebarOpen(true)} />
+            <div>
+              <h2 style={{ margin: 0, fontSize: '1.2rem', color: '#fff' }}>Dashboard</h2>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Welcome back, {tpoData.name.split(' ')[0]} 👋</span>
             </div>
+          </div>
 
-            <div className="header-profile" onClick={() => setIsDrawerOpen(true)}>
-              <div className="header-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)' }}>
-                {renderAvatar()}
+          <div className="header-search">
+            <MagnifyingGlass size={18} color="var(--text-muted)" />
+            <input type="text" placeholder="Search students, drives, companies..." />
+            <div className="kbd-shortcut">⌘ K</div>
+          </div>
+
+          <div className="header-right">
+            <button className="icon-btn"><ChatCircleDots size={22} /><span className="badge">3</span></button>
+            <button className="icon-btn"><Bell size={22} /><span className="badge">8</span></button>
+            
+            <div className="header-profile">
+              {profilePhotoUrl ? <img src={profilePhotoUrl} alt="Profile" /> : <div className="avatar-fallback">{tpoData.name.charAt(0)}</div>}
+              <div className="profile-text">
+                <div className="name">{tpoData.name}</div>
+                <div className="role">{tpoData.role}</div>
               </div>
+              <CaretDown size={14} color="var(--text-muted)" />
             </div>
           </div>
         </header>
 
-        <div className="page-container" style={{ width: '100%', overflowX: 'hidden' }} onClick={() => setIsNotifOpen(false)}>
+        {/* PAGE CONTENT */}
+        <div className="enterprise-content">
           {children}
         </div>
-
-      </main>
-
-      <div 
-        className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} 
-        onClick={(e) => { if(e.target.classList.contains('drawer-overlay')) setIsDrawerOpen(false); }}
-      >
-        <div className="drawer-card">
-          <div className="drawer-header">
-            <div className="drawer-close-btn" onClick={() => setIsDrawerOpen(false)}><X size={16} /></div>
-            <div className="drawer-profile-row">
-              <div className="drawer-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)' }}>
-                {renderAvatar()}
-              </div>
-              <div>
-                <strong style={{ display: 'block', fontSize: '1.1rem', fontWeight: 700 }}>{tpoData.name}</strong>
-                <span style={{ fontSize: '0.8rem', opacity: 0.9 }}>{tpoData.role || 'Placement Officer'}</span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="drawer-menu">
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/dashboard'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><SquaresFour size={22} color={isActive('/dashboard')} /> Dashboard</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/students'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/students')} /> Students Directory</div><span>›</span></div>
-            
-            {(tpoData.role || '').toUpperCase() === 'TPO' && (
-              <>
-                <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/tracker'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Files size={22} color={isActive('/tracker')} /> Job Tracker</div><span>›</span></div>
-                <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/reports'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> Reports</div><span>›</span></div>
-              </>
-            )}
-
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/placed'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Trophy size={22} color={isActive('/placed')} /> Placed Students</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/applications'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ListChecks size={22} color={isActive('/applications')} /> Student Apps</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/vacancies'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Briefcase size={22} color={isActive('/vacancies')} /> Vacancies</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/placement-drives'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><IdentificationCard size={22} color={isActive('/placement-drives')} /> Placement Drives</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/clients'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Handshake size={22} color={isActive('/clients')} /> Clients & Partners</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/events'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><CalendarStar size={22} color={isActive('/events')} /> Events</div><span>›</span></div>
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> Talentino</div><span>›</span></div>
-            
-            {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
-               <>
-                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/study-materials'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Book size={22} color={isActive('/study-materials')} /> Study Materials</div><span>›</span></div>
-                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/exams'); }}>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                     <FileText size={22} color={location.pathname.startsWith('/exams') ? 'var(--accent-primary)' : 'var(--text-muted)'} /> 
-                     Exams Hub
-                   </div>
-                   <span>›</span>
-                 </div>
-               </>
-            )}
-
-            {tpoData.accessType === 'superadmin' && (
-               <>
-                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/courses'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Bookmarks size={22} color={isActive('/courses')} /> Manage Courses</div><span>›</span></div>
-                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/users'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/users')} /> User Management</div><span>›</span></div>
-               </>
-            )}
-
-            <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/settings'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Gear size={22} color={isActive('/settings')} /> Settings</div><span>›</span></div>
-          </div>
-          
-          <div className="drawer-footer">
-            <button className="btn-logout-drawer" onClick={handleLogout}>Log Out</button>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px' }}>Copyright © 2026 IPCS Global</div>
-          </div>
-        </div>
       </div>
+
+      {/* OVERLAY FOR MOBILE */}
+      {isSidebarOpen && <div className="sidebar-overlay" onClick={() => setIsSidebarOpen(false)}></div>}
+
+      {/* GLOBAL CSS FOR NEW ENTERPRISE LAYOUT */}
+      <style>{`
+        body { margin: 0; background: #0b1120; font-family: 'Inter', sans-serif; color: #f8fafc; }
+        
+        .enterprise-layout { display: flex; height: 100vh; overflow: hidden; }
+        
+        /* SIDEBAR */
+        .enterprise-sidebar { width: 260px; background: #111827; border-right: 1px solid #1e293b; display: flex; flex-direction: column; flex-shrink: 0; z-index: 1000; transition: transform 0.3s ease; }
+        .sidebar-header { padding: 20px; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; }
+        .mobile-close { display: none; cursor: pointer; color: #94a3b8; }
+        .sidebar-scroll-area { flex: 1; overflow-y: auto; padding: 15px 10px; }
+        .sidebar-scroll-area::-webkit-scrollbar { width: 4px; }
+        .sidebar-scroll-area::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        
+        .sidebar-category { font-size: 0.65rem; font-weight: bold; color: #64748b; margin: 20px 0 10px 15px; letter-spacing: 1px; }
+        .nav-item { display: flex; align-items: center; gap: 12px; padding: 10px 15px; margin-bottom: 4px; border-radius: 8px; color: #94a3b8; cursor: pointer; transition: 0.2s; font-size: 0.9rem; }
+        .nav-item:hover { background: rgba(255,255,255,0.05); color: #f8fafc; }
+        .nav-item.active { background: #3b82f6; color: #ffffff; font-weight: 600; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
+        
+        .sidebar-footer { padding: 15px; border-top: 1px solid #1e293b; }
+        .logout-btn { width: 100%; padding: 10px; border-radius: 8px; border: none; background: rgba(239, 68, 68, 0.1); color: #ef4444; font-weight: bold; cursor: pointer; transition: 0.2s; }
+        .logout-btn:hover { background: #ef4444; color: #fff; }
+
+        /* MAIN AREA & HEADER */
+        .enterprise-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; background: #0b1120; }
+        .enterprise-top-header { height: 70px; background: #0b1120; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; padding: 0 25px; flex-shrink: 0; }
+        .header-left { display: flex; align-items: center; gap: 15px; }
+        .mobile-menu-btn { display: none; cursor: pointer; color: #94a3b8; }
+        
+        .header-search { display: flex; align-items: center; background: #111827; border: 1px solid #1e293b; padding: 0 15px; border-radius: 20px; width: 400px; height: 40px; }
+        .header-search input { background: transparent; border: none; outline: none; color: #fff; width: 100%; margin-left: 10px; font-size: 0.9rem; }
+        .kbd-shortcut { background: #1e293b; color: #94a3b8; padding: 2px 6px; border-radius: 4px; font-size: 0.7rem; font-weight: bold; }
+        
+        .header-right { display: flex; align-items: center; gap: 20px; }
+        .icon-btn { background: transparent; border: none; color: #94a3b8; cursor: pointer; position: relative; padding: 5px; }
+        .icon-btn:hover { color: #fff; }
+        .badge { position: absolute; top: 0; right: 0; background: #ef4444; color: #fff; font-size: 0.6rem; font-weight: bold; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 2px solid #0b1120; }
+        
+        .header-profile { display: flex; align-items: center; gap: 10px; cursor: pointer; border-left: 1px solid #1e293b; padding-left: 20px; }
+        .header-profile img, .avatar-fallback { width: 35px; height: 35px; border-radius: 50%; object-fit: cover; }
+        .avatar-fallback { background: #3b82f6; display: flex; align-items: center; justify-content: center; font-weight: bold; color: #fff; }
+        .profile-text { display: flex; flex-direction: column; }
+        .profile-text .name { font-size: 0.85rem; font-weight: bold; color: #fff; }
+        .profile-text .role { font-size: 0.7rem; color: #94a3b8; }
+
+        .enterprise-content { flex: 1; overflow-y: auto; padding: 25px; }
+
+        /* RESPONSIVE RESPONSIVE RESPONSIVE */
+        @media (max-width: 1024px) {
+          .header-search { width: 250px; }
+        }
+        @media (max-width: 768px) {
+          .enterprise-sidebar { position: fixed; height: 100%; transform: translateX(-100%); }
+          .enterprise-sidebar.open { transform: translateX(0); }
+          .sidebar-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.6); z-index: 999; }
+          .mobile-menu-btn, .mobile-close { display: block; }
+          .header-search { display: none; }
+          .profile-text { display: none; }
+          .enterprise-content { padding: 15px; }
+        }
+      `}</style>
     </div>
   );
 }

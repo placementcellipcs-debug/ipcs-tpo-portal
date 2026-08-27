@@ -2,18 +2,14 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
-  Users, Briefcase, Files, Trophy, CalendarStar, CircleNotch, 
-  TrendUp, BuildingOffice, GraduationCap, ChalkboardTeacher, 
-  ShieldCheck, UserList, CaretRight, BookOpen, Clock, PresentationChart,
-  NotePencil, Desktop, FolderOpen, Bell, ChartLineUp, Student,
-  CalendarCheck, ListChecks, ArrowUpRight
+  Users, Briefcase, Trophy, CircleNotch, TrendUp, 
+  CalendarCheck, CalendarBlank, ChartBar, Desktop, NotePencil, ListChecks
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
-  const isTpo = (tpoData?.role || '').toUpperCase() === 'TPO';
   
   const [stats, setStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0 });
   const [events, setEvents] = useState([]);
@@ -46,509 +42,388 @@ export default function Dashboard() {
     if (tpoData) fetchData();
   }, [tpoData]);
 
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  
-  const upcomingEvents = events.filter(e => {
-    if (!e.date || !e.title || e.title.toLowerCase().includes('dummy')) return false;
-    let parsedDate = null;
-    if (e.date.includes('/')) {
-      const parts = e.date.split(/[/\s,]+/);
-      if (parts.length >= 3) parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`);
-    } else { parsedDate = new Date(e.date.replace(/st|nd|rd|th/g, '')); }
-    if (isNaN(parsedDate)) return false;
-    return parsedDate >= today;
-  }).slice(0, 3);
-
   const placementRate = stats.totalStudents > 0 ? ((stats.placed / stats.totalStudents) * 100).toFixed(1) : '0.0';
 
   // ==========================================
-  // NATIVE SVG CHART GENERATORS (No Libraries Needed!)
+  // NATIVE SVG CHARTS (Mockup Matched)
   // ==========================================
   
-  // 1. Smooth Line Chart Generator
-  const trendData = [
-    { month: 'Jan', placed: 40, offers: 85 }, { month: 'Feb', placed: 30, offers: 60 }, { month: 'Mar', placed: 60, offers: 110 },
-    { month: 'Apr', placed: 45, offers: 90 }, { month: 'May', placed: 70, offers: 140 }, { month: 'Jun', placed: 50, offers: 120 },
-    { month: 'Jul', placed: 80, offers: 160 }, { month: 'Aug', placed: 65, offers: 130 }, { month: 'Sep', placed: 90, offers: 170 },
-    { month: 'Oct', placed: 75, offers: 150 }, { month: 'Nov', placed: 110, offers: 210 }, { month: 'Dec', placed: 95, offers: 180 }
-  ];
-  const chartHeight = 160; const chartWidth = 600; const maxVal = 250; const xStep = chartWidth / (trendData.length - 1);
-  const makeSmoothPath = (dataKey) => {
-    if(!trendData.length) return '';
-    let path = `M 0,${chartHeight - (trendData[0][dataKey]/maxVal*chartHeight)}`;
-    for(let i=0; i<trendData.length-1; i++) {
-      const x1 = i * xStep; const y1 = chartHeight - (trendData[i][dataKey]/maxVal*chartHeight);
-      const x2 = (i+1) * xStep; const y2 = chartHeight - (trendData[i+1][dataKey]/maxVal*chartHeight);
-      const cx = (x1+x2)/2; path += ` C ${cx},${y1} ${cx},${y2} ${x2},${y2}`;
-    }
-    return path;
+  // 1. Sparklines for KPI Cards
+  const makeSparkline = (color) => {
+    const pts = Array.from({length: 10}, () => Math.floor(Math.random() * 20));
+    const path = `M 0,${pts[0]} ` + pts.map((p, i) => `L ${i * 12},${p}`).join(' ');
+    return (
+      <svg width="100%" height="30" viewBox="0 0 108 25" preserveAspectRatio="none" style={{ marginTop: '10px' }}>
+        <path d={path} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={`${path} L 108,25 L 0,25 Z`} fill={color} opacity="0.1" />
+      </svg>
+    );
   };
 
-  // 2. Donut Chart Generator
-  const domainData = [
-    { name: 'Automation', value: 439, color: '#3b82f6' }, { name: 'IT & Software', value: 251, color: '#10b981' },
-    { name: 'BMS & CCTV', value: 188, color: '#f59e0b' }, { name: 'Digital Mkt', value: 126, color: '#ec4899' },
-    { name: 'Embedded', value: 252, color: '#8b5cf6' }
+  // 2. Main 3-Line Trend Chart
+  const trendData = [
+    { m: 'Jan', apps: 80, off: 40, pl: 20 }, { m: 'Feb', apps: 60, off: 30, pl: 15 }, { m: 'Mar', apps: 130, off: 60, pl: 40 },
+    { m: 'Apr', apps: 150, off: 90, pl: 60 }, { m: 'May', apps: 110, off: 70, pl: 45 }, { m: 'Jun', apps: 160, off: 120, pl: 80 },
+    { m: 'Jul', apps: 190, off: 160, pl: 100 }, { m: 'Aug', apps: 140, off: 130, pl: 70 }, { m: 'Sep', apps: 200, off: 170, pl: 120 },
+    { m: 'Oct', apps: 190, off: 150, pl: 110 }, { m: 'Nov', apps: 240, off: 210, pl: 140 }, { m: 'Dec', apps: 210, off: 180, pl: 130 }
   ];
-  const totalDomain = domainData.reduce((acc, curr) => acc + curr.value, 0);
-  let cumulativePercent = 0;
-  const radius = 40; const circumference = 2 * Math.PI * radius;
+  const cHeight = 140; const cWidth = 600; const maxV = 250; const xStep = cWidth / 11;
+  const makeSmoothPath = (key) => {
+    let path = `M 0,${cHeight - (trendData[0][key]/maxV*cHeight)}`;
+    for(let i=0; i<11; i++) {
+      const cx = (i * xStep + (i+1) * xStep)/2;
+      path += ` C ${cx},${cHeight - (trendData[i][key]/maxV*cHeight)} ${cx},${cHeight - (trendData[i+1][key]/maxV*cHeight)} ${(i+1)*xStep},${cHeight - (trendData[i+1][key]/maxV*cHeight)}`;
+    } return path;
+  };
 
-  // Batch Progress Mock Data
-  const batchProgress = [
-    { batch: 'Python Full Stack - Jan', course: 'Full Stack', progress: 85, color: '#3b82f6' },
-    { batch: 'Data Science - Feb', course: 'Data Science', progress: 72, color: '#10b981' },
-    { batch: 'Java Development - Jan', course: 'Java', progress: 68, color: '#a855f7' },
-    { batch: 'Industrial Auto - Mar', course: 'Automation', progress: 90, color: '#f59e0b' },
-    { batch: 'Digital Marketing - Apr', course: 'Marketing', progress: 75, color: '#ec4899' },
-  ];
+  // 3. Donut Chart
+  const domainData = [ { n: 'Software', v: 439, c: '#3b82f6' }, { n: 'Data Science', v: 251, c: '#10b981' }, { n: 'Digital Mkt', v: 188, c: '#8b5cf6' }, { n: 'Embedded', v: 126, c: '#f59e0b' }, { n: 'UI/UX', v: 126, c: '#ec4899' } ];
+  const totalDomain = domainData.reduce((acc, curr) => acc + curr.v, 0);
+  let cumPct = 0; const circ = 2 * Math.PI * 40;
+
+  // Render Mini Calendar
+  const renderCalendar = () => {
+    const days = [27,28,29,30,1,2,3, 4,5,6,7,8,9,10, 11,12,13,14,15,16,17, 18,19,20,21,22,23,24, 25,26,27,28,29,30,31];
+    return (
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', textAlign: 'center', fontSize: '0.75rem', marginTop: '15px' }}>
+        {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => <div key={d} style={{ color: 'var(--text-muted)', fontWeight: 'bold' }}>{d}</div>)}
+        {days.map((d, i) => (
+          <div key={i} style={{ padding: '4px', color: (i<4) ? '#475569' : '#fff', background: d===15 ? '#3b82f6' : d===28 ? '#10b981' : 'transparent', borderRadius: '50%', fontWeight: (d===15||d===28) ? 'bold' : 'normal' }}>{d}</div>
+        ))}
+      </div>
+    );
+  };
 
   return (
-    <Layout>
-      <div className="page-container" style={{ padding: '0 10px', maxWidth: '1600px', margin: '0 auto' }}>
+    <div className="db-wrapper" style={{ paddingBottom: '40px' }}>
+      
+      {/* ROW 1: TOP 6 KPI CARDS */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '20px' }}>
         
-        {/* HEADER */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
-          <div>
-            <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', color: '#fff' }}>Good Morning, {tpoData.name.split(' ')[0]} 👋</h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Here's what's happening in your institute today.</p>
-          </div>
-          <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-            <div style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', padding: '10px 20px', borderRadius: '30px', color: 'var(--text-muted)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Clock size={16} /> {today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
-            </div>
-          </div>
-        </div>
-
-        {/* ========================================== */}
-        {/* ROW 1: TOP 6 KPI CARDS */}
-        {/* ========================================== */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '25px' }}>
-          
-          <div className="kpi-card">
-            <div className="kpi-icon" style={{ color: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)' }}><Users weight="fill" size={24} /></div>
+        <div className="dash-card">
+          <div className="kpi-header">
+            <div className="icon-c blue"><Users weight="fill" size={20}/></div>
             <div>
               <div className="kpi-title">Total Students</div>
-              <div className="kpi-value">{loading ? <CircleNotch className="ph-spin" size={20}/> : stats.totalStudents}</div>
-              <div className="kpi-trend green"><TrendUp size={12} weight="bold"/> 12.5% from last month</div>
+              <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.totalStudents}</div>
             </div>
           </div>
+          <div className="kpi-trend green">↑ 12.5% vs last month</div>
+          {makeSparkline('#3b82f6')}
+        </div>
 
-          <div className="kpi-card">
-            <div className="kpi-icon" style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.1)' }}><PresentationChart weight="fill" size={24} /></div>
+        <div className="dash-card">
+          <div className="kpi-header">
+            <div className="icon-c green"><Briefcase weight="fill" size={20}/></div>
             <div>
               <div className="kpi-title">Active Vacancies</div>
-              <div className="kpi-value">{loading ? <CircleNotch className="ph-spin" size={20}/> : stats.activeVacancies}</div>
-              <div className="kpi-trend green"><TrendUp size={12} weight="bold"/> 8.3% from last month</div>
+              <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.activeVacancies}</div>
             </div>
           </div>
+          <div className="kpi-trend green">↑ 18.3% vs last month</div>
+          {makeSparkline('#10b981')}
+        </div>
 
-          <div className="kpi-card">
-            <div className="kpi-icon" style={{ color: '#8b5cf6', background: 'rgba(139, 92, 246, 0.1)' }}><Student weight="fill" size={24} /></div>
+        <div className="dash-card">
+          <div className="kpi-header">
+            <div className="icon-c purple"><Trophy weight="fill" size={20}/></div>
             <div>
-              <div className="kpi-title">Placed Students</div>
-              <div className="kpi-value">{loading ? <CircleNotch className="ph-spin" size={20}/> : stats.placed}</div>
-              <div className="kpi-trend green"><TrendUp size={12} weight="bold"/> 15.7% from last month</div>
+              <div className="kpi-title">Students Placed</div>
+              <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div>
             </div>
           </div>
+          <div className="kpi-trend green">↑ 16.7% vs last month</div>
+          {makeSparkline('#a855f7')}
+        </div>
 
-          <div className="kpi-card">
-            <div className="kpi-icon" style={{ color: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)' }}><ChartLineUp weight="fill" size={24} /></div>
+        <div className="dash-card">
+          <div className="kpi-header">
+            <div className="icon-c orange"><ChartBar weight="fill" size={20}/></div>
             <div>
               <div className="kpi-title">Placement Rate</div>
-              <div className="kpi-value">{loading ? <CircleNotch className="ph-spin" size={20}/> : `${placementRate}%`}</div>
-              <div className="kpi-trend green"><TrendUp size={12} weight="bold"/> 6.4% from last month</div>
+              <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : `${placementRate}%`}</div>
             </div>
           </div>
+          <div className="kpi-trend green">↑ 6.4% vs last month</div>
+          {makeSparkline('#f59e0b')}
+        </div>
 
-          <div className="kpi-card">
-            <div className="kpi-icon" style={{ color: '#ec4899', background: 'rgba(236, 72, 153, 0.1)' }}><BuildingOffice weight="fill" size={24} /></div>
+        <div className="dash-card">
+          <div className="kpi-header">
+            <div className="icon-c pink"><CalendarCheck weight="fill" size={20}/></div>
             <div>
-              <div className="kpi-title">Active Drives</div>
-              <div className="kpi-value">{loading ? <CircleNotch className="ph-spin" size={20}/> : '12'}</div>
-              <div className="kpi-trend green"><TrendUp size={12} weight="bold"/> 9.1% from last month</div>
+              <div className="kpi-title">Upcoming Drives</div>
+              <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : '23'}</div>
             </div>
           </div>
+          <div className="kpi-trend green">↑ 9.1% vs last month</div>
+          {makeSparkline('#ec4899')}
+        </div>
 
-          <div className="kpi-card">
-            <div className="kpi-icon" style={{ color: '#0ea5e9', background: 'rgba(14, 165, 233, 0.1)' }}><Briefcase weight="fill" size={24} /></div>
+        <div className="dash-card">
+          <div className="kpi-header">
+            <div className="icon-c teal"><ListChecks weight="fill" size={20}/></div>
             <div>
-              <div className="kpi-title">Pending Apps</div>
-              <div className="kpi-value">{loading ? <CircleNotch className="ph-spin" size={20}/> : stats.pendingApps}</div>
-              <div className="kpi-trend green"><TrendUp size={12} weight="bold"/> 10.2% from last month</div>
+              <div className="kpi-title">Active MOUs</div>
+              <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : '68'}</div>
             </div>
           </div>
-
+          <div className="kpi-trend green">↑ 10.2% vs last month</div>
+          {makeSparkline('#0ea5e9')}
         </div>
-
-        {/* ========================================== */}
-        {/* ROW 2 & 3: MASTER GRID LAYOUT */}
-        {/* ========================================== */}
-        <div className="dashboard-main-grid">
-          
-          {/* --- COLUMN 1: TRENDS & RECENT PLACEMENTS (WIDEST) --- */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-            
-            {/* Trend Line Chart */}
-            <div className="dash-panel">
-              <div className="panel-header">
-                <h3>Placement Trends</h3>
-                <span className="panel-subtitle">This Year ▾</span>
-              </div>
-              <div style={{ display: 'flex', gap: '20px', marginBottom: '15px', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                <div style={{ color: '#3b82f6', display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{width:'10px', height:'3px', background:'#3b82f6'}}></span> Placed</div>
-                <div style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: '5px' }}><span style={{width:'10px', height:'3px', background:'#10b981'}}></span> Offers</div>
-              </div>
-              
-              <div style={{ height: `${chartHeight}px`, width: '100%', position: 'relative', marginBottom: '20px' }}>
-                <svg viewBox={`0 0 ${chartWidth} ${chartHeight}`} preserveAspectRatio="none" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
-                  {/* Grid Lines */}
-                  {[0, 1, 2, 3, 4].map(i => <line key={i} x1="0" y1={chartHeight * (i/4)} x2={chartWidth} y2={chartHeight * (i/4)} stroke="#1e293b" strokeWidth="1" />)}
-                  {/* The Data Lines */}
-                  <path d={makeSmoothPath('offers')} fill="none" stroke="#10b981" strokeWidth="3" strokeLinecap="round" />
-                  <path d={makeSmoothPath('placed')} fill="none" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" />
-                </svg>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 'bold' }}>
-                  {trendData.map(d => <span key={d.month}>{d.month}</span>)}
-                </div>
-              </div>
-
-              {/* Trend Footer Stats */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', borderTop: '1px solid var(--card-border)', paddingTop: '15px' }}>
-                <div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Total Offers</div><div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#fff' }}>1,842</div></div>
-                <div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Total Placed</div><div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#fff' }}>1,256</div></div>
-                <div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Highest Package</div><div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#fff' }}>18.5 LPA</div></div>
-                <div><div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Average Package</div><div style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#fff' }}>4.6 LPA</div></div>
-              </div>
-            </div>
-
-            {/* Recent Placements Table */}
-            <div className="dash-panel" style={{ flex: 1 }}>
-              <div className="panel-header">
-                <h3>Recent Placements</h3>
-                <button onClick={() => navigate('/placed')} className="text-btn">View All</button>
-              </div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--card-border)', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-                    <th style={{ paddingBottom: '10px', fontWeight: 'bold' }}>Student</th>
-                    <th style={{ paddingBottom: '10px', fontWeight: 'bold' }}>Course</th>
-                    <th style={{ paddingBottom: '10px', fontWeight: 'bold' }}>Company</th>
-                    <th style={{ paddingBottom: '10px', textAlign: 'right', fontWeight: 'bold' }}>Package</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {loading ? (
-                    <tr><td colSpan="4" style={{ textAlign: 'center', padding: '2rem' }}><CircleNotch size={24} className="ph-spin" color="var(--accent-primary)"/></td></tr>
-                  ) : recentPlacements.length === 0 ? (
-                    <tr><td colSpan="4" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>No recent placements found.</td></tr>
-                  ) : (
-                    recentPlacements.map((p, i) => (
-                      <tr key={i} style={{ borderBottom: '1px solid var(--card-border)' }}>
-                        <td style={{ padding: '12px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent-primary)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                            {p.name.charAt(0)}
-                          </div>
-                          <div style={{ fontWeight: 'bold', color: '#fff', fontSize: '0.9rem' }}>{p.name}</div>
-                        </td>
-                        <td style={{ padding: '12px 0', color: '#cbd5e1', fontSize: '0.85rem' }}>{p.course}</td>
-                        <td style={{ padding: '12px 0', fontWeight: 'bold', color: '#fff', fontSize: '0.85rem' }}>{p.company}</td>
-                        <td style={{ padding: '12px 0', textAlign: 'right', fontWeight: 'bold', color: '#10b981', fontSize: '0.85rem' }}>
-                          {p.packageLpa ? `${p.packageLpa} LPA` : 'TBD'}
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-          </div>
-
-          {/* --- COLUMN 2: DONUT CHART & PROGRESS --- */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-            
-            {/* Domain Donut Chart */}
-            <div className="dash-panel">
-              <h3 style={{ margin: '0 0 20px 0', fontSize: '1.1rem', color: '#fff' }}>Placements by Domain</h3>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                
-                {/* Custom Native SVG Donut */}
-                <div style={{ width: '140px', height: '140px', position: 'relative' }}>
-                  <svg viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%' }}>
-                    {domainData.map(slice => {
-                      const percent = slice.value / totalDomain;
-                      const strokeDasharray = `${percent * circumference} ${circumference}`;
-                      const strokeDashoffset = cumulativePercent * circumference * -1;
-                      cumulativePercent += percent;
-                      return <circle key={slice.name} r={radius} cx="50" cy="50" fill="transparent" stroke={slice.color} strokeWidth="16" strokeDasharray={strokeDasharray} strokeDashoffset={strokeDashoffset} style={{ transition: 'stroke-dashoffset 1s ease' }} />
-                    })}
-                  </svg>
-                  <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>1,256</div>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Total Placed</div>
-                  </div>
-                </div>
-
-                {/* Donut Legend */}
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {domainData.map(d => (
-                    <div key={d.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#cbd5e1' }}>
-                        <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: d.color }}></span>
-                        {d.name}
-                      </div>
-                      <div style={{ color: 'var(--text-muted)' }}>{((d.value/totalDomain)*100).toFixed(0)}%</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Batch Progress */}
-            <div className="dash-panel" style={{ flex: 1 }}>
-              <div className="panel-header">
-                <h3>Batch Progress Overview</h3>
-                <button onClick={() => navigate('/courses')} className="text-btn">View All</button>
-              </div>
-              
-              <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '15px', borderBottom: '1px solid var(--card-border)', paddingBottom: '10px' }}>
-                <span>Batch</span><span>Course</span><span>Progress</span>
-              </div>
-              
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                {batchProgress.map((b, i) => (
-                  <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr', alignItems: 'center', fontSize: '0.8rem' }}>
-                    <div style={{ fontWeight: 'bold', color: '#fff' }}>{b.batch}</div>
-                    <div style={{ color: '#cbd5e1' }}>{b.course}</div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <div style={{ flex: 1, height: '6px', background: 'var(--bg-dark)', borderRadius: '3px', overflow: 'hidden' }}>
-                        <div style={{ width: `${b.progress}%`, height: '100%', background: b.color, borderRadius: '3px' }}></div>
-                      </div>
-                      <span style={{ fontWeight: 'bold', color: '#fff', width: '30px' }}>{b.progress}%</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-          </div>
-
-          {/* --- COLUMN 3: DRIVES, LINKS, & CALENDAR --- */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
-            
-            {/* Upcoming Drives */}
-            <div className="dash-panel">
-              <div className="panel-header">
-                <h3>Upcoming Drives</h3>
-                <button onClick={() => navigate('/events')} className="text-btn">View All</button>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                {loading ? (
-                  <div style={{ textAlign: 'center', padding: '1rem' }}><CircleNotch size={24} className="ph-spin" color="var(--accent-primary)"/></div>
-                ) : upcomingEvents.length === 0 ? (
-                  <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No upcoming drives scheduled.</div>
-                ) : (
-                  upcomingEvents.map((evt, idx) => (
-                    <div key={idx} style={{ display: 'flex', gap: '15px', alignItems: 'center', borderBottom: '1px solid var(--card-border)', paddingBottom: '15px' }}>
-                      <div style={{ width: '40px', height: '40px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', fontSize: '1.2rem' }}>
-                        {evt.title.charAt(0)}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 'bold', color: '#fff', fontSize: '0.9rem' }}>{evt.title}</div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{evt.type} • {evt.location || 'All Branches'}</div>
-                      </div>
-                      <div style={{ textAlign: 'right' }}>
-                        <div style={{ fontSize: '0.8rem', color: '#cbd5e1', fontWeight: 'bold' }}>{evt.date}</div>
-                        <div style={{ fontSize: '0.7rem', color: '#10b981' }}>Active</div>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Quick Links Grid */}
-            <div className="dash-panel">
-              <h3 style={{ margin: '0 0 15px 0', fontSize: '1.1rem', color: '#fff' }}>Quick Links</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
-                
-                <div onClick={() => navigate('/students')} className="quick-link-box">
-                  <div className="icon-wrap" style={{ color: '#8b5cf6', background: 'rgba(139, 92, 246, 0.1)' }}><Users weight="fill" size={20}/></div>
-                  <span>Students</span>
-                </div>
-                
-                {isTpo && (
-                  <div onClick={() => navigate('/tracker')} className="quick-link-box">
-                    <div className="icon-wrap" style={{ color: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)' }}><ListChecks weight="fill" size={20}/></div>
-                    <span>Tracker</span>
-                  </div>
-                )}
-                
-                <div onClick={() => navigate('/placement-drives')} className="quick-link-box">
-                  <div className="icon-wrap" style={{ color: '#ec4899', background: 'rgba(236, 72, 153, 0.1)' }}><BuildingOffice weight="fill" size={20}/></div>
-                  <span>Add Drive</span>
-                </div>
-                
-                <div onClick={() => navigate('/events')} className="quick-link-box">
-                  <div className="icon-wrap" style={{ color: '#0ea5e9', background: 'rgba(14, 165, 233, 0.1)' }}><CalendarCheck weight="fill" size={20}/></div>
-                  <span>Events</span>
-                </div>
-                
-                <div onClick={() => navigate('/clients')} className="quick-link-box">
-                  <div className="icon-wrap" style={{ color: '#10b981', background: 'rgba(16, 185, 129, 0.1)' }}><FolderOpen weight="fill" size={20}/></div>
-                  <span>Documents</span>
-                </div>
-                
-                {isTpo && (
-                  <div onClick={() => navigate('/reports')} className="quick-link-box">
-                    <div className="icon-wrap" style={{ color: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)' }}><ChartLineUp weight="fill" size={20}/></div>
-                    <span>Reports</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Agenda List */}
-            <div className="dash-panel" style={{ flex: 1 }}>
-              <div className="panel-header">
-                <h3>Agenda</h3>
-                <button onClick={() => navigate('/events')} className="text-btn">View Calendar</button>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                <div style={{ display: 'flex', gap: '15px' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', width: '60px' }}>10:00 AM</div>
-                  <div>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#fff' }}>Training Session</div>
-                    <div style={{ fontSize: '0.75rem', color: '#cbd5e1' }}>Data Structures - Batch Jan</div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '15px' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', width: '60px' }}>01:30 PM</div>
-                  <div>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#fff' }}>Mock Interview</div>
-                    <div style={{ fontSize: '0.75rem', color: '#cbd5e1' }}>TCS Drive Preparation</div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '15px' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', width: '60px' }}>03:00 PM</div>
-                  <div>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#fff' }}>Placement Drive</div>
-                    <div style={{ fontSize: '0.75rem', color: '#cbd5e1' }}>Infosys Online Test</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-          </div>
-        </div>
-
-        {/* ========================================== */}
-        {/* ROW 4: ACCESS IMPORTANT MODULES (7 Colored Cards) */}
-        {/* ========================================== */}
-        <h3 style={{ margin: '0 0 20px 0', fontSize: '1.2rem', color: '#fff' }}>Access Important Modules</h3>
-        
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginBottom: '40px' }}>
-          
-          <div onClick={() => navigate('/students')} className="module-card blue">
-            <h4 style={{ color: '#3b82f6' }}>Student Directory</h4>
-            <p>View and manage student information</p>
-            <div className="link">View Students <ArrowUpRight size={14} weight="bold"/></div>
-          </div>
-
-          {(tpoData.accessType === 'superadmin') && (
-            <div onClick={() => navigate('/courses')} className="module-card green">
-              <h4 style={{ color: '#10b981' }}>Course Management</h4>
-              <p>Create and manage courses & syllabus</p>
-              <div className="link">Manage Courses <ArrowUpRight size={14} weight="bold"/></div>
-            </div>
-          )}
-
-          {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
-            <div onClick={() => navigate('/exams')} className="module-card purple">
-              <h4 style={{ color: '#a855f7' }}>Assessment Center</h4>
-              <p>Create tests and evaluate students</p>
-              <div className="link">Go to Assessments <ArrowUpRight size={14} weight="bold"/></div>
-            </div>
-          )}
-
-          <div onClick={() => navigate('/talentino')} className="module-card yellow">
-            <h4 style={{ color: '#f59e0b' }}>Attendance Tracking</h4>
-            <p>Monitor daily Talentino check-ins</p>
-            <div className="link">View Attendance <ArrowUpRight size={14} weight="bold"/></div>
-          </div>
-
-          <div onClick={() => navigate('/placement-drives')} className="module-card pink">
-            <h4 style={{ color: '#ec4899' }}>Placement Management</h4>
-            <p>Manage drives, offers and placements</p>
-            <div className="link">Manage Placements <ArrowUpRight size={14} weight="bold"/></div>
-          </div>
-
-          {isTpo && (
-            <div onClick={() => navigate('/reports')} className="module-card teal">
-              <h4 style={{ color: '#0ea5e9' }}>Reports & Analytics</h4>
-              <p>Detailed insights and performance reports</p>
-              <div className="link">View Reports <ArrowUpRight size={14} weight="bold"/></div>
-            </div>
-          )}
-
-          <div onClick={() => navigate('/clients')} className="module-card orange">
-            <h4 style={{ color: '#f97316' }}>Document Center</h4>
-            <p>Store and manage important MOUs</p>
-            <div className="link">View Documents <ArrowUpRight size={14} weight="bold"/></div>
-          </div>
-
-        </div>
-
-        {/* Global Styles for this Dashboard */}
-        <style>{`
-          .kpi-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; display: flex; alignItems: center; gap: 15px; }
-          .kpi-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-          .kpi-title { font-size: 0.8rem; color: var(--text-muted); font-weight: bold; margin-bottom: 4px; }
-          .kpi-value { font-size: 1.6rem; font-weight: bold; color: #fff; margin-bottom: 4px; }
-          .kpi-trend { font-size: 0.7rem; display: flex; align-items: center; gap: 4px; font-weight: bold; }
-          .kpi-trend.green { color: #10b981; }
-
-          .dashboard-main-grid { display: grid; grid-template-columns: 2.2fr 1.2fr 1fr; gap: 20px; margin-bottom: 30px; }
-          @media (max-width: 1200px) { .dashboard-main-grid { grid-template-columns: 1fr 1fr; } }
-          @media (max-width: 800px) { .dashboard-main-grid { grid-template-columns: 1fr; } }
-
-          .dash-panel { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 25px; display: flex; flex-direction: column; }
-          .panel-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-          .panel-header h3 { margin: 0; font-size: 1.15rem; color: #fff; }
-          .panel-subtitle { font-size: 0.8rem; color: var(--text-muted); background: var(--bg-dark); padding: 4px 10px; border-radius: 6px; border: 1px solid var(--card-border); cursor: pointer; }
-          .text-btn { background: transparent; color: var(--accent-primary); border: none; cursor: pointer; font-weight: bold; font-size: 0.85rem; }
-          .text-btn:hover { text-decoration: underline; }
-
-          .quick-link-box { background: var(--bg-dark); border: 1px solid var(--card-border); border-radius: 12px; padding: 15px 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer; transition: 0.2s; text-align: center; }
-          .quick-link-box:hover { border-color: var(--accent-primary); transform: translateY(-2px); }
-          .quick-link-box .icon-wrap { padding: 10px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
-          .quick-link-box span { font-size: 0.75rem; color: #cbd5e1; font-weight: bold; }
-
-          .module-card { background: rgba(255,255,255,0.02); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; cursor: pointer; transition: 0.2s; }
-          .module-card:hover { transform: translateY(-4px); }
-          .module-card h4 { margin: 0 0 8px 0; font-size: 1.05rem; }
-          .module-card p { margin: 0 0 15px 0; font-size: 0.75rem; color: var(--text-muted); line-height: 1.5; flex: 1; }
-          .module-card .link { font-size: 0.8rem; font-weight: bold; display: flex; align-items: center; gap: 5px; margin-top: auto; }
-          
-          .module-card.blue { background: rgba(59, 130, 246, 0.05); border-color: rgba(59, 130, 246, 0.2); }
-          .module-card.blue .link { color: #3b82f6; }
-          .module-card.green { background: rgba(16, 185, 129, 0.05); border-color: rgba(16, 185, 129, 0.2); }
-          .module-card.green .link { color: #10b981; }
-          .module-card.purple { background: rgba(168, 85, 247, 0.05); border-color: rgba(168, 85, 247, 0.2); }
-          .module-card.purple .link { color: #a855f7; }
-          .module-card.yellow { background: rgba(245, 158, 11, 0.05); border-color: rgba(245, 158, 11, 0.2); }
-          .module-card.yellow .link { color: #f59e0b; }
-          .module-card.pink { background: rgba(236, 72, 153, 0.05); border-color: rgba(236, 72, 153, 0.2); }
-          .module-card.pink .link { color: #ec4899; }
-          .module-card.teal { background: rgba(14, 165, 233, 0.05); border-color: rgba(14, 165, 233, 0.2); }
-          .module-card.teal .link { color: #0ea5e9; }
-          .module-card.orange { background: rgba(249, 115, 22, 0.05); border-color: rgba(249, 115, 22, 0.2); }
-          .module-card.orange .link { color: #f97316; }
-        `}</style>
 
       </div>
-    </Layout>
+
+      {/* ROW 2: MAIN CHARTS */}
+      <div className="grid-3-col" style={{ marginBottom: '20px' }}>
+        
+        {/* Placement Overview Chart */}
+        <div className="dash-card" style={{ gridColumn: 'span 2' }}>
+          <div className="card-top">
+            <h3>Placement Overview</h3>
+            <select className="mini-select"><option>This Year</option></select>
+          </div>
+          <div style={{ display: 'flex', gap: '20px', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '20px' }}>
+            <span style={{ color: '#3b82f6' }}>— Offers</span>
+            <span style={{ color: '#10b981' }}>— Placements</span>
+            <span style={{ color: '#a855f7' }}>— Applications</span>
+          </div>
+          
+          <div style={{ height: `${cHeight}px`, width: '100%', position: 'relative' }}>
+            <svg viewBox={`0 0 ${cWidth} ${cHeight}`} preserveAspectRatio="none" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+              {[0, 1, 2, 3, 4].map(i => <line key={i} x1="0" y1={cHeight * (i/4)} x2={cWidth} y2={cHeight * (i/4)} stroke="#1e293b" />)}
+              <path d={makeSmoothPath('apps')} fill="none" stroke="#a855f7" strokeWidth="3" />
+              <path d={makeSmoothPath('off')} fill="none" stroke="#3b82f6" strokeWidth="3" />
+              <path d={makeSmoothPath('pl')} fill="none" stroke="#10b981" strokeWidth="3" />
+            </svg>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', color: '#64748b', fontSize: '0.7rem' }}>
+              {trendData.map(d => <span key={d.m}>{d.m}</span>)}
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #1e293b', paddingTop: '15px', marginTop: '20px' }}>
+            <div><div className="stat-lbl">Total Applications</div><div className="stat-val">3,842</div></div>
+            <div><div className="stat-lbl">Total Offers</div><div className="stat-val">1,842</div></div>
+            <div><div className="stat-lbl">Total Placements</div><div className="stat-val">1,256</div></div>
+            <div><div className="stat-lbl">Highest Package</div><div className="stat-val">18.5 LPA</div></div>
+            <div><div className="stat-lbl">Average Package</div><div className="stat-val">4.6 LPA</div></div>
+          </div>
+        </div>
+
+        {/* Donut Chart */}
+        <div className="dash-card">
+          <h3>Placements by Domain</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '20px 0' }}>
+            <div style={{ width: '160px', height: '160px', position: 'relative' }}>
+              <svg viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%' }}>
+                {domainData.map(slice => {
+                  const pct = slice.v / totalDomain; const dash = `${pct * circ} ${circ}`; const off = cumPct * circ * -1; cumPct += pct;
+                  return <circle key={slice.n} r={40} cx="50" cy="50" fill="transparent" stroke={slice.c} strokeWidth="16" strokeDasharray={dash} strokeDashoffset={off} />
+                })}
+              </svg>
+              <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>1,256</div>
+                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Total Placements</div>
+              </div>
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {domainData.map(d => (
+              <div key={d.n} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#cbd5e1' }}><span style={{ width: '8px', height: '8px', background: d.c }}></span>{d.n}</div>
+                <div style={{ color: '#64748b' }}>{((d.v/totalDomain)*100).toFixed(0)}%</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </div>
+
+      {/* ROW 3: TABLES & CALENDAR */}
+      <div className="grid-3-col" style={{ marginBottom: '20px' }}>
+        
+        {/* Recent Placements */}
+        <div className="dash-card" style={{ gridColumn: 'span 2' }}>
+          <div className="card-top">
+            <h3>Recent Placement Activity</h3>
+            <button className="text-link" onClick={()=>navigate('/placed')}>View All</button>
+          </div>
+          <table className="mini-table">
+            <thead>
+              <tr><th>Student</th><th>Company</th><th>Role</th><th style={{textAlign:'right'}}>Package</th><th style={{textAlign:'right'}}>Status</th></tr>
+            </thead>
+            <tbody>
+              {recentPlacements.length > 0 ? recentPlacements.map((p, i) => (
+                <tr key={i}>
+                  <td><div style={{display:'flex', alignItems:'center', gap:'8px'}}><div className="tiny-avatar">{p.name.charAt(0)}</div> <span style={{color:'#fff'}}>{p.name}</span></div></td>
+                  <td><span style={{color:'#3b82f6', fontWeight:'bold'}}>{p.company}</span></td>
+                  <td>{p.course}</td>
+                  <td style={{textAlign:'right', fontWeight:'bold', color:'#fff'}}>{p.packageLpa ? `${p.packageLpa} LPA` : '-'}</td>
+                  <td style={{textAlign:'right'}}><span className="status-badge green">Placed</span></td>
+                </tr>
+              )) : <tr><td colSpan="5" style={{textAlign:'center', padding:'20px'}}>No records found</td></tr>}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Global Calendar */}
+        <div className="dash-card">
+          <div className="card-top">
+            <h3>Global Calendar</h3>
+            <button className="text-link" onClick={()=>navigate('/events')}>View All</button>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', fontWeight: 'bold' }}>
+            <span>&lt;</span><span>May 2026</span><span>&gt;</span>
+          </div>
+          {renderCalendar()}
+          <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <div style={{ display: 'flex', gap: '15px' }}>
+              <div style={{ fontSize:'0.75rem', fontWeight:'bold', color:'#cbd5e1' }}>May 15</div>
+              <div><div style={{fontSize:'0.8rem', color:'#fff', fontWeight:'bold'}}>TCS Online Drive</div><div style={{fontSize:'0.65rem', color:'#64748b'}}>10:00 AM - Online</div></div>
+            </div>
+            <div style={{ display: 'flex', gap: '15px' }}>
+              <div style={{ fontSize:'0.75rem', fontWeight:'bold', color:'#cbd5e1' }}>May 17</div>
+              <div><div style={{fontSize:'0.8rem', color:'#fff', fontWeight:'bold'}}>Infosys Technical Round</div><div style={{fontSize:'0.65rem', color:'#64748b'}}>09:30 AM - Bangalore</div></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* ROW 4: BATCH PROGRESS & ANNOUNCEMENTS & QUICK LINKS */}
+      <div className="grid-3-col" style={{ marginBottom: '30px' }}>
+        
+        {/* Quick Access */}
+        <div className="dash-card">
+          <h3>Quick Access</h3>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginTop: '15px' }}>
+            <div className="qa-box"><div className="qa-icon blue"><CalendarCheck weight="fill"/></div>Add Drive</div>
+            <div className="qa-box"><div className="qa-icon blue"><Users weight="fill"/></div>Add Student</div>
+            <div className="qa-box"><div className="qa-icon green"><ListChecks weight="fill"/></div>Interview</div>
+            <div className="qa-box"><div className="qa-icon orange"><NotePencil weight="fill"/></div>Create Exam</div>
+            <div className="qa-box"><div className="qa-icon pink"><BookOpen weight="fill"/></div>Material</div>
+            <div className="qa-box"><div className="qa-icon teal"><ChartBar weight="fill"/></div>Gen. Report</div>
+            <div className="qa-box"><div className="qa-icon purple"><Desktop weight="fill"/></div>View Reports</div>
+          </div>
+        </div>
+
+        {/* Batch Progress */}
+        <div className="dash-card">
+          <div className="card-top">
+            <h3>Batch Progress Overview</h3>
+            <button className="text-link" onClick={()=>navigate('/courses')}>View All</button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '10px' }}>
+            {batchProgress.map((b, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '15px', fontSize: '0.75rem' }}>
+                <div style={{ width: '130px', color: '#cbd5e1' }}>{b.batch}</div>
+                <div style={{ flex: 1, height: '4px', background: '#1e293b', borderRadius: '2px' }}>
+                  <div style={{ width: `${b.progress}%`, height: '100%', background: b.color }}></div>
+                </div>
+                <div style={{ width: '30px', textAlign: 'right', fontWeight: 'bold' }}>{b.progress}%</div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Announcements */}
+        <div className="dash-card">
+          <div className="card-top">
+            <h3>Announcements</h3>
+            <button className="text-link" onClick={()=>navigate('/events')}>View All</button>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '10px' }}>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+              <div style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7', padding: '8px', borderRadius: '8px' }}><CalendarStar weight="fill" size={16}/></div>
+              <div><div style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 'bold' }}>New Placement Drive from Cognizant</div><div style={{ fontSize: '0.7rem', color: '#64748b' }}>Hiring for multiple roles. Apply now! • 2h ago</div></div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+              <div style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '8px', borderRadius: '8px' }}><NotePencil weight="fill" size={16}/></div>
+              <div><div style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 'bold' }}>Aptitude Exam Scheduled</div><div style={{ fontSize: '0.7rem', color: '#64748b' }}>Quantitative Aptitude on May 18. • 5h ago</div></div>
+            </div>
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
+              <div style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', padding: '8px', borderRadius: '8px' }}><BookOpen weight="fill" size={16}/></div>
+              <div><div style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 'bold' }}>Update: New Study Materials</div><div style={{ fontSize: '0.7rem', color: '#64748b' }}>Advanced Java Notes uploaded. • 1d ago</div></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      {/* ROW 5: SYSTEM OVERVIEW & DRIVE PIPELINE */}
+      <div className="grid-2-col">
+        
+        <div className="dash-card">
+          <h3>System Overview</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: '20px', textAlign: 'center' }}>
+            <div><div style={{ color: '#3b82f6', marginBottom: '5px' }}><BuildingOffice size={24}/></div><div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>32</div><div style={{ fontSize: '0.7rem', color: '#64748b' }}>Branches</div></div>
+            <div><div style={{ color: '#a855f7', marginBottom: '5px' }}><ChalkboardTeacher size={24}/></div><div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>156</div><div style={{ fontSize: '0.7rem', color: '#64748b' }}>Trainers</div></div>
+            <div><div style={{ color: '#f59e0b', marginBottom: '5px' }}><Files size={24}/></div><div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>8,421</div><div style={{ fontSize: '0.7rem', color: '#64748b' }}>Resources</div></div>
+            <div><div style={{ color: '#10b981', marginBottom: '5px' }}><ShieldCheck size={24}/></div><div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>99.9%</div><div style={{ fontSize: '0.7rem', color: '#64748b' }}>System Uptime</div></div>
+          </div>
+        </div>
+
+        <div className="dash-card">
+          <div className="card-top">
+            <h3>Drive Pipeline</h3>
+            <button className="text-link" onClick={()=>navigate('/placement-drives')}>View Pipeline →</button>
+          </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', textAlign: 'center' }}>
+            <div><div style={{ fontSize: '0.7rem', color: '#f59e0b', marginBottom: '5px' }}>● Upcoming</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>23</div></div>
+            <div style={{ color: '#334155' }}>→</div>
+            <div><div style={{ fontSize: '0.7rem', color: '#10b981', marginBottom: '5px' }}>● Registration</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>912</div></div>
+            <div style={{ color: '#334155' }}>→</div>
+            <div><div style={{ fontSize: '0.7rem', color: '#a855f7', marginBottom: '5px' }}>● Shortlisted</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>312</div></div>
+            <div style={{ color: '#334155' }}>→</div>
+            <div><div style={{ fontSize: '0.7rem', color: '#3b82f6', marginBottom: '5px' }}>● Interview</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>156</div></div>
+            <div style={{ color: '#334155' }}>→</div>
+            <div><div style={{ fontSize: '0.7rem', color: '#ec4899', marginBottom: '5px' }}>● Offers</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>98</div></div>
+          </div>
+        </div>
+
+      </div>
+
+      <style>{`
+        .db-wrapper { font-family: 'Inter', sans-serif; }
+        .dash-card { background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; }
+        .dash-card h3 { margin: 0; font-size: 1rem; color: #fff; }
+        
+        .kpi-header { display: flex; align-items: center; gap: 15px; }
+        .icon-c { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+        .icon-c.blue { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+        .icon-c.green { background: rgba(16, 185, 129, 0.1); color: #10b981; }
+        .icon-c.purple { background: rgba(168, 85, 247, 0.1); color: #a855f7; }
+        .icon-c.orange { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
+        .icon-c.pink { background: rgba(236, 72, 153, 0.1); color: #ec4899; }
+        .icon-c.teal { background: rgba(14, 165, 233, 0.1); color: #0ea5e9; }
+        
+        .kpi-title { font-size: 0.75rem; color: #94a3b8; margin-bottom: 2px; }
+        .kpi-val { font-size: 1.5rem; font-weight: bold; color: #fff; }
+        .kpi-trend { font-size: 0.7rem; margin-top: 10px; font-weight: bold; }
+        .kpi-trend.green { color: #10b981; }
+
+        .grid-3-col { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 20px; }
+        .grid-2-col { display: grid; grid-template-columns: 1fr 1.5fr; gap: 20px; }
+        @media (max-width: 1100px) { .grid-3-col, .grid-2-col { grid-template-columns: 1fr; } }
+
+        .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+        .mini-select { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; border-radius: 6px; padding: 4px 8px; font-size: 0.75rem; outline: none; }
+        .stat-lbl { font-size: 0.7rem; color: #64748b; margin-bottom: 4px; }
+        .stat-val { font-size: 1.1rem; font-weight: bold; color: #fff; }
+
+        .mini-table th { border-bottom: 1px solid #1e293b; color: #64748b; font-size: 0.75rem; padding-bottom: 10px; font-weight: normal; }
+        .mini-table td { padding: 12px 0; border-bottom: 1px solid #1e293b; font-size: 0.85rem; color: #cbd5e1; }
+        .tiny-avatar { width: 24px; height: 24px; border-radius: 50%; background: #3b82f6; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; }
+        .status-badge.green { background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 4px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: bold; }
+
+        .text-link { background: transparent; border: none; color: #3b82f6; font-size: 0.8rem; cursor: pointer; font-weight: bold; }
+        .text-link:hover { text-decoration: underline; }
+
+        .qa-box { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; font-size: 0.7rem; color: #cbd5e1; font-weight: bold; }
+        .qa-icon { width: 36px; height: 36px; border-radius: 10px; border: 1px solid #1e293b; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; transition: 0.2s; }
+        .qa-box:hover .qa-icon { border-color: #3b82f6; transform: translateY(-2px); }
+        .qa-icon.blue { color: #3b82f6; } .qa-icon.green { color: #10b981; } .qa-icon.orange { color: #f59e0b; } .qa-icon.pink { color: #ec4899; } .qa-icon.teal { color: #0ea5e9; } .qa-icon.purple { color: #a855f7; }
+      `}</style>
+    </div>
   );
 }
