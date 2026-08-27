@@ -24,7 +24,6 @@ export default function Layout({ children }) {
 
   useEffect(() => {
     if (!tpoData) navigate('/');
-    // Enforce Dark Mode Permanently
     document.body.setAttribute('data-theme', 'dark');
   }, [tpoData, navigate]);
 
@@ -123,21 +122,23 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/placed'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Trophy size={22} color={isActive('/placed')} /> Placed Students</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/applications'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ListChecks size={22} color={isActive('/applications')} /> Student Apps</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/vacancies'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Briefcase size={22} color={isActive('/vacancies')} /> Vacancies</div><span>›</span></div>
-            
-            {/* 🚨 ADDED PLACEMENT DRIVES (View for all, edit for TPO) */}
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/placement-drives'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><IdentificationCard size={22} color={isActive('/placement-drives')} /> Placement Drives</div><span>›</span></div>
-            
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/clients'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Handshake size={22} color={isActive('/clients')} /> Clients & Partners</div><span>›</span></div>
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/events'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><CalendarStar size={22} color={isActive('/events')} /> Events</div><span>›</span></div>
-            
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> Talentino</div><span>›</span></div>
             
             {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
                <>
                  <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/study-materials'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Book size={22} color={isActive('/study-materials')} /> Study Materials</div><span>›</span></div>
-                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/exams'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><FileText size={22} color={isActive('/exams')} /> Technical Exams</div><span>›</span></div>
-                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/aptitude'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Brain size={22} color={isActive('/aptitude')} /> Aptitude Exams</div><span>›</span></div>
-                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/talentino-exams'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><PencilSimple size={22} color={isActive('/talentino-exams')} /> Talentino Exams</div><span>›</span></div>
+                 
+                 {/* 🚨 THE CONSOLIDATED EXAMS HUB TAB */}
+                 <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/exams'); }}>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                     <FileText size={22} color={location.pathname.startsWith('/exams') ? 'var(--accent-primary)' : 'var(--text-muted)'} /> 
+                     Exams Hub
+                   </div>
+                   <span>›</span>
+                 </div>
                </>
             )}
 

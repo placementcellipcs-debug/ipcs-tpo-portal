@@ -19,6 +19,7 @@ import Aptitude from './Aptitude';
 import TalentinoExams from './TalentinoExams';
 import Courses from './Courses';
 import PlacementDrives from './PlacementDrives';
+import ExamsHub from './ExamsHub'; // 🚨 NEW IMPORT
 
 function App() {
   return (
@@ -39,11 +40,14 @@ function App() {
         <Route path="/sign-certificate/:id" element={<CertificateSign />} />
         <Route path="/users" element={<UserManagement />} />
         <Route path="/study-materials" element={<StudyMaterials />} />
-        <Route path="/exams" element={<TechnicalExams />} />
-        <Route path="/aptitude" element={<Aptitude />} />
-        <Route path="/talentino-exams" element={<TalentinoExams />} />
         <Route path="/courses" element={<Courses />} />
         <Route path="/placement-drives" element={<PlacementDrives />} />
+
+        {/* 🚨 THE UNIFIED EXAMS ROUTING */}
+        <Route path="/exams" element={<ExamsHub />} />
+        <Route path="/exams/technical" element={<TechnicalExams />} />
+        <Route path="/exams/aptitude" element={<Aptitude />} />
+        <Route path="/exams/talentino" element={<TalentinoExams />} />
       </Routes>
     </BrowserRouter>
   );
