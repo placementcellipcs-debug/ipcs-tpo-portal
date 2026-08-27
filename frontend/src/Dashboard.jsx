@@ -6,7 +6,7 @@ import {
   TrendUp, BuildingOffice, GraduationCap, ChalkboardTeacher, 
   ShieldCheck, UserList, BookOpen, Clock, PresentationChart,
   NotePencil, Desktop, FolderOpen, ChartLineUp, Student,
-  CalendarCheck, ListChecks, ArrowUpRight, ChartBar
+  CalendarCheck, ListChecks, ArrowUpRight
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -19,6 +19,22 @@ export default function Dashboard() {
   const [events, setEvents] = useState([]);
   const [recentPlacements, setRecentPlacements] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // 🚨 REAL DATA STATES
+  const [trendData, setTrendData] = useState(Array(12).fill({ m: '', apps: 0, off: 0, pl: 0 }));
+  const [domainData, setDomainData] = useState([]);
+  const [pipeline, setPipeline] = useState({ applied: 0, interview: 0, offers: 0, placed: 0 });
+  const [totalAppsCount, setTotalAppsCount] = useState(0);
+
+  const parseDateRobust = (dStr) => {
+    if (!dStr) return null;
+    if (dStr.includes('/')) {
+      const parts = dStr.split(/[/\s,]+/);
+      if (parts.length >= 3) return new Date(`${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`);
+    }
+    const d = new Date(dStr.replace(/st|nd|rd|th/g, ''));
+    return isNaN(d) ? null : d;
+  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -33,13 +49,62 @@ export default function Dashboard() {
           setStats(statsRes.data.stats);
           setEvents(statsRes.data.events || []);
         }
+
         if (appsRes.data.success) {
-          const placed = appsRes.data.applications.filter(a => {
-            const s = (a.status || '').toLowerCase();
-            const j = (a.joiningStatus || '').toLowerCase();
-            return s.includes('placed') || s.includes('got offer') || s.includes('join') || s.includes('offer') || j.includes('join');
-          }).reverse().slice(0, 5);
-          setRecentPlacements(placed);
+          const allApps = appsRes.data.applications;
+          setTotalAppsCount(allApps.length);
+
+          // 1. Process Trend Data (Current Year)
+          const currentYear = new Date().getFullYear();
+          const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+          let newTrend = months.map(m => ({ m, apps: 0, off: 0, pl: 0 }));
+          
+          let domCount = {};
+          let pApp = 0, pInt = 0, pOff = 0, pPl = 0;
+
+          const placedRecent = [];
+
+          allApps.forEach(app => {
+            const st = (app.status || '').toLowerCase();
+            const isPlaced = st.includes('placed') || st.includes('join') || st.includes('offer');
+            
+            if (isPlaced) placedRecent.push(app);
+
+            // Pipeline Counting
+            if (st.includes('applied') || st.includes('register') || st.includes('pending')) pApp++;
+            if (st.includes('interview') || st.includes('shortlist')) pInt++;
+            if (st.includes('offer')) pOff++;
+            if (isPlaced) pPl++;
+
+            // Domain Counting
+            if (isPlaced) {
+              let c = app.course || 'Others';
+              if(c.toLowerCase().includes('automation') || c.toLowerCase().includes('plc')) c = 'Automation';
+              if(c.toLowerCase().includes('digital') || c.toLowerCase().includes('dm')) c = 'Digital Mkt';
+              if(c.toLowerCase().includes('python') || c.toLowerCase().includes('data')) c = 'Data Science';
+              domCount[c] = (domCount[c] || 0) + 1;
+            }
+
+            // Trend Math
+            const d = parseDateRobust(app.date || app.datePlaced);
+            if (d && d.getFullYear() === currentYear) {
+              const mIdx = d.getMonth();
+              newTrend[mIdx].apps++;
+              if (st.includes('offer')) newTrend[mIdx].off++;
+              if (isPlaced) newTrend[mIdx].pl++;
+            }
+          });
+
+          // Format Domain Donut Data
+          const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#0ea5e9'];
+          const formattedDomains = Object.keys(domCount).map((k, i) => ({
+            n: k, v: domCount[k], c: colors[i % colors.length]
+          })).sort((a,b) => b.v - a.v).slice(0, 5); // Keep top 5
+
+          setTrendData(newTrend);
+          setDomainData(formattedDomains);
+          setPipeline({ applied: pApp, interview: pInt, offers: pOff, placed: pPl });
+          setRecentPlacements(placedRecent.reverse().slice(0, 5));
         }
       } catch (err) { console.error(err); } finally { setLoading(false); }
     };
@@ -51,19 +116,15 @@ export default function Dashboard() {
   
   const upcomingEvents = events.filter(e => {
     if (!e.date || !e.title || e.title.toLowerCase().includes('dummy')) return false;
-    let parsedDate = null;
-    if (e.date.includes('/')) {
-      const parts = e.date.split(/[/\s,]+/);
-      if (parts.length >= 3) parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`);
-    } else { parsedDate = new Date(e.date.replace(/st|nd|rd|th/g, '')); }
-    if (isNaN(parsedDate)) return false;
-    return parsedDate >= today;
+    const pd = parseDateRobust(e.date);
+    return pd && pd >= today;
   }).slice(0, 3);
+  const upDrivesCount = events.filter(e => (e.type||'').toLowerCase().includes('drive') && parseDateRobust(e.date) >= today).length;
 
   const placementRate = stats.totalStudents > 0 ? ((stats.placed / stats.totalStudents) * 100).toFixed(1) : '0.0';
 
   // ==========================================
-  // NATIVE SVG CHART GENERATORS
+  // NATIVE SVG CHART GENERATORS (DYNAMIC)
   // ==========================================
   
   const makeSparkline = (color) => {
@@ -77,14 +138,11 @@ export default function Dashboard() {
     );
   };
 
-  const trendData = [
-    { m: 'Jan', apps: 80, off: 40, pl: 20 }, { m: 'Feb', apps: 60, off: 30, pl: 15 }, { m: 'Mar', apps: 130, off: 60, pl: 40 },
-    { m: 'Apr', apps: 150, off: 90, pl: 60 }, { m: 'May', apps: 110, off: 70, pl: 45 }, { m: 'Jun', apps: 160, off: 120, pl: 80 },
-    { m: 'Jul', apps: 190, off: 160, pl: 100 }, { m: 'Aug', apps: 140, off: 130, pl: 70 }, { m: 'Sep', apps: 200, off: 170, pl: 120 },
-    { m: 'Oct', apps: 190, off: 150, pl: 110 }, { m: 'Nov', apps: 240, off: 210, pl: 140 }, { m: 'Dec', apps: 210, off: 180, pl: 130 }
-  ];
-  const cHeight = 140; const cWidth = 600; const maxV = 250; const xStep = cWidth / 11;
+  const cHeight = 140; const cWidth = 600; const xStep = cWidth / 11;
+  const maxV = Math.max(...trendData.map(d => Math.max(d.apps, d.off, d.pl)), 10); // Prevent infinity
+  
   const makeSmoothPath = (key) => {
+    if(!trendData.length) return '';
     let path = `M 0,${cHeight - (trendData[0][key]/maxV*cHeight)}`;
     for(let i=0; i<11; i++) {
       const cx = (i * xStep + (i+1) * xStep)/2;
@@ -92,17 +150,8 @@ export default function Dashboard() {
     } return path;
   };
 
-  const domainData = [ { n: 'Software', v: 439, c: '#3b82f6' }, { n: 'Data Science', v: 251, c: '#10b981' }, { n: 'Digital Mkt', v: 188, c: '#8b5cf6' }, { n: 'Embedded', v: 126, c: '#f59e0b' }, { n: 'UI/UX', v: 126, c: '#ec4899' } ];
   const totalDomain = domainData.reduce((acc, curr) => acc + curr.v, 0);
   let cumPct = 0; const circ = 2 * Math.PI * 40;
-
-  const batchProgress = [
-    { batch: 'Python Full Stack - Jan', course: 'Full Stack', progress: 85, color: '#3b82f6' },
-    { batch: 'Data Science - Feb', course: 'Data Science', progress: 72, color: '#10b981' },
-    { batch: 'Java Development - Jan', course: 'Java', progress: 68, color: '#a855f7' },
-    { batch: 'Industrial Auto - Mar', course: 'Automation', progress: 90, color: '#f59e0b' },
-    { batch: 'Digital Marketing - Apr', course: 'Marketing', progress: 75, color: '#ec4899' },
-  ];
 
   const renderCalendar = () => {
     const days = [27,28,29,30,1,2,3, 4,5,6,7,8,9,10, 11,12,13,14,15,16,17, 18,19,20,21,22,23,24, 25,26,27,28,29,30,31];
@@ -110,7 +159,7 @@ export default function Dashboard() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', textAlign: 'center', fontSize: '0.75rem', marginTop: '15px' }}>
         {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => <div key={d} style={{ color: 'var(--text-muted)', fontWeight: 'bold' }}>{d}</div>)}
         {days.map((d, i) => (
-          <div key={i} style={{ padding: '4px', color: (i<4) ? '#475569' : '#fff', background: d===15 ? '#3b82f6' : d===28 ? '#10b981' : 'transparent', borderRadius: '50%', fontWeight: (d===15||d===28) ? 'bold' : 'normal' }}>{d}</div>
+          <div key={i} style={{ padding: '4px', color: (i<4) ? '#475569' : '#fff', background: d===today.getDate() && i>3 && i<34 ? '#3b82f6' : 'transparent', borderRadius: '50%', fontWeight: d===today.getDate() ? 'bold' : 'normal' }}>{d}</div>
         ))}
       </div>
     );
@@ -118,9 +167,22 @@ export default function Dashboard() {
 
   return (
     <Layout>
-      <div className="db-wrapper" style={{ paddingBottom: '40px' }}>
+      <div className="db-wrapper" style={{ paddingBottom: '40px', maxWidth: '1600px', margin: '0 auto' }}>
         
+        {/* HEADER */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
+          <div>
+            <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', color: '#fff' }}>Good Morning, {tpoData.name.split(' ')[0]} 👋</h1>
+            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Here's what's happening across your branches today.</p>
+          </div>
+          <div style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', padding: '10px 20px', borderRadius: '30px', color: 'var(--text-muted)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Clock size={16} /> {today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+          </div>
+        </div>
+
+        {/* ========================================== */}
         {/* ROW 1: TOP 6 KPI CARDS */}
+        {/* ========================================== */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '20px' }}>
           
           <div className="dash-card">
@@ -131,7 +193,7 @@ export default function Dashboard() {
                 <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.totalStudents}</div>
               </div>
             </div>
-            <div className="kpi-trend green">↑ 12.5% vs last month</div>
+            <div className="kpi-trend green">↑ Live Database</div>
             {makeSparkline('#3b82f6')}
           </div>
 
@@ -143,7 +205,7 @@ export default function Dashboard() {
                 <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.activeVacancies}</div>
               </div>
             </div>
-            <div className="kpi-trend green">↑ 18.3% vs last month</div>
+            <div className="kpi-trend green">↑ Hiring Now</div>
             {makeSparkline('#10b981')}
           </div>
 
@@ -155,7 +217,7 @@ export default function Dashboard() {
                 <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div>
               </div>
             </div>
-            <div className="kpi-trend green">↑ 16.7% vs last month</div>
+            <div className="kpi-trend green">↑ Growing Pipeline</div>
             {makeSparkline('#a855f7')}
           </div>
 
@@ -167,7 +229,7 @@ export default function Dashboard() {
                 <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : `${placementRate}%`}</div>
               </div>
             </div>
-            <div className="kpi-trend green">↑ 6.4% vs last month</div>
+            <div className="kpi-trend green">↑ Global Average</div>
             {makeSparkline('#f59e0b')}
           </div>
 
@@ -176,10 +238,10 @@ export default function Dashboard() {
               <div className="icon-c pink"><CalendarCheck weight="fill" size={20}/></div>
               <div>
                 <div className="kpi-title">Upcoming Drives</div>
-                <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : '23'}</div>
+                <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : upDrivesCount}</div>
               </div>
             </div>
-            <div className="kpi-trend green">↑ 9.1% vs last month</div>
+            <div className="kpi-trend green">↑ Scheduled Events</div>
             {makeSparkline('#ec4899')}
           </div>
 
@@ -187,27 +249,29 @@ export default function Dashboard() {
             <div className="kpi-header">
               <div className="icon-c teal"><ListChecks weight="fill" size={20}/></div>
               <div>
-                <div className="kpi-title">Active MOUs</div>
-                <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : '68'}</div>
+                <div className="kpi-title">Total Applications</div>
+                <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : totalAppsCount}</div>
               </div>
             </div>
-            <div className="kpi-trend green">↑ 10.2% vs last month</div>
+            <div className="kpi-trend green">↑ Submitted</div>
             {makeSparkline('#0ea5e9')}
           </div>
 
         </div>
 
+        {/* ========================================== */}
         {/* ROW 2: MAIN CHARTS */}
+        {/* ========================================== */}
         <div className="grid-3-col" style={{ marginBottom: '20px' }}>
           
           <div className="dash-card" style={{ gridColumn: 'span 2' }}>
             <div className="card-top">
-              <h3>Placement Overview</h3>
+              <h3>Placement Trends (2026)</h3>
               <select className="mini-select"><option>This Year</option></select>
             </div>
             <div style={{ display: 'flex', gap: '20px', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '20px' }}>
-              <span style={{ color: '#3b82f6' }}>— Offers</span>
-              <span style={{ color: '#10b981' }}>— Placements</span>
+              <span style={{ color: '#3b82f6' }}>— Placed</span>
+              <span style={{ color: '#10b981' }}>— Offers</span>
               <span style={{ color: '#a855f7' }}>— Applications</span>
             </div>
             
@@ -215,8 +279,8 @@ export default function Dashboard() {
               <svg viewBox={`0 0 ${cWidth} ${cHeight}`} preserveAspectRatio="none" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
                 {[0, 1, 2, 3, 4].map(i => <line key={i} x1="0" y1={cHeight * (i/4)} x2={cWidth} y2={cHeight * (i/4)} stroke="#1e293b" />)}
                 <path d={makeSmoothPath('apps')} fill="none" stroke="#a855f7" strokeWidth="3" />
-                <path d={makeSmoothPath('off')} fill="none" stroke="#3b82f6" strokeWidth="3" />
-                <path d={makeSmoothPath('pl')} fill="none" stroke="#10b981" strokeWidth="3" />
+                <path d={makeSmoothPath('off')} fill="none" stroke="#10b981" strokeWidth="3" />
+                <path d={makeSmoothPath('pl')} fill="none" stroke="#3b82f6" strokeWidth="3" />
               </svg>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', color: '#64748b', fontSize: '0.7rem' }}>
                 {trendData.map(d => <span key={d.m}>{d.m}</span>)}
@@ -224,11 +288,10 @@ export default function Dashboard() {
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #1e293b', paddingTop: '15px', marginTop: '20px' }}>
-              <div><div className="stat-lbl">Total Applications</div><div className="stat-val">3,842</div></div>
-              <div><div className="stat-lbl">Total Offers</div><div className="stat-val">1,842</div></div>
-              <div><div className="stat-lbl">Total Placements</div><div className="stat-val">1,256</div></div>
-              <div><div className="stat-lbl">Highest Package</div><div className="stat-val">18.5 LPA</div></div>
-              <div><div className="stat-lbl">Average Package</div><div className="stat-val">4.6 LPA</div></div>
+              <div><div className="stat-lbl">Total Applications</div><div className="stat-val">{totalAppsCount}</div></div>
+              <div><div className="stat-lbl">Active Interviews</div><div className="stat-val">{pipeline.interview}</div></div>
+              <div><div className="stat-lbl">Total Offers</div><div className="stat-val">{pipeline.offers}</div></div>
+              <div><div className="stat-lbl">Total Placements</div><div className="stat-val">{stats.placed}</div></div>
             </div>
           </div>
 
@@ -238,18 +301,21 @@ export default function Dashboard() {
               <div style={{ width: '160px', height: '160px', position: 'relative' }}>
                 <svg viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%' }}>
                   {domainData.map(slice => {
+                    if (totalDomain === 0) return null;
                     const pct = slice.v / totalDomain; const dash = `${pct * circ} ${circ}`; const off = cumPct * circ * -1; cumPct += pct;
                     return <circle key={slice.n} r={40} cx="50" cy="50" fill="transparent" stroke={slice.c} strokeWidth="16" strokeDasharray={dash} strokeDashoffset={off} />
                   })}
+                  {totalDomain === 0 && <circle r={40} cx="50" cy="50" fill="transparent" stroke="#1e293b" strokeWidth="16" />}
                 </svg>
                 <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>1,256</div>
-                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Total Placements</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{totalDomain}</div>
+                  <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Total Charted</div>
                 </div>
               </div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {domainData.map(d => (
+              {domainData.length === 0 ? <div style={{textAlign:'center', color:'#64748b', fontSize:'0.8rem'}}>No data available</div> : 
+               domainData.map(d => (
                 <div key={d.n} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#cbd5e1' }}><span style={{ width: '8px', height: '8px', background: d.c }}></span>{d.n}</div>
                   <div style={{ color: '#64748b' }}>{((d.v/totalDomain)*100).toFixed(0)}%</div>
@@ -260,7 +326,9 @@ export default function Dashboard() {
 
         </div>
 
+        {/* ========================================== */}
         {/* ROW 3: TABLES & CALENDAR */}
+        {/* ========================================== */}
         <div className="grid-3-col" style={{ marginBottom: '20px' }}>
           
           <div className="dash-card" style={{ gridColumn: 'span 2' }}>
@@ -279,7 +347,7 @@ export default function Dashboard() {
                     <td><span style={{color:'#3b82f6', fontWeight:'bold'}}>{p.company}</span></td>
                     <td>{p.course}</td>
                     <td style={{textAlign:'right', fontWeight:'bold', color:'#fff'}}>{p.packageLpa ? `${p.packageLpa} LPA` : '-'}</td>
-                    <td style={{textAlign:'right'}}><span className="status-badge green">Placed</span></td>
+                    <td style={{textAlign:'right'}}><span className="status-badge green">{(p.status||'Placed').toUpperCase()}</span></td>
                   </tr>
                 )) : <tr><td colSpan="5" style={{textAlign:'center', padding:'20px'}}>No records found</td></tr>}
               </tbody>
@@ -292,25 +360,26 @@ export default function Dashboard() {
               <button className="text-link" onClick={()=>navigate('/events')}>View All</button>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', fontWeight: 'bold' }}>
-              <span>&lt;</span><span>May 2026</span><span>&gt;</span>
+              <span>&lt;</span><span>{today.toLocaleString('default', { month: 'long', year: 'numeric' })}</span><span>&gt;</span>
             </div>
             {renderCalendar()}
             <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-              <div style={{ display: 'flex', gap: '15px' }}>
-                <div style={{ fontSize:'0.75rem', fontWeight:'bold', color:'#cbd5e1' }}>May 15</div>
-                <div><div style={{fontSize:'0.8rem', color:'#fff', fontWeight:'bold'}}>TCS Online Drive</div><div style={{fontSize:'0.65rem', color:'#64748b'}}>10:00 AM - Online</div></div>
-              </div>
-              <div style={{ display: 'flex', gap: '15px' }}>
-                <div style={{ fontSize:'0.75rem', fontWeight:'bold', color:'#cbd5e1' }}>May 17</div>
-                <div><div style={{fontSize:'0.8rem', color:'#fff', fontWeight:'bold'}}>Infosys Technical Round</div><div style={{fontSize:'0.65rem', color:'#64748b'}}>09:30 AM - Bangalore</div></div>
-              </div>
+              {upcomingEvents.length === 0 ? <div style={{ fontSize:'0.8rem', color:'#64748b' }}>No upcoming schedule.</div> : 
+               upcomingEvents.map((evt, i) => (
+                <div key={i} style={{ display: 'flex', gap: '15px' }}>
+                  <div style={{ fontSize:'0.75rem', fontWeight:'bold', color:'#cbd5e1' }}>{evt.date.substring(0,6)}</div>
+                  <div><div style={{fontSize:'0.8rem', color:'#fff', fontWeight:'bold'}}>{evt.title}</div><div style={{fontSize:'0.65rem', color:'#64748b'}}>{evt.type} - {evt.location||'Online'}</div></div>
+                </div>
+              ))}
             </div>
           </div>
 
         </div>
 
-        {/* ROW 4: BATCH PROGRESS & ANNOUNCEMENTS & QUICK LINKS */}
-        <div className="grid-3-col" style={{ marginBottom: '30px' }}>
+        {/* ========================================== */}
+        {/* ROW 4: PIPELINE & QUICK LINKS */}
+        {/* ========================================== */}
+        <div className="grid-2-col" style={{ marginBottom: '30px' }}>
           
           <div className="dash-card">
             <h3>Quick Access</h3>
@@ -322,85 +391,32 @@ export default function Dashboard() {
               <div className="qa-box" onClick={()=>navigate('/study-materials')}><div className="qa-icon pink"><BookOpen weight="fill"/></div>Material</div>
               <div className="qa-box" onClick={()=>navigate('/reports')}><div className="qa-icon teal"><ChartBar weight="fill"/></div>Gen. Report</div>
               <div className="qa-box" onClick={()=>navigate('/reports')}><div className="qa-icon purple"><Desktop weight="fill"/></div>View Reports</div>
+              <div className="qa-box" onClick={()=>navigate('/clients')}><div className="qa-icon orange"><FolderOpen weight="fill"/></div>Documents</div>
             </div>
           </div>
 
           <div className="dash-card">
             <div className="card-top">
-              <h3>Batch Progress Overview</h3>
-              <button className="text-link" onClick={()=>navigate('/courses')}>View All</button>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '10px' }}>
-              {batchProgress.map((b, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '15px', fontSize: '0.75rem' }}>
-                  <div style={{ width: '130px', color: '#cbd5e1' }}>{b.batch}</div>
-                  <div style={{ flex: 1, height: '4px', background: '#1e293b', borderRadius: '2px' }}>
-                    <div style={{ width: `${b.progress}%`, height: '100%', background: b.color }}></div>
-                  </div>
-                  <div style={{ width: '30px', textAlign: 'right', fontWeight: 'bold' }}>{b.progress}%</div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="dash-card">
-            <div className="card-top">
-              <h3>Announcements</h3>
-              <button className="text-link" onClick={()=>navigate('/events')}>View All</button>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '10px' }}>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <div style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7', padding: '8px', borderRadius: '8px' }}><CalendarStar weight="fill" size={16}/></div>
-                <div><div style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 'bold' }}>New Placement Drive from Cognizant</div><div style={{ fontSize: '0.7rem', color: '#64748b' }}>Hiring for multiple roles. Apply now!</div></div>
-              </div>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <div style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '8px', borderRadius: '8px' }}><NotePencil weight="fill" size={16}/></div>
-                <div><div style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 'bold' }}>Aptitude Exam Scheduled</div><div style={{ fontSize: '0.7rem', color: '#64748b' }}>Quantitative Aptitude on May 18.</div></div>
-              </div>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
-                <div style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', padding: '8px', borderRadius: '8px' }}><BookOpen weight="fill" size={16}/></div>
-                <div><div style={{ fontSize: '0.8rem', color: '#fff', fontWeight: 'bold' }}>Update: New Study Materials</div><div style={{ fontSize: '0.7rem', color: '#64748b' }}>Advanced Java Notes uploaded.</div></div>
-              </div>
-            </div>
-          </div>
-
-        </div>
-
-        {/* ROW 5: SYSTEM OVERVIEW & DRIVE PIPELINE */}
-        <div className="grid-2-col">
-          
-          <div className="dash-card">
-            <h3>System Overview</h3>
-            <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: '20px', textAlign: 'center' }}>
-              <div><div style={{ color: '#3b82f6', marginBottom: '5px' }}><BuildingOffice size={24}/></div><div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>32</div><div style={{ fontSize: '0.7rem', color: '#64748b' }}>Branches</div></div>
-              <div><div style={{ color: '#a855f7', marginBottom: '5px' }}><ChalkboardTeacher size={24}/></div><div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>156</div><div style={{ fontSize: '0.7rem', color: '#64748b' }}>Trainers</div></div>
-              <div><div style={{ color: '#f59e0b', marginBottom: '5px' }}><Files size={24}/></div><div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>8,421</div><div style={{ fontSize: '0.7rem', color: '#64748b' }}>Resources</div></div>
-              <div><div style={{ color: '#10b981', marginBottom: '5px' }}><ShieldCheck size={24}/></div><div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>99.9%</div><div style={{ fontSize: '0.7rem', color: '#64748b' }}>System Uptime</div></div>
-            </div>
-          </div>
-
-          <div className="dash-card">
-            <div className="card-top">
-              <h3>Drive Pipeline</h3>
-              <button className="text-link" onClick={()=>navigate('/placement-drives')}>View Pipeline →</button>
+              <h3>Live Application Pipeline</h3>
+              <button className="text-link" onClick={()=>navigate('/applications')}>View Apps →</button>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', textAlign: 'center' }}>
-              <div><div style={{ fontSize: '0.7rem', color: '#f59e0b', marginBottom: '5px' }}>● Upcoming</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>23</div></div>
+              <div><div style={{ fontSize: '0.7rem', color: '#f59e0b', marginBottom: '5px' }}>● Applied</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{pipeline.applied}</div></div>
               <div style={{ color: '#334155' }}>→</div>
-              <div><div style={{ fontSize: '0.7rem', color: '#10b981', marginBottom: '5px' }}>● Registration</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>912</div></div>
+              <div><div style={{ fontSize: '0.7rem', color: '#3b82f6', marginBottom: '5px' }}>● Interview</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{pipeline.interview}</div></div>
               <div style={{ color: '#334155' }}>→</div>
-              <div><div style={{ fontSize: '0.7rem', color: '#a855f7', marginBottom: '5px' }}>● Shortlisted</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>312</div></div>
+              <div><div style={{ fontSize: '0.7rem', color: '#a855f7', marginBottom: '5px' }}>● Offers</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{pipeline.offers}</div></div>
               <div style={{ color: '#334155' }}>→</div>
-              <div><div style={{ fontSize: '0.7rem', color: '#3b82f6', marginBottom: '5px' }}>● Interview</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>156</div></div>
-              <div style={{ color: '#334155' }}>→</div>
-              <div><div style={{ fontSize: '0.7rem', color: '#ec4899', marginBottom: '5px' }}>● Offers</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>98</div></div>
+              <div><div style={{ fontSize: '0.7rem', color: '#10b981', marginBottom: '5px' }}>● Placed</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{pipeline.placed}</div></div>
             </div>
           </div>
 
         </div>
 
-        {/* ROW 6: ACCESS IMPORTANT MODULES (7 Colored Cards) */}
-        <h3 style={{ margin: '30px 0 20px 0', fontSize: '1.2rem', color: '#fff' }}>Access Important Modules</h3>
+        {/* ========================================== */}
+        {/* ROW 5: ACCESS IMPORTANT MODULES */}
+        {/* ========================================== */}
+        <h3 style={{ margin: '0 0 20px 0', fontSize: '1.2rem', color: '#fff' }}>Access Important Modules</h3>
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginBottom: '40px' }}>
           
