@@ -39,6 +39,7 @@ function App() {
         <Route path="/clients" element={<Clients />} />
         <Route path="/sign-certificate/:id" element={<CertificateSign />} />
         <Route path="/users" element={<UserManagement />} />
+        <Route path="/placement-drives" element={<PlacementDrives />} />                    
         
         {/* 🚨 NEW ROUTES */}
         <Route path="/study-materials" element={<StudyMaterials />} />
@@ -46,6 +47,7 @@ function App() {
         <Route path="/courses" element={<Courses />} />
         <Route path="/aptitude" element={<Aptitude />} />
         <Route path="/talentino-exams" element={<TalentinoExams />} />
+        <Route path="/placement-drives" element={<PlacementDrives />} />
       </Routes>
     </BrowserRouter>
   );

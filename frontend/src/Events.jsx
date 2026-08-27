@@ -298,12 +298,41 @@ export default function Events() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
               <div className="form-group">
                 <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Event Type *</label>
-                <select className="sleek-input" style={{ width: '100%' }} value={newEvent.type} onChange={e => setNewEvent({...newEvent, type: e.target.value})}>
-                  <option value="Placement Drive">Placement Drive</option>
-                  <option value="Interview">Interview</option>
-                  <option value="Talentino">Talentino</option>
-                  <option value="Training">Training</option>
-                </select>
+                <select className="sleek-input" style={{ width: '100%' }} value={newEvent.branch} onChange={e => setNewEvent({...newEvent, branch: e.target.value})}>
+                <option value="All Branches">All Branches</option>
+                <option value="Bangalore">Bangalore</option>
+                <option value="Trivandrum">Trivandrum</option>
+                <option value="Kochi">Kochi</option>
+                <option value="Calicut">Calicut</option>
+                <option value="Kannur">Kannur</option>
+                <option value="Coimbatore">Coimbatore</option>
+                <option value="Chennai">Chennai</option>
+                <option value="Madurai">Madurai</option>
+                <option value="Trichy">Trichy</option>
+                <option value="Tirunelveli">Tirunelveli</option>
+                <option value="Nagercoil">Nagercoil</option>
+                <option value="Mumbai">Mumbai</option>
+                <option value="Pune">Pune</option>
+                <option value="Salem">Salem</option>
+                <option value="Erode">Erode</option>
+                <option value="Mysore">Mysore</option>
+                <option value="Hubli">Hubli</option>
+                <option value="Belgaum">Belgaum</option>
+                <option value="Mangalore">Mangalore</option>
+                <option value="Delhi">Delhi</option>
+                <option value="Navi Mumbai">Navi Mumbai</option>
+                <option value="Noida">Noida</option>
+                <option value="Lucknow">Lucknow</option>
+                <option value="Dubai">Dubai</option>
+                <option value="Qatar">Qatar</option>
+                <option value="Pathanamthitta">Pathanamthitta</option>
+                <option value="Kottayam">Kottayam</option>
+                <option value="Alleppey">Alleppey</option>
+                <option value="Trichur">Trichur</option>
+                <option value="Palakkad">Palakkad</option>
+                <option value="Malappuram">Malappuram</option>
+                <option value="Perinthalmanna">Perinthalmanna</option>
+              </select>
               </div>
               <div className="form-group">
                 <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Event Location</label>

@@ -182,7 +182,13 @@ exports.getApplications = (req, res) => {
 
   sourceData.forEach((row) => {
     const rowData = row.toObject();
-    const getHeader = (searchString) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(searchString.toLowerCase().replace(/\s/g, '')));
+    // 🚨 STRICT COLUMN MATCHER FIX
+    const getHeader = (searchString) => {
+      const cleanSearch = searchString.toLowerCase().replace(/\s/g, '');
+      const keys = Object.keys(rowData);
+      const exact = keys.find(k => k.toLowerCase().replace(/\s/g, '') === cleanSearch);
+      return exact || keys.find(k => k.toLowerCase().replace(/\s/g, '').includes(cleanSearch));
+    };
     const branch = rowData[getHeader('branch')] || 'Unknown';
     const course = rowData[getHeader('course')] || 'Unknown';
     const officerKey = getHeader('placementofficer');
@@ -979,4 +985,39 @@ exports.updatePassword = async (req, res) => {
       res.status(404).json({ success: false, message: "User account not found in database." });
     }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+// ==========================================
+// 🚨 PLACEMENT DRIVES
+// ==========================================
+exports.getDrives = (req, res) => {
+  try {
+    const drivesData = (getCache().drives || []).map(row => {
+      const rd = row.toObject();
+      const getH = (str) => {
+        const c = str.toLowerCase().replace(/\s/g, ''); const keys = Object.keys(rd);
+        return keys.find(k => k.toLowerCase().replace(/\s/g, '') === c) || keys.find(k => k.toLowerCase().replace(/\s/g, '').includes(c));
+      };
+      return {
+        rowNumber: row.rowNumber, driveId: rd[getH('driveid')] || '', name: rd[getH('name')] || '', phone: rd[getH('contact')] || '',
+        email: rd[getH('mailid')] || rd[getH('email')] || '', course: rd[getH('course')] || '', branch: rd[getH('branch')] || '',
+        resume: rd[getH('resume')] || '', qual: rd[getH('qualification')] || '', regStatus: rd[getH('status')] || '',
+        regDate: rd[getH('registeddate')] || rd[getH('timestamp')] || '', studentStatus: rd[getH('studentstatus')] || ''
+      };
+    });
+    res.json({ success: true, drives: drivesData.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateDriveStatus = async (req, res) => {
+  const { rowNumber, studentStatus } = req.body;
+  try {
+    const sheet = doc.sheetsByTitle["Drive_Registration"];
+    const rows = await sheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    if(rows.length > 0) {
+      const statHead = getFuzzyHeader(sheet.headerValues, 'studentstatus');
+      rows[0].assign({ [statHead]: studentStatus }); await rows[0].save();
+      refreshCache(); res.json({ success: true });
+    }
+  } catch(err) { res.status(500).json({ success: false, message: err.message }); }
 };

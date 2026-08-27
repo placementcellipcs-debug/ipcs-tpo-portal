@@ -57,7 +57,7 @@ export default function PlacedStudents() {
     
     let dateObj = parseDate(a.datePlaced || a.date);
     let monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
-    let mMatch = monthFilter === '' ? true : monthKey === monthFilter;
+    let mMatch = monthFilter === '' ? true : a.branch === monthFilter;
     let sMatch = searchQuery === '' || (a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (a.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || (a.roll || '').toLowerCase().includes(searchQuery.toLowerCase());
     
     return isPlaced && mMatch && sMatch;
@@ -130,7 +130,15 @@ export default function PlacedStudents() {
         
         <div className="header-controls" style={{ justifyContent: 'flex-start' }}>
           <input type="text" className="sleek-input" placeholder="Search student or company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-          <input type="month" className="sleek-input" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
+          
+          {/* 🚨 NEW: Branch Filter Dropdown */}
+          <select className="sleek-select" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)}>
+            <option value="">All Branches</option>
+            {[...new Set(applications.map(a => a.branch).filter(Boolean))].sort().map(b => (
+              <option key={b} value={b}>{b}</option>
+            ))}
+          </select>
+          
           <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
             <option value="newest">Sort: Date Placed</option>
             <option value="az">Sort: Student A-Z</option>
