@@ -20,6 +20,7 @@ export default function Layout({ children }) {
   });
   
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isNotifOpen, setIsNotifOpen] = useState(false); // 🚨 NEW NOTIFICATION STATE
   const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
@@ -75,7 +76,46 @@ export default function Layout({ children }) {
             />
           </div>
           <div className="header-actions">
-            <button className="icon-btn" title="Notifications"><Bell weight="fill" /></button>
+            
+            {/* 🚨 NOTIFICATION BELL DROPDOWN */}
+            <div style={{ position: 'relative' }}>
+              <button className="icon-btn" title="Notifications" onClick={() => setIsNotifOpen(!isNotifOpen)}>
+                <Bell weight="fill" />
+                <span style={{ position: 'absolute', top: '5px', right: '5px', width: '8px', height: '8px', background: '#ef4444', borderRadius: '50%', border: '2px solid var(--card-bg)' }}></span>
+              </button>
+
+              {isNotifOpen && (
+                <div style={{ position: 'absolute', top: '50px', right: '0', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '12px', width: '320px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', zIndex: 9999, overflow: 'hidden' }}>
+                  <div style={{ padding: '15px', borderBottom: '1px solid #1e293b', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff' }}>
+                    Notifications
+                    <span style={{ fontSize: '0.7rem', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '3px 8px', borderRadius: '10px' }}>2 New</span>
+                  </div>
+                  <div style={{ padding: '0', maxHeight: '300px', overflowY: 'auto' }}>
+                    <div style={{ padding: '15px', borderBottom: '1px solid #1e293b', display: 'flex', gap: '12px', background: 'rgba(56, 189, 248, 0.03)' }}>
+                      <div style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <ListChecks size={18} weight="bold" />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginBottom: '3px' }}>System Updated</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>The new Unified Exams Hub and Placement Drives are now live.</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', marginTop: '5px', fontWeight: 'bold' }}>Just now</div>
+                      </div>
+                    </div>
+                    <div style={{ padding: '15px', display: 'flex', gap: '12px' }}>
+                      <div style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Trophy size={18} weight="bold" />
+                      </div>
+                      <div>
+                        <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginBottom: '3px' }}>Placement Data Synced</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>Latest global placement and application records have been successfully fetched.</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '5px' }}>1 hour ago</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="header-profile" onClick={() => setIsDrawerOpen(true)}>
               <div className="header-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)' }}>
                 {renderAvatar()}
@@ -84,7 +124,7 @@ export default function Layout({ children }) {
           </div>
         </header>
 
-        <div className="page-container" style={{ width: '100%', overflowX: 'hidden' }}>
+        <div className="page-container" style={{ width: '100%', overflowX: 'hidden' }} onClick={() => setIsNotifOpen(false)}>
           {children}
         </div>
 
@@ -130,8 +170,6 @@ export default function Layout({ children }) {
             {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
                <>
                  <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/study-materials'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Book size={22} color={isActive('/study-materials')} /> Study Materials</div><span>›</span></div>
-                 
-                 {/* 🚨 THE CONSOLIDATED EXAMS HUB TAB */}
                  <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/exams'); }}>
                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                      <FileText size={22} color={location.pathname.startsWith('/exams') ? 'var(--accent-primary)' : 'var(--text-muted)'} /> 
