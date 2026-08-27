@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
   Users, Briefcase, Files, Trophy, CalendarStar, CircleNotch, 
-  TrendUp, BuildingOffice, GraduationCap, ChalkboardTeacher, 
-  ShieldCheck, UserList, BookOpen, Clock, PresentationChart,
-  NotePencil, Desktop, FolderOpen, ChartLineUp, Student,
-  CalendarCheck, ListChecks, ArrowUpRight
+  TrendUp, Buildings, GraduationCap, Chalkboard, 
+  ShieldCheck, BookOpen, Clock, ChartPieSlice,
+  NotePencil, Desktop, FolderOpen, User,
+  CalendarCheck, ListChecks, ArrowRight, ChartBar
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -20,7 +20,6 @@ export default function Dashboard() {
   const [recentPlacements, setRecentPlacements] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // 🚨 REAL DATA STATES
   const [trendData, setTrendData] = useState(Array(12).fill({ m: '', apps: 0, off: 0, pl: 0 }));
   const [domainData, setDomainData] = useState([]);
   const [pipeline, setPipeline] = useState({ applied: 0, interview: 0, offers: 0, placed: 0 });
@@ -51,17 +50,15 @@ export default function Dashboard() {
         }
 
         if (appsRes.data.success) {
-          const allApps = appsRes.data.applications;
+          const allApps = appsRes.data.applications || [];
           setTotalAppsCount(allApps.length);
 
-          // 1. Process Trend Data (Current Year)
           const currentYear = new Date().getFullYear();
           const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
           let newTrend = months.map(m => ({ m, apps: 0, off: 0, pl: 0 }));
           
           let domCount = {};
           let pApp = 0, pInt = 0, pOff = 0, pPl = 0;
-
           const placedRecent = [];
 
           allApps.forEach(app => {
@@ -70,13 +67,11 @@ export default function Dashboard() {
             
             if (isPlaced) placedRecent.push(app);
 
-            // Pipeline Counting
             if (st.includes('applied') || st.includes('register') || st.includes('pending')) pApp++;
             if (st.includes('interview') || st.includes('shortlist')) pInt++;
             if (st.includes('offer')) pOff++;
             if (isPlaced) pPl++;
 
-            // Domain Counting
             if (isPlaced) {
               let c = app.course || 'Others';
               if(c.toLowerCase().includes('automation') || c.toLowerCase().includes('plc')) c = 'Automation';
@@ -85,7 +80,6 @@ export default function Dashboard() {
               domCount[c] = (domCount[c] || 0) + 1;
             }
 
-            // Trend Math
             const d = parseDateRobust(app.date || app.datePlaced);
             if (d && d.getFullYear() === currentYear) {
               const mIdx = d.getMonth();
@@ -95,11 +89,10 @@ export default function Dashboard() {
             }
           });
 
-          // Format Domain Donut Data
           const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#0ea5e9'];
           const formattedDomains = Object.keys(domCount).map((k, i) => ({
             n: k, v: domCount[k], c: colors[i % colors.length]
-          })).sort((a,b) => b.v - a.v).slice(0, 5); // Keep top 5
+          })).sort((a,b) => b.v - a.v).slice(0, 5); 
 
           setTrendData(newTrend);
           setDomainData(formattedDomains);
@@ -139,7 +132,7 @@ export default function Dashboard() {
   };
 
   const cHeight = 140; const cWidth = 600; const xStep = cWidth / 11;
-  const maxV = Math.max(...trendData.map(d => Math.max(d.apps, d.off, d.pl)), 10); // Prevent infinity
+  const maxV = Math.max(...trendData.map(d => Math.max(d.apps, d.off, d.pl)), 10); 
   
   const makeSmoothPath = (key) => {
     if(!trendData.length) return '';
@@ -169,7 +162,6 @@ export default function Dashboard() {
     <Layout>
       <div className="db-wrapper" style={{ paddingBottom: '40px', maxWidth: '1600px', margin: '0 auto' }}>
         
-        {/* HEADER */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
           <div>
             <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', color: '#fff' }}>Good Morning, {tpoData.name.split(' ')[0]} 👋</h1>
@@ -180,9 +172,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ========================================== */}
-        {/* ROW 1: TOP 6 KPI CARDS */}
-        {/* ========================================== */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '20px' }}>
           
           <div className="dash-card">
@@ -259,14 +248,11 @@ export default function Dashboard() {
 
         </div>
 
-        {/* ========================================== */}
-        {/* ROW 2: MAIN CHARTS */}
-        {/* ========================================== */}
         <div className="grid-3-col" style={{ marginBottom: '20px' }}>
           
           <div className="dash-card" style={{ gridColumn: 'span 2' }}>
             <div className="card-top">
-              <h3>Placement Trends (2026)</h3>
+              <h3>Placement Trends ({new Date().getFullYear()})</h3>
               <select className="mini-select"><option>This Year</option></select>
             </div>
             <div style={{ display: 'flex', gap: '20px', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '20px' }}>
@@ -326,9 +312,6 @@ export default function Dashboard() {
 
         </div>
 
-        {/* ========================================== */}
-        {/* ROW 3: TABLES & CALENDAR */}
-        {/* ========================================== */}
         <div className="grid-3-col" style={{ marginBottom: '20px' }}>
           
           <div className="dash-card" style={{ gridColumn: 'span 2' }}>
@@ -376,9 +359,6 @@ export default function Dashboard() {
 
         </div>
 
-        {/* ========================================== */}
-        {/* ROW 4: PIPELINE & QUICK LINKS */}
-        {/* ========================================== */}
         <div className="grid-2-col" style={{ marginBottom: '30px' }}>
           
           <div className="dash-card">
@@ -413,9 +393,6 @@ export default function Dashboard() {
 
         </div>
 
-        {/* ========================================== */}
-        {/* ROW 5: ACCESS IMPORTANT MODULES */}
-        {/* ========================================== */}
         <h3 style={{ margin: '0 0 20px 0', fontSize: '1.2rem', color: '#fff' }}>Access Important Modules</h3>
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginBottom: '40px' }}>
@@ -423,14 +400,14 @@ export default function Dashboard() {
           <div onClick={() => navigate('/students')} className="module-card blue">
             <h4 style={{ color: '#3b82f6' }}>Student Directory</h4>
             <p>View and manage student information</p>
-            <div className="link">View Students <ArrowUpRight size={14} weight="bold"/></div>
+            <div className="link">View Students <ArrowRight size={14} weight="bold"/></div>
           </div>
 
           {(tpoData.accessType === 'superadmin') && (
             <div onClick={() => navigate('/courses')} className="module-card green">
               <h4 style={{ color: '#10b981' }}>Course Management</h4>
               <p>Create and manage courses & syllabus</p>
-              <div className="link">Manage Courses <ArrowUpRight size={14} weight="bold"/></div>
+              <div className="link">Manage Courses <ArrowRight size={14} weight="bold"/></div>
             </div>
           )}
 
@@ -438,34 +415,34 @@ export default function Dashboard() {
             <div onClick={() => navigate('/exams')} className="module-card purple">
               <h4 style={{ color: '#a855f7' }}>Assessment Center</h4>
               <p>Create tests and evaluate students</p>
-              <div className="link">Go to Assessments <ArrowUpRight size={14} weight="bold"/></div>
+              <div className="link">Go to Assessments <ArrowRight size={14} weight="bold"/></div>
             </div>
           )}
 
           <div onClick={() => navigate('/talentino')} className="module-card yellow">
             <h4 style={{ color: '#f59e0b' }}>Attendance Tracking</h4>
             <p>Monitor daily Talentino check-ins</p>
-            <div className="link">View Attendance <ArrowUpRight size={14} weight="bold"/></div>
+            <div className="link">View Attendance <ArrowRight size={14} weight="bold"/></div>
           </div>
 
           <div onClick={() => navigate('/placement-drives')} className="module-card pink">
             <h4 style={{ color: '#ec4899' }}>Placement Management</h4>
             <p>Manage drives, offers and placements</p>
-            <div className="link">Manage Placements <ArrowUpRight size={14} weight="bold"/></div>
+            <div className="link">Manage Placements <ArrowRight size={14} weight="bold"/></div>
           </div>
 
           {isTpo && (
             <div onClick={() => navigate('/reports')} className="module-card teal">
               <h4 style={{ color: '#0ea5e9' }}>Reports & Analytics</h4>
               <p>Detailed insights and performance reports</p>
-              <div className="link">View Reports <ArrowUpRight size={14} weight="bold"/></div>
+              <div className="link">View Reports <ArrowRight size={14} weight="bold"/></div>
             </div>
           )}
 
           <div onClick={() => navigate('/clients')} className="module-card orange">
             <h4 style={{ color: '#f97316' }}>Document Center</h4>
             <p>Store and manage important MOUs</p>
-            <div className="link">View Documents <ArrowUpRight size={14} weight="bold"/></div>
+            <div className="link">View Documents <ArrowRight size={14} weight="bold"/></div>
           </div>
 
         </div>
