@@ -23,26 +23,26 @@ async function refreshCache() {
 
     const [
       stuSheet, appSheet, vacSheet, eventSheet, issueSheet, tSchedSheet, tAttSheet, clientSheet, tpoLogSheet, 
-      matSheet, tqSheet, trSheet, aptQSheet, aptRSheet, talQSheet, talRSheet, courseSheet, driveSheet // 🚨 Added driveSheet
+      matSheet, tqSheet, trSheet, aptQSheet, aptRSheet, talQSheet, talRSheet, courseSheet, driveSheet
     ] = [
       getSheet("Data"), getSheet("Opening_Applied"), getSheet("NewsLetter"), getSheet("Event"), getSheet("Issues"), 
       getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients"), getSheet("TPO_Log"), 
       getSheet("Study_Materials"), getSheet("Tech_Questions"), getSheet("Tech_Results"),
-      getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"), getSheet("Courses"), getSheet("Drive_Registration")
+      getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"), 
+      getSheet("Courses"), getSheet("Drive_Registration") // 🚨 Safely grabbing the drive sheet
     ];
 
     const [
       stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, 
-      matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows, driveRows // 🚨 Added driveRows
+      matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows, driveRows
     ] = await Promise.all([
       stuSheet?.getRows() || [], appSheet?.getRows() || [], vacSheet?.getRows() || [], eventSheet?.getRows() || [], 
       issueSheet?.getRows() || [], tSchedSheet?.getRows() || [], tAttSheet?.getRows() || [], clientSheet?.getRows() || [], 
       tpoLogSheet?.getRows() || [], matSheet?.getRows() || [], tqSheet?.getRows() || [], trSheet?.getRows() || [],
-      aptQSheet?.getRows() || [], aptRSheet?.getRows() || [], talQSheet?.getRows() || [], talRSheet?.getRows() || [], driveSheet?.getRows() || []
+      aptQSheet?.getRows() || [], aptRSheet?.getRows() || [], talQSheet?.getRows() || [], talRSheet?.getRows() || [], 
+      driveSheet?.getRows() || [] // 🚨 Resolving drive rows safely
     ]);
 
-
-    // 🚨 SMART PARSER FOR YOUR VISUAL COURSES SHEET
     let coursesDict = {};
     if (courseSheet) {
       const cRows = await courseSheet.getRows();
@@ -69,11 +69,12 @@ async function refreshCache() {
       });
     }
 
+    // 🚨 The Master Object: ensures "drives" is explicitly included!
     globalCache = { 
       students: stuRows, applications: appRows, vacancies: vacRows, events: eventRows, issues: issueRows, 
       tSched: tSchedRows, tAtt: tAttRows, clients: clientRows, tpoLogs: tpoLogRows, materials: matRows, 
       techQuestions: tqRows, techResults: trRows, aptQuestions: aptQRows, aptResults: aptRRows, 
-      talQuestions: talQRows, talResults: talRRows, coursesDict: coursesDict
+      talQuestions: talQRows, talResults: talRRows, coursesDict: coursesDict, drives: driveRows 
     };
   } catch (err) { console.error("❌ Cache sync failed:", err.message); }
 }

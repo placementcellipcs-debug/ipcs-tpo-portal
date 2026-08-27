@@ -1,15 +1,19 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, Plus, PencilSimple, X, FloppyDisk } from '@phosphor-icons/react';
+import { CircleNotch, Plus, PencilSimple, X, FloppyDisk, CaretLeft, Trophy } from '@phosphor-icons/react';
 import Layout from './Layout';
+
+const TILE_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 
 export default function PlacedStudents() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // 🚨 PROPERLY NAMED FILTERS
-  const [branchFilter, setBranchFilter] = useState('');
+  // View State Management (Dual-View)
+  const [selectedBranch, setSelectedBranch] = useState(null);
+
+  // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState('newest');
 
@@ -35,11 +39,18 @@ export default function PlacedStudents() {
       const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications', { 
         assignedBranchesArray: tpoData.assignedBranchesArray, tpoName: tpoData.name, role: tpoData.role, assignedCourse: tpoData.assignedCourse
       });
-      if (response.data.success) setApplications(response.data.applications);
+      if (response.data.success) {
+        // Filter globally for ONLY placed students to generate branch counts
+        const allPlaced = response.data.applications.filter(a => {
+          const s = (a.status || '').toLowerCase();
+          const j = (a.joiningStatus || '').toLowerCase();
+          return s.includes('placed') || s.includes('got offer') || s.includes('join') || s.includes('offer') || j.includes('join');
+        });
+        setApplications(allPlaced);
+      }
     } catch (error) { console.error("Failed to load", error); } finally { setLoading(false); }
   };
 
-  // Smart Date Parser for sorting variations of DD/MM/YYYY
   const parseDate = (dStr) => {
     if (!dStr) return null;
     if (dStr.includes('/')) {
@@ -50,16 +61,24 @@ export default function PlacedStudents() {
     return isNaN(d) ? null : d;
   };
 
-  const placedApps = applications.filter(a => {
-    const s = (a.status || '').toLowerCase();
-    const j = (a.joiningStatus || '').toLowerCase();
-    const isPlaced = s.includes('placed') || s.includes('got offer') || s.includes('join') || s.includes('offer') || j.includes('join');
-    
-    // 🚨 APPLYING THE BRANCH FILTER
-    let bMatch = branchFilter === '' ? true : a.branch === branchFilter;
+  // ==========================================
+  // DATA PREP FOR BRANCH TILES
+  // ==========================================
+  const branchData = {};
+  applications.forEach(a => {
+    const b = a.branch || 'Unknown';
+    branchData[b] = (branchData[b] || 0) + 1;
+  });
+  const branchList = Object.keys(branchData).sort();
+
+  // ==========================================
+  // DATA PREP FOR TABLE VIEW
+  // ==========================================
+  const activePlacedApps = selectedBranch ? applications.filter(a => a.branch === selectedBranch) : [];
+
+  const filteredApps = activePlacedApps.filter(a => {
     let sMatch = searchQuery === '' || (a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (a.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || (a.roll || '').toLowerCase().includes(searchQuery.toLowerCase());
-    
-    return isPlaced && bMatch && sMatch;
+    return sMatch;
   }).sort((a, b) => {
     if(sortOrder === 'newest') return new Date(b.datePlaced || b.date) - new Date(a.datePlaced || a.date);
     if(sortOrder === 'az') return (a.name || '').localeCompare(b.name || '');
@@ -113,30 +132,117 @@ export default function PlacedStudents() {
     } catch (error) { alert("Failed to add."); } finally { setSavingStatus(false); }
   };
 
+  // ==========================================
+  // RENDER: VIEW 1 - BRANCH TILES LANDING
+  // ==========================================
+  if (!selectedBranch) {
+    return (
+      <Layout>
+        <div className="page-container" style={{ padding: 0 }}>
+          
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '15px' }}>
+            <div>
+              <h1 style={{ fontSize: '2rem', marginBottom: '5px' }}>Placed Students Data</h1>
+              <p style={{ color: 'var(--text-muted)' }}>Select a branch to view placement details, upload offer letters, and log salary packages.</p>
+            </div>
+            <button className="btn-action" style={{ background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px', width: 'auto' }} onClick={() => setIsAddModalOpen(true)}>
+              <Plus weight="bold" /> Add Placement
+            </button>
+          </div>
+
+          {loading ? (
+            <div style={{ textAlign: 'center', marginTop: '4rem', color: '#10b981' }}><CircleNotch size={50} className="ph-spin" /></div>
+          ) : branchList.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '2rem' }}>No placed students found in your branches.</div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px', padding: '0 20px', marginTop: '30px' }}>
+              {branchList.map((branch, index) => {
+                const color = TILE_COLORS[index % TILE_COLORS.length];
+                return (
+                  <div 
+                    key={branch} 
+                    onClick={() => setSelectedBranch(branch)}
+                    style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
+                    onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
+                  >
+                    <h2 style={{ color: '#ffffff', fontSize: '2.2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
+                      {branch}
+                    </h2>
+                    <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Trophy size={20} color="#ffffff" weight="bold" />
+                      <span style={{ color: '#ffffff', fontSize: '1.1rem', fontWeight: 'bold' }}>{branchData[branch]} Placed</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* The Add Modal is still rendered here so it can be accessed from the Grid View */}
+        {isAddModalOpen && (
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
+            <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Add Manual Placement</h2>
+                <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsAddModalOpen(false)} />
+              </div>
+              
+              <h3 style={{ fontSize: '0.85rem', color: '#38bdf8', textTransform: 'uppercase', marginBottom: '10px' }}>Student Details</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', marginBottom: '20px' }}>
+                <div><label className="data-label">Student Name *</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.name} onChange={e=>setAddForm({...addForm, name: e.target.value})} /></div>
+                <div><label className="data-label">Roll Number *</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.roll} onChange={e=>setAddForm({...addForm, roll: e.target.value})} /></div>
+                <div><label className="data-label">Contact No.</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.phone} onChange={e=>setAddForm({...addForm, phone: e.target.value})} /></div>
+                <div><label className="data-label">Mail ID</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.email} onChange={e=>setAddForm({...addForm, email: e.target.value})} /></div>
+                <div><label className="data-label">Course</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.course} onChange={e=>setAddForm({...addForm, course: e.target.value})} /></div>
+                <div><label className="data-label">Branch</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.branch} onChange={e=>setAddForm({...addForm, branch: e.target.value})} /></div>
+              </div>
+
+              <h3 style={{ fontSize: '0.85rem', color: '#38bdf8', textTransform: 'uppercase', marginBottom: '10px' }}>Placement Details</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
+                <div><label className="data-label">Company Name *</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.company} onChange={e=>setAddForm({...addForm, company: e.target.value})} /></div>
+                <div><label className="data-label">Position Status</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.position} onChange={e=>setAddForm({...addForm, position: e.target.value})} /></div>
+                <div><label className="data-label">Date Placed</label><input type="date" className="sleek-input" style={{width:'100%'}} value={addForm.datePlaced} onChange={e=>setAddForm({...addForm, datePlaced: e.target.value})} /></div>
+                <div><label className="data-label">Package (LPA)</label><input type="number" step="0.1" className="sleek-input" style={{width:'100%'}} value={addForm.packageLpa} onChange={e=>setAddForm({...addForm, packageLpa: e.target.value})} /></div>
+                <div><label className="data-label">Joining Status</label><select className="sleek-select" style={{width:'100%'}} value={addForm.joiningStatus} onChange={e=>setAddForm({...addForm, joiningStatus: e.target.value})}><option value="">Select...</option><option value="Joined">Joined</option><option value="Not Joined">Not Joined</option></select></div>
+                <div><label className="data-label">Upload Offer Letter</label><input type="file" className="sleek-input" style={{width:'100%', padding:'6px'}} onChange={e=>setAddForm({...addForm, offerLetterFile: e.target.files[0]})} /></div>
+              </div>
+
+              <div style={{ marginBottom: '1.5rem' }}><label className="data-label">Remarks</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.remarks} onChange={e=>setAddForm({...addForm, remarks: e.target.value})} /></div>
+
+              <button className="btn-action" style={{ background: '#10b981', color: '#fff', width: '100%' }} onClick={submitAdd} disabled={savingStatus}>
+                {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> Save New Placement</>}
+              </button>
+            </div>
+          </div>
+        )}
+      </Layout>
+    );
+  }
+
+  // ==========================================
+  // RENDER: VIEW 2 - DETAILED TABLE VIEW
+  // ==========================================
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-          <div>
-            <h1 style={{ fontSize: '1.8rem', marginBottom: '5px' }}>Placed Students Data</h1>
-            <p style={{ color: 'var(--text-muted)' }}>Manage placement details, upload offer letters directly to Drive, and log salary packages.</p>
-          </div>
-          <button className="btn-action" style={{ background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px', width: 'auto' }} onClick={() => setIsAddModalOpen(true)}>
-            <Plus weight="bold" /> Add Placement
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '25px', gap: '15px' }}>
+          <button 
+            onClick={() => setSelectedBranch(null)} 
+            style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
+          >
+            <CaretLeft weight="bold" size={18} /> Back to Branches
           </button>
+          <div>
+            <h1 style={{ fontSize: '1.8rem', margin: 0 }}>{selectedBranch} Placements</h1>
+            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Detailed breakdown of all placements achieved in {selectedBranch}.</p>
+          </div>
         </div>
         
         <div className="header-controls" style={{ justifyContent: 'flex-start' }}>
           <input type="text" className="sleek-input" placeholder="Search student or company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-          
-          {/* 🚨 DYNAMIC BRANCH DROPDOWN */}
-          <select className="sleek-select" value={branchFilter} onChange={(e) => setBranchFilter(e.target.value)}>
-            <option value="">All Branches</option>
-            {[...new Set(applications.map(a => a.branch).filter(Boolean))].sort().map(b => (
-              <option key={b} value={b}>{b}</option>
-            ))}
-          </select>
           
           <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
             <option value="newest">Sort: Date Placed</option>
@@ -146,9 +252,7 @@ export default function PlacedStudents() {
         </div>
 
         <div style={{ marginTop: '1.5rem' }}>
-          {loading ? (
-            <div style={{ textAlign: 'center', marginTop: '3rem', color: '#10b981' }}><CircleNotch size={40} className="ph-spin" /><p>Loading records...</p></div>
-          ) : placedApps.length === 0 ? (
+          {filteredApps.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '2rem' }}>No placed students found matching filters.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -156,7 +260,7 @@ export default function PlacedStudents() {
                 <span>STUDENT DETAILS</span><span>COMPANY & POSITION</span><span>PLACED DATE & LPA</span><span>STATUS & OFFER</span><span style={{textAlign:'center'}}>ACTION</span>
               </div>
 
-              {placedApps.map(app => (
+              {filteredApps.map(app => (
                 <div key={app.rowNumber} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1rem 1.5rem', display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 2fr 0.5fr', alignItems: 'center', gap: '15px' }}>
                   
                   <div>
@@ -225,45 +329,6 @@ export default function PlacedStudents() {
           </div>
         </div>
       )}
-
-      {/* ADD PLACEMENT MODAL */}
-      {isAddModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
-          <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Add Manual Placement</h2>
-              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsAddModalOpen(false)} />
-            </div>
-            
-            <h3 style={{ fontSize: '0.85rem', color: '#38bdf8', textTransform: 'uppercase', marginBottom: '10px' }}>Student Details</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', marginBottom: '20px' }}>
-              <div><label className="data-label">Student Name *</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.name} onChange={e=>setAddForm({...addForm, name: e.target.value})} /></div>
-              <div><label className="data-label">Roll Number *</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.roll} onChange={e=>setAddForm({...addForm, roll: e.target.value})} /></div>
-              <div><label className="data-label">Contact No.</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.phone} onChange={e=>setAddForm({...addForm, phone: e.target.value})} /></div>
-              <div><label className="data-label">Mail ID</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.email} onChange={e=>setAddForm({...addForm, email: e.target.value})} /></div>
-              <div><label className="data-label">Course</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.course} onChange={e=>setAddForm({...addForm, course: e.target.value})} /></div>
-              <div><label className="data-label">Branch</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.branch} onChange={e=>setAddForm({...addForm, branch: e.target.value})} /></div>
-            </div>
-
-            <h3 style={{ fontSize: '0.85rem', color: '#38bdf8', textTransform: 'uppercase', marginBottom: '10px' }}>Placement Details</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
-              <div><label className="data-label">Company Name *</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.company} onChange={e=>setAddForm({...addForm, company: e.target.value})} /></div>
-              <div><label className="data-label">Position Status</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.position} onChange={e=>setAddForm({...addForm, position: e.target.value})} /></div>
-              <div><label className="data-label">Date Placed</label><input type="date" className="sleek-input" style={{width:'100%'}} value={addForm.datePlaced} onChange={e=>setAddForm({...addForm, datePlaced: e.target.value})} /></div>
-              <div><label className="data-label">Package (LPA)</label><input type="number" step="0.1" className="sleek-input" style={{width:'100%'}} value={addForm.packageLpa} onChange={e=>setAddForm({...addForm, packageLpa: e.target.value})} /></div>
-              <div><label className="data-label">Joining Status</label><select className="sleek-select" style={{width:'100%'}} value={addForm.joiningStatus} onChange={e=>setAddForm({...addForm, joiningStatus: e.target.value})}><option value="">Select...</option><option value="Joined">Joined</option><option value="Not Joined">Not Joined</option></select></div>
-              <div><label className="data-label">Upload Offer Letter</label><input type="file" className="sleek-input" style={{width:'100%', padding:'6px'}} onChange={e=>setAddForm({...addForm, offerLetterFile: e.target.files[0]})} /></div>
-            </div>
-
-            <div style={{ marginBottom: '1.5rem' }}><label className="data-label">Remarks</label><input type="text" className="sleek-input" style={{width:'100%'}} value={addForm.remarks} onChange={e=>setAddForm({...addForm, remarks: e.target.value})} /></div>
-
-            <button className="btn-action" style={{ background: '#10b981', color: '#fff', width: '100%' }} onClick={submitAdd} disabled={savingStatus}>
-              {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> Save New Placement</>}
-            </button>
-          </div>
-        </div>
-      )}
-
     </Layout>
   );
 }
