@@ -8,19 +8,25 @@ import Layout from './Layout';
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#0ea5e9'];
 
+const DEFAULT_COURSES = {
+  'BMS AND CCTV': ['Diploma In Building Management System', 'Certified BMS Engineer', 'CCTV & Security Systems', 'CCTV Training'],
+  'Industrial Automation': ['Automation System Engineer', 'Professional Diploma in Industrial Automation', 'Advanced Automation System Professional', 'Advanced PLC Program Professional', 'DCS Engineering & Maintenance', 'Electrical Control & Panel Designing', 'Industrial Networking', 'Diploma in Marine Automation Systems', 'VFD Installation Professional', 'Customize programming PLC SCADA'],
+  'Embedded and IoT': ['Certified Embedded Engineer', 'Embedded System Design (Crash)', 'Certified Raspberry Pi Programmer', 'Certified Embedded System Engineer', 'Certified IoT Professional', 'LabView Course', 'Certified IIoT Professional'],
+  'Digital Marketing': ['Professional Diploma in Digital Marketing', 'Advanced Course in Online Entrepreneurship', 'Advanced Certificate Course in Digital Marketing', 'Search Engine Optimization Certification Course', 'Certificate Course in Digital Marketing', 'Search Engine Marketing Certification Course', 'Social Media Marketing Certification Course', 'Online Money Making Courses', 'Digital Marketing Corporate Training', 'Affiliate Marketing Certification Course', 'Certificate Course in Email Marketing', 'Video Blogging', 'Google Analytics Fundamentals Course', 'International Web Professional', 'Inbound Marketing Certification Course', 'AI Digital Marketing'],
+  'Information technology (IT)': ['PHP AND MYSQL', 'JAVA Full Stack', 'Web Designing and Development', 'Python & Data Science', 'Python Programming', 'Data Science & Analytics', 'Android App Development', 'Python Full Stack Development', 'Artificial Intelligence', 'Diploma in Artificial Intelligence', 'AI & Machine Learning with Python', 'Software Testing', 'Basics of Software Testing', 'Advanced QA Automation Testing', 'Cyber Security', 'Cyber Security & Network Security Essentials', 'MERN Stack', 'Data Analytics']
+};
+
 export default function Courses() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
   const isSuperAdmin = tpoData?.accessType === 'superadmin';
 
-  const [coursesDict, setCoursesDict] = useState({});
+  const [coursesDict, setCoursesDict] = useState(DEFAULT_COURSES); // 🚨 Fallback explicitly loaded
   const [loading, setLoading] = useState(true);
   
-  // Navigation State
   const [viewLevel, setViewLevel] = useState('main_courses');
   const [selectedMainCourse, setSelectedMainCourse] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -29,8 +35,16 @@ export default function Courses() {
   const fetchCourses = async () => {
     try {
       const res = await axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/courses');
-      if (res.data.success) {
-        setCoursesDict(res.data.courses || {});
+      if (res.data.success && res.data.courses) {
+        // 🚨 Validate if backend parsed the sheet properly
+        let hasPrograms = false;
+        Object.values(res.data.courses).forEach(arr => { if(arr.length > 0) hasPrograms = true; });
+        
+        if (hasPrograms) {
+          setCoursesDict(res.data.courses);
+        } else {
+          console.warn("Backend returned empty arrays. Falling back to default dictionary.");
+        }
       }
     } catch (err) {
       console.error("Failed to load courses", err);
@@ -86,7 +100,6 @@ export default function Courses() {
     }
   };
 
-  // Safe Fallback for non-Super Admins
   if (!isSuperAdmin) {
     return (
       <Layout>
@@ -108,9 +121,6 @@ export default function Courses() {
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        {/* ========================================== */}
-        {/* VIEW 1: SUPER ADMIN MAIN COURSES */}
-        {/* ========================================== */}
         {viewLevel === 'main_courses' && (
           <>
             <div style={{ marginBottom: '30px' }}>
@@ -148,9 +158,6 @@ export default function Courses() {
           </>
         )}
 
-        {/* ========================================== */}
-        {/* VIEW 2: SUB-COURSES LIST */}
-        {/* ========================================== */}
         {viewLevel === 'sub_courses' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
@@ -227,9 +234,6 @@ export default function Courses() {
 
       </div>
 
-      {/* ========================================== */}
-      {/* ADD COURSE MODAL */}
-      {/* ========================================== */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>

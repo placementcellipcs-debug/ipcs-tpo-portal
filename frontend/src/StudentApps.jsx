@@ -10,12 +10,10 @@ export default function StudentApps() {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // View State Management (Dual-View)
   const [selectedBranch, setSelectedBranch] = useState(null);
 
-  // Exact Original Filters
-  const currentMonth = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
-  const [monthFilter, setMonthFilter] = useState(currentMonth);
+  // 🚨 FIX 1: Default to empty so it shows ALL applications immediately
+  const [monthFilter, setMonthFilter] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
 
   useEffect(() => {
@@ -36,9 +34,6 @@ export default function StudentApps() {
     fetchApps();
   }, [tpoData]);
 
-  // ==========================================
-  // DATA PREP FOR BRANCH TILES
-  // ==========================================
   const branchData = {};
   applications.forEach(a => {
     const b = a.branch || 'Unknown';
@@ -46,22 +41,27 @@ export default function StudentApps() {
   });
   const branchList = Object.keys(branchData).sort();
 
-  // ==========================================
-  // DATA PREP FOR SELECTED BRANCH (VIEW 2)
-  // ==========================================
   const activeApps = selectedBranch ? applications.filter(a => a.branch === selectedBranch) : [];
 
+  // 🚨 FIX 2: Smart Date Parser to handle DD/MM/YYYY from Google Sheets
+  const parseDate = (dStr) => {
+    if (!dStr) return null;
+    if (dStr.includes('/')) {
+      const parts = dStr.split(/[/\s,]+/);
+      if (parts.length >= 3) return new Date(`${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`);
+    }
+    const d = new Date(dStr);
+    return isNaN(d) ? null : d;
+  };
+
   const filteredApps = activeApps.filter(a => {
-    let dateObj = new Date(a.date);
-    let monthKey = !isNaN(dateObj) ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
-    let mMatch = monthFilter ? monthKey === monthFilter : true;
-    let cMatch = courseFilter === 'All' || a.course.toLowerCase().includes(courseFilter.toLowerCase());
+    let dateObj = parseDate(a.date);
+    let monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
+    let mMatch = monthFilter === '' ? true : monthKey === monthFilter;
+    let cMatch = courseFilter === 'All' || (a.course || '').toLowerCase().includes(courseFilter.toLowerCase());
     return mMatch && cMatch;
   });
 
-  // ==========================================
-  // RENDER: VIEW 1 - BRANCH TILES LANDING
-  // ==========================================
   if (!selectedBranch) {
     return (
       <Layout>
@@ -102,9 +102,6 @@ export default function StudentApps() {
     );
   }
 
-  // ==========================================
-  // RENDER: VIEW 2 - DETAILED APPLICATIONS TABLE
-  // ==========================================
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
@@ -155,7 +152,7 @@ export default function StudentApps() {
                   let statClass = 'badge-blue';
                   let s = (app.status || '').toLowerCase();
                   if(s.includes('interview')) statClass = 'badge-purple';
-                  if(s.includes('offer') || s.includes('placed') || s.includes('joined')) statClass = 'badge-green';
+                  if(s.includes('offer') || s.includes('placed') || s.includes('join')) statClass = 'badge-green';
                   if(s.includes('reject') || s.includes('not attended')) statClass = 'badge-gray';
 
                   return (

@@ -8,18 +8,16 @@ export default function PlacedStudents() {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Filters & Search
+  // 🚨 FIX 1: Default to empty
   const [monthFilter, setMonthFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState('newest');
 
-  // Modal States
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedApp, setSelectedApp] = useState(null);
   const [savingStatus, setSavingStatus] = useState(false);
 
-  // Form States (Includes file object)
   const [editForm, setEditForm] = useState({});
   const [addForm, setAddForm] = useState({ 
     name: '', phone: '', email: '', roll: '', course: '', branch: '', 
@@ -41,22 +39,32 @@ export default function PlacedStudents() {
     } catch (error) { console.error("Failed to load", error); } finally { setLoading(false); }
   };
 
-  // 🚨 FILTER & SORT - Now smartly catches all placement variations
+  // 🚨 FIX 2: Smart Date Parser
+  const parseDate = (dStr) => {
+    if (!dStr) return null;
+    if (dStr.includes('/')) {
+      const parts = dStr.split(/[/\s,]+/);
+      if (parts.length >= 3) return new Date(`${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`);
+    }
+    const d = new Date(dStr);
+    return isNaN(d) ? null : d;
+  };
+
   const placedApps = applications.filter(a => {
     const s = (a.status || '').toLowerCase();
     const j = (a.joiningStatus || '').toLowerCase();
     const isPlaced = s.includes('placed') || s.includes('got offer') || s.includes('join') || s.includes('offer') || j.includes('join');
     
-    let dateObj = new Date(a.datePlaced || a.date);
-    let monthKey = !isNaN(dateObj) ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
-    let mMatch = monthFilter ? monthKey === monthFilter : true;
-    let sMatch = searchQuery === '' || a.name.toLowerCase().includes(searchQuery.toLowerCase()) || a.company.toLowerCase().includes(searchQuery.toLowerCase()) || (a.roll || '').toLowerCase().includes(searchQuery.toLowerCase());
+    let dateObj = parseDate(a.datePlaced || a.date);
+    let monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
+    let mMatch = monthFilter === '' ? true : monthKey === monthFilter;
+    let sMatch = searchQuery === '' || (a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (a.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || (a.roll || '').toLowerCase().includes(searchQuery.toLowerCase());
     
     return isPlaced && mMatch && sMatch;
   }).sort((a, b) => {
     if(sortOrder === 'newest') return new Date(b.datePlaced || b.date) - new Date(a.datePlaced || a.date);
-    if(sortOrder === 'az') return a.name.localeCompare(b.name);
-    if(sortOrder === 'za') return b.name.localeCompare(a.name);
+    if(sortOrder === 'az') return (a.name || '').localeCompare(b.name || '');
+    if(sortOrder === 'za') return (b.name || '').localeCompare(a.name || '');
     return 0;
   });
 
@@ -160,7 +168,7 @@ export default function PlacedStudents() {
                   </div>
 
                   <div>
-                    <span style={{ border: '1px solid #10b981', color: '#10b981', padding: '2px 10px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.5px' }}>{app.status.toUpperCase()}</span>
+                    <span style={{ border: '1px solid #10b981', color: '#10b981', padding: '2px 10px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.5px' }}>{(app.status || 'Placed').toUpperCase()}</span>
                     <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '6px' }}>{app.joiningStatus || 'Joining TBD'}</span>
                   </div>
 
@@ -177,6 +185,7 @@ export default function PlacedStudents() {
         </div>
       </div>
 
+      {/* EDIT MODAL */}
       {isEditModalOpen && selectedApp && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
@@ -210,6 +219,7 @@ export default function PlacedStudents() {
         </div>
       )}
 
+      {/* ADD PLACEMENT MODAL */}
       {isAddModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
