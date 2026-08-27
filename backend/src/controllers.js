@@ -82,7 +82,9 @@ exports.getDashboardStats = (req, res) => {
     if (hasAccess(rowData[getHeader('branch')], rowData[getHeader('course')], role, assignedBranchesArray, assignedCourse)) studentCount++; 
   });
   
-  const appSource = (cache.tpoLogs && cache.tpoLogs.length > 0) ? cache.tpoLogs : cache.applications;
+  // 🚨 FIX: Force backend to strictly read from Opening_Applied
+  const appSource = cache.applications || [];
+  
   appSource.forEach(row => {
     const rowData = row.toObject();
     const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
@@ -174,7 +176,9 @@ exports.getApplications = (req, res) => {
   let appsMap = {}; 
   const cleanTpoName = (tpoName || '').toString().toLowerCase().trim();
   const cache = getCache();
-  const sourceData = (cache.tpoLogs && cache.tpoLogs.length > 0) ? cache.tpoLogs : cache.applications;
+  
+  // 🚨 FIX: Force backend to strictly read from Opening_Applied
+  const sourceData = cache.applications || [];
 
   sourceData.forEach((row) => {
     const rowData = row.toObject();
