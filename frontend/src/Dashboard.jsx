@@ -35,69 +35,78 @@ export default function Dashboard() {
     return isNaN(d) ? null : d;
   };
 
+  const processApps = (allApps) => {
+    setTotalAppsCount(allApps.length);
+    const currentYear = new Date().getFullYear();
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    let newTrend = months.map(m => ({ m, apps: 0, off: 0, pl: 0 }));
+    let domCount = {};
+    let pApp = 0, pInt = 0, pOff = 0, pPl = 0;
+    const placedRecent = [];
+
+    allApps.forEach(app => {
+      const st = (app.status || '').toLowerCase();
+      const isPlaced = st.includes('placed') || st.includes('join') || st.includes('offer');
+      if (isPlaced) placedRecent.push(app);
+
+      if (st.includes('applied') || st.includes('register') || st.includes('pending')) pApp++;
+      if (st.includes('interview') || st.includes('shortlist')) pInt++;
+      if (st.includes('offer')) pOff++;
+      if (isPlaced) pPl++;
+
+      if (isPlaced) {
+        let c = app.course || 'Others';
+        if(c.toLowerCase().includes('automation') || c.toLowerCase().includes('plc')) c = 'Automation';
+        if(c.toLowerCase().includes('digital') || c.toLowerCase().includes('dm')) c = 'Digital Mkt';
+        if(c.toLowerCase().includes('python') || c.toLowerCase().includes('data')) c = 'Data Science';
+        domCount[c] = (domCount[c] || 0) + 1;
+      }
+
+      const d = parseDateRobust(app.date || app.datePlaced);
+      if (d && d.getFullYear() === currentYear) {
+        const mIdx = d.getMonth();
+        newTrend[mIdx].apps++;
+        if (st.includes('offer')) newTrend[mIdx].off++;
+        if (isPlaced) newTrend[mIdx].pl++;
+      }
+    });
+
+    const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#0ea5e9'];
+    const formattedDomains = Object.keys(domCount).map((k, i) => ({
+      n: k, v: domCount[k], c: colors[i % colors.length]
+    })).sort((a,b) => b.v - a.v).slice(0, 5); 
+
+    setTrendData(newTrend);
+    setDomainData(formattedDomains);
+    setPipeline({ applied: pApp, interview: pInt, offers: pOff, placed: pPl });
+    setRecentPlacements(placedRecent.reverse().slice(0, 5));
+  };
+
   useEffect(() => {
     const fetchData = async () => {
+      // 🚨 INSTANT CACHE LOAD (Eliminates waiting!)
+      const cachedStats = localStorage.getItem('dash_stats');
+      const cachedApps = localStorage.getItem('dash_apps');
+      if (cachedStats) setStats(JSON.parse(cachedStats));
+      if (cachedApps) { processApps(JSON.parse(cachedApps)); setLoading(false); }
+
       try {
-        const reqPayload = { assignedBranchesArray: tpoData.assignedBranchesArray, role: tpoData.role, assignedCourse: tpoData.assignedCourse };
+        const reqPayload = { assignedBranchesArray: tpoData.assignedBranchesArray, role: tpoData.role, assignedCourse: tpoData.assignedCourse, tpoName: tpoData.name };
         const [statsRes, appsRes] = await Promise.all([
           axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/dashboard-stats', reqPayload),
-          axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications', { ...reqPayload, tpoName: tpoData.name })
+          axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications', reqPayload)
         ]);
         
         if (statsRes.data.success) {
           setStats(statsRes.data.stats);
+          localStorage.setItem('dash_stats', JSON.stringify(statsRes.data.stats));
           setEvents(statsRes.data.events || []);
         }
 
         if (appsRes.data.success) {
           const allApps = appsRes.data.applications || [];
-          setTotalAppsCount(allApps.length);
-
-          const currentYear = new Date().getFullYear();
-          const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-          let newTrend = months.map(m => ({ m, apps: 0, off: 0, pl: 0 }));
-          
-          let domCount = {};
-          let pApp = 0, pInt = 0, pOff = 0, pPl = 0;
-          const placedRecent = [];
-
-          allApps.forEach(app => {
-            const st = (app.status || '').toLowerCase();
-            const isPlaced = st.includes('placed') || st.includes('join') || st.includes('offer');
-            
-            if (isPlaced) placedRecent.push(app);
-
-            if (st.includes('applied') || st.includes('register') || st.includes('pending')) pApp++;
-            if (st.includes('interview') || st.includes('shortlist')) pInt++;
-            if (st.includes('offer')) pOff++;
-            if (isPlaced) pPl++;
-
-            if (isPlaced) {
-              let c = app.course || 'Others';
-              if(c.toLowerCase().includes('automation') || c.toLowerCase().includes('plc')) c = 'Automation';
-              if(c.toLowerCase().includes('digital') || c.toLowerCase().includes('dm')) c = 'Digital Mkt';
-              if(c.toLowerCase().includes('python') || c.toLowerCase().includes('data')) c = 'Data Science';
-              domCount[c] = (domCount[c] || 0) + 1;
-            }
-
-            const d = parseDateRobust(app.date || app.datePlaced);
-            if (d && d.getFullYear() === currentYear) {
-              const mIdx = d.getMonth();
-              newTrend[mIdx].apps++;
-              if (st.includes('offer')) newTrend[mIdx].off++;
-              if (isPlaced) newTrend[mIdx].pl++;
-            }
-          });
-
-          const colors = ['#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#0ea5e9'];
-          const formattedDomains = Object.keys(domCount).map((k, i) => ({
-            n: k, v: domCount[k], c: colors[i % colors.length]
-          })).sort((a,b) => b.v - a.v).slice(0, 5); 
-
-          setTrendData(newTrend);
-          setDomainData(formattedDomains);
-          setPipeline({ applied: pApp, interview: pInt, offers: pOff, placed: pPl });
-          setRecentPlacements(placedRecent.reverse().slice(0, 5));
+          localStorage.setItem('dash_apps', JSON.stringify(allApps));
+          processApps(allApps);
         }
       } catch (err) { console.error(err); } finally { setLoading(false); }
     };
@@ -116,10 +125,6 @@ export default function Dashboard() {
 
   const placementRate = stats.totalStudents > 0 ? ((stats.placed / stats.totalStudents) * 100).toFixed(1) : '0.0';
 
-  // ==========================================
-  // NATIVE SVG CHART GENERATORS (DYNAMIC)
-  // ==========================================
-  
   const makeSparkline = (color) => {
     const pts = Array.from({length: 10}, () => Math.floor(Math.random() * 20));
     const path = `M 0,${pts[0]} ` + pts.map((p, i) => `L ${i * 12},${p}`).join(' ');

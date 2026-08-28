@@ -8,6 +8,30 @@ import Layout from './Layout';
 
 const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
 
+// 🚨 SMART IMAGE FALLBACK COMPONENT
+const ClientLogo = ({ client }) => {
+  const [imgErr, setImgErr] = useState(false);
+  
+  const getDriveImage = (url) => {
+    if (!url) return null;
+    const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+    return match ? `https://drive.google.com/thumbnail?id=${match[1]}&sz=w400` : url;
+  };
+
+  const logoUrl = getDriveImage(client.logo);
+  const initial = (client.companyName || 'C').charAt(0).toUpperCase();
+
+  return (
+    <div style={{ width: '70px', height: '70px', borderRadius: '12px', background: '#fff', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px', padding: '6px', border: '1px solid var(--card-border)' }}>
+      {(!logoUrl || imgErr) ? (
+        <span style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '1.8rem' }}>{initial}</span>
+      ) : (
+        <img src={logoUrl} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} alt="Logo" onError={() => setImgErr(true)} />
+      )}
+    </div>
+  );
+};
+
 export default function Clients() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
   const isSuperAdmin = tpoData?.accessType === 'superadmin';
@@ -37,22 +61,22 @@ export default function Clients() {
   }, [tpoData]);
 
   const fetchClients = async () => {
+    // 🚨 INSTANT CACHE LOAD
+    const cached = localStorage.getItem('dash_clients');
+    if (cached) { setClients(JSON.parse(cached)); setLoading(false); }
+
     try {
-      // 🚨 Super Admins & Non-TPOs fetch ALL clients globally
       const payload = { tpoName: isSuperAdmin || !isTpo ? '' : tpoData.name };
       const res = await axios.post(`${API_BASE}/api/tpo/clients`, payload);
-      if (res.data.success) setClients(res.data.clients || []);
+      if (res.data.success) {
+        setClients(res.data.clients || []);
+        localStorage.setItem('dash_clients', JSON.stringify(res.data.clients || [])); // Save for next time
+      }
     } catch (err) { 
       console.error("Failed to fetch clients:", err); 
     } finally { 
       setLoading(false); 
     }
-  };
-
-  const getDriveImage = (url) => {
-    if (!url) return null;
-    const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
-    return match ? `https://drive.google.com/thumbnail?id=${match[1]}&sz=w400` : url;
   };
 
   const openEditModal = (client) => {
@@ -189,9 +213,8 @@ export default function Clients() {
                       onMouseEnter={(e) => { if(client.mouLink) { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.borderColor = 'var(--accent-primary)'; } }}
                       onMouseLeave={(e) => { if(client.mouLink) { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.borderColor = 'var(--card-border)'; } }}
                     >
-                      <div style={{ width: '70px', height: '70px', borderRadius: '12px', background: '#fff', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px', padding: '6px' }}>
-                        {client.logo ? <img src={getDriveImage(client.logo)} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} alt="Logo" /> : <span style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '1.5rem' }}>{client.companyName.charAt(0)}</span>}
-                      </div>
+                      {/* 🚨 REPLACED WITH FALLBACK LOGO */}
+                      <ClientLogo client={client} />
 
                       <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', color: '#fff' }}>{client.companyName}</h3>
                       <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '15px' }}>
@@ -224,9 +247,12 @@ export default function Clients() {
                   pendingClients.map(client => (
                     <div key={client.rowNumber} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '15px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                        <div style={{ width: '55px', height: '55px', borderRadius: '8px', background: '#fff', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '4px' }}>
-                          {client.logo ? <img src={getDriveImage(client.logo)} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} alt="Logo" /> : <span style={{ color: '#000', fontWeight: 'bold' }}>{client.companyName.charAt(0)}</span>}
+                        
+                        {/* 🚨 REPLACED WITH FALLBACK LOGO */}
+                        <div style={{ width: '55px', height: '55px', flexShrink: 0 }}>
+                          <ClientLogo client={client} />
                         </div>
+
                         <div>
                           <strong style={{ fontSize: '1.1rem', color: '#fff', display: 'block' }}>{client.companyName}</strong>
                           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{client.location || 'Location N/A'}</span>
@@ -261,9 +287,10 @@ export default function Clients() {
                 ) : (
                   signedClients.map(client => (
                     <div key={client.rowNumber} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-                      <div style={{ width: '65px', height: '65px', borderRadius: '10px', background: '#fff', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px', padding: '6px' }}>
-                        {client.logo ? <img src={getDriveImage(client.logo)} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} alt="Logo" /> : <span style={{ color: '#000', fontWeight: 'bold' }}>{client.companyName.charAt(0)}</span>}
-                      </div>
+                      
+                      {/* 🚨 REPLACED WITH FALLBACK LOGO */}
+                      <ClientLogo client={client} />
+
                       <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', color: '#fff' }}>{client.companyName}</h3>
                       <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '15px' }}>{client.location || 'Location N/A'}</span>
                       

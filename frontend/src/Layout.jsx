@@ -77,7 +77,6 @@ export default function Layout({ children }) {
           </div>
           <div className="header-actions">
             
-            {/* NOTIFICATIONS BELL */}
             <div style={{ position: 'relative' }}>
               <button className="icon-btn" title="Notifications" onClick={() => setIsNotifOpen(!isNotifOpen)}>
                 <Bell weight="fill" />
@@ -106,7 +105,6 @@ export default function Layout({ children }) {
               )}
             </div>
 
-            {/* PROFILE ICON TO OPEN DRAWER */}
             <div className="header-profile" onClick={() => setIsDrawerOpen(true)}>
               <div className="header-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)' }}>
                 {renderAvatar()}
@@ -117,7 +115,6 @@ export default function Layout({ children }) {
 
         <div className="page-container" style={{ width: '100%', overflowX: 'hidden' }} onClick={() => setIsNotifOpen(false)}>
           
-          {/* GLOBAL BACK BUTTON */}
           {location.pathname !== '/dashboard' && (
             <div style={{ marginBottom: '20px' }}>
               <button 
@@ -136,35 +133,26 @@ export default function Layout({ children }) {
 
       </main>
 
-      {/* THE CLASSIC DRAWER SLIDER */}
       <div 
         className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} 
         onClick={(e) => { if(e.target.classList.contains('drawer-overlay')) setIsDrawerOpen(false); }}
       >
-        {/* 🚨 NEW SLIDER BACKGROUND IMAGE */}
+        {/* 🚨 EXACT IMAGE APPLIED AS SLIDER BACKGROUND */}
         <div 
           className="drawer-card"
           style={{ 
-            backgroundImage: `linear-gradient(rgba(11, 17, 32, 0.85), rgba(11, 17, 32, 0.95)), url('https://lh3.googleusercontent.com/d/1arxJtyeJBZCinb9Sr7FAMlY-6C7eNm8c')`, 
+            backgroundImage: `linear-gradient(rgba(11, 17, 32, 0.85), rgba(11, 17, 32, 0.95)), url('https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB')`, 
             backgroundSize: 'cover', 
             backgroundPosition: 'center',
             borderLeft: '1px solid rgba(255,255,255,0.1)'
           }}
         >
           
-          {/* 🚨 NEW HEADER PROFILE COVER PHOTO */}
-          <div className="drawer-header" style={{ 
-            backgroundImage: `linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.8)), url('https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB')`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
-            padding: '30px 20px', 
-            position: 'relative',
-            borderBottom: '1px solid rgba(255,255,255,0.1)'
-          }}>
+          <div className="drawer-header" style={{ padding: '30px 20px', position: 'relative', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
             <div 
               className="drawer-close-btn" 
               onClick={() => setIsDrawerOpen(false)}
-              style={{ position: 'absolute', top: '15px', right: '15px', background: 'rgba(255,255,255,0.2)', color: '#fff', borderRadius: '50%', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              style={{ position: 'absolute', top: '15px', right: '15px', background: 'rgba(255,255,255,0.1)', color: '#fff', borderRadius: '50%', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               <X size={16} weight="bold" />
             </div>
