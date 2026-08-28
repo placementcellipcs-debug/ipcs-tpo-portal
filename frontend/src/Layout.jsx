@@ -61,13 +61,16 @@ export default function Layout({ children }) {
 
   return (
     <div className="app-layout">
-      <main className="main-content" style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      
+      {/* 🚨 REMOVED height: 100vh and overflow: hidden to fix scrolling bugs */}
+      <main className="main-content">
         
         {/* TOP HEADER */}
-        <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px', flexShrink: 0 }}>
+        <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px' }}>
           <div className="header-left">
+            {/* 🚨 RESTORED RELIABLE IPCS LOGO */}
             <img 
-              src="https://ipcsglobal.com/wp-content/uploads/2023/12/IPCS-Global-Logo-1.png" 
+              src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" 
               alt="IPCS Logo" 
               style={{ height: '35px', objectFit: 'contain' }} 
             />
@@ -111,7 +114,7 @@ export default function Layout({ children }) {
         </header>
 
         {/* SCROLLABLE PAGE CONTAINER */}
-        <div className="page-container" style={{ flex: 1, overflowY: 'auto', padding: '20px 30px', position: 'relative' }} onClick={() => setIsNotifOpen(false)}>
+        <div className="page-container" style={{ padding: '20px 30px', position: 'relative' }} onClick={() => setIsNotifOpen(false)}>
           
           {/* GLOBAL BACK BUTTON */}
           {location.pathname !== '/dashboard' && (
@@ -137,20 +140,19 @@ export default function Layout({ children }) {
         className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} 
         onClick={(e) => { if(e.target.classList.contains('drawer-overlay')) setIsDrawerOpen(false); }}
       >
+        {/* 🚨 ONLY ONE IMAGE: The specific "What's the trend" graphic you requested */}
         <div 
           className="drawer-card"
           style={{ 
-            backgroundImage: `linear-gradient(rgba(11, 17, 32, 0.85), rgba(11, 17, 32, 0.95)), url('https://lh3.googleusercontent.com/d/1arxJtyeJBZCinb9Sr7FAMlY-6C7eNm8c')`, 
+            backgroundImage: `linear-gradient(rgba(11, 17, 32, 0.85), rgba(11, 17, 32, 0.95)), url('https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB')`, 
             backgroundSize: 'cover', 
             backgroundPosition: 'center',
             borderLeft: '1px solid rgba(255,255,255,0.1)'
           }}
         >
           
+          {/* 🚨 REMOVED BACKGROUND IMAGE FROM HERE SO IT DOESN'T DUPLICATE */}
           <div className="drawer-header" style={{ 
-            backgroundImage: `linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.8)), url('https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB')`,
-            backgroundSize: 'cover',
-            backgroundPosition: 'center',
             padding: '30px 20px', 
             position: 'relative',
             borderBottom: '1px solid rgba(255,255,255,0.1)'

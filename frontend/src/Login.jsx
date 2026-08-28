@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { CircleNotch, Lightning, Users, Buildings, Medal, X } from '@phosphor-icons/react';
@@ -11,20 +11,9 @@ export default function Login() {
   const [showModal, setShowModal] = useState(false);
   const [isLoginView, setIsLoginView] = useState(false);
   
-  // SUCCESS VIDEO TRANSITION STATE
+  // 🚨 SUCCESS VIDEO TRANSITION STATE
   const [showVideoTransition, setShowVideoTransition] = useState(false);
-  
-  // SPLASH SCREEN STATE
-  const [showSplash, setShowSplash] = useState(true);
   const navigate = useNavigate();
-
-  // Auto-hide the splash screen video after 4.5 seconds
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setShowSplash(false);
-    }, 4500);
-    return () => clearTimeout(timer);
-  }, []);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -32,17 +21,15 @@ export default function Login() {
     setError('');
     
     try {
-      // 🚨 FIXED: The correct backend route is /api/auth/login and payload expects 'email'
       const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/auth/login', { 
         email: loginId, 
         password: password 
       });
       
       if (res.data.success) {
-        // Save data
         localStorage.setItem('tpoData', JSON.stringify(res.data.tpo));
         
-        // TRIGGER FULL-SCREEN VIDEO TRANSITION
+        // 🚨 TRIGGER FULL-SCREEN VIDEO TRANSITION
         setShowVideoTransition(true);
         
         // Wait 4 seconds for the video to play, then teleport to dashboard
@@ -56,7 +43,6 @@ export default function Login() {
       }
     } catch (err) {
       console.error("Login Error:", err);
-      // Detailed error for Render cold-starts or incorrect credentials
       setError(err.response?.data?.message || 'Server is waking up. Please wait 10 seconds and try again.');
       setLoading(false);
     }
@@ -64,20 +50,7 @@ export default function Login() {
 
   return (
     <>
-      {/* STARTUP VIDEO SPLASH SCREEN */}
-      {showSplash && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 99999, backgroundColor: '#020617', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <video 
-            autoPlay muted playsInline 
-            onEnded={() => setShowSplash(false)}
-            style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-          >
-            <source src="/bg-video.mp4" type="video/mp4" />
-          </video>
-        </div>
-      )}
-
-      {/* SUCCESS VIDEO TRANSITION OVERLAY */}
+      {/* 🚨 SUCCESS VIDEO TRANSITION OVERLAY */}
       {showVideoTransition && (
         <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 99999, backgroundColor: '#020617', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <video 
@@ -92,7 +65,7 @@ export default function Login() {
       {/* MAIN LOGIN PAGE BACKGROUND */}
       <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', background: 'radial-gradient(circle at top left, #0f172a, #020617)', fontFamily: 'Inter, sans-serif' }}>
         
-        {/* 🚨 FIXED: Reliable Google Drive IPCS Logo */}
+        {/* 🚨 RESTORED RELIABLE IPCS LOGO */}
         <header style={{ position: 'absolute', top: 0, left: 0, width: '100%', padding: '30px 40px', zIndex: 20 }}>
           <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" style={{ height: '35px' }} />
         </header>
@@ -144,8 +117,9 @@ export default function Login() {
                 position: 'absolute', 
                 width: '100%', 
                 maxWidth: '420px', 
-                background: '#0f172a', 
-                border: '1px solid #1e293b', 
+                background: 'rgba(15, 23, 42, 0.6)', 
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.1)', 
                 borderRadius: '24px', 
                 padding: '35px', 
                 boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
@@ -168,17 +142,17 @@ export default function Login() {
                 </div>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                  <div style={{ background: '#1e293b', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '15px' }}>
                     <div style={{ color: '#38bdf8' }}><Users size={24} weight="fill"/></div>
                     <div><div style={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 'bold', marginBottom: '3px' }}>TOTAL STUDENTS HIRED</div><div style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>1.5 M+</div></div>
                   </div>
 
-                  <div style={{ background: '#1e293b', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '15px' }}>
                     <div style={{ color: '#8b5cf6' }}><Buildings size={24} weight="fill"/></div>
                     <div><div style={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 'bold', marginBottom: '3px' }}>ENTERPRISE RECRUITERS</div><div style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>25 K+</div></div>
                   </div>
 
-                  <div style={{ background: '#1e293b', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <div style={{ background: 'rgba(30, 41, 59, 0.5)', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '15px' }}>
                     <div style={{ color: '#f59e0b' }}><Medal size={24} weight="fill"/></div>
                     <div><div style={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 'bold', marginBottom: '3px' }}>PRESENCE ACROSS COUNTRIES</div><div style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>50 +</div></div>
                   </div>
@@ -190,8 +164,9 @@ export default function Login() {
                 position: 'absolute', 
                 width: '100%', 
                 maxWidth: '420px', 
-                background: '#0f172a', 
-                border: '1px solid #1e293b', 
+                background: 'rgba(15, 23, 42, 0.8)', 
+                backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.1)', 
                 borderRadius: '24px', 
                 padding: '40px', 
                 boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
@@ -201,7 +176,7 @@ export default function Login() {
                 pointerEvents: isLoginView ? 'auto' : 'none'
               }}>
                 
-                {/* BACK BUTTON TO RETURN TO STATS */}
+                {/* BACK BUTTON */}
                 <div 
                   onClick={() => setIsLoginView(false)} 
                   style={{ position: 'absolute', top: '20px', left: '20px', color: '#94a3b8', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px', transition: '0.2s' }}
@@ -212,7 +187,7 @@ export default function Login() {
                 </div>
 
                 <div style={{ textAlign: 'center', marginBottom: '30px', marginTop: '10px' }}>
-                  {/* 🚨 FIXED: Reliable Google Drive IPCS Logo */}
+                  {/* 🚨 RESTORED RELIABLE IPCS LOGO */}
                   <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" style={{ height: '35px', marginBottom: '15px' }} />
                   <h2 style={{ margin: 0, color: '#fff', fontSize: '1.4rem' }}>Welcome Back</h2>
                   <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: '5px' }}>Sign in to the Placement Ecosystem</p>
@@ -227,7 +202,7 @@ export default function Login() {
                       onChange={(e) => setLoginId(e.target.value)} 
                       required 
                       placeholder="name@ipcsglobal.com"
-                      style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', color: '#fff', padding: '14px', borderRadius: '10px', outline: 'none', fontSize: '0.9rem' }}
+                      style={{ width: '100%', background: 'rgba(30, 41, 59, 0.5)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '14px', borderRadius: '10px', outline: 'none', fontSize: '0.9rem' }}
                     />
                   </div>
 
@@ -239,11 +214,10 @@ export default function Login() {
                       onChange={(e) => setPassword(e.target.value)} 
                       required 
                       placeholder="••••••••"
-                      style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', color: '#fff', padding: '14px', borderRadius: '10px', outline: 'none', fontSize: '0.9rem' }}
+                      style={{ width: '100%', background: 'rgba(30, 41, 59, 0.5)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '14px', borderRadius: '10px', outline: 'none', fontSize: '0.9rem' }}
                     />
                   </div>
 
-                  {/* REAL ERROR DISPLAY */}
                   {error && <div style={{ color: '#ef4444', fontSize: '0.85rem', textAlign: 'center', background: 'rgba(239, 68, 68, 0.1)', padding: '10px', borderRadius: '8px' }}>{error}</div>}
 
                   <button 
