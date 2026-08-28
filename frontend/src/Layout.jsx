@@ -62,13 +62,12 @@ export default function Layout({ children }) {
   return (
     <div className="app-layout">
       
-      {/* 🚨 REMOVED height: 100vh and overflow: hidden to fix scrolling bugs */}
+      {/* 🚨 REMOVED height restriction so the dashboard scrolls perfectly naturally again */}
       <main className="main-content">
         
         {/* TOP HEADER */}
         <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px' }}>
           <div className="header-left">
-            {/* 🚨 RESTORED RELIABLE IPCS LOGO */}
             <img 
               src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" 
               alt="IPCS Logo" 
@@ -140,7 +139,6 @@ export default function Layout({ children }) {
         className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} 
         onClick={(e) => { if(e.target.classList.contains('drawer-overlay')) setIsDrawerOpen(false); }}
       >
-        {/* 🚨 ONLY ONE IMAGE: The specific "What's the trend" graphic you requested */}
         <div 
           className="drawer-card"
           style={{ 
@@ -151,12 +149,7 @@ export default function Layout({ children }) {
           }}
         >
           
-          {/* 🚨 REMOVED BACKGROUND IMAGE FROM HERE SO IT DOESN'T DUPLICATE */}
-          <div className="drawer-header" style={{ 
-            padding: '30px 20px', 
-            position: 'relative',
-            borderBottom: '1px solid rgba(255,255,255,0.1)'
-          }}>
+          <div className="drawer-header" style={{ padding: '30px 20px', position: 'relative', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
             <div 
               className="drawer-close-btn" 
               onClick={() => setIsDrawerOpen(false)}
