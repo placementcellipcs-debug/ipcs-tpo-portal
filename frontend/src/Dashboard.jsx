@@ -1,11 +1,9 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
   Users, Briefcase, Files, Trophy, CalendarStar, CircleNotch, 
-  TrendUp, Buildings, GraduationCap, Chalkboard, 
-  ShieldCheck, BookOpen, Clock, ChartPieSlice,
-  NotePencil, Desktop, FolderOpen, User,
+  Buildings, BookOpen, Clock, NotePencil, Desktop, FolderOpen,
   CalendarCheck, ListChecks, ArrowRight, ChartBar
 } from '@phosphor-icons/react';
 import Layout from './Layout';
@@ -124,18 +122,16 @@ export default function Dashboard() {
 
   const placementRate = stats.totalStudents > 0 ? ((stats.placed / stats.totalStudents) * 100).toFixed(1) : '0.0';
 
-  // 🚨 FIXED: useMemo ensures sparklines are calculated ONLY ONCE, stopping the wild re-rendering.
+  // 🚨 FIXED: Safe, static sparkline generation (Stops the wild crashing/fluttering)
   const makeSparkline = (color) => {
-    return useMemo(() => {
-      const pts = Array.from({length: 10}, () => Math.floor(Math.random() * 20));
-      const path = `M 0,${pts[0]} ` + pts.map((p, i) => `L ${i * 12},${p}`).join(' ');
-      return (
-        <svg width="100%" height="30" viewBox="0 0 108 25" preserveAspectRatio="none" style={{ marginTop: '10px' }}>
-          <path d={path} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-          <path d={`${path} L 108,25 L 0,25 Z`} fill={color} opacity="0.1" />
-        </svg>
-      );
-    }, [color]);
+    const pts = [3, 6, 5, 9, 8, 12, 10, 15, 14, 18]; // Fixed upward trend points
+    const path = `M 0,${pts[0]} ` + pts.map((p, i) => `L ${i * 12},${p}`).join(' ');
+    return (
+      <svg width="100%" height="30" viewBox="0 0 108 25" preserveAspectRatio="none" style={{ marginTop: '10px' }}>
+        <path d={path} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        <path d={`${path} L 108,25 L 0,25 Z`} fill={color} opacity="0.1" />
+      </svg>
+    );
   };
 
   const cHeight = 140; const cWidth = 600; const xStep = cWidth / 11;
