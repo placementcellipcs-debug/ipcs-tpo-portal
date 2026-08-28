@@ -1,14 +1,14 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { CircleNotch, Lightning, Users, Buildings, Medal, X } from '@phosphor-icons/react';
+import { CircleNotch, Lightning, Users, Buildings, Medal } from '@phosphor-icons/react';
 
 export default function Login() {
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [showModal, setShowModal] = useState(false);
+  const [isLoginView, setIsLoginView] = useState(false); // Controls the smooth slide animation
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
@@ -34,12 +34,12 @@ export default function Login() {
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', backgroundColor: '#020617', fontFamily: 'Inter, sans-serif' }}>
       
-      {/* 🚨 BACKGROUND VIDEO */}
+      {/* BACKGROUND VIDEO */}
       <video 
         autoPlay loop muted playsInline 
         style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0 }}
       >
-        <source src="https://cdn.pixabay.com/video/2020/05/25/40131-424908077_large.mp4" type="video/mp4" />
+        <source src="/bg-video.mp4" type="video/mp4" />
       </video>
 
       {/* OVERLAY */}
@@ -53,7 +53,7 @@ export default function Login() {
       {/* MAIN CONTENT GRID */}
       <div style={{ position: 'relative', zIndex: 20, width: '100%', height: '100%', maxWidth: '1300px', margin: '0 auto', display: 'flex', alignItems: 'center', padding: '0 40px' }}>
         
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '60px', width: '100%', alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '60px', width: '100%', alignItems: 'center' }}>
           
           {/* LEFT SIDE: COPY & BRANDING */}
           <div>
@@ -76,20 +76,37 @@ export default function Login() {
               IPCS Global connects future-ready talent in Industrial Automation, Embedded Systems, IoT, and Digital Tech with leading blue-chip global firms. Experience zero-barrier career transitions.
             </p>
 
-            <button 
-              onClick={() => setShowModal(true)}
-              style={{ background: 'linear-gradient(90deg, #0ea5e9, #00d8ff)', color: '#fff', border: 'none', padding: '14px 35px', borderRadius: '30px', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 10px 25px rgba(0, 216, 255, 0.4)', transition: 'transform 0.2s' }}
-              onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-3px)'}
-              onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
-            >
-              Login / Signup &gt;
-            </button>
+            {/* BUTTON TOGGLES THE VIEW */}
+            {!isLoginView && (
+              <button 
+                onClick={() => setIsLoginView(true)}
+                style={{ background: 'linear-gradient(90deg, #0ea5e9, #00d8ff)', color: '#fff', border: 'none', padding: '14px 35px', borderRadius: '30px', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 10px 25px rgba(0, 216, 255, 0.4)', transition: 'transform 0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-3px)'}
+                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+              >
+                Login / Signup &gt;
+              </button>
+            )}
           </div>
 
-          {/* RIGHT SIDE: HIRING DASHBOARD CARD */}
-          <div style={{ display: 'flex', justifyContent: 'center' }}>
-            <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: '24px', padding: '35px', width: '100%', maxWidth: '420px', boxShadow: '0 25px 50px rgba(0,0,0,0.5)' }}>
-              
+          {/* RIGHT SIDE: ANIMATED CONTAINER */}
+          <div style={{ position: 'relative', height: '450px', width: '100%', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+            
+            {/* VIEW 1: HIRING DASHBOARD STATS */}
+            <div style={{ 
+              position: 'absolute', 
+              width: '100%', 
+              maxWidth: '420px', 
+              background: '#0f172a', 
+              border: '1px solid #1e293b', 
+              borderRadius: '24px', 
+              padding: '35px', 
+              boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
+              transition: 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
+              transform: isLoginView ? 'translateX(-100px)' : 'translateX(0)',
+              opacity: isLoginView ? 0 : 1,
+              pointerEvents: isLoginView ? 'none' : 'auto'
+            }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                   <div style={{ background: '#3b82f6', color: '#fff', padding: '10px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -100,40 +117,103 @@ export default function Login() {
                     <div style={{ color: '#64748b', fontSize: '0.75rem' }}>Realtime Campus Intake</div>
                   </div>
                 </div>
-                <div style={{ border: '1px solid #10b981', color: '#10b981', fontSize: '0.65rem', fontWeight: 'bold', padding: '4px 10px', borderRadius: '12px', letterSpacing: '0.5px' }}>
-                  ACTIVE STAGE
-                </div>
+                <div style={{ border: '1px solid #10b981', color: '#10b981', fontSize: '0.65rem', fontWeight: 'bold', padding: '4px 10px', borderRadius: '12px', letterSpacing: '0.5px' }}>ACTIVE STAGE</div>
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                 <div style={{ background: '#1e293b', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '15px' }}>
                   <div style={{ color: '#38bdf8' }}><Users size={24} weight="fill"/></div>
-                  <div>
-                    <div style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 'bold', marginBottom: '3px' }}>TOTAL STUDENTS HIRED</div>
-                    <div style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>1.5 M+</div>
-                  </div>
+                  <div><div style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 'bold', marginBottom: '3px' }}>TOTAL STUDENTS HIRED</div><div style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>1.5 M+</div></div>
                 </div>
 
                 <div style={{ background: '#1e293b', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '15px' }}>
                   <div style={{ color: '#8b5cf6' }}><Buildings size={24} weight="fill"/></div>
-                  <div>
-                    <div style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 'bold', marginBottom: '3px' }}>ENTERPRISE RECRUITERS</div>
-                    <div style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>25 K+</div>
-                  </div>
+                  <div><div style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 'bold', marginBottom: '3px' }}>ENTERPRISE RECRUITERS</div><div style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>25 K+</div></div>
                 </div>
 
                 <div style={{ background: '#1e293b', padding: '20px', borderRadius: '16px', display: 'flex', alignItems: 'center', gap: '15px' }}>
                   <div style={{ color: '#f59e0b' }}><Medal size={24} weight="fill"/></div>
-                  <div>
-                    <div style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 'bold', marginBottom: '3px' }}>PRESENCE ACROSS COUNTRIES</div>
-                    <div style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>50 +</div>
-                  </div>
+                  <div><div style={{ color: '#64748b', fontSize: '0.7rem', fontWeight: 'bold', marginBottom: '3px' }}>PRESENCE ACROSS COUNTRIES</div><div style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>50 +</div></div>
                 </div>
               </div>
-
             </div>
-          </div>
 
+            {/* VIEW 2: LOGIN FORM */}
+            <div style={{ 
+              position: 'absolute', 
+              width: '100%', 
+              maxWidth: '420px', 
+              background: '#0f172a', 
+              border: '1px solid #1e293b', 
+              borderRadius: '24px', 
+              padding: '40px', 
+              boxShadow: '0 25px 50px rgba(0,0,0,0.5)',
+              transition: 'all 0.6s cubic-bezier(0.4, 0, 0.2, 1)',
+              transform: isLoginView ? 'translateX(0)' : 'translateX(100px)',
+              opacity: isLoginView ? 1 : 0,
+              pointerEvents: isLoginView ? 'auto' : 'none'
+            }}>
+              
+              {/* BACK BUTTON TO RETURN TO STATS */}
+              <div 
+                onClick={() => setIsLoginView(false)} 
+                style={{ position: 'absolute', top: '20px', left: '20px', color: '#64748b', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px', transition: '0.2s' }}
+                onMouseEnter={e => e.currentTarget.style.color = '#fff'}
+                onMouseLeave={e => e.currentTarget.style.color = '#64748b'}
+              >
+                &lt; Back
+              </div>
+
+              <div style={{ textAlign: 'center', marginBottom: '30px', marginTop: '10px' }}>
+                <img src="https://ipcsglobal.com/wp-content/uploads/2023/12/IPCS-Global-Logo-1.png" alt="IPCS Logo" style={{ height: '35px', marginBottom: '15px' }} />
+                <h2 style={{ margin: 0, color: '#fff', fontSize: '1.4rem' }}>Welcome Back</h2>
+                <p style={{ color: '#64748b', fontSize: '0.85rem', marginTop: '5px' }}>Sign in to the Placement Ecosystem</p>
+              </div>
+
+              <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                <div>
+                  <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>OFFICIAL EMAIL</label>
+                  <input 
+                    type="text" 
+                    value={loginId} 
+                    onChange={(e) => setLoginId(e.target.value)} 
+                    required 
+                    placeholder="name@ipcsglobal.com"
+                    style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', color: '#fff', padding: '14px', borderRadius: '10px', outline: 'none', fontSize: '0.9rem' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>PASSWORD</label>
+                  <input 
+                    type="password" 
+                    value={password} 
+                    onChange={(e) => setPassword(e.target.value)} 
+                    required 
+                    placeholder="••••••••"
+                    style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', color: '#fff', padding: '14px', borderRadius: '10px', outline: 'none', fontSize: '0.9rem' }}
+                  />
+                </div>
+
+                {error && <div style={{ color: '#ef4444', fontSize: '0.85rem', textAlign: 'center', background: 'rgba(239, 68, 68, 0.1)', padding: '10px', borderRadius: '8px' }}>{error}</div>}
+
+                <button 
+                  type="submit" 
+                  disabled={loading}
+                  style={{ width: '100%', background: '#3b82f6', color: '#fff', border: 'none', padding: '14px', borderRadius: '10px', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '10px', transition: 'background 0.2s' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#2563eb'}
+                  onMouseLeave={e => e.currentTarget.style.background = '#3b82f6'}
+                >
+                  {loading ? <><CircleNotch size={20} className="ph-spin" /> Authenticating...</> : 'Sign In'}
+                </button>
+              </form>
+
+              <div style={{ textAlign: 'center', marginTop: '25px', color: '#64748b', fontSize: '0.75rem' }}>
+                Secured by IPCS IT Infrastructure
+              </div>
+            </div>
+
+          </div>
         </div>
       </div>
 
@@ -146,66 +226,6 @@ export default function Login() {
         </div>
       </div>
 
-      {/* 🚨 THE LOGIN MODAL */}
-      {showModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(10px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          
-          <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: '24px', padding: '40px', width: '100%', maxWidth: '400px', position: 'relative', boxShadow: '0 25px 50px rgba(0,0,0,0.8)' }}>
-            
-            <div onClick={() => setShowModal(false)} style={{ position: 'absolute', top: '20px', right: '20px', color: '#64748b', cursor: 'pointer', background: '#1e293b', borderRadius: '50%', padding: '6px' }}>
-              <X size={16} weight="bold" />
-            </div>
-
-            <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-              <img src="https://ipcsglobal.com/wp-content/uploads/2023/12/IPCS-Global-Logo-1.png" alt="IPCS Logo" style={{ height: '35px', marginBottom: '15px' }} />
-              <h2 style={{ margin: 0, color: '#fff', fontSize: '1.4rem' }}>Welcome Back</h2>
-              <p style={{ color: '#64748b', fontSize: '0.85rem', marginTop: '5px' }}>Sign in to the Placement Ecosystem</p>
-            </div>
-
-            <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div>
-                <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>OFFICIAL EMAIL</label>
-                <input 
-                  type="text" 
-                  value={loginId} 
-                  onChange={(e) => setLoginId(e.target.value)} 
-                  required 
-                  placeholder="name@ipcsglobal.com"
-                  style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', color: '#fff', padding: '14px', borderRadius: '10px', outline: 'none', fontSize: '0.9rem' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>PASSWORD</label>
-                <input 
-                  type="password" 
-                  value={password} 
-                  onChange={(e) => setPassword(e.target.value)} 
-                  required 
-                  placeholder="••••••••"
-                  style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', color: '#fff', padding: '14px', borderRadius: '10px', outline: 'none', fontSize: '0.9rem' }}
-                />
-              </div>
-
-              {error && <div style={{ color: '#ef4444', fontSize: '0.85rem', textAlign: 'center', background: 'rgba(239, 68, 68, 0.1)', padding: '10px', borderRadius: '8px' }}>{error}</div>}
-
-              {/* 🚨 UPDATED BUTTON WITH AUTHENTICATING TEXT */}
-              <button 
-                type="submit" 
-                disabled={loading}
-                style={{ width: '100%', background: '#3b82f6', color: '#fff', border: 'none', padding: '14px', borderRadius: '10px', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '10px' }}
-              >
-                {loading ? <><CircleNotch size={20} className="ph-spin" /> Authenticating...</> : 'Sign In'}
-              </button>
-            </form>
-
-            <div style={{ textAlign: 'center', marginTop: '25px', color: '#64748b', fontSize: '0.75rem' }}>
-              Secured by IPCS IT Infrastructure
-            </div>
-
-          </div>
-        </div>
-      )}
     </div>
   );
 }
