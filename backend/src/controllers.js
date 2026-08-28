@@ -1070,3 +1070,142 @@ exports.deleteMaterial = async (req, res) => {
     }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
+
+// --- UPDATE TECHNICAL QUESTION ---
+exports.updateQuestion = async (req, res) => {
+  try {
+    const { id, course, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
+    const sheet = doc.sheetsByTitle["Tech_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => (r.get('Question ID') || '').toString().trim() === id.toString().trim());
+    
+    if (rowToUpdate) {
+      rowToUpdate.assign({
+        'Question ID': id, 'Course': course, 'Question': question,
+        'Option A': optA, 'Option B': optB, 'Option C': optC, 'Option D': optD,
+        'Correct Option': correct, 'Explanation': explanation, 'Status': status || 'Active'
+      });
+      await rowToUpdate.save();
+      refreshCache();
+      res.json({ success: true, message: "Technical question updated successfully!" });
+    } else {
+      res.status(404).json({ success: false, message: "Question ID not found." });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+// --- UPDATE APTITUDE QUESTION ---
+exports.updateAptQuestion = async (req, res) => {
+  try {
+    const { id, category, question, optA, optB, optC, optD, correct, explanation, status, level } = req.body;
+    const sheet = doc.sheetsByTitle["Aptitude_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => (r.get('QID') || r.get('qid') || '').toString().trim() === id.toString().trim());
+    
+    if (rowToUpdate) {
+      const h = sheet.headerValues;
+      rowToUpdate.assign({
+        [getFuzzyHeader(h, 'qid')]: id, [getFuzzyHeader(h, 'category')]: category,
+        [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA,
+        [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC,
+        [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct,
+        [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active',
+        [getFuzzyHeader(h, 'level')]: level || 'Medium'
+      });
+      await rowToUpdate.save();
+      refreshCache();
+      res.json({ success: true, message: "Aptitude question updated successfully!" });
+    } else {
+      res.status(404).json({ success: false, message: "Question ID not found." });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+// --- UPDATE TALENTINO QUESTION ---
+exports.updateTalExamQuestion = async (req, res) => {
+  try {
+    const { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
+    const sheet = doc.sheetsByTitle["Talentino_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => (r.get('Question ID') || r.get('questionid') || '').toString().trim() === id.toString().trim());
+    
+    if (rowToUpdate) {
+      const h = sheet.headerValues;
+      rowToUpdate.assign({
+        [getFuzzyHeader(h, 'questionid')]: id, [getFuzzyHeader(h, 'testnumber')]: testNumber,
+        [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA,
+        [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC,
+        [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct,
+        [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active'
+      });
+      await rowToUpdate.save();
+      refreshCache();
+      res.json({ success: true, message: "Talentino question updated successfully!" });
+    } else {
+      res.status(404).json({ success: false, message: "Question ID not found." });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+// --- UPDATE APTITUDE QUESTION ---
+exports.updateAptQuestion = async (req, res) => {
+  try {
+    const { id, category, question, optA, optB, optC, optD, correct, explanation, status, level } = req.body;
+    const sheet = doc.sheetsByTitle["Aptitude_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => (r.get('QID') || r.get('qid') || '').toString().trim() === id.toString().trim());
+    
+    if (rowToUpdate) {
+      const h = sheet.headerValues;
+      rowToUpdate.assign({
+        [getFuzzyHeader(h, 'qid')]: id, [getFuzzyHeader(h, 'category')]: category,
+        [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA,
+        [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC,
+        [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct,
+        [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active',
+        [getFuzzyHeader(h, 'level')]: level || 'Medium'
+      });
+      await rowToUpdate.save();
+      refreshCache();
+      res.json({ success: true, message: "Aptitude question updated successfully!" });
+    } else {
+      res.status(404).json({ success: false, message: "Question ID not found." });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+// --- UPDATE TALENTINO QUESTION ---
+exports.updateTalExamQuestion = async (req, res) => {
+  try {
+    const { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
+    const sheet = doc.sheetsByTitle["Talentino_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => (r.get('Question ID') || r.get('questionid') || '').toString().trim() === id.toString().trim());
+    
+    if (rowToUpdate) {
+      const h = sheet.headerValues;
+      rowToUpdate.assign({
+        [getFuzzyHeader(h, 'questionid')]: id, [getFuzzyHeader(h, 'testnumber')]: testNumber,
+        [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA,
+        [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC,
+        [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct,
+        [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active'
+      });
+      await rowToUpdate.save();
+      refreshCache();
+      res.json({ success: true, message: "Talentino question updated successfully!" });
+    } else {
+      res.status(404).json({ success: false, message: "Question ID not found." });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};

@@ -76,6 +76,11 @@ app.get('/api/tpo/drives', controllers.getDrives);
 app.post('/api/tpo/drives/update', controllers.updateDriveStatus);
 app.post('/api/lms/materials/update', controllers.updateMaterial);
 app.post('/api/lms/materials/delete', controllers.deleteMaterial);
+app.post('/api/exams/questions/update', controllers.updateQuestion);
+app.post('/api/aptitude/questions/update', controllers.updateAptQuestion);
+app.post('/api/talentino-exams/questions/update', controllers.updateTalExamQuestion);
+app.post('/api/aptitude/questions/update', controllers.updateAptQuestion);
+app.post('/api/talentino-exams/questions/update', controllers.updateTalExamQuestion);
 
 cron.schedule('0 8 * * *', controllers.runDailyCron);
 const PORT = process.env.PORT || 5000;

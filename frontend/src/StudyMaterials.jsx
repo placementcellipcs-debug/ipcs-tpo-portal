@@ -7,35 +7,6 @@ import {
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
-const COURSE_DICTIONARY = {
-  'BMS AND CCTV': [
-    'Diploma In Building Management System', 'Certified BMS Engineer', 'CCTV & Security Systems', 'CCTV Training'
-  ],
-  'Industrial Automation': [
-    'Automation System Engineer', 'Professional Diploma in Industrial Automation', 'Advanced Automation System Professional', 
-    'Advanced PLC Program Professional', 'DCS Engineering & Maintenance', 'Electrical Control & Panel Designing', 
-    'Industrial Networking', 'Diploma in Marine Automation Systems', 'VFD Installation Professional', 'Customize programming PLC SCADA'
-  ],
-  'Embedded and IoT': [
-    'Certified Embedded Engineer', 'Embedded System Design (Crash)', 'Certified Raspberry Pi Programmer', 
-    'Certified Embedded System Engineer', 'Certified IoT Professional', 'LabView Course', 'Certified IIoT Professional'
-  ],
-  'Digital Marketing': [
-    'Professional Diploma in Digital Marketing', 'Advanced Course in Online Entrepreneurship', 'Advanced Certificate Course in Digital Marketing', 
-    'Search Engine Optimization Certification Course', 'Certificate Course in Digital Marketing', 'Search Engine Marketing Certification Course', 
-    'Social Media Marketing Certification Course', 'Online Money Making Courses', 'Digital Marketing Corporate Training', 
-    'Affiliate Marketing Certification Course', 'Certificate Course in Email Marketing', 'Video Blogging', 
-    'Google Analytics Fundamentals Course', 'International Web Professional', 'Inbound Marketing Certification Course', 'AI Digital Marketing'
-  ],
-  'Information technology (IT)': [
-    'PHP AND MYSQL', 'JAVA Full Stack', 'Web Designing and Development', 'Python & Data Science', 'Python Programming', 
-    'Data Science & Analytics', 'Android App Development', 'Python Full Stack Development', 'Artificial Intelligence', 
-    'Diploma in Artificial Intelligence', 'AI & Machine Learning with Python', 'Software Testing', 'Basics of Software Testing', 
-    'Advanced QA Automation Testing', 'Cyber Security', 'Cyber Security & Network Security Essentials', 'MERN Stack', 'Data Analytics'
-  ]
-};
-
-const MAIN_COURSES = Object.keys(COURSE_DICTIONARY);
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
 
 export default function StudyMaterials() {
@@ -46,10 +17,10 @@ export default function StudyMaterials() {
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
   
-  // 🚨 RESTRICT ACCESS: Only Superadmin and RTH can modify study materials
   const canManage = isSuperAdmin || isRth;
   const rthAssignedCourse = tpoData?.assignedCourse || '';
 
+  const [courseDict, setCourseDict] = useState({});
   const [materials, setMaterials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -58,7 +29,6 @@ export default function StudyMaterials() {
   const [selectedMainCourse, setSelectedMainCourse] = useState(isSuperAdmin ? null : rthAssignedCourse);
   const [selectedSubCourse, setSelectedSubCourse] = useState(null);
 
-  // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -67,20 +37,26 @@ export default function StudyMaterials() {
     id: '', course: '', module: '', title: '', fileType: 'pdf', link: '', status: 'Active'
   });
 
-  const fetchMaterials = async () => {
+  const fetchData = async () => {
     try {
-      const res = await axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials');
-      if (res.data.success) setMaterials(res.data.materials || []);
+      const [matRes, courseRes] = await Promise.all([
+        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials'),
+        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/courses')
+      ]);
+      if (matRes.data.success) setMaterials(matRes.data.materials || []);
+      if (courseRes.data.success) setCourseDict(courseRes.data.courses || {});
     } catch (err) {
-      console.error("Failed to load materials", err);
+      console.error("Failed to load data", err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchMaterials();
+    fetchData();
   }, []);
+
+  const MAIN_COURSES = Object.keys(courseDict);
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -91,11 +67,7 @@ export default function StudyMaterials() {
     setFormData({
       id: randomId, 
       course: selectedSubCourse || '', 
-      module: '', 
-      title: '', 
-      fileType: 'pdf', 
-      link: '', 
-      status: 'Active'
+      module: '', title: '', fileType: 'pdf', link: '', status: 'Active'
     });
     setIsEditMode(false);
     setError('');
@@ -104,13 +76,8 @@ export default function StudyMaterials() {
 
   const openEditModal = (mat) => {
     setFormData({
-      id: mat.id,
-      course: mat.course,
-      module: mat.module,
-      title: mat.title,
-      fileType: mat.fileType,
-      link: mat.link,
-      status: mat.status || 'Active'
+      id: mat.id, course: mat.course, module: mat.module,
+      title: mat.title, fileType: mat.fileType, link: mat.link, status: mat.status || 'Active'
     });
     setIsEditMode(true);
     setError('');
@@ -131,7 +98,7 @@ export default function StudyMaterials() {
       if (res.data.success) {
         setIsModalOpen(false);
         setLoading(true);
-        fetchMaterials(); 
+        fetchData(); 
       }
     } catch (err) {
       setError(err.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'add'} material.`);
@@ -147,9 +114,7 @@ export default function StudyMaterials() {
       if (res.data.success) {
         setMaterials(materials.filter(m => m.id !== id));
       }
-    } catch (err) {
-      alert("Failed to delete study material.");
-    }
+    } catch (err) { alert("Failed to delete study material."); }
   };
 
   const getFileIcon = (type) => {
@@ -157,8 +122,7 @@ export default function StudyMaterials() {
     if (t.includes('pdf')) return <FilePdf size={24} color="#ef4444" weight="fill" />;
     if (t.includes('pptx') || t.includes('ppt')) return <FileText size={24} color="#f59e0b" weight="fill" />;
     if (t.includes('mp4') || t.includes('video')) return <FileVideo size={24} color="#3b82f6" weight="fill" />;
-    if (t.includes('jpg') || t.includes('png')) return <FileImage size={24} color="#10b981" weight="fill" />;
-    return <LinkIcon size={24} color="#8b5cf6" weight="fill" />;
+    return <FileImage size={24} color="#10b981" weight="fill" />;
   };
 
   const filteredMaterials = materials.filter(m => {
@@ -176,9 +140,9 @@ export default function StudyMaterials() {
           <>
             <div style={{ marginBottom: '30px' }}>
               <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <FolderOpen color="var(--accent-primary)" weight="fill" /> LMS Repository
+                <FolderOpen color="var(--accent-primary)" weight="fill" /> Study Materials Management
               </h1>
-              <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select an engineering domain to manage its study materials and modules.</p>
+              <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a domain from your Courses sheet to manage materials.</p>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px' }}>
@@ -188,9 +152,9 @@ export default function StudyMaterials() {
                   <div 
                     key={course} 
                     onClick={() => { setSelectedMainCourse(course); setViewLevel('sub_courses'); }}
-                    style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
+                    style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}
                   >
-                    <h2 style={{ color: '#ffffff', fontSize: '1.6rem', margin: '0 0 15px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)', lineHeight: 1.3 }}>{course}</h2>
+                    <h2 style={{ color: '#ffffff', fontSize: '1.6rem', margin: '0 0 15px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>{course}</h2>
                     <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <BookOpenText size={20} color="#ffffff" weight="bold" />
                       <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: 'bold' }}>View Modules</span>
@@ -212,12 +176,12 @@ export default function StudyMaterials() {
               )}
               <div>
                 <h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedMainCourse}</h1>
-                <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a specific certification or diploma program to manage its files.</p>
+                <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a specific program fetched directly from your Courses sheet.</p>
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-              {(COURSE_DICTIONARY[selectedMainCourse] || []).map((subCourse) => (
+              {(courseDict[selectedMainCourse] || []).map((subCourse) => (
                 <div 
                   key={subCourse}
                   onClick={() => { setSelectedSubCourse(subCourse); setViewLevel('materials'); }}
@@ -246,7 +210,6 @@ export default function StudyMaterials() {
                 </div>
               </div>
               
-              {/* 🚨 RESTRICTED TO ADMIN / RTH */}
               {canManage && (
                 <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
                   <Plus size={20} weight="bold" /> Upload Material
@@ -309,18 +272,10 @@ export default function StudyMaterials() {
                         {canManage && (
                           <td style={{ textAlign: 'center' }}>
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                              <button 
-                                onClick={() => openEditModal(mat)}
-                                style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
-                                title="Edit Material"
-                              >
+                              <button onClick={() => openEditModal(mat)} style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Edit">
                                 <PencilSimple size={18} weight="bold" />
                               </button>
-                              <button 
-                                onClick={() => handleDeleteMaterial(mat.id)}
-                                style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
-                                title="Delete Material"
-                              >
+                              <button onClick={() => handleDeleteMaterial(mat.id)} style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Delete">
                                 <Trash size={18} weight="bold" />
                               </button>
                             </div>
@@ -334,69 +289,42 @@ export default function StudyMaterials() {
             </div>
           </>
         )}
-
       </div>
 
-      {/* ========================================== */}
-      {/* ADD / EDIT MATERIAL MODAL */}
-      {/* ========================================== */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
-            
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <BookOpenText color="var(--accent-primary)" /> {isEditMode ? 'Edit Study Material' : 'Upload Study Material'}
-              </h2>
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><BookOpenText color="var(--accent-primary)" /> {isEditMode ? 'Edit Study Material' : 'Upload Study Material'}</h2>
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsModalOpen(false)} />
             </div>
 
-            {error && (
-              <div className="alert alert-error" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <WarningCircle size={20} /> {error}
-              </div>
-            )}
+            {error && <div className="alert alert-error" style={{ marginBottom: '1rem' }}><WarningCircle size={20} /> {error}</div>}
 
             <form onSubmit={handleSubmit}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '15px', marginBottom: '15px' }}>
-                <div className="form-group">
-                  <label>Material ID</label>
-                  <input type="text" name="id" value={formData.id} readOnly style={{ background: 'var(--bg-dark)', opacity: 0.7 }} />
-                </div>
+                <div className="form-group"><label>Material ID</label><input type="text" name="id" value={formData.id} readOnly style={{ background: 'var(--bg-dark)', opacity: 0.7 }} /></div>
                 <div className="form-group">
                   <label>Assigned Program</label>
                   <select name="course" value={formData.course} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }} required>
-                    {(COURSE_DICTIONARY[selectedMainCourse] || []).map(c => <option key={c} value={c}>{c}</option>)}
+                    {(courseDict[selectedMainCourse] || []).map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '15px', marginBottom: '15px' }}>
-                <div className="form-group">
-                  <label>Module / Topic</label>
-                  <input type="text" name="module" placeholder="e.g. Module 01" value={formData.module} onChange={handleInputChange} required />
-                </div>
-                <div className="form-group">
-                  <label>Document Title</label>
-                  <input type="text" name="title" placeholder="e.g. Introduction to Networking" value={formData.title} onChange={handleInputChange} required />
-                </div>
+                <div className="form-group"><label>Module / Topic</label><input type="text" name="module" placeholder="Module 01" value={formData.module} onChange={handleInputChange} required /></div>
+                <div className="form-group"><label>Document Title</label><input type="text" name="title" placeholder="Title" value={formData.title} onChange={handleInputChange} required /></div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '15px', marginBottom: '20px' }}>
                 <div className="form-group">
                   <label>File Type</label>
                   <select name="fileType" value={formData.fileType} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }}>
-                    <option value="pdf">PDF</option>
-                    <option value="pptx">PowerPoint (PPTX)</option>
-                    <option value="docx">Word (DOCX)</option>
-                    <option value="mp4">Video (MP4)</option>
-                    <option value="link">External Link</option>
+                    <option value="pdf">PDF</option><option value="pptx">PowerPoint (PPTX)</option><option value="docx">Word (DOCX)</option><option value="mp4">Video (MP4)</option><option value="link">External Link</option>
                   </select>
                 </div>
-                <div className="form-group">
-                  <label>SharePoint / OneDrive Link</label>
-                  <input type="url" name="link" placeholder="https://..." value={formData.link} onChange={handleInputChange} required />
-                </div>
+                <div className="form-group"><label>SharePoint / OneDrive Link</label><input type="url" name="link" placeholder="https://..." value={formData.link} onChange={handleInputChange} required /></div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '1.5rem' }}>
@@ -406,7 +334,6 @@ export default function StudyMaterials() {
                 </button>
               </div>
             </form>
-
           </div>
         </div>
       )}

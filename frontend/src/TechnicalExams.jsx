@@ -6,57 +6,33 @@ import {
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
-// Master Dictionary of IPCS Courses
-const COURSE_DICTIONARY = {
-  'BMS AND CCTV': [
-    'Diploma In Building Management System', 'Certified BMS Engineer', 'CCTV & Security Systems', 'CCTV Training'
-  ],
-  'Industrial Automation': [
-    'Automation System Engineer', 'Professional Diploma in Industrial Automation', 'Advanced Automation System Professional', 
-    'Advanced PLC Program Professional', 'DCS Engineering & Maintenance', 'Electrical Control & Panel Designing', 
-    'Industrial Networking', 'Diploma in Marine Automation Systems', 'VFD Installation Professional', 'Customize programming PLC SCADA'
-  ],
-  'Embedded and IoT': [
-    'Certified Embedded Engineer', 'Embedded System Design (Crash)', 'Certified Raspberry Pi Programmer', 
-    'Certified Embedded System Engineer', 'Certified IoT Professional', 'LabView Course', 'Certified IIoT Professional'
-  ],
-  'Digital Marketing': [
-    'Professional Diploma in Digital Marketing', 'Advanced Course in Online Entrepreneurship', 'Advanced Certificate Course in Digital Marketing', 
-    'Search Engine Optimization Certification Course', 'Certificate Course in Digital Marketing', 'Search Engine Marketing Certification Course', 
-    'Social Media Marketing Certification Course', 'Online Money Making Courses', 'Digital Marketing Corporate Training', 
-    'Affiliate Marketing Certification Course', 'Certificate Course in Email Marketing', 'Video Blogging', 
-    'Google Analytics Fundamentals Course', 'International Web Professional', 'Inbound Marketing Certification Course', 'AI Digital Marketing'
-  ],
-  'Information technology (IT)': [
-    'PHP AND MYSQL', 'JAVA Full Stack', 'Web Designing and Development', 'Python & Data Science', 'Python Programming', 
-    'Data Science & Analytics', 'Android App Development', 'Python Full Stack Development', 'Artificial Intelligence', 
-    'Diploma in Artificial Intelligence', 'AI & Machine Learning with Python', 'Software Testing', 'Basics of Software Testing', 
-    'Advanced QA Automation Testing', 'Cyber Security', 'Cyber Security & Network Security Essentials', 'MERN Stack', 'Data Analytics'
-  ]
-};
-
-const MAIN_COURSES = Object.keys(COURSE_DICTIONARY);
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
 
 export default function TechnicalExams() {
-  const tpoData = JSON.parse(localStorage.getItem('tpoData'));
+  const tpoDataStr = localStorage.getItem('tpoData');
+  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  
   const isSuperAdmin = tpoData?.accessType === 'superadmin';
+  const upperRole = (tpoData?.role || '').toUpperCase();
+  const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
+  
+  const canManage = isSuperAdmin || isRth;
   const rthAssignedCourse = tpoData?.assignedCourse || '';
 
+  const [courseDict, setCourseDict] = useState({});
   const [questions, setQuestions] = useState([]);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Navigation State
   const [viewLevel, setViewLevel] = useState(isSuperAdmin ? 'main_courses' : 'sub_courses');
   const [selectedMainCourse, setSelectedMainCourse] = useState(isSuperAdmin ? null : rthAssignedCourse);
   const [selectedSubCourse, setSelectedSubCourse] = useState(null);
   const [activeTab, setActiveTab] = useState('questions'); 
 
-  // Modals State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [viewQuestionModal, setViewQuestionModal] = useState(null); // Stores question to view
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [viewQuestionModal, setViewQuestionModal] = useState(null); 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
@@ -65,13 +41,14 @@ export default function TechnicalExams() {
 
   const fetchData = async () => {
     try {
-      // 🚨 Ensure this uses your active Render URL
-      const [qRes, rRes] = await Promise.all([
+      const [qRes, rRes, courseRes] = await Promise.all([
         axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/questions'), 
-        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/results')
+        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/results'),
+        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/courses')
       ]);
       if (qRes.data.success) setQuestions(qRes.data.questions || []);
       if (rRes.data.success) setResults(rRes.data.results || []);
+      if (courseRes.data.success) setCourseDict(courseRes.data.courses || {});
     } catch (err) {
       console.error("Failed to load exam data", err);
     } finally {
@@ -82,6 +59,8 @@ export default function TechnicalExams() {
   useEffect(() => {
     fetchData();
   }, []);
+
+  const MAIN_COURSES = Object.keys(courseDict);
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -94,24 +73,40 @@ export default function TechnicalExams() {
       course: selectedSubCourse || '', 
       question: '', optA: '', optB: '', optC: '', optD: '', correct: 'A', explanation: '', status: 'Active'
     });
+    setIsEditMode(false);
     setError('');
     setIsAddModalOpen(true);
   };
 
-  const handleAddQuestion = async (e) => {
+  const openEditModal = (q) => {
+    setFormData({
+      id: q.id, course: q.course, question: q.question,
+      optA: q.optA, optB: q.optB, optC: q.optC, optD: q.optD,
+      correct: q.correct || 'A', explanation: q.explanation || '', status: q.status || 'Active'
+    });
+    setIsEditMode(true);
+    setError('');
+    setIsAddModalOpen(true);
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError('');
 
     try {
-      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/questions/add', formData);
+      const endpoint = isEditMode 
+        ? 'https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/questions/update' 
+        : 'https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/questions/add';
+
+      const res = await axios.post(endpoint, formData);
       if (res.data.success) {
         setIsAddModalOpen(false);
         setLoading(true);
         fetchData(); 
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to add question.');
+      setError(err.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'add'} question.`);
     } finally {
       setIsSubmitting(false);
     }
@@ -119,18 +114,14 @@ export default function TechnicalExams() {
 
   const handleDeleteQuestion = async (id) => {
     if(!window.confirm("Are you sure you want to delete this question?")) return;
-    
     try {
       const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/questions/delete', { id });
       if (res.data.success) {
         setQuestions(questions.filter(q => q.id !== id));
       }
-    } catch (err) {
-      alert("Failed to delete question.");
-    }
+    } catch (err) { alert("Failed to delete question."); }
   };
 
-  // 🚨 ADDED .trim() to ensure matching ignores accidental Google Sheets spaces
   const filteredQuestions = questions.filter(q => {
     const qCourse = (q.course || '').trim();
     const selCourse = (selectedSubCourse || '').trim();
@@ -150,14 +141,22 @@ export default function TechnicalExams() {
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        {/* VIEW 1: SUPER ADMIN MAIN COURSES */}
+        <div style={{ marginBottom: '20px' }}>
+          <button 
+            onClick={() => window.location.href = '/exams'}
+            style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-muted)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 'bold' }}
+          >
+            <CaretLeft weight="bold" size={16} /> Back to Exams Hub
+          </button>
+        </div>
+
         {viewLevel === 'main_courses' && isSuperAdmin && (
           <>
             <div style={{ marginBottom: '30px' }}>
               <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <FolderOpen color="var(--accent-primary)" weight="fill" /> Examination Engine
               </h1>
-              <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select an engineering domain to manage technical exams and view student scores.</p>
+              <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a domain fetched from your Courses sheet.</p>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px' }}>
@@ -167,11 +166,9 @@ export default function TechnicalExams() {
                   <div 
                     key={course} 
                     onClick={() => { setSelectedMainCourse(course); setViewLevel('sub_courses'); }}
-                    style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
+                    style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}
                   >
-                    <h2 style={{ color: '#ffffff', fontSize: '1.6rem', margin: '0 0 15px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)', lineHeight: 1.3 }}>{course}</h2>
+                    <h2 style={{ color: '#ffffff', fontSize: '1.6rem', margin: '0 0 15px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>{course}</h2>
                     <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <FileText size={20} color="#ffffff" weight="bold" />
                       <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: 'bold' }}>Manage Exams</span>
@@ -183,7 +180,6 @@ export default function TechnicalExams() {
           </>
         )}
 
-        {/* VIEW 2: SUB-COURSES GRID */}
         {viewLevel === 'sub_courses' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '15px', flexWrap: 'wrap' }}>
@@ -194,18 +190,16 @@ export default function TechnicalExams() {
               )}
               <div>
                 <h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedMainCourse}</h1>
-                <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a program to manage its question bank and student results.</p>
+                <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a program to manage exams.</p>
               </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-              {(COURSE_DICTIONARY[selectedMainCourse] || []).map((subCourse) => (
+              {(courseDict[selectedMainCourse] || []).map((subCourse) => (
                 <div 
                   key={subCourse}
                   onClick={() => { setSelectedSubCourse(subCourse); setViewLevel('exam_dashboard'); }}
                   style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.5rem', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', gap: '15px' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.transform = 'translateY(0)'; }}
                 >
                   <div style={{ width: '45px', height: '45px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <BookBookmark size={24} weight="fill" />
@@ -217,7 +211,6 @@ export default function TechnicalExams() {
           </>
         )}
 
-        {/* VIEW 3: EXAM DASHBOARD (QUESTIONS / RESULTS) */}
         {viewLevel === 'exam_dashboard' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
@@ -227,53 +220,38 @@ export default function TechnicalExams() {
                 </button>
                 <div>
                   <h1 style={{ fontSize: '1.6rem', margin: 0 }}>{selectedSubCourse}</h1>
-                  <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>Manage the assessment question bank and track student performance.</p>
+                  <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>Assessment question bank and student scores.</p>
                 </div>
               </div>
-              {activeTab === 'questions' && (
+              {activeTab === 'questions' && canManage && (
                 <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
                   <Plus size={20} weight="bold" /> Add Question
                 </button>
               )}
             </div>
 
-            {/* TAB CONTROLS */}
             <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '1px solid var(--card-border)', paddingBottom: '10px' }}>
-              <button 
-                onClick={() => setActiveTab('questions')}
-                style={{ background: activeTab === 'questions' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'questions' ? 'var(--accent-primary)' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', transition: '0.2s' }}
-              >
+              <button onClick={() => setActiveTab('questions')} style={{ background: activeTab === 'questions' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'questions' ? 'var(--accent-primary)' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Question size={20} weight={activeTab === 'questions' ? "fill" : "regular"} /> Question Bank
               </button>
-              <button 
-                onClick={() => setActiveTab('results')}
-                style={{ background: activeTab === 'results' ? 'rgba(16, 185, 129, 0.1)' : 'transparent', color: activeTab === 'results' ? '#10b981' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', transition: '0.2s' }}
-              >
+              <button onClick={() => setActiveTab('results')} style={{ background: activeTab === 'results' ? 'rgba(16, 185, 129, 0.1)' : 'transparent', color: activeTab === 'results' ? '#10b981' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <ChartBar size={20} weight={activeTab === 'results' ? "fill" : "regular"} /> Student Results
               </button>
             </div>
 
             <div style={{ marginBottom: '20px', maxWidth: '400px', position: 'relative' }}>
-              <input 
-                type="text" 
-                placeholder={activeTab === 'questions' ? "Search questions..." : "Search student name or roll..."} 
-                className="sleek-input" 
-                style={{ width: '100%' }}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-              />
+              <input type="text" placeholder={activeTab === 'questions' ? "Search questions..." : "Search student name or roll..."} className="sleek-input" style={{ width: '100%' }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             </div>
 
-            {/* QUESTIONS TAB */}
             {activeTab === 'questions' && (
               <div className="table-container">
                 <table className="modern-table">
                   <thead>
                     <tr>
-                      <th>Question Details</th>
-                      <th>Options</th>
-                      <th style={{ textAlign: 'center' }}>Correct Answer</th>
-                      <th style={{ textAlign: 'center' }}>Actions</th>
+                      <th style={{ width: '35%' }}>Question Details</th>
+                      <th style={{ width: '40%' }}>Options</th>
+                      <th style={{ textAlign: 'center', width: '10%' }}>Correct Answer</th>
+                      <th style={{ textAlign: 'center', width: '15%' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -284,37 +262,36 @@ export default function TechnicalExams() {
                     ) : (
                       filteredQuestions.map((q, i) => (
                         <tr key={i}>
-                          <td style={{ maxWidth: '300px' }}>
-                            <span className="primary-text" style={{ whiteSpace: 'normal', lineHeight: 1.4 }}>{q.question}</span>
+                          <td style={{ verticalAlign: 'top', padding: '16px' }}>
+                            <span className="primary-text" style={{ whiteSpace: 'normal', lineHeight: 1.5, display: 'block', marginBottom: '6px' }}>{q.question}</span>
                             <span className="sub-text">ID: {q.id}</span>
                           </td>
-                          <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                            <div>A: {q.optA}</div>
-                            <div>B: {q.optB}</div>
-                            <div>C: {q.optC}</div>
-                            <div>D: {q.optD}</div>
+                          <td style={{ verticalAlign: 'top', padding: '16px', fontSize: '0.85rem', color: '#cbd5e1', lineHeight: 1.6 }}>
+                            <div style={{ marginBottom: '8px' }}><b>A:</b> {q.optA}</div>
+                            <div style={{ marginBottom: '8px' }}><b>B:</b> {q.optB}</div>
+                            <div style={{ marginBottom: '8px' }}><b>C:</b> {q.optC}</div>
+                            <div><b>D:</b> {q.optD}</div>
                           </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '30px', height: '30px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', fontWeight: 'bold', border: '1px solid #10b981' }}>
+                          <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', width: '32px', height: '32px', borderRadius: '50%', background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', fontWeight: 'bold', border: '1px solid #10b981' }}>
                               {q.correct}
                             </div>
                           </td>
-                          <td style={{ textAlign: 'center' }}>
-                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                              <button 
-                                onClick={() => setViewQuestionModal(q)}
-                                style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
-                                title="View Question"
-                              >
-                                <Eye size={18} weight="bold" />
+                          <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
+                              <button onClick={() => setViewQuestionModal(q)} style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="View">
+                                <Eye size={16} weight="bold" />
                               </button>
-                              <button 
-                                onClick={() => handleDeleteQuestion(q.id)}
-                                style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
-                                title="Delete Question"
-                              >
-                                <Trash size={18} weight="bold" />
-                              </button>
+                              {canManage && (
+                                <>
+                                  <button onClick={() => openEditModal(q)} style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', border: '1px solid #f59e0b', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Edit">
+                                    <PencilSimple size={16} weight="bold" />
+                                  </button>
+                                  <button onClick={() => handleDeleteQuestion(q.id)} style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Delete">
+                                    <Trash size={16} weight="bold" />
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </td>
                         </tr>
@@ -325,55 +302,27 @@ export default function TechnicalExams() {
               </div>
             )}
 
-            {/* RESULTS TAB */}
             {activeTab === 'results' && (
               <div className="table-container">
                 <table className="modern-table">
-                  <thead>
-                    <tr>
-                      <th>Student Details</th>
-                      <th>Completion Date</th>
-                      <th style={{ textAlign: 'center' }}>Score</th>
-                      <th style={{ textAlign: 'center' }}>Time Taken</th>
-                    </tr>
-                  </thead>
+                  <thead><tr><th>Student Details</th><th>Completion Date</th><th style={{ textAlign: 'center' }}>Score</th><th style={{ textAlign: 'center' }}>Time Taken</th></tr></thead>
                   <tbody>
-                    {loading ? (
-                      <tr><td colSpan="4" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="#10b981" /></td></tr>
-                    ) : filteredResults.length === 0 ? (
-                      <tr><td colSpan="4" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No exam attempts recorded yet.</td></tr>
-                    ) : (
-                      filteredResults.map((r, i) => {
-                        const perc = parseFloat(r.percentage.replace('%', ''));
-                        const isPass = perc >= 50; 
-                        return (
-                          <tr key={i}>
-                            <td>
-                              <span className="primary-text">{r.name}</span>
-                              <span className="sub-text">{r.rollNo} • {r.branch}</span>
-                            </td>
-                            <td><span className="primary-text" style={{ fontSize: '0.85rem' }}>{r.timestamp}</span></td>
-                            <td style={{ textAlign: 'center' }}>
-                              <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: isPass ? '#10b981' : '#ef4444' }}>{r.percentage}</span>
-                              <span className="sub-text">{r.score} / {r.total}</span>
-                            </td>
-                            <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontWeight: 'bold' }}>{r.timeTaken}</td>
-                          </tr>
-                        );
-                      })
-                    )}
+                    {filteredResults.map((r, i) => (
+                      <tr key={i}>
+                        <td><span className="primary-text">{r.name}</span><span className="sub-text">{r.rollNo} • {r.branch}</span></td>
+                        <td><span className="primary-text" style={{ fontSize: '0.85rem' }}>{r.timestamp}</span></td>
+                        <td style={{ textAlign: 'center' }}><span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#10b981' }}>{r.percentage}</span><span className="sub-text">{r.score} / {r.total}</span></td>
+                        <td style={{ textAlign: 'center', color: 'var(--text-muted)', fontWeight: 'bold' }}>{r.timeTaken}</td>
+                      </tr>
+                    ))}
                   </tbody>
                 </table>
               </div>
             )}
           </>
         )}
-
       </div>
 
-      {/* ========================================== */}
-      {/* VIEW FULL QUESTION MODAL */}
-      {/* ========================================== */}
       {viewQuestionModal && (
          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
          <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
@@ -381,115 +330,57 @@ export default function TechnicalExams() {
              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><Eye color="var(--accent-primary)" /> Question Details</h2>
              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setViewQuestionModal(null)} />
            </div>
-           
-           <div style={{ background: '#161e2e', padding: '15px', borderRadius: '8px', border: '1px solid #1e293b', marginBottom: '15px' }}>
-             <p style={{ margin: 0, fontSize: '1.1rem', lineHeight: 1.5 }}>{viewQuestionModal.question}</p>
-           </div>
-           
+           <div style={{ background: '#161e2e', padding: '15px', borderRadius: '8px', border: '1px solid #1e293b', marginBottom: '15px' }}><p style={{ margin: 0, fontSize: '1.1rem', lineHeight: 1.5 }}>{viewQuestionModal.question}</p></div>
            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
-             <div style={{ padding: '10px', background: viewQuestionModal.correct === 'A' ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-dark)', border: viewQuestionModal.correct === 'A' ? '1px solid #10b981' : '1px solid var(--card-border)', borderRadius: '8px' }}><b>A:</b> {viewQuestionModal.optA}</div>
-             <div style={{ padding: '10px', background: viewQuestionModal.correct === 'B' ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-dark)', border: viewQuestionModal.correct === 'B' ? '1px solid #10b981' : '1px solid var(--card-border)', borderRadius: '8px' }}><b>B:</b> {viewQuestionModal.optB}</div>
-             <div style={{ padding: '10px', background: viewQuestionModal.correct === 'C' ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-dark)', border: viewQuestionModal.correct === 'C' ? '1px solid #10b981' : '1px solid var(--card-border)', borderRadius: '8px' }}><b>C:</b> {viewQuestionModal.optC}</div>
-             <div style={{ padding: '10px', background: viewQuestionModal.correct === 'D' ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-dark)', border: viewQuestionModal.correct === 'D' ? '1px solid #10b981' : '1px solid var(--card-border)', borderRadius: '8px' }}><b>D:</b> {viewQuestionModal.optD}</div>
+             <div style={{ padding: '10px', background: 'var(--bg-dark)', border: '1px solid var(--card-border)', borderRadius: '8px' }}><b>A:</b> {viewQuestionModal.optA}</div>
+             <div style={{ padding: '10px', background: 'var(--bg-dark)', border: '1px solid var(--card-border)', borderRadius: '8px' }}><b>B:</b> {viewQuestionModal.optB}</div>
+             <div style={{ padding: '10px', background: 'var(--bg-dark)', border: '1px solid var(--card-border)', borderRadius: '8px' }}><b>C:</b> {viewQuestionModal.optC}</div>
+             <div style={{ padding: '10px', background: 'var(--bg-dark)', border: '1px solid var(--card-border)', borderRadius: '8px' }}><b>D:</b> {viewQuestionModal.optD}</div>
            </div>
-
-           {viewQuestionModal.explanation && (
-             <div style={{ padding: '15px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid #0284c7', borderRadius: '8px', color: '#38bdf8', fontSize: '0.9rem' }}>
-               <b>Explanation:</b> {viewQuestionModal.explanation}
-             </div>
-           )}
+           {viewQuestionModal.explanation && <div style={{ padding: '15px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid #0284c7', borderRadius: '8px', color: '#38bdf8' }}><b>Explanation:</b> {viewQuestionModal.explanation}</div>}
          </div>
        </div>
       )}
 
-      {/* ========================================== */}
-      {/* ADD QUESTION MODAL */}
-      {/* ========================================== */}
       {isAddModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="modal-card" style={{ maxWidth: '700px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
-            
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><ListChecks color="var(--accent-primary)" /> Add Exam Question</h2>
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><ListChecks color="var(--accent-primary)" /> {isEditMode ? 'Edit Exam Question' : 'Add Exam Question'}</h2>
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsAddModalOpen(false)} />
             </div>
-
-            {error && (
-              <div className="alert alert-error" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <WarningCircle size={20} /> {error}
-              </div>
-            )}
-
-            <form onSubmit={handleAddQuestion}>
+            {error && <div className="alert alert-error" style={{ marginBottom: '1rem' }}><WarningCircle size={20} /> {error}</div>}
+            <form onSubmit={handleSubmit}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '15px', marginBottom: '15px' }}>
-                <div className="form-group">
-                  <label>Question ID</label>
-                  <input type="text" name="id" value={formData.id} readOnly style={{ background: 'var(--bg-dark)', opacity: 0.7 }} />
-                </div>
+                <div className="form-group"><label>Question ID</label><input type="text" name="id" value={formData.id} readOnly style={{ background: 'var(--bg-dark)', opacity: 0.7 }} /></div>
                 <div className="form-group">
                   <label>Assigned Program</label>
                   <select name="course" value={formData.course} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }} required>
-                    {(COURSE_DICTIONARY[selectedMainCourse] || []).map(c => <option key={c} value={c}>{c}</option>)}
+                    {(courseDict[selectedMainCourse] || []).map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               </div>
-
-              <div className="form-group" style={{ marginBottom: '15px' }}>
-                <label>Question Text</label>
-                <textarea 
-                  name="question" 
-                  className="sleek-input" 
-                  placeholder="Enter the technical question here..." 
-                  style={{ width: '100%', minHeight: '80px', resize: 'vertical' }} 
-                  value={formData.question} 
-                  onChange={handleInputChange} 
-                  required 
-                />
-              </div>
-
+              <div className="form-group" style={{ marginBottom: '15px' }}><label>Question Text</label><textarea name="question" className="sleek-input" style={{ width: '100%', minHeight: '80px' }} value={formData.question} onChange={handleInputChange} required /></div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
-                <div className="form-group">
-                  <label>Option A</label>
-                  <input type="text" name="optA" value={formData.optA} onChange={handleInputChange} required />
-                </div>
-                <div className="form-group">
-                  <label>Option B</label>
-                  <input type="text" name="optB" value={formData.optB} onChange={handleInputChange} required />
-                </div>
-                <div className="form-group">
-                  <label>Option C</label>
-                  <input type="text" name="optC" value={formData.optC} onChange={handleInputChange} required />
-                </div>
-                <div className="form-group">
-                  <label>Option D</label>
-                  <input type="text" name="optD" value={formData.optD} onChange={handleInputChange} required />
-                </div>
+                <div className="form-group"><label>Option A</label><input type="text" name="optA" value={formData.optA} onChange={handleInputChange} required /></div>
+                <div className="form-group"><label>Option B</label><input type="text" name="optB" value={formData.optB} onChange={handleInputChange} required /></div>
+                <div className="form-group"><label>Option C</label><input type="text" name="optC" value={formData.optC} onChange={handleInputChange} required /></div>
+                <div className="form-group"><label>Option D</label><input type="text" name="optD" value={formData.optD} onChange={handleInputChange} required /></div>
               </div>
-
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '15px', marginBottom: '20px' }}>
                 <div className="form-group">
                   <label>Correct Answer</label>
-                  <select name="correct" value={formData.correct} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', border: '1px solid #10b981', fontWeight: 'bold' }}>
-                    <option value="A">Option A</option>
-                    <option value="B">Option B</option>
-                    <option value="C">Option C</option>
-                    <option value="D">Option D</option>
+                  <select name="correct" value={formData.correct} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}>
+                    <option value="A">Option A</option><option value="B">Option B</option><option value="C">Option C</option><option value="D">Option D</option>
                   </select>
                 </div>
-                <div className="form-group">
-                  <label>Explanation (Optional)</label>
-                  <input type="text" name="explanation" placeholder="Why is this the correct answer?" value={formData.explanation} onChange={handleInputChange} />
-                </div>
+                <div className="form-group"><label>Explanation (Optional)</label><input type="text" name="explanation" value={formData.explanation} onChange={handleInputChange} /></div>
               </div>
-
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '1.5rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsAddModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-action" style={{ width: 'auto' }} disabled={isSubmitting}>
-                  {isSubmitting ? <CircleNotch size={20} className="ph-spin" /> : 'Save Question'}
-                </button>
+                <button type="submit" className="btn-action" style={{ width: 'auto' }} disabled={isSubmitting}>{isSubmitting ? <CircleNotch size={20} className="ph-spin" /> : (isEditMode ? 'Save Changes' : 'Save Question')}</button>
               </div>
             </form>
-
           </div>
         </div>
       )}
