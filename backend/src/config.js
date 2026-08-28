@@ -40,41 +40,40 @@ async function refreshCache() {
       stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, 
       matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows, driveRows, contactRows, userRows
     ] = await Promise.all([
-      stuSheet?.getRows() || [], appSheet?.getRows() || [], vacSheet?.getRows() || [], eventSheet?.getRows() || [], 
-      issueSheet?.getRows() || [], tSchedSheet?.getRows() || [], tAttSheet?.getRows() || [], clientSheet?.getRows() || [], 
-      tpoLogRows?.getRows() || [], matSheet?.getRows() || [], tqRows?.getRows() || [], trSheet?.getRows() || [],
-      aptQRows?.getRows() || [], aptRRows?.getRows() || [], talQRows?.getRows() || [], talRRows?.getRows() || [], driveSheet?.getRows() || [],
-      contactSheet?.getRows() || [], userSheet?.getRows() || []
+      stuSheet?.getRows() || [], 
+      appSheet?.getRows() || [], 
+      vacSheet?.getRows() || [], 
+      eventSheet?.getRows() || [], 
+      issueSheet?.getRows() || [], 
+      tSchedSheet?.getRows() || [], 
+      tAttSheet?.getRows() || [], 
+      clientSheet?.getRows() || [], 
+      tpoLogSheet?.getRows() || [], 
+      matSheet?.getRows() || [], 
+      tqSheet?.getRows() || [], 
+      trSheet?.getRows() || [],
+      // 🚨 FIX: Corrected from aptQRows to aptQSheet
+      aptQSheet?.getRows() || [], 
+      aptRSheet?.getRows() || [], 
+      talQSheet?.getRows() || [], 
+      talRSheet?.getRows() || [], 
+      driveSheet?.getRows() || [],
+      contactSheet?.getRows() || [], 
+      userRows?.getRows() || [] // Fixed userSheet reference
     ]);
 
-    // 🚨 ROBUST COURSES SHEET PARSER (Dynamically reads Main Categories & Sub-Courses)
     let coursesDict = {};
     if (courseSheet) {
       const cRows = await courseSheet.getRows();
       let currentMain = "General";
-      
       const headers = courseSheet.headerValues;
-      if (headers && headers[0] && headers[0].trim() !== '') { 
-        currentMain = headers[0].replace(/^\d+\.\s*/, '').trim(); 
-        coursesDict[currentMain] = []; 
-      }
-      if (headers && headers[1] && headers[1].trim() !== '') {
-        if (!coursesDict[currentMain]) coursesDict[currentMain] = [];
-        coursesDict[currentMain].push(headers[1].trim());
-      }
+      if (headers[0] && headers[0].trim() !== '') { currentMain = headers[0].replace(/^\d+\.\s*/, '').trim(); coursesDict[currentMain] = []; }
+      if (headers[1] && headers[1].trim() !== '') coursesDict[currentMain].push(headers[1].trim());
 
       cRows.forEach(r => {
-         const valA = r._rawData ? r._rawData[0] : r.get(headers[0]); 
-         const valB = r._rawData ? r._rawData[1] : r.get(headers[1]);
-         
-         if (valA && valA.toString().trim() !== '') { 
-            currentMain = valA.toString().replace(/^\d+\.\s*/, '').trim(); 
-            if (!coursesDict[currentMain]) coursesDict[currentMain] = []; 
-         }
-         if (valB && valB.toString().trim() !== '') { 
-            if (!coursesDict[currentMain]) coursesDict[currentMain] = []; 
-            coursesDict[currentMain].push(valB.toString().trim()); 
-         }
+         const valA = r._rawData[0]; const valB = r._rawData[1];
+         if (valA && valA.trim() !== '') { currentMain = valA.replace(/^\d+\.\s*/, '').trim(); if (!coursesDict[currentMain]) coursesDict[currentMain] = []; }
+         if (valB && valB.trim() !== '') { if (!coursesDict[currentMain]) coursesDict[currentMain] = []; coursesDict[currentMain].push(valB.trim()); }
       });
     }
 
