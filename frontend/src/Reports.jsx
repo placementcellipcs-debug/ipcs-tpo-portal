@@ -7,7 +7,6 @@ const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
 const COURSES = ['Automation', 'BMS', 'IT', 'DM', 'Embedded'];
 
 export default function Reports() {
-  // 🚨 FIX: Safe parsing
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   

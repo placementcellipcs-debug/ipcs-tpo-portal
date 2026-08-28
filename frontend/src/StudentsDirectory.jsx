@@ -21,7 +21,6 @@ const getStandardCourse = (c) => {
 };
 
 export default function StudentsDirectory() {
-  // 🚨 FIX: Safe parsing, no syntax errors
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   
@@ -50,7 +49,6 @@ export default function StudentsDirectory() {
   const isViewOnly = tpoData?.accessType === 'view'; 
 
   useEffect(() => {
-    // 🚨 FIX: Fetch inside hook, dependency array empty
     const fetchData = async () => {
       const localTpoStr = localStorage.getItem('tpoData');
       if (!localTpoStr) return;
@@ -75,7 +73,7 @@ export default function StudentsDirectory() {
       } catch (error) { console.error("Failed", error); } finally { setLoading(false); }
     };
     fetchData();
-  }, []); // 🚨 CRITICAL FIX: Stops the loop!
+  }, []); // 🚨 CRITICAL FIX: Empty array prevents the endless loop
 
   const students = rawStudents.filter(s => {
     if (isCourseSpecific) {

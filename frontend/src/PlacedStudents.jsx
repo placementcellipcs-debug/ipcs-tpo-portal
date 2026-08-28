@@ -6,19 +6,17 @@ import Layout from './Layout';
 const TILE_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 
 export default function PlacedStudents() {
-  const tpoData = JSON.parse(localStorage.getItem('tpoData'));
+  const tpoDataStr = localStorage.getItem('tpoData');
+  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // 🚨 RESTRICT "ADD PLACEMENT" ACCESS
   const isTpo = (tpoData?.role || '').toUpperCase() === 'TPO';
   const isGifty = (tpoData?.email || '').toLowerCase() === 'gifty@ipcsglobal.com' || (tpoData?.loginId || '').toLowerCase() === 'gifty@ipcsglobal.com';
   const canAddPlacement = isTpo || isGifty;
   
-  // View State Management (Dual-View)
   const [selectedBranch, setSelectedBranch] = useState(null);
-
-  // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState('newest');
 
@@ -34,18 +32,16 @@ export default function PlacedStudents() {
     datePlaced: new Date().toISOString().split('T')[0], packageLpa: '', joiningStatus: '', offerLetterFile: null 
   });
 
-  useEffect(() => {
-    if (!tpoData) return;
-    fetchData();
-  }, [tpoData]);
-
   const fetchData = async () => {
+    const localTpoStr = localStorage.getItem('tpoData');
+    if (!localTpoStr) return;
+    const localTpo = JSON.parse(localTpoStr);
+
     try {
       const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications', { 
-        assignedBranchesArray: tpoData.assignedBranchesArray, tpoName: tpoData.name, role: tpoData.role, assignedCourse: tpoData.assignedCourse
+        assignedBranchesArray: localTpo.assignedBranchesArray, tpoName: localTpo.name, role: localTpo.role, assignedCourse: localTpo.assignedCourse
       });
       if (response.data.success) {
-        // Filter globally for ONLY placed students to generate branch counts
         const allPlaced = response.data.applications.filter(a => {
           const s = (a.status || '').toLowerCase();
           const j = (a.joiningStatus || '').toLowerCase();
@@ -55,6 +51,11 @@ export default function PlacedStudents() {
       }
     } catch (error) { console.error("Failed to load", error); } finally { setLoading(false); }
   };
+
+  useEffect(() => {
+    // 🚨 CRITICAL FIX: Calling fetch internally, empty dependency array.
+    fetchData();
+  }, []); 
 
   const parseDate = (dStr) => {
     if (!dStr) return null;
@@ -66,9 +67,6 @@ export default function PlacedStudents() {
     return isNaN(d) ? null : d;
   };
 
-  // ==========================================
-  // DATA PREP FOR BRANCH TILES
-  // ==========================================
   const branchData = {};
   applications.forEach(a => {
     const b = a.branch || 'Unknown';
@@ -76,9 +74,6 @@ export default function PlacedStudents() {
   });
   const branchList = Object.keys(branchData).sort();
 
-  // ==========================================
-  // DATA PREP FOR TABLE VIEW
-  // ==========================================
   const activePlacedApps = selectedBranch ? applications.filter(a => a.branch === selectedBranch) : [];
 
   const filteredApps = activePlacedApps.filter(a => {
@@ -125,7 +120,7 @@ export default function PlacedStudents() {
     setSavingStatus(true);
     try {
       const formData = new FormData();
-      formData.append('tpoName', tpoData.name);
+      formData.append('tpoName', tpoData?.name || '');
       formData.append('appData', JSON.stringify(addForm));
       
       if (addForm.offerLetterFile) formData.append('offerLetterFile', addForm.offerLetterFile);
@@ -137,9 +132,6 @@ export default function PlacedStudents() {
     } catch (error) { alert("Failed to add."); } finally { setSavingStatus(false); }
   };
 
-  // ==========================================
-  // RENDER: VIEW 1 - BRANCH TILES LANDING
-  // ==========================================
   if (!selectedBranch) {
     return (
       <Layout>
@@ -151,7 +143,6 @@ export default function PlacedStudents() {
               <p style={{ color: 'var(--text-muted)' }}>Select a branch to view placement details, upload offer letters, and log salary packages.</p>
             </div>
             
-            {/* 🚨 ONLY TPOs AND GIFTY CAN ADD PLACEMENTS */}
             {canAddPlacement && (
               <button className="btn-action" style={{ background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px', width: 'auto' }} onClick={() => setIsAddModalOpen(true)}>
                 <Plus weight="bold" /> Add Placement
@@ -172,8 +163,6 @@ export default function PlacedStudents() {
                     key={branch} 
                     onClick={() => setSelectedBranch(branch)}
                     style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
                   >
                     <h2 style={{ color: '#ffffff', fontSize: '2.2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
                       {branch}
@@ -189,7 +178,6 @@ export default function PlacedStudents() {
           )}
         </div>
 
-        {/* The Add Modal is still rendered here so it can be accessed from the Grid View */}
         {isAddModalOpen && canAddPlacement && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
             <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
@@ -230,9 +218,6 @@ export default function PlacedStudents() {
     );
   }
 
-  // ==========================================
-  // RENDER: VIEW 2 - DETAILED TABLE VIEW
-  // ==========================================
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
@@ -305,12 +290,11 @@ export default function PlacedStudents() {
         </div>
       </div>
 
-      {/* EDIT MODAL */}
       {isEditModalOpen && selectedApp && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Update {selectedApp.name}'s Placement</h2>
+              <h2 style={{ margin: '0 0 5px 0', fontSize: '1.4rem' }}>Update {selectedApp.name}'s Placement</h2>
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsEditModalOpen(false)} />
             </div>
             

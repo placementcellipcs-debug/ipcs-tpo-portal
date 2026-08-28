@@ -17,7 +17,7 @@ export default function StudentApps() {
   const [courseFilter, setCourseFilter] = useState('All');
 
   useEffect(() => {
-    // 🚨 FIX: Data fetch isolated inside the hook
+    // 🚨 FIX: Internal fetch logic
     const fetchApps = async () => {
       const localTpoStr = localStorage.getItem('tpoData');
       if (!localTpoStr) return;
