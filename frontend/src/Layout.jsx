@@ -117,7 +117,7 @@ export default function Layout({ children }) {
 
         <div className="page-container" style={{ width: '100%', overflowX: 'hidden' }} onClick={() => setIsNotifOpen(false)}>
           
-          {/* 🚨 GLOBAL BACK BUTTON (Hides on Dashboard) */}
+          {/* GLOBAL BACK BUTTON */}
           {location.pathname !== '/dashboard' && (
             <div style={{ marginBottom: '20px' }}>
               <button 
@@ -141,18 +141,22 @@ export default function Layout({ children }) {
         className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} 
         onClick={(e) => { if(e.target.classList.contains('drawer-overlay')) setIsDrawerOpen(false); }}
       >
-        {/* 🚨 UPDATED: ENTIRE SLIDER BACKGROUND IMAGE */}
+        {/* 🚨 NEW SLIDER BACKGROUND IMAGE */}
         <div 
           className="drawer-card"
           style={{ 
-            backgroundImage: `linear-gradient(rgba(11, 17, 32, 0.8), rgba(11, 17, 32, 0.95)), url('https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB')`, 
+            backgroundImage: `linear-gradient(rgba(11, 17, 32, 0.85), rgba(11, 17, 32, 0.95)), url('https://lh3.googleusercontent.com/d/1arxJtyeJBZCinb9Sr7FAMlY-6C7eNm8c')`, 
             backgroundSize: 'cover', 
             backgroundPosition: 'center',
             borderLeft: '1px solid rgba(255,255,255,0.1)'
           }}
         >
           
+          {/* 🚨 NEW HEADER PROFILE COVER PHOTO */}
           <div className="drawer-header" style={{ 
+            backgroundImage: `linear-gradient(rgba(0,0,0,0.3), rgba(0,0,0,0.8)), url('https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB')`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
             padding: '30px 20px', 
             position: 'relative',
             borderBottom: '1px solid rgba(255,255,255,0.1)'
@@ -160,12 +164,12 @@ export default function Layout({ children }) {
             <div 
               className="drawer-close-btn" 
               onClick={() => setIsDrawerOpen(false)}
-              style={{ position: 'absolute', top: '15px', right: '15px', background: 'rgba(255,255,255,0.1)', color: '#fff', borderRadius: '50%', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              style={{ position: 'absolute', top: '15px', right: '15px', background: 'rgba(255,255,255,0.2)', color: '#fff', borderRadius: '50%', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               <X size={16} weight="bold" />
             </div>
             <div className="drawer-profile-row" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-              <div className="drawer-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)', width: '60px', height: '60px', borderRadius: '50%', overflow: 'hidden', border: '2px solid rgba(255,255,255,0.2)', flexShrink: 0 }}>
+              <div className="drawer-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', width: '60px', height: '60px', borderRadius: '50%', overflow: 'hidden', border: '2px solid rgba(255,255,255,0.4)', flexShrink: 0 }}>
                 {renderAvatar()}
               </div>
               <div style={{ color: '#fff' }}>
