@@ -8,20 +8,36 @@ import Layout from './Layout';
 
 const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
 
-const ClientLogo = ({ client }) => {
+// 🚨 SMART IMAGE FALLBACK COMPONENT - NOW FULLY RESPONSIVE
+const ClientLogo = ({ client, size = 70, noMargin = false }) => {
   const [imgErr, setImgErr] = useState(false);
+  
   const getDriveImage = (url) => {
     if (!url) return null;
     const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
     return match ? `https://drive.google.com/thumbnail?id=${match[1]}&sz=w400` : url;
   };
+
   const logoUrl = getDriveImage(client.logo);
   const initial = (client.companyName || 'C').charAt(0).toUpperCase();
 
   return (
-    <div style={{ width: '70px', height: '70px', borderRadius: '12px', background: '#fff', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '12px', padding: '6px', border: '1px solid var(--card-border)' }}>
+    <div style={{ 
+      width: `${size}px`, 
+      height: `${size}px`, 
+      borderRadius: '12px', 
+      background: '#fff', 
+      overflow: 'hidden', 
+      display: 'flex', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      marginBottom: noMargin ? '0' : '12px', 
+      padding: '6px', 
+      border: '1px solid var(--card-border)',
+      flexShrink: 0
+    }}>
       {(!logoUrl || imgErr) ? (
-        <span style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '1.8rem' }}>{initial}</span>
+        <span style={{ color: '#0f172a', fontWeight: 'bold', fontSize: size > 55 ? '1.8rem' : '1.3rem' }}>{initial}</span>
       ) : (
         <img src={logoUrl} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} alt="Logo" onError={() => setImgErr(true)} />
       )}
@@ -38,6 +54,8 @@ export default function Clients() {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  
+  // TPO Tabs: 'pending' vs 'signed'
   const [tpoTab, setTpoTab] = useState('pending');
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -53,7 +71,6 @@ export default function Clients() {
   };
 
   useEffect(() => { 
-    // 🚨 CRITICAL FIX: Data fetch isolated inside the hook to prevent infinite loops
     const fetchClientsInitial = async () => {
       const localStr = localStorage.getItem('tpoData');
       if (!localStr) return;
@@ -78,7 +95,7 @@ export default function Clients() {
       }
     };
     fetchClientsInitial(); 
-  }, []); // 🚨 EMPTY DEPENDENCY ARRAY - STOPS THE CRASH
+  }, []); 
 
   const fetchClientsManual = async () => {
     try {
@@ -242,19 +259,22 @@ export default function Clients() {
                   pendingClients.map(client => (
                     <div key={client.rowNumber} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '15px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                        <div style={{ width: '55px', height: '55px', flexShrink: 0 }}>
-                          <ClientLogo client={client} />
-                        </div>
-                        <div>
-                          <strong style={{ fontSize: '1.1rem', color: '#fff', display: 'block' }}>{client.companyName}</strong>
+                        
+                        {/* 🚨 FIXED LOGO IMPLEMENTATION */}
+                        <ClientLogo client={client} size={60} noMargin={true} />
+
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <strong style={{ fontSize: '1.1rem', color: '#fff', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{client.companyName}</strong>
                           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{client.location || 'Location N/A'}</span>
                         </div>
                       </div>
+
                       <div style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>
                         <div style={{ marginBottom: '4px' }}>👤 {client.contactPerson || 'No Contact Person'}</div>
                         <div style={{ marginBottom: '4px' }}>✉️ {client.email || 'No Email'}</div>
                         <div>📞 {client.contact || 'No Phone'}</div>
                       </div>
+
                       <div style={{ marginTop: 'auto', paddingTop: '15px', borderTop: '1px solid var(--card-border)', display: 'flex', gap: '10px' }}>
                         <button className="btn-secondary" style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: '5px' }} onClick={() => openEditModal(client)}>
                           <PencilSimple weight="bold" size={16} /> Edit
@@ -291,11 +311,12 @@ export default function Clients() {
         )}
       </div>
 
+      {/* EDIT MODAL */}
       {isEditModalOpen && selectedClient && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Edit {selectedClient.companyName}</h2>
+              <h2 style={{ margin: '0 0 5px 0', fontSize: '1.4rem' }}>Edit {selectedClient.companyName}</h2>
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsEditModalOpen(false)} />
             </div>
             
@@ -318,7 +339,13 @@ export default function Clients() {
       )}
 
       {notification && (
-        <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 999999, backgroundColor: notification.type === 'success' ? '#10b981' : '#ef4444', color: '#ffffff', padding: '16px 24px', borderRadius: '10px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1rem', fontWeight: 'bold' }}>
+        <div style={{
+          position: 'fixed', bottom: '30px', right: '30px', zIndex: 999999,
+          backgroundColor: notification.type === 'success' ? '#10b981' : '#ef4444',
+          color: '#ffffff', padding: '16px 24px', borderRadius: '10px',
+          boxShadow: '0 10px 25px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', gap: '12px',
+          fontSize: '1rem', fontWeight: 'bold'
+        }}>
           {notification.type === 'success' ? <CheckCircle size={24} weight="fill" /> : <WarningCircle size={24} weight="fill" />}
           {notification.message}
         </div>
