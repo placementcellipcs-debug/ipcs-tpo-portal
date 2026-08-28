@@ -13,7 +13,8 @@ const DetailBox = ({ label, value }) => (
 );
 
 export default function Vacancies() {
-  const tpoData = JSON.parse(localStorage.getItem('tpoData'));
+  const tpoDataStr = localStorage.getItem('tpoData');
+  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   
   const [vacancies, setVacancies] = useState([]);
   const [applications, setApplications] = useState([]); 
@@ -27,16 +28,20 @@ export default function Vacancies() {
   const [isApplicantsModalOpen, setIsApplicantsModalOpen] = useState(false);
 
   useEffect(() => {
-    if (!tpoData) return;
+    // 🚨 FIX: Fetch inside hook, dependency array empty
     const fetchAllData = async () => {
+      const localTpoStr = localStorage.getItem('tpoData');
+      if (!localTpoStr) return;
+      const localTpo = JSON.parse(localTpoStr);
+      
       try {
         const [vacRes, appRes] = await Promise.all([
           axios.get(`${API_BASE}/api/tpo/vacancies`),
           axios.post(`${API_BASE}/api/tpo/applications`, { 
-            assignedBranchesArray: tpoData.assignedBranchesArray,
-            tpoName: tpoData.name,
-            role: tpoData.role,
-            assignedCourse: tpoData.assignedCourse
+            assignedBranchesArray: localTpo.assignedBranchesArray,
+            tpoName: localTpo.name,
+            role: localTpo.role,
+            assignedCourse: localTpo.assignedCourse
           })
         ]);
         
@@ -45,8 +50,9 @@ export default function Vacancies() {
 
       } catch (error) { console.error("Failed to fetch data", error); } finally { setLoading(false); }
     };
+    
     fetchAllData();
-  }, [tpoData]);
+  }, []); // 🚨 CRITICAL FIX: Stops the loop!
 
   const appsByJobId = {};
   applications.forEach(app => {

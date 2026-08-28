@@ -8,40 +8,38 @@ const FOLDER_MOU_CERTIFICATES = '1Hu1zPs56nFXyJPSl7PVfs-oFW4QrKqiD';
 exports.login = async (req, res) => {
   const { email, password } = req.body;
   try {
-    await doc.loadInfo();
+    const cache = getCache();
+    
+    // 🚨 FAST LOGIN: Uses RAM Cache instead of hitting Google API during login
+    if (!cache || !cache.contacts || !cache.users) {
+       return res.status(503).json({ success: false, message: "System is booting up. Please try again in 5 seconds." });
+    }
+
     const cleanInput = (email || '').toString().trim().toLowerCase();
     const cleanPass = (password || '').toString().trim();
     let foundUser = null; let role = 'TPO'; let course = 'All'; let nameField = 'username';
 
-    const contactSheet = doc.sheetsByTitle["Contact"];
-    if (contactSheet) {
-      const rows = await contactSheet.getRows();
-      for (let row of rows) {
-        const rowObj = row.toObject(); const cleanKeys = {};
-        for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
-        const sheetMail = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
-        const sheetLoginId = (cleanKeys['loginid'] || cleanKeys['username'] || '').toString().trim().toLowerCase();
-        const sheetPass = (cleanKeys['password'] || '').toString().trim();
-        if ((sheetMail === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
-          foundUser = cleanKeys; role = (cleanKeys['role'] || 'TPO').toString().toUpperCase().trim(); course = (cleanKeys['course'] || 'All').toString().trim(); nameField = 'tponame'; break;
-        }
+    for (let row of cache.contacts) {
+      const rowObj = row.toObject(); const cleanKeys = {};
+      for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
+      const sheetMail = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
+      const sheetLoginId = (cleanKeys['loginid'] || cleanKeys['username'] || '').toString().trim().toLowerCase();
+      const sheetPass = (cleanKeys['password'] || '').toString().trim();
+      if ((sheetMail === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
+        foundUser = cleanKeys; role = (cleanKeys['role'] || 'TPO').toString().toUpperCase().trim(); course = (cleanKeys['course'] || 'All').toString().trim(); nameField = 'tponame'; break;
       }
     }
 
     if (!foundUser) {
-      const userSheet = doc.sheetsByTitle["User"];
-      if (userSheet) {
-        const rows = await userSheet.getRows();
-        for (let row of rows) {
-          const rowObj = row.toObject(); const cleanKeys = {};
-          for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
-          const sheetUsername = (cleanKeys['username'] || cleanKeys['name'] || '').toString().trim().toLowerCase();
-          const sheetMail = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
-          const sheetLoginId = (cleanKeys['loginid'] || '').toString().trim().toLowerCase();
-          const sheetPass = (cleanKeys['password'] || '').toString().trim();
-          if ((sheetUsername === cleanInput || sheetMail === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
-            foundUser = cleanKeys; role = (cleanKeys['role'] || 'RTH').toString().toUpperCase().trim(); course = (cleanKeys['course'] || 'All').toString().trim(); nameField = 'username'; break;
-          }
+      for (let row of cache.users) {
+        const rowObj = row.toObject(); const cleanKeys = {};
+        for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
+        const sheetUsername = (cleanKeys['username'] || cleanKeys['name'] || '').toString().trim().toLowerCase();
+        const sheetMail = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
+        const sheetLoginId = (cleanKeys['loginid'] || '').toString().trim().toLowerCase();
+        const sheetPass = (cleanKeys['password'] || '').toString().trim();
+        if ((sheetUsername === cleanInput || sheetMail === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
+          foundUser = cleanKeys; role = (cleanKeys['role'] || 'RTH').toString().toUpperCase().trim(); course = (cleanKeys['course'] || 'All').toString().trim(); nameField = 'username'; break;
         }
       }
     }

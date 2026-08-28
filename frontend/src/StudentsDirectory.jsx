@@ -9,7 +9,6 @@ import Layout from './Layout';
 
 const TILE_COLORS = ['#10b981', '#ef4444', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#0ea5e9', '#f43f5e'];
 
-// 🚨 STANDARDIZED COURSE HELPER (Matches Backend)
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
   const lower = c.toLowerCase().trim();
@@ -22,43 +21,46 @@ const getStandardCourse = (c) => {
 };
 
 export default function StudentsDirectory() {
-  const tpoData = JSON.parse(localStorage.getItem('tpoData'));
+  // 🚨 FIX: Safe parsing, no syntax errors
+  const tpoDataStr = localStorage.getItem('tpoData');
+  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  
   const [rawStudents, setRawStudents] = useState([]);
   const [globalStats, setGlobalStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0 });
   const [loading, setLoading] = useState(true);
   
-  // View & Filters & Sorting
   const [selectedBranch, setSelectedBranch] = useState(null); 
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
   const [sortOrder, setSortOrder] = useState('newest'); 
   const [viewType, setViewType] = useState('list'); 
 
-  // Modal State
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [savingStatus, setSavingStatus] = useState(false);
   
-  // Access Control States
   const [localVacState, setLocalVacState] = useState('');
   const [localPlacementState, setLocalPlacementState] = useState('');
-  const [localStudyAccess, setLocalStudyAccess] = useState(''); // 🚨 NEW
-  const [localExamAccess, setLocalExamAccess] = useState(''); // 🚨 NEW
+  const [localStudyAccess, setLocalStudyAccess] = useState('');
+  const [localExamAccess, setLocalExamAccess] = useState('');
 
-  // 🚨 ROLE, COURSE, AND ACCESS PERMISSIONS IDENTIFICATION
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD') || upperRole.includes('TTH') || upperRole.includes('TERRITORY TECHNICAL HEAD') || upperRole.includes('TRAINER');
   const displayCourse = tpoData?.assignedCourse || '';
   const isViewOnly = tpoData?.accessType === 'view'; 
 
   useEffect(() => {
-    if (!tpoData) return;
+    // 🚨 FIX: Fetch inside hook, dependency array empty
     const fetchData = async () => {
+      const localTpoStr = localStorage.getItem('tpoData');
+      if (!localTpoStr) return;
+      const localTpo = JSON.parse(localTpoStr);
+
       try {
         const payload = { 
-          assignedBranchesArray: tpoData.assignedBranchesArray,
-          role: tpoData.role,
-          assignedCourse: tpoData.assignedCourse
+          assignedBranchesArray: localTpo.assignedBranchesArray,
+          role: localTpo.role,
+          assignedCourse: localTpo.assignedCourse
         };
 
         const [stuRes, statRes] = await Promise.all([
@@ -73,7 +75,7 @@ export default function StudentsDirectory() {
       } catch (error) { console.error("Failed", error); } finally { setLoading(false); }
     };
     fetchData();
-  }, [tpoData]);
+  }, []); // 🚨 CRITICAL FIX: Stops the loop!
 
   const students = rawStudents.filter(s => {
     if (isCourseSpecific) {
@@ -112,8 +114,8 @@ export default function StudentsDirectory() {
     setSelectedStudent(student);
     setLocalVacState(student.vacOpen || 'Yes');
     setLocalPlacementState(student.placementStatus || 'Pending');
-    setLocalStudyAccess(student.studyAccess || 'No'); // 🚨 BIND NEW STATE
-    setLocalExamAccess(student.examAccess || 'No'); // 🚨 BIND NEW STATE
+    setLocalStudyAccess(student.studyAccess || 'No');
+    setLocalExamAccess(student.examAccess || 'No');
     setIsModalOpen(true);
   };
 
@@ -124,8 +126,8 @@ export default function StudentsDirectory() {
         rowNumber: selectedStudent.rowIdx,
         vacOpen: localVacState,
         placementStatus: localPlacementState,
-        studyAccess: localStudyAccess, // 🚨 INCLUDED IN PAYLOAD
-        examAccess: localExamAccess    // 🚨 INCLUDED IN PAYLOAD
+        studyAccess: localStudyAccess,
+        examAccess: localExamAccess
       });
       
       if (response.data.success) {
@@ -142,9 +144,6 @@ export default function StudentsDirectory() {
     } catch (error) { alert("Failed to update student data"); } finally { setSavingStatus(false); }
   };
 
-  // ==========================================
-  // DATA PREP FOR TILES & DIRECTORY
-  // ==========================================
   const branchData = {};
   students.forEach(s => {
     const b = s.branch || 'Unknown';
@@ -180,9 +179,6 @@ export default function StudentsDirectory() {
     return url && url !== 'N/A' ? url : null;
   };
 
-  // ==========================================
-  // RENDER: VIEW 1 - BRANCH TILES LANDING
-  // ==========================================
   if (!selectedBranch) {
     return (
       <Layout>
@@ -216,8 +212,6 @@ export default function StudentsDirectory() {
                         key={branch} 
                         onClick={() => setSelectedBranch(branch)}
                         style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
-                        onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
                       >
                         <h2 style={{ color: '#ffffff', fontSize: '2.2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>{branch}</h2>
                         <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -236,9 +230,6 @@ export default function StudentsDirectory() {
     );
   }
 
-  // ==========================================
-  // RENDER: VIEW 2 - BRANCH DIRECTORY
-  // ==========================================
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
@@ -312,9 +303,6 @@ export default function StudentsDirectory() {
         )}
       </div>
 
-      {/* ========================================== */}
-      {/* STUDENT PROFILE & ACCESS MODAL */}
-      {/* ========================================== */}
       {isModalOpen && selectedStudent && (
         <div 
           style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', overflow: 'hidden' }} 
@@ -378,10 +366,8 @@ export default function StudentsDirectory() {
               })}
             </div>
 
-            {/* 🚨 DYNAMIC ROLE-BASED CONTROL GRID */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '1.5rem' }}>
               
-              {/* TPO & SUPER ADMIN: PLACEMENT CONTROLS */}
               {(tpoData?.accessType === 'superadmin' || !isCourseSpecific) && (
                 <>
                   <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
@@ -399,7 +385,6 @@ export default function StudentsDirectory() {
                 </>
               )}
 
-              {/* RTH & SUPER ADMIN: LMS CONTROLS */}
               {(tpoData?.accessType === 'superadmin' || isCourseSpecific) && (
                 <>
                   <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>

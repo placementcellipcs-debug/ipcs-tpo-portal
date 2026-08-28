@@ -6,33 +6,38 @@ import Layout from './Layout';
 const TILE_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 
 export default function StudentApps() {
-  const tpoData = JSON.parse(localStorage.getItem('tpoData'));
+  const tpoDataStr = localStorage.getItem('tpoData');
+  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
-  
   const [selectedBranch, setSelectedBranch] = useState(null);
 
-  // 🚨 FIX 1: Default to empty so it shows ALL applications immediately
   const [monthFilter, setMonthFilter] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
 
   useEffect(() => {
-    if (!tpoData) return;
+    // 🚨 FIX: Data fetch isolated inside the hook
     const fetchApps = async () => {
+      const localTpoStr = localStorage.getItem('tpoData');
+      if (!localTpoStr) return;
+      const localTpo = JSON.parse(localTpoStr);
+      
       try {
         const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications', { 
-          assignedBranchesArray: tpoData.assignedBranchesArray,
-          tpoName: tpoData.name,
-          role: tpoData.role,
-          assignedCourse: tpoData.assignedCourse
+          assignedBranchesArray: localTpo.assignedBranchesArray,
+          tpoName: localTpo.name,
+          role: localTpo.role,
+          assignedCourse: localTpo.assignedCourse
         });
         if (response.data.success) {
           setApplications(response.data.applications);
         }
       } catch (error) { console.error("Failed", error); } finally { setLoading(false); }
     };
+    
     fetchApps();
-  }, [tpoData]);
+  }, []); // 🚨 CRITICAL FIX: Empty dependency array
 
   const branchData = {};
   applications.forEach(a => {
@@ -43,7 +48,6 @@ export default function StudentApps() {
 
   const activeApps = selectedBranch ? applications.filter(a => a.branch === selectedBranch) : [];
 
-  // 🚨 FIX 2: Smart Date Parser to handle DD/MM/YYYY from Google Sheets
   const parseDate = (dStr) => {
     if (!dStr) return null;
     if (dStr.includes('/')) {
@@ -82,8 +86,6 @@ export default function StudentApps() {
                     key={branch} 
                     onClick={() => setSelectedBranch(branch)}
                     style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
                   >
                     <h2 style={{ color: '#ffffff', fontSize: '2.2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
                       {branch}

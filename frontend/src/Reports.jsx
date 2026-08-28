@@ -7,12 +7,14 @@ const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
 const COURSES = ['Automation', 'BMS', 'IT', 'DM', 'Embedded'];
 
 export default function Reports() {
-  const tpoData = JSON.parse(localStorage.getItem('tpoData'));
+  // 🚨 FIX: Safe parsing
+  const tpoDataStr = localStorage.getItem('tpoData');
+  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(1);
 
-  // Global Filter
-  const currentMonthStr = new Date().toISOString().slice(0, 7); // YYYY-MM
+  const currentMonthStr = new Date().toISOString().slice(0, 7); 
   const [monthFilter, setMonthFilter] = useState(currentMonthStr);
 
   const [students, setStudents] = useState([]);
@@ -21,7 +23,7 @@ export default function Reports() {
   const [events, setEvents] = useState([]);
 
   useEffect(() => {
-    if (!tpoData) return;
+    // 🚨 FIX: Data fetch isolated inside the hook, dependency array empty
     const fetchAllData = async () => {
       try {
         const res = await axios.post(`${API_BASE}/api/tpo/reports`, { assignedBranchesArray: ['all'] });
@@ -38,11 +40,8 @@ export default function Reports() {
       }
     };
     fetchAllData();
-  }, [tpoData]);
+  }, []); // 🚨 CRITICAL FIX: Stops the loop!
 
-  // ==========================================
-  // HELPERS
-  // ==========================================
   const getCourse = (c) => {
     if(!c) return 'Others';
     const lower = c.toLowerCase();
@@ -84,9 +83,6 @@ export default function Reports() {
     return Math.abs(hash).toString().substring(0, 4);
   };
 
-  // ==========================================
-  // TAB 1: MY TARGET REPORT
-  // ==========================================
   const displayMonthName = new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
   const tpoNameLower = (tpoData?.name || '').toLowerCase();
   
@@ -106,10 +102,6 @@ export default function Reports() {
   const targetGoal = 20;
   const progressPercent = Math.min((myTotalPlacements / targetGoal) * 100, 100);
 
-  // ==========================================
-  // TAB 2: BRANCH MATRICES
-  // ==========================================
-  // Enrollment: ONLY ASSIGNED BRANCHES
   const assignedBranches = [...new Set(students.filter(s => isAssignedBranch(s.branch)).map(s => s.branch))].filter(Boolean).sort();
   const branchEnrolls = {};
   assignedBranches.forEach(b => branchEnrolls[b] = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0, Total: 0 });
@@ -122,7 +114,6 @@ export default function Reports() {
     }
   });
 
-  // Placements: ALL BRANCHES (Filtered by Month & based on applications)
   const allBranches = [...new Set(students.map(s => s.branch))].filter(b => b && b !== 'Unknown').sort();
   const branchPlaces = {};
   allBranches.forEach(b => branchPlaces[b] = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0, Total: 0 });
@@ -139,7 +130,6 @@ export default function Reports() {
     }
   });
 
-  // TPO vs Branch: ALL BRANCHES
   const activeTPOs = [...new Set(applications.map(a => a.tpoName))].filter(t => t && t !== 'Unknown').sort();
   const branchTPO = {};
   allBranches.forEach(b => {
@@ -159,10 +149,6 @@ export default function Reports() {
     }
   });
 
-  // ==========================================
-  // TAB 3: PLACEMENT TRACKER
-  // ==========================================
-  // Table 1: Global Pipeline (From Applications)
   const pipeline = {};
   COURSES.concat(['Others']).forEach(c => pipeline[c] = { placed: 0, joined: 0, notJoined: 0 });
 
@@ -177,7 +163,6 @@ export default function Reports() {
     else if (stat.includes('reject') || stat.includes('not attend')) pipeline[c].notJoined++;
   });
 
-  // Table 2: Placement Pending (From Data Sheet - Assigned Branches only)
   const pendingByCourse = {};
   assignedBranches.forEach(b => {
     pendingByCourse[b] = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0, Total: 0 };
@@ -194,7 +179,6 @@ export default function Reports() {
     }
   });
 
-  // Table 3: NewsLetter Vacancies Created by Course
   const newsLetterStats = {};
   COURSES.concat(['Others']).forEach(c => newsLetterStats[c] = 0);
   
@@ -204,37 +188,28 @@ export default function Reports() {
     if (newsLetterStats[c] !== undefined) newsLetterStats[c]++;
   });
 
-  // ==========================================
-  // 🚨 TAB 4: TPO ACTIVITY LOGS (FLASHING FIXED)
-  // ==========================================
   const tpoActivity = activeTPOs.map(t => {
-    // 1. Applications handled by this TPO
     const apps = applications.filter(a => a.tpoName === t && checkMonth(a.date));
     const joined = apps.filter(a => (a.status || '').toLowerCase().includes('join')).length;
     const notJoined = apps.filter(a => (a.status || '').toLowerCase().includes('reject') || (a.status || '').toLowerCase().includes('not attend')).length;
     
-    // 2. Real data calculation for Companies Visited
     const uniqueCompanies = new Set(apps.map(a => a.company).filter(Boolean));
 
-    // 3. Real data calculation for Drives Conducted (From Events Sheet)
     const tpoEvents = events.filter(e => e.tpo === t && checkMonth(e.date));
     const drivesConducted = tpoEvents.filter(e => (e.type || '').toLowerCase().includes('drive')).length;
 
     return {
       tpo: t,
-      companiesVisited: uniqueCompanies.size, // REAL DATA
-      drivesConducted: drivesConducted,       // REAL DATA
-      postersMade: 0,                         // 🚨 Set to 0 to stop flashing!
-      videosMade: 0,                          // 🚨 Set to 0 to stop flashing!
+      companiesVisited: uniqueCompanies.size,
+      drivesConducted: drivesConducted,
+      postersMade: 0,
+      videosMade: 0, 
       joining: joined,
       notJoining: notJoined,
       totalApps: apps.length
     };
   });
 
-  // ==========================================
-  // STYLES
-  // ==========================================
   const reportStyles = `
     .rt-tabs { display: flex; gap: 12px; margin-bottom: 25px; overflow-x: auto; padding-bottom: 10px; }
     .rt-tab { background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text-muted); padding: 12px 24px; border-radius: 30px; cursor: pointer; white-space: nowrap; font-weight: bold; transition: all 0.2s; display: flex; align-items: center; gap: 8px; }
@@ -292,9 +267,7 @@ export default function Reports() {
           <button className={`rt-tab ${activeTab === 4 ? 'active' : ''}`} onClick={() => setActiveTab(4)}><ShieldCheck size={20} weight={activeTab === 4 ? "fill" : "regular"} /> TPO Activities</button>
         </div>
 
-        {/* ========================================== */}
-        {/* TAB 1: MY TARGET REPORT                    */}
-        {/* ========================================== */}
+        {/* TAB 1 */}
         {activeTab === 1 && (
           <div className="hero-card fade-in">
             <div className="hc-header">
@@ -336,9 +309,7 @@ export default function Reports() {
           </div>
         )}
 
-        {/* ========================================== */}
-        {/* TAB 2: BRANCH MATRICES                     */}
-        {/* ========================================== */}
+        {/* TAB 2 */}
         {activeTab === 2 && (
           <div className="fade-in">
             <div className="data-table-wrap">
@@ -413,9 +384,7 @@ export default function Reports() {
           </div>
         )}
 
-        {/* ========================================== */}
-        {/* TAB 3: PLACEMENT TRACKER                   */}
-        {/* ========================================== */}
+        {/* TAB 3 */}
         {activeTab === 3 && (
           <div className="fade-in">
             <div className="data-table-wrap">
@@ -495,9 +464,7 @@ export default function Reports() {
           </div>
         )}
 
-        {/* ========================================== */}
-        {/* TAB 4: TPO ACTIVITY LOGS                   */}
-        {/* ========================================== */}
+        {/* TAB 4 */}
         {activeTab === 4 && (
           <div className="fade-in">
             <div className="data-table-wrap">

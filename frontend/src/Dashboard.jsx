@@ -10,7 +10,16 @@ import Layout from './Layout';
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const tpoData = JSON.parse(localStorage.getItem('tpoData'));
+  
+  // 🚨 FIX 1: Safely parse localStorage using parentheses () not brackets []
+  let tpoData = null;
+  try {
+    const rawData = localStorage.getItem('tpoData');
+    if (rawData) tpoData = JSON.parse(rawData);
+  } catch(e) {
+    console.error("Error reading tpoData");
+  }
+  
   const isTpo = (tpoData?.role || '').toUpperCase() === 'TPO';
   
   const [stats, setStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0 });
@@ -81,6 +90,11 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
+    // 🚨 FIX 2: We safely get localTpo INSIDE the effect to prevent infinite loops
+    const localTpoStr = localStorage.getItem('tpoData');
+    if (!localTpoStr) return;
+    const localTpo = JSON.parse(localTpoStr);
+
     const fetchData = async () => {
       const cachedStats = localStorage.getItem('dash_stats');
       const cachedApps = localStorage.getItem('dash_apps');
@@ -88,7 +102,13 @@ export default function Dashboard() {
       if (cachedApps) { processApps(JSON.parse(cachedApps)); setLoading(false); }
 
       try {
-        const reqPayload = { assignedBranchesArray: tpoData.assignedBranchesArray, role: tpoData.role, assignedCourse: tpoData.assignedCourse, tpoName: tpoData.name };
+        const reqPayload = { 
+          assignedBranchesArray: localTpo.assignedBranchesArray, 
+          role: localTpo.role, 
+          assignedCourse: localTpo.assignedCourse, 
+          tpoName: localTpo.name 
+        };
+        
         const [statsRes, appsRes] = await Promise.all([
           axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/dashboard-stats', reqPayload),
           axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications', reqPayload)
@@ -107,8 +127,9 @@ export default function Dashboard() {
         }
       } catch (err) { console.error(err); } finally { setLoading(false); }
     };
-    if (tpoData) fetchData();
-  }, [tpoData]);
+    
+    fetchData();
+  }, []); // 🚨 CRITICAL FIX: The empty array [] guarantees this runs ONLY ONCE, stopping the lag/freezing instantly.
 
   const today = new Date();
   today.setHours(0,0,0,0);
@@ -122,7 +143,6 @@ export default function Dashboard() {
 
   const placementRate = stats.totalStudents > 0 ? ((stats.placed / stats.totalStudents) * 100).toFixed(1) : '0.0';
 
-  // 🚨 FIXED: Hardcoded static path string. Literally impossible for it to recalculate or crash.
   const makeSparkline = (color) => {
     const staticPath = "M 0,15 L 12,12 L 24,18 L 36,10 L 48,16 L 60,8 L 72,14 L 84,6 L 96,12 L 108,4";
     return (
@@ -166,7 +186,7 @@ export default function Dashboard() {
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
           <div>
-            <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', color: '#fff' }}>Good Morning, {tpoData.name.split(' ')[0]} 👋</h1>
+            <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', color: '#fff' }}>Good Morning, {tpoData?.name?.split(' ')[0] || 'Officer'} 👋</h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Here's what's happening across your branches today.</p>
           </div>
           <div style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', padding: '10px 20px', borderRadius: '30px', color: 'var(--text-muted)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -405,7 +425,7 @@ export default function Dashboard() {
             <div className="link">View Students <ArrowRight size={14} weight="bold"/></div>
           </div>
 
-          {(tpoData.accessType === 'superadmin') && (
+          {(tpoData?.accessType === 'superadmin') && (
             <div onClick={() => navigate('/courses')} className="module-card green">
               <h4 style={{ color: '#10b981' }}>Course Management</h4>
               <p>Create and manage courses & syllabus</p>
@@ -413,7 +433,7 @@ export default function Dashboard() {
             </div>
           )}
 
-          {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
+          {(tpoData?.accessType === 'superadmin' || (tpoData?.role || '').toUpperCase().includes('RTH')) && (
             <div onClick={() => navigate('/exams')} className="module-card purple">
               <h4 style={{ color: '#a855f7' }}>Assessment Center</h4>
               <p>Create tests and evaluate students</p>

@@ -5,27 +5,31 @@ import Layout from './Layout';
 
 const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
 
-// Vibrant color palette for the Branch Tiles
 const TILE_COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 
 export default function Talentino() {
-  const tpoData = JSON.parse(localStorage.getItem('tpoData'));
+  // 🚨 FIX: Safe parsing
+  const tpoDataStr = localStorage.getItem('tpoData');
+  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  
   const [data, setData] = useState({ dates: [], records: [] });
   const [loading, setLoading] = useState(true);
   
-  // View State Management (Dual-View)
   const [selectedBranch, setSelectedBranch] = useState(null);
 
-  // Filters
   const [dateFilter, setDateFilter] = useState('All Dates');
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    if (!tpoData) return;
+    // 🚨 FIX: Data fetch isolated inside the hook, dependency array empty
     const fetchTalentino = async () => {
+      const localTpoStr = localStorage.getItem('tpoData');
+      if (!localTpoStr) return;
+      const localTpo = JSON.parse(localTpoStr);
+      
       try {
         const response = await axios.post(`${API_BASE}/api/tpo/talentino`, {
-          assignedBranchesArray: tpoData.assignedBranchesArray
+          assignedBranchesArray: localTpo.assignedBranchesArray
         });
         if (response.data.success) {
           setData({ dates: response.data.dates, records: response.data.records });
@@ -37,11 +41,8 @@ export default function Talentino() {
       }
     };
     fetchTalentino();
-  }, [tpoData]);
+  }, []); // 🚨 CRITICAL FIX: Stops the loop!
 
-  // ==========================================
-  // DATA PROCESSING FOR BRANCH TILES
-  // ==========================================
   const branchData = {};
   data.records.forEach(r => {
     const b = r.branch || 'Unknown Branch';
@@ -51,12 +52,8 @@ export default function Talentino() {
   
   const branchList = Object.keys(branchData).sort();
 
-  // ==========================================
-  // DATA PROCESSING FOR SELECTED BRANCH (VIEW 2)
-  // ==========================================
   const activeRecords = selectedBranch ? data.records.filter(r => r.branch === selectedBranch) : [];
   
-  // 🚨 FIX: Use the dates provided directly by the backend (from Talentino_Schedule)
   const uniqueDates = ['All Dates', ...data.dates];
 
   const filteredRecords = activeRecords.filter(r => {
@@ -66,9 +63,6 @@ export default function Talentino() {
     return matchDate && matchSearch;
   });
 
-  // ==========================================
-  // RENDER: VIEW 1 - AVODHA STYLE BRANCH TILES
-  // ==========================================
   if (!selectedBranch) {
     return (
       <Layout>
@@ -89,8 +83,6 @@ export default function Talentino() {
                     key={branch} 
                     onClick={() => { setSelectedBranch(branch); setDateFilter('All Dates'); setSearchQuery(''); }}
                     style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
                   >
                     <h2 style={{ color: '#ffffff', fontSize: '2.2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
                       {branch}
@@ -109,14 +101,10 @@ export default function Talentino() {
     );
   }
 
-  // ==========================================
-  // RENDER: VIEW 2 - DETAILED RECORD LIST
-  // ==========================================
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        {/* Navigation Header */}
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '25px', gap: '15px' }}>
           <button 
             onClick={() => setSelectedBranch(null)} 
@@ -131,7 +119,6 @@ export default function Talentino() {
           Viewing student performance records for {selectedBranch}.
         </p>
 
-        {/* Filters */}
         <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
           <select className="sleek-input" style={{ width: '200px', background: 'var(--card-bg)', border: '1px solid var(--card-border)' }} value={dateFilter} onChange={(e) => setDateFilter(e.target.value)}>
             {uniqueDates.map((d, i) => <option key={i} value={d}>{d}</option>)}
@@ -149,7 +136,6 @@ export default function Talentino() {
 
         <div style={{ width: '100%', overflowX: 'auto' }}>
           
-          {/* Header Row */}
           <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr 2fr', padding: '10px 20px', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
             <div>STUDENT</div>
             <div>BRANCH</div>
@@ -159,7 +145,6 @@ export default function Talentino() {
           </div>
 
           {filteredRecords.length > 0 ? filteredRecords.map((r, idx) => {
-            // 🚨 FIX: Safely extract only the FIRST sequence of numbers (so "5/5" becomes "5")
             let rawRating = '-';
             if (r.rating) {
               const match = r.rating.toString().match(/[\d.]+/);
@@ -174,8 +159,6 @@ export default function Talentino() {
                   background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', 
                   padding: '16px 20px', marginBottom: '10px', transition: 'background 0.2s'
                 }}
-                onMouseEnter={(e) => e.currentTarget.style.background = '#1e293b'}
-                onMouseLeave={(e) => e.currentTarget.style.background = 'var(--card-bg)'}
               >
                 <div style={{ fontWeight: 'bold', color: '#fff', fontSize: '1rem', textTransform: 'uppercase' }}>
                   {r.name || 'Unknown'}

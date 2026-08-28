@@ -15,57 +15,50 @@ const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth
 const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 
 let globalCache = null;
+let isFetching = false;
 
 async function refreshCache() {
+  if (isFetching) return;
+  isFetching = true;
   try {
     await doc.loadInfo();
     const getSheet = (title) => doc.sheetsByIndex.find(s => s.title.trim().toLowerCase() === title.toLowerCase());
 
     const [
       stuSheet, appSheet, vacSheet, eventSheet, issueSheet, tSchedSheet, tAttSheet, clientSheet, tpoLogSheet, 
-      matSheet, tqSheet, trSheet, aptQSheet, aptRSheet, talQSheet, talRSheet, courseSheet, driveSheet // 🚨 Added driveSheet
+      matSheet, tqSheet, trSheet, aptQSheet, aptRSheet, talQSheet, talRSheet, courseSheet, driveSheet,
+      contactSheet, userSheet // 🚨 NEW: Added Auth Sheets
     ] = [
       getSheet("Data"), getSheet("Opening_Applied"), getSheet("NewsLetter"), getSheet("Event"), getSheet("Issues"), 
       getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients"), getSheet("TPO_Log"), 
       getSheet("Study_Materials"), getSheet("Tech_Questions"), getSheet("Tech_Results"),
-      getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"), getSheet("Courses"), getSheet("Drive_Registration")
+      getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"), getSheet("Courses"), getSheet("Drive_Registration"),
+      getSheet("Contact"), getSheet("User")
     ];
 
     const [
       stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, 
-      matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows, driveRows // 🚨 Added driveRows
+      matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows, driveRows, contactRows, userRows
     ] = await Promise.all([
       stuSheet?.getRows() || [], appSheet?.getRows() || [], vacSheet?.getRows() || [], eventSheet?.getRows() || [], 
       issueSheet?.getRows() || [], tSchedSheet?.getRows() || [], tAttSheet?.getRows() || [], clientSheet?.getRows() || [], 
       tpoLogSheet?.getRows() || [], matSheet?.getRows() || [], tqSheet?.getRows() || [], trSheet?.getRows() || [],
-      aptQSheet?.getRows() || [], aptRSheet?.getRows() || [], talQSheet?.getRows() || [], talRSheet?.getRows() || [], driveSheet?.getRows() || []
+      aptQSheet?.getRows() || [], aptRSheet?.getRows() || [], talQSheet?.getRows() || [], talRSheet?.getRows() || [], driveSheet?.getRows() || [],
+      contactSheet?.getRows() || [], userSheet?.getRows() || []
     ]);
 
-
-    // 🚨 SMART PARSER FOR YOUR VISUAL COURSES SHEET
     let coursesDict = {};
     if (courseSheet) {
       const cRows = await courseSheet.getRows();
       let currentMain = "General";
-      
       const headers = courseSheet.headerValues;
-      if (headers[0] && headers[0].trim() !== '') {
-         currentMain = headers[0].replace(/^\d+\.\s*/, '').trim();
-         coursesDict[currentMain] = [];
-      }
+      if (headers[0] && headers[0].trim() !== '') { currentMain = headers[0].replace(/^\d+\.\s*/, '').trim(); coursesDict[currentMain] = []; }
       if (headers[1] && headers[1].trim() !== '') coursesDict[currentMain].push(headers[1].trim());
 
       cRows.forEach(r => {
-         const valA = r._rawData[0];
-         const valB = r._rawData[1];
-         if (valA && valA.trim() !== '') {
-            currentMain = valA.replace(/^\d+\.\s*/, '').trim();
-            if (!coursesDict[currentMain]) coursesDict[currentMain] = [];
-         }
-         if (valB && valB.trim() !== '') {
-            if (!coursesDict[currentMain]) coursesDict[currentMain] = [];
-            coursesDict[currentMain].push(valB.trim());
-         }
+         const valA = r._rawData[0]; const valB = r._rawData[1];
+         if (valA && valA.trim() !== '') { currentMain = valA.replace(/^\d+\.\s*/, '').trim(); if (!coursesDict[currentMain]) coursesDict[currentMain] = []; }
+         if (valB && valB.trim() !== '') { if (!coursesDict[currentMain]) coursesDict[currentMain] = []; coursesDict[currentMain].push(valB.trim()); }
       });
     }
 
@@ -73,9 +66,21 @@ async function refreshCache() {
       students: stuRows, applications: appRows, vacancies: vacRows, events: eventRows, issues: issueRows, 
       tSched: tSchedRows, tAtt: tAttRows, clients: clientRows, tpoLogs: tpoLogRows, materials: matRows, 
       techQuestions: tqRows, techResults: trRows, aptQuestions: aptQRows, aptResults: aptRRows, 
-      talQuestions: talQRows, talResults: talRRows, coursesDict: coursesDict
+      talQuestions: talQRows, talResults: talRRows, coursesDict: coursesDict, drives: driveRows,
+      contacts: contactRows, users: userRows // 🚨 Cached for instant login
     };
-  } catch (err) { console.error("❌ Cache sync failed:", err.message); }
+    
+    console.log("✅ Cache successfully synced with Google Sheets!");
+    isFetching = false;
+  } catch (err) { 
+    console.error("❌ Cache sync failed:", err.message); 
+    isFetching = false;
+    // 🚨 AGGRESSIVE RETRY: If Render drops the network, retry in 3 seconds.
+    if (!globalCache) {
+      console.log("⚠️ Retrying cache sync in 3 seconds...");
+      setTimeout(refreshCache, 3000);
+    }
+  }
 }
 
 refreshCache();
@@ -119,10 +124,7 @@ const getFuzzyHeader = (headers, target) => {
   return headers.find(h => h.toLowerCase().replace(/\s/g, '') === cleanTarget) || target;
 };
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com', port: 465, secure: true, family: 4, 
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
-});
+const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, family: 4, auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }});
 
 async function sendIPCSMail(mailOptions) {
   if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
