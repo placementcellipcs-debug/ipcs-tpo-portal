@@ -141,16 +141,36 @@ export default function Layout({ children }) {
         className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} 
         onClick={(e) => { if(e.target.classList.contains('drawer-overlay')) setIsDrawerOpen(false); }}
       >
-        <div className="drawer-card">
-          <div className="drawer-header">
-            <div className="drawer-close-btn" onClick={() => setIsDrawerOpen(false)}><X size={16} /></div>
-            <div className="drawer-profile-row">
-              <div className="drawer-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)' }}>
+        {/* 🚨 UPDATED: ENTIRE SLIDER BACKGROUND IMAGE */}
+        <div 
+          className="drawer-card"
+          style={{ 
+            backgroundImage: `linear-gradient(rgba(11, 17, 32, 0.8), rgba(11, 17, 32, 0.95)), url('https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB')`, 
+            backgroundSize: 'cover', 
+            backgroundPosition: 'center',
+            borderLeft: '1px solid rgba(255,255,255,0.1)'
+          }}
+        >
+          
+          <div className="drawer-header" style={{ 
+            padding: '30px 20px', 
+            position: 'relative',
+            borderBottom: '1px solid rgba(255,255,255,0.1)'
+          }}>
+            <div 
+              className="drawer-close-btn" 
+              onClick={() => setIsDrawerOpen(false)}
+              style={{ position: 'absolute', top: '15px', right: '15px', background: 'rgba(255,255,255,0.1)', color: '#fff', borderRadius: '50%', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <X size={16} weight="bold" />
+            </div>
+            <div className="drawer-profile-row" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+              <div className="drawer-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.4)', width: '60px', height: '60px', borderRadius: '50%', overflow: 'hidden', border: '2px solid rgba(255,255,255,0.2)', flexShrink: 0 }}>
                 {renderAvatar()}
               </div>
-              <div>
-                <strong style={{ display: 'block', fontSize: '1.1rem', fontWeight: 700 }}>{tpoData.name}</strong>
-                <span style={{ fontSize: '0.8rem', opacity: 0.9 }}>{tpoData.role || 'Placement Officer'}</span>
+              <div style={{ color: '#fff' }}>
+                <strong style={{ display: 'block', fontSize: '1.25rem', fontWeight: 700, letterSpacing: '0.5px' }}>{tpoData.name}</strong>
+                <span style={{ fontSize: '0.75rem', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '1px', color: '#cbd5e1' }}>{tpoData.role || 'Placement Officer'}</span>
               </div>
             </div>
           </div>
@@ -197,9 +217,9 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => { setIsDrawerOpen(false); navigate('/settings'); }}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Gear size={22} color={isActive('/settings')} /> Settings</div><span>›</span></div>
           </div>
           
-          <div className="drawer-footer">
-            <button className="btn-logout-drawer" onClick={handleLogout}>Log Out</button>
-            <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: '8px' }}>Copyright © 2026 IPCS Global</div>
+          <div className="drawer-footer" style={{ borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+            <button className="btn-logout-drawer" onClick={handleLogout} style={{ background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)' }}>Log Out</button>
+            <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginTop: '8px' }}>Copyright © 2026 IPCS Global</div>
           </div>
         </div>
       </div>
