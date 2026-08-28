@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
   Users, Briefcase, Files, Trophy, CalendarStar, CircleNotch, 
-  Buildings, BookOpen, Clock, NotePencil, Desktop, FolderOpen,
+  TrendUp, Buildings, GraduationCap, Chalkboard, 
+  ShieldCheck, BookOpen, Clock, ChartPieSlice,
+  NotePencil, Desktop, FolderOpen, User,
   CalendarCheck, ListChecks, ArrowRight, ChartBar
 } from '@phosphor-icons/react';
 import Layout from './Layout';
@@ -82,6 +84,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     const fetchData = async () => {
+      // 🚨 INSTANT CACHE LOAD (Eliminates waiting!)
       const cachedStats = localStorage.getItem('dash_stats');
       const cachedApps = localStorage.getItem('dash_apps');
       if (cachedStats) setStats(JSON.parse(cachedStats));
@@ -122,9 +125,8 @@ export default function Dashboard() {
 
   const placementRate = stats.totalStudents > 0 ? ((stats.placed / stats.totalStudents) * 100).toFixed(1) : '0.0';
 
-  // 🚨 FIXED: Safe, static sparkline generation (Stops the wild crashing/fluttering)
   const makeSparkline = (color) => {
-    const pts = [3, 6, 5, 9, 8, 12, 10, 15, 14, 18]; // Fixed upward trend points
+    const pts = Array.from({length: 10}, () => Math.floor(Math.random() * 20));
     const path = `M 0,${pts[0]} ` + pts.map((p, i) => `L ${i * 12},${p}`).join(' ');
     return (
       <svg width="100%" height="30" viewBox="0 0 108 25" preserveAspectRatio="none" style={{ marginTop: '10px' }}>

@@ -15,37 +15,34 @@ const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth
 const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 
 let globalCache = null;
-let isFetching = false; // 🚨 Prevents overlapping requests
 
 async function refreshCache() {
-  if (isFetching) return;
-  isFetching = true;
   try {
     await doc.loadInfo();
     const getSheet = (title) => doc.sheetsByIndex.find(s => s.title.trim().toLowerCase() === title.toLowerCase());
 
     const [
       stuSheet, appSheet, vacSheet, eventSheet, issueSheet, tSchedSheet, tAttSheet, clientSheet, tpoLogSheet, 
-      matSheet, tqSheet, trSheet, aptQSheet, aptRSheet, talQSheet, talRSheet, courseSheet, driveSheet
+      matSheet, tqSheet, trSheet, aptQSheet, aptRSheet, talQSheet, talRSheet, courseSheet, driveSheet // 🚨 Added driveSheet
     ] = [
       getSheet("Data"), getSheet("Opening_Applied"), getSheet("NewsLetter"), getSheet("Event"), getSheet("Issues"), 
       getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients"), getSheet("TPO_Log"), 
       getSheet("Study_Materials"), getSheet("Tech_Questions"), getSheet("Tech_Results"),
-      getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"), 
-      getSheet("Courses"), getSheet("Drive_Registration")
+      getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"), getSheet("Courses"), getSheet("Drive_Registration")
     ];
 
     const [
       stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, 
-      matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows, driveRows
+      matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows, driveRows // 🚨 Added driveRows
     ] = await Promise.all([
       stuSheet?.getRows() || [], appSheet?.getRows() || [], vacSheet?.getRows() || [], eventSheet?.getRows() || [], 
       issueSheet?.getRows() || [], tSchedSheet?.getRows() || [], tAttSheet?.getRows() || [], clientSheet?.getRows() || [], 
       tpoLogSheet?.getRows() || [], matSheet?.getRows() || [], tqSheet?.getRows() || [], trSheet?.getRows() || [],
-      aptQSheet?.getRows() || [], aptRSheet?.getRows() || [], talQSheet?.getRows() || [], talRSheet?.getRows() || [], 
-      driveSheet?.getRows() || []
+      aptQSheet?.getRows() || [], aptRSheet?.getRows() || [], talQSheet?.getRows() || [], talRSheet?.getRows() || [], driveSheet?.getRows() || []
     ]);
 
+
+    // 🚨 SMART PARSER FOR YOUR VISUAL COURSES SHEET
     let coursesDict = {};
     if (courseSheet) {
       const cRows = await courseSheet.getRows();
@@ -76,28 +73,13 @@ async function refreshCache() {
       students: stuRows, applications: appRows, vacancies: vacRows, events: eventRows, issues: issueRows, 
       tSched: tSchedRows, tAtt: tAttRows, clients: clientRows, tpoLogs: tpoLogRows, materials: matRows, 
       techQuestions: tqRows, techResults: trRows, aptQuestions: aptQRows, aptResults: aptRRows, 
-      talQuestions: talQRows, talResults: talRRows, coursesDict: coursesDict, drives: driveRows 
+      talQuestions: talQRows, talResults: talRRows, coursesDict: coursesDict
     };
-    console.log("✅ Cache successfully synced with Google Sheets!");
-  } catch (err) { 
-    console.error("❌ Cache sync failed:", err.message); 
-  } finally {
-    isFetching = false;
-  }
+  } catch (err) { console.error("❌ Cache sync failed:", err.message); }
 }
 
 refreshCache();
-
-// Standard 5-minute background refresh
 setInterval(refreshCache, 300000); 
-
-// 🚨 AGGRESSIVE RETRY: If cache fails on startup, retry every 15 seconds!
-setInterval(() => {
-  if (!globalCache && !isFetching) {
-    console.log("⚠️ Cache is empty! Aggressively retrying connection to Google Sheets...");
-    refreshCache();
-  }
-}, 15000);
 
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
