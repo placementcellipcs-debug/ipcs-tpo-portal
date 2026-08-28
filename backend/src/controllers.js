@@ -1020,3 +1020,53 @@ exports.updateDriveStatus = async (req, res) => {
     }
   } catch(err) { res.status(500).json({ success: false, message: err.message }); }
 };
+
+// --- UPDATE STUDY MATERIAL ---
+exports.updateMaterial = async (req, res) => {
+  try {
+    const { id, course, module, title, fileType, link, status } = req.body;
+    const sheet = doc.sheetsByTitle["Study_Materials"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => (r.get('Material ID') || r.get('materialid') || '').toString().trim() === id.toString().trim());
+    
+    if (rowToUpdate) {
+      const h = sheet.headerValues;
+      rowToUpdate.assign({
+        [getFuzzyHeader(h, 'materialid')]: id, 
+        [getFuzzyHeader(h, 'course')]: course, 
+        [getFuzzyHeader(h, 'module/topic')]: module,
+        [getFuzzyHeader(h, 'title')]: title, 
+        [getFuzzyHeader(h, 'filetype')]: fileType, 
+        [getFuzzyHeader(h, 'onedrivelink')]: link, 
+        [getFuzzyHeader(h, 'status')]: status || 'Active'
+      });
+      await rowToUpdate.save();
+      refreshCache(); 
+      res.json({ success: true, message: "Material updated successfully!" });
+    } else {
+      res.status(404).json({ success: false, message: "Material ID not found." });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+// --- DELETE STUDY MATERIAL ---
+exports.deleteMaterial = async (req, res) => {
+  try {
+    const { id } = req.body;
+    const sheet = doc.sheetsByTitle["Study_Materials"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const rows = await sheet.getRows();
+    const rowToDelete = rows.find(r => (r.get('Material ID') || r.get('materialid') || '').toString().trim() === id.toString().trim());
+    
+    if (rowToDelete) {
+      await rowToDelete.delete();
+      refreshCache();
+      res.json({ success: true, message: "Material deleted successfully!" });
+    } else {
+      res.status(404).json({ success: false, message: "Material ID not found." });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};

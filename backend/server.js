@@ -74,6 +74,8 @@ app.post('/api/talentino-exams/questions/delete', controllers.deleteTalExamQuest
 app.post('/api/tpo/profile/update-password', controllers.updatePassword);
 app.get('/api/tpo/drives', controllers.getDrives);
 app.post('/api/tpo/drives/update', controllers.updateDriveStatus);
+app.post('/api/lms/materials/update', controllers.updateMaterial);
+app.post('/api/lms/materials/delete', controllers.deleteMaterial);
 
 cron.schedule('0 8 * * *', controllers.runDailyCron);
 const PORT = process.env.PORT || 5000;

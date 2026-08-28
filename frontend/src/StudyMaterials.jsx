@@ -3,11 +3,10 @@ import axios from 'axios';
 import { 
   CircleNotch, BookOpenText, Plus, CaretLeft, Link as LinkIcon, 
   FilePdf, FileImage, FileText, FileVideo, CheckCircle, WarningCircle, X,
-  FolderOpen, BookBookmark
+  FolderOpen, BookBookmark, PencilSimple, Trash
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
-// Master Dictionary of IPCS Courses based on your Google Sheets
 const COURSE_DICTIONARY = {
   'BMS AND CCTV': [
     'Diploma In Building Management System', 'Certified BMS Engineer', 'CCTV & Security Systems', 'CCTV Training'
@@ -40,21 +39,28 @@ const MAIN_COURSES = Object.keys(COURSE_DICTIONARY);
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
 
 export default function StudyMaterials() {
-  const tpoData = JSON.parse(localStorage.getItem('tpoData'));
+  const tpoDataStr = localStorage.getItem('tpoData');
+  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  
   const isSuperAdmin = tpoData?.accessType === 'superadmin';
+  const upperRole = (tpoData?.role || '').toUpperCase();
+  const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
+  
+  // 🚨 RESTRICT ACCESS: Only Superadmin and RTH can modify study materials
+  const canManage = isSuperAdmin || isRth;
   const rthAssignedCourse = tpoData?.assignedCourse || '';
 
   const [materials, setMaterials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // Navigation State: 'main_courses' -> 'sub_courses' -> 'materials'
   const [viewLevel, setViewLevel] = useState(isSuperAdmin ? 'main_courses' : 'sub_courses');
   const [selectedMainCourse, setSelectedMainCourse] = useState(isSuperAdmin ? null : rthAssignedCourse);
   const [selectedSubCourse, setSelectedSubCourse] = useState(null);
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
@@ -81,37 +87,68 @@ export default function StudyMaterials() {
   };
 
   const openAddModal = () => {
-    // Generate a random Material ID
     const randomId = `MAT${Math.floor(1000 + Math.random() * 9000)}`;
     setFormData({
       id: randomId, 
-      course: selectedSubCourse || (COURSE_DICTIONARY[selectedMainCourse] ? COURSE_DICTIONARY[selectedMainCourse][0] : ''), 
+      course: selectedSubCourse || '', 
       module: '', 
       title: '', 
       fileType: 'pdf', 
       link: '', 
       status: 'Active'
     });
+    setIsEditMode(false);
     setError('');
     setIsModalOpen(true);
   };
 
-  const handleAddMaterial = async (e) => {
+  const openEditModal = (mat) => {
+    setFormData({
+      id: mat.id,
+      course: mat.course,
+      module: mat.module,
+      title: mat.title,
+      fileType: mat.fileType,
+      link: mat.link,
+      status: mat.status || 'Active'
+    });
+    setIsEditMode(true);
+    setError('');
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
     setError('');
 
     try {
-      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/add', formData);
+      const endpoint = isEditMode 
+        ? 'https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/update' 
+        : 'https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/add';
+
+      const res = await axios.post(endpoint, formData);
       if (res.data.success) {
         setIsModalOpen(false);
         setLoading(true);
         fetchMaterials(); 
       }
     } catch (err) {
-      setError(err.response?.data?.message || 'Failed to add material.');
+      setError(err.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'add'} material.`);
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteMaterial = async (id) => {
+    if (!window.confirm("Are you sure you want to permanently delete this study material?")) return;
+    try {
+      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/delete', { id });
+      if (res.data.success) {
+        setMaterials(materials.filter(m => m.id !== id));
+      }
+    } catch (err) {
+      alert("Failed to delete study material.");
     }
   };
 
@@ -135,9 +172,6 @@ export default function StudyMaterials() {
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        {/* ========================================== */}
-        {/* VIEW 1: SUPER ADMIN MAIN COURSES */}
-        {/* ========================================== */}
         {viewLevel === 'main_courses' && isSuperAdmin && (
           <>
             <div style={{ marginBottom: '30px' }}>
@@ -155,8 +189,6 @@ export default function StudyMaterials() {
                     key={course} 
                     onClick={() => { setSelectedMainCourse(course); setViewLevel('sub_courses'); }}
                     style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
                   >
                     <h2 style={{ color: '#ffffff', fontSize: '1.6rem', margin: '0 0 15px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)', lineHeight: 1.3 }}>{course}</h2>
                     <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -170,9 +202,6 @@ export default function StudyMaterials() {
           </>
         )}
 
-        {/* ========================================== */}
-        {/* VIEW 2: SUB-COURSES GRID */}
-        {/* ========================================== */}
         {viewLevel === 'sub_courses' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '15px', flexWrap: 'wrap' }}>
@@ -193,8 +222,6 @@ export default function StudyMaterials() {
                   key={subCourse}
                   onClick={() => { setSelectedSubCourse(subCourse); setViewLevel('materials'); }}
                   style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.5rem', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', gap: '15px' }}
-                  onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent-primary)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-                  onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--card-border)'; e.currentTarget.style.transform = 'translateY(0)'; }}
                 >
                   <div style={{ width: '45px', height: '45px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                     <BookBookmark size={24} weight="fill" />
@@ -206,9 +233,6 @@ export default function StudyMaterials() {
           </>
         )}
 
-        {/* ========================================== */}
-        {/* VIEW 3: MATERIALS TABLE */}
-        {/* ========================================== */}
         {viewLevel === 'materials' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
@@ -221,9 +245,13 @@ export default function StudyMaterials() {
                   <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>Upload presentations, PDFs, and notes for student access.</p>
                 </div>
               </div>
-              <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
-                <Plus size={20} weight="bold" /> Upload Material
-              </button>
+              
+              {/* 🚨 RESTRICTED TO ADMIN / RTH */}
+              {canManage && (
+                <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
+                  <Plus size={20} weight="bold" /> Upload Material
+                </button>
+              )}
             </div>
 
             <div style={{ marginBottom: '20px', maxWidth: '400px', position: 'relative' }}>
@@ -246,13 +274,14 @@ export default function StudyMaterials() {
                     <th>Format</th>
                     <th>Drive Link</th>
                     <th style={{ textAlign: 'center' }}>Status</th>
+                    {canManage && <th style={{ textAlign: 'center' }}>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="var(--accent-primary)" /></td></tr>
+                    <tr><td colSpan={canManage ? 6 : 5} style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="var(--accent-primary)" /></td></tr>
                   ) : filteredMaterials.length === 0 ? (
-                    <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No study materials uploaded for this course yet.</td></tr>
+                    <tr><td colSpan={canManage ? 6 : 5} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No study materials uploaded for this course yet.</td></tr>
                   ) : (
                     filteredMaterials.map((mat, i) => (
                       <tr key={i}>
@@ -277,6 +306,26 @@ export default function StudyMaterials() {
                             {mat.status}
                           </span>
                         </td>
+                        {canManage && (
+                          <td style={{ textAlign: 'center' }}>
+                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                              <button 
+                                onClick={() => openEditModal(mat)}
+                                style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
+                                title="Edit Material"
+                              >
+                                <PencilSimple size={18} weight="bold" />
+                              </button>
+                              <button 
+                                onClick={() => handleDeleteMaterial(mat.id)}
+                                style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
+                                title="Delete Material"
+                              >
+                                <Trash size={18} weight="bold" />
+                              </button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     ))
                   )}
@@ -289,14 +338,16 @@ export default function StudyMaterials() {
       </div>
 
       {/* ========================================== */}
-      {/* ADD MATERIAL MODAL */}
+      {/* ADD / EDIT MATERIAL MODAL */}
       {/* ========================================== */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><BookOpenText color="var(--accent-primary)" /> Upload Study Material</h2>
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <BookOpenText color="var(--accent-primary)" /> {isEditMode ? 'Edit Study Material' : 'Upload Study Material'}
+              </h2>
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsModalOpen(false)} />
             </div>
 
@@ -306,7 +357,7 @@ export default function StudyMaterials() {
               </div>
             )}
 
-            <form onSubmit={handleAddMaterial}>
+            <form onSubmit={handleSubmit}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '15px', marginBottom: '15px' }}>
                 <div className="form-group">
                   <label>Material ID</label>
@@ -344,14 +395,14 @@ export default function StudyMaterials() {
                 </div>
                 <div className="form-group">
                   <label>SharePoint / OneDrive Link</label>
-                  <input type="url" name="link" placeholder="https://ipcsglobal-my.sharepoint.com/..." value={formData.link} onChange={handleInputChange} required />
+                  <input type="url" name="link" placeholder="https://..." value={formData.link} onChange={handleInputChange} required />
                 </div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '1.5rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn-action" style={{ width: 'auto' }} disabled={isSubmitting}>
-                  {isSubmitting ? <CircleNotch size={20} className="ph-spin" /> : 'Publish Material'}
+                  {isSubmitting ? <CircleNotch size={20} className="ph-spin" /> : (isEditMode ? 'Save Changes' : 'Publish Material')}
                 </button>
               </div>
             </form>
