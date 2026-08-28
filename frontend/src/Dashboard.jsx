@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
@@ -84,7 +84,6 @@ export default function Dashboard() {
 
   useEffect(() => {
     const fetchData = async () => {
-      // 🚨 INSTANT CACHE LOAD (Eliminates waiting!)
       const cachedStats = localStorage.getItem('dash_stats');
       const cachedApps = localStorage.getItem('dash_apps');
       if (cachedStats) setStats(JSON.parse(cachedStats));
@@ -125,15 +124,18 @@ export default function Dashboard() {
 
   const placementRate = stats.totalStudents > 0 ? ((stats.placed / stats.totalStudents) * 100).toFixed(1) : '0.0';
 
+  // 🚨 FIXED: useMemo ensures sparklines are calculated ONLY ONCE, stopping the wild re-rendering.
   const makeSparkline = (color) => {
-    const pts = Array.from({length: 10}, () => Math.floor(Math.random() * 20));
-    const path = `M 0,${pts[0]} ` + pts.map((p, i) => `L ${i * 12},${p}`).join(' ');
-    return (
-      <svg width="100%" height="30" viewBox="0 0 108 25" preserveAspectRatio="none" style={{ marginTop: '10px' }}>
-        <path d={path} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        <path d={`${path} L 108,25 L 0,25 Z`} fill={color} opacity="0.1" />
-      </svg>
-    );
+    return useMemo(() => {
+      const pts = Array.from({length: 10}, () => Math.floor(Math.random() * 20));
+      const path = `M 0,${pts[0]} ` + pts.map((p, i) => `L ${i * 12},${p}`).join(' ');
+      return (
+        <svg width="100%" height="30" viewBox="0 0 108 25" preserveAspectRatio="none" style={{ marginTop: '10px' }}>
+          <path d={path} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d={`${path} L 108,25 L 0,25 Z`} fill={color} opacity="0.1" />
+        </svg>
+      );
+    }, [color]);
   };
 
   const cHeight = 140; const cWidth = 600; const xStep = cWidth / 11;
