@@ -1,7 +1,7 @@
 // backend/server.js
 require('dotenv').config();
 
-// 🚨 FORCES IPV4 FOR RENDER NETWORKS
+// FORCES IPV4 FOR RENDER NETWORKS
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
 
@@ -19,7 +19,15 @@ app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
 // ==========================================
-// MIDDLEWARE
+// 🚨 CRITICAL FIX: UNBLOCKED LOGIN ROUTE
+// We placed Login ABOVE the middleware bouncer.
+// Now you can log in instantly even if the cache is still downloading!
+// ==========================================
+app.post('/api/auth/login', controllers.login);
+
+
+// ==========================================
+// THE BOUNCER MIDDLEWARE
 // ==========================================
 app.use('/api', (req, res, next) => {
   if (!getCache()) return res.status(503).json({ success: false, message: "Server is warming up, please try again in 5 seconds." });
@@ -27,9 +35,8 @@ app.use('/api', (req, res, next) => {
 });
 
 // ==========================================
-// API ROUTES
+// ALL OTHER API ROUTES
 // ==========================================
-app.post('/api/auth/login', controllers.login);
 app.post('/api/tpo/dashboard-stats', controllers.getDashboardStats);
 
 app.post('/api/tpo/students', controllers.getStudents);
@@ -63,31 +70,31 @@ app.post('/api/admin/users/add', controllers.addAdminUser);
 app.post('/api/admin/users/update', controllers.updateAdminUser);
 app.post('/api/admin/users/delete', controllers.deleteAdminUser);
 
-// 🚨 NEW LMS & EXAM ENGINE ROUTES
+// LMS & EXAM ENGINE ROUTES
 app.get('/api/lms/materials', controllers.getMaterials);
 app.post('/api/lms/materials/add', controllers.addMaterial);
 
 app.get('/api/exams/questions', controllers.getQuestions);
 app.post('/api/exams/questions/add', controllers.addQuestion);
-app.post('/api/exams/questions/delete', controllers.deleteQuestion); // 🚨 ADD THIS LINE
+app.post('/api/exams/questions/delete', controllers.deleteQuestion); 
 app.get('/api/exams/results', controllers.getResults);
 
-// 🚨 NEW COURSES API
+// COURSES API
 app.get('/api/admin/courses', controllers.getCourses);
 app.post('/api/admin/courses/add', controllers.addCourse);
-app.post('/api/admin/courses/delete', controllers.deleteCourse); // 🚨 ADD THIS LINE
+app.post('/api/admin/courses/delete', controllers.deleteCourse); 
 
-// 🚨 APTITUDE EXAMS API
+// APTITUDE EXAMS API
 app.get('/api/aptitude/questions', controllers.getAptQuestions);
 app.get('/api/aptitude/results', controllers.getAptResults);
-app.post('/api/aptitude/questions/add', controllers.addAptQuestion); // 🚨 ADDED
-app.post('/api/aptitude/questions/delete', controllers.deleteAptQuestion); // 🚨 ADDED
+app.post('/api/aptitude/questions/add', controllers.addAptQuestion); 
+app.post('/api/aptitude/questions/delete', controllers.deleteAptQuestion); 
 
-// 🚨 TALENTINO EXAMS API
+// TALENTINO EXAMS API
 app.get('/api/talentino-exams/questions', controllers.getTalExamQuestions);
 app.get('/api/talentino-exams/results', controllers.getTalExamResults);
-app.post('/api/talentino-exams/questions/add', controllers.addTalExamQuestion); // 🚨 ADDED
-app.post('/api/talentino-exams/questions/delete', controllers.deleteTalExamQuestion); // 🚨 ADDED
+app.post('/api/talentino-exams/questions/add', controllers.addTalExamQuestion); 
+app.post('/api/talentino-exams/questions/delete', controllers.deleteTalExamQuestion); 
 
 app.post('/api/tpo/profile/update-password', controllers.updatePassword);
 

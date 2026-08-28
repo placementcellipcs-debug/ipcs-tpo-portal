@@ -16,11 +16,10 @@ export default function Login() {
     setError('');
     
     try {
-      // 🚨 Waits up to 60 seconds for Render to wake up safely
       const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/auth/login', { 
         email: loginId, 
         password: password 
-      }, { timeout: 60000 });
+      });
       
       if (res.data.success) {
         localStorage.setItem('tpoData', JSON.stringify(res.data.tpo || res.data.tpoData));
@@ -31,7 +30,8 @@ export default function Login() {
       }
     } catch (err) {
       console.error("Login Error:", err);
-      setError(err.response?.data?.message || 'Waking up secure server... Please try clicking Sign In again.');
+      // Give a highly accurate error message
+      setError(err.response?.data?.message || 'Server connection failed. Please check your internet and try again.');
       setLoading(false);
     }
   };
@@ -39,15 +39,12 @@ export default function Login() {
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#020617', fontFamily: 'Inter, sans-serif' }}>
       
-      {/* HEADER LOGO */}
       <header style={{ position: 'absolute', top: 0, left: 0, width: '100%', padding: '30px 40px' }}>
         <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" style={{ height: '35px' }} />
       </header>
 
-      {/* MAIN CONTENT GRID */}
       <div style={{ width: '100%', maxWidth: '1200px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '60px', padding: '0 40px', alignItems: 'center' }}>
         
-        {/* LEFT SIDE: COPY & BRANDING */}
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
             <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#00d8ff', boxShadow: '0 0 10px #00d8ff' }}></div>
@@ -69,7 +66,6 @@ export default function Login() {
           </p>
         </div>
 
-        {/* RIGHT SIDE: STATIC LOGIN FORM */}
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <div style={{ width: '100%', maxWidth: '420px', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '24px', padding: '40px', boxShadow: '0 25px 50px rgba(0,0,0,0.5)' }}>
             

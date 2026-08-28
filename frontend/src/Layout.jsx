@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useLocation, Link } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Bell, X, SquaresFour, Trophy, ListChecks, 
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
@@ -37,6 +37,13 @@ export default function Layout({ children }) {
   };
   
   const profilePhotoUrl = getDriveImage(tpoData.photo);
+  
+  // Highlighting active tabs logic
+  const isActive = (path) => {
+    if (path === '/dashboard' && location.pathname === '/dashboard') return '#38bdf8';
+    if (path !== '/dashboard' && location.pathname.startsWith(path)) return '#38bdf8';
+    return '#94a3b8';
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('tpoData');
@@ -58,49 +65,10 @@ export default function Layout({ children }) {
     );
   };
 
-  // 🚨 BULLETPROOF MENU ITEM COMPONENT (Uses Native React Router Links)
-  const MenuItem = ({ path, icon: Icon, label }) => {
-    // Ensures accurate active state highlighting
-    const active = location.pathname.startsWith(path) && (path !== '/dashboard' || location.pathname === '/dashboard');
-    
-    return (
-      <Link 
-        to={path} 
-        onClick={() => setIsDrawerOpen(false)}
-        style={{ 
-          textDecoration: 'none', 
-          color: active ? '#fff' : '#cbd5e1', 
-          display: 'flex', 
-          alignItems: 'center', 
-          justifyContent: 'space-between',
-          padding: '12px 15px',
-          borderRadius: '8px',
-          background: active ? 'rgba(56, 189, 248, 0.1)' : 'transparent',
-          borderLeft: active ? '3px solid #38bdf8' : '3px solid transparent',
-          marginBottom: '5px',
-          transition: 'all 0.2s ease',
-          cursor: 'pointer'
-        }}
-        onMouseEnter={(e) => {
-          if(!active) {
-            e.currentTarget.style.background = 'rgba(255,255,255,0.05)';
-            e.currentTarget.style.color = '#fff';
-          }
-        }}
-        onMouseLeave={(e) => {
-          if(!active) {
-            e.currentTarget.style.background = 'transparent';
-            e.currentTarget.style.color = '#cbd5e1';
-          }
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <Icon size={22} color={active ? '#38bdf8' : '#94a3b8'} weight={active ? "fill" : "regular"} /> 
-          <span style={{ fontWeight: active ? 'bold' : 'normal', fontSize: '0.9rem' }}>{label}</span>
-        </div>
-        <span style={{ color: '#64748b', fontSize: '1.2rem', lineHeight: '1' }}>›</span>
-      </Link>
-    );
+  // 🚨 BULLETPROOF CLICK HANDLER
+  const handleNav = (path) => {
+    setIsDrawerOpen(false);
+    navigate(path);
   };
 
   return (
@@ -108,7 +76,6 @@ export default function Layout({ children }) {
       
       <main className="main-content">
         
-        {/* TOP HEADER */}
         <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px' }}>
           <div className="header-left">
             <img 
@@ -157,14 +124,11 @@ export default function Layout({ children }) {
 
         <div className="page-container" style={{ padding: '20px 30px', position: 'relative' }} onClick={() => setIsNotifOpen(false)}>
           
-          {/* GLOBAL BACK BUTTON */}
           {location.pathname !== '/dashboard' && (
             <div style={{ marginBottom: '25px' }}>
               <button 
                 onClick={() => navigate('/dashboard')}
                 style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-muted)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 'bold', transition: '0.2s' }}
-                onMouseEnter={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = '#64748b'; }}
-                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--card-border)'; }}
               >
                 <CaretLeft weight="bold" size={16} /> Back to Dashboard
               </button>
@@ -176,7 +140,6 @@ export default function Layout({ children }) {
 
       </main>
 
-      {/* THE DRAWER SLIDER */}
       <div 
         className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} 
         onClick={(e) => { if(e.target.classList.contains('drawer-overlay')) setIsDrawerOpen(false); }}
@@ -213,41 +176,47 @@ export default function Layout({ children }) {
             </div>
           </div>
           
-          {/* 🚨 NATIVE REACT ROUTER LINKS IMPLEMENTED HERE */}
+          {/* 🚨 REVERTED TO BULLETPROOF DIV ONCLICKS */}
           <div className="drawer-menu" style={{ padding: '15px', flex: 1, overflowY: 'auto' }}>
-            <MenuItem path="/dashboard" icon={SquaresFour} label="Dashboard" />
-            <MenuItem path="/students" icon={Users} label="Students Directory" />
+            
+            <div className="drawer-item" onClick={() => handleNav('/dashboard')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><SquaresFour size={22} color={isActive('/dashboard')} /> <span style={{ color: isActive('/dashboard') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Dashboard</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            <div className="drawer-item" onClick={() => handleNav('/students')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/students')} /> <span style={{ color: isActive('/students') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Students Directory</span></div><span style={{ color: '#64748b' }}>›</span></div>
             
             {(tpoData.role || '').toUpperCase() === 'TPO' && (
               <>
-                <MenuItem path="/tracker" icon={Files} label="Job Tracker" />
-                <MenuItem path="/reports" icon={ChartBar} label="Reports" />
+                <div className="drawer-item" onClick={() => handleNav('/tracker')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Files size={22} color={isActive('/tracker')} /> <span style={{ color: isActive('/tracker') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Job Tracker</span></div><span style={{ color: '#64748b' }}>›</span></div>
+                <div className="drawer-item" onClick={() => handleNav('/reports')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> <span style={{ color: isActive('/reports') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Reports</span></div><span style={{ color: '#64748b' }}>›</span></div>
               </>
             )}
 
-            <MenuItem path="/placed" icon={Trophy} label="Placed Students" />
-            <MenuItem path="/applications" icon={ListChecks} label="Student Apps" />
-            <MenuItem path="/vacancies" icon={Briefcase} label="Vacancies" />
-            <MenuItem path="/placement-drives" icon={IdentificationCard} label="Placement Drives" />
-            <MenuItem path="/clients" icon={Handshake} label="Clients & Partners" />
-            <MenuItem path="/events" icon={CalendarStar} label="Events" />
-            <MenuItem path="/talentino" icon={UserCheck} label="Talentino" />
+            <div className="drawer-item" onClick={() => handleNav('/placed')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Trophy size={22} color={isActive('/placed')} /> <span style={{ color: isActive('/placed') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Placed Students</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            <div className="drawer-item" onClick={() => handleNav('/applications')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ListChecks size={22} color={isActive('/applications')} /> <span style={{ color: isActive('/applications') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Student Apps</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            <div className="drawer-item" onClick={() => handleNav('/vacancies')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Briefcase size={22} color={isActive('/vacancies')} /> <span style={{ color: isActive('/vacancies') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Vacancies</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            <div className="drawer-item" onClick={() => handleNav('/placement-drives')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><IdentificationCard size={22} color={isActive('/placement-drives')} /> <span style={{ color: isActive('/placement-drives') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Placement Drives</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            <div className="drawer-item" onClick={() => handleNav('/clients')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Handshake size={22} color={isActive('/clients')} /> <span style={{ color: isActive('/clients') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Clients & Partners</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            <div className="drawer-item" onClick={() => handleNav('/events')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><CalendarStar size={22} color={isActive('/events')} /> <span style={{ color: isActive('/events') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Events</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            <div className="drawer-item" onClick={() => handleNav('/talentino')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> <span style={{ color: isActive('/talentino') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Talentino</span></div><span style={{ color: '#64748b' }}>›</span></div>
             
             {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
                <>
-                 <MenuItem path="/study-materials" icon={Book} label="Study Materials" />
-                 <MenuItem path="/exams" icon={FileText} label="Exams Hub" />
+                 <div className="drawer-item" onClick={() => handleNav('/study-materials')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Book size={22} color={isActive('/study-materials')} /> <span style={{ color: isActive('/study-materials') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Study Materials</span></div><span style={{ color: '#64748b' }}>›</span></div>
+                 <div className="drawer-item" onClick={() => handleNav('/exams')}>
+                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                     <FileText size={22} color={isActive('/exams')} /> <span style={{ color: isActive('/exams') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Exams Hub</span>
+                   </div>
+                   <span style={{ color: '#64748b' }}>›</span>
+                 </div>
                </>
             )}
 
             {tpoData.accessType === 'superadmin' && (
                <>
-                 <MenuItem path="/courses" icon={Bookmarks} label="Manage Courses" />
-                 <MenuItem path="/users" icon={ShieldCheck} label="User Management" />
+                 <div className="drawer-item" onClick={() => handleNav('/courses')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Bookmarks size={22} color={isActive('/courses')} /> <span style={{ color: isActive('/courses') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Manage Courses</span></div><span style={{ color: '#64748b' }}>›</span></div>
+                 <div className="drawer-item" onClick={() => handleNav('/users')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/users')} /> <span style={{ color: isActive('/users') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>User Management</span></div><span style={{ color: '#64748b' }}>›</span></div>
                </>
             )}
 
-            <MenuItem path="/settings" icon={Gear} label="Settings" />
+            <div className="drawer-item" onClick={() => handleNav('/settings')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Gear size={22} color={isActive('/settings')} /> <span style={{ color: isActive('/settings') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Settings</span></div><span style={{ color: '#64748b' }}>›</span></div>
           </div>
           
           <div className="drawer-footer" style={{ borderTop: '1px solid rgba(255,255,255,0.1)', padding: '20px', flexShrink: 0 }}>
