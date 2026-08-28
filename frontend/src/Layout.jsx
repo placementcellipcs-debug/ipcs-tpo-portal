@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Bell, X, SquaresFour, Trophy, ListChecks, 
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
-  Book, FileText, Brain, PencilSimple, Bookmarks, ShieldCheck, IdentificationCard
+  Book, FileText, Brain, PencilSimple, Bookmarks, ShieldCheck, IdentificationCard, CaretLeft
 } from '@phosphor-icons/react';
 
 export default function Layout({ children }) {
@@ -20,7 +20,7 @@ export default function Layout({ children }) {
   });
   
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [isNotifOpen, setIsNotifOpen] = useState(false); // 🚨 NEW NOTIFICATION STATE
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
 
   useEffect(() => {
@@ -37,7 +37,7 @@ export default function Layout({ children }) {
   };
   
   const profilePhotoUrl = getDriveImage(tpoData.photo);
-  const isActive = (path) => location.pathname === path ? 'var(--accent-primary)' : 'var(--text-muted)';
+  const isActive = (path) => location.pathname.startsWith(path) ? 'var(--accent-primary)' : 'var(--text-muted)';
 
   const handleLogout = () => {
     localStorage.removeItem('tpoData');
@@ -77,7 +77,7 @@ export default function Layout({ children }) {
           </div>
           <div className="header-actions">
             
-            {/* 🚨 NOTIFICATION BELL DROPDOWN */}
+            {/* NOTIFICATIONS BELL */}
             <div style={{ position: 'relative' }}>
               <button className="icon-btn" title="Notifications" onClick={() => setIsNotifOpen(!isNotifOpen)}>
                 <Bell weight="fill" />
@@ -88,27 +88,17 @@ export default function Layout({ children }) {
                 <div style={{ position: 'absolute', top: '50px', right: '0', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '12px', width: '320px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', zIndex: 9999, overflow: 'hidden' }}>
                   <div style={{ padding: '15px', borderBottom: '1px solid #1e293b', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff' }}>
                     Notifications
-                    <span style={{ fontSize: '0.7rem', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '3px 8px', borderRadius: '10px' }}>2 New</span>
+                    <span style={{ fontSize: '0.7rem', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '3px 8px', borderRadius: '10px' }}>System Active</span>
                   </div>
                   <div style={{ padding: '0', maxHeight: '300px', overflowY: 'auto' }}>
-                    <div style={{ padding: '15px', borderBottom: '1px solid #1e293b', display: 'flex', gap: '12px', background: 'rgba(56, 189, 248, 0.03)' }}>
-                      <div style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <ListChecks size={18} weight="bold" />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginBottom: '3px' }}>System Updated</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>The new Unified Exams Hub and Placement Drives are now live.</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--accent-primary)', marginTop: '5px', fontWeight: 'bold' }}>Just now</div>
-                      </div>
-                    </div>
                     <div style={{ padding: '15px', display: 'flex', gap: '12px' }}>
                       <div style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                         <Trophy size={18} weight="bold" />
                       </div>
                       <div>
-                        <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginBottom: '3px' }}>Placement Data Synced</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>Latest global placement and application records have been successfully fetched.</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '5px' }}>1 hour ago</div>
+                        <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginBottom: '3px' }}>Data Synced Successfully</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>All dashboard charts are now reflecting real-time data from Google Sheets.</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '5px' }}>Just now</div>
                       </div>
                     </div>
                   </div>
@@ -116,6 +106,7 @@ export default function Layout({ children }) {
               )}
             </div>
 
+            {/* PROFILE ICON TO OPEN DRAWER */}
             <div className="header-profile" onClick={() => setIsDrawerOpen(true)}>
               <div className="header-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)' }}>
                 {renderAvatar()}
@@ -125,11 +116,27 @@ export default function Layout({ children }) {
         </header>
 
         <div className="page-container" style={{ width: '100%', overflowX: 'hidden' }} onClick={() => setIsNotifOpen(false)}>
+          
+          {/* 🚨 GLOBAL BACK BUTTON (Hides on Dashboard) */}
+          {location.pathname !== '/dashboard' && (
+            <div style={{ marginBottom: '20px' }}>
+              <button 
+                onClick={() => navigate('/dashboard')}
+                style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-muted)', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 'bold', transition: '0.2s' }}
+                onMouseEnter={e => { e.currentTarget.style.color = '#fff'; e.currentTarget.style.borderColor = '#64748b'; }}
+                onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-muted)'; e.currentTarget.style.borderColor = 'var(--card-border)'; }}
+              >
+                <CaretLeft weight="bold" size={14} /> Back to Dashboard
+              </button>
+            </div>
+          )}
+
           {children}
         </div>
 
       </main>
 
+      {/* THE CLASSIC DRAWER SLIDER */}
       <div 
         className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} 
         onClick={(e) => { if(e.target.classList.contains('drawer-overlay')) setIsDrawerOpen(false); }}

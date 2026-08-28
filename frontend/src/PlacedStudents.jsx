@@ -10,6 +10,11 @@ export default function PlacedStudents() {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   
+  // 🚨 RESTRICT "ADD PLACEMENT" ACCESS
+  const isTpo = (tpoData?.role || '').toUpperCase() === 'TPO';
+  const isGifty = (tpoData?.email || '').toLowerCase() === 'gifty@ipcsglobal.com' || (tpoData?.loginId || '').toLowerCase() === 'gifty@ipcsglobal.com';
+  const canAddPlacement = isTpo || isGifty;
+  
   // View State Management (Dual-View)
   const [selectedBranch, setSelectedBranch] = useState(null);
 
@@ -145,9 +150,13 @@ export default function PlacedStudents() {
               <h1 style={{ fontSize: '2rem', marginBottom: '5px' }}>Placed Students Data</h1>
               <p style={{ color: 'var(--text-muted)' }}>Select a branch to view placement details, upload offer letters, and log salary packages.</p>
             </div>
-            <button className="btn-action" style={{ background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px', width: 'auto' }} onClick={() => setIsAddModalOpen(true)}>
-              <Plus weight="bold" /> Add Placement
-            </button>
+            
+            {/* 🚨 ONLY TPOs AND GIFTY CAN ADD PLACEMENTS */}
+            {canAddPlacement && (
+              <button className="btn-action" style={{ background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px', width: 'auto' }} onClick={() => setIsAddModalOpen(true)}>
+                <Plus weight="bold" /> Add Placement
+              </button>
+            )}
           </div>
 
           {loading ? (
@@ -181,7 +190,7 @@ export default function PlacedStudents() {
         </div>
 
         {/* The Add Modal is still rendered here so it can be accessed from the Grid View */}
-        {isAddModalOpen && (
+        {isAddModalOpen && canAddPlacement && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
             <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>

@@ -173,16 +173,14 @@ exports.updateStudent = async (req, res) => {
 // --- APPLICATIONS ---
 exports.getApplications = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, tpoName } = req.body;
-  let appsMap = {}; 
+  let appsList = []; // 🚨 Changed from appsMap to a flat array
   const cleanTpoName = (tpoName || '').toString().toLowerCase().trim();
   const cache = getCache();
   
-  // 🚨 FIX: Force backend to strictly read from Opening_Applied
   const sourceData = cache.applications || [];
 
   sourceData.forEach((row) => {
     const rowData = row.toObject();
-    // 🚨 STRICT COLUMN MATCHER FIX
     const getHeader = (searchString) => {
       const cleanSearch = searchString.toLowerCase().replace(/\s/g, '');
       const keys = Object.keys(rowData);
@@ -197,7 +195,8 @@ exports.getApplications = (req, res) => {
     const tpoMatch = (!role || role === 'TPO') && (cleanTpoName !== '' && officerName === cleanTpoName);
 
     if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse) || tpoMatch) {
-      const roll = rowData[getHeader('roll')] || ''; const jobId = rowData[getHeader('jobid')] || '';
+      const roll = rowData[getHeader('roll')] || ''; 
+      const jobId = rowData[getHeader('jobid')] || '';
       let phone = rowData[getHeader('contact')] || rowData[getHeader('phone')] || '';
       let email = rowData[getHeader('mail')] || rowData[getHeader('email')] || '';
       let resume = rowData[getHeader('resume')] || rowData[getHeader('cv')] || '';
@@ -219,12 +218,14 @@ exports.getApplications = (req, res) => {
         }
       }
 
-      appsMap[`${roll}_${jobId}`] = {
+      // 🚨 Directly push to array to prevent data overwriting
+      appsList.push({
         rowNumber: row.rowNumber, name: rowData[getHeader('name')] || '', roll: roll, branch: branch, course: course, qual: qual || 'Not Specified', jobId: jobId, company: rowData[getHeader('company')] || 'Unknown Company', position: rowData[getHeader('position')] || 'Unknown Position', date: rowData[getHeader('time')] || rowData[getHeader('date')] || '', status: rowData[getHeader('status')] || 'Applied', remarks: rowData[getHeader('remarks')] || '', tpoName: rowData[getHeader('placementofficer')] || '', phone: phone, email: email, resume: resume, datePlaced: rowData[getHeader('dateplaced')] || '', packageLpa: rowData[getHeader('package')] || '', offerLetter: rowData[getHeader('offerletter')] || '', joiningStatus: rowData[getHeader('joiningstatus')] || ''
-      };
+      });
     }
   });
-  res.json({ success: true, applications: Object.values(appsMap) });
+  
+  res.json({ success: true, applications: appsList });
 };
 
 exports.updateApplication = async (req, res) => {
