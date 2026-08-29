@@ -9,6 +9,7 @@ const COURSES = ['Automation', 'BMS', 'IT', 'DM', 'Embedded'];
 export default function Reports() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  const isSuperAdmin = tpoData?.accessType === 'superadmin';
   
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(1);
@@ -20,9 +21,12 @@ export default function Reports() {
   const [applications, setApplications] = useState([]);
   const [vacancies, setVacancies] = useState([]); 
   const [events, setEvents] = useState([]);
+  
+  // 🚨 SUPER ADMIN ADDITIONS
+  const [tpoList, setTpoList] = useState([]);
+  const [selectedTpoId, setSelectedTpoId] = useState('');
 
   useEffect(() => {
-    // 🚨 FIX: Data fetch isolated inside the hook, dependency array empty
     const fetchAllData = async () => {
       try {
         const res = await axios.post(`${API_BASE}/api/tpo/reports`, { assignedBranchesArray: ['all'] });
@@ -32,6 +36,21 @@ export default function Reports() {
           setVacancies(res.data.vacancies || []);
           setEvents(res.data.events || []);
         }
+
+        // 🚨 Fetch TPO List if Super Admin to populate the report dropdown
+        if (isSuperAdmin) {
+          const uRes = await axios.get(`${API_BASE}/api/admin/users`);
+          if (uRes.data.success) {
+            const tpos = (uRes.data.users || []).filter(u => u.role === 'TPO');
+            setTpoList(tpos);
+            if (tpos.length > 0) setSelectedTpoId(tpos[0].email);
+          }
+        } else {
+          // Standard TPO View
+          setSelectedTpoId(tpoData?.email);
+          setTpoList([tpoData]); 
+        }
+
       } catch (error) {
         console.error("Failed to fetch reports", error);
       } finally {
@@ -39,7 +58,7 @@ export default function Reports() {
       }
     };
     fetchAllData();
-  }, []); // 🚨 CRITICAL FIX: Stops the loop!
+  }, []); 
 
   const getCourse = (c) => {
     if(!c) return 'Others';
@@ -83,10 +102,14 @@ export default function Reports() {
   };
 
   const displayMonthName = new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
-  const tpoNameLower = (tpoData?.name || '').toLowerCase();
   
-  const myFilteredApps = applications.filter(a => (a.tpoName || '').toLowerCase() === tpoNameLower && checkMonth(a.date));
+  // 🚨 DYNAMIC TPO SELECTION LOGIC
+  const currentTpoData = tpoList.find(t => t.email === selectedTpoId) || tpoData;
+  const targetTpoNameLower = (currentTpoData?.userName || currentTpoData?.name || '').toLowerCase();
+  
+  const myFilteredApps = applications.filter(a => (a.tpoName || '').toLowerCase() === targetTpoNameLower && checkMonth(a.date));
   const myPlacementCounts = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0 };
+  const actualPlacedStudents = [];
   let myTotalPlacements = 0;
 
   myFilteredApps.forEach(a => {
@@ -95,6 +118,7 @@ export default function Reports() {
       const c = getCourse(a.course);
       if (myPlacementCounts[c] !== undefined) myPlacementCounts[c]++;
       myTotalPlacements++;
+      actualPlacedStudents.push(a); // Save for detailed table
     }
   });
 
@@ -260,7 +284,9 @@ export default function Reports() {
         </div>
 
         <div className="rt-tabs">
-          <button className={`rt-tab ${activeTab === 1 ? 'active' : ''}`} onClick={() => setActiveTab(1)}><Target size={20} weight={activeTab === 1 ? "fill" : "regular"} /> My Target Report</button>
+          <button className={`rt-tab ${activeTab === 1 ? 'active' : ''}`} onClick={() => setActiveTab(1)}>
+            <Target size={20} weight={activeTab === 1 ? "fill" : "regular"} /> {isSuperAdmin ? 'TPO Target Reports' : 'My Target Report'}
+          </button>
           <button className={`rt-tab ${activeTab === 2 ? 'active' : ''}`} onClick={() => setActiveTab(2)}><Buildings size={20} weight={activeTab === 2 ? "fill" : "regular"} /> Branch Matrices</button>
           <button className={`rt-tab ${activeTab === 3 ? 'active' : ''}`} onClick={() => setActiveTab(3)}><ChartLineUp size={20} weight={activeTab === 3 ? "fill" : "regular"} /> Placement Tracker</button>
           <button className={`rt-tab ${activeTab === 4 ? 'active' : ''}`} onClick={() => setActiveTab(4)}><ShieldCheck size={20} weight={activeTab === 4 ? "fill" : "regular"} /> TPO Activities</button>
@@ -268,43 +294,106 @@ export default function Reports() {
 
         {/* TAB 1 */}
         {activeTab === 1 && (
-          <div className="hero-card fade-in">
-            <div className="hc-header">
-              <span>Placement Report</span>
-              <span style={{ color: '#bae6fd' }}>{displayMonthName.toUpperCase()}</span>
-            </div>
-            
-            <div className="hc-grid">
-              <div className="hc-item"><div className="hc-label">Name of the Employee</div><div className="hc-value">{tpoData?.name || 'Officer'}</div></div>
-              <div className="hc-item"><div className="hc-label">Sitting Branch</div><div className="hc-value">{tpoData?.sittingBranch || 'N/A'}</div></div>
-              <div className="hc-item"><div className="hc-label">Emp ID</div><div className="hc-value">IPCS-EMP-{getHashId(tpoData?.email)}</div></div>
-              <div className="hc-item"><div className="hc-label">Assigned Branches</div><div className="hc-value" style={{ fontSize: '0.85rem' }}>{(tpoData?.assignedBranchesArray || []).join(', ').toUpperCase()}</div></div>
-              <div className="hc-item" style={{ background: 'rgba(16, 185, 129, 0.05)' }}>
-                <div className="hc-label" style={{ color: '#10b981' }}>Target For The Month</div>
-                <div className="hc-value" style={{ color: '#10b981', fontSize: '1.6rem' }}>{targetGoal}</div>
+          <div className="fade-in">
+            {/* 🚨 TPO SELECTOR FOR SUPER ADMINS */}
+            {isSuperAdmin && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '1.5rem', background: '#0f1523', padding: '15px 20px', borderRadius: '12px', border: '1px solid #1e293b' }}>
+                <span style={{ color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>Select TPO Report:</span>
+                <select 
+                  className="sleek-select" 
+                  value={selectedTpoId} 
+                  onChange={(e) => setSelectedTpoId(e.target.value)}
+                  style={{ width: '300px', background: '#161e2e', border: '1px solid #38bdf8', color: '#fff', fontWeight: 'bold' }}
+                >
+                  {tpoList.map(t => (
+                    <option key={t.email} value={t.email}>{t.userName || t.name} ({t.sittingBranch || 'Global'})</option>
+                  ))}
+                </select>
               </div>
-            </div>
+            )}
 
-            <div className="hc-subheader"><Briefcase size={20} weight="fill" /> Current Status On Placements</div>
-            
-            <div className="hc-grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
-              {COURSES.concat(['Others']).map(c => (
-                <div key={c} className="hc-item" style={{ textAlign: 'center' }}>
-                  <div className="hc-label">{c}</div>
-                  <div className="hc-value" style={{ fontSize: '1.8rem', color: myPlacementCounts[c] > 0 ? '#38bdf8' : '#475569' }}>{myPlacementCounts[c]}</div>
+            <div className="hero-card">
+              <div className="hc-header">
+                <span>Placement Report</span>
+                <span style={{ color: '#bae6fd' }}>{displayMonthName.toUpperCase()}</span>
+              </div>
+              
+              <div className="hc-grid">
+                <div className="hc-item"><div className="hc-label">Name of the Employee</div><div className="hc-value">{currentTpoData?.userName || currentTpoData?.name || 'Officer'}</div></div>
+                <div className="hc-item"><div className="hc-label">Sitting Branch</div><div className="hc-value">{currentTpoData?.sittingBranch || 'N/A'}</div></div>
+                <div className="hc-item"><div className="hc-label">Emp ID</div><div className="hc-value">IPCS-EMP-{getHashId(currentTpoData?.email)}</div></div>
+                <div className="hc-item"><div className="hc-label">Assigned Branches</div><div className="hc-value" style={{ fontSize: '0.85rem' }}>{Array.isArray(currentTpoData?.assignedBranchesArray) ? currentTpoData.assignedBranchesArray.join(', ').toUpperCase() : (currentTpoData?.assignedBranches || '').toUpperCase()}</div></div>
+                <div className="hc-item" style={{ background: 'rgba(16, 185, 129, 0.05)' }}>
+                  <div className="hc-label" style={{ color: '#10b981' }}>Target For The Month</div>
+                  <div className="hc-value" style={{ color: '#10b981', fontSize: '1.6rem' }}>{targetGoal}</div>
                 </div>
-              ))}
+              </div>
+
+              <div className="hc-subheader"><Briefcase size={20} weight="fill" /> Current Status On Placements</div>
+              
+              <div className="hc-grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
+                {COURSES.concat(['Others']).map(c => (
+                  <div key={c} className="hc-item" style={{ textAlign: 'center' }}>
+                    <div className="hc-label">{c}</div>
+                    <div className="hc-value" style={{ fontSize: '1.8rem', color: myPlacementCounts[c] > 0 ? '#38bdf8' : '#475569' }}>{myPlacementCounts[c]}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div style={{ background: '#0f1523', padding: '20px 25px', borderTop: '1px solid #1e293b' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <span style={{ color: 'var(--text-muted)', fontWeight: 'bold' }}>Progress to Target</span>
+                  <span style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 'bold' }}>{myTotalPlacements} / {targetGoal} Hires</span>
+                </div>
+                <div style={{ width: '100%', height: '12px', background: '#1e293b', borderRadius: '10px', overflow: 'hidden' }}>
+                  <div style={{ width: `${progressPercent}%`, height: '100%', background: progressPercent >= 100 ? '#10b981' : '#38bdf8', transition: 'width 1s ease-in-out' }}></div>
+                </div>
+              </div>
             </div>
 
-            <div style={{ background: '#0f1523', padding: '20px 25px', borderTop: '1px solid #1e293b' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                <span style={{ color: 'var(--text-muted)', fontWeight: 'bold' }}>Progress to Target</span>
-                <span style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 'bold' }}>{myTotalPlacements} / {targetGoal} Hires</span>
+            {/* 🚨 DETAILED PLACEMENT TABLE FOR THE SELECTED TPO */}
+            {actualPlacedStudents.length > 0 && (
+              <div className="data-table-wrap" style={{ marginTop: '2rem' }}>
+                <div className="data-table-head">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Target size={22} color="#10b981" weight="fill"/> Placed Students</div>
+                  <div style={{ fontSize: '0.85rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '4px 12px', borderRadius: '20px' }}>By {currentTpoData?.userName || currentTpoData?.name}</div>
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <table className="dt" style={{ textAlign: 'left' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ textAlign: 'left', paddingLeft: '25px' }}>Student Details</th>
+                        <th style={{ textAlign: 'left' }}>Company & Role</th>
+                        <th style={{ textAlign: 'left' }}>Salary Package</th>
+                        <th style={{ textAlign: 'left' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {actualPlacedStudents.map((app, i) => (
+                        <tr key={i}>
+                          <td style={{ textAlign: 'left', paddingLeft: '25px' }}>
+                            <strong style={{ display: 'block', color: '#fff' }}>{app.name}</strong>
+                            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{app.branch} • {app.course}</span>
+                          </td>
+                          <td style={{ textAlign: 'left' }}>
+                            <strong style={{ display: 'block', color: '#38bdf8' }}>{app.company}</strong>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{app.position || 'N/A'}</span>
+                          </td>
+                          <td style={{ textAlign: 'left', color: '#10b981', fontWeight: 'bold' }}>
+                            {app.packageLpa ? `${app.packageLpa} LPA` : '-'}
+                          </td>
+                          <td style={{ textAlign: 'left' }}>
+                            <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                              {(app.status || 'Placed').toUpperCase()}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-              <div style={{ width: '100%', height: '12px', background: '#1e293b', borderRadius: '10px', overflow: 'hidden' }}>
-                <div style={{ width: `${progressPercent}%`, height: '100%', background: progressPercent >= 100 ? '#10b981' : '#38bdf8', transition: 'width 1s ease-in-out' }}></div>
-              </div>
-            </div>
+            )}
           </div>
         )}
 
