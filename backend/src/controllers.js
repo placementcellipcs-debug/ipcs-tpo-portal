@@ -331,24 +331,37 @@ exports.updateIssue = async (req, res) => {
 
 exports.getReports = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
-  let students = [], applications = [], issues = [], talentino = [];
+  let students = [], applications = [], issues = [], talentino = [], tpoLogs = [];
+  
   getCache().students.forEach(row => {
     if(!hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) return;
     students.push({ name: row.get('Name'), roll: row.get('Roll Number'), branch: row.get('Branch'), course: row.get('Course'), status: row.get('Status'), placementStatus: row.get('Placement Stat') || row.get('Placement Status') });
   });
+  
   getCache().applications.forEach(row => {
     if(!hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) return;
     applications.push({ name: row.get('Student Name'), roll: row.get('Roll Number'), jobId: row.get('Job ID'), company: row.get('Company Name'), date: row.get('TimeStamp'), status: row.get('Status'), remarks: row.get('Remarks'), tpoName: row.get('Placement Officer'), branch: row.get('Branch'), course: row.get('Course') });
   });
+  
   getCache().issues.forEach(row => { 
     if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) issues.push({ name: row.get('Name'), branch: row.get('Branch'), details: row.get('Issue Details'), status: row.get('Status'), remarks: row.get('Remarks') }); 
   });
+  
   getCache().tAtt.forEach(row => { 
     if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) talentino.push({ name: row.get('Name'), branch: row.get('Branch'), date: row.get('Check-in') || row.get('Date'), rating: row.get('Rating'), notes: row.get('Notes') }); 
   });
+  
   let vacancies = getCache().vacancies.map(row => ({ id: row.get('Job ID') || row.get('ID') || '', company: row.get('Company') || '', location: row.get('Location') || '', mode: row.get('Mode') || '', status: row.get('Status') || 'Open', course: row.get('Course') || '', date: row.get('Last Date') || row.get('Date') || '' }));
   let events = getCache().events.map(row => ({ date: row.get('Date') || '' }));
-  res.json({ success: true, students, applications, issues, talentino, vacancies, events });
+
+  // 🚨 NEW: Fetching TPO Logs specifically for the Reports module
+  if (getCache().tpoLogs) {
+    getCache().tpoLogs.forEach(row => {
+      tpoLogs.push(row.toObject());
+    });
+  }
+
+  res.json({ success: true, students, applications, issues, talentino, vacancies, events, tpoLogs });
 };
 
 exports.getTalentino = (req, res) => {

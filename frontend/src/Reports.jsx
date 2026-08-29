@@ -21,10 +21,9 @@ export default function Reports() {
   const [applications, setApplications] = useState([]);
   const [vacancies, setVacancies] = useState([]); 
   const [events, setEvents] = useState([]);
+  const [tpoLogs, setTpoLogs] = useState([]); // 🚨 New State for TPO Logs
   
-  // 🚨 SUPER ADMIN ADDITIONS
   const [tpoList, setTpoList] = useState([]);
-  const [selectedTpoId, setSelectedTpoId] = useState('');
 
   useEffect(() => {
     const fetchAllData = async () => {
@@ -35,22 +34,18 @@ export default function Reports() {
           setApplications(res.data.applications || []);
           setVacancies(res.data.vacancies || []);
           setEvents(res.data.events || []);
+          setTpoLogs(res.data.tpoLogs || []); // 🚨 Store TPO Logs
         }
 
-        // 🚨 Fetch TPO List if Super Admin to populate the report dropdown
         if (isSuperAdmin) {
           const uRes = await axios.get(`${API_BASE}/api/admin/users`);
           if (uRes.data.success) {
             const tpos = (uRes.data.users || []).filter(u => u.role === 'TPO');
             setTpoList(tpos);
-            if (tpos.length > 0) setSelectedTpoId(tpos[0].email);
           }
         } else {
-          // Standard TPO View
-          setSelectedTpoId(tpoData?.email);
           setTpoList([tpoData]); 
         }
-
       } catch (error) {
         console.error("Failed to fetch reports", error);
       } finally {
@@ -76,9 +71,13 @@ export default function Reports() {
     if (!dateStr) return false;
     let year, month;
     if (dateStr.includes('/')) {
-      const parts = dateStr.split(' ')[0].split('/');
+      const parts = dateStr.split(/[/\s]+/);
       year = parts[2];
-      month = parts[1];
+      month = parts[1].padStart(2, '0');
+    } else if (dateStr.includes('-')) {
+      const parts = dateStr.split(' ')[0].split('-');
+      year = parts[0];
+      month = parts[1].padStart(2, '0');
     } else {
       const d = new Date(dateStr);
       if (isNaN(d)) return false;
@@ -86,6 +85,11 @@ export default function Reports() {
       month = String(d.getMonth() + 1).padStart(2, '0');
     }
     return `${year}-${month}` === monthFilter;
+  };
+
+  const getVal = (obj, searchStr) => {
+    const key = Object.keys(obj).find(k => k.toLowerCase().replace(/\s/g, '').includes(searchStr.toLowerCase().replace(/\s/g, '')));
+    return key ? obj[key] : '';
   };
 
   const isAssignedBranch = (b) => {
@@ -102,28 +106,7 @@ export default function Reports() {
   };
 
   const displayMonthName = new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
-  
-  // 🚨 DYNAMIC TPO SELECTION LOGIC
-  const currentTpoData = tpoList.find(t => t.email === selectedTpoId) || tpoData;
-  const targetTpoNameLower = (currentTpoData?.userName || currentTpoData?.name || '').toLowerCase();
-  
-  const myFilteredApps = applications.filter(a => (a.tpoName || '').toLowerCase() === targetTpoNameLower && checkMonth(a.date));
-  const myPlacementCounts = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0 };
-  const actualPlacedStudents = [];
-  let myTotalPlacements = 0;
-
-  myFilteredApps.forEach(a => {
-    const stat = (a.status || '').toLowerCase();
-    if (stat.includes('placed') || stat.includes('join') || stat.includes('offer')) {
-      const c = getCourse(a.course);
-      if (myPlacementCounts[c] !== undefined) myPlacementCounts[c]++;
-      myTotalPlacements++;
-      actualPlacedStudents.push(a); // Save for detailed table
-    }
-  });
-
   const targetGoal = 20;
-  const progressPercent = Math.min((myTotalPlacements / targetGoal) * 100, 100);
 
   const assignedBranches = [...new Set(students.filter(s => isAssignedBranch(s.branch)).map(s => s.branch))].filter(Boolean).sort();
   const branchEnrolls = {};
@@ -292,108 +275,132 @@ export default function Reports() {
           <button className={`rt-tab ${activeTab === 4 ? 'active' : ''}`} onClick={() => setActiveTab(4)}><ShieldCheck size={20} weight={activeTab === 4 ? "fill" : "regular"} /> TPO Activities</button>
         </div>
 
-        {/* TAB 1 */}
+        {/* ========================================================= */}
+        {/* TAB 1: DYNAMIC STACKED TPO TARGET REPORTS (FROM TPO_LOG)  */}
+        {/* ========================================================= */}
         {activeTab === 1 && (
           <div className="fade-in">
-            {/* 🚨 TPO SELECTOR FOR SUPER ADMINS */}
-            {isSuperAdmin && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '15px', marginBottom: '1.5rem', background: '#0f1523', padding: '15px 20px', borderRadius: '12px', border: '1px solid #1e293b' }}>
-                <span style={{ color: 'var(--text-muted)', fontWeight: 'bold', textTransform: 'uppercase', fontSize: '0.85rem' }}>Select TPO Report:</span>
-                <select 
-                  className="sleek-select" 
-                  value={selectedTpoId} 
-                  onChange={(e) => setSelectedTpoId(e.target.value)}
-                  style={{ width: '300px', background: '#161e2e', border: '1px solid #38bdf8', color: '#fff', fontWeight: 'bold' }}
-                >
-                  {tpoList.map(t => (
-                    <option key={t.email} value={t.email}>{t.userName || t.name} ({t.sittingBranch || 'Global'})</option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div className="hero-card">
-              <div className="hc-header">
-                <span>Placement Report</span>
-                <span style={{ color: '#bae6fd' }}>{displayMonthName.toUpperCase()}</span>
-              </div>
+            {tpoList.map((tpo, idx) => {
+              const targetTpoName = (tpo.userName || tpo.name || '').toLowerCase().trim();
               
-              <div className="hc-grid">
-                <div className="hc-item"><div className="hc-label">Name of the Employee</div><div className="hc-value">{currentTpoData?.userName || currentTpoData?.name || 'Officer'}</div></div>
-                <div className="hc-item"><div className="hc-label">Sitting Branch</div><div className="hc-value">{currentTpoData?.sittingBranch || 'N/A'}</div></div>
-                <div className="hc-item"><div className="hc-label">Emp ID</div><div className="hc-value">IPCS-EMP-{getHashId(currentTpoData?.email)}</div></div>
-                <div className="hc-item"><div className="hc-label">Assigned Branches</div><div className="hc-value" style={{ fontSize: '0.85rem' }}>{Array.isArray(currentTpoData?.assignedBranchesArray) ? currentTpoData.assignedBranchesArray.join(', ').toUpperCase() : (currentTpoData?.assignedBranches || '').toUpperCase()}</div></div>
-                <div className="hc-item" style={{ background: 'rgba(16, 185, 129, 0.05)' }}>
-                  <div className="hc-label" style={{ color: '#10b981' }}>Target For The Month</div>
-                  <div className="hc-value" style={{ color: '#10b981', fontSize: '1.6rem' }}>{targetGoal}</div>
-                </div>
-              </div>
+              // 🚨 Strictly filter from TPO_Log subsheet
+              const placedStudentsLog = tpoLogs.filter(log => {
+                const logTpo = getVal(log, 'placementofficer').toLowerCase().trim();
+                const isMatch = logTpo === targetTpoName || logTpo.includes(targetTpoName) || targetTpoName.includes(logTpo);
+                if (!isMatch) return false;
 
-              <div className="hc-subheader"><Briefcase size={20} weight="fill" /> Current Status On Placements</div>
-              
-              <div className="hc-grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
-                {COURSES.concat(['Others']).map(c => (
-                  <div key={c} className="hc-item" style={{ textAlign: 'center' }}>
-                    <div className="hc-label">{c}</div>
-                    <div className="hc-value" style={{ fontSize: '1.8rem', color: myPlacementCounts[c] > 0 ? '#38bdf8' : '#475569' }}>{myPlacementCounts[c]}</div>
-                  </div>
-                ))}
-              </div>
+                const status = getVal(log, 'status').toLowerCase();
+                if (!status.includes('placed')) return false;
 
-              <div style={{ background: '#0f1523', padding: '20px 25px', borderTop: '1px solid #1e293b' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                  <span style={{ color: 'var(--text-muted)', fontWeight: 'bold' }}>Progress to Target</span>
-                  <span style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 'bold' }}>{myTotalPlacements} / {targetGoal} Hires</span>
-                </div>
-                <div style={{ width: '100%', height: '12px', background: '#1e293b', borderRadius: '10px', overflow: 'hidden' }}>
-                  <div style={{ width: `${progressPercent}%`, height: '100%', background: progressPercent >= 100 ? '#10b981' : '#38bdf8', transition: 'width 1s ease-in-out' }}></div>
-                </div>
-              </div>
-            </div>
+                const dateStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp') || '';
+                return checkMonth(dateStr);
+              });
 
-            {/* 🚨 DETAILED PLACEMENT TABLE FOR THE SELECTED TPO */}
-            {actualPlacedStudents.length > 0 && (
-              <div className="data-table-wrap" style={{ marginTop: '2rem' }}>
-                <div className="data-table-head">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Target size={22} color="#10b981" weight="fill"/> Placed Students</div>
-                  <div style={{ fontSize: '0.85rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '4px 12px', borderRadius: '20px' }}>By {currentTpoData?.userName || currentTpoData?.name}</div>
-                </div>
-                <div style={{ overflowX: 'auto' }}>
-                  <table className="dt" style={{ textAlign: 'left' }}>
-                    <thead>
-                      <tr>
-                        <th style={{ textAlign: 'left', paddingLeft: '25px' }}>Student Details</th>
-                        <th style={{ textAlign: 'left' }}>Company & Role</th>
-                        <th style={{ textAlign: 'left' }}>Salary Package</th>
-                        <th style={{ textAlign: 'left' }}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {actualPlacedStudents.map((app, i) => (
-                        <tr key={i}>
-                          <td style={{ textAlign: 'left', paddingLeft: '25px' }}>
-                            <strong style={{ display: 'block', color: '#fff' }}>{app.name}</strong>
-                            <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{app.branch} • {app.course}</span>
-                          </td>
-                          <td style={{ textAlign: 'left' }}>
-                            <strong style={{ display: 'block', color: '#38bdf8' }}>{app.company}</strong>
-                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{app.position || 'N/A'}</span>
-                          </td>
-                          <td style={{ textAlign: 'left', color: '#10b981', fontWeight: 'bold' }}>
-                            {app.packageLpa ? `${app.packageLpa} LPA` : '-'}
-                          </td>
-                          <td style={{ textAlign: 'left' }}>
-                            <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>
-                              {(app.status || 'Placed').toUpperCase()}
-                            </span>
-                          </td>
-                        </tr>
+              const counts = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0 };
+              placedStudentsLog.forEach(p => {
+                 const c = getCourse(getVal(p, 'course'));
+                 counts[c]++;
+              });
+
+              const totalPlacements = placedStudentsLog.length;
+              const progressPercent = Math.min((totalPlacements / targetGoal) * 100, 100);
+
+              return (
+                <div key={idx} style={{ marginBottom: '4rem' }}>
+                  
+                  {/* HERO CARD */}
+                  <div className="hero-card">
+                    <div className="hc-header">
+                      <span>Placement Report</span>
+                      <span style={{ color: '#bae6fd' }}>{displayMonthName.toUpperCase()}</span>
+                    </div>
+                    
+                    <div className="hc-grid">
+                      <div className="hc-item"><div className="hc-label">Name of the Employee</div><div className="hc-value">{tpo.userName || tpo.name || 'Officer'}</div></div>
+                      <div className="hc-item"><div className="hc-label">Sitting Branch</div><div className="hc-value">{tpo.sittingBranch || 'N/A'}</div></div>
+                      <div className="hc-item"><div className="hc-label">Emp ID</div><div className="hc-value">IPCS-EMP-{getHashId(tpo.email)}</div></div>
+                      <div className="hc-item"><div className="hc-label">Assigned Branches</div><div className="hc-value" style={{ fontSize: '0.85rem' }}>{Array.isArray(tpo.assignedBranchesArray) ? tpo.assignedBranchesArray.join(', ').toUpperCase() : (tpo.assignedBranches || '').toUpperCase()}</div></div>
+                      <div className="hc-item" style={{ background: 'rgba(16, 185, 129, 0.05)' }}>
+                        <div className="hc-label" style={{ color: '#10b981' }}>Target For The Month</div>
+                        <div className="hc-value" style={{ color: '#10b981', fontSize: '1.6rem' }}>{targetGoal}</div>
+                      </div>
+                    </div>
+
+                    <div className="hc-subheader"><Briefcase size={20} weight="fill" /> Current Status On Placements</div>
+                    
+                    <div className="hc-grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
+                      {COURSES.concat(['Others']).map(c => (
+                        <div key={c} className="hc-item" style={{ textAlign: 'center' }}>
+                          <div className="hc-label">{c}</div>
+                          <div className="hc-value" style={{ fontSize: '1.8rem', color: counts[c] > 0 ? '#38bdf8' : '#475569' }}>{counts[c]}</div>
+                        </div>
                       ))}
-                    </tbody>
-                  </table>
+                    </div>
+
+                    <div style={{ background: '#0f1523', padding: '20px 25px', borderTop: '1px solid #1e293b' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 'bold' }}>Progress to Target</span>
+                        <span style={{ color: '#fff', fontSize: '1.2rem', fontWeight: 'bold' }}>{totalPlacements} / {targetGoal} Hires</span>
+                      </div>
+                      <div style={{ width: '100%', height: '12px', background: '#1e293b', borderRadius: '10px', overflow: 'hidden' }}>
+                        <div style={{ width: `${progressPercent}%`, height: '100%', background: progressPercent >= 100 ? '#10b981' : '#38bdf8', transition: 'width 1s ease-in-out' }}></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* DATA TABLE (FROM TPO_LOG) */}
+                  <div className="data-table-wrap">
+                    <div className="data-table-head">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Target size={22} color="#10b981" weight="fill"/> Logged Placements</div>
+                      <div style={{ fontSize: '0.85rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '4px 12px', borderRadius: '20px' }}>By {tpo.userName || tpo.name}</div>
+                    </div>
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="dt" style={{ textAlign: 'left' }}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: 'left', paddingLeft: '25px' }}>Student Details</th>
+                            <th style={{ textAlign: 'left' }}>Company & Role</th>
+                            <th style={{ textAlign: 'left' }}>Salary Package</th>
+                            <th style={{ textAlign: 'left' }}>Status</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {placedStudentsLog.length === 0 ? (
+                            <tr>
+                              <td colSpan="4" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>
+                                No placements recorded for this month.
+                              </td>
+                            </tr>
+                          ) : (
+                            placedStudentsLog.map((log, i) => (
+                              <tr key={i}>
+                                <td style={{ textAlign: 'left', paddingLeft: '25px' }}>
+                                  <strong style={{ display: 'block', color: '#fff' }}>{getVal(log, 'studentname')}</strong>
+                                  <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{getVal(log, 'branch')} • {getVal(log, 'course')}</span>
+                                </td>
+                                <td style={{ textAlign: 'left' }}>
+                                  <strong style={{ display: 'block', color: '#38bdf8' }}>{getVal(log, 'companyname')}</strong>
+                                  <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{getVal(log, 'position') || 'N/A'}</span>
+                                </td>
+                                <td style={{ textAlign: 'left', color: '#10b981', fontWeight: 'bold' }}>
+                                  {getVal(log, 'package') ? `${getVal(log, 'package')} LPA` : '-'}
+                                </td>
+                                <td style={{ textAlign: 'left' }}>
+                                  <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>
+                                    {(getVal(log, 'status') || 'Placed').toUpperCase()}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+
                 </div>
-              </div>
-            )}
+              );
+            })}
           </div>
         )}
 
