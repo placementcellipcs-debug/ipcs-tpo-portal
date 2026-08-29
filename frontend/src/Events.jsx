@@ -2,14 +2,38 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   Plus, CaretLeft, CaretRight, X, CircleNotch, CalendarBlank, MapPin, 
-  Clock, Buildings, CalendarStar, Briefcase, UserCheck, FilePdf, Image
+  Clock, Buildings, CalendarStar, Briefcase, UserCheck, Image
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
 const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
 
+// 🚨 ROBUST DATE PARSER ADDED to fix the blank calendar issue
+const parseDate = (dateStr) => {
+  if (!dateStr) return null;
+  let cleanStr = typeof dateStr === 'string' ? dateStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dateStr;
+
+  if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
+    const parts = cleanStr.split(/[/-]/);
+    if (parts.length === 3) {
+      // Handles DD/MM/YYYY or DD-MM-YYYY
+      if (parts[2].length === 4) {
+        return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+      }
+      // Handles YYYY/MM/DD or YYYY-MM-DD
+      if (parts[0].length === 4) {
+        return new Date(`${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`);
+      }
+    }
+  }
+  const d = new Date(cleanStr);
+  return isNaN(d) ? null : d;
+};
+
 export default function Events() {
-  const tpoData = JSON.parse(localStorage.getItem('tpoData'));
+  const tpoDataStr = localStorage.getItem('tpoData');
+  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   
@@ -29,6 +53,7 @@ export default function Events() {
 
   const fetchEvents = async () => {
     try {
+      setLoading(true);
       const response = await axios.get(`${API_BASE}/api/tpo/events`);
       if (response.data.success) {
         setEvents(response.data.events || []);
@@ -80,13 +105,6 @@ export default function Events() {
     return '#38bdf8';
   };
 
-  const parseDate = (dateStr) => {
-    if (!dateStr) return null;
-    const cleanStr = dateStr.replace(/st|nd|rd|th/g, ''); 
-    const parsed = new Date(cleanStr);
-    return isNaN(parsed) ? null : parsed;
-  };
-
   const nextPeriod = () => {
     const d = new Date(currentDate);
     if (view === 'Month') d.setMonth(d.getMonth() + 1);
@@ -105,7 +123,7 @@ export default function Events() {
 
   const getMonthName = () => currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
 
-  // Categorized event filtering (Interviews removed)
+  // Categorized event filtering
   const categorizedEvents = events.filter(e => {
     if (categoryTab === 'calendar') return true;
     if (categoryTab === 'Other') {
@@ -122,20 +140,31 @@ export default function Events() {
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     
     const grid = [];
-    for (let i = 0; i < firstDay; i++) grid.push(<div key={`empty-${i}`} className="cal-cell empty"></div>);
+    for (let i = 0; i < firstDay; i++) grid.push(<div key={`empty-${i}`} className="cal-cell empty" style={{ minHeight: '120px', background: 'var(--bg-dark)', borderRight: '1px solid var(--card-border)', borderBottom: '1px solid var(--card-border)' }}></div>);
     
     for (let day = 1; day <= daysInMonth; day++) {
       const cellDate = new Date(year, month, day);
+      
       const dayEvents = events.filter(e => {
         const pd = parseDate(e.date);
         return pd && pd.toDateString() === cellDate.toDateString();
       });
 
       grid.push(
-        <div key={day} className="cal-cell">
-          <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>{day}</div>
+        <div key={day} className="cal-cell" style={{ minHeight: '120px', padding: '8px', borderRight: '1px solid var(--card-border)', borderBottom: '1px solid var(--card-border)' }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>{day}</div>
           {dayEvents.map((e, i) => (
-            <div key={i} className="cal-event-pill" style={{ background: getEventColor(e.type), marginBottom: '4px' }} title={`${e.time} - ${e.location}`}>
+            <div key={i} className="cal-event-pill" style={{ 
+              background: getEventColor(e.type), 
+              marginBottom: '4px', 
+              padding: '4px 6px', 
+              borderRadius: '4px', 
+              fontSize: '0.75rem', 
+              color: '#fff', 
+              whiteSpace: 'nowrap', 
+              overflow: 'hidden', 
+              textOverflow: 'ellipsis' 
+            }} title={`${e.time || 'All Day'} - ${e.title}`}>
               {e.time && <strong>{e.time}</strong>} {e.title}
             </div>
           ))}
@@ -161,7 +190,7 @@ export default function Events() {
           </button>
         </div>
 
-        {/* 🚨 CATEGORY NAVIGATION TABS (Interview Removed) */}
+        {/* 🚨 CATEGORY NAVIGATION TABS */}
         <div style={{ display: 'flex', gap: '10px', marginBottom: '25px', borderBottom: '1px solid var(--card-border)', paddingBottom: '10px', overflowX: 'auto' }}>
           <button 
             onClick={() => setCategoryTab('calendar')}
@@ -193,8 +222,8 @@ export default function Events() {
         {/* VIEW 1: FULL CALENDAR VIEW */}
         {/* ========================================== */}
         {categoryTab === 'calendar' && (
-          <div className="cal-main">
-            <div className="cal-toolbar" style={{ background: '#161e2e', padding: '15px 20px', borderRadius: '12px', marginBottom: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="cal-main" style={{ background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)', overflow: 'hidden' }}>
+            <div className="cal-toolbar" style={{ background: '#161e2e', padding: '15px 20px', borderBottom: '1px solid var(--card-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px', fontWeight: 'bold', fontSize: '1.2rem', color: '#fff' }}>
                 <CaretLeft size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={prevPeriod} />
                 {getMonthName()}
@@ -203,11 +232,17 @@ export default function Events() {
             </div>
 
             <div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', marginBottom: '10px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', padding: '15px 0', borderBottom: '1px solid var(--card-border)' }}>
                 {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => <div key={day} style={{ fontWeight: 'bold', color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase' }}>{day}</div>)}
               </div>
-              <div className="cal-grid">
-                {renderMonthGrid()}
+              <div className="cal-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+                {loading ? (
+                  <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '4rem', color: 'var(--accent-primary)' }}>
+                    <CircleNotch size={40} className="ph-spin" />
+                  </div>
+                ) : (
+                  renderMonthGrid()
+                )}
               </div>
             </div>
           </div>
