@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   CircleNotch, Plus, PencilSimple, X, FloppyDisk, 
-  CaretLeft, Trophy, ArrowCounterclockwise 
+  CaretLeft, Trophy, ArrowsClockwise 
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -283,7 +283,7 @@ export default function PlacedStudents() {
 
           {(courseFilter !== 'All' || monthFilter !== '' || searchQuery !== '') && (
             <button onClick={resetFilters} style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem' }}>
-              <ArrowCounterclockwise size={14} /> Reset
+              <ArrowsClockwise size={14} /> Reset
             </button>
           )}
         </div>

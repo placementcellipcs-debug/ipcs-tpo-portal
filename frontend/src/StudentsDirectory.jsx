@@ -4,7 +4,7 @@ import {
   CircleNotch, SquaresFour, List, PencilSimple, X, FloppyDisk, 
   UserMinus, ClockClockwise, Prohibit, UsersThree, Briefcase, Files, Confetti, 
   FilePdf, GraduationCap, CaretLeft, Phone, WhatsappLogo, EnvelopeSimple, LinkedinLogo,
-  ArrowCounterclockwise
+  ArrowsClockwise
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -13,29 +13,24 @@ const TILE_COLORS = ['#10b981', '#ef4444', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
   const lower = c.toLowerCase().trim();
-  if (lower.includes('bms') || lower.includes('cctv') || lower.includes('building management') || lower.includes('security system')) return 'BMS AND CCTV';
-  if (lower.includes('automation') || lower.includes('plc') || lower.includes('dcs') || lower.includes('scada') || lower.includes('vfd') || lower.includes('panel') || lower.includes('marine') || lower.includes('networking')) return 'Industrial Automation';
-  if (lower.includes('embed') || lower.includes('iot') || lower.includes('raspberry') || lower.includes('labview')) return 'Embedded and IoT';
-  if (lower.includes('digital') || lower.includes('dm') || lower.includes('seo') || lower.includes('social media') || lower.includes('affiliate') || lower.includes('blogging') || lower.includes('marketing')) return 'Digital Marketing';
-  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('information') || lower.includes('data science') || lower.includes('full stack') || lower.includes('java') || lower.includes('stack') || lower.includes('artificial intelligence') || lower.includes('ai')) return 'Information technology (IT)';
+  if (lower.includes('bms') || lower.includes('cctv')) return 'BMS AND CCTV';
+  if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
+  if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
+  if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
+  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
   return 'Others';
 };
 
 const parseDate = (dStr) => {
   if (!dStr) return null;
-  if (typeof dStr !== 'string') {
-    const d = new Date(dStr);
-    return isNaN(d) ? null : d;
-  }
-  if (dStr.includes('/') || (dStr.includes('-') && dStr.split('-')[0].length <= 2)) {
-    const parts = dStr.split(/[/\s,.-]+/);
-    if (parts.length >= 3) {
-      if (parts[2].length === 4) {
-        return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-      }
+  let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0] : dStr;
+  if (typeof cleanStr === 'string' && cleanStr.includes('/')) {
+    const parts = cleanStr.split('/');
+    if (parts.length === 3 && parts[2].length === 4) {
+      return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
     }
   }
-  const d = new Date(dStr);
+  const d = new Date(cleanStr);
   return isNaN(d) ? null : d;
 };
 
@@ -95,18 +90,13 @@ export default function StudentsDirectory() {
         }
       } catch (error) { 
         console.error("Failed to fetch students", error); 
-      } finally { 
-        setLoading(false); 
-      }
+      } finally { setLoading(false); }
     };
     fetchData();
   }, []);
 
   const resetFilters = () => {
-    setSearchQuery('');
-    setCourseFilter('All');
-    setMonthFilter('');
-    setSortOrder('newest');
+    setSearchQuery(''); setCourseFilter('All'); setMonthFilter(''); setSortOrder('newest');
   };
 
   const getDriveImage = (url) => {
@@ -126,10 +116,7 @@ export default function StudentsDirectory() {
     const initial = name ? name.charAt(0).toUpperCase() : '?';
     if (!fixedUrl || fixedUrl === 'N/A') return <span style={{ fontSize: '1.4rem', fontWeight: 'bold' }}>{initial}</span>;
     return (
-      <img 
-        src={fixedUrl} 
-        alt={name} 
-        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+      <img src={fixedUrl} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
         onError={(e) => { e.target.style.display='none'; e.target.parentNode.innerHTML = `<span style="font-size: 1.4rem; font-weight: bold;">${initial}</span>`; }} 
       />
     );
@@ -149,49 +136,32 @@ export default function StudentsDirectory() {
     try {
       const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/students/update-student', {
         rowNumber: selectedStudent.rowIdx,
-        vacOpen: localVacState,
-        placementStatus: localPlacementState,
-        studyAccess: localStudyAccess,
-        examAccess: localExamAccess
+        vacOpen: localVacState, placementStatus: localPlacementState,
+        studyAccess: localStudyAccess, examAccess: localExamAccess
       });
       
       if (response.data.success) {
         const updatedStudents = rawStudents.map(s => s.rowIdx === selectedStudent.rowIdx ? { 
-          ...s, 
-          vacOpen: localVacState, 
-          placementStatus: localPlacementState,
-          studyAccess: localStudyAccess,
-          examAccess: localExamAccess
+          ...s, vacOpen: localVacState, placementStatus: localPlacementState, studyAccess: localStudyAccess, examAccess: localExamAccess
         } : s);
         setRawStudents(updatedStudents);
         setIsModalOpen(false);
       }
-    } catch (error) { 
-      alert("Failed to update student data"); 
-    } finally { 
-      setSavingStatus(false); 
-    }
+    } catch (error) { alert("Failed to update student data"); } finally { setSavingStatus(false); }
   };
 
-  // 1. Course specific restriction
   const scopedStudents = rawStudents.filter(s => {
-    if (isCourseSpecific) {
-      return getStandardCourse(s.course) === getStandardCourse(displayCourse);
-    }
+    if (isCourseSpecific) return getStandardCourse(s.course) === getStandardCourse(displayCourse);
     return true;
   });
 
-  // 2. Global Course and Month Filter
   const globallyFiltered = scopedStudents.filter(s => {
     let cMatch = courseFilter === 'All' || getStandardCourse(s.course) === getStandardCourse(courseFilter);
-    
-    // Check registration date / timestamp in rawData
     const dateKey = Object.keys(s.rawData || {}).find(k => k.toLowerCase().includes('timestamp') || k.toLowerCase().includes('date'));
     const dateVal = dateKey ? s.rawData[dateKey] : null;
     const dateObj = parseDate(dateVal);
     const monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
     let mMatch = monthFilter === '' || monthKey === monthFilter;
-
     return cMatch && mMatch;
   });
 
@@ -211,9 +181,8 @@ export default function StudentsDirectory() {
   };
 
   let filteredAndSorted = activeStudents.filter(s => {
-    const matchQuery = s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    return s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
       (s.roll && s.roll.toLowerCase().includes(searchQuery.toLowerCase()));
-    return matchQuery;
   });
 
   if (sortOrder === 'az') filteredAndSorted.sort((a, b) => a.name.localeCompare(b.name));
@@ -223,9 +192,7 @@ export default function StudentsDirectory() {
     if (!rawData) return null;
     const key = Object.keys(rawData).find(k => k.toLowerCase().includes('linkedin'));
     let url = key ? rawData[key] : null;
-    if (url && url !== 'N/A' && !url.startsWith('http')) {
-      url = 'https://' + url;
-    }
+    if (url && url !== 'N/A' && !url.startsWith('http')) url = 'https://' + url;
     return url && url !== 'N/A' ? url : null;
   };
 
@@ -236,34 +203,10 @@ export default function StudentsDirectory() {
         {/* TOP KPI BAR */}
         {!selectedBranch && (
           <div className="universal-kpi-bar" style={{ marginBottom: '2.5rem' }}>
-            <div className="kpi-card">
-              <div>
-                <div className="kpi-val">{globallyFiltered.length}</div>
-                <div className="kpi-label">{isCourseSpecific ? `${displayCourse} Students` : 'Filtered Students'}</div>
-              </div>
-              <div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}><UsersThree weight="fill"/></div>
-            </div>
-            <div className="kpi-card">
-              <div>
-                <div className="kpi-val">{globalStats.activeVacancies}</div>
-                <div className="kpi-label">Active Vacancies</div>
-              </div>
-              <div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><Briefcase weight="fill"/></div>
-            </div>
-            <div className="kpi-card">
-              <div>
-                <div className="kpi-val">{globalStats.pendingApps}</div>
-                <div className="kpi-label">Pending Apps</div>
-              </div>
-              <div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><Files weight="fill"/></div>
-            </div>
-            <div className="kpi-card">
-              <div>
-                <div className="kpi-val">{globalStats.placed}</div>
-                <div className="kpi-label">Total Hired</div>
-              </div>
-              <div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}><Confetti weight="fill"/></div>
-            </div>
+            <div className="kpi-card"><div><div className="kpi-val">{globallyFiltered.length}</div><div className="kpi-label">{isCourseSpecific ? `${displayCourse} Students` : 'Filtered Students'}</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}><UsersThree weight="fill"/></div></div>
+            <div className="kpi-card"><div><div className="kpi-val">{globalStats.activeVacancies}</div><div className="kpi-label">Active Vacancies</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><Briefcase weight="fill"/></div></div>
+            <div className="kpi-card"><div><div className="kpi-val">{globalStats.pendingApps}</div><div className="kpi-label">Pending Apps</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><Files weight="fill"/></div></div>
+            <div className="kpi-card"><div><div className="kpi-val">{globalStats.placed}</div><div className="kpi-label">Total Hired</div></div><div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}><Confetti weight="fill"/></div></div>
           </div>
         )}
 
@@ -295,27 +238,13 @@ export default function StudentsDirectory() {
 
         {/* UNIVERSAL FILTER BAR */}
         <div className="header-controls" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '1.5rem', alignItems: 'center', background: 'var(--card-bg)', padding: '14px 18px', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
-          
           {selectedBranch && (
-            <input 
-              type="text" 
-              className="sleek-input" 
-              placeholder="Search name or roll..." 
-              style={{ minWidth: '200px', flex: 1 }}
-              value={searchQuery} 
-              onChange={(e) => setSearchQuery(e.target.value)} 
-            />
+            <input type="text" className="sleek-input" placeholder="Search name or roll..." style={{ minWidth: '200px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           )}
 
-          {/* 5 MAIN COURSES */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
-            <select 
-              className="sleek-select" 
-              style={{ minWidth: '190px' }}
-              value={courseFilter} 
-              onChange={(e) => setCourseFilter(e.target.value)}
-            >
+            <select className="sleek-select" style={{ minWidth: '190px' }} value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
               <option value="All">All Main Courses</option>
               <option value="Industrial Automation">Industrial Automation</option>
               <option value="BMS AND CCTV">BMS AND CCTV</option>
@@ -325,16 +254,9 @@ export default function StudentsDirectory() {
             </select>
           </div>
 
-          {/* MONTH & YEAR FILTER */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Month/Year:</span>
-            <input 
-              type="month" 
-              className="sleek-input" 
-              style={{ minWidth: '150px' }}
-              value={monthFilter} 
-              onChange={(e) => setMonthFilter(e.target.value)} 
-            />
+            <input type="month" className="sleek-input" style={{ minWidth: '150px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
           </div>
 
           {selectedBranch && (
@@ -353,11 +275,8 @@ export default function StudentsDirectory() {
           )}
 
           {(courseFilter !== 'All' || monthFilter !== '' || searchQuery !== '') && (
-            <button 
-              onClick={resetFilters}
-              style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem' }}
-            >
-              <ArrowCounterclockwise size={14} /> Reset
+            <button onClick={resetFilters} style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem' }}>
+              <ArrowsClockwise size={14} /> Reset
             </button>
           )}
         </div>
@@ -369,7 +288,6 @@ export default function StudentsDirectory() {
             <p>Fetching registered students...</p>
           </div>
         ) : !selectedBranch ? (
-          /* BRANCH TILE VIEW */
           branchList.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
               No students found for the selected course and month filters.
@@ -379,11 +297,7 @@ export default function StudentsDirectory() {
               {branchList.map((branch, index) => {
                 const color = TILE_COLORS[index % TILE_COLORS.length];
                 return (
-                  <div 
-                    key={branch} 
-                    onClick={() => setSelectedBranch(branch)}
-                    style={{ backgroundColor: color, borderRadius: '20px', padding: '35px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
-                  >
+                  <div key={branch} onClick={() => setSelectedBranch(branch)} style={{ backgroundColor: color, borderRadius: '20px', padding: '35px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
                     <h2 style={{ color: '#ffffff', fontSize: '2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>{branch}</h2>
                     <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <UsersThree size={20} color="#ffffff" weight="bold" />
@@ -465,10 +379,7 @@ export default function StudentsDirectory() {
 
       {/* MODAL */}
       {isModalOpen && selectedStudent && (
-        <div 
-          style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', overflow: 'hidden' }} 
-          onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}
-        >
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', overflow: 'hidden' }} onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '850px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
             
             <div className="student-modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #1e293b', paddingBottom: '1.2rem', margin: '0 0 1.5rem 0', flexWrap: 'wrap', gap: '15px' }}>
@@ -528,23 +439,18 @@ export default function StudentsDirectory() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '1.5rem' }}>
-              
               {(tpoData?.accessType === 'superadmin' || !isCourseSpecific) && (
                 <>
                   <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
                     <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Placement Status</span>
                     <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localPlacementState} onChange={(e) => setLocalPlacementState(e.target.value)} disabled={isViewOnly}>
-                      <option value="Pending">Pending</option>
-                      <option value="Placed">Placed</option>
-                      <option value="Not Responding">Not Responding</option>
-                      <option value="No Need of Placement">No Need of Placement</option>
+                      <option value="Pending">Pending</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
                     </select>
                   </div>
                   <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
                     <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Vacancy Access</span>
                     <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)} disabled={isViewOnly}>
-                      <option value="Yes">Yes (Allowed)</option>
-                      <option value="No">No (Restricted)</option>
+                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
                     </select>
                   </div>
                 </>
@@ -555,20 +461,17 @@ export default function StudentsDirectory() {
                   <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
                     <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Study Material Access</span>
                     <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localStudyAccess} onChange={(e) => setLocalStudyAccess(e.target.value)} disabled={isViewOnly}>
-                      <option value="Yes">Yes (Allowed)</option>
-                      <option value="No">No (Restricted)</option>
+                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
                     </select>
                   </div>
                   <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
                     <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Technical Exam Access</span>
                     <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localExamAccess} onChange={(e) => setLocalExamAccess(e.target.value)} disabled={isViewOnly}>
-                      <option value="Yes">Yes (Allowed)</option>
-                      <option value="No">No (Restricted)</option>
+                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
                     </select>
                   </div>
                 </>
               )}
-
             </div>
 
             <div style={{ display: 'flex', justifyContent: isViewOnly ? 'space-between' : 'flex-end', alignItems: 'center', borderTop: '1px solid #1e293b', paddingTop: '1.5rem', marginTop: '1.5rem' }}>

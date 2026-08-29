@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, CaretLeft, Files, ArrowCounterclockwise } from '@phosphor-icons/react';
+import { CircleNotch, CaretLeft, Files, ArrowsClockwise } from '@phosphor-icons/react';
 import Layout from './Layout';
 
 const TILE_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
@@ -8,29 +8,24 @@ const TILE_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
   const lower = c.toLowerCase().trim();
-  if (lower.includes('bms') || lower.includes('cctv') || lower.includes('building management') || lower.includes('security system')) return 'BMS AND CCTV';
-  if (lower.includes('automation') || lower.includes('plc') || lower.includes('dcs') || lower.includes('scada') || lower.includes('vfd') || lower.includes('panel') || lower.includes('marine') || lower.includes('networking')) return 'Industrial Automation';
-  if (lower.includes('embed') || lower.includes('iot') || lower.includes('raspberry') || lower.includes('labview')) return 'Embedded and IoT';
-  if (lower.includes('digital') || lower.includes('dm') || lower.includes('seo') || lower.includes('social media') || lower.includes('affiliate') || lower.includes('blogging') || lower.includes('marketing')) return 'Digital Marketing';
-  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('information') || lower.includes('data science') || lower.includes('full stack') || lower.includes('java') || lower.includes('stack') || lower.includes('artificial intelligence') || lower.includes('ai')) return 'Information technology (IT)';
+  if (lower.includes('bms') || lower.includes('cctv')) return 'BMS AND CCTV';
+  if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
+  if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
+  if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
+  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
   return 'Others';
 };
 
 const parseDate = (dStr) => {
   if (!dStr) return null;
-  if (typeof dStr !== 'string') {
-    const d = new Date(dStr);
-    return isNaN(d) ? null : d;
-  }
-  if (dStr.includes('/') || (dStr.includes('-') && dStr.split('-')[0].length <= 2)) {
-    const parts = dStr.split(/[/\s,.-]+/);
-    if (parts.length >= 3) {
-      if (parts[2].length === 4) {
-        return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-      }
+  let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0] : dStr;
+  if (typeof cleanStr === 'string' && cleanStr.includes('/')) {
+    const parts = cleanStr.split('/');
+    if (parts.length === 3 && parts[2].length === 4) {
+      return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
     }
   }
-  const d = new Date(dStr);
+  const d = new Date(cleanStr);
   return isNaN(d) ? null : d;
 };
 
@@ -66,7 +61,6 @@ export default function StudentApps() {
         setLoading(false); 
       }
     };
-    
     fetchApps();
   }, []);
 
@@ -111,10 +105,7 @@ export default function StudentApps() {
           <div>
             {selectedBranch ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                <button 
-                  onClick={() => setSelectedBranch(null)} 
-                  style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
-                >
+                <button onClick={() => setSelectedBranch(null)} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <CaretLeft weight="bold" size={18} /> Back to Branches
                 </button>
                 <div>
@@ -133,27 +124,13 @@ export default function StudentApps() {
 
         {/* UNIVERSAL FILTER BAR */}
         <div className="header-controls" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '1.5rem', alignItems: 'center', background: 'var(--card-bg)', padding: '14px 18px', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
-          
           {selectedBranch && (
-            <input 
-              type="text" 
-              className="sleek-input" 
-              placeholder="Search student, roll, job ID..." 
-              style={{ minWidth: '220px', flex: 1 }}
-              value={searchQuery} 
-              onChange={(e) => setSearchQuery(e.target.value)} 
-            />
+            <input type="text" className="sleek-input" placeholder="Search student, roll, job ID..." style={{ minWidth: '220px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           )}
 
-          {/* COURSE FILTER (5 Main Courses) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
-            <select 
-              className="sleek-select" 
-              style={{ minWidth: '190px' }}
-              value={courseFilter} 
-              onChange={(e) => setCourseFilter(e.target.value)}
-            >
+            <select className="sleek-select" style={{ minWidth: '190px' }} value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
               <option value="All">All Main Courses</option>
               <option value="Industrial Automation">Industrial Automation</option>
               <option value="BMS AND CCTV">BMS AND CCTV</option>
@@ -163,24 +140,14 @@ export default function StudentApps() {
             </select>
           </div>
 
-          {/* MONTH & YEAR FILTER */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Month/Year:</span>
-            <input 
-              type="month" 
-              className="sleek-input" 
-              style={{ minWidth: '150px' }}
-              value={monthFilter} 
-              onChange={(e) => setMonthFilter(e.target.value)} 
-            />
+            <input type="month" className="sleek-input" style={{ minWidth: '150px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
           </div>
 
           {(courseFilter !== 'All' || monthFilter !== '' || searchQuery !== '') && (
-            <button 
-              onClick={resetFilters}
-              style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem' }}
-            >
-              <ArrowCounterclockwise size={14} /> Reset
+            <button onClick={resetFilters} style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem' }}>
+              <ArrowsClockwise size={14} /> Reset
             </button>
           )}
         </div>
@@ -192,7 +159,6 @@ export default function StudentApps() {
             <p style={{ marginTop: '10px', color: 'var(--text-muted)' }}>Fetching application records...</p>
           </div>
         ) : !selectedBranch ? (
-          /* BRANCH TILE VIEW */
           branchList.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
               No applications match the selected Course and Month filters.
@@ -202,14 +168,8 @@ export default function StudentApps() {
               {branchList.map((branch, index) => {
                 const color = TILE_COLORS[index % TILE_COLORS.length];
                 return (
-                  <div 
-                    key={branch} 
-                    onClick={() => setSelectedBranch(branch)}
-                    style={{ backgroundColor: color, borderRadius: '20px', padding: '35px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
-                  >
-                    <h2 style={{ color: '#ffffff', fontSize: '2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>
-                      {branch}
-                    </h2>
+                  <div key={branch} onClick={() => setSelectedBranch(branch)} style={{ backgroundColor: color, borderRadius: '20px', padding: '35px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+                    <h2 style={{ color: '#ffffff', fontSize: '2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>{branch}</h2>
                     <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <Files size={20} color="#ffffff" weight="bold" />
                       <span style={{ color: '#ffffff', fontSize: '1.05rem', fontWeight: 'bold' }}>{branchData[branch]} Applications</span>
@@ -220,7 +180,6 @@ export default function StudentApps() {
             </div>
           )
         ) : (
-          /* TABLE VIEW */
           <div className="table-container" style={{ marginTop: '1.5rem' }}>
             <table className="modern-table">
               <thead>
@@ -259,7 +218,7 @@ export default function StudentApps() {
                           <span className="sub-text">{app.company}</span>
                         </td>
                         <td style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                          {app.date ? app.date.split(' ')[0] : 'N/A'}
+                          {app.date ? (app.date.includes('/') ? app.date.split(' ')[0] : new Date(app.date).toLocaleDateString('en-GB')) : 'N/A'}
                         </td>
                         <td>
                           <strong style={{ color: 'var(--text-main)', fontSize: '0.8rem' }}>{app.tpoName || 'N/A'}</strong>
