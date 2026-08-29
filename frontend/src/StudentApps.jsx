@@ -121,14 +121,15 @@ export default function StudentApps() {
           </div>
         </div>
 
-        <div className="header-controls" style={{ justifyContent: 'flex-start' }}>
+        <div className="header-controls" style={{ justifyContent: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
           <input type="month" className="sleek-input" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
           <select className="sleek-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
             <option value="All">All Courses</option>
             <option value="Industrial Automation">Industrial Automation</option>
-            <option value="BMS & CCTV">BMS & CCTV</option>
-            <option value="Python and Data Science">Python</option>
+            <option value="BMS AND CCTV">BMS AND CCTV</option>
+            <option value="Embedded and IoT">Embedded and IoT</option>
             <option value="Digital Marketing">Digital Marketing</option>
+            <option value="Information technology (IT)">Information technology (IT)</option>
           </select>
         </div>
 

@@ -33,6 +33,7 @@ export default function StudentsDirectory() {
   const [courseFilter, setCourseFilter] = useState('All');
   const [sortOrder, setSortOrder] = useState('newest'); 
   const [viewType, setViewType] = useState('list'); 
+  const [monthFilter, setMonthFilter] = useState(''); // NEW
 
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -158,10 +159,28 @@ export default function StudentsDirectory() {
     noNeed: activeStudents.filter(s => s.placementStatus?.toLowerCase().includes('no need')).length
   };
 
+  const parseDate = (dStr) => {
+    if (!dStr) return null;
+    if (typeof dStr === 'string' && dStr.includes('/')) {
+      const parts = dStr.split(/[/\s,]+/);
+      if (parts.length >= 3) return new Date(`${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`);
+    }
+    const d = new Date(dStr);
+    return isNaN(d) ? null : d;
+  };
+
   let filteredAndSorted = activeStudents.filter(s => {
     const matchQuery = s.name.toLowerCase().includes(searchQuery.toLowerCase()) || (s.roll && s.roll.toLowerCase().includes(searchQuery.toLowerCase()));
-    const matchCourse = courseFilter === 'All' || s.course === courseFilter;
-    return matchQuery && matchCourse;
+    const matchCourse = courseFilter === 'All' || (s.course || '').toLowerCase().includes(courseFilter.toLowerCase());
+    
+    // Find timestamp in rawData to filter by month
+    const dateKey = Object.keys(s.rawData || {}).find(k => k.toLowerCase().includes('timestamp') || k.toLowerCase().includes('date'));
+    const dateVal = dateKey ? s.rawData[dateKey] : null;
+    const dateObj = parseDate(dateVal);
+    const monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
+    const matchMonth = monthFilter === '' || monthKey === monthFilter;
+
+    return matchQuery && matchCourse && matchMonth;
   });
 
   if (sortOrder === 'az') filteredAndSorted.sort((a, b) => a.name.localeCompare(b.name));
@@ -248,13 +267,25 @@ export default function StudentsDirectory() {
         </div>
 
         <div className="header-controls">
-          <div className="filter-group">
+          <div className="filter-group" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <input type="text" className="sleek-input" placeholder="Search name or roll..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            
+            <input type="month" className="sleek-input" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
+            
             <select className="sleek-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
               <option value="All">All {isCourseSpecific ? 'Sub-Courses' : 'Courses'}</option>
-              {uniqueCourses.filter(c => c !== 'All').map(c => <option key={c} value={c}>{c}</option>)}
+              <option value="Industrial Automation">Industrial Automation</option>
+              <option value="BMS AND CCTV">BMS AND CCTV</option>
+              <option value="Embedded and IoT">Embedded and IoT</option>
+              <option value="Digital Marketing">Digital Marketing</option>
+              <option value="Information technology (IT)">Information technology (IT)</option>
             </select>
-            <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}><option value="newest">Sort: Newest First</option><option value="az">Sort: A-Z</option><option value="za">Sort: Z-A</option></select>
+
+            <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
+              <option value="newest">Sort: Newest First</option>
+              <option value="az">Sort: A-Z</option>
+              <option value="za">Sort: Z-A</option>
+            </select>
           </div>
           <div className="view-toggles">
             <button className={`view-btn ${viewType === 'grid' ? 'active' : ''}`} onClick={() => setViewType('grid')}><SquaresFour weight="fill" /></button>

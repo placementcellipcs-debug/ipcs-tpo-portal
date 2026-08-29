@@ -19,6 +19,8 @@ export default function PlacedStudents() {
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [sortOrder, setSortOrder] = useState('newest');
+  const [courseFilter, setCourseFilter] = useState('All'); // NEW
+  const [monthFilter, setMonthFilter] = useState('');      // NEW
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -78,7 +80,13 @@ export default function PlacedStudents() {
 
   const filteredApps = activePlacedApps.filter(a => {
     let sMatch = searchQuery === '' || (a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || (a.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || (a.roll || '').toLowerCase().includes(searchQuery.toLowerCase());
-    return sMatch;
+    let cMatch = courseFilter === 'All' || (a.course || '').toLowerCase().includes(courseFilter.toLowerCase());
+    
+    let dateObj = parseDate(a.datePlaced || a.date);
+    let monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
+    let mMatch = monthFilter === '' ? true : monthKey === monthFilter;
+
+    return sMatch && cMatch && mMatch;
   }).sort((a, b) => {
     if(sortOrder === 'newest') return new Date(b.datePlaced || b.date) - new Date(a.datePlaced || a.date);
     if(sortOrder === 'az') return (a.name || '').localeCompare(b.name || '');
@@ -235,9 +243,20 @@ export default function PlacedStudents() {
           </div>
         </div>
         
-        <div className="header-controls" style={{ justifyContent: 'flex-start' }}>
+        <div className="header-controls" style={{ justifyContent: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
           <input type="text" className="sleek-input" placeholder="Search student or company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           
+          <input type="month" className="sleek-input" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
+          
+          <select className="sleek-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
+            <option value="All">All Courses</option>
+            <option value="Industrial Automation">Industrial Automation</option>
+            <option value="BMS AND CCTV">BMS AND CCTV</option>
+            <option value="Embedded and IoT">Embedded and IoT</option>
+            <option value="Digital Marketing">Digital Marketing</option>
+            <option value="Information technology (IT)">Information technology (IT)</option>
+          </select>
+
           <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
             <option value="newest">Sort: Date Placed</option>
             <option value="az">Sort: Student A-Z</option>
