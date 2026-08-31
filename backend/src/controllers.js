@@ -10,7 +10,6 @@ exports.login = async (req, res) => {
   try {
     const cache = getCache();
     
-    // 🚨 FAST LOGIN: Uses RAM Cache instead of hitting Google API during login
     if (!cache || !cache.contacts || !cache.users) {
        return res.status(503).json({ success: false, message: "System is booting up. Please try again in 5 seconds." });
     }
@@ -74,30 +73,55 @@ exports.getDashboardStats = (req, res) => {
   const cache = getCache();
   let studentCount = 0, pendingApps = 0, placedCount = 0, activeVacs = 0;
 
+  // 1. Calculate Students
   cache.students.forEach(row => { 
     const rowData = row.toObject();
     const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
     if (hasAccess(rowData[getHeader('branch')], rowData[getHeader('course')], role, assignedBranchesArray, assignedCourse)) studentCount++; 
   });
   
-  // 🚨 FIX: Force backend to strictly read from Opening_Applied
-  const appSource = cache.applications || [];
+  // 🚨 FIX: Force backend to strictly read Placements/Applications from TPO_Log
+  const logsSource = cache.tpoLogs || [];
   
-  appSource.forEach(row => {
+  // Deduplicate logs so we only evaluate the newest status for each application
+  const dedupedLogs = {};
+  logsSource.forEach(row => {
     const rowData = row.toObject();
     const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
+    
+    const roll = rowData[getHeader('roll')] || rowData[getHeader('rollnumber')] || '';
+    const name = rowData[getHeader('name')] || rowData[getHeader('studentname')] || '';
+    const company = rowData[getHeader('company')] || rowData[getHeader('companyname')] || '';
+    
+    const key = `${roll || name}_${company}`.toLowerCase();
+    dedupedLogs[key] = rowData; // Overwrites older entries with newer ones
+  });
+
+  // Evaluate the latest log for each application
+  Object.values(dedupedLogs).forEach(rowData => {
+    const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
+    
     if (hasAccess(rowData[getHeader('branch')], rowData[getHeader('course')], role, assignedBranchesArray, assignedCourse)) {
       const stat = (rowData[getHeader('status')] || '').toString().toLowerCase();
+      const joinStat = (rowData[getHeader('joiningstatus')] || '').toString().toLowerCase();
+      const placeStat = (rowData[getHeader('placementstatus')] || '').toString().toLowerCase();
+
       if (stat === 'applied') pendingApps++;
-      if (stat.includes('placed') || stat.includes('joined') || stat.includes('offer')) placedCount++;
+      // If it mentions placed, offer, or join, count it as Placed!
+      if (stat.includes('placed') || stat.includes('got offer') || stat.includes('offer') || joinStat.includes('join') || placeStat.includes('placed')) {
+        placedCount++;
+      }
     }
   });
   
+  // 3. Calculate Vacancies
   cache.vacancies.forEach(row => {
     if ((row.get('Status') || 'Open').toString().toLowerCase().includes('open') || (row.get('Status') || '').toString().toLowerCase().includes('yes')) activeVacs++;
   });
 
+  // 4. Events
   let eventsList = cache.events.slice(-8).map(row => ({ title: row.get('Title') || 'Event', date: row.get('Date') || '', time: row.get('Time') || '', type: row.get('Type') || 'Placement Drive', location: row.get('Location') || '' }));
+  
   res.json({ success: true, stats: { totalStudents: studentCount, pendingApps, placed: placedCount, activeVacancies: activeVacs }, events: eventsList.reverse() });
 };
 
@@ -140,8 +164,8 @@ exports.getStudents = (req, res) => {
         qual: rowData[getHeader('qualification')] || '', stream: rowData[getHeader('stream')] || '', status: status, 
         resume: rowData[getHeader('resume')] || rowData[getHeader('cv')] || '', certificate: rowData[getHeader('certificate')] || '',
         vacOpen: (vacKey && rowData[vacKey] ? rowData[vacKey] : 'Yes'), 
-        studyAccess: (studyKey && rowData[studyKey] ? rowData[studyKey] : 'No'), // 🚨 ADDED
-        examAccess: (examKey && rowData[examKey] ? rowData[examKey] : 'No'), // 🚨 ADDED
+        studyAccess: (studyKey && rowData[studyKey] ? rowData[studyKey] : 'No'), 
+        examAccess: (examKey && rowData[examKey] ? rowData[examKey] : 'No'), 
         placementStatus: pStatus, rawData: rowData
       });
     }
@@ -171,7 +195,7 @@ exports.updateStudent = async (req, res) => {
 // --- APPLICATIONS ---
 exports.getApplications = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, tpoName } = req.body;
-  let appsList = []; // 🚨 Changed from appsMap to a flat array
+  let appsList = []; 
   const cleanTpoName = (tpoName || '').toString().toLowerCase().trim();
   const cache = getCache();
   
@@ -216,7 +240,6 @@ exports.getApplications = (req, res) => {
         }
       }
 
-      // 🚨 Directly push to array to prevent data overwriting
       appsList.push({
         rowNumber: row.rowNumber, name: rowData[getHeader('name')] || '', roll: roll, branch: branch, course: course, qual: qual || 'Not Specified', jobId: jobId, company: rowData[getHeader('company')] || 'Unknown Company', position: rowData[getHeader('position')] || 'Unknown Position', date: rowData[getHeader('time')] || rowData[getHeader('date')] || '', status: rowData[getHeader('status')] || 'Applied', remarks: rowData[getHeader('remarks')] || '', tpoName: rowData[getHeader('placementofficer')] || '', phone: phone, email: email, resume: resume, datePlaced: rowData[getHeader('dateplaced')] || '', packageLpa: rowData[getHeader('package')] || '', offerLetter: rowData[getHeader('offerletter')] || '', joiningStatus: rowData[getHeader('joiningstatus')] || ''
       });
@@ -354,7 +377,6 @@ exports.getReports = (req, res) => {
   let vacancies = getCache().vacancies.map(row => ({ id: row.get('Job ID') || row.get('ID') || '', company: row.get('Company') || '', location: row.get('Location') || '', mode: row.get('Mode') || '', status: row.get('Status') || 'Open', course: row.get('Course') || '', date: row.get('Last Date') || row.get('Date') || '' }));
   let events = getCache().events.map(row => ({ date: row.get('Date') || '' }));
 
-  // 🚨 NEW: Fetching TPO Logs specifically for the Reports module
   if (getCache().tpoLogs) {
     getCache().tpoLogs.forEach(row => {
       tpoLogs.push(row.toObject());
@@ -1103,63 +1125,6 @@ exports.updateQuestion = async (req, res) => {
       await rowToUpdate.save();
       refreshCache();
       res.json({ success: true, message: "Technical question updated successfully!" });
-    } else {
-      res.status(404).json({ success: false, message: "Question ID not found." });
-    }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-// --- UPDATE APTITUDE QUESTION ---
-exports.updateAptQuestion = async (req, res) => {
-  try {
-    const { id, category, question, optA, optB, optC, optD, correct, explanation, status, level } = req.body;
-    const sheet = doc.sheetsByTitle["Aptitude_Questions"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
-    const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => (r.get('QID') || r.get('qid') || '').toString().trim() === id.toString().trim());
-    
-    if (rowToUpdate) {
-      const h = sheet.headerValues;
-      rowToUpdate.assign({
-        [getFuzzyHeader(h, 'qid')]: id, [getFuzzyHeader(h, 'category')]: category,
-        [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA,
-        [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC,
-        [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct,
-        [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active',
-        [getFuzzyHeader(h, 'level')]: level || 'Medium'
-      });
-      await rowToUpdate.save();
-      refreshCache();
-      res.json({ success: true, message: "Aptitude question updated successfully!" });
-    } else {
-      res.status(404).json({ success: false, message: "Question ID not found." });
-    }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-// --- UPDATE TALENTINO QUESTION ---
-exports.updateTalExamQuestion = async (req, res) => {
-  try {
-    const { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
-    const sheet = doc.sheetsByTitle["Talentino_Questions"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
-    const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => (r.get('Question ID') || r.get('questionid') || '').toString().trim() === id.toString().trim());
-    
-    if (rowToUpdate) {
-      const h = sheet.headerValues;
-      rowToUpdate.assign({
-        [getFuzzyHeader(h, 'questionid')]: id, [getFuzzyHeader(h, 'testnumber')]: testNumber,
-        [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA,
-        [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC,
-        [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct,
-        [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active'
-      });
-      await rowToUpdate.save();
-      refreshCache();
-      res.json({ success: true, message: "Talentino question updated successfully!" });
     } else {
       res.status(404).json({ success: false, message: "Question ID not found." });
     }

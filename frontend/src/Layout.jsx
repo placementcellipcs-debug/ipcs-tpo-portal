@@ -38,7 +38,6 @@ export default function Layout({ children }) {
   
   const profilePhotoUrl = getDriveImage(tpoData.photo);
   
-  // Highlighting active tabs logic
   const isActive = (path) => {
     if (path === '/dashboard' && location.pathname === '/dashboard') return '#38bdf8';
     if (path !== '/dashboard' && location.pathname.startsWith(path)) return '#38bdf8';
@@ -65,7 +64,6 @@ export default function Layout({ children }) {
     );
   };
 
-  // 🚨 BULLETPROOF CLICK HANDLER
   const handleNav = (path) => {
     setIsDrawerOpen(false);
     navigate(path);
@@ -176,13 +174,13 @@ export default function Layout({ children }) {
             </div>
           </div>
           
-          {/* 🚨 REVERTED TO BULLETPROOF DIV ONCLICKS */}
           <div className="drawer-menu" style={{ padding: '15px', flex: 1, overflowY: 'auto' }}>
             
             <div className="drawer-item" onClick={() => handleNav('/dashboard')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><SquaresFour size={22} color={isActive('/dashboard')} /> <span style={{ color: isActive('/dashboard') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Dashboard</span></div><span style={{ color: '#64748b' }}>›</span></div>
             <div className="drawer-item" onClick={() => handleNav('/students')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/students')} /> <span style={{ color: isActive('/students') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Students Directory</span></div><span style={{ color: '#64748b' }}>›</span></div>
             
-            {(tpoData.role || '').toUpperCase() === 'TPO' && (
+            {/* 🚨 FIX: Now visible to both TPO and Superadmin (Zonal Head) */}
+            {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase() === 'TPO') && (
               <>
                 <div className="drawer-item" onClick={() => handleNav('/tracker')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Files size={22} color={isActive('/tracker')} /> <span style={{ color: isActive('/tracker') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Job Tracker</span></div><span style={{ color: '#64748b' }}>›</span></div>
                 <div className="drawer-item" onClick={() => handleNav('/reports')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> <span style={{ color: isActive('/reports') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Reports</span></div><span style={{ color: '#64748b' }}>›</span></div>
