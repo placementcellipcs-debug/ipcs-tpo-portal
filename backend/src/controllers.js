@@ -10,12 +10,14 @@ const FOLDER_MOU_CERTIFICATES = '1Hu1zPs56nFXyJPSl7PVfs-oFW4QrKqiD';
 // =========================================================
 // 🚨 EMAIL HELPERS & LOGGING SYSTEM
 // =========================================================
-const getTpoEmail = (tpoName) => {
+const getTpoEmailByBranch = (branch) => {
   const cache = getCache();
   if (!cache || !cache.contacts) return '';
   const row = cache.contacts.find(r => {
-    const name = r.get('TPO Name') || r.get('Name') || '';
-    return name.toLowerCase().includes((tpoName || '').toLowerCase());
+    const assigned = (r.get('Assigned Branches') || '').toLowerCase();
+    const sitting = (r.get('Sitting Branch') || '').toLowerCase();
+    const searchBranch = (branch || '').toLowerCase();
+    return assigned.includes(searchBranch) || sitting.includes(searchBranch);
   });
   return row ? row.get('Mail ID') : '';
 };
@@ -75,7 +77,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE
+// 🚨 MASTER STUDENT EMAIL ENGINE (WITH ANTI-THREADING)
 // ---------------------------------------------------------
 const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
@@ -89,9 +91,10 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   const noAttendCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'interview not attended').length + (status === 'interview not attended' ? 1 : 0);
   const rejectCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'student rejected offer').length + (status === 'student rejected offer' ? 1 : 0);
 
-  // 🚨 CC Logic: 1) TPO who scheduled it (currentUser), 2) TPO assigned to the branch, 3) Gifty
+  // 🚨 CC Logic: 1) Who scheduled it, 2) TPO assigned to student, 3) TPO assigned to branch, 4) Gifty
   const branchTpoEmail = getTpoEmailByBranch(studentData.branch);
-  const ccList = [...new Set([currentUserEmail, branchTpoEmail, 'Gifty@ipcsglobal.com'])].filter(Boolean).join(',');
+  const assignedTpoEmail = getTpoEmail(studentData.tpoName);
+  const ccList = [...new Set([currentUserEmail, assignedTpoEmail, branchTpoEmail, 'Gifty@ipcsglobal.com'])].filter(Boolean).join(',');
 
   let subject = ''; let html = ''; let mailType = '';
   const refId = Math.floor(10000 + Math.random() * 90000); 
@@ -107,16 +110,17 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
         <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
           <p style="margin: 0 0 5px 0;">Regards,</p>
           <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">IPCS Placement Cell</p>
+          <p style="margin: 0;">IPCS Global</p>
         </div>
       </div>
     </div>
   `;
 
   if (status === 'interview scheduled') {
-    subject = `Congratulations, Student ! Your Interview Awaits! # ${studentData.company} [Ref: ${refId}]`;
+    subject = `Congratulations, ${studentData.name} ! Your Interview Awaits! # ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Interview Schedule';
     
-    // 🚨 EXACT HTML DESIGN FROM THE SCREENSHOT
+    // 🚨 EXACT HTML DESIGN FROM YOUR SCREENSHOT
     html = `
       <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; color: #000;">
         <p style="font-size: 15px; font-weight: bold;">Greetings ${studentData.name},</p>
@@ -150,46 +154,28 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
     if (noAttendCount === 2) {
       subject = `WARNING: Missed Interview Notice (2nd Occurrence) [Ref: ${refId}]`;
       mailType = 'Warning Mail';
-      html = getGenericTemplate('OFFICIAL WARNING', `
-        <p>This is an official warning. Our records indicate that you have failed to attend scheduled interviews on <b>two separate occasions</b>.</p>
-        <p style="color: #ef4444; font-weight: bold;">Professionalism is a core value at IPCS Global. Missing scheduled interviews damages our corporate relationships.</p>
-        <p>If you fail to attend a third interview, your placement assistance will be placed on hold.</p>
-      `, '#f59e0b');
+      html = getGenericTemplate('OFFICIAL WARNING', `<p>This is an official warning. Our records indicate that you have failed to attend scheduled interviews on <b>two separate occasions</b>.</p><p style="color: #ef4444; font-weight: bold;">Professionalism is a core value at IPCS Global. Missing scheduled interviews damages our corporate relationships.</p><p>If you fail to attend a third interview, your placement assistance will be placed on hold.</p>`, '#f59e0b');
     } else if (noAttendCount >= 3) {
       subject = `NOTICE: Placement Assistance On Hold [Ref: ${refId}]`;
       mailType = 'Hold Mail';
-      html = getGenericTemplate('PLACEMENT ON HOLD', `
-        <p>We regret to inform you that due to missing <b>three scheduled interviews</b>, your placement assistance has been officially <b>Placed on Hold</b>.</p>
-        <p>To request a reactivation of your placement services, you must urgently contact your Placement Officer and Branch Manager to explain your absences.</p>
-      `, '#ef4444');
+      html = getGenericTemplate('PLACEMENT ON HOLD', `<p>We regret to inform you that due to missing <b>three scheduled interviews</b>, your placement assistance has been officially <b>Placed on Hold</b>.</p><p>To request a reactivation of your placement services, you must urgently contact your Placement Officer and Branch Manager to explain your absences.</p>`, '#ef4444');
     }
   }
   else if (status === 'student rejected offer') {
     if (rejectCount === 2) {
       subject = `WARNING: Multiple Offers Rejected (2nd Occurrence) [Ref: ${refId}]`;
       mailType = 'Warning Mail';
-      html = getGenericTemplate('OFFICIAL WARNING', `
-        <p>This is an official notice. You have now rejected <b>two job offers</b> facilitated by the IPCS Placement Cell.</p>
-        <p style="color: #ef4444; font-weight: bold;">Please evaluate your requirements carefully before applying for further drives.</p>
-        <p>If you reject a third offer, your placement assistance will be placed on hold.</p>
-      `, '#f59e0b');
+      html = getGenericTemplate('OFFICIAL WARNING', `<p>This is an official notice. You have now rejected <b>two job offers</b> facilitated by the IPCS Placement Cell.</p><p style="color: #ef4444; font-weight: bold;">Please evaluate your requirements carefully before applying for further drives.</p><p>If you reject a third offer, your placement assistance will be placed on hold.</p>`, '#f59e0b');
     } else if (rejectCount >= 3) {
       subject = `NOTICE: Placement Assistance On Hold [Ref: ${refId}]`;
       mailType = 'Hold Mail';
-      html = getGenericTemplate('PLACEMENT ON HOLD', `
-        <p>We regret to inform you that due to rejecting <b>three job offers</b>, your placement assistance has been officially <b>Placed on Hold</b>.</p>
-        <p>We dedicate significant resources to secure these opportunities. Please reach out to your Placement Officer to discuss your future path.</p>
-      `, '#ef4444');
+      html = getGenericTemplate('PLACEMENT ON HOLD', `<p>We regret to inform you that due to rejecting <b>three job offers</b>, your placement assistance has been officially <b>Placed on Hold</b>.</p><p>We dedicate significant resources to secure these opportunities. Please reach out to your Placement Officer to discuss your future path.</p>`, '#ef4444');
     }
   }
   else if (status.includes('placed') || status.includes('joined')) {
     subject = `Congratulations! Placement Confirmed at ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Congratulation Mail';
-    html = getGenericTemplate('CONGRATULATIONS!', `
-      <p style="font-size: 18px; color: #10b981; font-weight: bold;">Congratulations on your placement!</p>
-      <p>We are incredibly proud to announce that your placement at <b>${studentData.company}</b> has been confirmed!</p>
-      <p>Your hard work and dedication have paid off. We wish you the absolute best in your new career journey. Make IPCS proud!</p>
-    `, '#10b981');
+    html = getGenericTemplate('CONGRATULATIONS!', `<p style="font-size: 18px; color: #10b981; font-weight: bold;">Congratulations on your placement!</p><p>We are incredibly proud to announce that your placement at <b>${studentData.company}</b> has been confirmed!</p><p>Your hard work and dedication have paid off. We wish you the absolute best in your new career journey. Make IPCS proud!</p>`, '#10b981');
   }
 
   if (subject && html) {
@@ -533,13 +519,10 @@ exports.updateApplication = async (req, res) => {
   const rowNumber = parseInt(req.body.rowNumber);
   const { status, remarks, datePlaced, packageLpa, joiningStatus, currentUserEmail, interviewDate, interviewTime, interviewVenue } = req.body;
   
-  // 🚨 FIX: Safely handle 'fullApp' whether it arrives as a String (FormData) or an Object (JSON)
   let fullApp = {};
   try {
     fullApp = typeof req.body.fullApp === 'string' ? JSON.parse(req.body.fullApp) : (req.body.fullApp || {});
-  } catch(e) {
-    console.error("Failed to parse fullApp payload");
-  }
+  } catch(e) { console.error("Parse payload skipped"); }
 
   let offerLetterLink = req.body.offerLetter || fullApp.offerLetter || '';
 
@@ -558,7 +541,7 @@ exports.updateApplication = async (req, res) => {
       
       const oldStatus = (currentRowData[getHeader('status')] || '').toString().toLowerCase();
 
-      // Ensure we have fallback data for logging
+      // Ensure fallback data
       const sName = currentRowData[getHeader('name')] || currentRowData[getHeader('studentname')] || fullApp.name || '';
       const sContact = currentRowData[getHeader('contact')] || currentRowData[getHeader('phone')] || fullApp.phone || '';
       const sMail = currentRowData[getHeader('mail')] || currentRowData[getHeader('email')] || fullApp.email || '';
@@ -579,7 +562,7 @@ exports.updateApplication = async (req, res) => {
       const hOffer = getFuzzyHeader(headers, 'offerletter'); if (hOffer && offerLetterLink) updateObj[hOffer] = offerLetterLink;
       const hJoining = getFuzzyHeader(headers, 'joiningstatus'); if (hJoining && joiningStatus !== undefined) updateObj[hJoining] = joiningStatus;
       
-      // FUZZY MATCH INTERVIEW COLUMNS TO PREVENT SHEET ERRORS
+      // Update Opening_Applied interview fields
       const hDate = getFuzzyHeader(headers, 'interviewdate');
       const hTime = getFuzzyHeader(headers, 'interviewtime') || getFuzzyHeader(headers, 'intervewtime');
       const hVenue = getFuzzyHeader(headers, 'interviewvenue');
@@ -591,49 +574,53 @@ exports.updateApplication = async (req, res) => {
       rows[0].assign(updateObj); 
       await rows[0].save(); 
       
-      const logSheet = doc.sheetsByTitle["TPO_Log"];
-      if (logSheet) {
-        const logHeaders = logSheet.headerValues;
-        const logObj = {};
-        
-        const setLogH = (key, val) => {
-           const h = getFuzzyHeader(logHeaders, key);
-           if (h) logObj[h] = val;
-        };
+      // 🚨 SAFETY NET: Write to TPO_Log without breaking the save
+      try {
+        const logSheet = doc.sheetsByTitle["TPO_Log"];
+        if (logSheet) {
+          const logHeaders = logSheet.headerValues;
+          const logObj = {};
+          
+          const setLogH = (key, val) => {
+             const h = getFuzzyHeader(logHeaders, key);
+             if (h) logObj[h] = val;
+          };
 
-        setLogH('timestamp', new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
-        setLogH('studentname', sName);
-        setLogH('contact', sContact);
-        setLogH('mailid', sMail);
-        setLogH('rollnumber', sRoll);
-        setLogH('course', sCourse);
-        setLogH('branch', sBranch);
-        setLogH('qualification', sQual);
-        setLogH('resume', sResume);
-        setLogH('jobid', sJobId);
-        setLogH('companyname', sCompany);
-        setLogH('position', sPosition);
-        setLogH('placementofficer', sTpo);
-        setLogH('status', status || '');
-        setLogH('remarks', remarks !== undefined ? remarks : (currentRowData[getHeader('remarks')] || ''));
-        setLogH('dateplaced', datePlaced !== undefined ? datePlaced : (currentRowData[getHeader('dateplaced')] || ''));
-        setLogH('package', packageLpa !== undefined ? packageLpa : (currentRowData[getHeader('package')] || ''));
-        setLogH('offerletterstatus', offerLetterLink || currentRowData[getHeader('offerletter')] || '');
-        setLogH('joiningstatus', joiningStatus !== undefined ? joiningStatus : (currentRowData[getHeader('joiningstatus')] || ''));
-        setLogH('interviewdate', interviewDate || '');
-        setLogH('interviewtime', interviewTime || '');
-        setLogH('intervewtime', interviewTime || ''); 
-        setLogH('interviewvenue', interviewVenue || '');
+          setLogH('timestamp', new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
+          setLogH('studentname', sName);
+          setLogH('contact', sContact);
+          setLogH('mailid', sMail);
+          setLogH('rollnumber', sRoll);
+          setLogH('course', sCourse);
+          setLogH('branch', sBranch);
+          setLogH('qualification', sQual);
+          setLogH('resume', sResume);
+          setLogH('jobid', sJobId);
+          setLogH('companyname', sCompany);
+          setLogH('position', sPosition);
+          setLogH('placementofficer', sTpo);
+          setLogH('status', status || '');
+          setLogH('remarks', remarks !== undefined ? remarks : (currentRowData[getHeader('remarks')] || ''));
+          setLogH('dateplaced', datePlaced !== undefined ? datePlaced : (currentRowData[getHeader('dateplaced')] || ''));
+          setLogH('package', packageLpa !== undefined ? packageLpa : (currentRowData[getHeader('package')] || ''));
+          setLogH('offerletterstatus', offerLetterLink || currentRowData[getHeader('offerletter')] || '');
+          setLogH('joiningstatus', joiningStatus !== undefined ? joiningStatus : (currentRowData[getHeader('joiningstatus')] || ''));
+          setLogH('interviewdate', interviewDate || '');
+          setLogH('interviewtime', interviewTime || '');
+          setLogH('intervewtime', interviewTime || ''); 
+          setLogH('interviewvenue', interviewVenue || '');
 
-        await logSheet.addRow(logObj);
-      }
+          await logSheet.addRow(logObj);
+        }
+      } catch(e) { console.error("TPO Log skipped due to column mismatch"); }
       
-      // 🚨 Trigger Student Mails
+      // 🚨 SAFETY NET: Send mail in the background
       if (oldStatus !== (status || '').toLowerCase()) {
          checkAndSendStudentMails({
            name: sName, roll: sRoll, email: sMail, company: sCompany, 
            position: sPosition, tpoName: sTpo, branch: sBranch, jobId: sJobId
-         }, status, { date: interviewDate, time: interviewTime, venue: interviewVenue }, currentUserEmail); 
+         }, status, { date: interviewDate, time: interviewTime, venue: interviewVenue }, currentUserEmail)
+         .catch(e => console.error("Background Mail Error")); 
       }
 
       refreshCache(); 
