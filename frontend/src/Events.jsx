@@ -27,6 +27,7 @@ export default function Events() {
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   
   const [events, setEvents] = useState([]);
+  const [branchList, setBranchList] = useState([]); // 🚨 State to hold dynamic branches
   const [loading, setLoading] = useState(true);
   
   const [categoryTab, setCategoryTab] = useState('calendar');
@@ -56,8 +57,26 @@ export default function Events() {
     }
   };
 
+  // 🚨 Fetch dynamic branches from the backend
+  const fetchBranches = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/api/admin/branches`);
+      if (res.data.success) {
+        // Extract branch names, remove empties, and sort alphabetically
+        const branches = res.data.branches
+          .map(b => b.branch)
+          .filter(Boolean)
+          .sort((a, b) => a.localeCompare(b));
+        setBranchList(branches);
+      }
+    } catch (error) {
+      console.error("Failed to fetch branches", error);
+    }
+  };
+
   useEffect(() => {
     fetchEvents();
+    fetchBranches();
   }, []);
 
   const handleSaveEvent = async () => {
@@ -118,7 +137,6 @@ export default function Events() {
     return (e.type || '').toLowerCase().includes(categoryTab.toLowerCase());
   }).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
-  // 🚨 FIX: Beautifully highlights Calendar cells with events
   const renderMonthGrid = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
@@ -316,14 +334,12 @@ export default function Events() {
 
             <div className="form-group" style={{ marginBottom: '15px' }}>
               <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Eligible Branch</label>
+              {/* 🚨 DYNAMIC BRANCH DROPDOWN */}
               <select className="sleek-input" style={{ width: '100%' }} value={newEvent.branch} onChange={e => setNewEvent({...newEvent, branch: e.target.value})}>
                 <option value="All Branches">All Branches</option>
-                <option value="Bangalore">Bangalore</option>
-                <option value="Trivandrum">Trivandrum</option>
-                <option value="Kochi">Kochi</option>
-                <option value="Calicut">Calicut</option>
-                <option value="Kannur">Kannur</option>
-                <option value="Coimbatore">Coimbatore</option>
+                {branchList.map((branchName, idx) => (
+                  <option key={idx} value={branchName}>{branchName}</option>
+                ))}
               </select>
             </div>
 
