@@ -89,7 +89,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE (UPDATED CC LOGIC)
+// 🚨 MASTER STUDENT EMAIL ENGINE (WITH UPDATED TEMPLATES)
 // ---------------------------------------------------------
 const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
@@ -101,170 +101,179 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   );
 
   const noAttendCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'interview not attended').length + (status === 'interview not attended' ? 1 : 0);
-  const rejectCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'student rejected offer').length + (status === 'student rejected offer' ? 1 : 0);
+  const rejectCount = logs.filter(r => {
+    const s = (r.get('Status') || '').toLowerCase();
+    return s.includes('student rejected') || s.includes('offer rejected');
+  }).length + (status.includes('student rejected') || status.includes('offer rejected') ? 1 : 0);
 
-  // 🚨 EXACT CC LOGIC: 
-  // 1. Logged-in TPO (currentUserEmail)
-  // 2. TPO assigned to the student's branch (branchTpoEmail)
-  // 3. TPO listed on the application (assignedTpoEmail)
+  // CC Logic: 1) Scheduling TPO, 2) Student Branch TPO, 3) Assigned TPO
   const branchTpoEmail = getTpoEmailByBranch(studentData.branch);
   const assignedTpoEmail = getTpoEmail(studentData.tpoName);
-
   const ccList = [...new Set([currentUserEmail, assignedTpoEmail, branchTpoEmail])].filter(Boolean).join(',');
 
-  let subject = ''; let html = ''; let mailType = '';
+  let subject = ''; 
+  let html = ''; 
+  let mailType = '';
   const refId = Math.floor(10000 + Math.random() * 90000); 
 
-  // 🚨 DIRECT GOOGLE DRIVE IMAGE LINKS
+  // Asset URLs
   const logo1 = "https://drive.google.com/uc?export=view&id=1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
   const logo2 = "https://drive.google.com/uc?export=view&id=1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
   const watermark = "https://drive.google.com/uc?export=view&id=1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
 
-  const getGenericTemplate = (title, message, color) => `
+  // Reusable Branded Container
+  const buildBrandedEmail = (title, headerColor, bodyContent) => `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
-
-      <!-- HEADER WITH 2 LOGOS -->
-      <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid ${color};">
-        <div style="margin-bottom: 15px;">
-          <img src="${logo1}" alt="IPCS Logo" style="max-height: 40px; margin: 0 10px; display: inline-block; vertical-align: middle;" />
-          <img src="${logo2}" alt="Partner Logo" style="max-height: 40px; margin: 0 10px; display: inline-block; vertical-align: middle;" />
+      <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid ${headerColor};">
+        <div style="margin-bottom: 12px;">
+          <img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
+          <img src="${logo2}" alt="Talenzo Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
         </div>
-        <h2 style="color: #ffffff; margin: 0; font-size: 22px; text-transform: uppercase; letter-spacing: 1px;">${title}</h2>
+        <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px;">${title}</h2>
+        <p style="color: #94a3b8; margin: 5px 0 0 0; font-size: 13px;">IPCS Global Placement Cell</p>
       </div>
-      
-      <!-- WATERMARK BACKGROUND CONTAINER -->
       <div style="background-image: url('${watermark}'); background-repeat: no-repeat; background-position: center center; background-size: cover; background-color: #ffffff;">
-        <!-- TRANSLUCENT OVERLAY FOR READABILITY -->
-        <div style="padding: 40px 35px; background-color: rgba(255, 255, 255, 0.92);">
-          
-          <p style="font-size: 16px; margin-top: 0; color: #0f1523;">Dear <b>${studentData.name}</b>,</p>
-          <div style="font-size: 15px; line-height: 1.6; color: #334155;">${message}</div>
-          
-          <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523; font-weight: bold;">
-            <p style="margin: 0 0 5px 0;">Regards,</p>
-            <p style="margin: 0 0 2px 0; color: #38bdf8;">IPCS Placement Cell</p>
+        <div style="padding: 35px 30px; background-color: rgba(255, 255, 255, 0.94); color: #334155; font-size: 15px; line-height: 1.65;">
+          ${bodyContent}
+          <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
+            <p style="margin: 0 0 3px 0;">Regards,</p>
+            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523;">Placement Team</p>
+            <p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p>
           </div>
-
         </div>
       </div>
-
     </div>
   `;
 
+  // 1. INTERVIEW SCHEDULED
   if (status === 'interview scheduled') {
     subject = `Congratulations, ${studentData.name} ! Your Interview Awaits! # ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Interview Schedule';
-    
-    html = `
-      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
-        
-        <!-- HEADER WITH 2 LOGOS -->
-        <div style="background-color: #0f1523; padding: 30px 20px; text-align: center; border-bottom: 5px solid #38bdf8;">
-          <div style="margin-bottom: 15px;">
-            <img src="${logo1}" alt="IPCS Logo" style="max-height: 40px; margin: 0 10px; display: inline-block; vertical-align: middle;" />
-            <img src="${logo2}" alt="Partner Logo" style="max-height: 40px; margin: 0 10px; display: inline-block; vertical-align: middle;" />
-          </div>
-          <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 1px; text-transform: uppercase;">Interview Invitation</h1>
-          <p style="color: #94a3b8; margin: 10px 0 0 0; font-size: 14px;">IPCS Global Placement Cell</p>
-        </div>
-
-        <!-- WATERMARK BACKGROUND CONTAINER -->
-        <div style="background-image: url('${watermark}'); background-repeat: no-repeat; background-position: center center; background-size: cover; background-color: #ffffff;">
-          
-          <!-- TRANSLUCENT OVERLAY FOR READABILITY -->
-          <div style="padding: 40px 35px; background-color: rgba(255, 255, 255, 0.92);">
-            
-            <h2 style="margin: 0 0 20px 0; color: #1e293b; font-size: 22px;">Congratulations, ${studentData.name}!</h2>
-            <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 30px 0;">
-              We are thrilled to inform you that you have been <strong style="color: #0f1523;">selected for an interview</strong> with one of our esteemed partner companies. This is a fantastic step towards achieving your career goals, and we are excited to see your hard work and dedication paying off.
-            </p>
-
-            <!-- Highlighted Details Card -->
-            <div style="background-color: rgba(248, 250, 252, 0.95); border: 1px solid #cbd5e1; border-left: 5px solid #38bdf8; border-radius: 8px; padding: 25px; margin-bottom: 30px;">
-              <h3 style="margin: 0 0 15px 0; color: #0f1523; font-size: 16px; text-transform: uppercase; letter-spacing: 0.5px;">Event Details</h3>
-              <table style="width: 100%; border-collapse: collapse;">
-                <tbody>
-                  <tr>
-                    <td style="padding: 10px 0; color: #475569; font-size: 14px; font-weight: 600; width: 35%; border-bottom: 1px solid #cbd5e1;">Company:</td>
-                    <td style="padding: 10px 0; color: #0f1523; font-size: 16px; font-weight: bold; border-bottom: 1px solid #cbd5e1;">${studentData.company}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 10px 0; color: #475569; font-size: 14px; font-weight: 600; border-bottom: 1px solid #cbd5e1;">Position:</td>
-                    <td style="padding: 10px 0; color: #0f1523; font-size: 15px; border-bottom: 1px solid #cbd5e1;">${studentData.position || 'Professional'}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 10px 0; color: #475569; font-size: 14px; font-weight: 600; border-bottom: 1px solid #cbd5e1;">Date:</td>
-                    <td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #cbd5e1;">${interviewDetails.date || 'TBD'}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 10px 0; color: #475569; font-size: 14px; font-weight: 600; border-bottom: 1px solid #cbd5e1;">Time:</td>
-                    <td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #cbd5e1;">${interviewDetails.time || 'TBD'}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 10px 0; color: #475569; font-size: 14px; font-weight: 600; border-bottom: 1px solid #cbd5e1;">Venue / Link:</td>
-                    <td style="padding: 10px 0; color: #0284c7; font-size: 15px; font-weight: bold; border-bottom: 1px solid #cbd5e1;">${interviewDetails.venue || 'TBD'}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 10px 0; color: #475569; font-size: 13px; font-weight: 600;">Newsletter ID:</td>
-                    <td style="padding: 10px 0; color: #475569; font-size: 13px;">${studentData.jobId || 'N/A'}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-
-            <h3 style="margin: 0 0 10px 0; color: #1e293b; font-size: 16px;">Agenda & Expectations</h3>
-            <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 25px 0; padding: 18px; background-color: rgba(56, 189, 248, 0.05); border-radius: 8px; font-style: italic; border: 1px solid rgba(56, 189, 248, 0.2);">
-              "The interview may consist of multiple rounds, including technical assessments, behavioral interviews, or HR rounds. You may also be required to provide specific documents or complete certain tasks, so please be prepared accordingly."
-            </p>
-
-            <div style="background-color: rgba(254, 242, 242, 0.95); border-left: 4px solid #ef4444; padding: 15px; border-radius: 4px; margin-bottom: 30px; border: 1px solid #fecaca;">
-              <p style="font-size: 13px; line-height: 1.5; color: #991b1b; margin: 0;">
-                <strong>Important Note:</strong> Please make sure to arrive on time for the interview or log in to the online meeting platform a few minutes before the scheduled time. If, for any reason, you are unable to attend, please inform us at your earliest convenience so we can make alternative arrangements.
-              </p>
-            </div>
-
-            <!-- Footer divider -->
-            <div style="border-top: 1px solid #cbd5e1; padding-top: 25px;">
-              <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 15px 0;">
-                If you have any questions or need further information about the interview, please do not hesitate to contact the placement department. We wish you the very best of luck!
-              </p>
-              <p style="font-size: 15px; color: #0f1523; font-weight: bold; margin: 0;">
-                Regards,<br>
-                <span style="color: #38bdf8;">IPCS Placement Cell</span>
-              </p>
-            </div>
-
-          </div>
-        </div>
+    html = buildBrandedEmail('Interview Invitation', '#38bdf8', `
+      <p style="font-size: 16px; font-weight: bold; color: #0f1523; margin-top: 0;">Greetings ${studentData.name},</p>
+      <p>I hope this message finds you well and in high spirits. We are thrilled to inform you that you have been <b>selected for an interview opportunity</b> with one of our esteemed partner companies! This is a fantastic step towards achieving your career goals, and we are excited to see your hard work and dedication paying off.</p>
+      
+      <div style="background-color: rgba(248, 250, 252, 0.95); border: 1px solid #cbd5e1; border-left: 5px solid #38bdf8; border-radius: 8px; padding: 20px; margin: 25px 0;">
+        <h3 style="margin: 0 0 12px 0; color: #0f1523; font-size: 15px; text-transform: uppercase;">Interview Details</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+          <tr><td style="padding: 6px 0; color: #64748b; width: 35%;">NewLetterID:</td><td style="padding: 6px 0; color: #8b5cf6; font-weight: bold;">${studentData.jobId || 'N/A'}</td></tr>
+          <tr><td style="padding: 6px 0; color: #64748b;">Company Name:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${studentData.company}</td></tr>
+          <tr><td style="padding: 6px 0; color: #64748b;">Hiring For:</td><td style="padding: 6px 0; color: #0f1523;">${studentData.position || 'Professional'}</td></tr>
+          <tr><td style="padding: 6px 0; color: #64748b;">Interview Date:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${interviewDetails.date || 'TBD'}</td></tr>
+          <tr><td style="padding: 6px 0; color: #64748b;">Interview Time:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${interviewDetails.time || 'TBD'}</td></tr>
+          <tr><td style="padding: 6px 0; color: #64748b;">Interview Venue:</td><td style="padding: 6px 0; color: #0284c7; font-weight: bold;">${interviewDetails.venue || 'TBD'}</td></tr>
+          <tr><td style="padding: 6px 0; color: #64748b;">Contact Person:</td><td style="padding: 6px 0; color: #0f1523;">HR</td></tr>
+        </table>
       </div>
-    `;
-  } 
+
+      <p>Please be prepared for a comprehensive evaluation of your skills and qualifications. We highly recommend researching the company thoroughly to ensure you are well-prepared.</p>
+      
+      <p style="font-weight: bold; margin-bottom: 5px; color: #0f1523;">Agenda:</p>
+      <p style="color: #1e3a8a; background-color: rgba(56, 189, 248, 0.05); padding: 12px 15px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.2); font-style: italic; margin-top: 0;">
+        "The interview may consist of multiple rounds, including technical assessments, behavioral interviews, or HR rounds. You may also be required to provide specific documents or complete certain tasks, so please be prepared accordingly."
+      </p>
+
+      <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 12px 15px; border-radius: 4px; margin: 20px 0;">
+        <p style="font-size: 13px; color: #991b1b; margin: 0;">
+          <b>Note:</b> <i>Please make sure to arrive on time for the interview or log in to the online meeting platform a few minutes before the scheduled time. If, for any reason, you are unable to attend, please inform us at your earliest convenience so we can make alternative arrangements (if possible).</i>
+        </p>
+      </div>
+
+      <p>If you have any questions or need further information about the interview, please do not hesitate to contact the placement department. We are here to assist and support you throughout this important process.</p>
+      <p>We wish you the very best of luck and look forward to hearing about your successful interview experience. Remember, your journey to success is our mission, and we are here to support you every step of the way.</p>
+    `);
+  }
+
+  // 2. MISSED INTERVIEW (2nd & 3rd Occurrences)
   else if (status === 'interview not attended') {
     if (noAttendCount === 2) {
-      subject = `WARNING: Missed Interview Notice (2nd Occurrence) [Ref: ${refId}]`;
+      subject = `❗Warning – Non-Attendance for Scheduled Interview [Ref: ${refId}]`;
       mailType = 'Warning Mail';
-      html = getGenericTemplate('OFFICIAL WARNING', `<p>This is an official warning. Our records indicate that you have failed to attend scheduled interviews on <b>two separate occasions</b>.</p><p style="color: #ef4444; font-weight: bold;">Professionalism is a core value at IPCS Global. Missing scheduled interviews damages our corporate relationships.</p><p>If you fail to attend a third interview, your placement assistance will be placed on hold.</p>`, '#f59e0b');
+      html = buildBrandedEmail('Official Warning', '#f59e0b', `
+        <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
+        <p>Greetings from the Placement Team.</p>
+        <p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the second time</b> without prior intimation or a valid reason.</p>
+        <p>Please consider this email as an <b>official warning</b>. Attending interviews scheduled through the Placement Team is an important responsibility of every student registered for placement assistance.</p>
+        <p>You are hereby instructed to ensure your attendance for all future interviews and recruitment processes scheduled for you.</p>
+        <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 15px; margin: 20px 0; border-radius: 4px;">
+          <p style="margin: 0; color: #92400e; font-weight: bold;">
+            Please note that if you fail to attend a scheduled interview for the third time, your placement assistance will be put on hold, and you may not be considered for further placement opportunities until further review by the Placement Team.
+          </p>
+        </div>
+        <p>We strongly advise you to take this matter seriously and maintain proper communication with the Placement Team in case of any genuine difficulty or unavoidable circumstance.</p>
+        <p>We expect your full cooperation and commitment towards the placement process.</p>
+      `);
     } else if (noAttendCount >= 3) {
-      subject = `NOTICE: Placement Assistance On Hold [Ref: ${refId}]`;
+      subject = `❗Final Warning – Placement Assistance Put on Hold [Ref: ${refId}]`;
       mailType = 'Hold Mail';
-      html = getGenericTemplate('PLACEMENT ON HOLD', `<p>We regret to inform you that due to missing <b>three scheduled interviews</b>, your placement assistance has been officially <b>Placed on Hold</b>.</p><p>To request a reactivation of your placement services, you must urgently contact your Placement Officer and Branch Manager to explain your absences.</p>`, '#ef4444');
+      html = buildBrandedEmail('Placement Assistance Put on Hold', '#ef4444', `
+        <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
+        <p>Greetings from the Placement Team.</p>
+        <p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the third time.</b></p>
+        <p>Despite the previous warning regarding non-attendance, you have again failed to participate in the scheduled interview without prior intimation to the Placement Team.</p>
+        <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;">
+          <p style="margin: 0; color: #991b1b; font-weight: bold; font-size: 15px;">
+            This is considered a serious violation of the placement process. Therefore, your placement assistance is hereby put on hold with immediate effect.
+          </p>
+        </div>
+        <p>You will not be considered for further interview opportunities or placement drives until your case is reviewed by the Placement Team and further instructions are communicated to you.</p>
+        <p>We expect students to take the placement opportunities provided to them seriously and maintain proper communication with the Placement Team regarding any genuine or unavoidable circumstances.</p>
+        <p>If you have a valid reason for your repeated non-attendance, you may submit a written explanation to the Placement Team for review.</p>
+        <p><b>Please treat this matter as serious and final.</b></p>
+      `);
     }
   }
-  else if (status === 'student rejected offer') {
+
+  // 3. REJECTED OFFER (2nd & 3rd Occurrences)
+  else if (status.includes('student rejected') || status.includes('offer rejected')) {
     if (rejectCount === 2) {
-      subject = `WARNING: Multiple Offers Rejected (2nd Occurrence) [Ref: ${refId}]`;
+      subject = `❗Warning – Rejection of Job Offer for the Second Time [Ref: ${refId}]`;
       mailType = 'Warning Mail';
-      html = getGenericTemplate('OFFICIAL WARNING', `<p>This is an official notice. You have now rejected <b>two job offers</b> facilitated by the IPCS Placement Cell.</p><p style="color: #ef4444; font-weight: bold;">Please evaluate your requirements carefully before applying for further drives.</p><p>If you reject a third offer, your placement assistance will be placed on hold.</p>`, '#f59e0b');
+      html = buildBrandedEmail('Official Warning', '#f59e0b', `
+        <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
+        <p>Greetings from the Placement Team.</p>
+        <p>This is to formally inform you that you have <b>rejected a job offer for the second time</b> after being selected through the IPCS Global placement process.</p>
+        <p>As per the <b>IPCS Placement Policy</b>, students are expected to seriously consider and accept suitable employment opportunities provided through the Placement Team. Repeated rejection of offers after selection affects the placement process and the opportunities provided to other students.</p>
+        <p>Please consider this email as an <b>official warning.</b></p>
+        <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 15px; margin: 20px 0; border-radius: 4px;">
+          <p style="margin: 0; color: #92400e; font-weight: bold;">
+            You are hereby advised that if you reject a job offer for the third time, your placement assistance will be put on hold, as per the IPCS Placement Policy. In such a situation, you may not be considered for further placement opportunities until further review by the Placement Team.
+          </p>
+        </div>
+        <p>We strongly advise you to carefully evaluate the opportunities shared with you before participating in the recruitment process and to communicate with the Placement Team in advance if you have any genuine concerns regarding an offer.</p>
+        <p>Please take this warning seriously and ensure strict adherence to the IPCS Placement Policy going forward.</p>
+      `);
     } else if (rejectCount >= 3) {
-      subject = `NOTICE: Placement Assistance On Hold [Ref: ${refId}]`;
+      subject = `❗Final Warning – Placement Assistance Put on Hold [Ref: ${refId}]`;
       mailType = 'Hold Mail';
-      html = getGenericTemplate('PLACEMENT ON HOLD', `<p>We regret to inform you that due to rejecting <b>three job offers</b>, your placement assistance has been officially <b>Placed on Hold</b>.</p><p>We dedicate significant resources to secure these opportunities. Please reach out to your Placement Officer to discuss your future path.</p>`, '#ef4444');
+      html = buildBrandedEmail('Placement Assistance Put on Hold', '#ef4444', `
+        <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
+        <p>Greetings from the Placement Team.</p>
+        <p>This is to formally inform you that you have <b>rejected a job offer for the third time</b> after being selected through the IPCS Global placement process.</p>
+        <p>You were previously informed about the consequences of repeated offer rejections. However, despite the warnings, you have again declined the opportunity provided to you.</p>
+        <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;">
+          <p style="margin: 0; color: #991b1b; font-weight: bold; font-size: 15px;">
+            As per the IPCS Placement Policy, repeated rejection of job offers after selection may result in the withdrawal of placement assistance. Accordingly, your placement assistance is hereby put on hold with immediate effect.
+          </p>
+        </div>
+        <p>During this period, you will not be considered for further placement opportunities or interview processes through IPCS Global unless your case is reviewed and the Placement Team communicates otherwise.</p>
+        <p>If you have any genuine or unavoidable reason for rejecting the offer, you may submit a written explanation to the Placement Team for review.</p>
+        <p>Please treat this communication as an <b>official warning and confirmation of the placement assistance hold.</b></p>
+        <p>We expect you to take future career opportunities and the placement process seriously.</p>
+      `);
     }
   }
-  else if (status.includes('placed') || status.includes('joined')) {
+
+  // 4. PLACEMENT CONFIRMED
+  else if (status.includes('placed') || status.includes('joined') || status.includes('got offer')) {
     subject = `Congratulations! Placement Confirmed at ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Congratulation Mail';
-    html = getGenericTemplate('CONGRATULATIONS!', `<p style="font-size: 18px; color: #10b981; font-weight: bold;">Congratulations on your placement!</p><p>We are incredibly proud to announce that your placement at <b>${studentData.company}</b> has been confirmed!</p><p>Your hard work and dedication have paid off. We wish you the absolute best in your new career journey. Make IPCS proud!</p>`, '#10b981');
+    html = buildBrandedEmail('Congratulations on Your Placement!', '#10b981', `
+      <p style="font-size: 18px; color: #10b981; font-weight: bold; margin-top: 0;">Congratulations on your placement!</p>
+      <p>Dear <b>${studentData.name}</b>,</p>
+      <p>We are incredibly proud to announce that your placement at <b>${studentData.company}</b> has been confirmed!</p>
+      <p>Your hard work and dedication have paid off. We wish you the absolute best in your new career journey. Make IPCS proud!</p>
+    `);
   }
 
   if (subject && html) {
@@ -832,22 +841,83 @@ exports.addEvent = async (req, res) => {
       const allTpos = getAllTpoEmails();
       const allBMs = getAllBranchManagerEmails();
       const bccList = [...new Set([...allTpos, ...allBMs])].join(',');
+
+      const logo1 = "https://drive.google.com/uc?export=view&id=1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
+      const logo2 = "https://drive.google.com/uc?export=view&id=1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
+      const watermark = "https://drive.google.com/uc?export=view&id=1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
       
       const html = `
-        <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-          <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #3b82f6;">
-            <h2 style="color: #ffffff; margin: 0;">NEW PLACEMENT DRIVE</h2>
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
+          
+          <!-- Header -->
+          <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #3b82f6;">
+            <div style="margin-bottom: 12px;">
+              <img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
+              <img src="${logo2}" alt="Talenzo Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
+            </div>
+            <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px;">Placement Drive Notification</h2>
+            <p style="color: #94a3b8; margin: 5px 0 0 0; font-size: 13px;">IPCS Global Placement Cell</p>
           </div>
-          <div style="padding: 30px; background-color: #ffffff;">
-            <h3 style="color: #0f1523; margin-top: 0;">${title}</h3>
-            <p style="font-size: 15px; color: #475569;">A new Placement Drive has been scheduled. Please ensure eligible students are informed and prepared.</p>
-            <ul style="background: #f8fafc; padding: 15px 30px; border-radius: 8px; font-size: 14px; color: #334155;">
-              <li style="margin-bottom: 8px;"><b>Date:</b> ${date}</li>
-              <li style="margin-bottom: 8px;"><b>Time:</b> ${time || 'TBD'}</li>
-              <li style="margin-bottom: 8px;"><b>Location:</b> ${location || 'N/A'}</li>
-              <li style="margin-bottom: 8px;"><b>Eligible Branch:</b> ${branch}</li>
-            </ul>
-            <p style="font-size: 14px; color: #64748b;">${description}</p>
+
+          <!-- Body Container -->
+          <div style="background-image: url('${watermark}'); background-repeat: no-repeat; background-position: center center; background-size: cover; background-color: #ffffff;">
+            <div style="padding: 35px 30px; background-color: rgba(255, 255, 255, 0.94); color: #334155; font-size: 15px; line-height: 1.65;">
+              
+              <p style="font-size: 16px; font-weight: bold; color: #0f1523; margin-top: 0;">Dear Team,</p>
+              <p>Greetings from the Placement Department, IPCS Global.</p>
+              <p>This is to inform you that a Placement Drive has been scheduled. Kindly find the details below:</p>
+
+              <!-- Details Card -->
+              <div style="background-color: rgba(248, 250, 252, 0.95); border: 1px solid #cbd5e1; border-left: 5px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 25px 0;">
+                <h3 style="margin: 0 0 12px 0; color: #0f1523; font-size: 15px; text-transform: uppercase;">📌 Placement Drive Details</h3>
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                  <tr><td style="padding: 6px 0; color: #64748b; width: 35%;">Drive Title:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${title}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Date:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${date}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Time:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${time || 'TBD'}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Location / Mode:</td><td style="padding: 6px 0; color: #0284c7; font-weight: bold;">${location || 'Venue / Online'}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Eligible Branch:</td><td style="padding: 6px 0; color: #0f1523;">${branch || 'All Branches'}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Description:</td><td style="padding: 6px 0; color: #334155;">${description || 'N/A'}</td></tr>
+                </table>
+              </div>
+
+              <h3 style="color: #ef4444; margin: 20px 0 10px 0; font-size: 16px;">⚠️ Action Required</h3>
+              <p>All concerned branches are requested to immediately inform all eligible students about this placement opportunity and encourage maximum participation.</p>
+              
+              <p>Please ensure that the interested and eligible students strictly register for the drive through the IPCS Global Student Portal:</p>
+
+              <!-- Portal Callout -->
+              <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0;">
+                <p style="margin: 0; font-size: 15px; color: #1e3a8a;">
+                  🌐 <b>Student Portal:</b> <a href="https://placement.ipcsglobal.info" target="_blank" style="color: #0284c7; font-weight: bold; text-decoration: underline;">placement.ipcsglobal.info</a>
+                </p>
+              </div>
+
+              <p style="color: #b91c1c; font-weight: bold;">
+                Portal registration is mandatory for participation in the placement drive.
+              </p>
+
+              <p>Students must complete their registration through the portal within the given registration period. Branch-level confirmation, WhatsApp confirmation, or verbal confirmation will not be considered as a substitute for portal registration.</p>
+
+              <p style="font-weight: bold; margin-bottom: 5px;">We request all branches to ensure that:</p>
+              <ul style="padding-left: 20px; margin-top: 5px;">
+                <li style="margin-bottom: 6px;">All eligible students are informed about the drive.</li>
+                <li style="margin-bottom: 6px;">Interested students complete their registration through the Student Portal.</li>
+                <li style="margin-bottom: 6px;">Students are reminded to register strictly through the portal before the registration deadline.</li>
+                <li style="margin-bottom: 6px;">Registered students are properly informed about the drive and instructed to attend on time.</li>
+              </ul>
+
+              <p>Your support and coordination are essential to ensure smooth execution of the placement drive and maximum student participation.</p>
+              <p>For any clarification, please coordinate with the Placement Team.</p>
+              <p>Thank you for your cooperation.</p>
+
+              <!-- Sign-off -->
+              <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
+                <p style="margin: 0 0 3px 0;">Regards,</p>
+                <p style="margin: 0 0 2px 0; font-weight: bold;">Placement Team</p>
+                <p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p>
+              </div>
+
+            </div>
           </div>
         </div>
       `;
@@ -857,7 +927,7 @@ exports.addEvent = async (req, res) => {
         to: process.env.EMAIL_USER, 
         bcc: bccList, 
         cc: 'RAKESH@ipcsglobal.com,Gifty@ipcsglobal.com',
-        subject: `New Placement Drive Scheduled: ${title} [Ref: ${refId}]`,
+        subject: `Placement Drive Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
         html: html
       }, { name: 'All Branches', email: 'Broadcast', type: 'Event Notification' });
 
