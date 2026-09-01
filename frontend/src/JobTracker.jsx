@@ -65,13 +65,13 @@ export default function JobTracker() {
     setSavingStatus(prev => ({ ...prev, [rowNum]: 'saving' }));
 
     try {
-      // 🚨 Added interview details and currentUserEmail to payload
       const payload = {
         rowNumber: rowNum, 
         status: newStatus, 
         remarks: newRemarks,
         fullApp: app,
-        currentUserEmail: tpoData?.email || '',
+        // 🚨 Explicitly pass the logged-in TPO's email here
+        currentUserEmail: tpoData?.email || JSON.parse(localStorage.getItem('tpoData') || '{}').email || '',
         interviewDate: interviewModal.appRowNumber === rowNum ? interviewModal.date : '',
         interviewTime: interviewModal.appRowNumber === rowNum ? interviewModal.time : '',
         interviewVenue: interviewModal.appRowNumber === rowNum ? interviewModal.venue : ''

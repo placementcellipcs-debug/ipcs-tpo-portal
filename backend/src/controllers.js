@@ -13,11 +13,13 @@ const FOLDER_MOU_CERTIFICATES = '1Hu1zPs56nFXyJPSl7PVfs-oFW4QrKqiD';
 const getTpoEmailByBranch = (branch) => {
   const cache = getCache();
   if (!cache || !cache.contacts) return '';
+  const searchBranch = (branch || '').toLowerCase().trim();
+  
   const row = cache.contacts.find(r => {
     const assigned = (r.get('Assigned Branches') || '').toLowerCase();
     const sitting = (r.get('Sitting Branch') || '').toLowerCase();
-    const searchBranch = (branch || '').toLowerCase();
-    return assigned.includes(searchBranch) || sitting.includes(searchBranch);
+    if (assigned.includes('all') || sitting.includes('all')) return false; // Skip general accounts
+    return assigned.includes(searchBranch) || searchBranch.includes(assigned) || sitting.includes(searchBranch);
   });
   return row ? row.get('Mail ID') : '';
 };
