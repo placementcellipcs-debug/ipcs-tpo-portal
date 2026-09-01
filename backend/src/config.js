@@ -19,6 +19,26 @@ let isFetching = false;
 
 const getCache = () => globalCache;
 
+// 🚨 SMART DELAY & RETRY SYSTEM TO PREVENT 429 ERRORS
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function fetchSheetWithRetry(sheet, retries = 3) {
+  if (!sheet) return [];
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await sheet.getRows();
+    } catch (error) {
+      if (error.response && error.response.status === 429) {
+        console.warn(`⚠️ Google API Rate Limit Hit (429). Retrying in ${2000 * (i + 1)}ms...`);
+        await delay(2000 * (i + 1)); // Wait 2s, then 4s, then 6s
+      } else {
+        throw error;
+      }
+    }
+  }
+  return [];
+}
+
 async function refreshCache() {
   if (isFetching) return;
   isFetching = true;
@@ -36,14 +56,10 @@ async function refreshCache() {
 
     const fetchedData = [];
     
-    // 🚨 FIX: Fetch sheets sequentially with a 200ms delay to prevent Google API 429 Quota Errors!
-    for (const sheet of sheetsToFetch) {
-      if (sheet) {
-        fetchedData.push(await sheet.getRows());
-      } else {
-        fetchedData.push([]);
-      }
-      await new Promise(resolve => setTimeout(resolve, 200)); 
+    // 🚨 Fetch sequentially with 1-second delays to avoid Quota Exceeded limits
+    for (let i = 0; i < sheetsToFetch.length; i++) {
+      fetchedData.push(await fetchSheetWithRetry(sheetsToFetch[i]));
+      await delay(1000); // 1 full second delay between every sheet
     }
 
     const [
@@ -80,7 +96,7 @@ async function refreshCache() {
   } catch (err) { 
     console.error("❌ Cache sync failed:", err.message); 
     isFetching = false;
-    if (!globalCache) { setTimeout(refreshCache, 3000); }
+    if (!globalCache) { setTimeout(refreshCache, 5000); }
   }
 }
 
