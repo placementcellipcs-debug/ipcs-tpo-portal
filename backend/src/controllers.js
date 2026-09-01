@@ -112,7 +112,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   const refId = Math.floor(10000 + Math.random() * 90000); 
 
   // URL for the IPCS Logo (You can change this link if you have a different version of the logo)
-  const logoUrl = "https://ipcsglobal.com/wp-content/uploads/2023/12/IPCS-Global-Logo.png";
+  const logoUrl = "https://drive.google.com/file/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN/view?usp=drive_link";
 
   const getGenericTemplate = (title, message, color) => `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
