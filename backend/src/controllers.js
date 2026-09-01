@@ -75,9 +75,9 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE (WITH ANTI-THREADING)
+// 🚨 MASTER STUDENT EMAIL ENGINE
 // ---------------------------------------------------------
-const checkAndSendStudentMails = async (studentData, newStatus) => {
+const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}) => {
   if (!studentData.email || !newStatus) return;
   const status = newStatus.toLowerCase().trim();
   
@@ -94,7 +94,7 @@ const checkAndSendStudentMails = async (studentData, newStatus) => {
   const ccList = [tpoEmail, bmEmail, 'Gifty@ipcsglobal.com'].filter(Boolean).join(',');
 
   let subject = ''; let html = ''; let mailType = '';
-  const refId = Math.floor(10000 + Math.random() * 90000); // 🚨 Unique ID to prevent threading!
+  const refId = Math.floor(10000 + Math.random() * 90000); 
 
   const getTemplate = (title, message, color) => `
     <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
@@ -118,6 +118,13 @@ const checkAndSendStudentMails = async (studentData, newStatus) => {
     mailType = 'Interview Schedule';
     html = getTemplate('INTERVIEW SCHEDULED', `
       <p>We are pleased to inform you that your interview with <b>${studentData.company}</b> for the position of <b>${studentData.position || 'Professional'}</b> has been officially scheduled.</p>
+      
+      <div style="background: #f8fafc; padding: 15px 20px; border-radius: 8px; border-left: 4px solid #38bdf8; margin: 20px 0;">
+        <p style="margin: 0 0 8px 0;"><b>Date:</b> ${interviewDetails.date || 'To be communicated'}</p>
+        <p style="margin: 0 0 8px 0;"><b>Time:</b> ${interviewDetails.time || 'To be communicated'}</p>
+        <p style="margin: 0;"><b>Venue / Link:</b> ${interviewDetails.venue || 'To be communicated'}</p>
+      </div>
+
       <p>Please ensure you are fully prepared and arrive on time. Contact your Placement Officer immediately if you need any assistance or have scheduling conflicts.</p>
     `, '#38bdf8');
   } 
@@ -178,8 +185,9 @@ const checkAndSendStudentMails = async (studentData, newStatus) => {
   }
 };
 
-
-// --- AUTHENTICATION ---
+// ---------------------------------------------------------
+// AUTHENTICATION
+// ---------------------------------------------------------
 exports.login = async (req, res) => {
   const { email, password } = req.body;
   try {
@@ -242,7 +250,9 @@ exports.login = async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-// --- DASHBOARD ---
+// ---------------------------------------------------------
+// DASHBOARD
+// ---------------------------------------------------------
 exports.getDashboardStats = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
   const cache = getCache();
@@ -300,9 +310,7 @@ exports.getDashboardStats = (req, res) => {
           parsedDate = new Date(lastDateStr);
         }
         if (parsedDate && !isNaN(parsedDate)) {
-          if (parsedDate < todayStart) {
-            isExpired = true; 
-          }
+          if (parsedDate < todayStart) isExpired = true;
         }
       } catch(e) {}
     }
@@ -317,7 +325,9 @@ exports.getDashboardStats = (req, res) => {
   res.json({ success: true, stats: { totalStudents: studentCount, pendingApps, placed: placedCount, activeVacancies: activeVacs }, events: eventsList.reverse() });
 };
 
-// --- STUDENTS ---
+// ---------------------------------------------------------
+// STUDENTS DIRECTORY
+// ---------------------------------------------------------
 exports.getStudents = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
   const cache = getCache();
@@ -370,7 +380,6 @@ exports.updateStudent = async (req, res) => {
   try {
     const stuSheet = doc.sheetsByTitle["Data"];
     const rows = await stuSheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    
     if (rows.length > 0) {
       const headers = stuSheet.headerValues;
       const updateObj = {};
@@ -383,14 +392,26 @@ exports.updateStudent = async (req, res) => {
       if (cStatusH && courseStatus !== undefined) {
         updateObj[cStatusH] = courseStatus;
         
-        // 🚨 Trigger Welcome Mail if changed to Completed OR 90%
-        const oldStatus = (rows[0].get(cStatusH) || '').toString().toLowerCase();
+        let oldStatus = '';
+        if (rows[0].get) {
+           oldStatus = (rows[0].get(cStatusH) || '').toString().toLowerCase();
+        } else {
+           oldStatus = (rows[0][cStatusH] || '').toString().toLowerCase();
+        }
+        
         const isNowCompleted = courseStatus.toLowerCase().includes('completed') || courseStatus.toLowerCase().includes('90%');
         const wasCompleted = oldStatus.includes('completed') || oldStatus.includes('90%');
 
         if (!wasCompleted && isNowCompleted) {
-          const sName = rows[0].get('Name') || 'Student';
-          const sEmail = rows[0].get('Mail ID') || rows[0].get('Email') || '';
+          let sName = 'Student'; let sEmail = '';
+          if (rows[0].get) {
+             sName = rows[0].get('Name') || 'Student';
+             sEmail = rows[0].get('Mail ID') || rows[0].get('Email') || '';
+          } else {
+             sName = rows[0]['Name'] || 'Student';
+             sEmail = rows[0]['Mail ID'] || rows[0]['Email'] || '';
+          }
+
           const refId = Math.floor(10000 + Math.random() * 90000); 
           
           if (sEmail) {
@@ -427,16 +448,13 @@ exports.updateStudent = async (req, res) => {
       await rows[0].save(); 
       refreshCache(); 
       res.json({ success: true, message: "Student record updated!" });
-      
-    } else { 
-      res.status(404).json({ success: false, message: "Row not found." }); 
-    }
-  } catch (error) { 
-    res.status(500).json({ success: false, message: error.message }); 
-  }
+    } else { res.status(404).json({ success: false, message: "Row not found." }); }
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-// --- APPLICATIONS ---
+// ---------------------------------------------------------
+// APPLICATIONS (BULLETPROOF UPDATES)
+// ---------------------------------------------------------
 exports.getApplications = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, tpoName } = req.body;
   let appsList = []; 
@@ -495,76 +513,137 @@ exports.getApplications = (req, res) => {
 
 exports.updateApplication = async (req, res) => {
   const rowNumber = parseInt(req.body.rowNumber);
-  const { status, remarks, datePlaced, packageLpa, joiningStatus } = req.body;
-  const fullApp = JSON.parse(req.body.fullApp || '{}');
-  let offerLetterLink = req.body.offerLetter || fullApp.offerLetter || '';
+  const { status, remarks, datePlaced, packageLpa, joiningStatus, interviewDate, interviewTime, interviewVenue } = req.body; // 🚨 New fields added here
+  let offerLetterLink = req.body.offerLetter || '';
 
   try {
     if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
+    
     const appSheet = doc.sheetsByTitle["Opening_Applied"];
+    if (!appSheet || isNaN(rowNumber)) return res.status(400).json({ success: false, message: "Invalid payload or sheet missing." });
+
     const rows = await appSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    
     if (rows.length > 0) {
       const headers = appSheet.headerValues;
+      const currentRowData = rows[0].toObject();
+      const getHeader = (s) => Object.keys(currentRowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
+      
+      const oldStatus = (currentRowData[getHeader('status')] || '').toString().toLowerCase();
+
+      const sName = currentRowData[getHeader('name')] || currentRowData[getHeader('studentname')] || '';
+      const sContact = currentRowData[getHeader('contact')] || currentRowData[getHeader('phone')] || '';
+      const sMail = currentRowData[getHeader('mail')] || currentRowData[getHeader('email')] || '';
+      const sRoll = currentRowData[getHeader('roll')] || '';
+      const sCourse = currentRowData[getHeader('course')] || '';
+      const sBranch = currentRowData[getHeader('branch')] || '';
+      const sQual = currentRowData[getHeader('qual')] || '';
+      const sResume = currentRowData[getHeader('resume')] || currentRowData[getHeader('cv')] || '';
+      const sJobId = currentRowData[getHeader('jobid')] || '';
+      const sCompany = currentRowData[getHeader('company')] || '';
+      const sPosition = currentRowData[getHeader('position')] || '';
+      const sTpo = currentRowData[getHeader('placementofficer')] || '';
+      const sDatePlaced = datePlaced !== undefined ? datePlaced : (currentRowData[getHeader('dateplaced')] || '');
+      const sPackage = packageLpa !== undefined ? packageLpa : (currentRowData[getHeader('package')] || '');
+      const sJoining = joiningStatus !== undefined ? joiningStatus : (currentRowData[getHeader('joiningstatus')] || '');
+      const sOffer = offerLetterLink || currentRowData[getHeader('offerletter')] || '';
+
       const updateObj = { 'Status': status };
       if(headers.includes('Remarks') && remarks !== undefined) updateObj['Remarks'] = remarks;
       if(headers.includes('DATE PLACED') && datePlaced !== undefined) updateObj['DATE PLACED'] = datePlaced;
       if(headers.includes('PACKAGE (LPA)') && packageLpa !== undefined) updateObj['PACKAGE (LPA)'] = packageLpa;
-      if(headers.includes('Offer Letter')) updateObj['Offer Letter'] = offerLetterLink;
+      if(headers.includes('Offer Letter') && offerLetterLink) updateObj['Offer Letter'] = offerLetterLink;
       if(headers.includes('Joining Status') && joiningStatus !== undefined) updateObj['Joining Status'] = joiningStatus;
       
-      const oldStatus = (rows[0].get('Status') || '').toString().toLowerCase();
+      // Update Opening_Applied with Interview details if columns exist
+      if(headers.includes('Interview Date') && interviewDate !== undefined) updateObj['Interview Date'] = interviewDate;
+      if(headers.includes('Interview Time') && interviewTime !== undefined) updateObj['Interview Time'] = interviewTime;
+      if(headers.includes('Interview Venue') && interviewVenue !== undefined) updateObj['Interview Venue'] = interviewVenue;
 
-      rows[0].assign(updateObj); await rows[0].save(); 
+      rows[0].assign(updateObj); 
+      await rows[0].save(); 
       
       const logSheet = doc.sheetsByTitle["TPO_Log"];
-      if (logSheet && fullApp) {
+      if (logSheet) {
         await logSheet.addRow({
-          'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), 'Student Name': fullApp.name || '', 'Contact': fullApp.phone || '', 'Mail ID': fullApp.email || '', 'Roll Number': fullApp.roll || '', 'Course': fullApp.course || '', 'Branch': fullApp.branch || '', 'Qualification': fullApp.qual || '', 'Resume': fullApp.resume || '', 'Job ID': fullApp.jobId || '', 'Company Name': fullApp.company || '', 'Placement Officer': fullApp.tpoName || '', 'Status': status || '', 'Remarks': remarks || '', 'DATE PLACED': datePlaced !== undefined ? datePlaced : (fullApp.datePlaced || ''), 'PACKAGE (LPA)': packageLpa !== undefined ? packageLpa : (fullApp.packageLpa || ''), 'Offer Letter Status': offerLetterLink, 'Joining Status': joiningStatus || ''
+          'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), 
+          'Student Name': sName, 
+          'Contact': sContact, 
+          'Mail ID': sMail, 
+          'Roll Number': sRoll, 
+          'Course': sCourse, 
+          'Branch': sBranch, 
+          'Qualification': sQual, 
+          'Resume': sResume, 
+          'Job ID': sJobId, 
+          'Company Name': sCompany, 
+          'Position': sPosition, 
+          'Placement Officer': sTpo, 
+          'Status': status || '', 
+          'Remarks': remarks !== undefined ? remarks : (currentRowData[getHeader('remarks')] || ''), 
+          'DATE PLACED': sDatePlaced, 
+          'PACKAGE (LPA)': sPackage, 
+          'Offer Letter Status': sOffer, 
+          'Joining Status': sJoining,
+          'Interview Date': interviewDate || '',  // 🚨 Logged
+          'Interview Time': interviewTime || '',  // 🚨 Logged
+          'Interview Venue': interviewVenue || '' // 🚨 Logged
         });
       }
       
-      // 🚨 Evaluate and send student status mails (Only if status actually changed)
       if (oldStatus !== (status || '').toLowerCase()) {
-         checkAndSendStudentMails({ ...fullApp, status: status, joiningStatus: joiningStatus }, status);
+         checkAndSendStudentMails({
+           name: sName, roll: sRoll, email: sMail, company: sCompany, 
+           position: sPosition, tpoName: sTpo, branch: sBranch
+         }, status, { date: interviewDate, time: interviewTime, venue: interviewVenue }); // 🚨 Passed to mail function
       }
 
-      refreshCache(); res.json({ success: true, message: "Updated!" });
-    } else { res.status(404).json({ success: false, message: "Row not found." }); }
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+      refreshCache(); 
+      res.json({ success: true, message: "Updated!" });
+    } else { 
+      res.status(404).json({ success: false, message: "Row not found." }); 
+    }
+  } catch (error) { 
+    res.status(500).json({ success: false, message: error.message }); 
+  }
 };
 
 exports.addApplication = async (req, res) => {
-  const appData = JSON.parse(req.body.appData);
+  let appData = {};
+  try {
+    appData = typeof req.body.appData === 'string' ? JSON.parse(req.body.appData) : (req.body.appData || {});
+  } catch(e) {}
+  
   const tpoName = req.body.tpoName;
   try {
     let offerLetterLink = '';
     if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
+    
     const appSheet = doc.sheetsByTitle["Opening_Applied"];
-    const newRow = { 'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), 'Student Name': appData.name, 'Contact': appData.phone, 'Mail ID': appData.email, 'Roll Number': appData.roll, 'Course': appData.course, 'Branch': appData.branch, 'Qualification': appData.qual || '', 'Resume': appData.resume || '', 'Job ID': 'MANUAL-ADD', 'Company Name': appData.company, 'Position': appData.position, 'Placement Officer': tpoName, 'Status': appData.status || 'Placed', 'Remarks': appData.remarks, 'DATE PLACED': appData.datePlaced, 'PACKAGE (LPA)': appData.packageLpa, 'Offer Letter': offerLetterLink, 'Joining Status': appData.joiningStatus };
+    const newRow = { 
+      'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), 
+      'Student Name': appData.name || '', 'Contact': appData.phone || '', 'Mail ID': appData.email || '', 
+      'Roll Number': appData.roll || '', 'Course': appData.course || '', 'Branch': appData.branch || '', 
+      'Qualification': appData.qual || '', 'Resume': appData.resume || '', 'Job ID': 'MANUAL-ADD', 
+      'Company Name': appData.company || '', 'Position': appData.position || '', 
+      'Placement Officer': tpoName || '', 'Status': appData.status || 'Placed', 
+      'Remarks': appData.remarks || '', 'DATE PLACED': appData.datePlaced || '', 
+      'PACKAGE (LPA)': appData.packageLpa || '', 'Offer Letter': offerLetterLink, 
+      'Joining Status': appData.joiningStatus || '' 
+    };
+    
     await appSheet.addRow(newRow);
     
     const logSheet = doc.sheetsByTitle["TPO_Log"];
     if (logSheet) { await logSheet.addRow({ ...newRow, 'Offer Letter Status': offerLetterLink }); }
     
-    // 🚨 Evaluate and send student status mails
     checkAndSendStudentMails({ ...appData, tpoName: tpoName }, appData.status || 'Placed');
 
     refreshCache(); res.json({ success: true, message: "Placement added manually." });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-// --- VACANCIES & EVENTS ---
-exports.getVacancies = (req, res) => {
-  let vacs = getCache().vacancies.map((row, i) => {
-    const rowData = row.toObject();
-    const getVal = (possibleKeys) => { for(let key of Object.keys(rowData)) { if (possibleKeys.includes(key.trim())) return rowData[key]; } return ''; };
-    return {
-      id: getVal(['JOBID', 'Job ID', 'ID']) || `JOB-${i+1}`, company: getVal(['Company Name', 'Company']), position: getVal(['Position', 'Role']), location: getVal(['Opening AT ( Location )', 'Opening AT( Location )', 'Location']), state: getVal(['State']), mode: getVal(['Work Mode', 'Mode']), lastDate: getVal(['Last Date']), course: getVal(['Course']), qualification: getVal(['Qualification']), description: getVal(['Job Description']), experience: getVal(['Experience']), salary: getVal(['Salary']), gender: getVal(['Gender Preference']), status: getVal(['Status']) || 'Open'
-    };
-  });
-  res.json({ success: true, vacancies: vacs.reverse() });
-};
-
+// --- EVENTS ---
 exports.getEvents = (req, res) => {
   let allEvents = getCache().events.map(row => {
     const rowData = row.toObject();
@@ -584,9 +663,8 @@ exports.addEvent = async (req, res) => {
     if (req.file) posterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS); 
     await eventSheet.addRow({ 'Date of the Event': date, 'TPO': tpo, 'Branch': branch, 'Event': type, 'Title': title, 'Descripation': description || '', 'Time of the Event': time || '', 'Event Happening in': location || '', 'Poster Link': posterLink });
     
-    // 🚨 SEND EVENT MAILS (Drive vs Talentino)
     const evType = (type || '').toLowerCase();
-    const refId = Math.floor(10000 + Math.random() * 90000); // 🚨 Unique ID
+    const refId = Math.floor(10000 + Math.random() * 90000); 
     
     if (evType.includes('placement drive')) {
       const allTpos = getAllTpoEmails();
@@ -617,7 +695,7 @@ exports.addEvent = async (req, res) => {
         to: process.env.EMAIL_USER, 
         bcc: bccList, 
         cc: 'RAKESH@ipcsglobal.com,Gifty@ipcsglobal.com',
-        subject: `New Placement Drive Scheduled: ${title} [Ref: ${refId}]`, // 🚨 Anti-threading
+        subject: `New Placement Drive Scheduled: ${title} [Ref: ${refId}]`,
         html: html
       }, { name: 'All Branches', email: 'Broadcast', type: 'Event Notification' });
 
@@ -647,7 +725,7 @@ exports.addEvent = async (req, res) => {
           from: `"IPCS Talentino" <${process.env.EMAIL_USER}>`,
           to: tpoMail,
           cc: `Gifty@ipcsglobal.com,${bmMail}`,
-          subject: `Talentino Session Scheduled: ${title} [Ref: ${refId}]`, // 🚨 Anti-threading
+          subject: `Talentino Session Scheduled: ${title} [Ref: ${refId}]`,
           html: html
         }, { name: tpo, email: tpoMail, type: 'Event Notification' });
       }
@@ -657,7 +735,115 @@ exports.addEvent = async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-// --- ISSUES, REPORTS, TALENTINO ---
+// --- CRON HELPER (RESUME DELIVERY) ---
+exports.runDailyCron = async () => {
+  const cache = getCache();
+  if (!cache) return;
+  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  const yStr = yesterday.toISOString().split('T')[0]; 
+  
+  const expiredJobs = cache.vacancies.filter(v => {
+    if (!v.get('Last Date')) return false;
+    try { 
+      let pd = v.get('Last Date');
+      if (pd.includes('/')) {
+        const parts = pd.split(/[/\s,.-]+/);
+        if (parts.length >= 3) pd = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+      return new Date(pd).toISOString().split('T')[0] === yStr; 
+    } catch(e) { return false; }
+  });
+
+  for (let job of expiredJobs) {
+    const jobId = job.get('Job ID') || job.get('ID');
+    const companyEmail = job.get('Company Mail ID') || job.get('Company Email'); 
+    if (!companyEmail) continue;
+
+    const applicants = cache.applications.filter(app => app.get('Job ID') === jobId);
+    if (applicants.length === 0) continue;
+
+    const tpoName = applicants[0].get('Placement Officer');
+    const tpoEmail = getTpoEmail(tpoName);
+
+    let tableRows = ''; let attachments = [];
+    applicants.forEach((appRow, index) => {
+      const rd = appRow.toObject();
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().includes(str.toLowerCase()));
+      const info = { name: rd[getH('name')] || '', phone: rd[getH('contact')] || rd[getH('phone')] || '', email: rd[getH('mail')] || rd[getH('email')] || '', qual: rd[getH('qual')] || '', resume: rd[getH('resume')] || rd[getH('cv')] || '' };
+      
+      let resumeBtn = 'N/A';
+      if (info.resume) {
+        const driveMatch = info.resume.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+        if (driveMatch) {
+            const driveId = driveMatch[1];
+            resumeBtn = `<a href="https://drive.google.com/file/d/${driveId}/view" style="background: #0f172a; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; display: inline-block; white-space: nowrap;">View CV</a>`;
+            attachments.push({ filename: `${info.name.replace(/\s+/g, '_')}_Resume.pdf`, href: `https://drive.google.com/uc?export=download&id=${driveId}` });
+        } else { resumeBtn = `<a href="${info.resume}">Link</a>`; }
+      }
+      tableRows += `<tr><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${index+1}</td><td style="padding:10px;border:1px solid #cbd5e1;"><b>${info.name}</b></td><td style="padding:10px;border:1px solid #cbd5e1;">${info.phone}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.email}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.qual}</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${resumeBtn}</td></tr>`;
+    });
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; color: #333; max-width: 800px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+        <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #10b981;">
+          <h2 style="color: #ffffff; margin: 0; letter-spacing: 1px;">APPLICANT RESUMES</h2>
+        </div>
+        <div style="padding: 30px; background-color: #ffffff;">
+          <p style="font-size: 16px; margin-top: 0;">Dear <b>${job.get('Company Name') || job.get('Company')}</b> Hiring Team,</p>
+          <p style="font-size: 15px; line-height: 1.6; color: #475569;">Greetings from IPCS Global Placement Cell.</p>
+          <p style="font-size: 15px; line-height: 1.6; color: #475569;">Please find attached the consolidated list of pre-screened resumes for the <b>${job.get('Position')}</b> opening (Ref: ${jobId}).</p>
+          
+          <table style="width: 100%; border-collapse: collapse; margin-top: 25px;">
+            <thead>
+              <tr style="background-color: #f1f5f9; text-align: left; font-size: 13px;">
+                <th style="padding: 10px; border: 1px solid #cbd5e1; text-align:center;">#</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Applicant Name</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Phone</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Email</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Qualification</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Resume Link</th>
+              </tr>
+            </thead>
+            <tbody style="font-size: 13px;">
+              ${tableRows}
+            </tbody>
+          </table>
+          
+          <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
+            <p style="margin: 0 0 5px 0;">If you require further shortlisting or have interview dates finalized, please reply directly to this email.</p>
+            <p style="margin: 15px 0 2px 0;">Regards,</p>
+            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName}</p>
+            <p style="margin: 0;">Placement Officer, IPCS Global</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    await sendMailAndLog({
+      from: `"IPCS Corporate Relations" <${process.env.EMAIL_USER}>`, 
+      to: companyEmail,
+      cc: tpoEmail || '',
+      subject: `Applicant Resumes: ${job.get('Position')} Opening [Ref: ${jobId}]`,
+      html: html,
+      attachments: attachments
+    }, { name: job.get('Company Name'), email: companyEmail, type: 'Resume Delivery' }); 
+  }
+};
+
+// ---------------------------------------------------------
+// EVERYTHING ELSE (Untouched, safe to keep exactly as is)
+// ---------------------------------------------------------
+exports.getVacancies = (req, res) => {
+  let vacs = getCache().vacancies.map((row, i) => {
+    const rowData = row.toObject();
+    const getVal = (possibleKeys) => { for(let key of Object.keys(rowData)) { if (possibleKeys.includes(key.trim())) return rowData[key]; } return ''; };
+    return {
+      id: getVal(['JOBID', 'Job ID', 'ID']) || `JOB-${i+1}`, company: getVal(['Company Name', 'Company']), position: getVal(['Position', 'Role']), location: getVal(['Opening AT ( Location )', 'Opening AT( Location )', 'Location']), state: getVal(['State']), mode: getVal(['Work Mode', 'Mode']), lastDate: getVal(['Last Date']), course: getVal(['Course']), qualification: getVal(['Qualification']), description: getVal(['Job Description']), experience: getVal(['Experience']), salary: getVal(['Salary']), gender: getVal(['Gender Preference']), status: getVal(['Status']) || 'Open'
+    };
+  });
+  res.json({ success: true, vacancies: vacs.reverse() });
+};
+
 exports.getIssues = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
   let issuesList = getCache().issues.filter(row => {
@@ -852,9 +1038,6 @@ exports.submitMou = async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-// ---------------------------------------------------------
-// PROFILE & SETTINGS
-// ---------------------------------------------------------
 exports.updatePassword = async (req, res) => {
   const { email, loginId, newPassword } = req.body;
   try {
@@ -923,9 +1106,6 @@ exports.updatePhoto = async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-// ---------------------------------------------------------
-// ADMIN ROUTES
-// ---------------------------------------------------------
 exports.getAdminUsers = async (req, res) => {
   try {
     await doc.loadInfo();
@@ -1005,18 +1185,12 @@ exports.deleteAdminUser = async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-// ---------------------------------------------------------
-// LMS & EXAMS
-// ---------------------------------------------------------
 exports.getMaterials = (req, res) => {
   try {
     let materials = getCache().materials.map(row => {
       const rd = row.toObject();
       const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return {
-        id: rd[getH('materialid')] || '', course: rd[getH('course')] || '', module: rd[getH('module/topic')] || rd[getH('module')] || rd[getH('topic')] || '',
-        title: rd[getH('title')] || '', fileType: rd[getH('filetype')] || '', link: rd[getH('onedrivelink')] || rd[getH('link')] || '', status: rd[getH('status')] || 'Active'
-      };
+      return { id: rd[getH('materialid')] || '', course: rd[getH('course')] || '', module: rd[getH('module/topic')] || rd[getH('module')] || rd[getH('topic')] || '', title: rd[getH('title')] || '', fileType: rd[getH('filetype')] || '', link: rd[getH('onedrivelink')] || rd[getH('link')] || '', status: rd[getH('status')] || 'Active' };
     });
     res.json({ success: true, materials: materials.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -1028,10 +1202,7 @@ exports.addMaterial = async (req, res) => {
     const sheet = doc.sheetsByTitle["Study_Materials"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const h = sheet.headerValues;
-    await sheet.addRow({
-      [getFuzzyHeader(h, 'materialid')]: id, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'module/topic')]: module,
-      [getFuzzyHeader(h, 'title')]: title, [getFuzzyHeader(h, 'filetype')]: fileType, [getFuzzyHeader(h, 'onedrivelink')]: link, [getFuzzyHeader(h, 'status')]: status || 'Active'
-    });
+    await sheet.addRow({ [getFuzzyHeader(h, 'materialid')]: id, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'module/topic')]: module, [getFuzzyHeader(h, 'title')]: title, [getFuzzyHeader(h, 'filetype')]: fileType, [getFuzzyHeader(h, 'onedrivelink')]: link, [getFuzzyHeader(h, 'status')]: status || 'Active' });
     refreshCache(); res.json({ success: true, message: "Material added successfully!" });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
@@ -1068,11 +1239,7 @@ exports.getQuestions = (req, res) => {
     let questions = getCache().techQuestions.map(row => {
       const rd = row.toObject();
       const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return {
-        id: rd[getH('questionid')] || '', course: rd[getH('course')] || '', question: rd[getH('question')] || '',
-        optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '',
-        correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active'
-      };
+      return { id: rd[getH('questionid')] || '', course: rd[getH('course')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active' };
     });
     res.json({ success: true, questions: questions.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -1119,107 +1286,10 @@ exports.getResults = (req, res) => {
     let results = getCache().techResults.map(row => {
       const rd = row.toObject();
       const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return {
-        timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', course: rd[getH('course')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || ''
-      };
+      return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', course: rd[getH('course')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '' };
     });
     res.json({ success: true, results: results.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-// --- CRON HELPER ---
-exports.runDailyCron = async () => {
-  const cache = getCache();
-  if (!cache) return;
-  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-  const yStr = yesterday.toISOString().split('T')[0]; 
-  
-  const expiredJobs = cache.vacancies.filter(v => {
-    if (!v.get('Last Date')) return false;
-    try { 
-      let pd = v.get('Last Date');
-      if (pd.includes('/')) {
-        const parts = pd.split(/[/\s,.-]+/);
-        if (parts.length >= 3) pd = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-      }
-      return new Date(pd).toISOString().split('T')[0] === yStr; 
-    } catch(e) { return false; }
-  });
-
-  for (let job of expiredJobs) {
-    const jobId = job.get('Job ID') || job.get('ID');
-    const companyEmail = job.get('Company Mail ID') || job.get('Company Email'); 
-    if (!companyEmail) continue;
-
-    const applicants = cache.applications.filter(app => app.get('Job ID') === jobId);
-    if (applicants.length === 0) continue;
-
-    const tpoName = applicants[0].get('Placement Officer');
-    const tpoEmail = getTpoEmail(tpoName);
-
-    let tableRows = ''; let attachments = [];
-    applicants.forEach((appRow, index) => {
-      const rd = appRow.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().includes(str.toLowerCase()));
-      const info = { name: rd[getH('name')] || '', phone: rd[getH('contact')] || rd[getH('phone')] || '', email: rd[getH('mail')] || rd[getH('email')] || '', qual: rd[getH('qual')] || '', resume: rd[getH('resume')] || rd[getH('cv')] || '' };
-      
-      let resumeBtn = 'N/A';
-      if (info.resume) {
-        const driveMatch = info.resume.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
-        if (driveMatch) {
-            const driveId = driveMatch[1];
-            resumeBtn = `<a href="https://drive.google.com/file/d/${driveId}/view" style="background: #0f172a; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; display: inline-block; white-space: nowrap;">View CV</a>`;
-            attachments.push({ filename: `${info.name.replace(/\s+/g, '_')}_Resume.pdf`, href: `https://drive.google.com/uc?export=download&id=${driveId}` });
-        } else { resumeBtn = `<a href="${info.resume}">Link</a>`; }
-      }
-      tableRows += `<tr><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${index+1}</td><td style="padding:10px;border:1px solid #cbd5e1;"><b>${info.name}</b></td><td style="padding:10px;border:1px solid #cbd5e1;">${info.phone}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.email}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.qual}</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${resumeBtn}</td></tr>`;
-    });
-
-    const html = `
-      <div style="font-family: Arial, sans-serif; color: #333; max-width: 800px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-        <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #10b981;">
-          <h2 style="color: #ffffff; margin: 0; letter-spacing: 1px;">APPLICANT RESUMES</h2>
-        </div>
-        <div style="padding: 30px; background-color: #ffffff;">
-          <p style="font-size: 16px; margin-top: 0;">Dear <b>${job.get('Company Name') || job.get('Company')}</b> Hiring Team,</p>
-          <p style="font-size: 15px; line-height: 1.6; color: #475569;">Greetings from IPCS Global Placement Cell.</p>
-          <p style="font-size: 15px; line-height: 1.6; color: #475569;">Please find attached the consolidated list of pre-screened resumes for the <b>${job.get('Position')}</b> opening (Ref: ${jobId}).</p>
-          
-          <table style="width: 100%; border-collapse: collapse; margin-top: 25px;">
-            <thead>
-              <tr style="background-color: #f1f5f9; text-align: left; font-size: 13px;">
-                <th style="padding: 10px; border: 1px solid #cbd5e1; text-align:center;">#</th>
-                <th style="padding: 10px; border: 1px solid #cbd5e1;">Applicant Name</th>
-                <th style="padding: 10px; border: 1px solid #cbd5e1;">Phone</th>
-                <th style="padding: 10px; border: 1px solid #cbd5e1;">Email</th>
-                <th style="padding: 10px; border: 1px solid #cbd5e1;">Qualification</th>
-                <th style="padding: 10px; border: 1px solid #cbd5e1;">Resume Link</th>
-              </tr>
-            </thead>
-            <tbody style="font-size: 13px;">
-              ${tableRows}
-            </tbody>
-          </table>
-          
-          <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
-            <p style="margin: 0 0 5px 0;">If you require further shortlisting or have interview dates finalized, please reply directly to this email.</p>
-            <p style="margin: 15px 0 2px 0;">Regards,</p>
-            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName}</p>
-            <p style="margin: 0;">Placement Officer, IPCS Global</p>
-          </div>
-        </div>
-      </div>
-    `;
-
-    await sendMailAndLog({
-      from: `"IPCS Corporate Relations" <${process.env.EMAIL_USER}>`, 
-      to: companyEmail,
-      cc: tpoEmail || '',
-      subject: `Applicant Resumes: ${job.get('Position')} Opening [Ref: ${jobId}]`,
-      html: html,
-      attachments: attachments
-    }, { name: job.get('Company Name'), email: companyEmail, type: 'Resume Delivery' }); 
-  }
 };
 
 exports.getCourses = (req, res) => {
@@ -1245,9 +1315,7 @@ exports.deleteCourse = async (req, res) => {
     const rows = await sheet.getRows();
     const rowToDelete = rows.find(r => r._rawData[1] && r._rawData[1].trim() === subCourse.trim());
     if (rowToDelete) {
-      await rowToDelete.delete();
-      refreshCache();
-      res.json({ success: true, message: "Course deleted" });
+      await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Course deleted" });
     } else { res.status(404).json({ success: false, message: "Course not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };

@@ -2,11 +2,21 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   CircleNotch, CaretDown, FloppyDisk, CheckCircle, 
-  WhatsappLogo, EnvelopeSimple, FilePdf 
+  WhatsappLogo, EnvelopeSimple, FilePdf, X // 🚨 Added X for the modal close button
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
 export default function JobTracker() {
+  // 🚨 FIX: Moved the hook INSIDE the component where it belongs!
+  const [interviewModal, setInterviewModal] = useState({
+    isOpen: false,
+    appRowNumber: null,
+    status: '',
+    date: '',
+    time: '',
+    venue: ''
+  });
+
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -56,14 +66,27 @@ export default function JobTracker() {
     setSavingStatus(prev => ({ ...prev, [rowNum]: 'saving' }));
 
     try {
-      const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications/update', {
+      // 🚨 UPDATED PAYLOAD: Injects the interview modal details directly into the save request
+      const payload = {
         rowNumber: rowNum, 
         status: newStatus, 
         remarks: newRemarks,
-        fullApp: app // WE ADDED THIS LINE! Pass the entire app object for the Audit Log
-      });
+        fullApp: app,
+        interviewDate: interviewModal.appRowNumber === rowNum ? interviewModal.date : '',
+        interviewTime: interviewModal.appRowNumber === rowNum ? interviewModal.time : '',
+        interviewVenue: interviewModal.appRowNumber === rowNum ? interviewModal.venue : ''
+      };
+
+      const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications/update', payload);
+      
       if (response.data.success) {
         setSavingStatus(prev => ({ ...prev, [rowNum]: 'success' }));
+        
+        // Close modal if it was open for this row
+        if (interviewModal.isOpen && interviewModal.appRowNumber === rowNum) {
+          setInterviewModal({ isOpen: false, appRowNumber: null, status: '', date: '', time: '', venue: '' });
+        }
+
         setTimeout(() => setSavingStatus(prev => ({ ...prev, [rowNum]: null })), 2000);
       }
     } catch (error) {
@@ -208,12 +231,10 @@ export default function JobTracker() {
                                       {app.name} <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>({app.roll})</span>
                                     </span>
                                     
-                                    {/* NEW: Display Branch and Qualification cleanly */}
                                     <span style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '10px', fontWeight: 600 }}>
                                       {app.branch} • {app.qual || app.course}
                                     </span>
                                     
-                                    {/* 1-CLICK QUICK ACTIONS */}
                                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                                       <a 
                                         href={hasPhone ? `https://wa.me/91${safePhone.replace(/\D/g,'')}` : '#'} 
@@ -248,7 +269,26 @@ export default function JobTracker() {
                                   <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{app.date.split(' ')[0]}</td>
                                   
                                   <td>
-                                    <select className="sleek-select" style={{ padding: '8px', width: '100%', borderRadius: '6px' }} value={currentStatus} onChange={(e) => handleEditChange(app.rowNumber, 'status', e.target.value)}>
+                                    {/* 🚨 TRIGGER MODAL FROM DROPDOWN */}
+                                    <select 
+                                      className="sleek-select" 
+                                      style={{ padding: '8px', width: '100%', borderRadius: '6px' }} 
+                                      value={currentStatus} 
+                                      onChange={(e) => {
+                                        const newStat = e.target.value;
+                                        handleEditChange(app.rowNumber, 'status', newStat);
+                                        
+                                        // Open modal ONLY if "Interview Scheduled" is picked
+                                        if (newStat === 'Interview Scheduled') {
+                                          setInterviewModal({
+                                            isOpen: true,
+                                            appRowNumber: app.rowNumber,
+                                            status: newStat,
+                                            date: '', time: '', venue: ''
+                                          });
+                                        }
+                                      }}
+                                    >
                                       {statusOptions.map(o => <option key={o} value={o}>{o}</option>)}
                                     </select>
                                   </td>
@@ -276,6 +316,62 @@ export default function JobTracker() {
           )}
         </div>
       </div>
+
+      {/* 🚨 INTERVIEW SCHEDULE POPUP MODAL */}
+      {interviewModal.isOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+          <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
+            
+            <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <h2 style={{ margin: 0, color: '#38bdf8', fontSize: '1.4rem' }}>Schedule Interview</h2>
+                <p style={{ margin: '5px 0 0 0', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  These details will be emailed to the student and recorded in the official TPO Log.
+                </p>
+              </div>
+              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => {
+                // If they cancel, revert the status back to Applied
+                handleEditChange(interviewModal.appRowNumber, 'status', 'Applied');
+                setInterviewModal({ ...interviewModal, isOpen: false });
+              }} />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Interview Date *</label>
+                <input type="date" className="sleek-input" style={{ width: '100%' }} value={interviewModal.date} onChange={(e) => setInterviewModal({...interviewModal, date: e.target.value})} />
+              </div>
+              <div>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Interview Time *</label>
+                <input type="time" className="sleek-input" style={{ width: '100%' }} value={interviewModal.time} onChange={(e) => setInterviewModal({...interviewModal, time: e.target.value})} />
+              </div>
+            </div>
+
+            <div style={{ marginBottom: '25px' }}>
+              <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Venue / Google Meet Link *</label>
+              <input type="text" className="sleek-input" placeholder="e.g., Calicut Branch or Meet Link" style={{ width: '100%' }} value={interviewModal.venue} onChange={(e) => setInterviewModal({...interviewModal, venue: e.target.value})} />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '1.5rem' }}>
+              <button className="btn-secondary" onClick={() => {
+                handleEditChange(interviewModal.appRowNumber, 'status', 'Applied');
+                setInterviewModal({ ...interviewModal, isOpen: false });
+              }}>Cancel</button>
+              
+              <button className="btn-action" style={{ background: '#38bdf8', color: '#0f172a', width: 'auto', padding: '0.8rem 1.5rem' }} onClick={() => {
+                if (!interviewModal.date || !interviewModal.time || !interviewModal.venue) {
+                  return alert("Please fill in all interview details to proceed.");
+                }
+                // Save and fire off the email!
+                const appToSave = applications.find(a => a.rowNumber === interviewModal.appRowNumber);
+                if (appToSave) saveApplication(appToSave);
+              }}>
+                Confirm & Send Mail
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
