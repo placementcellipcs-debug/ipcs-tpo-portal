@@ -49,12 +49,12 @@ export default function Settings() {
     }
   };
 
-  // 🚨 NEW: Profile Photo Upload Logic
   const handlePhotoUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
 
     setIsUploading(true);
+    setMessage({ text: '', type: '' });
     const formData = new FormData();
     formData.append('email', tpoData.email);
     formData.append('photo', file);
@@ -64,17 +64,17 @@ export default function Settings() {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       if (res.data.success) {
-        // Update local storage and state so the picture updates instantly!
         const updatedTpo = { ...tpoData, photo: res.data.photoUrl };
         localStorage.setItem('tpoData', JSON.stringify(updatedTpo));
         setTpoData(updatedTpo);
         setMessage({ text: "Profile photo updated successfully! It will sync across the portal.", type: 'success' });
         
-        // Force reload after 1.5 seconds to refresh the sidebar avatar
         setTimeout(() => window.location.reload(), 1500);
       }
     } catch (err) {
-      setMessage({ text: "Failed to upload photo to Google Drive.", type: 'error' });
+      // 🚨 Shows exact server error message
+      const errMsg = err.response?.data?.message || err.message || "Failed to upload photo to Google Drive.";
+      setMessage({ text: errMsg, type: 'error' });
     } finally {
       setIsUploading(false);
     }
@@ -91,7 +91,6 @@ export default function Settings() {
 
         <div style={{ display: 'grid', gridTemplateColumns: '250px 1fr', gap: '30px' }}>
           
-          {/* SIDEBAR TABS */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <button 
               onClick={() => { setActiveTab('profile'); setMessage({text:'', type:''}); }}
@@ -107,7 +106,6 @@ export default function Settings() {
             </button>
           </div>
 
-          {/* MAIN CONTENT AREA */}
           <div style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2.5rem' }}>
             
             {message.text && (
@@ -117,12 +115,10 @@ export default function Settings() {
               </div>
             )}
 
-            {/* PROFILE TAB */}
             {activeTab === 'profile' && (
               <div className="fade-in">
                 <h2 style={{ fontSize: '1.4rem', margin: '0 0 25px 0', borderBottom: '1px solid var(--card-border)', paddingBottom: '15px' }}>Profile Information</h2>
                 
-                {/* 🚨 AVATAR UPLOADER AREA */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '25px', marginBottom: '30px' }}>
                   <div style={{ position: 'relative' }}>
                     <div style={{ width: '100px', height: '100px', borderRadius: '50%', background: 'var(--bg-dark)', border: '3px solid #38bdf8', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -133,7 +129,6 @@ export default function Settings() {
                       )}
                     </div>
                     
-                    {/* Hidden file input */}
                     <input type="file" accept="image/*" ref={fileInputRef} onChange={handlePhotoUpload} style={{ display: 'none' }} />
                     
                     <button 
@@ -184,7 +179,6 @@ export default function Settings() {
               </div>
             )}
 
-            {/* SECURITY TAB */}
             {activeTab === 'security' && (
               <div className="fade-in">
                 <h2 style={{ fontSize: '1.4rem', margin: '0 0 25px 0', borderBottom: '1px solid var(--card-border)', paddingBottom: '15px' }}>Security & Authentication</h2>

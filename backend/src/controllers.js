@@ -552,32 +552,55 @@ exports.updatePhoto = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: "No file provided" });
     const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
+    
+    let targetRow = null;
     let sheet = doc.sheetsByTitle["Contact"];
-    let rows = await sheet.getRows();
-    let cleanEmail = email.trim().toLowerCase();
+    let cleanEmail = (email || '').trim().toLowerCase();
 
-    let targetRow = rows.find(row => {
-       const mail = row.get('Mail ID') || row.get('Mail ID ') || '';
-       return mail.toString().trim().toLowerCase() === cleanEmail;
-    });
-
-    if (!targetRow) {
-       sheet = doc.sheetsByTitle["User"];
-       if (sheet) {
-          rows = await sheet.getRows();
-          targetRow = rows.find(row => {
-             const login = row.get('USER Name') || row.get('Mail ID') || '';
-             return login.toString().trim().toLowerCase() === cleanEmail;
-          });
-       }
+    // 1. Search in Contact sheet by checking any mail/email column
+    if (sheet) {
+      let rows = await sheet.getRows();
+      targetRow = rows.find(row => {
+        const rowObj = row.toObject();
+        for (let k in rowObj) {
+          if (k.toLowerCase().includes('mail') || k.toLowerCase().includes('email') || k.toLowerCase().includes('login')) {
+            if ((rowObj[k] || '').toString().trim().toLowerCase() === cleanEmail) return true;
+          }
+        }
+        return false;
+      });
     }
 
-    if (targetRow) {
-      const photoHeader = sheet.headerValues.find(h => h.trim() === 'Profile Photo') || 'Profile Photo';
+    // 2. If not found, search in User sheet
+    if (!targetRow) {
+      sheet = doc.sheetsByTitle["User"];
+      if (sheet) {
+        let rows = await sheet.getRows();
+        targetRow = rows.find(row => {
+          const rowObj = row.toObject();
+          for (let k in rowObj) {
+            if (k.toLowerCase().includes('mail') || k.toLowerCase().includes('email') || k.toLowerCase().includes('login') || k.toLowerCase().includes('name')) {
+              if ((rowObj[k] || '').toString().trim().toLowerCase() === cleanEmail) return true;
+            }
+          }
+          return false;
+        });
+      }
+    }
+
+    if (targetRow && sheet) {
+      const headers = sheet.headerValues;
+      const photoHeader = headers.find(h => h.toLowerCase().includes('photo') || h.toLowerCase().includes('profile')) || 'Profile Photo';
       targetRow.assign({ [photoHeader]: photoLink });
-      await targetRow.save(); refreshCache(); res.json({ success: true, photoUrl: photoLink });
-    } else { res.status(404).json({ success: false, message: "User not found." }); }
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+      await targetRow.save(); 
+      refreshCache(); 
+      res.json({ success: true, photoUrl: photoLink });
+    } else { 
+      res.status(404).json({ success: false, message: "User account not found in database to update photo." }); 
+    }
+  } catch (error) { 
+    res.status(500).json({ success: false, message: error.message }); 
+  }
 };
 
 // --- ADMIN USERS ---
