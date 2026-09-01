@@ -242,6 +242,11 @@ export default function CertificateSign() {
             <li style={{ marginBottom: '8px' }}><strong>Confidentiality:</strong> Both parties shall maintain confidentiality regarding candidate information, company information and other sensitive recruitment-related information shared during the association.</li>
             <li style={{ marginBottom: '8px' }}><strong>Non-Exclusivity:</strong> This hiring partnership is non-exclusive unless otherwise agreed upon in writing by both parties.</li>
             <li style={{ marginBottom: '8px' }}><strong>No Recruitment Fee / Recruitment Charges:</strong> No recruitment fee shall be charged to the employer for candidates sourced through IPCS Global, unless otherwise mutually agreed in writing.</li>
+            <li style={{ marginBottom: '8px' }}><strong>Offer Acceptance:</strong> After receiving an offer letter, the candidate has the complete freedom to accept or reject the offer. IPCS Global will not be responsible for the candidate's decision.</li>
+            <li style={{ marginBottom: '8px' }}><strong>Non-Joining:</strong> If a selected candidate does not join the organization after accepting the offer letter, IPCS Global will not be responsible for the same.</li>
+            <li style={{ marginBottom: '8px' }}><strong>Replacement:</strong> If a candidate joins and leaves the organization after days or months, IPCS Global will not be responsible for providing a replacement. Suitable candidates will be shared if available and interested.</li>
+            <li style={{ marginBottom: '8px' }}><strong>Mutual Understanding:</strong> This document represents a mutual understanding between IPCS Global and the employer and is not a legal or commercial agreement.</li>
+            <li style={{ marginBottom: '8px' }}><strong>Future Requirements:</strong> IPCS Global will continue to support the employer's future hiring requirements by sharing suitable candidates whenever available.</li>
           </ol>
 
           <h4 style={{ fontSize: '16px', marginBottom: '10px', textDecoration: 'underline', fontWeight: 'bold' }}>Acknowledgement</h4>
