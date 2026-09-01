@@ -47,6 +47,18 @@ export default function Dashboard() {
     return isNaN(d) ? null : d;
   };
 
+  // 🚨 STANDARD DOMAIN MAPPER
+  const getStandardDomain = (courseStr) => {
+    if (!courseStr) return 'Other Domains';
+    const c = courseStr.toLowerCase();
+    if (c.includes('automation') || c.includes('plc') || c.includes('scada')) return 'Industrial Automation';
+    if (c.includes('bms') || c.includes('cctv')) return 'BMS & CCTV';
+    if (c.includes('embed') || c.includes('iot')) return 'Embedded & IoT';
+    if (c.includes('digital') || c.includes('dm') || c.includes('marketing')) return 'Digital Marketing';
+    if (c.includes('python') || c.includes('data') || c.includes('it') || c.includes('software')) return 'Data Science & IT';
+    return 'Other Domains';
+  };
+
   const processApps = (tpoLogs) => {
     const mappedLogs = tpoLogs.map(row => {
       const getVal = (s) => {
@@ -65,17 +77,21 @@ export default function Dashboard() {
       };
     });
 
-    // Deduplicate history
     const deduped = {};
     mappedLogs.forEach(log => {
       const key = `${log.roll || log.name}_${log.company}`.toLowerCase();
-      deduped[key] = log;
+      // Ensure we don't accidentally overwrite a 'placed' status with an older 'applied' log
+      if (!deduped[key] || (log.status.toLowerCase().includes('placed') || log.status.toLowerCase().includes('offer'))) {
+        deduped[key] = log;
+      }
     });
     const uniqueApps = Object.values(deduped);
 
     setTotalAppsCount(uniqueApps.length);
     const currentYear = new Date().getFullYear();
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    
+    // 🚨 RESET TREND PROPERLY TO AVOID OVERLAPPING LINES
     let newTrend = months.map(m => ({ m, apps: 0, off: 0, pl: 0 }));
     let domCount = {};
     let pApp = 0, pInt = 0, pOff = 0, pPl = 0;
@@ -84,28 +100,34 @@ export default function Dashboard() {
     uniqueApps.forEach(app => {
       const st = (app.status || '').toLowerCase();
       const jSt = (app.joiningStatus || '').toLowerCase();
+      
       const isPlaced = st.includes('placed') || st.includes('got offer') || st.includes('offer') || jSt.includes('join');
+      const isOffer = st.includes('offer') || isPlaced; // If placed, they had an offer
+      const isInterview = st.includes('interview') || st.includes('shortlist');
       
       if (isPlaced) placedRecent.push(app);
 
+      // Pipeline Aggregation
       if (st.includes('applied') || st.includes('register') || st.includes('pending')) pApp++;
-      if (st.includes('interview') || st.includes('shortlist')) pInt++;
+      if (isInterview) pInt++;
       if (st.includes('offer')) pOff++;
       if (isPlaced) pPl++;
 
+      // 🚨 MAPPING ALL SUBCOURSES TO 5 MAIN DOMAINS
       if (isPlaced) {
-        let c = app.course || 'Others';
-        if(c.toLowerCase().includes('automation') || c.toLowerCase().includes('plc')) c = 'Automation';
-        if(c.toLowerCase().includes('digital') || c.toLowerCase().includes('dm')) c = 'Digital Mkt';
-        if(c.toLowerCase().includes('python') || c.toLowerCase().includes('data') || c.toLowerCase().includes('it')) c = 'Data Science';
+        let c = getStandardDomain(app.course);
         domCount[c] = (domCount[c] || 0) + 1;
       }
 
       const d = parseDateRobust(app.date);
       if (d && d.getFullYear() === currentYear) {
         const mIdx = d.getMonth();
+        // Graph Metric Logic: 
+        // 1. ALL entries count towards "Applications"
+        // 2. Only those with Offer/Placed count towards "Offers"
+        // 3. Only final Placed count towards "Placed"
         newTrend[mIdx].apps++;
-        if (st.includes('offer')) newTrend[mIdx].off++;
+        if (isOffer) newTrend[mIdx].off++;
         if (isPlaced) newTrend[mIdx].pl++;
       }
     });
@@ -393,7 +415,6 @@ export default function Dashboard() {
               <div><div style={{ fontSize: '0.7rem', color: '#10b981', marginBottom: '5px' }}>● Placed</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{pipeline.placed}</div></div>
             </div>
 
-            {/* 🚨 FIX: Fills the empty space with beautiful conversion tracking */}
             <div style={{ marginTop: '25px', padding: '15px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px dashed #1e293b' }}>
               <h4 style={{ margin: '0 0 12px 0', fontSize: '0.85rem', color: '#cbd5e1' }}>Pipeline Conversion Metrics</h4>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', fontSize: '0.75rem' }}>

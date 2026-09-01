@@ -3,7 +3,8 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Bell, X, SquaresFour, Trophy, ListChecks, 
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
-  Book, FileText, Bookmarks, ShieldCheck, IdentificationCard, CaretLeft, MapPin
+  Book, FileText, Bookmarks, ShieldCheck, IdentificationCard, CaretLeft, MapPin,
+  WarningCircle
 } from '@phosphor-icons/react';
 
 export default function Layout({ children }) {
@@ -22,11 +23,62 @@ export default function Layout({ children }) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
+  
+  // 🚨 Dynamic Notifications State
+  const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
     if (!tpoData) navigate('/');
     document.body.setAttribute('data-theme', 'dark');
-  }, [tpoData, navigate]);
+    
+    // 🚨 Parse real-time logs for notifications
+    try {
+      const logsStr = localStorage.getItem('dash_logs');
+      if (logsStr) {
+        const logs = JSON.parse(logsStr);
+        // Sort logs to get the most recent actions
+        const sorted = logs.sort((a,b) => new Date(b.TimeStamp || b.Timestamp || b['Time Stamp'] || 0) - new Date(a.TimeStamp || a.Timestamp || a['Time Stamp'] || 0)).slice(0, 5);
+        
+        const mappedNotifs = sorted.map(log => {
+          const getVal = (s) => {
+             const key = Object.keys(log).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
+             return key ? log[key] : '';
+          };
+          const name = getVal('name') || getVal('student') || 'Student';
+          const company = getVal('company');
+          const status = (getVal('status') || '').toLowerCase();
+          
+          let title = "Application Updated";
+          let desc = `${name}'s status updated to ${getVal('status') || 'Applied'} at ${company}.`;
+          let icon = <ListChecks size={18} weight="bold" />;
+          let color = "#38bdf8"; 
+          let bg = "rgba(56, 189, 248, 0.1)";
+
+          if (status.includes('placed') || status.includes('offer')) {
+             title = "Placement Confirmed! 🎉";
+             desc = `${name} has been successfully placed at ${company}!`;
+             icon = <Trophy size={18} weight="bold" />;
+             color = "#10b981"; bg = "rgba(16, 185, 129, 0.1)";
+          } else if (status.includes('interview')) {
+             title = "Interview Scheduled";
+             desc = `An interview is scheduled for ${name} at ${company}.`;
+             icon = <CalendarStar size={18} weight="bold" />;
+             color = "#a855f7"; bg = "rgba(168, 85, 247, 0.1)";
+          } else if (status.includes('reject') || status.includes('not attend') || status.includes('hold')) {
+             title = "Action Alert";
+             desc = `Status changed to '${getVal('status')}' for ${name}.`;
+             icon = <WarningCircle size={18} weight="bold" />;
+             color = "#ef4444"; bg = "rgba(239, 68, 68, 0.1)";
+          }
+
+          return { title, desc, icon, color, bg, time: getVal('timestamp') || 'Recently' };
+        });
+
+        setNotifications(mappedNotifs);
+      }
+    } catch(e) { console.error("Error parsing notifications"); }
+
+  }, [tpoData, navigate, location.pathname]);
 
   if (!tpoData) return null;
 
@@ -80,26 +132,35 @@ export default function Layout({ children }) {
             <div style={{ position: 'relative' }}>
               <button className="icon-btn" title="Notifications" onClick={() => setIsNotifOpen(!isNotifOpen)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex' }}>
                 <Bell size={24} weight="fill" />
-                <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '10px', height: '10px', background: '#ef4444', borderRadius: '50%', border: '2px solid var(--bg-dark)' }}></span>
+                {notifications.length > 0 && (
+                  <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '10px', height: '10px', background: '#ef4444', borderRadius: '50%', border: '2px solid var(--bg-dark)' }}></span>
+                )}
               </button>
 
               {isNotifOpen && (
-                <div style={{ position: 'absolute', top: '40px', right: '0', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '12px', width: '320px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', zIndex: 9999, overflow: 'hidden' }}>
+                <div style={{ position: 'absolute', top: '40px', right: '0', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '12px', width: '350px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', zIndex: 9999, overflow: 'hidden' }}>
                   <div style={{ padding: '15px', borderBottom: '1px solid #1e293b', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff' }}>
-                    Notifications
-                    <span style={{ fontSize: '0.7rem', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '3px 8px', borderRadius: '10px' }}>System Active</span>
+                    Activity Notifications
+                    <span style={{ fontSize: '0.7rem', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', padding: '3px 8px', borderRadius: '10px' }}>Live Updates</span>
                   </div>
-                  <div style={{ padding: '0', maxHeight: '300px', overflowY: 'auto' }}>
-                    <div style={{ padding: '15px', display: 'flex', gap: '12px' }}>
-                      <div style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Trophy size={18} weight="bold" />
-                      </div>
-                      <div>
-                        <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginBottom: '3px' }}>Data Synced Successfully</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>All dashboard charts are now reflecting real-time data from Google Sheets.</div>
-                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '5px' }}>Just now</div>
-                      </div>
-                    </div>
+                  <div style={{ padding: '0', maxHeight: '350px', overflowY: 'auto' }}>
+                    
+                    {notifications.length === 0 ? (
+                      <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No recent activity to display.</div>
+                    ) : (
+                      notifications.map((notif, idx) => (
+                        <div key={idx} style={{ padding: '15px', display: 'flex', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                          <div style={{ background: notif.bg, color: notif.color, width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            {notif.icon}
+                          </div>
+                          <div>
+                            <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginBottom: '3px' }}>{notif.title}</div>
+                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>{notif.desc}</div>
+                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '5px' }}>{notif.time.split(' ')[0]}</div>
+                          </div>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </div>
               )}

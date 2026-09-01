@@ -17,6 +17,9 @@ export default function Settings() {
 
   if (!tpoData) return null;
 
+  // 🚨 SECURITY LOCK: Check if user is Super Admin
+  const isSuperAdmin = tpoData.accessType === 'superadmin';
+
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
     const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
@@ -57,7 +60,6 @@ export default function Settings() {
     setIsUploading(true);
     setMessage({ text: '', type: '' });
     
-    // 🚨 Passing both email and loginId ensures a 100% match
     const formData = new FormData();
     formData.append('email', tpoData.email || '');
     formData.append('loginId', tpoData.loginId || '');
@@ -101,12 +103,16 @@ export default function Settings() {
             >
               <User size={20} weight={activeTab === 'profile' ? "fill" : "regular"} /> Account Profile
             </button>
-            <button 
-              onClick={() => { setActiveTab('security'); setMessage({text:'', type:''}); }}
-              style={{ padding: '15px 20px', borderRadius: '12px', border: 'none', background: activeTab === 'security' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'security' ? '#38bdf8' : 'var(--text-muted)', textAlign: 'left', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', transition: '0.2s', borderLeft: activeTab === 'security' ? '3px solid #38bdf8' : '3px solid transparent' }}
-            >
-              <LockKey size={20} weight={activeTab === 'security' ? "fill" : "regular"} /> Security
-            </button>
+
+            {/* 🚨 ONLY VISIBLE TO SUPER ADMINS */}
+            {isSuperAdmin && (
+              <button 
+                onClick={() => { setActiveTab('security'); setMessage({text:'', type:''}); }}
+                style={{ padding: '15px 20px', borderRadius: '12px', border: 'none', background: activeTab === 'security' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'security' ? '#38bdf8' : 'var(--text-muted)', textAlign: 'left', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', transition: '0.2s', borderLeft: activeTab === 'security' ? '3px solid #38bdf8' : '3px solid transparent' }}
+              >
+                <LockKey size={20} weight={activeTab === 'security' ? "fill" : "regular"} /> Security
+              </button>
+            )}
           </div>
 
           <div style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2.5rem' }}>
@@ -182,7 +188,7 @@ export default function Settings() {
               </div>
             )}
 
-            {activeTab === 'security' && (
+            {activeTab === 'security' && isSuperAdmin && (
               <div className="fade-in">
                 <h2 style={{ fontSize: '1.4rem', margin: '0 0 25px 0', borderBottom: '1px solid var(--card-border)', paddingBottom: '15px' }}>Security & Authentication</h2>
                 
