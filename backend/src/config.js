@@ -17,7 +17,6 @@ const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 let globalCache = null;
 let isFetching = false;
 
-// 🚨 FIX: Explicitly defined getCache so it doesn't crash the server
 const getCache = () => globalCache;
 
 async function refreshCache() {
@@ -27,11 +26,7 @@ async function refreshCache() {
     await doc.loadInfo();
     const getSheet = (title) => doc.sheetsByIndex.find(s => s.title.trim().toLowerCase() === title.toLowerCase());
 
-    const [
-      stuSheet, appSheet, vacSheet, eventSheet, issueSheet, tSchedSheet, tAttSheet, clientSheet, tpoLogSheet, 
-      matSheet, tqSheet, trSheet, aptQSheet, aptRSheet, talQSheet, talRSheet, courseSheet, driveSheet,
-      contactSheet, userSheet, branchSheet, mailSheet
-    ] = [
+    const sheetsToFetch = [
       getSheet("Data"), getSheet("Opening_Applied"), getSheet("NewsLetter"), getSheet("Event"), getSheet("Issues"), 
       getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients"), getSheet("TPO_Log"), 
       getSheet("Study_Materials"), getSheet("Tech_Questions"), getSheet("Tech_Results"),
@@ -39,20 +34,27 @@ async function refreshCache() {
       getSheet("Contact"), getSheet("User"), getSheet("Branches"), getSheet("Mail")
     ];
 
+    const fetchedData = [];
+    
+    // 🚨 FIX: Fetch sheets sequentially with a 200ms delay to prevent Google API 429 Quota Errors!
+    for (const sheet of sheetsToFetch) {
+      if (sheet) {
+        fetchedData.push(await sheet.getRows());
+      } else {
+        fetchedData.push([]);
+      }
+      await new Promise(resolve => setTimeout(resolve, 200)); 
+    }
+
     const [
       stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, 
       matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows, driveRows, contactRows, userRows, branchRows, mailRows
-    ] = await Promise.all([
-      stuSheet?.getRows() || [], appSheet?.getRows() || [], vacSheet?.getRows() || [], eventSheet?.getRows() || [], 
-      issueSheet?.getRows() || [], tSchedSheet?.getRows() || [], tAttSheet?.getRows() || [], clientSheet?.getRows() || [], 
-      tpoLogSheet?.getRows() || [], matSheet?.getRows() || [], tqSheet?.getRows() || [], trSheet?.getRows() || [],
-      aptQSheet?.getRows() || [], aptRSheet?.getRows() || [], talQSheet?.getRows() || [], talRSheet?.getRows() || [], driveSheet?.getRows() || [],
-      contactSheet?.getRows() || [], userSheet?.getRows() || [], branchSheet?.getRows() || [], mailSheet?.getRows() || []
-    ]);
+    ] = fetchedData;
 
     let coursesDict = {};
+    const courseSheet = sheetsToFetch[16];
     if (courseSheet) {
-      const cRows = await courseSheet.getRows();
+      const cRows = fetchedData[16];
       let currentMain = "General";
       const headers = courseSheet.headerValues;
       if (headers[0] && headers[0].trim() !== '') { currentMain = headers[0].replace(/^\d+\.\s*/, '').trim(); coursesDict[currentMain] = []; }
@@ -123,9 +125,6 @@ const getFuzzyHeader = (headers, target) => {
   return headers.find(h => h.toLowerCase().replace(/\s/g, '') === cleanTarget) || target;
 };
 
-// ---------------------------------------------------------
-// MAIL HELPERS
-// ---------------------------------------------------------
 const getTpoEmail = (tpoName) => {
   if (!globalCache) return '';
   const row = globalCache.contacts.find(r => {
@@ -193,11 +192,9 @@ async function sendIPCSMail(mailOptions, logDetails) {
       await transporter.sendMail(mailOptions);
     }
     
-    // Log success
     if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, 'Success');
     return true;
   } catch (err) {
-    // Log failure
     if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, `Failed: ${err.message}`);
     throw err;
   }

@@ -89,7 +89,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE (WITH CC LOGIC, 2 LOGOS & WATERMARK)
+// 🚨 MASTER STUDENT EMAIL ENGINE (UPDATED CC LOGIC)
 // ---------------------------------------------------------
 const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
@@ -103,10 +103,13 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   const noAttendCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'interview not attended').length + (status === 'interview not attended' ? 1 : 0);
   const rejectCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'student rejected offer').length + (status === 'student rejected offer' ? 1 : 0);
 
-  // 🚨 CC Logic: 1) Who scheduled it, 2) TPO assigned to student, 3) TPO assigned to branch, 4) Gifty
+  // 🚨 EXACT CC LOGIC: 
+  // 1. currentUserEmail (The TPO who is clicking save/scheduling)
+  // 2. branchTpoEmail (The TPO assigned to the student's branch)
   const branchTpoEmail = getTpoEmailByBranch(studentData.branch);
-  const assignedTpoEmail = getTpoEmail(studentData.tpoName);
-  const ccList = [...new Set([currentUserEmail, assignedTpoEmail, branchTpoEmail, 'Gifty@ipcsglobal.com'])].filter(Boolean).join(',');
+  
+  // Using Set to remove duplicates in case the person scheduling IS the branch TPO
+  const ccList = [...new Set([currentUserEmail, branchTpoEmail])].filter(Boolean).join(',');
 
   let subject = ''; let html = ''; let mailType = '';
   const refId = Math.floor(10000 + Math.random() * 90000); 
@@ -118,7 +121,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
 
   const getGenericTemplate = (title, message, color) => `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
-      
+
       <!-- HEADER WITH 2 LOGOS -->
       <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid ${color};">
         <div style="margin-bottom: 15px;">
