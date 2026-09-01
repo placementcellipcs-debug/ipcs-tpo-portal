@@ -24,19 +24,16 @@ export default function Layout({ children }) {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
   
-  // 🚨 Dynamic Notifications State
   const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
     if (!tpoData) navigate('/');
     document.body.setAttribute('data-theme', 'dark');
     
-    // 🚨 Parse real-time logs for notifications
     try {
       const logsStr = localStorage.getItem('dash_logs');
       if (logsStr) {
         const logs = JSON.parse(logsStr);
-        // Sort logs to get the most recent actions
         const sorted = logs.sort((a,b) => new Date(b.TimeStamp || b.Timestamp || b['Time Stamp'] || 0) - new Date(a.TimeStamp || a.Timestamp || a['Time Stamp'] || 0)).slice(0, 5);
         
         const mappedNotifs = sorted.map(log => {
@@ -125,9 +122,14 @@ export default function Layout({ children }) {
       
       <main className="main-content">
         <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px' }}>
-          <div className="header-left">
+          
+          {/* 🚨 UPDATED HEADER LEFT: DUAL LOGOS WITH DIVIDER */}
+          <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" style={{ height: '35px', objectFit: 'contain' }} />
+            <div style={{ width: '1px', height: '25px', backgroundColor: 'rgba(255, 255, 255, 0.15)' }}></div>
+            <img src="https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J" alt="Talenzo Logo" style={{ height: '30px', objectFit: 'contain' }} />
           </div>
+
           <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
             <div style={{ position: 'relative' }}>
               <button className="icon-btn" title="Notifications" onClick={() => setIsNotifOpen(!isNotifOpen)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex' }}>
