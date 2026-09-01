@@ -947,19 +947,75 @@ exports.addEvent = async (req, res) => {
       const tpoMail = getTpoEmail(tpo);
       const bmMail = getBranchManagerEmail(branch);
       
+      const logo1 = "https://drive.google.com/uc?export=view&id=1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
+      const logo2 = "https://drive.google.com/uc?export=view&id=1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
+      const watermark = "https://drive.google.com/uc?export=view&id=1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
+      
       const html = `
-        <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-          <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #a855f7;">
-            <h2 style="color: #ffffff; margin: 0;">TALENTINO SESSION SCHEDULED</h2>
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
+          
+          <!-- Header -->
+          <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #a855f7;">
+            <div style="margin-bottom: 12px;">
+              <img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
+              <img src="${logo2}" alt="Talenzo Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
+            </div>
+            <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px;">Talentino Session Notification</h2>
+            <p style="color: #94a3b8; margin: 5px 0 0 0; font-size: 13px;">IPCS Global Placement Cell</p>
           </div>
-          <div style="padding: 30px; background-color: #ffffff;">
-            <h3 style="color: #0f1523; margin-top: 0;">${title}</h3>
-            <p style="font-size: 15px; color: #475569;">A Talentino session has been formally scheduled in your branch.</p>
-            <ul style="background: #f8fafc; padding: 15px 30px; border-radius: 8px; font-size: 14px; color: #334155;">
-              <li style="margin-bottom: 8px;"><b>Date:</b> ${date}</li>
-              <li style="margin-bottom: 8px;"><b>Time:</b> ${time || 'TBD'}</li>
-              <li style="margin-bottom: 8px;"><b>Host TPO:</b> ${tpo}</li>
-            </ul>
+
+          <!-- Body Container -->
+          <div style="background-image: url('${watermark}'); background-repeat: no-repeat; background-position: center center; background-size: cover; background-color: #ffffff;">
+            <div style="padding: 35px 30px; background-color: rgba(255, 255, 255, 0.94); color: #334155; font-size: 15px; line-height: 1.65;">
+              
+              <p style="font-size: 16px; font-weight: bold; color: #0f1523; margin-top: 0;">Dear Team,</p>
+              <p>Greetings from the Placement Department, IPCS Global.</p>
+              <p>This is to inform you that a Talentino Session has been scheduled at your branch. Kindly find the details below:</p>
+
+              <!-- Details Card -->
+              <div style="background-color: rgba(248, 250, 252, 0.95); border: 1px solid #cbd5e1; border-left: 5px solid #a855f7; border-radius: 8px; padding: 20px; margin: 25px 0;">
+                <h3 style="margin: 0 0 12px 0; color: #0f1523; font-size: 15px; text-transform: uppercase;">📌 Talentino Session Details</h3>
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                  <tr><td style="padding: 6px 0; color: #64748b; width: 35%;">Date:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${date}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Time:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${time || 'TBD'}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Location / Mode:</td><td style="padding: 6px 0; color: #0284c7; font-weight: bold;">${location || branch || 'Branch Venue'}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Conducted By:</td><td style="padding: 6px 0; color: #0f1523;">${tpo}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Description:</td><td style="padding: 6px 0; color: #334155;">${description || 'N/A'}</td></tr>
+                </table>
+              </div>
+
+              <h3 style="color: #ef4444; margin: 20px 0 10px 0; font-size: 16px;">⚠️ Action Required</h3>
+              <p>The concerned branch is requested to inform the students about the scheduled Talentino session and ensure maximum participation.</p>
+              
+              <p style="font-weight: bold; margin-bottom: 5px;">Please ensure that:</p>
+              <ul style="padding-left: 20px; margin-top: 5px;">
+                <li style="margin-bottom: 6px;">All concerned students are informed about the session in advance.</li>
+                <li style="margin-bottom: 6px;">Students are instructed to be present at the branch on time.</li>
+                <li style="margin-bottom: 6px;">The required arrangements are made at the branch for conducting the session smoothly.</li>
+                <li style="margin-bottom: 6px;">Students are encouraged to actively participate in all the activities conducted during Talentino.</li>
+                <li style="margin-bottom: 6px;">The concerned TPO coordinates with the branch team and students throughout the session.</li>
+              </ul>
+
+              <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                <p style="margin: 0; font-size: 14px; color: #1e3a8a;">
+                  <b>Note:</b> No separate registration is required for the Talentino session. Students can participate directly as instructed by the concerned TPO.
+                </p>
+              </div>
+
+              <p>The Talentino session is designed to engage students through interactive activities, challenges, and placement-oriented exercises, helping them improve their confidence, communication, aptitude, problem-solving, and overall placement readiness.</p>
+              
+              <p>Your support and coordination are essential to ensure the smooth execution of the Talentino session and active student participation.</p>
+              
+              <p>For any clarification or coordination, please connect with the Placement Team.<br/>Thank you for your cooperation.</p>
+
+              <!-- Sign-off -->
+              <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
+                <p style="margin: 0 0 3px 0;">Regards,</p>
+                <p style="margin: 0 0 2px 0; font-weight: bold;">Placement Team</p>
+                <p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p>
+              </div>
+
+            </div>
           </div>
         </div>
       `;
@@ -969,7 +1025,7 @@ exports.addEvent = async (req, res) => {
           from: `"IPCS Talentino" <${process.env.EMAIL_USER}>`,
           to: tpoMail,
           cc: `Gifty@ipcsglobal.com,${bmMail}`,
-          subject: `Talentino Session Scheduled: ${title} [Ref: ${refId}]`,
+          subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
           html: html
         }, { name: tpo, email: tpoMail, type: 'Event Notification' });
       }
