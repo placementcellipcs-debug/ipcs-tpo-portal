@@ -291,34 +291,54 @@ exports.login = async (req, res) => {
 
     const cleanInput = (email || '').toString().trim().toLowerCase();
     const cleanPass = (password || '').toString().trim();
-    let foundUser = null; let role = 'TPO'; let course = 'All'; let nameField = 'username';
+    let foundUser = null; 
+    let role = 'TPO'; 
+    let course = 'All'; 
+    let userName = '';
 
+    // 1. Check Contact Sheet (Strictly for TPOs)
     for (let row of cache.contacts) {
-      const rowObj = row.toObject(); const cleanKeys = {};
+      const rowObj = row.toObject();
+      const cleanKeys = {};
       for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
+      
       const sheetMail = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
-      const sheetLoginId = (cleanKeys['loginid'] || cleanKeys['username'] || '').toString().trim().toLowerCase();
       const sheetPass = (cleanKeys['password'] || '').toString().trim();
-      if ((sheetMail === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
-        foundUser = cleanKeys; role = (cleanKeys['role'] || 'TPO').toString().toUpperCase().trim(); course = (cleanKeys['course'] || 'All').toString().trim(); nameField = 'tponame'; break;
+      
+      if (sheetMail === cleanInput && sheetPass === cleanPass && cleanInput !== '') {
+        foundUser = cleanKeys;
+        role = 'TPO';
+        course = 'All Courses';
+        userName = cleanKeys['tponame'] || cleanKeys['name'] || 'TPO User';
+        break;
       }
     }
 
+    // 2. Check User Sheet (For Admins, Managers, RTH, Trainers, etc.)
     if (!foundUser) {
       for (let row of cache.users) {
-        const rowObj = row.toObject(); const cleanKeys = {};
+        const rowObj = row.toObject();
+        const cleanKeys = {};
         for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
+        
         const sheetUsername = (cleanKeys['username'] || cleanKeys['name'] || '').toString().trim().toLowerCase();
         const sheetMail = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
         const sheetLoginId = (cleanKeys['loginid'] || '').toString().trim().toLowerCase();
         const sheetPass = (cleanKeys['password'] || '').toString().trim();
+        
         if ((sheetUsername === cleanInput || sheetMail === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
-          foundUser = cleanKeys; role = (cleanKeys['role'] || 'RTH').toString().toUpperCase().trim(); course = (cleanKeys['course'] || 'All').toString().trim(); nameField = 'username'; break;
+          foundUser = cleanKeys;
+          role = (cleanKeys['role'] || 'RTH').toString().trim();
+          course = (cleanKeys['course'] || 'All').toString().trim();
+          userName = cleanKeys['username'] || cleanKeys['name'] || 'User';
+          break;
         }
       }
     }
 
-    if (!foundUser) return res.status(401).json({ success: false, message: "Invalid Login ID or Password." });
+    if (!foundUser) {
+      return res.status(401).json({ success: false, message: "Invalid Login ID or Password." });
+    }
 
     const assignedRaw = foundUser['assignedbranches'] || foundUser['sittingbranch'] || '';
     let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
@@ -338,8 +358,24 @@ exports.login = async (req, res) => {
       assignedArray = ['all'];
     }
 
-    return res.json({ success: true, tpo: { name: foundUser[nameField] || foundUser['name'] || 'User', email: foundUser['mailid'] || foundUser['email'] || cleanInput, loginId: cleanInput, sittingBranch: foundUser['sittingbranch'] || 'N/A', assignedBranchesArray: assignedArray, photo: foundUser['profilephoto'] || foundUser['photo'] || '', phone: foundUser['contactnumber'] || foundUser['contact'] || foundUser['phoneno'] || 'Not Provided', role: role, assignedCourse: course, accessType: accessType } });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+    return res.json({ 
+      success: true, 
+      tpo: { 
+        name: userName, 
+        email: foundUser['mailid'] || foundUser['email'] || cleanInput, 
+        loginId: cleanInput, 
+        sittingBranch: foundUser['sittingbranch'] || 'N/A', 
+        assignedBranchesArray: assignedArray, 
+        photo: foundUser['profilephoto'] || foundUser['photo'] || '', 
+        phone: foundUser['contactnumber'] || foundUser['contact'] || foundUser['phoneno'] || 'Not Provided', 
+        role: role, 
+        assignedCourse: course, 
+        accessType: accessType 
+      } 
+    });
+  } catch (error) { 
+    res.status(500).json({ success: false, message: error.message }); 
+  }
 };
 
 // ---------------------------------------------------------

@@ -19,7 +19,6 @@ let isFetching = false;
 
 const getCache = () => globalCache;
 
-// 🚨 SMART DELAY & RETRY SYSTEM TO PREVENT 429 ERRORS
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchSheetWithRetry(sheet, retries = 3) {
@@ -29,8 +28,8 @@ async function fetchSheetWithRetry(sheet, retries = 3) {
       return await sheet.getRows();
     } catch (error) {
       if (error.response && error.response.status === 429) {
-        console.warn(`⚠️ Google API Rate Limit Hit (429). Retrying in ${2000 * (i + 1)}ms...`);
-        await delay(2000 * (i + 1)); // Wait 2s, then 4s, then 6s
+        console.warn(`⚠️ Google API Rate Limit Hit (429). Retrying in ${1500 * (i + 1)}ms...`);
+        await delay(1500 * (i + 1));
       } else {
         throw error;
       }
@@ -50,27 +49,27 @@ async function refreshCache() {
       getSheet("Data"), getSheet("Opening_Applied"), getSheet("NewsLetter"), getSheet("Event"), getSheet("Issues"), 
       getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients"), getSheet("TPO_Log"), 
       getSheet("Study_Materials"), getSheet("Tech_Questions"), getSheet("Tech_Results"),
-      getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"), getSheet("Courses"), getSheet("Drive_Registration"),
-      getSheet("Contact"), getSheet("User"), getSheet("Branches"), getSheet("Mail")
+      getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"),
+      getSheet("Courses"), getSheet("Drive_Registration"), getSheet("Contact"), getSheet("User"), getSheet("Branches"), getSheet("Mail")
     ];
 
     const fetchedData = [];
-    
-    // 🚨 Fetch sequentially with 1-second delays to avoid Quota Exceeded limits
     for (let i = 0; i < sheetsToFetch.length; i++) {
       fetchedData.push(await fetchSheetWithRetry(sheetsToFetch[i]));
-      await delay(1000); // 1 full second delay between every sheet
+      await delay(200); 
     }
 
+    // 🚨 EXACT 1-TO-1 DESTRUCTURING FIX (courseRows restored at index 16)
     const [
       stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, 
-      matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows, driveRows, contactRows, userRows, branchRows, mailRows
+      matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows,
+      courseRows, driveRows, contactRows, userRows, branchRows, mailRows
     ] = fetchedData;
 
     let coursesDict = {};
     const courseSheet = sheetsToFetch[16];
     if (courseSheet) {
-      const cRows = fetchedData[16];
+      const cRows = courseRows || [];
       let currentMain = "General";
       const headers = courseSheet.headerValues;
       if (headers[0] && headers[0].trim() !== '') { currentMain = headers[0].replace(/^\d+\.\s*/, '').trim(); coursesDict[currentMain] = []; }
