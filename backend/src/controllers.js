@@ -1,8 +1,183 @@
-const { doc, getCache, refreshCache, hasAccess, getFuzzyHeader, sendIPCSMail, uploadToDrive } = require('./config');
+const { 
+  doc, getCache, refreshCache, hasAccess, getFuzzyHeader, 
+  sendIPCSMail, uploadToDrive
+} = require('./config');
 
 const FOLDER_OFFER_LETTERS = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5';
 const FOLDER_CLIENT_LOGOS = '11M8jGi1ISWP2mOpWRZncHhThHLoc7cDi'; 
 const FOLDER_MOU_CERTIFICATES = '1Hu1zPs56nFXyJPSl7PVfs-oFW4QrKqiD';
+
+// =========================================================
+// 🚨 EMAIL HELPERS & LOGGING SYSTEM
+// =========================================================
+const getTpoEmail = (tpoName) => {
+  const cache = getCache();
+  if (!cache || !cache.contacts) return '';
+  const row = cache.contacts.find(r => {
+    const name = r.get('TPO Name') || r.get('Name') || '';
+    return name.toLowerCase().includes((tpoName || '').toLowerCase());
+  });
+  return row ? row.get('Mail ID') : '';
+};
+
+const getBranchManagerEmail = (branch) => {
+  const cache = getCache();
+  if (!cache || !cache.users) return '';
+  const row = cache.users.find(r => {
+    const role = (r.get('Role') || '').toLowerCase();
+    const br = (r.get('Sitting Branch') || r.get('Assigned Branches') || '').toLowerCase();
+    return role.includes('manager') && br.includes((branch || '').toLowerCase());
+  });
+  return row ? row.get('Mail ID') : '';
+};
+
+const getAllTpoEmails = () => {
+  const cache = getCache();
+  if (!cache || !cache.contacts) return [];
+  return cache.contacts.map(r => r.get('Mail ID')).filter(Boolean);
+};
+
+const getAllBranchManagerEmails = () => {
+  const cache = getCache();
+  if (!cache || !cache.users) return [];
+  return cache.users
+    .filter(r => (r.get('Role') || '').toLowerCase().includes('manager'))
+    .map(r => r.get('Mail ID')).filter(Boolean);
+};
+
+const logMailToSheet = async (receiverName, receiverMail, mailType, subject, status) => {
+  try {
+    const sheet = doc.sheetsByTitle["Mail"];
+    if (sheet) {
+      await sheet.addRow({
+        'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+        'Reciver Name': receiverName || 'Unknown',
+        'Reciver Mail': receiverMail || 'Unknown',
+        'Mail Type': mailType || 'System Alert',
+        'Subject': subject || 'Notification',
+        'Status': status || 'Sent'
+      });
+    }
+  } catch (e) {
+    console.error("Failed to log mail to sheet:", e);
+  }
+};
+
+const sendMailAndLog = async (mailOptions, logDetails) => {
+  try {
+    await sendIPCSMail(mailOptions);
+    await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, 'Success');
+    return true;
+  } catch (err) {
+    await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, `Failed: ${err.message}`);
+    console.error("Mail Dispatch Error:", err);
+  }
+};
+
+// ---------------------------------------------------------
+// 🚨 MASTER STUDENT EMAIL ENGINE (WITH ANTI-THREADING)
+// ---------------------------------------------------------
+const checkAndSendStudentMails = async (studentData, newStatus) => {
+  if (!studentData.email || !newStatus) return;
+  const status = newStatus.toLowerCase().trim();
+  
+  const cache = getCache();
+  const logs = (cache.tpoLogs || []).filter(r => 
+    (r.get('Roll Number') === studentData.roll || r.get('Student Name') === studentData.name)
+  );
+
+  const noAttendCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'interview not attended').length + (status === 'interview not attended' ? 1 : 0);
+  const rejectCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'offer rejected').length + (status === 'offer rejected' ? 1 : 0);
+
+  const tpoEmail = getTpoEmail(studentData.tpoName) || '';
+  const bmEmail = getBranchManagerEmail(studentData.branch) || '';
+  const ccList = [tpoEmail, bmEmail, 'Gifty@ipcsglobal.com'].filter(Boolean).join(',');
+
+  let subject = ''; let html = ''; let mailType = '';
+  const refId = Math.floor(10000 + Math.random() * 90000); // 🚨 Unique ID to prevent threading!
+
+  const getTemplate = (title, message, color) => `
+    <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+      <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid ${color};">
+        <h2 style="color: #ffffff; margin: 0;">${title}</h2>
+      </div>
+      <div style="padding: 30px; background-color: #ffffff;">
+        <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
+        <div style="font-size: 15px; line-height: 1.6; color: #475569;">${message}</div>
+        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
+          <p style="margin: 0 0 5px 0;">Regards,</p>
+          <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">IPCS Placement Cell</p>
+          <p style="margin: 0;">IPCS Global</p>
+        </div>
+      </div>
+    </div>
+  `;
+
+  if (status === 'interview scheduled') {
+    subject = `Action Required: Interview Scheduled - ${studentData.company} [Ref: ${refId}]`;
+    mailType = 'Interview Schedule';
+    html = getTemplate('INTERVIEW SCHEDULED', `
+      <p>We are pleased to inform you that your interview with <b>${studentData.company}</b> for the position of <b>${studentData.position || 'Professional'}</b> has been officially scheduled.</p>
+      <p>Please ensure you are fully prepared and arrive on time. Contact your Placement Officer immediately if you need any assistance or have scheduling conflicts.</p>
+    `, '#38bdf8');
+  } 
+  else if (status === 'interview not attended') {
+    if (noAttendCount === 2) {
+      subject = `WARNING: Missed Interview Notice (2nd Occurrence) [Ref: ${refId}]`;
+      mailType = 'Warning Mail';
+      html = getTemplate('OFFICIAL WARNING', `
+        <p>This is an official warning. Our records indicate that you have failed to attend scheduled interviews on <b>two separate occasions</b>.</p>
+        <p style="color: #ef4444; font-weight: bold;">Professionalism is a core value at IPCS Global. Missing scheduled interviews damages our corporate relationships.</p>
+        <p>If you fail to attend a third interview, your placement assistance will be placed on hold.</p>
+      `, '#f59e0b');
+    } else if (noAttendCount >= 3) {
+      subject = `NOTICE: Placement Assistance On Hold [Ref: ${refId}]`;
+      mailType = 'Hold Mail';
+      html = getTemplate('PLACEMENT ON HOLD', `
+        <p>We regret to inform you that due to missing <b>three scheduled interviews</b>, your placement assistance has been officially <b>Placed on Hold</b>.</p>
+        <p>To request a reactivation of your placement services, you must urgently contact your Placement Officer and Branch Manager to explain your absences.</p>
+      `, '#ef4444');
+    }
+  }
+  else if (status === 'offer rejected') {
+    if (rejectCount === 2) {
+      subject = `WARNING: Multiple Offers Rejected (2nd Occurrence) [Ref: ${refId}]`;
+      mailType = 'Warning Mail';
+      html = getTemplate('OFFICIAL WARNING', `
+        <p>This is an official notice. You have now rejected <b>two job offers</b> facilitated by the IPCS Placement Cell.</p>
+        <p style="color: #ef4444; font-weight: bold;">Please evaluate your requirements carefully before applying for further drives.</p>
+        <p>If you reject a third offer, your placement assistance will be placed on hold.</p>
+      `, '#f59e0b');
+    } else if (rejectCount >= 3) {
+      subject = `NOTICE: Placement Assistance On Hold [Ref: ${refId}]`;
+      mailType = 'Hold Mail';
+      html = getTemplate('PLACEMENT ON HOLD', `
+        <p>We regret to inform you that due to rejecting <b>three job offers</b>, your placement assistance has been officially <b>Placed on Hold</b>.</p>
+        <p>We dedicate significant resources to secure these opportunities. Please reach out to your Placement Officer to discuss your future path.</p>
+      `, '#ef4444');
+    }
+  }
+  else if (status.includes('placed') || status.includes('joined')) {
+    subject = `Congratulations! Placement Confirmed at ${studentData.company} [Ref: ${refId}]`;
+    mailType = 'Congratulation Mail';
+    html = getTemplate('CONGRATULATIONS!', `
+      <p style="font-size: 18px; color: #10b981; font-weight: bold;">Congratulations on your placement!</p>
+      <p>We are incredibly proud to announce that your placement at <b>${studentData.company}</b> has been confirmed!</p>
+      <p>Your hard work and dedication have paid off. We wish you the absolute best in your new career journey. Make IPCS proud!</p>
+    `, '#10b981');
+  }
+
+  if (subject && html) {
+    await sendMailAndLog({
+      from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`,
+      to: studentData.email,
+      cc: ccList,
+      subject: subject,
+      html: html
+    }, { name: studentData.name, email: studentData.email, type: mailType });
+  }
+};
+
 
 // --- AUTHENTICATION ---
 exports.login = async (req, res) => {
@@ -73,14 +248,12 @@ exports.getDashboardStats = (req, res) => {
   const cache = getCache();
   let studentCount = 0, pendingApps = 0, placedCount = 0, activeVacs = 0;
 
-  // 1. Calculate Students
   cache.students.forEach(row => { 
     const rowData = row.toObject();
     const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
     if (hasAccess(rowData[getHeader('branch')], rowData[getHeader('course')], role, assignedBranchesArray, assignedCourse)) studentCount++; 
   });
   
-  // 2. Calculate Placements via TPO_Log (Deduplicated)
   const logsSource = cache.tpoLogs || [];
   const dedupedLogs = {};
   logsSource.forEach(row => {
@@ -107,7 +280,6 @@ exports.getDashboardStats = (req, res) => {
     }
   });
   
-  // 🚨 3. Calculate Active Vacancies (Ignores Expired Dates)
   const todayStart = new Date();
   todayStart.setHours(0,0,0,0);
 
@@ -129,7 +301,7 @@ exports.getDashboardStats = (req, res) => {
         }
         if (parsedDate && !isNaN(parsedDate)) {
           if (parsedDate < todayStart) {
-            isExpired = true; // Date is in the past!
+            isExpired = true; 
           }
         }
       } catch(e) {}
@@ -140,7 +312,6 @@ exports.getDashboardStats = (req, res) => {
     }
   });
 
-  // 4. Events
   let eventsList = cache.events.slice(-8).map(row => ({ title: row.get('Title') || 'Event', date: row.get('Date') || '', time: row.get('Time') || '', type: row.get('Type') || 'Placement Drive', location: row.get('Location') || '' }));
   
   res.json({ success: true, stats: { totalStudents: studentCount, pendingApps, placed: placedCount, activeVacancies: activeVacs }, events: eventsList.reverse() });
@@ -195,7 +366,7 @@ exports.getStudents = (req, res) => {
 };
 
 exports.updateStudent = async (req, res) => {
-  const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess } = req.body;
+  const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus } = req.body;
   try {
     const stuSheet = doc.sheetsByTitle["Data"];
     const rows = await stuSheet.getRows({ offset: rowNumber - 2, limit: 1 });
@@ -206,6 +377,51 @@ exports.updateStudent = async (req, res) => {
       const pH = getFuzzyHeader(headers, 'placementstat'); if(pH) updateObj[pH] = placementStatus;
       const sH = getFuzzyHeader(headers, 'studymaterialaccess'); if(sH) updateObj[sH] = studyAccess;
       const eH = getFuzzyHeader(headers, 'technialexam'); if(eH) updateObj[eH] = examAccess;
+      
+      const cStatusH = getFuzzyHeader(headers, 'currentlystudying'); 
+      if (cStatusH && courseStatus !== undefined) {
+        updateObj[cStatusH] = courseStatus;
+        
+        // 🚨 Trigger Welcome Mail if changed to Completed OR 90%
+        const oldStatus = (rows[0].get(cStatusH) || '').toString().toLowerCase();
+        const isNowCompleted = courseStatus.toLowerCase().includes('completed') || courseStatus.includes('90%');
+        const wasCompleted = oldStatus.includes('completed') || oldStatus.includes('90%');
+
+        if (!wasCompleted && isNowCompleted) {
+          const sName = rows[0].get('Name') || 'Student';
+          const sEmail = rows[0].get('Mail ID') || rows[0].get('Email') || '';
+          const refId = Math.floor(10000 + Math.random() * 90000); 
+          
+          if (sEmail) {
+            const html = `
+              <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;">
+                  <h2 style="color: #ffffff; margin: 0;">PORTAL ACCESS GRANTED!</h2>
+                </div>
+                <div style="padding: 30px; background-color: #ffffff;">
+                  <p style="font-size: 16px; margin-top: 0;">Dear <b>${sName}</b>,</p>
+                  <p style="font-size: 15px; line-height: 1.6; color: #475569;">Congratulations! Your trainer has confirmed your exceptional performance.</p>
+                  <p style="font-size: 15px; line-height: 1.6; color: #475569;"><b>Your placement portal access is now fully active.</b> You can now browse active vacancies and apply directly for job openings.</p>
+                  <div style="text-align: center; margin: 35px 0;">
+                    <a href="https://ipcs-tpo-portal.vercel.app" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">Access Placement Portal</a>
+                  </div>
+                  <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
+                    <p style="margin: 0 0 5px 0;">Regards,</p>
+                    <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">IPCS Placement Cell</p>
+                  </div>
+                </div>
+              </div>
+            `;
+            sendMailAndLog({
+              from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`,
+              to: sEmail,
+              subject: `Welcome to IPCS Placements! Your Profile is Active [Ref: ${refId}]`,
+              html: html
+            }, { name: sName, email: sEmail, type: 'Course Completion Welcome' });
+          }
+        }
+        }
+      }
 
       rows[0].assign(updateObj); await rows[0].save(); refreshCache(); 
       res.json({ success: true, message: "Student record updated!" });
@@ -288,14 +504,23 @@ exports.updateApplication = async (req, res) => {
       if(headers.includes('PACKAGE (LPA)') && packageLpa !== undefined) updateObj['PACKAGE (LPA)'] = packageLpa;
       if(headers.includes('Offer Letter')) updateObj['Offer Letter'] = offerLetterLink;
       if(headers.includes('Joining Status') && joiningStatus !== undefined) updateObj['Joining Status'] = joiningStatus;
+      
+      const oldStatus = (rows[0].get('Status') || '').toString().toLowerCase();
 
       rows[0].assign(updateObj); await rows[0].save(); 
+      
       const logSheet = doc.sheetsByTitle["TPO_Log"];
       if (logSheet && fullApp) {
         await logSheet.addRow({
           'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), 'Student Name': fullApp.name || '', 'Contact': fullApp.phone || '', 'Mail ID': fullApp.email || '', 'Roll Number': fullApp.roll || '', 'Course': fullApp.course || '', 'Branch': fullApp.branch || '', 'Qualification': fullApp.qual || '', 'Resume': fullApp.resume || '', 'Job ID': fullApp.jobId || '', 'Company Name': fullApp.company || '', 'Placement Officer': fullApp.tpoName || '', 'Status': status || '', 'Remarks': remarks || '', 'DATE PLACED': datePlaced !== undefined ? datePlaced : (fullApp.datePlaced || ''), 'PACKAGE (LPA)': packageLpa !== undefined ? packageLpa : (fullApp.packageLpa || ''), 'Offer Letter Status': offerLetterLink, 'Joining Status': joiningStatus || ''
         });
       }
+      
+      // 🚨 Evaluate and send student status mails (Only if status actually changed)
+      if (oldStatus !== (status || '').toLowerCase()) {
+         checkAndSendStudentMails({ ...fullApp, status: status, joiningStatus: joiningStatus }, status);
+      }
+
       refreshCache(); res.json({ success: true, message: "Updated!" });
     } else { res.status(404).json({ success: false, message: "Row not found." }); }
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
@@ -310,8 +535,13 @@ exports.addApplication = async (req, res) => {
     const appSheet = doc.sheetsByTitle["Opening_Applied"];
     const newRow = { 'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), 'Student Name': appData.name, 'Contact': appData.phone, 'Mail ID': appData.email, 'Roll Number': appData.roll, 'Course': appData.course, 'Branch': appData.branch, 'Qualification': appData.qual || '', 'Resume': appData.resume || '', 'Job ID': 'MANUAL-ADD', 'Company Name': appData.company, 'Position': appData.position, 'Placement Officer': tpoName, 'Status': appData.status || 'Placed', 'Remarks': appData.remarks, 'DATE PLACED': appData.datePlaced, 'PACKAGE (LPA)': appData.packageLpa, 'Offer Letter': offerLetterLink, 'Joining Status': appData.joiningStatus };
     await appSheet.addRow(newRow);
+    
     const logSheet = doc.sheetsByTitle["TPO_Log"];
     if (logSheet) { await logSheet.addRow({ ...newRow, 'Offer Letter Status': offerLetterLink }); }
+    
+    // 🚨 Evaluate and send student status mails
+    checkAndSendStudentMails({ ...appData, tpoName: tpoName }, appData.status || 'Placed');
+
     refreshCache(); res.json({ success: true, message: "Placement added manually." });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
@@ -346,6 +576,76 @@ exports.addEvent = async (req, res) => {
     let posterLink = '';
     if (req.file) posterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS); 
     await eventSheet.addRow({ 'Date of the Event': date, 'TPO': tpo, 'Branch': branch, 'Event': type, 'Title': title, 'Descripation': description || '', 'Time of the Event': time || '', 'Event Happening in': location || '', 'Poster Link': posterLink });
+    
+    // 🚨 SEND EVENT MAILS (Drive vs Talentino)
+    const evType = (type || '').toLowerCase();
+    const refId = Math.floor(10000 + Math.random() * 90000); // 🚨 Unique ID
+    
+    if (evType.includes('placement drive')) {
+      const allTpos = getAllTpoEmails();
+      const allBMs = getAllBranchManagerEmails();
+      const bccList = [...new Set([...allTpos, ...allBMs])].join(',');
+      
+      const html = `
+        <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+          <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #3b82f6;">
+            <h2 style="color: #ffffff; margin: 0;">NEW PLACEMENT DRIVE</h2>
+          </div>
+          <div style="padding: 30px; background-color: #ffffff;">
+            <h3 style="color: #0f1523; margin-top: 0;">${title}</h3>
+            <p style="font-size: 15px; color: #475569;">A new Placement Drive has been scheduled. Please ensure eligible students are informed and prepared.</p>
+            <ul style="background: #f8fafc; padding: 15px 30px; border-radius: 8px; font-size: 14px; color: #334155;">
+              <li style="margin-bottom: 8px;"><b>Date:</b> ${date}</li>
+              <li style="margin-bottom: 8px;"><b>Time:</b> ${time || 'TBD'}</li>
+              <li style="margin-bottom: 8px;"><b>Location:</b> ${location || 'N/A'}</li>
+              <li style="margin-bottom: 8px;"><b>Eligible Branch:</b> ${branch}</li>
+            </ul>
+            <p style="font-size: 14px; color: #64748b;">${description}</p>
+          </div>
+        </div>
+      `;
+
+      sendMailAndLog({
+        from: `"IPCS Placements" <${process.env.EMAIL_USER}>`,
+        to: process.env.EMAIL_USER, 
+        bcc: bccList, 
+        cc: 'RAKESH@ipcsglobal.com,Gifty@ipcsglobal.com',
+        subject: `New Placement Drive Scheduled: ${title} [Ref: ${refId}]`, // 🚨 Anti-threading
+        html: html
+      }, { name: 'All Branches', email: 'Broadcast', type: 'Event Notification' });
+
+    } else if (evType.includes('talentino')) {
+      const tpoMail = getTpoEmail(tpo);
+      const bmMail = getBranchManagerEmail(branch);
+      
+      const html = `
+        <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+          <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #a855f7;">
+            <h2 style="color: #ffffff; margin: 0;">TALENTINO SESSION SCHEDULED</h2>
+          </div>
+          <div style="padding: 30px; background-color: #ffffff;">
+            <h3 style="color: #0f1523; margin-top: 0;">${title}</h3>
+            <p style="font-size: 15px; color: #475569;">A Talentino session has been formally scheduled in your branch.</p>
+            <ul style="background: #f8fafc; padding: 15px 30px; border-radius: 8px; font-size: 14px; color: #334155;">
+              <li style="margin-bottom: 8px;"><b>Date:</b> ${date}</li>
+              <li style="margin-bottom: 8px;"><b>Time:</b> ${time || 'TBD'}</li>
+              <li style="margin-bottom: 8px;"><b>Host TPO:</b> ${tpo}</li>
+            </ul>
+          </div>
+        </div>
+      `;
+
+      if (tpoMail) {
+        sendMailAndLog({
+          from: `"IPCS Talentino" <${process.env.EMAIL_USER}>`,
+          to: tpoMail,
+          cc: `Gifty@ipcsglobal.com,${bmMail}`,
+          subject: `Talentino Session Scheduled: ${title} [Ref: ${refId}]`, // 🚨 Anti-threading
+          html: html
+        }, { name: tpo, email: tpoMail, type: 'Event Notification' });
+      }
+    }
+
     refreshCache(); res.json({ success: true, message: "Event added successfully" });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
@@ -425,7 +725,6 @@ exports.getTalentino = (req, res) => {
   res.json({ success: true, dates: Array.from(dates).sort().reverse(), records: records.reverse() });
 };
 
-// --- CLIENTS ---
 exports.getClients = (req, res) => {
   const cleanTpoName = (req.body.tpoName || '').toString().toLowerCase().trim();
   let clients = [];
@@ -480,7 +779,7 @@ exports.requestMou = async (req, res) => {
       subject: `Action Required:  IPCS Global Hiring Partnership Confirmation With ${companyName} [Ref: ${refId}]`, 
       html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;"><h2 style="color: #ffffff; margin: 0;">IPCS HIRING PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${companyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Confirmation of Hiring Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review & Sign</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, copy and paste this link into your browser: <br/>${signingLink}</p></div></div>`
     };
-    await sendIPCSMail(mailOptions); 
+    await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Request' }); 
     const sheet = doc.sheetsByTitle["Clients"]; 
     const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
     if(rows.length > 0) {
@@ -535,75 +834,91 @@ exports.submitMou = async (req, res) => {
             <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
               <p style="margin: 0 0 5px 0;">Regards,</p>
               <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">IPCS Placement Portal</p>
-              <p style="margin: 0;">Placement & Corporate Relations Department</p>
-              <p style="margin: 0;">IPCS Global</p>
             </div>
           </div>
         </div>
       `,
       attachments: [{ filename: `${companyName.replace(/\s+/g, '_')}_Agreement.pdf`, content: certFile.buffer }]
     };
-    await sendIPCSMail(mailOptions); refreshCache(); res.json({ success: true, pdfLink });
+    await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Completion' }); 
+    refreshCache(); res.json({ success: true, pdfLink });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-exports.updatePhoto = async (req, res) => {
-  const { email } = req.body;
+// ---------------------------------------------------------
+// PROFILE & SETTINGS
+// ---------------------------------------------------------
+exports.updatePassword = async (req, res) => {
+  const { email, loginId, newPassword } = req.body;
   try {
-    if (!req.file) return res.status(400).json({ success: false, message: "No file provided" });
-    const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
-    
+    const cache = getCache();
     let targetRow = null;
-    let sheet = doc.sheetsByTitle["Contact"];
-    let cleanEmail = (email || '').trim().toLowerCase();
+    const identifiers = [(email || '').toString().trim().toLowerCase(), (loginId || '').toString().trim().toLowerCase()].filter(Boolean);
 
-    // 1. Search in Contact sheet by checking any mail/email column
-    if (sheet) {
-      let rows = await sheet.getRows();
-      targetRow = rows.find(row => {
-        const rowObj = row.toObject();
-        for (let k in rowObj) {
-          if (k.toLowerCase().includes('mail') || k.toLowerCase().includes('email') || k.toLowerCase().includes('login')) {
-            if ((rowObj[k] || '').toString().trim().toLowerCase() === cleanEmail) return true;
-          }
-        }
-        return false;
-      });
-    }
-
-    // 2. If not found, search in User sheet
-    if (!targetRow) {
-      sheet = doc.sheetsByTitle["User"];
-      if (sheet) {
-        let rows = await sheet.getRows();
-        targetRow = rows.find(row => {
-          const rowObj = row.toObject();
-          for (let k in rowObj) {
-            if (k.toLowerCase().includes('mail') || k.toLowerCase().includes('email') || k.toLowerCase().includes('login') || k.toLowerCase().includes('name')) {
-              if ((rowObj[k] || '').toString().trim().toLowerCase() === cleanEmail) return true;
-            }
-          }
-          return false;
+    if (cache.contacts) {
+        targetRow = cache.contacts.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
         });
-      }
+    }
+    if (!targetRow && cache.users) {
+        targetRow = cache.users.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
     }
 
-    if (targetRow && sheet) {
-      const headers = sheet.headerValues;
+    if (targetRow) {
+      const headers = targetRow._worksheet.headerValues;
+      const pHead = getFuzzyHeader(headers, 'password');
+      targetRow.assign({ [pHead]: newPassword });
+      await targetRow.save();
+      refreshCache();
+      res.json({ success: true, message: "Password updated successfully" });
+    } else {
+      res.status(404).json({ success: false, message: "User account not found in database." });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updatePhoto = async (req, res) => {
+  const { email, loginId } = req.body;
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: "No file provided." });
+    const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
+    const cache = getCache();
+    let targetRow = null;
+    const identifiers = [(email || '').toString().trim().toLowerCase(), (loginId || '').toString().trim().toLowerCase()].filter(Boolean);
+
+    if (cache.contacts) {
+        targetRow = cache.contacts.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
+    }
+    if (!targetRow && cache.users) {
+        targetRow = cache.users.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
+    }
+
+    if (targetRow) {
+      const headers = targetRow._worksheet.headerValues;
       const photoHeader = headers.find(h => h.toLowerCase().includes('photo') || h.toLowerCase().includes('profile')) || 'Profile Photo';
       targetRow.assign({ [photoHeader]: photoLink });
       await targetRow.save(); 
       refreshCache(); 
       res.json({ success: true, photoUrl: photoLink });
     } else { 
-      res.status(404).json({ success: false, message: "User account not found in database to update photo." }); 
+      res.status(404).json({ success: false, message: "User not found." }); 
     }
-  } catch (error) { 
-    res.status(500).json({ success: false, message: error.message }); 
-  }
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-// --- ADMIN USERS ---
+// ---------------------------------------------------------
+// ADMIN ROUTES
+// ---------------------------------------------------------
 exports.getAdminUsers = async (req, res) => {
   try {
     await doc.loadInfo();
@@ -618,9 +933,7 @@ exports.getAdminUsers = async (req, res) => {
       cRows.forEach(r => {
         const email = r.get(hMail) || ''; const name = r.get(hName) || '';
         if (email.trim() !== '' || name.trim() !== '') {
-          allUsers.push({
-            sheet: 'Contact', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: 'TPO', course: 'All Courses', access: 'View & Edit', profilePhoto: r.get(hPhoto) || r.get('Profile Photo') || ''
-          });
+          allUsers.push({ sheet: 'Contact', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: 'TPO', course: 'All Courses', access: 'View & Edit', profilePhoto: r.get(hPhoto) || r.get('Profile Photo') || '' });
         }
       });
     }
@@ -634,9 +947,7 @@ exports.getAdminUsers = async (req, res) => {
       uRows.forEach(r => {
         const email = r.get(hMail) || ''; const name = r.get(hName) || '';
         if (email.trim() !== '' || name.trim() !== '') {
-          allUsers.push({
-            sheet: 'User', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: r.get(hRole) || 'Unassigned', course: r.get(hCourse) || 'All Courses', access: r.get(hAccess) || 'View Only', profilePhoto: r.get(hPhoto) || r.get('Profile Photo') || ''
-          });
+          allUsers.push({ sheet: 'User', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: r.get(hRole) || 'Unassigned', course: r.get(hCourse) || 'All Courses', access: r.get(hAccess) || 'View Only', profilePhoto: r.get(hPhoto) || r.get('Profile Photo') || '' });
         }
       });
     }
@@ -687,10 +998,9 @@ exports.deleteAdminUser = async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-// ==========================================
-// 🚨 NEW LMS & EXAM ENGINE LOGIC
-// ==========================================
-
+// ---------------------------------------------------------
+// LMS & EXAMS
+// ---------------------------------------------------------
 exports.getMaterials = (req, res) => {
   try {
     let materials = getCache().materials.map(row => {
@@ -719,6 +1029,33 @@ exports.addMaterial = async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
+exports.updateMaterial = async (req, res) => {
+  try {
+    const { id, course, module, title, fileType, link, status } = req.body;
+    const sheet = doc.sheetsByTitle["Study_Materials"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => (r.get('Material ID') || r.get('materialid') || '').toString().trim() === id.toString().trim());
+    if (rowToUpdate) {
+      const h = sheet.headerValues;
+      rowToUpdate.assign({ [getFuzzyHeader(h, 'materialid')]: id, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'module/topic')]: module, [getFuzzyHeader(h, 'title')]: title, [getFuzzyHeader(h, 'filetype')]: fileType, [getFuzzyHeader(h, 'onedrivelink')]: link, [getFuzzyHeader(h, 'status')]: status || 'Active' });
+      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Material updated successfully!" });
+    } else { res.status(404).json({ success: false, message: "Material ID not found." }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteMaterial = async (req, res) => {
+  try {
+    const { id } = req.body;
+    const sheet = doc.sheetsByTitle["Study_Materials"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToDelete = rows.find(r => (r.get('Material ID') || r.get('materialid') || '').toString().trim() === id.toString().trim());
+    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Material deleted successfully!" }); } 
+    else { res.status(404).json({ success: false, message: "Material ID not found." }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
 exports.getQuestions = (req, res) => {
   try {
     let questions = getCache().techQuestions.map(row => {
@@ -739,23 +1076,22 @@ exports.addQuestion = async (req, res) => {
     const { id, course, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
     const sheet = doc.sheetsByTitle["Tech_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
-    // Using exact Google Sheet headers to prevent mapping errors
-    await sheet.addRow({
-      'Question ID': id,
-      'Course': course,
-      'Question': question,
-      'Option A': optA,
-      'Option B': optB,
-      'Option C': optC,
-      'Option D': optD,
-      'Correct Option': correct,
-      'Explanation': explanation,
-      'Status': status || 'Active'
-    });
-    
-    refreshCache();
-    res.json({ success: true, message: "Question added successfully!" });
+    await sheet.addRow({ 'Question ID': id, 'Course': course, 'Question': question, 'Option A': optA, 'Option B': optB, 'Option C': optC, 'Option D': optD, 'Correct Option': correct, 'Explanation': explanation, 'Status': status || 'Active' });
+    refreshCache(); res.json({ success: true, message: "Question added successfully!" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateQuestion = async (req, res) => {
+  try {
+    const { id, course, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
+    const sheet = doc.sheetsByTitle["Tech_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => (r.get('Question ID') || '').toString().trim() === id.toString().trim());
+    if (rowToUpdate) {
+      rowToUpdate.assign({ 'Question ID': id, 'Course': course, 'Question': question, 'Option A': optA, 'Option B': optB, 'Option C': optC, 'Option D': optD, 'Correct Option': correct, 'Explanation': explanation, 'Status': status || 'Active' });
+      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Technical question updated successfully!" });
+    } else { res.status(404).json({ success: false, message: "Question ID not found." }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -764,17 +1100,10 @@ exports.deleteQuestion = async (req, res) => {
     const { id } = req.body;
     const sheet = doc.sheetsByTitle["Tech_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
     const rows = await sheet.getRows();
     const rowToDelete = rows.find(r => r.get('Question ID') === id);
-    
-    if (rowToDelete) {
-      await rowToDelete.delete();
-      refreshCache();
-      res.json({ success: true, message: "Question deleted" });
-    } else {
-      res.status(404).json({ success: false, message: "Question not found" });
-    }
+    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Question deleted" }); } 
+    else { res.status(404).json({ success: false, message: "Question not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -784,9 +1113,7 @@ exports.getResults = (req, res) => {
       const rd = row.toObject();
       const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
       return {
-        timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || '',
-        branch: rd[getH('branch')] || '', course: rd[getH('course')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '',
-        percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || ''
+        timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', course: rd[getH('course')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || ''
       };
     });
     res.json({ success: true, results: results.reverse() });
@@ -799,27 +1126,35 @@ exports.runDailyCron = async () => {
   if (!cache) return;
   const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
   const yStr = yesterday.toISOString().split('T')[0]; 
+  
   const expiredJobs = cache.vacancies.filter(v => {
     if (!v.get('Last Date')) return false;
-    try { return new Date(v.get('Last Date')).toISOString().split('T')[0] === yStr; } catch(e) { return false; }
+    try { 
+      let pd = v.get('Last Date');
+      if (pd.includes('/')) {
+        const parts = pd.split(/[/\s,.-]+/);
+        if (parts.length >= 3) pd = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+      return new Date(pd).toISOString().split('T')[0] === yStr; 
+    } catch(e) { return false; }
   });
 
   for (let job of expiredJobs) {
     const jobId = job.get('Job ID') || job.get('ID');
+    const companyEmail = job.get('Company Mail ID') || job.get('Company Email'); 
+    if (!companyEmail) continue;
+
     const applicants = cache.applications.filter(app => app.get('Job ID') === jobId);
     if (applicants.length === 0) continue;
 
     const tpoName = applicants[0].get('Placement Officer');
-    const contactRows = await doc.sheetsByTitle["Contact"].getRows();
-    const tpoRow = contactRows.find(r => r.get('TPO Name') === tpoName);
-    const tpoEmail = tpoRow ? tpoRow.get('Mail ID') : null;
-    if (!tpoEmail) continue;
+    const tpoEmail = getTpoEmail(tpoName);
 
     let tableRows = ''; let attachments = [];
     applicants.forEach((appRow, index) => {
       const rd = appRow.toObject();
       const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().includes(str.toLowerCase()));
-      const info = { name: rd[getH('name')] || '', phone: rd[getH('contact')] || rd[getH('phone')] || '', email: rd[getH('mail')] || rd[getH('email')] || '', roll: rd[getH('roll')] || '', course: rd[getH('course')] || '', branch: rd[getH('branch')] || '', qual: rd[getH('qual')] || '', resume: rd[getH('resume')] || rd[getH('cv')] || '' };
+      const info = { name: rd[getH('name')] || '', phone: rd[getH('contact')] || rd[getH('phone')] || '', email: rd[getH('mail')] || rd[getH('email')] || '', qual: rd[getH('qual')] || '', resume: rd[getH('resume')] || rd[getH('cv')] || '' };
       
       let resumeBtn = 'N/A';
       if (info.resume) {
@@ -830,22 +1165,56 @@ exports.runDailyCron = async () => {
             attachments.push({ filename: `${info.name.replace(/\s+/g, '_')}_Resume.pdf`, href: `https://drive.google.com/uc?export=download&id=${driveId}` });
         } else { resumeBtn = `<a href="${info.resume}">Link</a>`; }
       }
-      tableRows += `<tr><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${index+1}</td><td style="padding:10px;border:1px solid #cbd5e1;"><b>${info.name}</b></td><td style="padding:10px;border:1px solid #cbd5e1;">${info.phone}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.email}</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${info.roll}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.course}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.branch}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.qual}</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${resumeBtn}</td></tr>`;
+      tableRows += `<tr><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${index+1}</td><td style="padding:10px;border:1px solid #cbd5e1;"><b>${info.name}</b></td><td style="padding:10px;border:1px solid #cbd5e1;">${info.phone}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.email}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.qual}</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${resumeBtn}</td></tr>`;
     });
 
-    const mailOptions = {
-      from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`, to: tpoEmail,
-      subject: `Applications Received – ${job.get('Company Name') || job.get('Company')} | ${job.get('Position')} | ${jobId}`,
-      html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 800px; margin: 0 auto;"><h2 style="color: #0f1523;">Applications Received</h2><p>Please find attached the resumes for the applicants to <b>${job.get('Company Name') || job.get('Company')}</b> for the position of ${job.get('Position')}.</p><table style="width: 100%; border-collapse: collapse; margin-top: 20px;"><thead><tr style="background-color: #f1f5f9; text-align: left;"><th style="padding: 10px; border: 1px solid #cbd5e1;">#</th><th style="padding: 10px; border: 1px solid #cbd5e1;">Name</th><th style="padding: 10px; border: 1px solid #cbd5e1;">Phone</th><th style="padding: 10px; border: 1px solid #cbd5e1;">Email</th><th style="padding: 10px; border: 1px solid #cbd5e1;">Roll No</th><th style="padding: 10px; border: 1px solid #cbd5e1;">Course</th><th style="padding: 10px; border: 1px solid #cbd5e1;">Branch</th><th style="padding: 10px; border: 1px solid #cbd5e1;">Qual.</th><th style="padding: 10px; border: 1px solid #cbd5e1;">Resume</th></tr></thead><tbody>${tableRows}</tbody></table><p style="margin-top: 20px; font-size: 12px; color: #64748b;">This is an automated report generated by the IPCS Placement Portal.</p></div>`,
+    const html = `
+      <div style="font-family: Arial, sans-serif; color: #333; max-width: 800px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+        <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #10b981;">
+          <h2 style="color: #ffffff; margin: 0; letter-spacing: 1px;">APPLICANT RESUMES</h2>
+        </div>
+        <div style="padding: 30px; background-color: #ffffff;">
+          <p style="font-size: 16px; margin-top: 0;">Dear <b>${job.get('Company Name') || job.get('Company')}</b> Hiring Team,</p>
+          <p style="font-size: 15px; line-height: 1.6; color: #475569;">Greetings from IPCS Global Placement Cell.</p>
+          <p style="font-size: 15px; line-height: 1.6; color: #475569;">Please find attached the consolidated list of pre-screened resumes for the <b>${job.get('Position')}</b> opening (Ref: ${jobId}).</p>
+          
+          <table style="width: 100%; border-collapse: collapse; margin-top: 25px;">
+            <thead>
+              <tr style="background-color: #f1f5f9; text-align: left; font-size: 13px;">
+                <th style="padding: 10px; border: 1px solid #cbd5e1; text-align:center;">#</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Applicant Name</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Phone</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Email</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Qualification</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Resume Link</th>
+              </tr>
+            </thead>
+            <tbody style="font-size: 13px;">
+              ${tableRows}
+            </tbody>
+          </table>
+          
+          <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
+            <p style="margin: 0 0 5px 0;">If you require further shortlisting or have interview dates finalized, please reply directly to this email.</p>
+            <p style="margin: 15px 0 2px 0;">Regards,</p>
+            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName}</p>
+            <p style="margin: 0;">Placement Officer, IPCS Global</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    await sendMailAndLog({
+      from: `"IPCS Corporate Relations" <${process.env.EMAIL_USER}>`, 
+      to: companyEmail,
+      cc: tpoEmail || '',
+      subject: `Applicant Resumes: ${job.get('Position')} Opening [Ref: ${jobId}]`,
+      html: html,
       attachments: attachments
-    };
-    await sendIPCSMail(mailOptions); 
+    }, { name: job.get('Company Name'), email: companyEmail, type: 'Resume Delivery' }); 
   }
 };
 
-// ==========================================
-// 🚨 DYNAMIC COURSES
-// ==========================================
 exports.getCourses = (req, res) => {
   try { res.json({ success: true, courses: getCache().coursesDict }); } 
   catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -867,30 +1236,20 @@ exports.deleteCourse = async (req, res) => {
     const sheet = doc.sheetsByTitle["Courses"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const rows = await sheet.getRows();
-    // Search column B for the exact subcourse name
     const rowToDelete = rows.find(r => r._rawData[1] && r._rawData[1].trim() === subCourse.trim());
     if (rowToDelete) {
       await rowToDelete.delete();
       refreshCache();
       res.json({ success: true, message: "Course deleted" });
-    } else {
-      res.status(404).json({ success: false, message: "Course not found" });
-    }
+    } else { res.status(404).json({ success: false, message: "Course not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-// ==========================================
-// 🚨 APTITUDE EXAMS
-// ==========================================
 exports.getAptQuestions = (req, res) => {
   try {
     let questions = getCache().aptQuestions.map(row => {
       const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return {
-        id: rd[getH('qid')] || '', category: rd[getH('category')] || '', question: rd[getH('question')] || '',
-        optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '',
-        correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active', level: rd[getH('level')] || 'Easy'
-      };
+      return { id: rd[getH('qid')] || '', category: rd[getH('category')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active', level: rd[getH('level')] || 'Easy' };
     });
     res.json({ success: true, questions: questions.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -900,9 +1259,7 @@ exports.getAptResults = (req, res) => {
   try {
     let results = getCache().aptResults.map(row => {
       const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return {
-        timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('email')] || rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', score: rd[getH('score')] || '', total: rd[getH('total')] || rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '', categoryBreakdown: rd[getH('categorybreakdown')] || ''
-      };
+      return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('email')] || rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', score: rd[getH('score')] || '', total: rd[getH('total')] || rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '', categoryBreakdown: rd[getH('categorybreakdown')] || '' };
     });
     res.json({ success: true, results: results.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -913,24 +1270,24 @@ exports.addAptQuestion = async (req, res) => {
     const { id, category, question, optA, optB, optC, optD, correct, explanation, status, level } = req.body;
     const sheet = doc.sheetsByTitle["Aptitude_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
     const h = sheet.headerValues;
-    await sheet.addRow({
-      [getFuzzyHeader(h, 'qid')]: id,
-      [getFuzzyHeader(h, 'category')]: category,
-      [getFuzzyHeader(h, 'question')]: question,
-      [getFuzzyHeader(h, 'optiona')]: optA,
-      [getFuzzyHeader(h, 'optionb')]: optB,
-      [getFuzzyHeader(h, 'optionc')]: optC,
-      [getFuzzyHeader(h, 'optiond')]: optD,
-      [getFuzzyHeader(h, 'correctoption')]: correct,
-      [getFuzzyHeader(h, 'explanation')]: explanation,
-      [getFuzzyHeader(h, 'status')]: status || 'Active',
-      [getFuzzyHeader(h, 'level')]: level || 'Medium'
-    });
-    
-    refreshCache();
-    res.json({ success: true, message: "Question added" });
+    await sheet.addRow({ [getFuzzyHeader(h, 'qid')]: id, [getFuzzyHeader(h, 'category')]: category, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA, [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct, [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active', [getFuzzyHeader(h, 'level')]: level || 'Medium' });
+    refreshCache(); res.json({ success: true, message: "Question added" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateAptQuestion = async (req, res) => {
+  try {
+    const { id, category, question, optA, optB, optC, optD, correct, explanation, status, level } = req.body;
+    const sheet = doc.sheetsByTitle["Aptitude_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => (r.get('QID') || r.get('qid') || '').toString().trim() === id.toString().trim());
+    if (rowToUpdate) {
+      const h = sheet.headerValues;
+      rowToUpdate.assign({ [getFuzzyHeader(h, 'qid')]: id, [getFuzzyHeader(h, 'category')]: category, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA, [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct, [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active', [getFuzzyHeader(h, 'level')]: level || 'Medium' });
+      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Aptitude question updated successfully!" });
+    } else { res.status(404).json({ success: false, message: "Question ID not found." }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -939,32 +1296,18 @@ exports.deleteAptQuestion = async (req, res) => {
     const { id } = req.body;
     const sheet = doc.sheetsByTitle["Aptitude_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
     const rows = await sheet.getRows();
     const rowToDelete = rows.find(r => r.get('QID') === id || r.get('qid') === id);
-    
-    if (rowToDelete) {
-      await rowToDelete.delete();
-      refreshCache();
-      res.json({ success: true, message: "Question deleted" });
-    } else {
-      res.status(404).json({ success: false, message: "Question not found" });
-    }
+    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Question deleted" }); } 
+    else { res.status(404).json({ success: false, message: "Question not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-// ==========================================
-// 🚨 TALENTINO EXAMS
-// ==========================================
 exports.getTalExamQuestions = (req, res) => {
   try {
     let questions = getCache().talQuestions.map(row => {
       const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return {
-        id: rd[getH('questionid')] || '', testNumber: rd[getH('textnumber')] || rd[getH('testnumber')] || '', question: rd[getH('question')] || '',
-        optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '',
-        correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active'
-      };
+      return { id: rd[getH('questionid')] || '', testNumber: rd[getH('textnumber')] || rd[getH('testnumber')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active' };
     });
     res.json({ success: true, questions: questions.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -974,9 +1317,7 @@ exports.getTalExamResults = (req, res) => {
   try {
     let results = getCache().talResults.map(row => {
       const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return {
-        timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || rd[getH('email')] || '', branch: rd[getH('branch')] || '', testNumber: rd[getH('testnumbercompleted')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || ''
-      };
+      return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || rd[getH('email')] || '', branch: rd[getH('branch')] || '', testNumber: rd[getH('testnumbercompleted')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '' };
     });
     res.json({ success: true, results: results.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -987,23 +1328,24 @@ exports.addTalExamQuestion = async (req, res) => {
     const { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
     const sheet = doc.sheetsByTitle["Talentino_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
     const h = sheet.headerValues;
-    await sheet.addRow({
-      [getFuzzyHeader(h, 'questionid')]: id,
-      [getFuzzyHeader(h, 'testnumber')]: testNumber,
-      [getFuzzyHeader(h, 'question')]: question,
-      [getFuzzyHeader(h, 'optiona')]: optA,
-      [getFuzzyHeader(h, 'optionb')]: optB,
-      [getFuzzyHeader(h, 'optionc')]: optC,
-      [getFuzzyHeader(h, 'optiond')]: optD,
-      [getFuzzyHeader(h, 'correctoption')]: correct,
-      [getFuzzyHeader(h, 'explanation')]: explanation,
-      [getFuzzyHeader(h, 'status')]: status || 'Active'
-    });
-    
-    refreshCache();
-    res.json({ success: true, message: "Question added" });
+    await sheet.addRow({ [getFuzzyHeader(h, 'questionid')]: id, [getFuzzyHeader(h, 'testnumber')]: testNumber, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA, [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct, [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active' });
+    refreshCache(); res.json({ success: true, message: "Question added" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateTalExamQuestion = async (req, res) => {
+  try {
+    const { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
+    const sheet = doc.sheetsByTitle["Talentino_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => (r.get('Question ID') || r.get('questionid') || '').toString().trim() === id.toString().trim());
+    if (rowToUpdate) {
+      const h = sheet.headerValues;
+      rowToUpdate.assign({ [getFuzzyHeader(h, 'questionid')]: id, [getFuzzyHeader(h, 'testnumber')]: testNumber, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA, [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct, [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active' });
+      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Talentino question updated successfully!" });
+    } else { res.status(404).json({ success: false, message: "Question ID not found." }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -1012,113 +1354,13 @@ exports.deleteTalExamQuestion = async (req, res) => {
     const { id } = req.body;
     const sheet = doc.sheetsByTitle["Talentino_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
     const rows = await sheet.getRows();
     const rowToDelete = rows.find(r => r.get('Question ID') === id || r.get('questionid') === id);
-    
-    if (rowToDelete) {
-      await rowToDelete.delete();
-      refreshCache();
-      res.json({ success: true, message: "Question deleted" });
-    } else {
-      res.status(404).json({ success: false, message: "Question not found" });
-    }
+    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Question deleted" }); } 
+    else { res.status(404).json({ success: false, message: "Question not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-// ==========================================
-// 🚨 PROFILE / SETTINGS API (BULLETPROOF)
-// ==========================================
-exports.updatePassword = async (req, res) => {
-  const { email, loginId, newPassword } = req.body;
-  try {
-    const cache = getCache();
-    let targetRow = null;
-    
-    // Create an array of potential identifiers (email or username)
-    const identifiers = [
-        (email || '').toString().trim().toLowerCase(),
-        (loginId || '').toString().trim().toLowerCase()
-    ].filter(Boolean);
-
-    // Search in Contact Sheet cache first across ALL columns
-    if (cache.contacts) {
-        targetRow = cache.contacts.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
-
-    // Search in User Sheet cache if not found
-    if (!targetRow && cache.users) {
-        targetRow = cache.users.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
-
-    if (targetRow) {
-      const headers = targetRow._worksheet.headerValues;
-      const pHead = getFuzzyHeader(headers, 'password');
-      targetRow.assign({ [pHead]: newPassword });
-      await targetRow.save();
-      refreshCache();
-      res.json({ success: true, message: "Password updated successfully" });
-    } else {
-      res.status(404).json({ success: false, message: "User account not found in database." });
-    }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.updatePhoto = async (req, res) => {
-  const { email, loginId } = req.body;
-  try {
-    if (!req.file) return res.status(400).json({ success: false, message: "No file provided." });
-    const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
-    
-    const cache = getCache();
-    let targetRow = null;
-
-    const identifiers = [
-        (email || '').toString().trim().toLowerCase(),
-        (loginId || '').toString().trim().toLowerCase()
-    ].filter(Boolean);
-
-    // Search Contact sheet cache
-    if (cache.contacts) {
-        targetRow = cache.contacts.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
-
-    // Search User sheet cache
-    if (!targetRow && cache.users) {
-        targetRow = cache.users.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
-
-    if (targetRow) {
-      const headers = targetRow._worksheet.headerValues;
-      const photoHeader = headers.find(h => h.toLowerCase().includes('photo') || h.toLowerCase().includes('profile')) || 'Profile Photo';
-      
-      targetRow.assign({ [photoHeader]: photoLink });
-      await targetRow.save(); 
-      refreshCache(); 
-      res.json({ success: true, photoUrl: photoLink });
-    } else { 
-      res.status(404).json({ success: false, message: "User not found. Please log out and log back in." }); 
-    }
-  } catch (error) { 
-    res.status(500).json({ success: false, message: error.message }); 
-  }
-};
-
-// ==========================================
-// 🚨 PLACEMENT DRIVES
-// ==========================================
 exports.getDrives = (req, res) => {
   try {
     const drivesData = (getCache().drives || []).map(row => {
@@ -1151,150 +1393,11 @@ exports.updateDriveStatus = async (req, res) => {
   } catch(err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-// --- UPDATE STUDY MATERIAL ---
-exports.updateMaterial = async (req, res) => {
-  try {
-    const { id, course, module, title, fileType, link, status } = req.body;
-    const sheet = doc.sheetsByTitle["Study_Materials"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
-    const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => (r.get('Material ID') || r.get('materialid') || '').toString().trim() === id.toString().trim());
-    
-    if (rowToUpdate) {
-      const h = sheet.headerValues;
-      rowToUpdate.assign({
-        [getFuzzyHeader(h, 'materialid')]: id, 
-        [getFuzzyHeader(h, 'course')]: course, 
-        [getFuzzyHeader(h, 'module/topic')]: module,
-        [getFuzzyHeader(h, 'title')]: title, 
-        [getFuzzyHeader(h, 'filetype')]: fileType, 
-        [getFuzzyHeader(h, 'onedrivelink')]: link, 
-        [getFuzzyHeader(h, 'status')]: status || 'Active'
-      });
-      await rowToUpdate.save();
-      refreshCache(); 
-      res.json({ success: true, message: "Material updated successfully!" });
-    } else {
-      res.status(404).json({ success: false, message: "Material ID not found." });
-    }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-// --- DELETE STUDY MATERIAL ---
-exports.deleteMaterial = async (req, res) => {
-  try {
-    const { id } = req.body;
-    const sheet = doc.sheetsByTitle["Study_Materials"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
-    const rows = await sheet.getRows();
-    const rowToDelete = rows.find(r => (r.get('Material ID') || r.get('materialid') || '').toString().trim() === id.toString().trim());
-    
-    if (rowToDelete) {
-      await rowToDelete.delete();
-      refreshCache();
-      res.json({ success: true, message: "Material deleted successfully!" });
-    } else {
-      res.status(404).json({ success: false, message: "Material ID not found." });
-    }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-// --- UPDATE TECHNICAL QUESTION ---
-exports.updateQuestion = async (req, res) => {
-  try {
-    const { id, course, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
-    const sheet = doc.sheetsByTitle["Tech_Questions"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
-    const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => (r.get('Question ID') || '').toString().trim() === id.toString().trim());
-    
-    if (rowToUpdate) {
-      rowToUpdate.assign({
-        'Question ID': id, 'Course': course, 'Question': question,
-        'Option A': optA, 'Option B': optB, 'Option C': optC, 'Option D': optD,
-        'Correct Option': correct, 'Explanation': explanation, 'Status': status || 'Active'
-      });
-      await rowToUpdate.save();
-      refreshCache();
-      res.json({ success: true, message: "Technical question updated successfully!" });
-    } else {
-      res.status(404).json({ success: false, message: "Question ID not found." });
-    }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-// --- UPDATE APTITUDE QUESTION ---
-exports.updateAptQuestion = async (req, res) => {
-  try {
-    const { id, category, question, optA, optB, optC, optD, correct, explanation, status, level } = req.body;
-    const sheet = doc.sheetsByTitle["Aptitude_Questions"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
-    const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => (r.get('QID') || r.get('qid') || '').toString().trim() === id.toString().trim());
-    
-    if (rowToUpdate) {
-      const h = sheet.headerValues;
-      rowToUpdate.assign({
-        [getFuzzyHeader(h, 'qid')]: id, [getFuzzyHeader(h, 'category')]: category,
-        [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA,
-        [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC,
-        [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct,
-        [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active',
-        [getFuzzyHeader(h, 'level')]: level || 'Medium'
-      });
-      await rowToUpdate.save();
-      refreshCache();
-      res.json({ success: true, message: "Aptitude question updated successfully!" });
-    } else {
-      res.status(404).json({ success: false, message: "Question ID not found." });
-    }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-// --- UPDATE TALENTINO QUESTION ---
-exports.updateTalExamQuestion = async (req, res) => {
-  try {
-    const { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
-    const sheet = doc.sheetsByTitle["Talentino_Questions"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
-    const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => (r.get('Question ID') || r.get('questionid') || '').toString().trim() === id.toString().trim());
-    
-    if (rowToUpdate) {
-      const h = sheet.headerValues;
-      rowToUpdate.assign({
-        [getFuzzyHeader(h, 'questionid')]: id, [getFuzzyHeader(h, 'testnumber')]: testNumber,
-        [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA,
-        [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC,
-        [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct,
-        [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active'
-      });
-      await rowToUpdate.save();
-      refreshCache();
-      res.json({ success: true, message: "Talentino question updated successfully!" });
-    } else {
-      res.status(404).json({ success: false, message: "Question ID not found." });
-    }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-// ==========================================
-// 🚨 DYNAMIC BRANCHES
-// ==========================================
 exports.getBranches = (req, res) => {
   try {
     const branches = getCache().branches.map(row => {
-      const rd = row._rawData; // 🚨 Using raw array to bypass header mismatch issues
-      return {
-        no: rd[0] || '',
-        region: rd[1] || '',
-        branch: rd[2] || ''
-      };
+      const rd = row._rawData; 
+      return { no: rd[0] || '', region: rd[1] || '', branch: rd[2] || '' };
     });
     res.json({ success: true, branches });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -1305,11 +1408,8 @@ exports.addBranch = async (req, res) => {
     const { no, region, branch } = req.body;
     const sheet = doc.sheetsByTitle["Branches"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
-    // 🚨 Array insert guarantees it goes into Columns A, B, and C
     await sheet.addRow([no, region, branch]);
-    refreshCache(); 
-    res.json({ success: true, message: "Branch saved" });
+    refreshCache(); res.json({ success: true, message: "Branch saved" });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -1318,21 +1418,12 @@ exports.updateBranch = async (req, res) => {
     const { oldBranch, no, region, branch } = req.body;
     const sheet = doc.sheetsByTitle["Branches"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
     const rows = await sheet.getRows();
-    // 🚨 Search rawData[2] (Column C) for the branch name
     const rowToUpdate = rows.find(r => r._rawData[2] === oldBranch);
-    
     if (rowToUpdate) {
-      rowToUpdate._rawData[0] = no;
-      rowToUpdate._rawData[1] = region;
-      rowToUpdate._rawData[2] = branch;
-      await rowToUpdate.save();
-      refreshCache();
-      res.json({ success: true, message: "Branch updated" });
-    } else {
-      res.status(404).json({ success: false, message: "Branch not found" });
-    }
+      rowToUpdate._rawData[0] = no; rowToUpdate._rawData[1] = region; rowToUpdate._rawData[2] = branch;
+      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Branch updated" });
+    } else { res.status(404).json({ success: false, message: "Branch not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -1341,16 +1432,9 @@ exports.deleteBranch = async (req, res) => {
     const { branch } = req.body;
     const sheet = doc.sheetsByTitle["Branches"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    
     const rows = await sheet.getRows();
     const rowToDelete = rows.find(r => r._rawData[2] === branch);
-    
-    if (rowToDelete) {
-      await rowToDelete.delete();
-      refreshCache();
-      res.json({ success: true, message: "Branch deleted" });
-    } else {
-      res.status(404).json({ success: false, message: "Branch not found" });
-    }
+    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Branch deleted" }); } 
+    else { res.status(404).json({ success: false, message: "Branch not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };

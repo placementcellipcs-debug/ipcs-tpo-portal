@@ -27,24 +27,24 @@ async function refreshCache() {
     const [
       stuSheet, appSheet, vacSheet, eventSheet, issueSheet, tSchedSheet, tAttSheet, clientSheet, tpoLogSheet, 
       matSheet, tqSheet, trSheet, aptQSheet, aptRSheet, talQSheet, talRSheet, courseSheet, driveSheet,
-      contactSheet, userSheet, branchSheet // 🚨 ADDED BRANCHES
+      contactSheet, userSheet, branchSheet, mailSheet // 🚨 ADDED MAIL SHEET
     ] = [
       getSheet("Data"), getSheet("Opening_Applied"), getSheet("NewsLetter"), getSheet("Event"), getSheet("Issues"), 
       getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients"), getSheet("TPO_Log"), 
       getSheet("Study_Materials"), getSheet("Tech_Questions"), getSheet("Tech_Results"),
       getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"), getSheet("Courses"), getSheet("Drive_Registration"),
-      getSheet("Contact"), getSheet("User"), getSheet("Branches") // 🚨 ADDED BRANCHES
+      getSheet("Contact"), getSheet("User"), getSheet("Branches"), getSheet("Mail") // 🚨 ADDED MAIL SHEET
     ];
 
     const [
       stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, 
-      matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows, driveRows, contactRows, userRows, branchRows
+      matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows, driveRows, contactRows, userRows, branchRows, mailRows
     ] = await Promise.all([
       stuSheet?.getRows() || [], appSheet?.getRows() || [], vacSheet?.getRows() || [], eventSheet?.getRows() || [], 
       issueSheet?.getRows() || [], tSchedSheet?.getRows() || [], tAttSheet?.getRows() || [], clientSheet?.getRows() || [], 
       tpoLogSheet?.getRows() || [], matSheet?.getRows() || [], tqSheet?.getRows() || [], trSheet?.getRows() || [],
       aptQSheet?.getRows() || [], aptRSheet?.getRows() || [], talQSheet?.getRows() || [], talRSheet?.getRows() || [], driveSheet?.getRows() || [],
-      contactSheet?.getRows() || [], userSheet?.getRows() || [], branchSheet?.getRows() || []
+      contactSheet?.getRows() || [], userSheet?.getRows() || [], branchSheet?.getRows() || [], mailSheet?.getRows() || []
     ]);
 
     let coursesDict = {};
@@ -67,7 +67,7 @@ async function refreshCache() {
       tSched: tSchedRows, tAtt: tAttRows, clients: clientRows, tpoLogs: tpoLogRows, materials: matRows, 
       techQuestions: tqRows, techResults: trRows, aptQuestions: aptQRows, aptResults: aptRRows, 
       talQuestions: talQRows, talResults: talRRows, coursesDict: coursesDict, drives: driveRows,
-      contacts: contactRows, users: userRows, branches: branchRows // 🚨 CACHED BRANCHES
+      contacts: contactRows, users: userRows, branches: branchRows, mails: mailRows
     };
     
     console.log("✅ Cache successfully synced with Google Sheets!");
@@ -120,10 +120,84 @@ const getFuzzyHeader = (headers, target) => {
   return headers.find(h => h.toLowerCase().replace(/\s/g, '') === cleanTarget) || target;
 };
 
+// 🚨 NEW: Mail Helper Functions
+const getTpoEmail = (tpoName) => {
+  if (!globalCache) return '';
+  const row = globalCache.contacts.find(r => {
+    const name = r.get('TPO Name') || r.get('Name') || '';
+    return name.toLowerCase().includes((tpoName || '').toLowerCase());
+  });
+  return row ? row.get('Mail ID') : '';
+};
+
+const getBranchManagerEmail = (branch) => {
+  if (!globalCache) return '';
+  const row = globalCache.users.find(r => {
+    const role = (r.get('Role') || '').toLowerCase();
+    const br = (r.get('Sitting Branch') || r.get('Assigned Branches') || '').toLowerCase();
+    return role.includes('manager') && br.includes((branch || '').toLowerCase());
+  });
+  return row ? row.get('Mail ID') : '';
+};
+
+const getAllTpoEmails = () => {
+  if (!globalCache) return [];
+  return globalCache.contacts.map(r => r.get('Mail ID')).filter(Boolean);
+};
+
+const getAllBranchManagerEmails = () => {
+  if (!globalCache) return [];
+  return globalCache.users
+    .filter(r => (r.get('Role') || '').toLowerCase().includes('branch manager'))
+    .map(r => r.get('Mail ID')).filter(Boolean);
+};
+
+// 🚨 NEW: Log Mail to Sheet Function
+async function logMailToSheet(receiverName, receiverMail, mailType, subject, status) {
+  try {
+    const sheet = doc.sheetsByTitle["Mail"];
+    if (sheet) {
+      await sheet.addRow({
+        'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+        'Reciver Name': receiverName || 'Unknown',
+        'Reciver Mail': receiverMail || 'Unknown',
+        'Mail Type': mailType || 'System Alert',
+        'Subject': subject || 'Notification',
+        'Status': status || 'Sent'
+      });
+    }
+  } catch (e) {
+    console.error("Failed to log mail to sheet:", e);
+  }
+}
+
 const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, family: 4, auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }});
 
-async function sendIPCSMail(mailOptions) {
-  return await transporter.sendMail(mailOptions);
+// 🚨 UPDATED: sendIPCSMail now logs automatically
+async function sendIPCSMail(mailOptions, logDetails) {
+  try {
+    if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
+      const payload = { to: mailOptions.to, cc: mailOptions.cc, bcc: mailOptions.bcc, subject: mailOptions.subject, html: mailOptions.html, attachments: [] };
+      if (mailOptions.attachments) {
+        mailOptions.attachments.forEach(att => {
+          if (att.content) payload.attachments.push({ filename: att.filename, mimeType: 'application/pdf', contentBytes: att.content.toString('base64') });
+          else if (att.href) payload.attachments.push({ filename: att.filename, href: att.href });
+        });
+      }
+      const res = await axios.post(process.env.APPS_SCRIPT_EMAIL_URL, payload);
+      if (!res.data.success) throw new Error("Apps Script Error");
+    } else {
+      await transporter.sendMail(mailOptions);
+    }
+    
+    // Log success
+    if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, 'Success');
+    return true;
+  } catch (err) {
+    // Log failure
+    if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, `Failed: ${err.message}`);
+    throw err;
+  }
 }
 
 const APPS_SCRIPT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyAJWuQlO7Ie3e-hsWkr965tZD3vfTBG5E9oBxFMleXBNi5ocSTnilPmFYzDXgQ-cOcbw/exec";
@@ -137,4 +211,8 @@ async function uploadToDrive(file, folderId) {
   } catch (err) { throw new Error(`Apps Script Error: ${err.message}`); }
 }
 
-module.exports = { doc, getCache: () => globalCache, refreshCache, hasAccess, getFuzzyHeader, sendIPCSMail, uploadToDrive };
+module.exports = { 
+  doc, getCache, refreshCache, hasAccess, getFuzzyHeader, 
+  sendIPCSMail, uploadToDrive,
+  getTpoEmail, getBranchManagerEmail, getAllTpoEmails, getAllBranchManagerEmails 
+};

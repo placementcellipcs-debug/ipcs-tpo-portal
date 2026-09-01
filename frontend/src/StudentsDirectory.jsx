@@ -23,11 +23,12 @@ const getStandardCourse = (c) => {
 
 const parseDate = (dStr) => {
   if (!dStr) return null;
-  let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0] : dStr;
-  if (typeof cleanStr === 'string' && cleanStr.includes('/')) {
-    const parts = cleanStr.split('/');
-    if (parts.length === 3 && parts[2].length === 4) {
-      return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+  let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dStr;
+  if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
+    const parts = cleanStr.split(/[/-]/);
+    if (parts.length === 3) {
+      if (parts[2].length === 4) return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+      if (parts[0].length === 4) return new Date(`${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`);
     }
   }
   const d = new Date(cleanStr);
@@ -57,6 +58,7 @@ export default function StudentsDirectory() {
   const [localPlacementState, setLocalPlacementState] = useState('');
   const [localStudyAccess, setLocalStudyAccess] = useState('');
   const [localExamAccess, setLocalExamAccess] = useState('');
+  const [localCourseStatus, setLocalCourseStatus] = useState(''); // 🚨 NEW
 
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD') || upperRole.includes('TTH') || upperRole.includes('TERRITORY TECHNICAL HEAD') || upperRole.includes('TRAINER');
@@ -128,6 +130,11 @@ export default function StudentsDirectory() {
     setLocalPlacementState(student.placementStatus || 'Pending');
     setLocalStudyAccess(student.studyAccess || 'No');
     setLocalExamAccess(student.examAccess || 'No');
+    
+    // Extract Course Status safely
+    const cStatKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().includes('currentlystudying'));
+    setLocalCourseStatus(cStatKey && student.rawData[cStatKey] ? student.rawData[cStatKey] : 'Currently Studying');
+
     setIsModalOpen(true);
   };
 
@@ -136,13 +143,16 @@ export default function StudentsDirectory() {
     try {
       const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/students/update-student', {
         rowNumber: selectedStudent.rowIdx,
-        vacOpen: localVacState, placementStatus: localPlacementState,
-        studyAccess: localStudyAccess, examAccess: localExamAccess
+        vacOpen: localVacState, 
+        placementStatus: localPlacementState,
+        studyAccess: localStudyAccess, 
+        examAccess: localExamAccess,
+        courseStatus: localCourseStatus // 🚨 Trigger Welcome Mail if changed to Completed
       });
       
       if (response.data.success) {
         const updatedStudents = rawStudents.map(s => s.rowIdx === selectedStudent.rowIdx ? { 
-          ...s, vacOpen: localVacState, placementStatus: localPlacementState, studyAccess: localStudyAccess, examAccess: localExamAccess
+          ...s, vacOpen: localVacState, placementStatus: localPlacementState, studyAccess: localStudyAccess, examAccess: localExamAccess, status: localCourseStatus
         } : s);
         setRawStudents(updatedStudents);
         setIsModalOpen(false);
@@ -276,7 +286,7 @@ export default function StudentsDirectory() {
 
           {(courseFilter !== 'All' || monthFilter !== '' || searchQuery !== '') && (
             <button onClick={resetFilters} style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem' }}>
-              <ArrowsClockwise size={14} /> Reset
+              <ArrowCounterclockwise size={14} /> Reset
             </button>
           )}
         </div>
@@ -288,6 +298,7 @@ export default function StudentsDirectory() {
             <p>Fetching registered students...</p>
           </div>
         ) : !selectedBranch ? (
+          /* BRANCH TILE VIEW */
           branchList.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
               No students found for the selected course and month filters.
@@ -438,7 +449,17 @@ export default function StudentsDirectory() {
               })}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '1.5rem' }}>
+            {/* 🚨 REPLACED 4 COLUMNS WITH 5 COLUMNS TO ADD COURSE STATUS */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '1.5rem' }}>
+              
+              <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
+                <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Course Status</span>
+                <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localCourseStatus} onChange={(e) => setLocalCourseStatus(e.target.value)} disabled={isViewOnly}>
+                  <option value="Currently Studying">Currently Studying</option>
+                  <option value="Completed Course">Completed Course</option>
+                </select>
+              </div>
+
               {(tpoData?.accessType === 'superadmin' || !isCourseSpecific) && (
                 <>
                   <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
