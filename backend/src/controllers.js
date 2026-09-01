@@ -130,35 +130,81 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
     subject = `Congratulations, ${studentData.name} ! Your Interview Awaits! # ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Interview Schedule';
     
+    // 🚨 BRAND NEW BEAUTIFUL HTML DESIGN
     html = `
-      <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; color: #000;">
-        <p style="font-size: 15px; font-weight: bold;">Greetings ${studentData.name},</p>
-        <p style="font-size: 14px; line-height: 1.5;">I hope this message finds you well and in high spirits. We are thrilled to inform you that you have been <b>selected for an interview opportunity</b> with one of our esteemed partner companies! This is a fantastic step towards achieving your career goals, and we are excited to see your hard work and dedication paying off.</p>
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
         
-        <p style="font-size: 15px; font-weight: bold; margin-top: 20px;">Interview Details:</p>
-        <ul style="font-size: 14px; line-height: 2; list-style-type: none; padding-left: 0;">
-          <li><span style="font-size: 18px; line-height: 1;">•</span> <b>NewLetterID :</b> <span style="color: #8b5cf6;">${studentData.jobId || 'N/A'}</span></li>
-          <li><span style="font-size: 18px; line-height: 1;">•</span> <b>Company Name :</b> ${studentData.company}</li>
-          <li><span style="font-size: 18px; line-height: 1;">•</span> <b>Hiring For :</b> ${studentData.position || 'Professional'}</li>
-          <li><span style="font-size: 18px; line-height: 1;">•</span> <b>Interview Date :</b> ${interviewDetails.date || 'TBD'}</li>
-          <li><span style="font-size: 18px; line-height: 1;">•</span> <b>Interview Time :</b> ${interviewDetails.time || 'TBD'}</li>
-          <li><span style="font-size: 18px; line-height: 1;">•</span> <b>Interview Venue :</b> ${interviewDetails.venue || 'TBD'}</li>
-          <li><span style="font-size: 18px; line-height: 1;">•</span> <b>Contact Person :</b> HR</li>
-        </ul>
+        <!-- Header Section -->
+        <div style="background-color: #0f1523; padding: 35px 20px; text-align: center; border-bottom: 5px solid #38bdf8;">
+          <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 1px; text-transform: uppercase;">Interview Invitation</h1>
+          <p style="color: #94a3b8; margin: 10px 0 0 0; font-size: 14px;">IPCS Global Placement Cell</p>
+        </div>
 
-        <p style="font-size: 14px; line-height: 1.5;">Please be prepared for a comprehensive evaluation of your skills and qualifications. We highly recommend researching the company thoroughly to ensure you are well-prepared.</p>
-        
-        <p style="font-size: 15px; font-weight: bold; margin-top: 20px;">Agenda:</p>
-        <p style="font-size: 14px; color: #1e3a8a; text-decoration: underline;">"The interview may consist of multiple rounds, including technical assessments, behavioral interviews, or HR rounds. You may also be required to provide specific documents or complete certain tasks, so please be prepared accordingly."</p>
+        <!-- Main Content -->
+        <div style="padding: 40px 35px;">
+          <h2 style="margin: 0 0 20px 0; color: #1e293b; font-size: 22px;">Congratulations, ${studentData.name}!</h2>
+          <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 30px 0;">
+            We are thrilled to inform you that you have been <strong style="color: #0f1523;">selected for an interview</strong> with one of our esteemed partner companies. This is a fantastic step towards achieving your career goals, and we are excited to see your hard work and dedication paying off.
+          </p>
 
-        <p style="font-size: 13px; line-height: 1.5; margin-top: 20px;"><b>Note:</b> <i>Please make sure to arrive on time for the interview or log in to the online meeting platform a few minutes before the scheduled time. If, for any reason, you are unable to attend, please inform us at your earliest convenience so we can make alternative arrangements (if possible).</i></p>
-        
-        <p style="font-size: 14px; line-height: 1.5;">If you have any questions or need further information about the interview, please do not hesitate to contact the placement department. We are here to assist and support you throughout this important process.</p>
-        
-        <p style="font-size: 14px; line-height: 1.5;">We wish you the very best of luck and look forward to hearing about your successful interview experience. Remember, your journey to success is our mission, and we are here to support you every step of the way.</p>
+          <!-- Highlighted Details Card -->
+          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 5px solid #38bdf8; border-radius: 8px; padding: 25px; margin-bottom: 30px;">
+            <h3 style="margin: 0 0 15px 0; color: #0f1523; font-size: 16px; text-transform: uppercase; letter-spacing: 0.5px;">Event Details</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tbody>
+                <tr>
+                  <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; width: 35%; border-bottom: 1px solid #e2e8f0;">Company:</td>
+                  <td style="padding: 10px 0; color: #0f1523; font-size: 16px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${studentData.company}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Position:</td>
+                  <td style="padding: 10px 0; color: #0f1523; font-size: 15px; border-bottom: 1px solid #e2e8f0;">${studentData.position || 'Professional'}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Date:</td>
+                  <td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${interviewDetails.date || 'TBD'}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Time:</td>
+                  <td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${interviewDetails.time || 'TBD'}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Venue / Link:</td>
+                  <td style="padding: 10px 0; color: #38bdf8; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${interviewDetails.venue || 'TBD'}</td>
+                </tr>
+                <tr>
+                  <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: 600;">Newsletter ID:</td>
+                  <td style="padding: 10px 0; color: #64748b; font-size: 13px;">${studentData.jobId || 'N/A'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <h3 style="margin: 0 0 10px 0; color: #1e293b; font-size: 16px;">Agenda & Expectations</h3>
+          <p style="font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 25px 0; padding: 18px; background-color: rgba(56, 189, 248, 0.05); border-radius: 8px; font-style: italic; border: 1px solid rgba(56, 189, 248, 0.2);">
+            "The interview may consist of multiple rounds, including technical assessments, behavioral interviews, or HR rounds. You may also be required to provide specific documents or complete certain tasks, so please be prepared accordingly."
+          </p>
+
+          <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; border-radius: 4px; margin-bottom: 30px;">
+            <p style="font-size: 13px; line-height: 1.5; color: #991b1b; margin: 0;">
+              <strong>Important Note:</strong> Please make sure to arrive on time for the interview or log in to the online meeting platform a few minutes before the scheduled time. If, for any reason, you are unable to attend, please inform us at your earliest convenience so we can make alternative arrangements.
+            </p>
+          </div>
+
+          <!-- Footer divider -->
+          <div style="border-top: 1px solid #e2e8f0; padding-top: 25px;">
+            <p style="font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 15px 0;">
+              If you have any questions or need further information about the interview, please do not hesitate to contact the placement department. We wish you the very best of luck!
+            </p>
+            <p style="font-size: 15px; color: #0f1523; font-weight: bold; margin: 0;">
+              Regards,<br>
+              <span style="color: #38bdf8;">IPCS Placement Cell</span>
+            </p>
+          </div>
+        </div>
       </div>
     `;
-  } 
+  }
   else if (status === 'interview not attended') {
     if (noAttendCount === 2) {
       subject = `WARNING: Missed Interview Notice (2nd Occurrence) [Ref: ${refId}]`;
