@@ -193,16 +193,33 @@ const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 4
 
 async function sendIPCSMail(mailOptions, logDetails) {
   try {
-    if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
-      const payload = { to: mailOptions.to, cc: mailOptions.cc, bcc: mailOptions.bcc, subject: mailOptions.subject, html: mailOptions.html, attachments: [] };
-      if (mailOptions.attachments) {
+    // 🚨 UPDATED: Uses your new Mailing System Web App URL by default
+    const emailWebAppUrl = process.env.APPS_SCRIPT_EMAIL_URL || "https://script.google.com/macros/s/AKfycbzKAEsc5_OR2YjHeO_8yyS9BoxFeJOXjNUzNMqGby7pIHuoIQVM5f31GxXJHxleGds4dQ/exec";
+    
+    if (process.env.EMAIL_MODE === 'APPS_SCRIPT' || true) {
+      const payload = { 
+        to: mailOptions.to, 
+        cc: mailOptions.cc || '', 
+        bcc: mailOptions.bcc || '', 
+        subject: mailOptions.subject, 
+        html: mailOptions.html, 
+        attachments: [] 
+      };
+
+      console.log(`📨 Dispatching email to: ${payload.to} | CC: ${payload.cc || 'None'}`);
+
+      if (mailOptions.attachments && Array.isArray(mailOptions.attachments)) {
         mailOptions.attachments.forEach(att => {
-          if (att.content) payload.attachments.push({ filename: att.filename, mimeType: 'application/pdf', contentBytes: att.content.toString('base64') });
-          else if (att.href) payload.attachments.push({ filename: att.filename, href: att.href });
+          if (att.content) {
+            payload.attachments.push({ filename: att.filename, mimeType: 'application/pdf', contentBytes: att.content.toString('base64') });
+          } else if (att.href) {
+            payload.attachments.push({ filename: att.filename, href: att.href });
+          }
         });
       }
-      const res = await axios.post(process.env.APPS_SCRIPT_EMAIL_URL, payload);
-      if (!res.data.success) throw new Error("Apps Script Error");
+
+      const res = await axios.post(emailWebAppUrl, payload);
+      if (!res.data.success) throw new Error(res.data.error || "Apps Script returned false");
     } else {
       await transporter.sendMail(mailOptions);
     }
@@ -211,6 +228,7 @@ async function sendIPCSMail(mailOptions, logDetails) {
     return true;
   } catch (err) {
     if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, `Failed: ${err.message}`);
+    console.error("❌ Email dispatch failed:", err.message);
     throw err;
   }
 }

@@ -104,12 +104,13 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   const rejectCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'student rejected offer').length + (status === 'student rejected offer' ? 1 : 0);
 
   // 🚨 EXACT CC LOGIC: 
-  // 1. currentUserEmail (The TPO who is clicking save/scheduling)
-  // 2. branchTpoEmail (The TPO assigned to the student's branch)
+  // 1. Logged-in TPO (currentUserEmail)
+  // 2. TPO assigned to the student's branch (branchTpoEmail)
+  // 3. TPO listed on the application (assignedTpoEmail)
   const branchTpoEmail = getTpoEmailByBranch(studentData.branch);
-  
-  // Using Set to remove duplicates in case the person scheduling IS the branch TPO
-  const ccList = [...new Set([currentUserEmail, branchTpoEmail])].filter(Boolean).join(',');
+  const assignedTpoEmail = getTpoEmail(studentData.tpoName);
+
+  const ccList = [...new Set([currentUserEmail, assignedTpoEmail, branchTpoEmail])].filter(Boolean).join(',');
 
   let subject = ''; let html = ''; let mailType = '';
   const refId = Math.floor(10000 + Math.random() * 90000); 
