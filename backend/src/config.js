@@ -17,6 +17,9 @@ const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 let globalCache = null;
 let isFetching = false;
 
+// 🚨 FIX: Explicitly defined getCache so it doesn't crash the server
+const getCache = () => globalCache;
+
 async function refreshCache() {
   if (isFetching) return;
   isFetching = true;
@@ -27,13 +30,13 @@ async function refreshCache() {
     const [
       stuSheet, appSheet, vacSheet, eventSheet, issueSheet, tSchedSheet, tAttSheet, clientSheet, tpoLogSheet, 
       matSheet, tqSheet, trSheet, aptQSheet, aptRSheet, talQSheet, talRSheet, courseSheet, driveSheet,
-      contactSheet, userSheet, branchSheet, mailSheet // 🚨 ADDED MAIL SHEET
+      contactSheet, userSheet, branchSheet, mailSheet
     ] = [
       getSheet("Data"), getSheet("Opening_Applied"), getSheet("NewsLetter"), getSheet("Event"), getSheet("Issues"), 
       getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients"), getSheet("TPO_Log"), 
       getSheet("Study_Materials"), getSheet("Tech_Questions"), getSheet("Tech_Results"),
       getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"), getSheet("Courses"), getSheet("Drive_Registration"),
-      getSheet("Contact"), getSheet("User"), getSheet("Branches"), getSheet("Mail") // 🚨 ADDED MAIL SHEET
+      getSheet("Contact"), getSheet("User"), getSheet("Branches"), getSheet("Mail")
     ];
 
     const [
@@ -120,7 +123,9 @@ const getFuzzyHeader = (headers, target) => {
   return headers.find(h => h.toLowerCase().replace(/\s/g, '') === cleanTarget) || target;
 };
 
-// 🚨 NEW: Mail Helper Functions
+// ---------------------------------------------------------
+// MAIL HELPERS
+// ---------------------------------------------------------
 const getTpoEmail = (tpoName) => {
   if (!globalCache) return '';
   const row = globalCache.contacts.find(r => {
@@ -152,7 +157,6 @@ const getAllBranchManagerEmails = () => {
     .map(r => r.get('Mail ID')).filter(Boolean);
 };
 
-// 🚨 NEW: Log Mail to Sheet Function
 async function logMailToSheet(receiverName, receiverMail, mailType, subject, status) {
   try {
     const sheet = doc.sheetsByTitle["Mail"];
@@ -173,7 +177,6 @@ async function logMailToSheet(receiverName, receiverMail, mailType, subject, sta
 
 const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, family: 4, auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }});
 
-// 🚨 UPDATED: sendIPCSMail now logs automatically
 async function sendIPCSMail(mailOptions, logDetails) {
   try {
     if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
