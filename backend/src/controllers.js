@@ -22,6 +22,16 @@ const getTpoEmailByBranch = (branch) => {
   return row ? row.get('Mail ID') : '';
 };
 
+const getTpoEmail = (tpoName) => {
+  const cache = getCache();
+  if (!cache || !cache.contacts) return '';
+  const row = cache.contacts.find(r => {
+    const name = r.get('TPO Name') || r.get('Name') || '';
+    return name.toLowerCase().includes((tpoName || '').toLowerCase());
+  });
+  return row ? row.get('Mail ID') : '';
+};
+
 const getBranchManagerEmail = (branch) => {
   const cache = getCache();
   if (!cache || !cache.users) return '';
@@ -77,7 +87,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE (WITH ANTI-THREADING)
+// 🚨 MASTER STUDENT EMAIL ENGINE
 // ---------------------------------------------------------
 const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
@@ -91,7 +101,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   const noAttendCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'interview not attended').length + (status === 'interview not attended' ? 1 : 0);
   const rejectCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'student rejected offer').length + (status === 'student rejected offer' ? 1 : 0);
 
-  // 🚨 CC Logic: 1) Who scheduled it, 2) TPO assigned to student, 3) TPO assigned to branch, 4) Gifty
+  // CC Logic: 1) Who scheduled it, 2) TPO assigned to student, 3) TPO assigned to branch, 4) Gifty
   const branchTpoEmail = getTpoEmailByBranch(studentData.branch);
   const assignedTpoEmail = getTpoEmail(studentData.tpoName);
   const ccList = [...new Set([currentUserEmail, assignedTpoEmail, branchTpoEmail, 'Gifty@ipcsglobal.com'])].filter(Boolean).join(',');
@@ -120,7 +130,6 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
     subject = `Congratulations, ${studentData.name} ! Your Interview Awaits! # ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Interview Schedule';
     
-    // 🚨 EXACT HTML DESIGN FROM YOUR SCREENSHOT
     html = `
       <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; color: #000;">
         <p style="font-size: 15px; font-weight: bold;">Greetings ${studentData.name},</p>
@@ -519,10 +528,17 @@ exports.updateApplication = async (req, res) => {
   const rowNumber = parseInt(req.body.rowNumber);
   const { status, remarks, datePlaced, packageLpa, joiningStatus, currentUserEmail, interviewDate, interviewTime, interviewVenue } = req.body;
   
+  // 🚨 FIX: Safely parse fullApp depending on if it's sent as a string (FormData) or JSON
   let fullApp = {};
-  try {
-    fullApp = typeof req.body.fullApp === 'string' ? JSON.parse(req.body.fullApp) : (req.body.fullApp || {});
-  } catch(e) { console.error("Parse payload skipped"); }
+  if (typeof req.body.fullApp === 'string') {
+    try {
+      if (req.body.fullApp !== "[object Object]") {
+        fullApp = JSON.parse(req.body.fullApp);
+      }
+    } catch(e) { console.error("Parse payload skipped"); }
+  } else if (typeof req.body.fullApp === 'object' && req.body.fullApp !== null) {
+    fullApp = req.body.fullApp;
+  }
 
   let offerLetterLink = req.body.offerLetter || fullApp.offerLetter || '';
 
@@ -636,9 +652,13 @@ exports.updateApplication = async (req, res) => {
 
 exports.addApplication = async (req, res) => {
   let appData = {};
-  try {
-    appData = typeof req.body.appData === 'string' ? JSON.parse(req.body.appData) : (req.body.appData || {});
-  } catch(e) {}
+  if (typeof req.body.appData === 'string') {
+    try {
+      if (req.body.appData !== "[object Object]") appData = JSON.parse(req.body.appData);
+    } catch(e) {}
+  } else if (typeof req.body.appData === 'object' && req.body.appData !== null) {
+    appData = req.body.appData;
+  }
   
   const tpoName = req.body.tpoName;
   try {
