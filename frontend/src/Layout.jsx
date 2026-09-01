@@ -3,7 +3,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Bell, X, SquaresFour, Trophy, ListChecks, 
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
-  Book, FileText, Bookmarks, ShieldCheck, IdentificationCard, CaretLeft
+  Book, FileText, Bookmarks, ShieldCheck, IdentificationCard, CaretLeft, MapPin
 } from '@phosphor-icons/react';
 
 export default function Layout({ children }) {
@@ -30,6 +30,10 @@ export default function Layout({ children }) {
 
   if (!tpoData) return null;
 
+  const userRole = (tpoData.role || '').toUpperCase();
+  const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
+  const showReports = isSuperAdmin || userRole === 'TPO';
+
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
     const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
@@ -55,12 +59,7 @@ export default function Layout({ children }) {
       return <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#ffffff' }}>{initial}</span>;
     }
     return (
-      <img 
-        src={profilePhotoUrl} 
-        alt="Profile" 
-        style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-        onError={() => setImgError(true)} 
-      />
+      <img src={profilePhotoUrl} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={() => setImgError(true)} />
     );
   };
 
@@ -73,17 +72,11 @@ export default function Layout({ children }) {
     <div className="app-layout">
       
       <main className="main-content">
-        
         <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px' }}>
           <div className="header-left">
-            <img 
-              src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" 
-              alt="IPCS Logo" 
-              style={{ height: '35px', objectFit: 'contain' }} 
-            />
+            <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" style={{ height: '35px', objectFit: 'contain' }} />
           </div>
           <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            
             <div style={{ position: 'relative' }}>
               <button className="icon-btn" title="Notifications" onClick={() => setIsNotifOpen(!isNotifOpen)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex' }}>
                 <Bell size={24} weight="fill" />
@@ -121,7 +114,6 @@ export default function Layout({ children }) {
         </header>
 
         <div className="page-container" style={{ padding: '20px 30px', position: 'relative' }} onClick={() => setIsNotifOpen(false)}>
-          
           {location.pathname !== '/dashboard' && (
             <div style={{ marginBottom: '25px' }}>
               <button 
@@ -132,41 +124,17 @@ export default function Layout({ children }) {
               </button>
             </div>
           )}
-
           {children}
         </div>
-
       </main>
 
-      <div 
-        className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} 
-        onClick={(e) => { if(e.target.classList.contains('drawer-overlay')) setIsDrawerOpen(false); }}
-      >
-        <div 
-          className="drawer-card"
-          style={{ 
-            backgroundImage: `linear-gradient(rgba(11, 17, 32, 0.85), rgba(11, 17, 32, 0.98)), url('https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB')`, 
-            backgroundSize: 'cover', 
-            backgroundPosition: 'center',
-            borderLeft: '1px solid rgba(255,255,255,0.1)',
-            display: 'flex',
-            flexDirection: 'column',
-            height: '100%'
-          }}
-        >
+      <div className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} onClick={(e) => { if(e.target.classList.contains('drawer-overlay')) setIsDrawerOpen(false); }}>
+        <div className="drawer-card" style={{ backgroundImage: `linear-gradient(rgba(11, 17, 32, 0.85), rgba(11, 17, 32, 0.98)), url('https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB')`, backgroundSize: 'cover', backgroundPosition: 'center', borderLeft: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', height: '100%' }}>
           
           <div className="drawer-header" style={{ padding: '30px 20px', position: 'relative', borderBottom: '1px solid rgba(255,255,255,0.1)', flexShrink: 0 }}>
-            <div 
-              className="drawer-close-btn" 
-              onClick={() => setIsDrawerOpen(false)}
-              style={{ position: 'absolute', top: '15px', right: '15px', background: 'rgba(255,255,255,0.2)', color: '#fff', borderRadius: '50%', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            >
-              <X size={16} weight="bold" />
-            </div>
+            <div className="drawer-close-btn" onClick={() => setIsDrawerOpen(false)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'rgba(255,255,255,0.2)', color: '#fff', borderRadius: '50%', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={16} weight="bold" /></div>
             <div className="drawer-profile-row" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-              <div className="drawer-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', width: '60px', height: '60px', borderRadius: '50%', overflow: 'hidden', border: '2px solid rgba(255,255,255,0.4)', flexShrink: 0 }}>
-                {renderAvatar()}
-              </div>
+              <div className="drawer-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', width: '60px', height: '60px', borderRadius: '50%', overflow: 'hidden', border: '2px solid rgba(255,255,255,0.4)', flexShrink: 0 }}>{renderAvatar()}</div>
               <div style={{ color: '#fff' }}>
                 <strong style={{ display: 'block', fontSize: '1.25rem', fontWeight: 700, letterSpacing: '0.5px' }}>{tpoData.name}</strong>
                 <span style={{ fontSize: '0.75rem', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '1px', color: '#cbd5e1' }}>{tpoData.role || 'Placement Officer'}</span>
@@ -175,12 +143,10 @@ export default function Layout({ children }) {
           </div>
           
           <div className="drawer-menu" style={{ padding: '15px', flex: 1, overflowY: 'auto' }}>
-            
             <div className="drawer-item" onClick={() => handleNav('/dashboard')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><SquaresFour size={22} color={isActive('/dashboard')} /> <span style={{ color: isActive('/dashboard') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Dashboard</span></div><span style={{ color: '#64748b' }}>›</span></div>
             <div className="drawer-item" onClick={() => handleNav('/students')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/students')} /> <span style={{ color: isActive('/students') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Students Directory</span></div><span style={{ color: '#64748b' }}>›</span></div>
             
-            {/* 🚨 FIX: Now visible to both TPO and Superadmin (Zonal Head) */}
-            {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase() === 'TPO') && (
+            {showReports && (
               <>
                 <div className="drawer-item" onClick={() => handleNav('/tracker')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Files size={22} color={isActive('/tracker')} /> <span style={{ color: isActive('/tracker') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Job Tracker</span></div><span style={{ color: '#64748b' }}>›</span></div>
                 <div className="drawer-item" onClick={() => handleNav('/reports')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> <span style={{ color: isActive('/reports') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Reports</span></div><span style={{ color: '#64748b' }}>›</span></div>
@@ -195,20 +161,16 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => handleNav('/events')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><CalendarStar size={22} color={isActive('/events')} /> <span style={{ color: isActive('/events') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Events</span></div><span style={{ color: '#64748b' }}>›</span></div>
             <div className="drawer-item" onClick={() => handleNav('/talentino')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> <span style={{ color: isActive('/talentino') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Talentino</span></div><span style={{ color: '#64748b' }}>›</span></div>
             
-            {(tpoData.accessType === 'superadmin' || (tpoData.role || '').toUpperCase().includes('RTH')) && (
+            {(isSuperAdmin || userRole.includes('RTH')) && (
                <>
                  <div className="drawer-item" onClick={() => handleNav('/study-materials')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Book size={22} color={isActive('/study-materials')} /> <span style={{ color: isActive('/study-materials') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Study Materials</span></div><span style={{ color: '#64748b' }}>›</span></div>
-                 <div className="drawer-item" onClick={() => handleNav('/exams')}>
-                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                     <FileText size={22} color={isActive('/exams')} /> <span style={{ color: isActive('/exams') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Exams Hub</span>
-                   </div>
-                   <span style={{ color: '#64748b' }}>›</span>
-                 </div>
+                 <div className="drawer-item" onClick={() => handleNav('/exams')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><FileText size={22} color={isActive('/exams')} /> <span style={{ color: isActive('/exams') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Exams Hub</span></div><span style={{ color: '#64748b' }}>›</span></div>
                </>
             )}
 
-            {tpoData.accessType === 'superadmin' && (
+            {isSuperAdmin && (
                <>
+                 <div className="drawer-item" onClick={() => handleNav('/branches')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><MapPin size={22} color={isActive('/branches')} /> <span style={{ color: isActive('/branches') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Manage Branches</span></div><span style={{ color: '#64748b' }}>›</span></div>
                  <div className="drawer-item" onClick={() => handleNav('/courses')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Bookmarks size={22} color={isActive('/courses')} /> <span style={{ color: isActive('/courses') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Manage Courses</span></div><span style={{ color: '#64748b' }}>›</span></div>
                  <div className="drawer-item" onClick={() => handleNav('/users')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/users')} /> <span style={{ color: isActive('/users') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>User Management</span></div><span style={{ color: '#64748b' }}>›</span></div>
                </>

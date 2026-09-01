@@ -8,22 +8,14 @@ import Layout from './Layout';
 
 const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
 
-// 🚨 ROBUST DATE PARSER ADDED to fix the blank calendar issue
 const parseDate = (dateStr) => {
   if (!dateStr) return null;
   let cleanStr = typeof dateStr === 'string' ? dateStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dateStr;
-
   if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
     const parts = cleanStr.split(/[/-]/);
     if (parts.length === 3) {
-      // Handles DD/MM/YYYY or DD-MM-YYYY
-      if (parts[2].length === 4) {
-        return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-      }
-      // Handles YYYY/MM/DD or YYYY-MM-DD
-      if (parts[0].length === 4) {
-        return new Date(`${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`);
-      }
+      if (parts[2].length === 4) return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+      if (parts[0].length === 4) return new Date(`${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`);
     }
   }
   const d = new Date(cleanStr);
@@ -37,7 +29,6 @@ export default function Events() {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // Master Category Tabs: 'calendar' | 'Placement Drive' | 'Talentino' | 'Other'
   const [categoryTab, setCategoryTab] = useState('calendar');
   const [view, setView] = useState('Month'); 
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -107,23 +98,18 @@ export default function Events() {
 
   const nextPeriod = () => {
     const d = new Date(currentDate);
-    if (view === 'Month') d.setMonth(d.getMonth() + 1);
-    if (view === 'Week') d.setDate(d.getDate() + 7);
-    if (view === 'Day') d.setDate(d.getDate() + 1);
+    d.setMonth(d.getMonth() + 1);
     setCurrentDate(d);
   };
 
   const prevPeriod = () => {
     const d = new Date(currentDate);
-    if (view === 'Month') d.setMonth(d.getMonth() - 1);
-    if (view === 'Week') d.setDate(d.getDate() - 7);
-    if (view === 'Day') d.setDate(d.getDate() - 1);
+    d.setMonth(d.getMonth() - 1);
     setCurrentDate(d);
   };
 
   const getMonthName = () => currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
 
-  // Categorized event filtering
   const categorizedEvents = events.filter(e => {
     if (categoryTab === 'calendar') return true;
     if (categoryTab === 'Other') {
@@ -132,7 +118,7 @@ export default function Events() {
     return (e.type || '').toLowerCase().includes(categoryTab.toLowerCase());
   }).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
 
-  // Calendar Grids
+  // 🚨 FIX: Beautifully highlights Calendar cells with events
   const renderMonthGrid = () => {
     const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
@@ -144,26 +130,36 @@ export default function Events() {
     
     for (let day = 1; day <= daysInMonth; day++) {
       const cellDate = new Date(year, month, day);
+      const isToday = day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear();
       
       const dayEvents = events.filter(e => {
         const pd = parseDate(e.date);
         return pd && pd.toDateString() === cellDate.toDateString();
       });
+      
+      const hasEvents = dayEvents.length > 0;
 
       grid.push(
-        <div key={day} className="cal-cell" style={{ minHeight: '120px', padding: '8px', borderRight: '1px solid var(--card-border)', borderBottom: '1px solid var(--card-border)' }}>
-          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '8px' }}>{day}</div>
+        <div key={day} className="cal-cell" style={{ 
+            minHeight: '120px', padding: '8px', 
+            borderRight: '1px solid var(--card-border)', borderBottom: '1px solid var(--card-border)',
+            background: hasEvents ? 'rgba(56, 189, 248, 0.05)' : (isToday ? 'rgba(255,255,255,0.05)' : 'transparent')
+        }}>
+          <div style={{ 
+            fontSize: '0.85rem', fontWeight: isToday ? 800 : 600, 
+            color: isToday ? '#fff' : (hasEvents ? '#38bdf8' : 'var(--text-muted)'), 
+            marginBottom: '8px', display: 'inline-block', 
+            padding: (hasEvents || isToday) ? '4px 8px' : '4px', 
+            background: isToday ? '#ef4444' : (hasEvents ? 'rgba(56, 189, 248, 0.15)' : 'transparent'), 
+            borderRadius: '50%' 
+          }}>
+            {day}
+          </div>
           {dayEvents.map((e, i) => (
             <div key={i} className="cal-event-pill" style={{ 
-              background: getEventColor(e.type), 
-              marginBottom: '4px', 
-              padding: '4px 6px', 
-              borderRadius: '4px', 
-              fontSize: '0.75rem', 
-              color: '#fff', 
-              whiteSpace: 'nowrap', 
-              overflow: 'hidden', 
-              textOverflow: 'ellipsis' 
+              background: getEventColor(e.type), marginBottom: '4px', padding: '4px 6px', 
+              borderRadius: '4px', fontSize: '0.75rem', color: '#fff', whiteSpace: 'nowrap', 
+              overflow: 'hidden', textOverflow: 'ellipsis' 
             }} title={`${e.time || 'All Day'} - ${e.title}`}>
               {e.time && <strong>{e.time}</strong>} {e.title}
             </div>
@@ -190,37 +186,21 @@ export default function Events() {
           </button>
         </div>
 
-        {/* 🚨 CATEGORY NAVIGATION TABS */}
         <div style={{ display: 'flex', gap: '10px', marginBottom: '25px', borderBottom: '1px solid var(--card-border)', paddingBottom: '10px', overflowX: 'auto' }}>
-          <button 
-            onClick={() => setCategoryTab('calendar')}
-            style={{ background: categoryTab === 'calendar' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: categoryTab === 'calendar' ? 'var(--accent-primary)' : 'var(--text-muted)', border: 'none', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
-          >
+          <button onClick={() => setCategoryTab('calendar')} style={{ background: categoryTab === 'calendar' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: categoryTab === 'calendar' ? 'var(--accent-primary)' : 'var(--text-muted)', border: 'none', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
             <CalendarBlank size={18} weight={categoryTab === 'calendar' ? "fill" : "regular"} /> Calendar View
           </button>
-          <button 
-            onClick={() => setCategoryTab('Placement Drive')}
-            style={{ background: categoryTab === 'Placement Drive' ? 'rgba(239, 68, 68, 0.1)' : 'transparent', color: categoryTab === 'Placement Drive' ? '#ef4444' : 'var(--text-muted)', border: 'none', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
-          >
+          <button onClick={() => setCategoryTab('Placement Drive')} style={{ background: categoryTab === 'Placement Drive' ? 'rgba(239, 68, 68, 0.1)' : 'transparent', color: categoryTab === 'Placement Drive' ? '#ef4444' : 'var(--text-muted)', border: 'none', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
             <Briefcase size={18} weight={categoryTab === 'Placement Drive' ? "fill" : "regular"} /> Placement Drives
           </button>
-          <button 
-            onClick={() => setCategoryTab('Talentino')}
-            style={{ background: categoryTab === 'Talentino' ? 'rgba(168, 85, 247, 0.1)' : 'transparent', color: categoryTab === 'Talentino' ? '#a855f7' : 'var(--text-muted)', border: 'none', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
-          >
+          <button onClick={() => setCategoryTab('Talentino')} style={{ background: categoryTab === 'Talentino' ? 'rgba(168, 85, 247, 0.1)' : 'transparent', color: categoryTab === 'Talentino' ? '#a855f7' : 'var(--text-muted)', border: 'none', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
             <UserCheck size={18} weight={categoryTab === 'Talentino' ? "fill" : "regular"} /> Talentino
           </button>
-          <button 
-            onClick={() => setCategoryTab('Other')}
-            style={{ background: categoryTab === 'Other' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: categoryTab === 'Other' ? '#38bdf8' : 'var(--text-muted)', border: 'none', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}
-          >
+          <button onClick={() => setCategoryTab('Other')} style={{ background: categoryTab === 'Other' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: categoryTab === 'Other' ? '#38bdf8' : 'var(--text-muted)', border: 'none', padding: '10px 18px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
             <CalendarStar size={18} weight={categoryTab === 'Other' ? "fill" : "regular"} /> Other Events
           </button>
         </div>
 
-        {/* ========================================== */}
-        {/* VIEW 1: FULL CALENDAR VIEW */}
-        {/* ========================================== */}
         {categoryTab === 'calendar' && (
           <div className="cal-main" style={{ background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)', overflow: 'hidden' }}>
             <div className="cal-toolbar" style={{ background: '#161e2e', padding: '15px 20px', borderBottom: '1px solid var(--card-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -248,9 +228,6 @@ export default function Events() {
           </div>
         )}
 
-        {/* ========================================== */}
-        {/* VIEW 2: CATEGORIZED SCHEDULES & BRANCHES */}
-        {/* ========================================== */}
         {categoryTab !== 'calendar' && (
           <div style={{ display: 'grid', gap: '15px' }}>
             {loading ? (
@@ -298,9 +275,6 @@ export default function Events() {
 
       </div>
 
-      {/* ========================================== */}
-      {/* ADD EVENT MODAL */}
-      {/* ========================================== */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '600px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
@@ -350,32 +324,6 @@ export default function Events() {
                 <option value="Calicut">Calicut</option>
                 <option value="Kannur">Kannur</option>
                 <option value="Coimbatore">Coimbatore</option>
-                <option value="Chennai">Chennai</option>
-                <option value="Madurai">Madurai</option>
-                <option value="Trichy">Trichy</option>
-                <option value="Tirunelveli">Tirunelveli</option>
-                <option value="Nagercoil">Nagercoil</option>
-                <option value="Mumbai">Mumbai</option>
-                <option value="Pune">Pune</option>
-                <option value="Salem">Salem</option>
-                <option value="Erode">Erode</option>
-                <option value="Mysore">Mysore</option>
-                <option value="Hubli">Hubli</option>
-                <option value="Belgaum">Belgaum</option>
-                <option value="Mangalore">Mangalore</option>
-                <option value="Delhi">Delhi</option>
-                <option value="Navi Mumbai">Navi Mumbai</option>
-                <option value="Noida">Noida</option>
-                <option value="Lucknow">Lucknow</option>
-                <option value="Dubai">Dubai</option>
-                <option value="Qatar">Qatar</option>
-                <option value="Pathanamthitta">Pathanamthitta</option>
-                <option value="Kottayam">Kottayam</option>
-                <option value="Alleppey">Alleppey</option>
-                <option value="Trichur">Trichur</option>
-                <option value="Palakkad">Palakkad</option>
-                <option value="Malappuram">Malappuram</option>
-                <option value="Perinthalmanna">Perinthalmanna</option>
               </select>
             </div>
 

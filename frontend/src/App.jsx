@@ -19,7 +19,8 @@ import Aptitude from './Aptitude';
 import TalentinoExams from './TalentinoExams';
 import Courses from './Courses';
 import PlacementDrives from './PlacementDrives';
-import ExamsHub from './ExamsHub'; // 🚨 NEW IMPORT
+import ExamsHub from './ExamsHub';
+import Branches from './Branches'; // 🚨 NEW IMPORT
 
 function App() {
   return (
@@ -42,8 +43,10 @@ function App() {
         <Route path="/study-materials" element={<StudyMaterials />} />
         <Route path="/courses" element={<Courses />} />
         <Route path="/placement-drives" element={<PlacementDrives />} />
+        
+        {/* 🚨 THE NEW BRANCHES ROUTE */}
+        <Route path="/branches" element={<Branches />} />
 
-        {/* 🚨 THE UNIFIED EXAMS ROUTING */}
         <Route path="/exams" element={<ExamsHub />} />
         <Route path="/exams/technical" element={<TechnicalExams />} />
         <Route path="/exams/aptitude" element={<Aptitude />} />

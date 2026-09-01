@@ -11,7 +11,6 @@ import Layout from './Layout';
 export default function Dashboard() {
   const navigate = useNavigate();
   
-  // 🚨 FIX 1: Safely parse localStorage using parentheses () not brackets []
   let tpoData = null;
   try {
     const rawData = localStorage.getItem('tpoData');
@@ -20,7 +19,9 @@ export default function Dashboard() {
     console.error("Error reading tpoData");
   }
   
-  const isTpo = (tpoData?.role || '').toUpperCase() === 'TPO';
+  const userRole = (tpoData?.role || '').toUpperCase();
+  const isSuperAdmin = tpoData?.accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
+  const showReports = isSuperAdmin || userRole === 'TPO';
   
   const [stats, setStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0 });
   const [events, setEvents] = useState([]);
@@ -34,16 +35,45 @@ export default function Dashboard() {
 
   const parseDateRobust = (dStr) => {
     if (!dStr) return null;
-    if (dStr.includes('/')) {
-      const parts = dStr.split(/[/\s,]+/);
-      if (parts.length >= 3) return new Date(`${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`);
+    let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dStr;
+    if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
+      const parts = cleanStr.split(/[/-]/);
+      if (parts.length === 3) {
+        if (parts[2].length === 4) return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+        if (parts[0].length === 4) return new Date(`${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`);
+      }
     }
-    const d = new Date(dStr.replace(/st|nd|rd|th/g, ''));
+    const d = new Date(cleanStr);
     return isNaN(d) ? null : d;
   };
 
-  const processApps = (allApps) => {
-    setTotalAppsCount(allApps.length);
+  const processApps = (tpoLogs) => {
+    const mappedLogs = tpoLogs.map(row => {
+      const getVal = (s) => {
+        const key = Object.keys(row).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
+        return key ? row[key] : '';
+      };
+      return {
+        name: getVal('studentname') || getVal('name'),
+        roll: getVal('roll'),
+        company: getVal('company'),
+        course: getVal('course'),
+        status: getVal('status') || 'Applied',
+        date: getVal('dateplaced') || getVal('timestamp'),
+        packageLpa: getVal('package'),
+        joiningStatus: getVal('joiningstatus')
+      };
+    });
+
+    // Deduplicate history
+    const deduped = {};
+    mappedLogs.forEach(log => {
+      const key = `${log.roll || log.name}_${log.company}`.toLowerCase();
+      deduped[key] = log;
+    });
+    const uniqueApps = Object.values(deduped);
+
+    setTotalAppsCount(uniqueApps.length);
     const currentYear = new Date().getFullYear();
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     let newTrend = months.map(m => ({ m, apps: 0, off: 0, pl: 0 }));
@@ -51,9 +81,11 @@ export default function Dashboard() {
     let pApp = 0, pInt = 0, pOff = 0, pPl = 0;
     const placedRecent = [];
 
-    allApps.forEach(app => {
+    uniqueApps.forEach(app => {
       const st = (app.status || '').toLowerCase();
-      const isPlaced = st.includes('placed') || st.includes('join') || st.includes('offer');
+      const jSt = (app.joiningStatus || '').toLowerCase();
+      const isPlaced = st.includes('placed') || st.includes('got offer') || st.includes('offer') || jSt.includes('join');
+      
       if (isPlaced) placedRecent.push(app);
 
       if (st.includes('applied') || st.includes('register') || st.includes('pending')) pApp++;
@@ -65,11 +97,11 @@ export default function Dashboard() {
         let c = app.course || 'Others';
         if(c.toLowerCase().includes('automation') || c.toLowerCase().includes('plc')) c = 'Automation';
         if(c.toLowerCase().includes('digital') || c.toLowerCase().includes('dm')) c = 'Digital Mkt';
-        if(c.toLowerCase().includes('python') || c.toLowerCase().includes('data')) c = 'Data Science';
+        if(c.toLowerCase().includes('python') || c.toLowerCase().includes('data') || c.toLowerCase().includes('it')) c = 'Data Science';
         domCount[c] = (domCount[c] || 0) + 1;
       }
 
-      const d = parseDateRobust(app.date || app.datePlaced);
+      const d = parseDateRobust(app.date);
       if (d && d.getFullYear() === currentYear) {
         const mIdx = d.getMonth();
         newTrend[mIdx].apps++;
@@ -86,20 +118,23 @@ export default function Dashboard() {
     setTrendData(newTrend);
     setDomainData(formattedDomains);
     setPipeline({ applied: pApp, interview: pInt, offers: pOff, placed: pPl });
-    setRecentPlacements(placedRecent.reverse().slice(0, 5));
+    
+    const sortedRecent = placedRecent.sort((a, b) => {
+      return new Date(parseDateRobust(b.date) || 0) - new Date(parseDateRobust(a.date) || 0);
+    }).slice(0, 5);
+    setRecentPlacements(sortedRecent);
   };
 
   useEffect(() => {
-    // 🚨 FIX 2: We safely get localTpo INSIDE the effect to prevent infinite loops
     const localTpoStr = localStorage.getItem('tpoData');
     if (!localTpoStr) return;
     const localTpo = JSON.parse(localTpoStr);
 
     const fetchData = async () => {
       const cachedStats = localStorage.getItem('dash_stats');
-      const cachedApps = localStorage.getItem('dash_apps');
+      const cachedLogs = localStorage.getItem('dash_logs');
       if (cachedStats) setStats(JSON.parse(cachedStats));
-      if (cachedApps) { processApps(JSON.parse(cachedApps)); setLoading(false); }
+      if (cachedLogs) { processApps(JSON.parse(cachedLogs)); setLoading(false); }
 
       try {
         const reqPayload = { 
@@ -109,9 +144,9 @@ export default function Dashboard() {
           tpoName: localTpo.name 
         };
         
-        const [statsRes, appsRes] = await Promise.all([
+        const [statsRes, reportsRes] = await Promise.all([
           axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/dashboard-stats', reqPayload),
-          axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications', reqPayload)
+          axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/reports', reqPayload)
         ]);
         
         if (statsRes.data.success) {
@@ -120,16 +155,15 @@ export default function Dashboard() {
           setEvents(statsRes.data.events || []);
         }
 
-        if (appsRes.data.success) {
-          const allApps = appsRes.data.applications || [];
-          localStorage.setItem('dash_apps', JSON.stringify(allApps));
-          processApps(allApps);
+        if (reportsRes.data.success) {
+          const logs = reportsRes.data.tpoLogs || [];
+          localStorage.setItem('dash_logs', JSON.stringify(logs));
+          processApps(logs);
         }
       } catch (err) { console.error(err); } finally { setLoading(false); }
     };
-    
     fetchData();
-  }, []); // 🚨 CRITICAL FIX: The empty array [] guarantees this runs ONLY ONCE, stopping the lag/freezing instantly.
+  }, []); 
 
   const today = new Date();
   today.setHours(0,0,0,0);
@@ -195,83 +229,33 @@ export default function Dashboard() {
         </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '20px' }}>
-          
           <div className="dash-card">
-            <div className="kpi-header">
-              <div className="icon-c blue"><Users weight="fill" size={20}/></div>
-              <div>
-                <div className="kpi-title">Total Students</div>
-                <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.totalStudents}</div>
-              </div>
-            </div>
-            <div className="kpi-trend green">↑ Live Database</div>
-            {makeSparkline('#3b82f6')}
+            <div className="kpi-header"><div className="icon-c blue"><Users weight="fill" size={20}/></div><div><div className="kpi-title">Total Students</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.totalStudents}</div></div></div>
+            <div className="kpi-trend green">↑ Live Database</div>{makeSparkline('#3b82f6')}
           </div>
-
           <div className="dash-card">
-            <div className="kpi-header">
-              <div className="icon-c green"><Briefcase weight="fill" size={20}/></div>
-              <div>
-                <div className="kpi-title">Active Vacancies</div>
-                <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.activeVacancies}</div>
-              </div>
-            </div>
-            <div className="kpi-trend green">↑ Hiring Now</div>
-            {makeSparkline('#10b981')}
+            <div className="kpi-header"><div className="icon-c green"><Briefcase weight="fill" size={20}/></div><div><div className="kpi-title">Active Vacancies</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.activeVacancies}</div></div></div>
+            <div className="kpi-trend green">↑ Hiring Now</div>{makeSparkline('#10b981')}
           </div>
-
           <div className="dash-card">
-            <div className="kpi-header">
-              <div className="icon-c purple"><Trophy weight="fill" size={20}/></div>
-              <div>
-                <div className="kpi-title">Students Placed</div>
-                <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div>
-              </div>
-            </div>
-            <div className="kpi-trend green">↑ Growing Pipeline</div>
-            {makeSparkline('#a855f7')}
+            <div className="kpi-header"><div className="icon-c purple"><Trophy weight="fill" size={20}/></div><div><div className="kpi-title">Students Placed</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div></div></div>
+            <div className="kpi-trend green">↑ Growing Pipeline</div>{makeSparkline('#a855f7')}
           </div>
-
           <div className="dash-card">
-            <div className="kpi-header">
-              <div className="icon-c orange"><ChartBar weight="fill" size={20}/></div>
-              <div>
-                <div className="kpi-title">Placement Rate</div>
-                <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : `${placementRate}%`}</div>
-              </div>
-            </div>
-            <div className="kpi-trend green">↑ Global Average</div>
-            {makeSparkline('#f59e0b')}
+            <div className="kpi-header"><div className="icon-c orange"><ChartBar weight="fill" size={20}/></div><div><div className="kpi-title">Placement Rate</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : `${placementRate}%`}</div></div></div>
+            <div className="kpi-trend green">↑ Global Average</div>{makeSparkline('#f59e0b')}
           </div>
-
           <div className="dash-card">
-            <div className="kpi-header">
-              <div className="icon-c pink"><CalendarCheck weight="fill" size={20}/></div>
-              <div>
-                <div className="kpi-title">Upcoming Drives</div>
-                <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : upDrivesCount}</div>
-              </div>
-            </div>
-            <div className="kpi-trend green">↑ Scheduled Events</div>
-            {makeSparkline('#ec4899')}
+            <div className="kpi-header"><div className="icon-c pink"><CalendarCheck weight="fill" size={20}/></div><div><div className="kpi-title">Upcoming Drives</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : upDrivesCount}</div></div></div>
+            <div className="kpi-trend green">↑ Scheduled Events</div>{makeSparkline('#ec4899')}
           </div>
-
           <div className="dash-card">
-            <div className="kpi-header">
-              <div className="icon-c teal"><ListChecks weight="fill" size={20}/></div>
-              <div>
-                <div className="kpi-title">Total Applications</div>
-                <div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : totalAppsCount}</div>
-              </div>
-            </div>
-            <div className="kpi-trend green">↑ Submitted</div>
-            {makeSparkline('#0ea5e9')}
+            <div className="kpi-header"><div className="icon-c teal"><ListChecks weight="fill" size={20}/></div><div><div className="kpi-title">Total Applications</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : totalAppsCount}</div></div></div>
+            <div className="kpi-trend green">↑ Submitted</div>{makeSparkline('#0ea5e9')}
           </div>
-
         </div>
 
         <div className="grid-3-col" style={{ marginBottom: '20px' }}>
-          
           <div className="dash-card" style={{ gridColumn: 'span 2' }}>
             <div className="card-top">
               <h3>Placement Trends ({new Date().getFullYear()})</h3>
@@ -331,11 +315,9 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
-
         </div>
 
         <div className="grid-3-col" style={{ marginBottom: '20px' }}>
-          
           <div className="dash-card" style={{ gridColumn: 'span 2' }}>
             <div className="card-top">
               <h3>Recent Placement Activity</h3>
@@ -378,21 +360,19 @@ export default function Dashboard() {
               ))}
             </div>
           </div>
-
         </div>
 
         <div className="grid-2-col" style={{ marginBottom: '30px' }}>
-          
           <div className="dash-card">
             <h3>Quick Access</h3>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginTop: '15px' }}>
               <div className="qa-box" onClick={()=>navigate('/placement-drives')}><div className="qa-icon blue"><CalendarCheck weight="fill"/></div>Add Drive</div>
               <div className="qa-box" onClick={()=>navigate('/students')}><div className="qa-icon blue"><Users weight="fill"/></div>Add Student</div>
-              <div className="qa-box" onClick={()=>navigate('/tracker')}><div className="qa-icon green"><ListChecks weight="fill"/></div>Tracker</div>
+              {showReports && <div className="qa-box" onClick={()=>navigate('/tracker')}><div className="qa-icon green"><ListChecks weight="fill"/></div>Tracker</div>}
               <div className="qa-box" onClick={()=>navigate('/exams')}><div className="qa-icon orange"><NotePencil weight="fill"/></div>Exams</div>
               <div className="qa-box" onClick={()=>navigate('/study-materials')}><div className="qa-icon pink"><BookOpen weight="fill"/></div>Material</div>
-              <div className="qa-box" onClick={()=>navigate('/reports')}><div className="qa-icon teal"><ChartBar weight="fill"/></div>Gen. Report</div>
-              <div className="qa-box" onClick={()=>navigate('/reports')}><div className="qa-icon purple"><Desktop weight="fill"/></div>View Reports</div>
+              {showReports && <div className="qa-box" onClick={()=>navigate('/reports')}><div className="qa-icon teal"><ChartBar weight="fill"/></div>Gen. Report</div>}
+              {showReports && <div className="qa-box" onClick={()=>navigate('/reports')}><div className="qa-icon purple"><Desktop weight="fill"/></div>View Reports</div>}
               <div className="qa-box" onClick={()=>navigate('/clients')}><div className="qa-icon orange"><FolderOpen weight="fill"/></div>Documents</div>
             </div>
           </div>
@@ -402,7 +382,8 @@ export default function Dashboard() {
               <h3>Live Application Pipeline</h3>
               <button className="text-link" onClick={()=>navigate('/applications')}>View Apps →</button>
             </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', textAlign: 'center' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', textAlign: 'center' }}>
               <div><div style={{ fontSize: '0.7rem', color: '#f59e0b', marginBottom: '5px' }}>● Applied</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{pipeline.applied}</div></div>
               <div style={{ color: '#334155' }}>→</div>
               <div><div style={{ fontSize: '0.7rem', color: '#3b82f6', marginBottom: '5px' }}>● Interview</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{pipeline.interview}</div></div>
@@ -411,62 +392,58 @@ export default function Dashboard() {
               <div style={{ color: '#334155' }}>→</div>
               <div><div style={{ fontSize: '0.7rem', color: '#10b981', marginBottom: '5px' }}>● Placed</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{pipeline.placed}</div></div>
             </div>
-          </div>
 
+            {/* 🚨 FIX: Fills the empty space with beautiful conversion tracking */}
+            <div style={{ marginTop: '25px', padding: '15px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px dashed #1e293b' }}>
+              <h4 style={{ margin: '0 0 12px 0', fontSize: '0.85rem', color: '#cbd5e1' }}>Pipeline Conversion Metrics</h4>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', fontSize: '0.75rem' }}>
+                <div style={{ background: '#0f1523', padding: '10px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                  <span style={{ color: '#94a3b8', display: 'block', marginBottom: '4px' }}>App ➔ Interview</span> 
+                  <strong style={{ color: '#3b82f6', fontSize: '1rem' }}>{pipeline.applied ? ((pipeline.interview/pipeline.applied)*100).toFixed(1) : 0}%</strong>
+                </div>
+                <div style={{ background: '#0f1523', padding: '10px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                  <span style={{ color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Interview ➔ Offer</span> 
+                  <strong style={{ color: '#a855f7', fontSize: '1rem' }}>{pipeline.interview ? ((pipeline.offers/pipeline.interview)*100).toFixed(1) : 0}%</strong>
+                </div>
+                <div style={{ background: '#0f1523', padding: '10px', borderRadius: '8px', border: '1px solid #1e293b' }}>
+                  <span style={{ color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Offer ➔ Joined</span> 
+                  <strong style={{ color: '#10b981', fontSize: '1rem' }}>{pipeline.offers ? ((pipeline.placed/pipeline.offers)*100).toFixed(1) : 0}%</strong>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <h3 style={{ margin: '0 0 20px 0', fontSize: '1.2rem', color: '#fff' }}>Access Important Modules</h3>
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginBottom: '40px' }}>
-          
           <div onClick={() => navigate('/students')} className="module-card blue">
-            <h4 style={{ color: '#3b82f6' }}>Student Directory</h4>
-            <p>View and manage student information</p>
-            <div className="link">View Students <ArrowRight size={14} weight="bold"/></div>
+            <h4 style={{ color: '#3b82f6' }}>Student Directory</h4><p>View and manage student information</p><div className="link">View Students <ArrowRight size={14} weight="bold"/></div>
           </div>
-
-          {(tpoData?.accessType === 'superadmin') && (
+          {isSuperAdmin && (
             <div onClick={() => navigate('/courses')} className="module-card green">
-              <h4 style={{ color: '#10b981' }}>Course Management</h4>
-              <p>Create and manage courses & syllabus</p>
-              <div className="link">Manage Courses <ArrowRight size={14} weight="bold"/></div>
+              <h4 style={{ color: '#10b981' }}>Course Management</h4><p>Create and manage courses & syllabus</p><div className="link">Manage Courses <ArrowRight size={14} weight="bold"/></div>
             </div>
           )}
-
-          {(tpoData?.accessType === 'superadmin' || (tpoData?.role || '').toUpperCase().includes('RTH')) && (
+          {(isSuperAdmin || userRole.includes('RTH')) && (
             <div onClick={() => navigate('/exams')} className="module-card purple">
-              <h4 style={{ color: '#a855f7' }}>Assessment Center</h4>
-              <p>Create tests and evaluate students</p>
-              <div className="link">Go to Assessments <ArrowRight size={14} weight="bold"/></div>
+              <h4 style={{ color: '#a855f7' }}>Assessment Center</h4><p>Create tests and evaluate students</p><div className="link">Go to Assessments <ArrowRight size={14} weight="bold"/></div>
             </div>
           )}
-
           <div onClick={() => navigate('/talentino')} className="module-card yellow">
-            <h4 style={{ color: '#f59e0b' }}>Attendance Tracking</h4>
-            <p>Monitor daily Talentino check-ins</p>
-            <div className="link">View Attendance <ArrowRight size={14} weight="bold"/></div>
+            <h4 style={{ color: '#f59e0b' }}>Attendance Tracking</h4><p>Monitor daily Talentino check-ins</p><div className="link">View Attendance <ArrowRight size={14} weight="bold"/></div>
           </div>
-
           <div onClick={() => navigate('/placement-drives')} className="module-card pink">
-            <h4 style={{ color: '#ec4899' }}>Placement Management</h4>
-            <p>Manage drives, offers and placements</p>
-            <div className="link">Manage Placements <ArrowRight size={14} weight="bold"/></div>
+            <h4 style={{ color: '#ec4899' }}>Placement Management</h4><p>Manage drives, offers and placements</p><div className="link">Manage Placements <ArrowRight size={14} weight="bold"/></div>
           </div>
-
-          {isTpo && (
+          {showReports && (
             <div onClick={() => navigate('/reports')} className="module-card teal">
-              <h4 style={{ color: '#0ea5e9' }}>Reports & Analytics</h4>
-              <p>Detailed insights and performance reports</p>
-              <div className="link">View Reports <ArrowRight size={14} weight="bold"/></div>
+              <h4 style={{ color: '#0ea5e9' }}>Reports & Analytics</h4><p>Detailed insights and performance reports</p><div className="link">View Reports <ArrowRight size={14} weight="bold"/></div>
             </div>
           )}
-
           <div onClick={() => navigate('/clients')} className="module-card orange">
-            <h4 style={{ color: '#f97316' }}>Document Center</h4>
-            <p>Store and manage important MOUs</p>
-            <div className="link">View Documents <ArrowRight size={14} weight="bold"/></div>
+            <h4 style={{ color: '#f97316' }}>Document Center</h4><p>Store and manage important MOUs</p><div className="link">View Documents <ArrowRight size={14} weight="bold"/></div>
           </div>
-
         </div>
 
         <style>{`

@@ -27,24 +27,24 @@ async function refreshCache() {
     const [
       stuSheet, appSheet, vacSheet, eventSheet, issueSheet, tSchedSheet, tAttSheet, clientSheet, tpoLogSheet, 
       matSheet, tqSheet, trSheet, aptQSheet, aptRSheet, talQSheet, talRSheet, courseSheet, driveSheet,
-      contactSheet, userSheet // 🚨 NEW: Added Auth Sheets
+      contactSheet, userSheet, branchSheet // 🚨 ADDED BRANCHES
     ] = [
       getSheet("Data"), getSheet("Opening_Applied"), getSheet("NewsLetter"), getSheet("Event"), getSheet("Issues"), 
       getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients"), getSheet("TPO_Log"), 
       getSheet("Study_Materials"), getSheet("Tech_Questions"), getSheet("Tech_Results"),
       getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"), getSheet("Courses"), getSheet("Drive_Registration"),
-      getSheet("Contact"), getSheet("User")
+      getSheet("Contact"), getSheet("User"), getSheet("Branches") // 🚨 ADDED BRANCHES
     ];
 
     const [
       stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, 
-      matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows, driveRows, contactRows, userRows
+      matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows, driveRows, contactRows, userRows, branchRows
     ] = await Promise.all([
       stuSheet?.getRows() || [], appSheet?.getRows() || [], vacSheet?.getRows() || [], eventSheet?.getRows() || [], 
       issueSheet?.getRows() || [], tSchedSheet?.getRows() || [], tAttSheet?.getRows() || [], clientSheet?.getRows() || [], 
       tpoLogSheet?.getRows() || [], matSheet?.getRows() || [], tqSheet?.getRows() || [], trSheet?.getRows() || [],
       aptQSheet?.getRows() || [], aptRSheet?.getRows() || [], talQSheet?.getRows() || [], talRSheet?.getRows() || [], driveSheet?.getRows() || [],
-      contactSheet?.getRows() || [], userSheet?.getRows() || []
+      contactSheet?.getRows() || [], userSheet?.getRows() || [], branchSheet?.getRows() || []
     ]);
 
     let coursesDict = {};
@@ -67,7 +67,7 @@ async function refreshCache() {
       tSched: tSchedRows, tAtt: tAttRows, clients: clientRows, tpoLogs: tpoLogRows, materials: matRows, 
       techQuestions: tqRows, techResults: trRows, aptQuestions: aptQRows, aptResults: aptRRows, 
       talQuestions: talQRows, talResults: talRRows, coursesDict: coursesDict, drives: driveRows,
-      contacts: contactRows, users: userRows // 🚨 Cached for instant login
+      contacts: contactRows, users: userRows, branches: branchRows // 🚨 CACHED BRANCHES
     };
     
     console.log("✅ Cache successfully synced with Google Sheets!");
@@ -75,11 +75,7 @@ async function refreshCache() {
   } catch (err) { 
     console.error("❌ Cache sync failed:", err.message); 
     isFetching = false;
-    // 🚨 AGGRESSIVE RETRY: If Render drops the network, retry in 3 seconds.
-    if (!globalCache) {
-      console.log("⚠️ Retrying cache sync in 3 seconds...");
-      setTimeout(refreshCache, 3000);
-    }
+    if (!globalCache) { setTimeout(refreshCache, 3000); }
   }
 }
 
@@ -89,11 +85,11 @@ setInterval(refreshCache, 300000);
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
   const lower = c.toLowerCase().trim();
-  if (lower.includes('bms') || lower.includes('cctv') || lower.includes('building management') || lower.includes('security system')) return 'BMS AND CCTV';
-  if (lower.includes('automation') || lower.includes('plc') || lower.includes('dcs') || lower.includes('scada') || lower.includes('vfd') || lower.includes('panel') || lower.includes('marine') || lower.includes('networking')) return 'Industrial Automation';
-  if (lower.includes('embed') || lower.includes('iot') || lower.includes('raspberry') || lower.includes('labview')) return 'Embedded and IoT';
-  if (lower.includes('digital') || lower.includes('dm') || lower.includes('seo') || lower.includes('social media') || lower.includes('affiliate') || lower.includes('blogging') || lower.includes('marketing')) return 'Digital Marketing';
-  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('information') || lower.includes('data science') || lower.includes('full stack') || lower.includes('java') || lower.includes('stack') || lower.includes('artificial intelligence') || lower.includes('ai')) return 'Information technology (IT)';
+  if (lower.includes('bms') || lower.includes('cctv')) return 'BMS AND CCTV';
+  if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
+  if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
+  if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
+  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
   return 'Others';
 };
 
@@ -127,18 +123,6 @@ const getFuzzyHeader = (headers, target) => {
 const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, family: 4, auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }});
 
 async function sendIPCSMail(mailOptions) {
-  if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
-    const payload = { to: mailOptions.to, subject: mailOptions.subject, html: mailOptions.html, attachments: [] };
-    if (mailOptions.attachments) {
-      mailOptions.attachments.forEach(att => {
-        if (att.content) payload.attachments.push({ filename: att.filename, mimeType: 'application/pdf', contentBytes: att.content.toString('base64') });
-        else if (att.href) payload.attachments.push({ filename: att.filename, href: att.href });
-      });
-    }
-    const res = await axios.post(process.env.APPS_SCRIPT_EMAIL_URL, payload);
-    if (!res.data.success) throw new Error("Apps Script Error");
-    return true;
-  }
   return await transporter.sendMail(mailOptions);
 }
 

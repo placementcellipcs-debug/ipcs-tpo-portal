@@ -80,43 +80,64 @@ exports.getDashboardStats = (req, res) => {
     if (hasAccess(rowData[getHeader('branch')], rowData[getHeader('course')], role, assignedBranchesArray, assignedCourse)) studentCount++; 
   });
   
-  // 🚨 FIX: Force backend to strictly read Placements/Applications from TPO_Log
+  // 2. Calculate Placements via TPO_Log (Deduplicated)
   const logsSource = cache.tpoLogs || [];
-  
-  // Deduplicate logs so we only evaluate the newest status for each application
   const dedupedLogs = {};
   logsSource.forEach(row => {
     const rowData = row.toObject();
     const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
-    
     const roll = rowData[getHeader('roll')] || rowData[getHeader('rollnumber')] || '';
     const name = rowData[getHeader('name')] || rowData[getHeader('studentname')] || '';
     const company = rowData[getHeader('company')] || rowData[getHeader('companyname')] || '';
-    
     const key = `${roll || name}_${company}`.toLowerCase();
-    dedupedLogs[key] = rowData; // Overwrites older entries with newer ones
+    dedupedLogs[key] = rowData;
   });
 
-  // Evaluate the latest log for each application
   Object.values(dedupedLogs).forEach(rowData => {
     const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
-    
     if (hasAccess(rowData[getHeader('branch')], rowData[getHeader('course')], role, assignedBranchesArray, assignedCourse)) {
       const stat = (rowData[getHeader('status')] || '').toString().toLowerCase();
       const joinStat = (rowData[getHeader('joiningstatus')] || '').toString().toLowerCase();
       const placeStat = (rowData[getHeader('placementstatus')] || '').toString().toLowerCase();
 
       if (stat === 'applied') pendingApps++;
-      // If it mentions placed, offer, or join, count it as Placed!
       if (stat.includes('placed') || stat.includes('got offer') || stat.includes('offer') || joinStat.includes('join') || placeStat.includes('placed')) {
         placedCount++;
       }
     }
   });
   
-  // 3. Calculate Vacancies
+  // 🚨 3. Calculate Active Vacancies (Ignores Expired Dates)
+  const todayStart = new Date();
+  todayStart.setHours(0,0,0,0);
+
   cache.vacancies.forEach(row => {
-    if ((row.get('Status') || 'Open').toString().toLowerCase().includes('open') || (row.get('Status') || '').toString().toLowerCase().includes('yes')) activeVacs++;
+    const status = (row.get('Status') || 'Open').toString().toLowerCase();
+    const lastDateStr = row.get('Last Date');
+    let isExpired = false;
+
+    if (lastDateStr) {
+      try {
+        let parsedDate;
+        if (lastDateStr.includes('/')) {
+          const parts = lastDateStr.split(/[/\s,.-]+/);
+          if (parts.length >= 3 && parts[2].length === 4) {
+            parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+          }
+        } else {
+          parsedDate = new Date(lastDateStr);
+        }
+        if (parsedDate && !isNaN(parsedDate)) {
+          if (parsedDate < todayStart) {
+            isExpired = true; // Date is in the past!
+          }
+        }
+      } catch(e) {}
+    }
+
+    if ((status.includes('open') || status.includes('yes')) && !isExpired) {
+      activeVacs++;
+    }
   });
 
   // 4. Events
@@ -1184,6 +1205,48 @@ exports.updateTalExamQuestion = async (req, res) => {
       res.json({ success: true, message: "Talentino question updated successfully!" });
     } else {
       res.status(404).json({ success: false, message: "Question ID not found." });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+// ==========================================
+// 🚨 DYNAMIC BRANCHES
+// ==========================================
+exports.getBranches = (req, res) => {
+  try {
+    const branches = getCache().branches.map(row => ({
+      no: row.get('No.') || '',
+      region: row.get('Region / State') || '',
+      branch: row.get('Branch') || ''
+    }));
+    res.json({ success: true, branches });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addBranch = async (req, res) => {
+  try {
+    const { no, region, branch } = req.body;
+    const sheet = doc.sheetsByTitle["Branches"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    await sheet.addRow({ 'No.': no, 'Region / State': region, 'Branch': branch });
+    refreshCache(); 
+    res.json({ success: true, message: "Branch saved" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteBranch = async (req, res) => {
+  try {
+    const { branch } = req.body;
+    const sheet = doc.sheetsByTitle["Branches"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToDelete = rows.find(r => r.get('Branch') === branch);
+    if (rowToDelete) {
+      await rowToDelete.delete();
+      refreshCache();
+      res.json({ success: true, message: "Branch deleted" });
+    } else {
+      res.status(404).json({ success: false, message: "Branch not found" });
     }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
