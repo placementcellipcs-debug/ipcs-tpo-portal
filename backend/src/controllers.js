@@ -1,7 +1,6 @@
 const { 
   doc, getCache, refreshCache, hasAccess, getFuzzyHeader, 
-  sendIPCSMail, uploadToDrive,
-  getTpoEmail, getBranchManagerEmail, getAllTpoEmails, getAllBranchManagerEmails 
+  sendIPCSMail, uploadToDrive
 } = require('./config');
 
 const FOLDER_OFFER_LETTERS = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5';
@@ -11,18 +10,39 @@ const FOLDER_MOU_CERTIFICATES = '1Hu1zPs56nFXyJPSl7PVfs-oFW4QrKqiD';
 // =========================================================
 // 🚨 EMAIL HELPERS & LOGGING SYSTEM
 // =========================================================
-
-// NEW HELPER: Gets the TPO email assigned to a specific branch
-const getTpoEmailByBranch = (branch) => {
+const getTpoEmail = (tpoName) => {
   const cache = getCache();
   if (!cache || !cache.contacts) return '';
   const row = cache.contacts.find(r => {
-    const assigned = (r.get('Assigned Branches') || '').toLowerCase();
-    const sitting = (r.get('Sitting Branch') || '').toLowerCase();
-    const searchBranch = (branch || '').toLowerCase();
-    return assigned.includes(searchBranch) || sitting.includes(searchBranch);
+    const name = r.get('TPO Name') || r.get('Name') || '';
+    return name.toLowerCase().includes((tpoName || '').toLowerCase());
   });
   return row ? row.get('Mail ID') : '';
+};
+
+const getBranchManagerEmail = (branch) => {
+  const cache = getCache();
+  if (!cache || !cache.users) return '';
+  const row = cache.users.find(r => {
+    const role = (r.get('Role') || '').toLowerCase();
+    const br = (r.get('Sitting Branch') || r.get('Assigned Branches') || '').toLowerCase();
+    return role.includes('manager') && br.includes((branch || '').toLowerCase());
+  });
+  return row ? row.get('Mail ID') : '';
+};
+
+const getAllTpoEmails = () => {
+  const cache = getCache();
+  if (!cache || !cache.contacts) return [];
+  return cache.contacts.map(r => r.get('Mail ID')).filter(Boolean);
+};
+
+const getAllBranchManagerEmails = () => {
+  const cache = getCache();
+  if (!cache || !cache.users) return [];
+  return cache.users
+    .filter(r => (r.get('Role') || '').toLowerCase().includes('manager'))
+    .map(r => r.get('Mail ID')).filter(Boolean);
 };
 
 const logMailToSheet = async (receiverName, receiverMail, mailType, subject, status) => {
@@ -54,9 +74,9 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
   }
 };
 
-// =========================================================
-// 🚨 MASTER STUDENT EMAIL ENGINE (WITH ANTI-THREADING)
-// =========================================================
+// ---------------------------------------------------------
+// 🚨 MASTER STUDENT EMAIL ENGINE
+// ---------------------------------------------------------
 const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
   const status = newStatus.toLowerCase().trim();
@@ -69,14 +89,13 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   const noAttendCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'interview not attended').length + (status === 'interview not attended' ? 1 : 0);
   const rejectCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'student rejected offer').length + (status === 'student rejected offer' ? 1 : 0);
 
-  // CC Logic: 1) The TPO who scheduled it (currentUser), 2) TPO assigned to branch, 3) Gifty
+  // 🚨 CC Logic: 1) TPO who scheduled it (currentUser), 2) TPO assigned to the branch, 3) Gifty
   const branchTpoEmail = getTpoEmailByBranch(studentData.branch);
   const ccList = [...new Set([currentUserEmail, branchTpoEmail, 'Gifty@ipcsglobal.com'])].filter(Boolean).join(',');
 
   let subject = ''; let html = ''; let mailType = '';
   const refId = Math.floor(10000 + Math.random() * 90000); 
 
-  // Generic Template for Warnings and Congrats
   const getGenericTemplate = (title, message, color) => `
     <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
       <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid ${color};">
@@ -88,7 +107,6 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
         <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
           <p style="margin: 0 0 5px 0;">Regards,</p>
           <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">IPCS Placement Cell</p>
-          <p style="margin: 0;">IPCS Global</p>
         </div>
       </div>
     </div>
@@ -98,7 +116,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
     subject = `Congratulations, ${studentData.name} ! Your Interview Awaits! # ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Interview Schedule';
     
-    // 🚨 EXACT HTML DESIGN AS REQUESTED FROM IMAGE
+    // 🚨 EXACT HTML DESIGN FROM THE SCREENSHOT
     html = `
       <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; color: #000;">
         <p style="font-size: 15px; font-weight: bold;">Greetings ${studentData.name},</p>
@@ -192,7 +210,10 @@ exports.login = async (req, res) => {
   const { email, password } = req.body;
   try {
     const cache = getCache();
-    if (!cache || !cache.contacts || !cache.users) return res.status(503).json({ success: false, message: "System is booting up." });
+    
+    if (!cache || !cache.contacts || !cache.users) {
+       return res.status(503).json({ success: false, message: "System is booting up. Please try again in 5 seconds." });
+    }
 
     const cleanInput = (email || '').toString().trim().toLowerCase();
     const cleanPass = (password || '').toString().trim();
@@ -239,7 +260,9 @@ exports.login = async (req, res) => {
       accessType = 'edit';
     }
 
-    if (accessType === 'superadmin' || upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD' || assignedArray.length === 0) assignedArray = ['all'];
+    if (accessType === 'superadmin' || upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD' || assignedArray.length === 0) {
+      assignedArray = ['all'];
+    }
 
     return res.json({ success: true, tpo: { name: foundUser[nameField] || foundUser['name'] || 'User', email: foundUser['mailid'] || foundUser['email'] || cleanInput, loginId: cleanInput, sittingBranch: foundUser['sittingbranch'] || 'N/A', assignedBranchesArray: assignedArray, photo: foundUser['profilephoto'] || foundUser['photo'] || '', phone: foundUser['contactnumber'] || foundUser['contact'] || foundUser['phoneno'] || 'Not Provided', role: role, assignedCourse: course, accessType: accessType } });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
@@ -279,7 +302,9 @@ exports.getDashboardStats = (req, res) => {
       const placeStat = (rowData[getHeader('placementstatus')] || '').toString().toLowerCase();
 
       if (stat === 'applied') pendingApps++;
-      if (stat.includes('placed') || stat.includes('got offer') || stat.includes('offer') || joinStat.includes('join') || placeStat.includes('placed')) placedCount++;
+      if (stat.includes('placed') || stat.includes('got offer') || stat.includes('offer') || joinStat.includes('join') || placeStat.includes('placed')) {
+        placedCount++;
+      }
     }
   });
   
@@ -296,15 +321,25 @@ exports.getDashboardStats = (req, res) => {
         let parsedDate;
         if (lastDateStr.includes('/')) {
           const parts = lastDateStr.split(/[/\s,.-]+/);
-          if (parts.length >= 3 && parts[2].length === 4) parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-        } else { parsedDate = new Date(lastDateStr); }
-        if (parsedDate && !isNaN(parsedDate)) { if (parsedDate < todayStart) isExpired = true; }
+          if (parts.length >= 3 && parts[2].length === 4) {
+            parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+          }
+        } else {
+          parsedDate = new Date(lastDateStr);
+        }
+        if (parsedDate && !isNaN(parsedDate)) {
+          if (parsedDate < todayStart) isExpired = true;
+        }
       } catch(e) {}
     }
-    if ((status.includes('open') || status.includes('yes')) && !isExpired) activeVacs++;
+
+    if ((status.includes('open') || status.includes('yes')) && !isExpired) {
+      activeVacs++;
+    }
   });
 
   let eventsList = cache.events.slice(-8).map(row => ({ title: row.get('Title') || 'Event', date: row.get('Date') || '', time: row.get('Time') || '', type: row.get('Type') || 'Placement Drive', location: row.get('Location') || '' }));
+  
   res.json({ success: true, stats: { totalStudents: studentCount, pendingApps, placed: placedCount, activeVacancies: activeVacs }, events: eventsList.reverse() });
 };
 
@@ -376,16 +411,24 @@ exports.updateStudent = async (req, res) => {
         updateObj[cStatusH] = courseStatus;
         
         let oldStatus = '';
-        if (rows[0].get) oldStatus = (rows[0].get(cStatusH) || '').toString().toLowerCase();
-        else oldStatus = (rows[0][cStatusH] || '').toString().toLowerCase();
+        if (rows[0].get) {
+           oldStatus = (rows[0].get(cStatusH) || '').toString().toLowerCase();
+        } else {
+           oldStatus = (rows[0][cStatusH] || '').toString().toLowerCase();
+        }
         
         const isNowCompleted = courseStatus.toLowerCase().includes('completed') || courseStatus.toLowerCase().includes('90%');
         const wasCompleted = oldStatus.includes('completed') || oldStatus.includes('90%');
 
         if (!wasCompleted && isNowCompleted) {
           let sName = 'Student'; let sEmail = '';
-          if (rows[0].get) { sName = rows[0].get('Name') || 'Student'; sEmail = rows[0].get('Mail ID') || rows[0].get('Email') || ''; } 
-          else { sName = rows[0]['Name'] || 'Student'; sEmail = rows[0]['Mail ID'] || rows[0]['Email'] || ''; }
+          if (rows[0].get) {
+             sName = rows[0].get('Name') || 'Student';
+             sEmail = rows[0].get('Mail ID') || rows[0].get('Email') || '';
+          } else {
+             sName = rows[0]['Name'] || 'Student';
+             sEmail = rows[0]['Mail ID'] || rows[0]['Email'] || '';
+          }
 
           const refId = Math.floor(10000 + Math.random() * 90000); 
           
@@ -419,7 +462,9 @@ exports.updateStudent = async (req, res) => {
         }
       }
 
-      rows[0].assign(updateObj); await rows[0].save(); refreshCache(); 
+      rows[0].assign(updateObj); 
+      await rows[0].save(); 
+      refreshCache(); 
       res.json({ success: true, message: "Student record updated!" });
     } else { res.status(404).json({ success: false, message: "Row not found." }); }
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
@@ -480,6 +525,7 @@ exports.getApplications = (req, res) => {
       });
     }
   });
+  
   res.json({ success: true, applications: appsList });
 };
 
@@ -504,34 +550,32 @@ exports.updateApplication = async (req, res) => {
       
       const oldStatus = (currentRowData[getHeader('status')] || '').toString().toLowerCase();
 
-      const sName = currentRowData[getHeader('name')] || currentRowData[getHeader('studentname')] || '';
-      const sContact = currentRowData[getHeader('contact')] || currentRowData[getHeader('phone')] || '';
-      const sMail = currentRowData[getHeader('mail')] || currentRowData[getHeader('email')] || '';
-      const sRoll = currentRowData[getHeader('roll')] || '';
-      const sCourse = currentRowData[getHeader('course')] || '';
-      const sBranch = currentRowData[getHeader('branch')] || '';
-      const sQual = currentRowData[getHeader('qual')] || '';
-      const sResume = currentRowData[getHeader('resume')] || currentRowData[getHeader('cv')] || '';
-      const sJobId = currentRowData[getHeader('jobid')] || '';
-      const sCompany = currentRowData[getHeader('company')] || '';
-      const sPosition = currentRowData[getHeader('position')] || '';
-      const sTpo = currentRowData[getHeader('placementofficer')] || '';
-      const sDatePlaced = datePlaced !== undefined ? datePlaced : (currentRowData[getHeader('dateplaced')] || '');
-      const sPackage = packageLpa !== undefined ? packageLpa : (currentRowData[getHeader('package')] || '');
-      const sJoining = joiningStatus !== undefined ? joiningStatus : (currentRowData[getHeader('joiningstatus')] || '');
-      const sOffer = offerLetterLink || currentRowData[getHeader('offerletter')] || '';
+      // Ensure we have fallback data for logging
+      const sName = currentRowData[getHeader('name')] || currentRowData[getHeader('studentname')] || fullApp.name || '';
+      const sContact = currentRowData[getHeader('contact')] || currentRowData[getHeader('phone')] || fullApp.phone || '';
+      const sMail = currentRowData[getHeader('mail')] || currentRowData[getHeader('email')] || fullApp.email || '';
+      const sRoll = currentRowData[getHeader('roll')] || fullApp.roll || '';
+      const sCourse = currentRowData[getHeader('course')] || fullApp.course || '';
+      const sBranch = currentRowData[getHeader('branch')] || fullApp.branch || '';
+      const sQual = currentRowData[getHeader('qual')] || fullApp.qual || '';
+      const sResume = currentRowData[getHeader('resume')] || currentRowData[getHeader('cv')] || fullApp.resume || '';
+      const sJobId = currentRowData[getHeader('jobid')] || fullApp.jobId || '';
+      const sCompany = currentRowData[getHeader('company')] || fullApp.company || '';
+      const sPosition = currentRowData[getHeader('position')] || fullApp.position || '';
+      const sTpo = currentRowData[getHeader('placementofficer')] || fullApp.tpoName || '';
 
       const updateObj = { 'Status': status };
-      if(headers.includes('Remarks') && remarks !== undefined) updateObj['Remarks'] = remarks;
-      if(headers.includes('DATE PLACED') && datePlaced !== undefined) updateObj['DATE PLACED'] = datePlaced;
-      if(headers.includes('PACKAGE (LPA)') && packageLpa !== undefined) updateObj['PACKAGE (LPA)'] = packageLpa;
-      if(headers.includes('Offer Letter') && offerLetterLink) updateObj['Offer Letter'] = offerLetterLink;
-      if(headers.includes('Joining Status') && joiningStatus !== undefined) updateObj['Joining Status'] = joiningStatus;
+      const hRemarks = getFuzzyHeader(headers, 'remarks'); if (hRemarks && remarks !== undefined) updateObj[hRemarks] = remarks;
+      const hDatePlaced = getFuzzyHeader(headers, 'dateplaced'); if (hDatePlaced && datePlaced !== undefined) updateObj[hDatePlaced] = datePlaced;
+      const hPackage = getFuzzyHeader(headers, 'package'); if (hPackage && packageLpa !== undefined) updateObj[hPackage] = packageLpa;
+      const hOffer = getFuzzyHeader(headers, 'offerletter'); if (hOffer && offerLetterLink) updateObj[hOffer] = offerLetterLink;
+      const hJoining = getFuzzyHeader(headers, 'joiningstatus'); if (hJoining && joiningStatus !== undefined) updateObj[hJoining] = joiningStatus;
       
-      // 🚨 Safely update Opening_Applied interview fields if they exist
+      // 🚨 FUZZY MATCH INTERVIEW COLUMNS TO PREVENT SHEET ERRORS
       const hDate = getFuzzyHeader(headers, 'interviewdate');
       const hTime = getFuzzyHeader(headers, 'interviewtime') || getFuzzyHeader(headers, 'intervewtime');
       const hVenue = getFuzzyHeader(headers, 'interviewvenue');
+      
       if (hDate && interviewDate !== undefined) updateObj[hDate] = interviewDate;
       if (hTime && interviewTime !== undefined) updateObj[hTime] = interviewTime;
       if (hVenue && interviewVenue !== undefined) updateObj[hVenue] = interviewVenue;
@@ -544,7 +588,6 @@ exports.updateApplication = async (req, res) => {
         const logHeaders = logSheet.headerValues;
         const logObj = {};
         
-        // Helper to safely set log object using exact fuzzy headers
         const setLogH = (key, val) => {
            const h = getFuzzyHeader(logHeaders, key);
            if (h) logObj[h] = val;
@@ -565,10 +608,10 @@ exports.updateApplication = async (req, res) => {
         setLogH('placementofficer', sTpo);
         setLogH('status', status || '');
         setLogH('remarks', remarks !== undefined ? remarks : (currentRowData[getHeader('remarks')] || ''));
-        setLogH('dateplaced', sDatePlaced);
-        setLogH('package', sPackage);
-        setLogH('offerletterstatus', sOffer);
-        setLogH('joiningstatus', sJoining);
+        setLogH('dateplaced', datePlaced !== undefined ? datePlaced : (currentRowData[getHeader('dateplaced')] || ''));
+        setLogH('package', packageLpa !== undefined ? packageLpa : (currentRowData[getHeader('package')] || ''));
+        setLogH('offerletterstatus', offerLetterLink || currentRowData[getHeader('offerletter')] || '');
+        setLogH('joiningstatus', joiningStatus !== undefined ? joiningStatus : (currentRowData[getHeader('joiningstatus')] || ''));
         setLogH('interviewdate', interviewDate || '');
         setLogH('interviewtime', interviewTime || '');
         setLogH('intervewtime', interviewTime || ''); 
@@ -607,7 +650,9 @@ exports.addApplication = async (req, res) => {
     if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
     
     const appSheet = doc.sheetsByTitle["Opening_Applied"];
-    const newRow = { 
+    const logSheet = doc.sheetsByTitle["TPO_Log"];
+
+    const newRowObj = {
       'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), 
       'Student Name': appData.name || '', 'Contact': appData.phone || '', 'Mail ID': appData.email || '', 
       'Roll Number': appData.roll || '', 'Course': appData.course || '', 'Branch': appData.branch || '', 
@@ -618,13 +663,11 @@ exports.addApplication = async (req, res) => {
       'PACKAGE (LPA)': appData.packageLpa || '', 'Offer Letter': offerLetterLink, 
       'Joining Status': appData.joiningStatus || '' 
     };
+
+    if (appSheet) await appSheet.addRow(newRowObj);
+    if (logSheet) await logSheet.addRow({ ...newRowObj, 'Offer Letter Status': offerLetterLink });
     
-    await appSheet.addRow(newRow);
-    
-    const logSheet = doc.sheetsByTitle["TPO_Log"];
-    if (logSheet) { await logSheet.addRow({ ...newRow, 'Offer Letter Status': offerLetterLink }); }
-    
-    checkAndSendStudentMails({ ...appData, tpoName: tpoName }, appData.status || 'Placed');
+    checkAndSendStudentMails({ ...appData, tpoName: tpoName }, appData.status || 'Placed', {}, req.body.currentUserEmail);
 
     refreshCache(); res.json({ success: true, message: "Placement added manually." });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
@@ -1022,6 +1065,74 @@ exports.submitMou = async (req, res) => {
     };
     await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Completion' }); 
     refreshCache(); res.json({ success: true, pdfLink });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+exports.updatePassword = async (req, res) => {
+  const { email, loginId, newPassword } = req.body;
+  try {
+    const cache = getCache();
+    let targetRow = null;
+    const identifiers = [(email || '').toString().trim().toLowerCase(), (loginId || '').toString().trim().toLowerCase()].filter(Boolean);
+
+    if (cache.contacts) {
+        targetRow = cache.contacts.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
+    }
+    if (!targetRow && cache.users) {
+        targetRow = cache.users.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
+    }
+
+    if (targetRow) {
+      const headers = targetRow._worksheet.headerValues;
+      const pHead = getFuzzyHeader(headers, 'password');
+      targetRow.assign({ [pHead]: newPassword });
+      await targetRow.save();
+      refreshCache();
+      res.json({ success: true, message: "Password updated successfully" });
+    } else {
+      res.status(404).json({ success: false, message: "User account not found in database." });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updatePhoto = async (req, res) => {
+  const { email, loginId } = req.body;
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: "No file provided." });
+    const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
+    const cache = getCache();
+    let targetRow = null;
+    const identifiers = [(email || '').toString().trim().toLowerCase(), (loginId || '').toString().trim().toLowerCase()].filter(Boolean);
+
+    if (cache.contacts) {
+        targetRow = cache.contacts.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
+    }
+    if (!targetRow && cache.users) {
+        targetRow = cache.users.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
+    }
+
+    if (targetRow) {
+      const headers = targetRow._worksheet.headerValues;
+      const photoHeader = headers.find(h => h.toLowerCase().includes('photo') || h.toLowerCase().includes('profile')) || 'Profile Photo';
+      targetRow.assign({ [photoHeader]: photoLink });
+      await targetRow.save(); 
+      refreshCache(); 
+      res.json({ success: true, photoUrl: photoLink });
+    } else { 
+      res.status(404).json({ success: false, message: "User not found." }); 
+    }
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
