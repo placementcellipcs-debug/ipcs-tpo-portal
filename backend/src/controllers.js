@@ -87,7 +87,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE
+// 🚨 MASTER STUDENT EMAIL ENGINE (WITH CC LOGIC & LOGO)
 // ---------------------------------------------------------
 const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
@@ -101,26 +101,31 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   const noAttendCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'interview not attended').length + (status === 'interview not attended' ? 1 : 0);
   const rejectCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'student rejected offer').length + (status === 'student rejected offer' ? 1 : 0);
 
-  // CC Logic: 1) Who scheduled it, 2) TPO assigned to student, 3) TPO assigned to branch, 4) Gifty
+  // 🚨 NEW CC LOGIC: 
+  // 1. currentUserEmail (The TPO who scheduled it)
+  // 2. branchTpoEmail (The TPO assigned to the student's branch)
+  // 3. Gifty (for admin oversight)
   const branchTpoEmail = getTpoEmailByBranch(studentData.branch);
-  const assignedTpoEmail = getTpoEmail(studentData.tpoName);
-  const ccList = [...new Set([currentUserEmail, assignedTpoEmail, branchTpoEmail, 'Gifty@ipcsglobal.com'])].filter(Boolean).join(',');
+  const ccList = [...new Set([currentUserEmail, branchTpoEmail, 'Gifty@ipcsglobal.com'])].filter(Boolean).join(',');
 
   let subject = ''; let html = ''; let mailType = '';
   const refId = Math.floor(10000 + Math.random() * 90000); 
 
+  // URL for the IPCS Logo (You can change this link if you have a different version of the logo)
+  const logoUrl = "https://ipcsglobal.com/wp-content/uploads/2023/12/IPCS-Global-Logo.png";
+
   const getGenericTemplate = (title, message, color) => `
-    <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-      <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid ${color};">
-        <h2 style="color: #ffffff; margin: 0;">${title}</h2>
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
+      <div style="background-color: #0f1523; padding: 35px 20px; text-align: center; border-bottom: 5px solid ${color};">
+        <img src="${logoUrl}" alt="IPCS Global" style="max-height: 50px; margin-bottom: 15px;" />
+        <h2 style="color: #ffffff; margin: 0; font-size: 22px; text-transform: uppercase;">${title}</h2>
       </div>
       <div style="padding: 30px; background-color: #ffffff;">
         <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
         <div style="font-size: 15px; line-height: 1.6; color: #475569;">${message}</div>
-        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
+        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 14px; color: #0f1523; font-weight: bold;">
           <p style="margin: 0 0 5px 0;">Regards,</p>
-          <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">IPCS Placement Cell</p>
-          <p style="margin: 0;">IPCS Global</p>
+          <p style="margin: 0 0 2px 0; color: #38bdf8;">IPCS Placement Cell</p>
         </div>
       </div>
     </div>
@@ -130,12 +135,13 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
     subject = `Congratulations, ${studentData.name} ! Your Interview Awaits! # ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Interview Schedule';
     
-    // 🚨 BRAND NEW BEAUTIFUL HTML DESIGN
+    // 🚨 EXACT HTML DESIGN WITH ADDED LOGO
     html = `
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
         
         <!-- Header Section -->
         <div style="background-color: #0f1523; padding: 35px 20px; text-align: center; border-bottom: 5px solid #38bdf8;">
+          <img src="${logoUrl}" alt="IPCS Global" style="max-height: 50px; margin-bottom: 15px;" />
           <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 1px; text-transform: uppercase;">Interview Invitation</h1>
           <p style="color: #94a3b8; margin: 10px 0 0 0; font-size: 14px;">IPCS Global Placement Cell</p>
         </div>
@@ -204,7 +210,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
         </div>
       </div>
     `;
-  }
+  } 
   else if (status === 'interview not attended') {
     if (noAttendCount === 2) {
       subject = `WARNING: Missed Interview Notice (2nd Occurrence) [Ref: ${refId}]`;
