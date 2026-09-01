@@ -89,7 +89,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE (WITH UPDATED TEMPLATES)
+// 🚨 MASTER STUDENT EMAIL ENGINE (WITH UPDATED TEMPLATES & DEDUPLICATION)
 // ---------------------------------------------------------
 const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
@@ -100,13 +100,25 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
     (r.get('Roll Number') === studentData.roll || r.get('Student Name') === studentData.name)
   );
 
-  const noAttendCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'interview not attended').length + (status === 'interview not attended' ? 1 : 0);
-  const rejectCount = logs.filter(r => {
-    const s = (r.get('Status') || '').toLowerCase();
-    return s.includes('student rejected') || s.includes('offer rejected');
-  }).length + (status.includes('student rejected') || status.includes('offer rejected') ? 1 : 0);
+  // 🚨 FIX: Group by Job ID to prevent duplicate logs from triggering the final warning early!
+  const noAttendJobs = new Set();
+  const rejectedJobs = new Set();
 
-  // CC Logic: 1) Scheduling TPO, 2) Student Branch TPO, 3) Assigned TPO
+  logs.forEach(r => {
+    const s = (r.get('Status') || '').toLowerCase();
+    const jobId = r.get('Job ID') || r.get('Company Name') || r.get('Company') || '';
+    if (s === 'interview not attended') noAttendJobs.add(jobId);
+    if (s.includes('student rejected') || s.includes('offer rejected')) rejectedJobs.add(jobId);
+  });
+
+  // Add the current job to the sets to calculate the new total
+  if (status === 'interview not attended') noAttendJobs.add(studentData.jobId || studentData.company);
+  if (status.includes('student rejected') || status.includes('offer rejected')) rejectedJobs.add(studentData.jobId || studentData.company);
+
+  const noAttendCount = noAttendJobs.size;
+  const rejectCount = rejectedJobs.size;
+
+  // CC Logic: 1) Scheduling TPO, 2) Assigned TPO, 3) Branch TPO
   const branchTpoEmail = getTpoEmailByBranch(studentData.branch);
   const assignedTpoEmail = getTpoEmail(studentData.tpoName);
   const ccList = [...new Set([currentUserEmail, assignedTpoEmail, branchTpoEmail])].filter(Boolean).join(',');
