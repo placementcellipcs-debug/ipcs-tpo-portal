@@ -532,7 +532,15 @@ exports.getApplications = (req, res) => {
 exports.updateApplication = async (req, res) => {
   const rowNumber = parseInt(req.body.rowNumber);
   const { status, remarks, datePlaced, packageLpa, joiningStatus, currentUserEmail, interviewDate, interviewTime, interviewVenue } = req.body;
-  const fullApp = JSON.parse(req.body.fullApp || '{}');
+  
+  // 🚨 FIX: Safely handle 'fullApp' whether it arrives as a String (FormData) or an Object (JSON)
+  let fullApp = {};
+  try {
+    fullApp = typeof req.body.fullApp === 'string' ? JSON.parse(req.body.fullApp) : (req.body.fullApp || {});
+  } catch(e) {
+    console.error("Failed to parse fullApp payload");
+  }
+
   let offerLetterLink = req.body.offerLetter || fullApp.offerLetter || '';
 
   try {
@@ -571,7 +579,7 @@ exports.updateApplication = async (req, res) => {
       const hOffer = getFuzzyHeader(headers, 'offerletter'); if (hOffer && offerLetterLink) updateObj[hOffer] = offerLetterLink;
       const hJoining = getFuzzyHeader(headers, 'joiningstatus'); if (hJoining && joiningStatus !== undefined) updateObj[hJoining] = joiningStatus;
       
-      // 🚨 FUZZY MATCH INTERVIEW COLUMNS TO PREVENT SHEET ERRORS
+      // FUZZY MATCH INTERVIEW COLUMNS TO PREVENT SHEET ERRORS
       const hDate = getFuzzyHeader(headers, 'interviewdate');
       const hTime = getFuzzyHeader(headers, 'interviewtime') || getFuzzyHeader(headers, 'intervewtime');
       const hVenue = getFuzzyHeader(headers, 'interviewvenue');
@@ -634,6 +642,7 @@ exports.updateApplication = async (req, res) => {
       res.status(404).json({ success: false, message: "Row not found." }); 
     }
   } catch (error) { 
+    console.error(error);
     res.status(500).json({ success: false, message: error.message }); 
   }
 };
