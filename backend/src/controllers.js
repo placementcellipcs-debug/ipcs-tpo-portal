@@ -1,6 +1,7 @@
 const { 
   doc, getCache, refreshCache, hasAccess, getFuzzyHeader, 
-  sendIPCSMail, uploadToDrive
+  sendIPCSMail, uploadToDrive,
+  getTpoEmail, getBranchManagerEmail, getAllTpoEmails, getAllBranchManagerEmails 
 } = require('./config');
 
 const FOLDER_OFFER_LETTERS = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5';
@@ -10,39 +11,18 @@ const FOLDER_MOU_CERTIFICATES = '1Hu1zPs56nFXyJPSl7PVfs-oFW4QrKqiD';
 // =========================================================
 // 🚨 EMAIL HELPERS & LOGGING SYSTEM
 // =========================================================
-const getTpoEmail = (tpoName) => {
+
+// NEW HELPER: Gets the TPO email assigned to a specific branch
+const getTpoEmailByBranch = (branch) => {
   const cache = getCache();
   if (!cache || !cache.contacts) return '';
   const row = cache.contacts.find(r => {
-    const name = r.get('TPO Name') || r.get('Name') || '';
-    return name.toLowerCase().includes((tpoName || '').toLowerCase());
+    const assigned = (r.get('Assigned Branches') || '').toLowerCase();
+    const sitting = (r.get('Sitting Branch') || '').toLowerCase();
+    const searchBranch = (branch || '').toLowerCase();
+    return assigned.includes(searchBranch) || sitting.includes(searchBranch);
   });
   return row ? row.get('Mail ID') : '';
-};
-
-const getBranchManagerEmail = (branch) => {
-  const cache = getCache();
-  if (!cache || !cache.users) return '';
-  const row = cache.users.find(r => {
-    const role = (r.get('Role') || '').toLowerCase();
-    const br = (r.get('Sitting Branch') || r.get('Assigned Branches') || '').toLowerCase();
-    return role.includes('manager') && br.includes((branch || '').toLowerCase());
-  });
-  return row ? row.get('Mail ID') : '';
-};
-
-const getAllTpoEmails = () => {
-  const cache = getCache();
-  if (!cache || !cache.contacts) return [];
-  return cache.contacts.map(r => r.get('Mail ID')).filter(Boolean);
-};
-
-const getAllBranchManagerEmails = () => {
-  const cache = getCache();
-  if (!cache || !cache.users) return [];
-  return cache.users
-    .filter(r => (r.get('Role') || '').toLowerCase().includes('manager'))
-    .map(r => r.get('Mail ID')).filter(Boolean);
 };
 
 const logMailToSheet = async (receiverName, receiverMail, mailType, subject, status) => {
@@ -74,10 +54,10 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
   }
 };
 
-// ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE
-// ---------------------------------------------------------
-const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}) => {
+// =========================================================
+// 🚨 MASTER STUDENT EMAIL ENGINE (WITH ANTI-THREADING)
+// =========================================================
+const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
   const status = newStatus.toLowerCase().trim();
   
@@ -87,16 +67,17 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   );
 
   const noAttendCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'interview not attended').length + (status === 'interview not attended' ? 1 : 0);
-  const rejectCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'offer rejected').length + (status === 'offer rejected' ? 1 : 0);
+  const rejectCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'student rejected offer').length + (status === 'student rejected offer' ? 1 : 0);
 
-  const tpoEmail = getTpoEmail(studentData.tpoName) || '';
-  const bmEmail = getBranchManagerEmail(studentData.branch) || '';
-  const ccList = [tpoEmail, bmEmail, 'Gifty@ipcsglobal.com'].filter(Boolean).join(',');
+  // CC Logic: 1) The TPO who scheduled it (currentUser), 2) TPO assigned to branch, 3) Gifty
+  const branchTpoEmail = getTpoEmailByBranch(studentData.branch);
+  const ccList = [...new Set([currentUserEmail, branchTpoEmail, 'Gifty@ipcsglobal.com'])].filter(Boolean).join(',');
 
   let subject = ''; let html = ''; let mailType = '';
   const refId = Math.floor(10000 + Math.random() * 90000); 
 
-  const getTemplate = (title, message, color) => `
+  // Generic Template for Warnings and Congrats
+  const getGenericTemplate = (title, message, color) => `
     <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
       <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid ${color};">
         <h2 style="color: #ffffff; margin: 0;">${title}</h2>
@@ -114,25 +95,44 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   `;
 
   if (status === 'interview scheduled') {
-    subject = `Action Required: Interview Scheduled - ${studentData.company} [Ref: ${refId}]`;
+    subject = `Congratulations, ${studentData.name} ! Your Interview Awaits! # ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Interview Schedule';
-    html = getTemplate('INTERVIEW SCHEDULED', `
-      <p>We are pleased to inform you that your interview with <b>${studentData.company}</b> for the position of <b>${studentData.position || 'Professional'}</b> has been officially scheduled.</p>
-      
-      <div style="background: #f8fafc; padding: 15px 20px; border-radius: 8px; border-left: 4px solid #38bdf8; margin: 20px 0;">
-        <p style="margin: 0 0 8px 0;"><b>Date:</b> ${interviewDetails.date || 'To be communicated'}</p>
-        <p style="margin: 0 0 8px 0;"><b>Time:</b> ${interviewDetails.time || 'To be communicated'}</p>
-        <p style="margin: 0;"><b>Venue / Link:</b> ${interviewDetails.venue || 'To be communicated'}</p>
-      </div>
+    
+    // 🚨 EXACT HTML DESIGN AS REQUESTED FROM IMAGE
+    html = `
+      <div style="font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; color: #000;">
+        <p style="font-size: 15px; font-weight: bold;">Greetings ${studentData.name},</p>
+        <p style="font-size: 14px; line-height: 1.5;">I hope this message finds you well and in high spirits. We are thrilled to inform you that you have been <b>selected for an interview opportunity</b> with one of our esteemed partner companies! This is a fantastic step towards achieving your career goals, and we are excited to see your hard work and dedication paying off.</p>
+        
+        <p style="font-size: 15px; font-weight: bold; margin-top: 20px;">Interview Details:</p>
+        <ul style="font-size: 14px; line-height: 2; list-style-type: disc;">
+          <li><b>NewLetterID :</b> <span style="color: #8b5cf6;">${studentData.jobId || 'N/A'}</span></li>
+          <li><b>Company Name :</b> ${studentData.company}</li>
+          <li><b>Hiring For :</b> ${studentData.position || 'Professional'}</li>
+          <li><b>Interview Date :</b> ${interviewDetails.date || 'TBD'}</li>
+          <li><b>Interview Time :</b> ${interviewDetails.time || 'TBD'}</li>
+          <li><b>Interview Venue :</b> ${interviewDetails.venue || 'TBD'}</li>
+          <li><b>Contact Person :</b> HR</li>
+        </ul>
 
-      <p>Please ensure you are fully prepared and arrive on time. Contact your Placement Officer immediately if you need any assistance or have scheduling conflicts.</p>
-    `, '#38bdf8');
+        <p style="font-size: 14px; line-height: 1.5;">Please be prepared for a comprehensive evaluation of your skills and qualifications. We highly recommend researching the company thoroughly to ensure you are well-prepared.</p>
+        
+        <p style="font-size: 15px; font-weight: bold; margin-top: 20px;">Agenda:</p>
+        <p style="font-size: 14px; color: #1e3a8a; text-decoration: underline;">"The interview may consist of multiple rounds, including technical assessments, behavioral interviews, or HR rounds. You may also be required to provide specific documents or complete certain tasks, so please be prepared accordingly."</p>
+
+        <p style="font-size: 13px; line-height: 1.5; margin-top: 20px;"><b>Note:</b> <i>Please make sure to arrive on time for the interview or log in to the online meeting platform a few minutes before the scheduled time. If, for any reason, you are unable to attend, please inform us at your earliest convenience so we can make alternative arrangements (if possible).</i></p>
+        
+        <p style="font-size: 14px; line-height: 1.5;">If you have any questions or need further information about the interview, please do not hesitate to contact the placement department. We are here to assist and support you throughout this important process.</p>
+        
+        <p style="font-size: 14px; line-height: 1.5;">We wish you the very best of luck and look forward to hearing about your successful interview experience. Remember, your journey to success is our mission, and we are here to support you every step of the way.</p>
+      </div>
+    `;
   } 
   else if (status === 'interview not attended') {
     if (noAttendCount === 2) {
       subject = `WARNING: Missed Interview Notice (2nd Occurrence) [Ref: ${refId}]`;
       mailType = 'Warning Mail';
-      html = getTemplate('OFFICIAL WARNING', `
+      html = getGenericTemplate('OFFICIAL WARNING', `
         <p>This is an official warning. Our records indicate that you have failed to attend scheduled interviews on <b>two separate occasions</b>.</p>
         <p style="color: #ef4444; font-weight: bold;">Professionalism is a core value at IPCS Global. Missing scheduled interviews damages our corporate relationships.</p>
         <p>If you fail to attend a third interview, your placement assistance will be placed on hold.</p>
@@ -140,17 +140,17 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
     } else if (noAttendCount >= 3) {
       subject = `NOTICE: Placement Assistance On Hold [Ref: ${refId}]`;
       mailType = 'Hold Mail';
-      html = getTemplate('PLACEMENT ON HOLD', `
+      html = getGenericTemplate('PLACEMENT ON HOLD', `
         <p>We regret to inform you that due to missing <b>three scheduled interviews</b>, your placement assistance has been officially <b>Placed on Hold</b>.</p>
         <p>To request a reactivation of your placement services, you must urgently contact your Placement Officer and Branch Manager to explain your absences.</p>
       `, '#ef4444');
     }
   }
-  else if (status === 'offer rejected') {
+  else if (status === 'student rejected offer') {
     if (rejectCount === 2) {
       subject = `WARNING: Multiple Offers Rejected (2nd Occurrence) [Ref: ${refId}]`;
       mailType = 'Warning Mail';
-      html = getTemplate('OFFICIAL WARNING', `
+      html = getGenericTemplate('OFFICIAL WARNING', `
         <p>This is an official notice. You have now rejected <b>two job offers</b> facilitated by the IPCS Placement Cell.</p>
         <p style="color: #ef4444; font-weight: bold;">Please evaluate your requirements carefully before applying for further drives.</p>
         <p>If you reject a third offer, your placement assistance will be placed on hold.</p>
@@ -158,7 +158,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
     } else if (rejectCount >= 3) {
       subject = `NOTICE: Placement Assistance On Hold [Ref: ${refId}]`;
       mailType = 'Hold Mail';
-      html = getTemplate('PLACEMENT ON HOLD', `
+      html = getGenericTemplate('PLACEMENT ON HOLD', `
         <p>We regret to inform you that due to rejecting <b>three job offers</b>, your placement assistance has been officially <b>Placed on Hold</b>.</p>
         <p>We dedicate significant resources to secure these opportunities. Please reach out to your Placement Officer to discuss your future path.</p>
       `, '#ef4444');
@@ -167,7 +167,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   else if (status.includes('placed') || status.includes('joined')) {
     subject = `Congratulations! Placement Confirmed at ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Congratulation Mail';
-    html = getTemplate('CONGRATULATIONS!', `
+    html = getGenericTemplate('CONGRATULATIONS!', `
       <p style="font-size: 18px; color: #10b981; font-weight: bold;">Congratulations on your placement!</p>
       <p>We are incredibly proud to announce that your placement at <b>${studentData.company}</b> has been confirmed!</p>
       <p>Your hard work and dedication have paid off. We wish you the absolute best in your new career journey. Make IPCS proud!</p>
@@ -192,10 +192,7 @@ exports.login = async (req, res) => {
   const { email, password } = req.body;
   try {
     const cache = getCache();
-    
-    if (!cache || !cache.contacts || !cache.users) {
-       return res.status(503).json({ success: false, message: "System is booting up. Please try again in 5 seconds." });
-    }
+    if (!cache || !cache.contacts || !cache.users) return res.status(503).json({ success: false, message: "System is booting up." });
 
     const cleanInput = (email || '').toString().trim().toLowerCase();
     const cleanPass = (password || '').toString().trim();
@@ -242,9 +239,7 @@ exports.login = async (req, res) => {
       accessType = 'edit';
     }
 
-    if (accessType === 'superadmin' || upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD' || assignedArray.length === 0) {
-      assignedArray = ['all'];
-    }
+    if (accessType === 'superadmin' || upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD' || assignedArray.length === 0) assignedArray = ['all'];
 
     return res.json({ success: true, tpo: { name: foundUser[nameField] || foundUser['name'] || 'User', email: foundUser['mailid'] || foundUser['email'] || cleanInput, loginId: cleanInput, sittingBranch: foundUser['sittingbranch'] || 'N/A', assignedBranchesArray: assignedArray, photo: foundUser['profilephoto'] || foundUser['photo'] || '', phone: foundUser['contactnumber'] || foundUser['contact'] || foundUser['phoneno'] || 'Not Provided', role: role, assignedCourse: course, accessType: accessType } });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
@@ -284,9 +279,7 @@ exports.getDashboardStats = (req, res) => {
       const placeStat = (rowData[getHeader('placementstatus')] || '').toString().toLowerCase();
 
       if (stat === 'applied') pendingApps++;
-      if (stat.includes('placed') || stat.includes('got offer') || stat.includes('offer') || joinStat.includes('join') || placeStat.includes('placed')) {
-        placedCount++;
-      }
+      if (stat.includes('placed') || stat.includes('got offer') || stat.includes('offer') || joinStat.includes('join') || placeStat.includes('placed')) placedCount++;
     }
   });
   
@@ -303,25 +296,15 @@ exports.getDashboardStats = (req, res) => {
         let parsedDate;
         if (lastDateStr.includes('/')) {
           const parts = lastDateStr.split(/[/\s,.-]+/);
-          if (parts.length >= 3 && parts[2].length === 4) {
-            parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-          }
-        } else {
-          parsedDate = new Date(lastDateStr);
-        }
-        if (parsedDate && !isNaN(parsedDate)) {
-          if (parsedDate < todayStart) isExpired = true;
-        }
+          if (parts.length >= 3 && parts[2].length === 4) parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+        } else { parsedDate = new Date(lastDateStr); }
+        if (parsedDate && !isNaN(parsedDate)) { if (parsedDate < todayStart) isExpired = true; }
       } catch(e) {}
     }
-
-    if ((status.includes('open') || status.includes('yes')) && !isExpired) {
-      activeVacs++;
-    }
+    if ((status.includes('open') || status.includes('yes')) && !isExpired) activeVacs++;
   });
 
   let eventsList = cache.events.slice(-8).map(row => ({ title: row.get('Title') || 'Event', date: row.get('Date') || '', time: row.get('Time') || '', type: row.get('Type') || 'Placement Drive', location: row.get('Location') || '' }));
-  
   res.json({ success: true, stats: { totalStudents: studentCount, pendingApps, placed: placedCount, activeVacancies: activeVacs }, events: eventsList.reverse() });
 };
 
@@ -393,24 +376,16 @@ exports.updateStudent = async (req, res) => {
         updateObj[cStatusH] = courseStatus;
         
         let oldStatus = '';
-        if (rows[0].get) {
-           oldStatus = (rows[0].get(cStatusH) || '').toString().toLowerCase();
-        } else {
-           oldStatus = (rows[0][cStatusH] || '').toString().toLowerCase();
-        }
+        if (rows[0].get) oldStatus = (rows[0].get(cStatusH) || '').toString().toLowerCase();
+        else oldStatus = (rows[0][cStatusH] || '').toString().toLowerCase();
         
         const isNowCompleted = courseStatus.toLowerCase().includes('completed') || courseStatus.toLowerCase().includes('90%');
         const wasCompleted = oldStatus.includes('completed') || oldStatus.includes('90%');
 
         if (!wasCompleted && isNowCompleted) {
           let sName = 'Student'; let sEmail = '';
-          if (rows[0].get) {
-             sName = rows[0].get('Name') || 'Student';
-             sEmail = rows[0].get('Mail ID') || rows[0].get('Email') || '';
-          } else {
-             sName = rows[0]['Name'] || 'Student';
-             sEmail = rows[0]['Mail ID'] || rows[0]['Email'] || '';
-          }
+          if (rows[0].get) { sName = rows[0].get('Name') || 'Student'; sEmail = rows[0].get('Mail ID') || rows[0].get('Email') || ''; } 
+          else { sName = rows[0]['Name'] || 'Student'; sEmail = rows[0]['Mail ID'] || rows[0]['Email'] || ''; }
 
           const refId = Math.floor(10000 + Math.random() * 90000); 
           
@@ -444,9 +419,7 @@ exports.updateStudent = async (req, res) => {
         }
       }
 
-      rows[0].assign(updateObj); 
-      await rows[0].save(); 
-      refreshCache(); 
+      rows[0].assign(updateObj); await rows[0].save(); refreshCache(); 
       res.json({ success: true, message: "Student record updated!" });
     } else { res.status(404).json({ success: false, message: "Row not found." }); }
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
@@ -507,14 +480,14 @@ exports.getApplications = (req, res) => {
       });
     }
   });
-  
   res.json({ success: true, applications: appsList });
 };
 
 exports.updateApplication = async (req, res) => {
   const rowNumber = parseInt(req.body.rowNumber);
-  const { status, remarks, datePlaced, packageLpa, joiningStatus, interviewDate, interviewTime, interviewVenue } = req.body; // 🚨 New fields added here
-  let offerLetterLink = req.body.offerLetter || '';
+  const { status, remarks, datePlaced, packageLpa, joiningStatus, currentUserEmail, interviewDate, interviewTime, interviewVenue } = req.body;
+  const fullApp = JSON.parse(req.body.fullApp || '{}');
+  let offerLetterLink = req.body.offerLetter || fullApp.offerLetter || '';
 
   try {
     if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
@@ -555,47 +528,61 @@ exports.updateApplication = async (req, res) => {
       if(headers.includes('Offer Letter') && offerLetterLink) updateObj['Offer Letter'] = offerLetterLink;
       if(headers.includes('Joining Status') && joiningStatus !== undefined) updateObj['Joining Status'] = joiningStatus;
       
-      // Update Opening_Applied with Interview details if columns exist
-      if(headers.includes('Interview Date') && interviewDate !== undefined) updateObj['Interview Date'] = interviewDate;
-      if(headers.includes('Interview Time') && interviewTime !== undefined) updateObj['Interview Time'] = interviewTime;
-      if(headers.includes('Interview Venue') && interviewVenue !== undefined) updateObj['Interview Venue'] = interviewVenue;
+      // 🚨 Safely update Opening_Applied interview fields if they exist
+      const hDate = getFuzzyHeader(headers, 'interviewdate');
+      const hTime = getFuzzyHeader(headers, 'interviewtime') || getFuzzyHeader(headers, 'intervewtime');
+      const hVenue = getFuzzyHeader(headers, 'interviewvenue');
+      if (hDate && interviewDate !== undefined) updateObj[hDate] = interviewDate;
+      if (hTime && interviewTime !== undefined) updateObj[hTime] = interviewTime;
+      if (hVenue && interviewVenue !== undefined) updateObj[hVenue] = interviewVenue;
 
       rows[0].assign(updateObj); 
       await rows[0].save(); 
       
       const logSheet = doc.sheetsByTitle["TPO_Log"];
       if (logSheet) {
-        await logSheet.addRow({
-          'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), 
-          'Student Name': sName, 
-          'Contact': sContact, 
-          'Mail ID': sMail, 
-          'Roll Number': sRoll, 
-          'Course': sCourse, 
-          'Branch': sBranch, 
-          'Qualification': sQual, 
-          'Resume': sResume, 
-          'Job ID': sJobId, 
-          'Company Name': sCompany, 
-          'Position': sPosition, 
-          'Placement Officer': sTpo, 
-          'Status': status || '', 
-          'Remarks': remarks !== undefined ? remarks : (currentRowData[getHeader('remarks')] || ''), 
-          'DATE PLACED': sDatePlaced, 
-          'PACKAGE (LPA)': sPackage, 
-          'Offer Letter Status': sOffer, 
-          'Joining Status': sJoining,
-          'Interview Date': interviewDate || '',  // 🚨 Logged
-          'Interview Time': interviewTime || '',  // 🚨 Logged
-          'Interview Venue': interviewVenue || '' // 🚨 Logged
-        });
+        const logHeaders = logSheet.headerValues;
+        const logObj = {};
+        
+        // Helper to safely set log object using exact fuzzy headers
+        const setLogH = (key, val) => {
+           const h = getFuzzyHeader(logHeaders, key);
+           if (h) logObj[h] = val;
+        };
+
+        setLogH('timestamp', new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
+        setLogH('studentname', sName);
+        setLogH('contact', sContact);
+        setLogH('mailid', sMail);
+        setLogH('rollnumber', sRoll);
+        setLogH('course', sCourse);
+        setLogH('branch', sBranch);
+        setLogH('qualification', sQual);
+        setLogH('resume', sResume);
+        setLogH('jobid', sJobId);
+        setLogH('companyname', sCompany);
+        setLogH('position', sPosition);
+        setLogH('placementofficer', sTpo);
+        setLogH('status', status || '');
+        setLogH('remarks', remarks !== undefined ? remarks : (currentRowData[getHeader('remarks')] || ''));
+        setLogH('dateplaced', sDatePlaced);
+        setLogH('package', sPackage);
+        setLogH('offerletterstatus', sOffer);
+        setLogH('joiningstatus', sJoining);
+        setLogH('interviewdate', interviewDate || '');
+        setLogH('interviewtime', interviewTime || '');
+        setLogH('intervewtime', interviewTime || ''); 
+        setLogH('interviewvenue', interviewVenue || '');
+
+        await logSheet.addRow(logObj);
       }
       
+      // 🚨 Trigger Student Mails
       if (oldStatus !== (status || '').toLowerCase()) {
          checkAndSendStudentMails({
            name: sName, roll: sRoll, email: sMail, company: sCompany, 
-           position: sPosition, tpoName: sTpo, branch: sBranch
-         }, status, { date: interviewDate, time: interviewTime, venue: interviewVenue }); // 🚨 Passed to mail function
+           position: sPosition, tpoName: sTpo, branch: sBranch, jobId: sJobId
+         }, status, { date: interviewDate, time: interviewTime, venue: interviewVenue }, currentUserEmail); 
       }
 
       refreshCache(); 
@@ -1035,74 +1022,6 @@ exports.submitMou = async (req, res) => {
     };
     await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Completion' }); 
     refreshCache(); res.json({ success: true, pdfLink });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
-};
-
-exports.updatePassword = async (req, res) => {
-  const { email, loginId, newPassword } = req.body;
-  try {
-    const cache = getCache();
-    let targetRow = null;
-    const identifiers = [(email || '').toString().trim().toLowerCase(), (loginId || '').toString().trim().toLowerCase()].filter(Boolean);
-
-    if (cache.contacts) {
-        targetRow = cache.contacts.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
-    if (!targetRow && cache.users) {
-        targetRow = cache.users.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
-
-    if (targetRow) {
-      const headers = targetRow._worksheet.headerValues;
-      const pHead = getFuzzyHeader(headers, 'password');
-      targetRow.assign({ [pHead]: newPassword });
-      await targetRow.save();
-      refreshCache();
-      res.json({ success: true, message: "Password updated successfully" });
-    } else {
-      res.status(404).json({ success: false, message: "User account not found in database." });
-    }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.updatePhoto = async (req, res) => {
-  const { email, loginId } = req.body;
-  try {
-    if (!req.file) return res.status(400).json({ success: false, message: "No file provided." });
-    const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
-    const cache = getCache();
-    let targetRow = null;
-    const identifiers = [(email || '').toString().trim().toLowerCase(), (loginId || '').toString().trim().toLowerCase()].filter(Boolean);
-
-    if (cache.contacts) {
-        targetRow = cache.contacts.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
-    if (!targetRow && cache.users) {
-        targetRow = cache.users.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
-
-    if (targetRow) {
-      const headers = targetRow._worksheet.headerValues;
-      const photoHeader = headers.find(h => h.toLowerCase().includes('photo') || h.toLowerCase().includes('profile')) || 'Profile Photo';
-      targetRow.assign({ [photoHeader]: photoLink });
-      await targetRow.save(); 
-      refreshCache(); 
-      res.json({ success: true, photoUrl: photoLink });
-    } else { 
-      res.status(404).json({ success: false, message: "User not found." }); 
-    }
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
