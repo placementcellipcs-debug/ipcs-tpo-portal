@@ -370,6 +370,7 @@ exports.updateStudent = async (req, res) => {
   try {
     const stuSheet = doc.sheetsByTitle["Data"];
     const rows = await stuSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    
     if (rows.length > 0) {
       const headers = stuSheet.headerValues;
       const updateObj = {};
@@ -384,7 +385,7 @@ exports.updateStudent = async (req, res) => {
         
         // 🚨 Trigger Welcome Mail if changed to Completed OR 90%
         const oldStatus = (rows[0].get(cStatusH) || '').toString().toLowerCase();
-        const isNowCompleted = courseStatus.toLowerCase().includes('completed') || courseStatus.includes('90%');
+        const isNowCompleted = courseStatus.toLowerCase().includes('completed') || courseStatus.toLowerCase().includes('90%');
         const wasCompleted = oldStatus.includes('completed') || oldStatus.includes('90%');
 
         if (!wasCompleted && isNowCompleted) {
@@ -420,13 +421,19 @@ exports.updateStudent = async (req, res) => {
             }, { name: sName, email: sEmail, type: 'Course Completion Welcome' });
           }
         }
-        }
       }
 
-      rows[0].assign(updateObj); await rows[0].save(); refreshCache(); 
+      rows[0].assign(updateObj); 
+      await rows[0].save(); 
+      refreshCache(); 
       res.json({ success: true, message: "Student record updated!" });
-    } else { res.status(404).json({ success: false, message: "Row not found." }); }
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+      
+    } else { 
+      res.status(404).json({ success: false, message: "Row not found." }); 
+    }
+  } catch (error) { 
+    res.status(500).json({ success: false, message: error.message }); 
+  }
 };
 
 // --- APPLICATIONS ---
