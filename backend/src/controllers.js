@@ -1214,11 +1214,14 @@ exports.updateTalExamQuestion = async (req, res) => {
 // ==========================================
 exports.getBranches = (req, res) => {
   try {
-    const branches = getCache().branches.map(row => ({
-      no: row.get('No.') || '',
-      region: row.get('Region / State') || '',
-      branch: row.get('Branch') || ''
-    }));
+    const branches = getCache().branches.map(row => {
+      const rd = row._rawData; // 🚨 Using raw array to bypass header mismatch issues
+      return {
+        no: rd[0] || '',
+        region: rd[1] || '',
+        branch: rd[2] || ''
+      };
+    });
     res.json({ success: true, branches });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
@@ -1228,9 +1231,34 @@ exports.addBranch = async (req, res) => {
     const { no, region, branch } = req.body;
     const sheet = doc.sheetsByTitle["Branches"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    await sheet.addRow({ 'No.': no, 'Region / State': region, 'Branch': branch });
+    
+    // 🚨 Array insert guarantees it goes into Columns A, B, and C
+    await sheet.addRow([no, region, branch]);
     refreshCache(); 
     res.json({ success: true, message: "Branch saved" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateBranch = async (req, res) => {
+  try {
+    const { oldBranch, no, region, branch } = req.body;
+    const sheet = doc.sheetsByTitle["Branches"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const rows = await sheet.getRows();
+    // 🚨 Search rawData[2] (Column C) for the branch name
+    const rowToUpdate = rows.find(r => r._rawData[2] === oldBranch);
+    
+    if (rowToUpdate) {
+      rowToUpdate._rawData[0] = no;
+      rowToUpdate._rawData[1] = region;
+      rowToUpdate._rawData[2] = branch;
+      await rowToUpdate.save();
+      refreshCache();
+      res.json({ success: true, message: "Branch updated" });
+    } else {
+      res.status(404).json({ success: false, message: "Branch not found" });
+    }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -1239,8 +1267,10 @@ exports.deleteBranch = async (req, res) => {
     const { branch } = req.body;
     const sheet = doc.sheetsByTitle["Branches"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
     const rows = await sheet.getRows();
-    const rowToDelete = rows.find(r => r.get('Branch') === branch);
+    const rowToDelete = rows.find(r => r._rawData[2] === branch);
+    
     if (rowToDelete) {
       await rowToDelete.delete();
       refreshCache();

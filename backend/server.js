@@ -14,23 +14,14 @@ app.use(cors());
 app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
-// ==========================================
-// 🚨 FIX 1: LOGIN IS NOW UNBLOCKED
-// Placed ABOVE the cache bouncer so you log in instantly!
-// ==========================================
 app.post('/api/auth/login', controllers.login);
 
-// ==========================================
-// THE BOUNCER MIDDLEWARE
-// ==========================================
 app.use('/api', (req, res, next) => {
   if (!getCache()) return res.status(503).json({ success: false, message: "Server is syncing data..." });
   next();
 });
 
-// ==========================================
-// ALL OTHER ROUTES
-// ==========================================
+// CORE ROUTES
 app.post('/api/tpo/dashboard-stats', controllers.getDashboardStats);
 app.post('/api/tpo/students', controllers.getStudents);
 app.post('/api/tpo/students/update-student', controllers.updateStudent);
@@ -50,37 +41,45 @@ app.post('/api/tpo/clients/update', upload.single('logoFile'), controllers.updat
 app.post('/api/tpo/clients/request-mou', controllers.requestMou);
 app.post('/api/tpo/clients/submit-mou', upload.any(), controllers.submitMou);
 app.post('/api/tpo/profile/update-photo', upload.single('photo'), controllers.updatePhoto);
+app.post('/api/tpo/profile/update-password', controllers.updatePassword);
+app.get('/api/tpo/drives', controllers.getDrives);
+app.post('/api/tpo/drives/update', controllers.updateDriveStatus);
+
+// ADMIN ROUTES
 app.get('/api/admin/users', controllers.getAdminUsers);
 app.post('/api/admin/users/add', controllers.addAdminUser);
 app.post('/api/admin/users/update', controllers.updateAdminUser);
 app.post('/api/admin/users/delete', controllers.deleteAdminUser);
-app.get('/api/lms/materials', controllers.getMaterials);
-app.post('/api/lms/materials/add', controllers.addMaterial);
-app.get('/api/exams/questions', controllers.getQuestions);
-app.post('/api/exams/questions/add', controllers.addQuestion);
-app.post('/api/exams/questions/delete', controllers.deleteQuestion); 
-app.get('/api/exams/results', controllers.getResults);
 app.get('/api/admin/courses', controllers.getCourses);
 app.post('/api/admin/courses/add', controllers.addCourse);
 app.post('/api/admin/courses/delete', controllers.deleteCourse); 
+
+// 🚨 BRANCH MANAGEMENT ROUTES
+app.get('/api/admin/branches', controllers.getBranches);
+app.post('/api/admin/branches/add', controllers.addBranch);
+app.post('/api/admin/branches/update', controllers.updateBranch); // <-- NEW!
+app.post('/api/admin/branches/delete', controllers.deleteBranch);
+
+// STUDY MATERIAL & EXAMS
+app.get('/api/lms/materials', controllers.getMaterials);
+app.post('/api/lms/materials/add', controllers.addMaterial);
+app.post('/api/lms/materials/update', controllers.updateMaterial);
+app.post('/api/lms/materials/delete', controllers.deleteMaterial);
+app.get('/api/exams/questions', controllers.getQuestions);
+app.post('/api/exams/questions/add', controllers.addQuestion);
+app.post('/api/exams/questions/update', controllers.updateQuestion);
+app.post('/api/exams/questions/delete', controllers.deleteQuestion); 
+app.get('/api/exams/results', controllers.getResults);
 app.get('/api/aptitude/questions', controllers.getAptQuestions);
 app.get('/api/aptitude/results', controllers.getAptResults);
 app.post('/api/aptitude/questions/add', controllers.addAptQuestion); 
+app.post('/api/aptitude/questions/update', controllers.updateAptQuestion);
 app.post('/api/aptitude/questions/delete', controllers.deleteAptQuestion); 
 app.get('/api/talentino-exams/questions', controllers.getTalExamQuestions);
 app.get('/api/talentino-exams/results', controllers.getTalExamResults);
 app.post('/api/talentino-exams/questions/add', controllers.addTalExamQuestion); 
+app.post('/api/talentino-exams/questions/update', controllers.updateTalExamQuestion);
 app.post('/api/talentino-exams/questions/delete', controllers.deleteTalExamQuestion); 
-app.post('/api/tpo/profile/update-password', controllers.updatePassword);
-app.get('/api/tpo/drives', controllers.getDrives);
-app.post('/api/tpo/drives/update', controllers.updateDriveStatus);
-app.post('/api/lms/materials/update', controllers.updateMaterial);
-app.post('/api/lms/materials/delete', controllers.deleteMaterial);
-app.post('/api/exams/questions/update', controllers.updateQuestion);
-app.post('/api/aptitude/questions/update', controllers.updateAptQuestion);
-app.post('/api/talentino-exams/questions/update', controllers.updateTalExamQuestion);
-app.post('/api/aptitude/questions/update', controllers.updateAptQuestion);
-app.post('/api/talentino-exams/questions/update', controllers.updateTalExamQuestion);
 
 cron.schedule('0 8 * * *', controllers.runDailyCron);
 const PORT = process.env.PORT || 5000;

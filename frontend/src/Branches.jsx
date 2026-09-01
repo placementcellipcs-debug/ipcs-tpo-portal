@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
-  CircleNotch, MapPin, Plus, Trash, X, WarningCircle
+  CircleNotch, MapPin, Plus, Trash, PencilSimple, X, WarningCircle, FloppyDisk
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -17,8 +17,10 @@ export default function Branches() {
   const [loading, setLoading] = useState(true);
   
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [formData, setFormData] = useState({ no: '', region: '', branch: '' });
+  
+  const [formData, setFormData] = useState({ oldBranch: '', no: '', region: '', branch: '' });
 
   const fetchBranches = async () => {
     try {
@@ -42,26 +44,41 @@ export default function Branches() {
     }
   }, [isSuperAdmin]);
 
-  const handleAdd = async (e) => {
+  const openAddModal = () => {
+    setIsEditMode(false);
+    // 🚨 Auto-generates the next index number based on the list length
+    setFormData({ oldBranch: '', no: (branches.length + 1).toString(), region: '', branch: '' });
+    setIsModalOpen(true);
+  };
+
+  const openEditModal = (b) => {
+    setIsEditMode(true);
+    setFormData({ oldBranch: b.branch, no: b.no, region: b.region, branch: b.branch });
+    setIsModalOpen(true);
+  };
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.branch || !formData.region) return alert("Region and Branch are required");
     setIsSubmitting(true);
+
+    const endpoint = isEditMode ? `${API_BASE}/api/admin/branches/update` : `${API_BASE}/api/admin/branches/add`;
+
     try {
-      const res = await axios.post(`${API_BASE}/api/admin/branches/add`, formData);
+      const res = await axios.post(endpoint, formData);
       if (res.data.success) {
         setIsModalOpen(false);
-        setFormData({ no: '', region: '', branch: '' });
         fetchBranches();
       }
     } catch (err) {
-      alert("Failed to add branch");
+      alert(`Failed to ${isEditMode ? 'update' : 'add'} branch`);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (branchName) => {
-    if (!window.confirm(`Are you sure you want to delete ${branchName}?`)) return;
+    if (!window.confirm(`Are you sure you want to delete ${branchName}? This may affect students assigned to it.`)) return;
     try {
       const res = await axios.post(`${API_BASE}/api/admin/branches/delete`, { branch: branchName });
       if (res.data.success) {
@@ -85,7 +102,7 @@ export default function Branches() {
             </h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Control the official master list of active branch locations.</p>
           </div>
-          <button className="btn-action" style={{ width: 'auto', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => setIsModalOpen(true)}>
+          <button className="btn-action" style={{ width: 'auto', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={openAddModal}>
             <Plus weight="bold" /> Add New Branch
           </button>
         </div>
@@ -96,8 +113,8 @@ export default function Branches() {
               <tr>
                 <th style={{ width: '10%' }}>No.</th>
                 <th style={{ width: '40%' }}>Region / State</th>
-                <th style={{ width: '40%' }}>Branch Location</th>
-                <th style={{ width: '10%', textAlign: 'center' }}>Action</th>
+                <th style={{ width: '35%' }}>Branch Location</th>
+                <th style={{ width: '15%', textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -120,13 +137,14 @@ export default function Branches() {
                     <td><strong style={{ color: 'var(--text-main)' }}>{b.region}</strong></td>
                     <td><strong style={{ color: '#38bdf8' }}>{b.branch}</strong></td>
                     <td style={{ textAlign: 'center' }}>
-                      <button 
-                        onClick={() => handleDelete(b.branch)} 
-                        style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} 
-                        title="Delete Branch"
-                      >
-                        <Trash size={18} weight="bold" />
-                      </button>
+                      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                        <button onClick={() => openEditModal(b)} style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Edit">
+                          <PencilSimple size={18} weight="bold" />
+                        </button>
+                        <button onClick={() => handleDelete(b.branch)} style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Delete Branch">
+                          <Trash size={18} weight="bold" />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -140,19 +158,19 @@ export default function Branches() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><MapPin color="var(--accent-primary)" /> Add Official Branch</h2>
+              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><MapPin color="var(--accent-primary)" /> {isEditMode ? 'Edit Branch' : 'Add Official Branch'}</h2>
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsModalOpen(false)} />
             </div>
 
             <div style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', padding: '15px', borderRadius: '8px', border: '1px solid rgba(245, 158, 11, 0.3)', marginBottom: '20px', fontSize: '0.8rem', display: 'flex', gap: '10px', alignItems: 'flex-start' }}>
               <WarningCircle size={20} weight="fill" style={{ flexShrink: 0 }} />
-              <div>Adding a branch here will officially register it in the Google Sheets database across all dropdown menus in the portal.</div>
+              <div>Changes here will immediately update the Google Sheets database and impact dropdown menus portal-wide.</div>
             </div>
 
-            <form onSubmit={handleAdd}>
+            <form onSubmit={handleSubmit}>
               <div className="form-group" style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Index Number (Optional)</label>
-                <input type="text" className="sleek-input" style={{ width: '100%' }} value={formData.no} onChange={e => setFormData({...formData, no: e.target.value})} placeholder="e.g. 35" />
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Index Number (Auto-Generated)</label>
+                <input type="text" className="sleek-input" style={{ width: '100%' }} value={formData.no} onChange={e => setFormData({...formData, no: e.target.value})} />
               </div>
 
               <div className="form-group" style={{ marginBottom: '15px' }}>
@@ -168,7 +186,7 @@ export default function Branches() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '1.5rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn-action" style={{ width: 'auto' }} disabled={isSubmitting}>
-                  {isSubmitting ? <CircleNotch size={20} className="ph-spin" /> : 'Register Branch'}
+                  {isSubmitting ? <CircleNotch size={20} className="ph-spin" /> : (isEditMode ? <><FloppyDisk size={18} weight="bold"/> Save Updates</> : 'Register Branch')}
                 </button>
               </div>
             </form>
