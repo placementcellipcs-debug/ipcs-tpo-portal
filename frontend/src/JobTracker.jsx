@@ -65,12 +65,13 @@ export default function JobTracker() {
     setSavingStatus(prev => ({ ...prev, [rowNum]: 'saving' }));
 
     try {
+      // 🚨 Added interview details and currentUserEmail to payload
       const payload = {
         rowNumber: rowNum, 
         status: newStatus, 
         remarks: newRemarks,
         fullApp: app,
-        currentUserEmail: tpoData.email || '', // 🚨 Added so backend knows who to CC
+        currentUserEmail: tpoData?.email || '',
         interviewDate: interviewModal.appRowNumber === rowNum ? interviewModal.date : '',
         interviewTime: interviewModal.appRowNumber === rowNum ? interviewModal.time : '',
         interviewVenue: interviewModal.appRowNumber === rowNum ? interviewModal.venue : ''
@@ -384,13 +385,16 @@ export default function JobTracker() {
               </button>
               <button 
                 className="btn-action" 
-                style={{ background: '#38bdf8', color: '#0f172a' }} 
+                style={{ background: '#38bdf8', color: '#0f172a', width: 'auto', padding: '0.8rem 1.5rem' }} 
                 onClick={() => {
                   if (!interviewModal.date || !interviewModal.time || !interviewModal.venue) {
                     return alert("Please fill in all interview details to proceed.");
                   }
-                  // Trigger the actual save process
-                  handleSave(interviewModal.appRowNumber);
+                  // 🚨 Find the correct app and trigger saveApplication
+                  const appToSave = applications.find(a => a.rowNumber === interviewModal.appRowNumber);
+                  if (appToSave) {
+                    saveApplication(appToSave);
+                  }
                 }}
               >
                 Confirm & Send Mail

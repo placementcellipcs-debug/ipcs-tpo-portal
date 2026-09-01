@@ -113,7 +113,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   `;
 
   if (status === 'interview scheduled') {
-    subject = `Congratulations, ${studentData.name} ! Your Interview Awaits! # ${studentData.company} [Ref: ${refId}]`;
+    subject = `Congratulations, Student ! Your Interview Awaits! # ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Interview Schedule';
     
     // 🚨 EXACT HTML DESIGN FROM THE SCREENSHOT
@@ -123,14 +123,14 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
         <p style="font-size: 14px; line-height: 1.5;">I hope this message finds you well and in high spirits. We are thrilled to inform you that you have been <b>selected for an interview opportunity</b> with one of our esteemed partner companies! This is a fantastic step towards achieving your career goals, and we are excited to see your hard work and dedication paying off.</p>
         
         <p style="font-size: 15px; font-weight: bold; margin-top: 20px;">Interview Details:</p>
-        <ul style="font-size: 14px; line-height: 2; list-style-type: disc;">
-          <li><b>NewLetterID :</b> <span style="color: #8b5cf6;">${studentData.jobId || 'N/A'}</span></li>
-          <li><b>Company Name :</b> ${studentData.company}</li>
-          <li><b>Hiring For :</b> ${studentData.position || 'Professional'}</li>
-          <li><b>Interview Date :</b> ${interviewDetails.date || 'TBD'}</li>
-          <li><b>Interview Time :</b> ${interviewDetails.time || 'TBD'}</li>
-          <li><b>Interview Venue :</b> ${interviewDetails.venue || 'TBD'}</li>
-          <li><b>Contact Person :</b> HR</li>
+        <ul style="font-size: 14px; line-height: 2; list-style-type: none; padding-left: 0;">
+          <li><span style="font-size: 18px; line-height: 1;">•</span> <b>NewLetterID :</b> <span style="color: #8b5cf6;">${studentData.jobId || 'N/A'}</span></li>
+          <li><span style="font-size: 18px; line-height: 1;">•</span> <b>Company Name :</b> ${studentData.company}</li>
+          <li><span style="font-size: 18px; line-height: 1;">•</span> <b>Hiring For :</b> ${studentData.position || 'Professional'}</li>
+          <li><span style="font-size: 18px; line-height: 1;">•</span> <b>Interview Date :</b> ${interviewDetails.date || 'TBD'}</li>
+          <li><span style="font-size: 18px; line-height: 1;">•</span> <b>Interview Time :</b> ${interviewDetails.time || 'TBD'}</li>
+          <li><span style="font-size: 18px; line-height: 1;">•</span> <b>Interview Venue :</b> ${interviewDetails.venue || 'TBD'}</li>
+          <li><span style="font-size: 18px; line-height: 1;">•</span> <b>Contact Person :</b> HR</li>
         </ul>
 
         <p style="font-size: 14px; line-height: 1.5;">Please be prepared for a comprehensive evaluation of your skills and qualifications. We highly recommend researching the company thoroughly to ensure you are well-prepared.</p>
