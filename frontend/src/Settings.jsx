@@ -34,7 +34,8 @@ export default function Settings() {
 
     try {
       const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/profile/update-password', {
-        email: tpoData.email,
+        email: tpoData.email || '',
+        loginId: tpoData.loginId || '',
         newPassword: passwords.new
       });
 
@@ -55,8 +56,11 @@ export default function Settings() {
 
     setIsUploading(true);
     setMessage({ text: '', type: '' });
+    
+    // 🚨 Passing both email and loginId ensures a 100% match
     const formData = new FormData();
-    formData.append('email', tpoData.email);
+    formData.append('email', tpoData.email || '');
+    formData.append('loginId', tpoData.loginId || '');
     formData.append('photo', file);
 
     try {
@@ -72,7 +76,6 @@ export default function Settings() {
         setTimeout(() => window.location.reload(), 1500);
       }
     } catch (err) {
-      // 🚨 Shows exact server error message
       const errMsg = err.response?.data?.message || err.message || "Failed to upload photo to Google Drive.";
       setMessage({ text: errMsg, type: 'error' });
     } finally {

@@ -1027,34 +1027,39 @@ exports.deleteTalExamQuestion = async (req, res) => {
 };
 
 // ==========================================
-// 🚨 PROFILE / SETTINGS API
+// 🚨 PROFILE / SETTINGS API (BULLETPROOF)
 // ==========================================
 exports.updatePassword = async (req, res) => {
-  const { email, newPassword } = req.body;
+  const { email, loginId, newPassword } = req.body;
   try {
+    const cache = getCache();
     let targetRow = null;
-    let targetSheet = null;
+    
+    // Create an array of potential identifiers (email or username)
+    const identifiers = [
+        (email || '').toString().trim().toLowerCase(),
+        (loginId || '').toString().trim().toLowerCase()
+    ].filter(Boolean);
 
-    // Search in Contact Sheet first
-    const cSheet = doc.sheetsByTitle["Contact"];
-    if (cSheet) {
-      const rows = await cSheet.getRows();
-      targetRow = rows.find(r => (r.get('Mail ID') || '').toString().trim().toLowerCase() === email.toLowerCase().trim());
-      if (targetRow) targetSheet = cSheet;
+    // Search in Contact Sheet cache first across ALL columns
+    if (cache.contacts) {
+        targetRow = cache.contacts.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
     }
 
-    // Search in User Sheet if not found
-    if (!targetRow) {
-      const uSheet = doc.sheetsByTitle["User"];
-      if (uSheet) {
-        const rows = await uSheet.getRows();
-        targetRow = rows.find(r => (r.get('Mail ID') || '').toString().trim().toLowerCase() === email.toLowerCase().trim());
-        if (targetRow) targetSheet = uSheet;
-      }
+    // Search in User Sheet cache if not found
+    if (!targetRow && cache.users) {
+        targetRow = cache.users.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
     }
 
-    if (targetRow && targetSheet) {
-      const pHead = getFuzzyHeader(targetSheet.headerValues, 'password');
+    if (targetRow) {
+      const headers = targetRow._worksheet.headerValues;
+      const pHead = getFuzzyHeader(headers, 'password');
       targetRow.assign({ [pHead]: newPassword });
       await targetRow.save();
       refreshCache();
@@ -1063,6 +1068,52 @@ exports.updatePassword = async (req, res) => {
       res.status(404).json({ success: false, message: "User account not found in database." });
     }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updatePhoto = async (req, res) => {
+  const { email, loginId } = req.body;
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: "No file provided." });
+    const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
+    
+    const cache = getCache();
+    let targetRow = null;
+
+    const identifiers = [
+        (email || '').toString().trim().toLowerCase(),
+        (loginId || '').toString().trim().toLowerCase()
+    ].filter(Boolean);
+
+    // Search Contact sheet cache
+    if (cache.contacts) {
+        targetRow = cache.contacts.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
+    }
+
+    // Search User sheet cache
+    if (!targetRow && cache.users) {
+        targetRow = cache.users.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
+    }
+
+    if (targetRow) {
+      const headers = targetRow._worksheet.headerValues;
+      const photoHeader = headers.find(h => h.toLowerCase().includes('photo') || h.toLowerCase().includes('profile')) || 'Profile Photo';
+      
+      targetRow.assign({ [photoHeader]: photoLink });
+      await targetRow.save(); 
+      refreshCache(); 
+      res.json({ success: true, photoUrl: photoLink });
+    } else { 
+      res.status(404).json({ success: false, message: "User not found. Please log out and log back in." }); 
+    }
+  } catch (error) { 
+    res.status(500).json({ success: false, message: error.message }); 
+  }
 };
 
 // ==========================================
