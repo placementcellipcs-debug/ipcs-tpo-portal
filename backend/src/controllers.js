@@ -87,7 +87,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE (WITH CC LOGIC & LOGO)
+// 🚨 MASTER STUDENT EMAIL ENGINE (WITH CC LOGIC, 2 LOGOS & WATERMARK)
 // ---------------------------------------------------------
 const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
@@ -101,33 +101,47 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   const noAttendCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'interview not attended').length + (status === 'interview not attended' ? 1 : 0);
   const rejectCount = logs.filter(r => (r.get('Status') || '').toLowerCase() === 'student rejected offer').length + (status === 'student rejected offer' ? 1 : 0);
 
-  // 🚨 NEW CC LOGIC: 
-  // 1. currentUserEmail (The TPO who scheduled it)
-  // 2. branchTpoEmail (The TPO assigned to the student's branch)
-  // 3. Gifty (for admin oversight)
+  // 🚨 CC Logic: 1) Who scheduled it, 2) TPO assigned to student, 3) TPO assigned to branch, 4) Gifty
   const branchTpoEmail = getTpoEmailByBranch(studentData.branch);
-  const ccList = [...new Set([currentUserEmail, branchTpoEmail, 'Gifty@ipcsglobal.com'])].filter(Boolean).join(',');
+  const assignedTpoEmail = getTpoEmail(studentData.tpoName);
+  const ccList = [...new Set([currentUserEmail, assignedTpoEmail, branchTpoEmail, 'Gifty@ipcsglobal.com'])].filter(Boolean).join(',');
 
   let subject = ''; let html = ''; let mailType = '';
   const refId = Math.floor(10000 + Math.random() * 90000); 
 
-  // URL for the IPCS Logo (You can change this link if you have a different version of the logo)
-  const logoUrl = "https://drive.google.com/file/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN/view?usp=drive_link";
+  // 🚨 DIRECT GOOGLE DRIVE IMAGE LINKS
+  const logo1 = "https://drive.google.com/uc?export=view&id=1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
+  const logo2 = "https://drive.google.com/uc?export=view&id=1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
+  const watermark = "https://drive.google.com/uc?export=view&id=1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
 
   const getGenericTemplate = (title, message, color) => `
-    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
-      <div style="background-color: #0f1523; padding: 35px 20px; text-align: center; border-bottom: 5px solid ${color};">
-        <img src="${logoUrl}" alt="IPCS Global" style="max-height: 50px; margin-bottom: 15px;" />
-        <h2 style="color: #ffffff; margin: 0; font-size: 22px; text-transform: uppercase;">${title}</h2>
+    <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
+      
+      <!-- HEADER WITH 2 LOGOS -->
+      <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid ${color};">
+        <div style="margin-bottom: 15px;">
+          <img src="${logo1}" alt="IPCS Logo" style="max-height: 40px; margin: 0 10px; display: inline-block; vertical-align: middle;" />
+          <img src="${logo2}" alt="Partner Logo" style="max-height: 40px; margin: 0 10px; display: inline-block; vertical-align: middle;" />
+        </div>
+        <h2 style="color: #ffffff; margin: 0; font-size: 22px; text-transform: uppercase; letter-spacing: 1px;">${title}</h2>
       </div>
-      <div style="padding: 30px; background-color: #ffffff;">
-        <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
-        <div style="font-size: 15px; line-height: 1.6; color: #475569;">${message}</div>
-        <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 14px; color: #0f1523; font-weight: bold;">
-          <p style="margin: 0 0 5px 0;">Regards,</p>
-          <p style="margin: 0 0 2px 0; color: #38bdf8;">IPCS Placement Cell</p>
+      
+      <!-- WATERMARK BACKGROUND CONTAINER -->
+      <div style="background-image: url('${watermark}'); background-repeat: no-repeat; background-position: center center; background-size: cover; background-color: #ffffff;">
+        <!-- TRANSLUCENT OVERLAY FOR READABILITY -->
+        <div style="padding: 40px 35px; background-color: rgba(255, 255, 255, 0.92);">
+          
+          <p style="font-size: 16px; margin-top: 0; color: #0f1523;">Dear <b>${studentData.name}</b>,</p>
+          <div style="font-size: 15px; line-height: 1.6; color: #334155;">${message}</div>
+          
+          <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523; font-weight: bold;">
+            <p style="margin: 0 0 5px 0;">Regards,</p>
+            <p style="margin: 0 0 2px 0; color: #38bdf8;">IPCS Placement Cell</p>
+          </div>
+
         </div>
       </div>
+
     </div>
   `;
 
@@ -135,77 +149,85 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
     subject = `Congratulations, ${studentData.name} ! Your Interview Awaits! # ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Interview Schedule';
     
-    // 🚨 EXACT HTML DESIGN WITH ADDED LOGO
     html = `
-      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
+      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
         
-        <!-- Header Section -->
-        <div style="background-color: #0f1523; padding: 35px 20px; text-align: center; border-bottom: 5px solid #38bdf8;">
-          <img src="${logoUrl}" alt="IPCS Global" style="max-height: 50px; margin-bottom: 15px;" />
+        <!-- HEADER WITH 2 LOGOS -->
+        <div style="background-color: #0f1523; padding: 30px 20px; text-align: center; border-bottom: 5px solid #38bdf8;">
+          <div style="margin-bottom: 15px;">
+            <img src="${logo1}" alt="IPCS Logo" style="max-height: 40px; margin: 0 10px; display: inline-block; vertical-align: middle;" />
+            <img src="${logo2}" alt="Partner Logo" style="max-height: 40px; margin: 0 10px; display: inline-block; vertical-align: middle;" />
+          </div>
           <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 1px; text-transform: uppercase;">Interview Invitation</h1>
           <p style="color: #94a3b8; margin: 10px 0 0 0; font-size: 14px;">IPCS Global Placement Cell</p>
         </div>
 
-        <!-- Main Content -->
-        <div style="padding: 40px 35px;">
-          <h2 style="margin: 0 0 20px 0; color: #1e293b; font-size: 22px;">Congratulations, ${studentData.name}!</h2>
-          <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 30px 0;">
-            We are thrilled to inform you that you have been <strong style="color: #0f1523;">selected for an interview</strong> with one of our esteemed partner companies. This is a fantastic step towards achieving your career goals, and we are excited to see your hard work and dedication paying off.
-          </p>
-
-          <!-- Highlighted Details Card -->
-          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 5px solid #38bdf8; border-radius: 8px; padding: 25px; margin-bottom: 30px;">
-            <h3 style="margin: 0 0 15px 0; color: #0f1523; font-size: 16px; text-transform: uppercase; letter-spacing: 0.5px;">Event Details</h3>
-            <table style="width: 100%; border-collapse: collapse;">
-              <tbody>
-                <tr>
-                  <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; width: 35%; border-bottom: 1px solid #e2e8f0;">Company:</td>
-                  <td style="padding: 10px 0; color: #0f1523; font-size: 16px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${studentData.company}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Position:</td>
-                  <td style="padding: 10px 0; color: #0f1523; font-size: 15px; border-bottom: 1px solid #e2e8f0;">${studentData.position || 'Professional'}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Date:</td>
-                  <td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${interviewDetails.date || 'TBD'}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Time:</td>
-                  <td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${interviewDetails.time || 'TBD'}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Venue / Link:</td>
-                  <td style="padding: 10px 0; color: #38bdf8; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${interviewDetails.venue || 'TBD'}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: 600;">Newsletter ID:</td>
-                  <td style="padding: 10px 0; color: #64748b; font-size: 13px;">${studentData.jobId || 'N/A'}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-
-          <h3 style="margin: 0 0 10px 0; color: #1e293b; font-size: 16px;">Agenda & Expectations</h3>
-          <p style="font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 25px 0; padding: 18px; background-color: rgba(56, 189, 248, 0.05); border-radius: 8px; font-style: italic; border: 1px solid rgba(56, 189, 248, 0.2);">
-            "The interview may consist of multiple rounds, including technical assessments, behavioral interviews, or HR rounds. You may also be required to provide specific documents or complete certain tasks, so please be prepared accordingly."
-          </p>
-
-          <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; border-radius: 4px; margin-bottom: 30px;">
-            <p style="font-size: 13px; line-height: 1.5; color: #991b1b; margin: 0;">
-              <strong>Important Note:</strong> Please make sure to arrive on time for the interview or log in to the online meeting platform a few minutes before the scheduled time. If, for any reason, you are unable to attend, please inform us at your earliest convenience so we can make alternative arrangements.
+        <!-- WATERMARK BACKGROUND CONTAINER -->
+        <div style="background-image: url('${watermark}'); background-repeat: no-repeat; background-position: center center; background-size: cover; background-color: #ffffff;">
+          
+          <!-- TRANSLUCENT OVERLAY FOR READABILITY -->
+          <div style="padding: 40px 35px; background-color: rgba(255, 255, 255, 0.92);">
+            
+            <h2 style="margin: 0 0 20px 0; color: #1e293b; font-size: 22px;">Congratulations, ${studentData.name}!</h2>
+            <p style="font-size: 15px; line-height: 1.6; color: #334155; margin: 0 0 30px 0;">
+              We are thrilled to inform you that you have been <strong style="color: #0f1523;">selected for an interview</strong> with one of our esteemed partner companies. This is a fantastic step towards achieving your career goals, and we are excited to see your hard work and dedication paying off.
             </p>
-          </div>
 
-          <!-- Footer divider -->
-          <div style="border-top: 1px solid #e2e8f0; padding-top: 25px;">
-            <p style="font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 15px 0;">
-              If you have any questions or need further information about the interview, please do not hesitate to contact the placement department. We wish you the very best of luck!
+            <!-- Highlighted Details Card -->
+            <div style="background-color: rgba(248, 250, 252, 0.95); border: 1px solid #cbd5e1; border-left: 5px solid #38bdf8; border-radius: 8px; padding: 25px; margin-bottom: 30px;">
+              <h3 style="margin: 0 0 15px 0; color: #0f1523; font-size: 16px; text-transform: uppercase; letter-spacing: 0.5px;">Event Details</h3>
+              <table style="width: 100%; border-collapse: collapse;">
+                <tbody>
+                  <tr>
+                    <td style="padding: 10px 0; color: #475569; font-size: 14px; font-weight: 600; width: 35%; border-bottom: 1px solid #cbd5e1;">Company:</td>
+                    <td style="padding: 10px 0; color: #0f1523; font-size: 16px; font-weight: bold; border-bottom: 1px solid #cbd5e1;">${studentData.company}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0; color: #475569; font-size: 14px; font-weight: 600; border-bottom: 1px solid #cbd5e1;">Position:</td>
+                    <td style="padding: 10px 0; color: #0f1523; font-size: 15px; border-bottom: 1px solid #cbd5e1;">${studentData.position || 'Professional'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0; color: #475569; font-size: 14px; font-weight: 600; border-bottom: 1px solid #cbd5e1;">Date:</td>
+                    <td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #cbd5e1;">${interviewDetails.date || 'TBD'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0; color: #475569; font-size: 14px; font-weight: 600; border-bottom: 1px solid #cbd5e1;">Time:</td>
+                    <td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #cbd5e1;">${interviewDetails.time || 'TBD'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0; color: #475569; font-size: 14px; font-weight: 600; border-bottom: 1px solid #cbd5e1;">Venue / Link:</td>
+                    <td style="padding: 10px 0; color: #0284c7; font-size: 15px; font-weight: bold; border-bottom: 1px solid #cbd5e1;">${interviewDetails.venue || 'TBD'}</td>
+                  </tr>
+                  <tr>
+                    <td style="padding: 10px 0; color: #475569; font-size: 13px; font-weight: 600;">Newsletter ID:</td>
+                    <td style="padding: 10px 0; color: #475569; font-size: 13px;">${studentData.jobId || 'N/A'}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <h3 style="margin: 0 0 10px 0; color: #1e293b; font-size: 16px;">Agenda & Expectations</h3>
+            <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 25px 0; padding: 18px; background-color: rgba(56, 189, 248, 0.05); border-radius: 8px; font-style: italic; border: 1px solid rgba(56, 189, 248, 0.2);">
+              "The interview may consist of multiple rounds, including technical assessments, behavioral interviews, or HR rounds. You may also be required to provide specific documents or complete certain tasks, so please be prepared accordingly."
             </p>
-            <p style="font-size: 15px; color: #0f1523; font-weight: bold; margin: 0;">
-              Regards,<br>
-              <span style="color: #38bdf8;">IPCS Placement Cell</span>
-            </p>
+
+            <div style="background-color: rgba(254, 242, 242, 0.95); border-left: 4px solid #ef4444; padding: 15px; border-radius: 4px; margin-bottom: 30px; border: 1px solid #fecaca;">
+              <p style="font-size: 13px; line-height: 1.5; color: #991b1b; margin: 0;">
+                <strong>Important Note:</strong> Please make sure to arrive on time for the interview or log in to the online meeting platform a few minutes before the scheduled time. If, for any reason, you are unable to attend, please inform us at your earliest convenience so we can make alternative arrangements.
+              </p>
+            </div>
+
+            <!-- Footer divider -->
+            <div style="border-top: 1px solid #cbd5e1; padding-top: 25px;">
+              <p style="font-size: 14px; line-height: 1.6; color: #334155; margin: 0 0 15px 0;">
+                If you have any questions or need further information about the interview, please do not hesitate to contact the placement department. We wish you the very best of luck!
+              </p>
+              <p style="font-size: 15px; color: #0f1523; font-weight: bold; margin: 0;">
+                Regards,<br>
+                <span style="color: #38bdf8;">IPCS Placement Cell</span>
+              </p>
+            </div>
+
           </div>
         </div>
       </div>
