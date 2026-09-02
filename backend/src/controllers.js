@@ -89,7 +89,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE (WITH UPDATED TEMPLATES & DEDUPLICATION)
+// 🚨 MASTER STUDENT EMAIL ENGINE (UPDATED CC LOGIC)
 // ---------------------------------------------------------
 const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
@@ -100,7 +100,6 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
     (r.get('Roll Number') === studentData.roll || r.get('Student Name') === studentData.name)
   );
 
-  // 🚨 FIX: Group by Job ID to prevent duplicate logs from triggering the final warning early!
   const noAttendJobs = new Set();
   const rejectedJobs = new Set();
 
@@ -111,29 +110,32 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
     if (s.includes('student rejected') || s.includes('offer rejected')) rejectedJobs.add(jobId);
   });
 
-  // Add the current job to the sets to calculate the new total
   if (status === 'interview not attended') noAttendJobs.add(studentData.jobId || studentData.company);
   if (status.includes('student rejected') || status.includes('offer rejected')) rejectedJobs.add(studentData.jobId || studentData.company);
 
   const noAttendCount = noAttendJobs.size;
   const rejectCount = rejectedJobs.size;
 
-  // CC Logic: 1) Scheduling TPO, 2) Assigned TPO, 3) Branch TPO
-  const branchTpoEmail = getTpoEmailByBranch(studentData.branch);
+  // 🚨 NEW STRICT CC LOGIC FOR STUDENT MAILS
+  // Base CC: Scheduling TPO + Student's Assigned TPO
   const assignedTpoEmail = getTpoEmail(studentData.tpoName);
-  const ccList = [...new Set([currentUserEmail, assignedTpoEmail, branchTpoEmail])].filter(Boolean).join(',');
+  let ccArray = [currentUserEmail, assignedTpoEmail];
 
-  let subject = ''; 
-  let html = ''; 
-  let mailType = '';
+  // ONLY add Gifty for 3rd misses/rejects
+  if ((status === 'interview not attended' && noAttendCount >= 3) || 
+      ((status.includes('student rejected') || status.includes('offer rejected')) && rejectCount >= 3)) {
+    ccArray.push('gifty@ipcsglobal.com');
+  }
+
+  const ccList = [...new Set(ccArray)].filter(Boolean).join(',');
+
+  let subject = ''; let html = ''; let mailType = '';
   const refId = Math.floor(10000 + Math.random() * 90000); 
 
-  // Asset URLs
   const logo1 = "https://drive.google.com/uc?export=view&id=1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
   const logo2 = "https://drive.google.com/uc?export=view&id=1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
   const watermark = "https://drive.google.com/uc?export=view&id=1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
 
-  // Reusable Branded Container
   const buildBrandedEmail = (title, headerColor, bodyContent) => `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
       <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid ${headerColor};">
@@ -157,14 +159,12 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
     </div>
   `;
 
-  // 1. INTERVIEW SCHEDULED
   if (status === 'interview scheduled') {
     subject = `Congratulations, ${studentData.name} ! Your Interview Awaits! # ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Interview Schedule';
     html = buildBrandedEmail('Interview Invitation', '#38bdf8', `
       <p style="font-size: 16px; font-weight: bold; color: #0f1523; margin-top: 0;">Greetings ${studentData.name},</p>
-      <p>I hope this message finds you well and in high spirits. We are thrilled to inform you that you have been <b>selected for an interview opportunity</b> with one of our esteemed partner companies! This is a fantastic step towards achieving your career goals, and we are excited to see your hard work and dedication paying off.</p>
-      
+      <p>I hope this message finds you well and in high spirits. We are thrilled to inform you that you have been <b>selected for an interview opportunity</b> with one of our esteemed partner companies!</p>
       <div style="background-color: rgba(248, 250, 252, 0.95); border: 1px solid #cbd5e1; border-left: 5px solid #38bdf8; border-radius: 8px; padding: 20px; margin: 25px 0;">
         <h3 style="margin: 0 0 12px 0; color: #0f1523; font-size: 15px; text-transform: uppercase;">Interview Details</h3>
         <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
@@ -174,129 +174,159 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
           <tr><td style="padding: 6px 0; color: #64748b;">Interview Date:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${interviewDetails.date || 'TBD'}</td></tr>
           <tr><td style="padding: 6px 0; color: #64748b;">Interview Time:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${interviewDetails.time || 'TBD'}</td></tr>
           <tr><td style="padding: 6px 0; color: #64748b;">Interview Venue:</td><td style="padding: 6px 0; color: #0284c7; font-weight: bold;">${interviewDetails.venue || 'TBD'}</td></tr>
-          <tr><td style="padding: 6px 0; color: #64748b;">Contact Person:</td><td style="padding: 6px 0; color: #0f1523;">HR</td></tr>
         </table>
       </div>
-
-      <p>Please be prepared for a comprehensive evaluation of your skills and qualifications. We highly recommend researching the company thoroughly to ensure you are well-prepared.</p>
-      
-      <p style="font-weight: bold; margin-bottom: 5px; color: #0f1523;">Agenda:</p>
-      <p style="color: #1e3a8a; background-color: rgba(56, 189, 248, 0.05); padding: 12px 15px; border-radius: 6px; border: 1px solid rgba(56, 189, 248, 0.2); font-style: italic; margin-top: 0;">
-        "The interview may consist of multiple rounds, including technical assessments, behavioral interviews, or HR rounds. You may also be required to provide specific documents or complete certain tasks, so please be prepared accordingly."
+      <p style="color: #1e3a8a; background-color: rgba(56, 189, 248, 0.05); padding: 12px 15px; border-radius: 6px; font-style: italic;">
+        "The interview may consist of multiple rounds, including technical assessments, behavioral interviews, or HR rounds. Please be prepared accordingly."
       </p>
-
-      <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 12px 15px; border-radius: 4px; margin: 20px 0;">
-        <p style="font-size: 13px; color: #991b1b; margin: 0;">
-          <b>Note:</b> <i>Please make sure to arrive on time for the interview or log in to the online meeting platform a few minutes before the scheduled time. If, for any reason, you are unable to attend, please inform us at your earliest convenience so we can make alternative arrangements (if possible).</i>
-        </p>
-      </div>
-
-      <p>If you have any questions or need further information about the interview, please do not hesitate to contact the placement department. We are here to assist and support you throughout this important process.</p>
-      <p>We wish you the very best of luck and look forward to hearing about your successful interview experience. Remember, your journey to success is our mission, and we are here to support you every step of the way.</p>
     `);
   }
-
-  // 2. MISSED INTERVIEW (2nd & 3rd Occurrences)
   else if (status === 'interview not attended') {
     if (noAttendCount === 2) {
       subject = `❗Warning – Non-Attendance for Scheduled Interview [Ref: ${refId}]`;
       mailType = 'Warning Mail';
-      html = buildBrandedEmail('Official Warning', '#f59e0b', `
-        <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
-        <p>Greetings from the Placement Team.</p>
-        <p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the second time</b> without prior intimation or a valid reason.</p>
-        <p>Please consider this email as an <b>official warning</b>. Attending interviews scheduled through the Placement Team is an important responsibility of every student registered for placement assistance.</p>
-        <p>You are hereby instructed to ensure your attendance for all future interviews and recruitment processes scheduled for you.</p>
-        <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 15px; margin: 20px 0; border-radius: 4px;">
-          <p style="margin: 0; color: #92400e; font-weight: bold;">
-            Please note that if you fail to attend a scheduled interview for the third time, your placement assistance will be put on hold, and you may not be considered for further placement opportunities until further review by the Placement Team.
-          </p>
-        </div>
-        <p>We strongly advise you to take this matter seriously and maintain proper communication with the Placement Team in case of any genuine difficulty or unavoidable circumstance.</p>
-        <p>We expect your full cooperation and commitment towards the placement process.</p>
-      `);
+      html = buildBrandedEmail('Official Warning', '#f59e0b', `<p>Dear <b>${studentData.name}</b>,</p><p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the second time</b> without prior intimation.</p><p>Please consider this email as an <b>official warning</b>.</p>`);
     } else if (noAttendCount >= 3) {
       subject = `❗Final Warning – Placement Assistance Put on Hold [Ref: ${refId}]`;
       mailType = 'Hold Mail';
-      html = buildBrandedEmail('Placement Assistance Put on Hold', '#ef4444', `
-        <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
-        <p>Greetings from the Placement Team.</p>
-        <p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the third time.</b></p>
-        <p>Despite the previous warning regarding non-attendance, you have again failed to participate in the scheduled interview without prior intimation to the Placement Team.</p>
-        <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;">
-          <p style="margin: 0; color: #991b1b; font-weight: bold; font-size: 15px;">
-            This is considered a serious violation of the placement process. Therefore, your placement assistance is hereby put on hold with immediate effect.
-          </p>
-        </div>
-        <p>You will not be considered for further interview opportunities or placement drives until your case is reviewed by the Placement Team and further instructions are communicated to you.</p>
-        <p>We expect students to take the placement opportunities provided to them seriously and maintain proper communication with the Placement Team regarding any genuine or unavoidable circumstances.</p>
-        <p>If you have a valid reason for your repeated non-attendance, you may submit a written explanation to the Placement Team for review.</p>
-        <p><b>Please treat this matter as serious and final.</b></p>
-      `);
+      html = buildBrandedEmail('Placement Assistance Put on Hold', '#ef4444', `<p>Dear <b>${studentData.name}</b>,</p><p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the third time.</b></p><p>This is considered a serious violation. Therefore, your placement assistance is hereby <b>put on hold</b> with immediate effect.</p>`);
     }
   }
-
-  // 3. REJECTED OFFER (2nd & 3rd Occurrences)
   else if (status.includes('student rejected') || status.includes('offer rejected')) {
     if (rejectCount === 2) {
       subject = `❗Warning – Rejection of Job Offer for the Second Time [Ref: ${refId}]`;
       mailType = 'Warning Mail';
-      html = buildBrandedEmail('Official Warning', '#f59e0b', `
-        <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
-        <p>Greetings from the Placement Team.</p>
-        <p>This is to formally inform you that you have <b>rejected a job offer for the second time</b> after being selected through the IPCS Global placement process.</p>
-        <p>As per the <b>IPCS Placement Policy</b>, students are expected to seriously consider and accept suitable employment opportunities provided through the Placement Team. Repeated rejection of offers after selection affects the placement process and the opportunities provided to other students.</p>
-        <p>Please consider this email as an <b>official warning.</b></p>
-        <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 12px 15px; margin: 20px 0; border-radius: 4px;">
-          <p style="margin: 0; color: #92400e; font-weight: bold;">
-            You are hereby advised that if you reject a job offer for the third time, your placement assistance will be put on hold, as per the IPCS Placement Policy. In such a situation, you may not be considered for further placement opportunities until further review by the Placement Team.
-          </p>
-        </div>
-        <p>We strongly advise you to carefully evaluate the opportunities shared with you before participating in the recruitment process and to communicate with the Placement Team in advance if you have any genuine concerns regarding an offer.</p>
-        <p>Please take this warning seriously and ensure strict adherence to the IPCS Placement Policy going forward.</p>
-      `);
+      html = buildBrandedEmail('Official Warning', '#f59e0b', `<p>Dear <b>${studentData.name}</b>,</p><p>This is to formally inform you that you have <b>rejected a job offer for the second time</b>.</p><p>Please consider this email as an <b>official warning.</b></p>`);
     } else if (rejectCount >= 3) {
       subject = `❗Final Warning – Placement Assistance Put on Hold [Ref: ${refId}]`;
       mailType = 'Hold Mail';
-      html = buildBrandedEmail('Placement Assistance Put on Hold', '#ef4444', `
-        <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
-        <p>Greetings from the Placement Team.</p>
-        <p>This is to formally inform you that you have <b>rejected a job offer for the third time</b> after being selected through the IPCS Global placement process.</p>
-        <p>You were previously informed about the consequences of repeated offer rejections. However, despite the warnings, you have again declined the opportunity provided to you.</p>
-        <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;">
-          <p style="margin: 0; color: #991b1b; font-weight: bold; font-size: 15px;">
-            As per the IPCS Placement Policy, repeated rejection of job offers after selection may result in the withdrawal of placement assistance. Accordingly, your placement assistance is hereby put on hold with immediate effect.
-          </p>
-        </div>
-        <p>During this period, you will not be considered for further placement opportunities or interview processes through IPCS Global unless your case is reviewed and the Placement Team communicates otherwise.</p>
-        <p>If you have any genuine or unavoidable reason for rejecting the offer, you may submit a written explanation to the Placement Team for review.</p>
-        <p>Please treat this communication as an <b>official warning and confirmation of the placement assistance hold.</b></p>
-        <p>We expect you to take future career opportunities and the placement process seriously.</p>
-      `);
+      html = buildBrandedEmail('Placement Assistance Put on Hold', '#ef4444', `<p>Dear <b>${studentData.name}</b>,</p><p>This is to formally inform you that you have <b>rejected a job offer for the third time</b>.</p><p>Your placement assistance is hereby <b>put on hold</b> with immediate effect.</p>`);
     }
   }
-
-  // 4. PLACEMENT CONFIRMED
   else if (status.includes('placed') || status.includes('joined') || status.includes('got offer')) {
     subject = `Congratulations! Placement Confirmed at ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Congratulation Mail';
-    html = buildBrandedEmail('Congratulations on Your Placement!', '#10b981', `
-      <p style="font-size: 18px; color: #10b981; font-weight: bold; margin-top: 0;">Congratulations on your placement!</p>
-      <p>Dear <b>${studentData.name}</b>,</p>
-      <p>We are incredibly proud to announce that your placement at <b>${studentData.company}</b> has been confirmed!</p>
-      <p>Your hard work and dedication have paid off. We wish you the absolute best in your new career journey. Make IPCS proud!</p>
-    `);
+    html = buildBrandedEmail('Congratulations on Your Placement!', '#10b981', `<p style="font-size: 18px; color: #10b981; font-weight: bold;">Congratulations on your placement!</p><p>Dear <b>${studentData.name}</b>,</p><p>We are incredibly proud to announce that your placement at <b>${studentData.company}</b> has been confirmed!</p>`);
   }
 
   if (subject && html) {
-    await sendMailAndLog({
-      from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`,
-      to: studentData.email,
-      cc: ccList,
-      subject: subject,
-      html: html
-    }, { name: studentData.name, email: studentData.email, type: mailType });
+    await sendMailAndLog({ from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`, to: studentData.email, cc: ccList, subject: subject, html: html }, { name: studentData.name, email: studentData.email, type: mailType });
   }
+};
+
+
+// ---------------------------------------------------------
+// 🚨 EVENTS ENGINE (DRIVE & TALENTINO MAILS)
+// ---------------------------------------------------------
+exports.addEvent = async (req, res) => {
+  const { date, tpo, branch, type, title, description, time, location } = req.body;
+  try {
+    const eventSheet = doc.sheetsByTitle["Event"];
+    let posterLink = '';
+    if (req.file) posterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS); 
+    await eventSheet.addRow({ 'Date of the Event': date, 'TPO': tpo, 'Branch': branch, 'Event': type, 'Title': title, 'Descripation': description || '', 'Time of the Event': time || '', 'Event Happening in': location || '', 'Poster Link': posterLink });
+    
+    const evType = (type || '').toLowerCase();
+    const refId = Math.floor(10000 + Math.random() * 90000); 
+
+    const logo1 = "https://drive.google.com/uc?export=view&id=1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
+    const logo2 = "https://drive.google.com/uc?export=view&id=1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
+    const watermark = "https://drive.google.com/uc?export=view&id=1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
+    
+    // 🚨 PLACEMENT DRIVE LOGIC
+    if (evType.includes('placement drive')) {
+      const allTpos = getAllTpoEmails();
+      const allBMs = getAllBranchManagerEmails();
+      const bccList = [...new Set([...allTpos, ...allBMs])].join(',');
+      const ccList = 'gifty@ipcsglobal.com,rakesh@ipcsglobal.com,ajith@ipcsglobal.com';
+
+      const html = `<div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
+          <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #3b82f6;">
+            <div style="margin-bottom: 12px;"><img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" /><img src="${logo2}" alt="Talenzo Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" /></div>
+            <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase;">Placement Drive Notification</h2>
+          </div>
+          <div style="padding: 35px 30px;">
+            <p>Dear Team,<br/>A Placement Drive has been scheduled. Details below:</p>
+            <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 5px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 20px 0;">
+              <b>Drive Title:</b> ${title}<br/><b>Date:</b> ${date}<br/><b>Location:</b> ${location}
+            </div>
+          </div></div>`;
+
+      sendMailAndLog({ from: `"IPCS Placements" <${process.env.EMAIL_USER}>`, to: process.env.EMAIL_USER, bcc: bccList, cc: ccList, subject: `Placement Drive Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`, html: html }, { name: 'All Branches', email: 'Broadcast', type: 'Event Notification' });
+
+    // 🚨 TALENTINO LOGIC
+    } else if (evType.includes('talentino')) {
+      const tpoMail = getTpoEmail(tpo);
+      const bmMail = getBranchManagerEmail(branch);
+      const ccList = [...new Set([tpoMail, bmMail, 'gifty@ipcsglobal.com'])].filter(Boolean).join(',');
+      
+      const html = `<div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
+          <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #a855f7;">
+            <div style="margin-bottom: 12px;"><img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" /><img src="${logo2}" alt="Talenzo Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" /></div>
+            <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase;">Talentino Session Notification</h2>
+          </div>
+          <div style="padding: 35px 30px;">
+            <p>Dear Team,<br/>A Talentino Session has been scheduled. Details below:</p>
+            <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 5px solid #a855f7; border-radius: 8px; padding: 20px; margin: 20px 0;">
+              <b>Date:</b> ${date}<br/><b>Time:</b> ${time}<br/><b>Conducted By:</b> ${tpo}
+            </div>
+          </div></div>`;
+
+      if (tpoMail) {
+        sendMailAndLog({ from: `"IPCS Talentino" <${process.env.EMAIL_USER}>`, to: tpoMail, cc: ccList, subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`, html: html }, { name: tpo, email: tpoMail, type: 'Event Notification' });
+      }
+    }
+
+    refreshCache(); res.json({ success: true, message: "Event added successfully" });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+// ---------------------------------------------------------
+// 🚨 ADMIN USERS ENGINE (FETCH TARGET & EMP ID)
+// ---------------------------------------------------------
+exports.getAdminUsers = async (req, res) => {
+  try {
+    await doc.loadInfo();
+    let allUsers = [];
+
+    const contactSheet = doc.sheetsByTitle["Contact"];
+    if (contactSheet) {
+      const cRows = await contactSheet.getRows();
+      const headers = contactSheet.headerValues;
+      const hName = getFuzzyHeader(headers, 'tponame'); const hMail = getFuzzyHeader(headers, 'mailid'); 
+      const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); 
+      const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); 
+      const hPhoto = getFuzzyHeader(headers, 'profilephoto'); 
+      const hTarget = getFuzzyHeader(headers, 'target') || getFuzzyHeader(headers, 'targetofthemonth');
+      const hEmpId = getFuzzyHeader(headers, 'empid');
+
+      cRows.forEach(r => {
+        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
+        if (email.trim() !== '' || name.trim() !== '') {
+          allUsers.push({ sheet: 'Contact', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: 'TPO', course: 'All Courses', access: 'View & Edit', profilePhoto: r.get(hPhoto) || '', target: r.get(hTarget) || '20', empId: r.get(hEmpId) || `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}` });
+        }
+      });
+    }
+
+    const userSheet = doc.sheetsByTitle["User"];
+    if (userSheet) {
+      const uRows = await userSheet.getRows();
+      const headers = userSheet.headerValues;
+      const hName = getFuzzyHeader(headers, 'username'); const hMail = getFuzzyHeader(headers, 'mailid'); 
+      const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); 
+      const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); 
+      const hRole = getFuzzyHeader(headers, 'role'); const hCourse = getFuzzyHeader(headers, 'course'); 
+      const hAccess = getFuzzyHeader(headers, 'access'); const hPhoto = getFuzzyHeader(headers, 'profilephoto');
+
+      uRows.forEach(r => {
+        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
+        if (email.trim() !== '' || name.trim() !== '') {
+          allUsers.push({ sheet: 'User', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: r.get(hRole) || 'Unassigned', course: r.get(hCourse) || 'All Courses', access: r.get(hAccess) || 'View Only', profilePhoto: r.get(hPhoto) || '', target: 'N/A', empId: `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}` });
+        }
+      });
+    }
+    res.json({ success: true, users: allUsers.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 // ---------------------------------------------------------
