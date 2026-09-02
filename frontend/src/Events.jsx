@@ -199,9 +199,13 @@ export default function Events() {
             </h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Track corporate drives and training sessions across branches.</p>
           </div>
-          <button className="btn-action" style={{ width: 'auto', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => setIsModalOpen(true)}>
-            <Plus weight="bold" /> Add Event
-          </button>
+          
+          {/* 🚨 RESTRICT ADD EVENT BUTTON TO ADMINS & TPOs ONLY */}
+          {(tpoData?.accessType === 'superadmin' || (tpoData?.role || '').toUpperCase() === 'TPO') && (
+            <button className="btn-action" style={{ width: 'auto', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => setIsModalOpen(true)}>
+              <Plus weight="bold" /> Add Event
+            </button>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: '10px', marginBottom: '25px', borderBottom: '1px solid var(--card-border)', paddingBottom: '10px', overflowX: 'auto' }}>

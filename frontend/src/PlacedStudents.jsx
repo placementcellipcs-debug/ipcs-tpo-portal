@@ -19,7 +19,6 @@ const getStandardCourse = (c) => {
   return 'Others';
 };
 
-// Robust Date Parser to handle DD/MM/YYYY and YYYY-MM-DD
 const parseDate = (dStr) => {
   if (!dStr) return null;
   let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0] : dStr;
@@ -40,10 +39,15 @@ export default function PlacedStudents() {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  const isTpo = (tpoData?.role || '').toUpperCase() === 'TPO';
-  const isGifty = (tpoData?.email || '').toLowerCase().includes('gifty') || (tpoData?.loginId || '').toLowerCase().includes('gifty');
-  const isSuper = (tpoData?.accessType === 'superadmin') || (tpoData?.role || '').toUpperCase().includes('ADMIN') || (tpoData?.role || '').toUpperCase().includes('HEAD');
-  const canAddPlacement = isTpo || isGifty || isSuper;
+  // 🚨 RESTRICT ADD PLACEMENT BUTTON
+  const upperRole = (tpoData?.role || '').toUpperCase();
+  const isTpo = upperRole === 'TPO';
+  const isSuper = (tpoData?.accessType === 'superadmin') || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
+  const canAddPlacement = isTpo || isSuper;
+
+  // 🚨 RESTRICT DATA BY COURSE
+  const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
+  const displayCourse = tpoData?.assignedCourse || '';
   
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -76,7 +80,6 @@ export default function PlacedStudents() {
 
     try {
       setLoading(true);
-      // Fetch both to get TPO_Log for display, and Opening_Applied for Row Numbers (to allow editing)
       const [appRes, repRes] = await Promise.all([
         axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications', payload),
         axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/reports', payload)
@@ -85,7 +88,6 @@ export default function PlacedStudents() {
       if (repRes.data.success) {
         let logs = repRes.data.tpoLogs || [];
 
-        // 1. Manually filter logs by Branch permissions
         const isSuperUser = localTpo.accessType === 'superadmin' || localTpo.assignedBranchesArray.includes('all');
         if (!isSuperUser) {
           logs = logs.filter(log => {
@@ -94,7 +96,6 @@ export default function PlacedStudents() {
           });
         }
 
-        // 2. Map TPO_Log headers to standardized fields
         let mappedLogs = logs.map(row => ({
           name: row['Student Name'] || '', phone: row['Contact'] || '', email: row['Mail ID'] || '',
           roll: row['Roll Number'] || '', course: row['Course'] || '', branch: row['Branch'] || '',
@@ -104,14 +105,12 @@ export default function PlacedStudents() {
           offerLetter: row['Offer Letter Status'] || row['Offer Letter'] || '', tpoName: row['Placement Officer'] || ''
         }));
 
-        // 3. Filter only Placed/Joined
         mappedLogs = mappedLogs.filter(a => {
           const s = (a.status || '').toLowerCase();
           const j = (a.joiningStatus || '').toLowerCase();
           return s.includes('placed') || s.includes('got offer') || s.includes('join') || s.includes('offer') || j.includes('join');
         });
 
-        // 4. Deduplicate logs (TPO_Log is append-only, keep the newest)
         const deduped = {};
         mappedLogs.forEach(log => {
           const key = `${log.roll || log.name}_${log.company}`.toLowerCase();
@@ -120,7 +119,6 @@ export default function PlacedStudents() {
 
         let finalApps = Object.values(deduped);
 
-        // 5. Attach Row Numbers from Opening_Applied so Editing works!
         if (appRes.data.success) {
           finalApps = finalApps.map(logApp => {
             const match = appRes.data.applications.find(a => 
@@ -143,8 +141,10 @@ export default function PlacedStudents() {
     setSearchQuery(''); setCourseFilter('All'); setMonthFilter(''); setSortOrder('newest');
   };
 
-  // Pre-filter by Course and Month for dynamic branch counts
   const globallyFiltered = applications.filter(a => {
+    // 🚨 Strict Course Restriction for specific roles
+    if (isCourseSpecific && getStandardCourse(a.course) !== getStandardCourse(displayCourse)) return false;
+
     let cMatch = courseFilter === 'All' || getStandardCourse(a.course) === getStandardCourse(courseFilter);
     let dateObj = parseDate(a.datePlaced || a.date);
     let monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
@@ -222,7 +222,6 @@ export default function PlacedStudents() {
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        {/* TOP HEADER */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '15px' }}>
           <div>
             {selectedBranch ? (
@@ -250,23 +249,25 @@ export default function PlacedStudents() {
           )}
         </div>
 
-        {/* UNIVERSAL FILTER BAR */}
         <div className="header-controls" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '1.5rem', alignItems: 'center', background: 'var(--card-bg)', padding: '14px 18px', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
           {selectedBranch && (
             <input type="text" className="sleek-input" placeholder="Search student, roll, or company..." style={{ minWidth: '220px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
-            <select className="sleek-select" style={{ minWidth: '190px' }} value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
-              <option value="All">All Main Courses</option>
-              <option value="Industrial Automation">Industrial Automation</option>
-              <option value="BMS AND CCTV">BMS AND CCTV</option>
-              <option value="Embedded and IoT">Embedded and IoT</option>
-              <option value="Digital Marketing">Digital Marketing</option>
-              <option value="Information technology (IT)">Information technology (IT)</option>
-            </select>
-          </div>
+          {/* 🚨 Course Filter Hidden for Course-Specific Roles */}
+          {!isCourseSpecific && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
+              <select className="sleek-select" style={{ minWidth: '190px' }} value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
+                <option value="All">All Main Courses</option>
+                <option value="Industrial Automation">Industrial Automation</option>
+                <option value="BMS AND CCTV">BMS AND CCTV</option>
+                <option value="Embedded and IoT">Embedded and IoT</option>
+                <option value="Digital Marketing">Digital Marketing</option>
+                <option value="Information technology (IT)">Information technology (IT)</option>
+              </select>
+            </div>
+          )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Month/Year:</span>

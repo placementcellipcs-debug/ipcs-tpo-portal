@@ -58,10 +58,11 @@ export default function StudentsDirectory() {
   const [localPlacementState, setLocalPlacementState] = useState('');
   const [localStudyAccess, setLocalStudyAccess] = useState('');
   const [localExamAccess, setLocalExamAccess] = useState('');
-  const [localCourseStatus, setLocalCourseStatus] = useState(''); // 🚨 NEW
+  const [localCourseStatus, setLocalCourseStatus] = useState(''); 
 
   const upperRole = (tpoData?.role || '').toUpperCase();
-  const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD') || upperRole.includes('TTH') || upperRole.includes('TERRITORY TECHNICAL HEAD') || upperRole.includes('TRAINER');
+  const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
+  const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
   const isViewOnly = tpoData?.accessType === 'view'; 
 
@@ -131,7 +132,6 @@ export default function StudentsDirectory() {
     setLocalStudyAccess(student.studyAccess || 'No');
     setLocalExamAccess(student.examAccess || 'No');
     
-    // Extract Course Status safely
     const cStatKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().includes('currentlystudying'));
     setLocalCourseStatus(cStatKey && student.rawData[cStatKey] ? student.rawData[cStatKey] : 'Currently Studying');
 
@@ -147,7 +147,7 @@ export default function StudentsDirectory() {
         placementStatus: localPlacementState,
         studyAccess: localStudyAccess, 
         examAccess: localExamAccess,
-        courseStatus: localCourseStatus // 🚨 Trigger Welcome Mail if changed to Completed
+        courseStatus: localCourseStatus 
       });
       
       if (response.data.success) {
@@ -191,12 +191,14 @@ export default function StudentsDirectory() {
   };
 
   let filteredAndSorted = activeStudents.filter(s => {
-    return s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-      (s.roll && s.roll.toLowerCase().includes(searchQuery.toLowerCase()));
+    const safeSearch = (searchQuery || '').toLowerCase();
+    const safeName = (s.name || '').toString().toLowerCase();
+    const safeRoll = (s.roll || '').toString().toLowerCase();
+    return safeName.includes(safeSearch) || safeRoll.includes(safeSearch);
   });
 
-  if (sortOrder === 'az') filteredAndSorted.sort((a, b) => a.name.localeCompare(b.name));
-  if (sortOrder === 'za') filteredAndSorted.sort((a, b) => b.name.localeCompare(a.name));
+  if (sortOrder === 'az') filteredAndSorted.sort((a, b) => (a.name || '').toString().localeCompare((b.name || '').toString()));
+  if (sortOrder === 'za') filteredAndSorted.sort((a, b) => (b.name || '').toString().localeCompare((a.name || '').toString()));
 
   const getLinkedInUrl = (rawData) => {
     if (!rawData) return null;
@@ -210,7 +212,6 @@ export default function StudentsDirectory() {
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        {/* TOP KPI BAR */}
         {!selectedBranch && (
           <div className="universal-kpi-bar" style={{ marginBottom: '2.5rem' }}>
             <div className="kpi-card"><div><div className="kpi-val">{globallyFiltered.length}</div><div className="kpi-label">{isCourseSpecific ? `${displayCourse} Students` : 'Filtered Students'}</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}><UsersThree weight="fill"/></div></div>
@@ -220,7 +221,6 @@ export default function StudentsDirectory() {
           </div>
         )}
 
-        {/* HEADER */}
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px', gap: '15px' }}>
           {selectedBranch && (
             <button onClick={() => setSelectedBranch(null)} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
@@ -237,7 +237,6 @@ export default function StudentsDirectory() {
           </div>
         </div>
 
-        {/* BRANCH METRICS WHEN INSIDE BRANCH */}
         {selectedBranch && (
           <div className="universal-kpi-bar" style={{ marginBottom: '1.5rem', gridTemplateColumns: 'repeat(3, 1fr)' }}>
             <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{branchStats.pending}</div><div className="kpi-label">Placement Pending</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}><ClockClockwise weight="fill"/></div></div>
@@ -246,23 +245,25 @@ export default function StudentsDirectory() {
           </div>
         )}
 
-        {/* UNIVERSAL FILTER BAR */}
         <div className="header-controls" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '1.5rem', alignItems: 'center', background: 'var(--card-bg)', padding: '14px 18px', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
           {selectedBranch && (
             <input type="text" className="sleek-input" placeholder="Search name or roll..." style={{ minWidth: '200px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
-            <select className="sleek-select" style={{ minWidth: '190px' }} value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
-              <option value="All">All Main Courses</option>
-              <option value="Industrial Automation">Industrial Automation</option>
-              <option value="BMS AND CCTV">BMS AND CCTV</option>
-              <option value="Embedded and IoT">Embedded and IoT</option>
-              <option value="Digital Marketing">Digital Marketing</option>
-              <option value="Information technology (IT)">Information technology (IT)</option>
-            </select>
-          </div>
+          {/* 🚨 Course Filter Hidden for Course-Specific Roles */}
+          {!isCourseSpecific && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
+              <select className="sleek-select" style={{ minWidth: '190px' }} value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
+                <option value="All">All Main Courses</option>
+                <option value="Industrial Automation">Industrial Automation</option>
+                <option value="BMS AND CCTV">BMS AND CCTV</option>
+                <option value="Embedded and IoT">Embedded and IoT</option>
+                <option value="Digital Marketing">Digital Marketing</option>
+                <option value="Information technology (IT)">Information technology (IT)</option>
+              </select>
+            </div>
+          )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Month/Year:</span>
@@ -286,19 +287,17 @@ export default function StudentsDirectory() {
 
           {(courseFilter !== 'All' || monthFilter !== '' || searchQuery !== '') && (
             <button onClick={resetFilters} style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem' }}>
-              <ArrowCounterclockwise size={14} /> Reset
+              <ArrowsClockwise size={14} /> Reset
             </button>
           )}
         </div>
 
-        {/* MAIN BODY */}
         {loading ? (
           <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--accent-primary)' }}>
             <CircleNotch size={40} className="ph-spin" />
             <p>Fetching registered students...</p>
           </div>
         ) : !selectedBranch ? (
-          /* BRANCH TILE VIEW */
           branchList.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
               No students found for the selected course and month filters.
@@ -388,7 +387,6 @@ export default function StudentsDirectory() {
         )}
       </div>
 
-      {/* MODAL */}
       {isModalOpen && selectedStudent && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', overflow: 'hidden' }} onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '850px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
@@ -449,7 +447,6 @@ export default function StudentsDirectory() {
               })}
             </div>
 
-            {/* 🚨 REPLACED 4 COLUMNS WITH 5 COLUMNS TO ADD COURSE STATUS */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '1.5rem' }}>
               
               <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
@@ -477,17 +474,18 @@ export default function StudentsDirectory() {
                 </>
               )}
 
+              {/* 🚨 RTH CAN NOW EDIT THESE TWO DROPDOWNS */}
               {(tpoData?.accessType === 'superadmin' || isCourseSpecific) && (
                 <>
                   <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
                     <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Study Material Access</span>
-                    <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localStudyAccess} onChange={(e) => setLocalStudyAccess(e.target.value)} disabled={isViewOnly}>
+                    <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly && !isRth ? 'not-allowed' : 'pointer', opacity: isViewOnly && !isRth ? 0.7 : 1 }} value={localStudyAccess} onChange={(e) => setLocalStudyAccess(e.target.value)} disabled={isViewOnly && !isRth}>
                       <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
                     </select>
                   </div>
                   <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
                     <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Technical Exam Access</span>
-                    <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localExamAccess} onChange={(e) => setLocalExamAccess(e.target.value)} disabled={isViewOnly}>
+                    <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly && !isRth ? 'not-allowed' : 'pointer', opacity: isViewOnly && !isRth ? 0.7 : 1 }} value={localExamAccess} onChange={(e) => setLocalExamAccess(e.target.value)} disabled={isViewOnly && !isRth}>
                       <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
                     </select>
                   </div>
@@ -495,10 +493,10 @@ export default function StudentsDirectory() {
               )}
             </div>
 
-            <div style={{ display: 'flex', justifyContent: isViewOnly ? 'space-between' : 'flex-end', alignItems: 'center', borderTop: '1px solid #1e293b', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
-               {isViewOnly && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission</span>}
-               <button className="btn-action" style={{ width: 'auto', background: isViewOnly ? '#1e293b' : '#38bdf8', color: isViewOnly ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: isViewOnly ? 'not-allowed' : 'pointer' }} onClick={saveStudentUpdates} disabled={savingStatus || isViewOnly}>
-                  {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> {isViewOnly ? 'Edit Locked' : 'Save All Changes'}</>}
+            <div style={{ display: 'flex', justifyContent: isViewOnly && !isRth ? 'space-between' : 'flex-end', alignItems: 'center', borderTop: '1px solid #1e293b', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
+               {isViewOnly && !isRth && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission</span>}
+               <button className="btn-action" style={{ width: 'auto', background: isViewOnly && !isRth ? '#1e293b' : '#38bdf8', color: isViewOnly && !isRth ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: isViewOnly && !isRth ? 'not-allowed' : 'pointer' }} onClick={saveStudentUpdates} disabled={savingStatus || (isViewOnly && !isRth)}>
+                  {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> {isViewOnly && !isRth ? 'Edit Locked' : 'Save All Changes'}</>}
                 </button>
             </div>
             

@@ -7,6 +7,17 @@ import {
   WarningCircle
 } from '@phosphor-icons/react';
 
+const getStandardCourse = (c) => {
+  if (!c) return 'Others';
+  const lower = c.toLowerCase().trim();
+  if (lower.includes('bms') || lower.includes('cctv')) return 'BMS AND CCTV';
+  if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
+  if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
+  if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
+  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
+  return 'Others';
+};
+
 export default function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -23,18 +34,22 @@ export default function Layout({ children }) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
-  
   const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
     if (!tpoData) navigate('/');
     document.body.setAttribute('data-theme', 'dark');
     
+    const userRole = (tpoData?.role || '').toUpperCase();
+    const isSuperAdmin = tpoData?.accessType === 'superadmin' || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
+    const isCourseSpecific = userRole.includes('RTH') || userRole.includes('TTH') || userRole.includes('TRAINER') || userRole.includes('TECHNICAL LEAD');
+    const myCourse = getStandardCourse(tpoData?.assignedCourse);
+
     try {
       const logsStr = localStorage.getItem('dash_logs');
       if (logsStr) {
         const logs = JSON.parse(logsStr);
-        const sorted = logs.sort((a,b) => new Date(b.TimeStamp || b.Timestamp || b['Time Stamp'] || 0) - new Date(a.TimeStamp || a.Timestamp || a['Time Stamp'] || 0)).slice(0, 5);
+        const sorted = logs.sort((a,b) => new Date(b.TimeStamp || b.Timestamp || b['Time Stamp'] || 0) - new Date(a.TimeStamp || a.Timestamp || a['Time Stamp'] || 0)).slice(0, 20); // Check more logs so we can filter
         
         const mappedNotifs = sorted.map(log => {
           const getVal = (s) => {
@@ -44,44 +59,51 @@ export default function Layout({ children }) {
           const name = getVal('name') || getVal('student') || 'Student';
           const company = getVal('company');
           const status = (getVal('status') || '').toLowerCase();
+          const courseRaw = getVal('course');
           
           let title = "Application Updated";
           let desc = `${name}'s status updated to ${getVal('status') || 'Applied'} at ${company}.`;
           let icon = <ListChecks size={18} weight="bold" />;
-          let color = "#38bdf8"; 
-          let bg = "rgba(56, 189, 248, 0.1)";
+          let color = "#38bdf8"; let bg = "rgba(56, 189, 248, 0.1)";
 
           if (status.includes('placed') || status.includes('offer')) {
-             title = "Placement Confirmed! 🎉";
-             desc = `${name} has been successfully placed at ${company}!`;
-             icon = <Trophy size={18} weight="bold" />;
-             color = "#10b981"; bg = "rgba(16, 185, 129, 0.1)";
+             title = "Placement Confirmed! 🎉"; desc = `${name} has been successfully placed at ${company}!`;
+             icon = <Trophy size={18} weight="bold" />; color = "#10b981"; bg = "rgba(16, 185, 129, 0.1)";
           } else if (status.includes('interview')) {
-             title = "Interview Scheduled";
-             desc = `An interview is scheduled for ${name} at ${company}.`;
-             icon = <CalendarStar size={18} weight="bold" />;
-             color = "#a855f7"; bg = "rgba(168, 85, 247, 0.1)";
+             title = "Interview Scheduled"; desc = `An interview is scheduled for ${name} at ${company}.`;
+             icon = <CalendarStar size={18} weight="bold" />; color = "#a855f7"; bg = "rgba(168, 85, 247, 0.1)";
           } else if (status.includes('reject') || status.includes('not attend') || status.includes('hold')) {
-             title = "Action Alert";
-             desc = `Status changed to '${getVal('status')}' for ${name}.`;
-             icon = <WarningCircle size={18} weight="bold" />;
-             color = "#ef4444"; bg = "rgba(239, 68, 68, 0.1)";
+             title = "Action Alert"; desc = `Status changed to '${getVal('status')}' for ${name}.`;
+             icon = <WarningCircle size={18} weight="bold" />; color = "#ef4444"; bg = "rgba(239, 68, 68, 0.1)";
           }
 
-          return { title, desc, icon, color, bg, time: getVal('timestamp') || 'Recently' };
+          return { title, desc, icon, color, bg, time: getVal('timestamp') || 'Recently', courseRaw };
         });
 
-        setNotifications(mappedNotifs);
+        // 🚨 Filter Notifications strictly for the user's course
+        const finalNotifs = mappedNotifs.filter(n => {
+          if (isSuperAdmin || userRole === 'TPO' || userRole.includes('MANAGER')) return true;
+          if (isCourseSpecific) return getStandardCourse(n.courseRaw) === myCourse;
+          return true;
+        }).slice(0, 5); // Only keep the 5 most recent relevant ones
+
+        setNotifications(finalNotifs);
       }
     } catch(e) { console.error("Error parsing notifications"); }
 
-  }, [tpoData, navigate, location.pathname]);
+  }, [tpoData, navigate]);
 
   if (!tpoData) return null;
 
+  // 🚨 STRICT ROLE-BASED ACCESS CONTROL FLAGS
   const userRole = (tpoData.role || '').toUpperCase();
-  const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
-  const showReports = isSuperAdmin || userRole === 'TPO';
+  const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
+  const isTpo = userRole === 'TPO';
+  const isRth = userRole.includes('RTH') || userRole.includes('REGIONAL TECHNICAL HEAD');
+
+  const showTrackerAndReports = isSuperAdmin || isTpo;
+  const showManageAdmin = isSuperAdmin;
+  const showStudyMaterials = isSuperAdmin || isTpo || isRth; // Hidden for TTH, RM, TM, BM, Leads, Trainers
 
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
@@ -90,40 +112,22 @@ export default function Layout({ children }) {
   };
   
   const profilePhotoUrl = getDriveImage(tpoData.photo);
-  
-  const isActive = (path) => {
-    if (path === '/dashboard' && location.pathname === '/dashboard') return '#38bdf8';
-    if (path !== '/dashboard' && location.pathname.startsWith(path)) return '#38bdf8';
-    return '#94a3b8';
-  };
+  const isActive = (path) => location.pathname.startsWith(path) ? '#38bdf8' : '#94a3b8';
 
-  const handleLogout = () => {
-    localStorage.removeItem('tpoData');
-    navigate('/');
-  };
+  const handleLogout = () => { localStorage.removeItem('tpoData'); navigate('/'); };
+  const handleNav = (path) => { setIsDrawerOpen(false); navigate(path); };
 
   const renderAvatar = () => {
     const initial = tpoData.name ? String(tpoData.name).charAt(0).toUpperCase() : '?';
-    if (!profilePhotoUrl || profilePhotoUrl === 'N/A' || imgError) {
-      return <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#ffffff' }}>{initial}</span>;
-    }
-    return (
-      <img src={profilePhotoUrl} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={() => setImgError(true)} />
-    );
-  };
-
-  const handleNav = (path) => {
-    setIsDrawerOpen(false);
-    navigate(path);
+    if (!profilePhotoUrl || profilePhotoUrl === 'N/A' || imgError) return <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#ffffff' }}>{initial}</span>;
+    return <img src={profilePhotoUrl} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={() => setImgError(true)} />;
   };
 
   return (
     <div className="app-layout">
-      
       <main className="main-content">
         <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px' }}>
           
-          {/* 🚨 UPDATED HEADER LEFT: DUAL LOGOS WITH DIVIDER */}
           <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" style={{ height: '35px', objectFit: 'contain' }} />
             <div style={{ width: '1px', height: '25px', backgroundColor: 'rgba(255, 255, 255, 0.15)' }}></div>
@@ -132,11 +136,9 @@ export default function Layout({ children }) {
 
           <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
             <div style={{ position: 'relative' }}>
-              <button className="icon-btn" title="Notifications" onClick={() => setIsNotifOpen(!isNotifOpen)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex' }}>
+              <button className="icon-btn" onClick={() => setIsNotifOpen(!isNotifOpen)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex' }}>
                 <Bell size={24} weight="fill" />
-                {notifications.length > 0 && (
-                  <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '10px', height: '10px', background: '#ef4444', borderRadius: '50%', border: '2px solid var(--bg-dark)' }}></span>
-                )}
+                {notifications.length > 0 && <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '10px', height: '10px', background: '#ef4444', borderRadius: '50%', border: '2px solid var(--bg-dark)' }}></span>}
               </button>
 
               {isNotifOpen && (
@@ -146,15 +148,12 @@ export default function Layout({ children }) {
                     <span style={{ fontSize: '0.7rem', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', padding: '3px 8px', borderRadius: '10px' }}>Live Updates</span>
                   </div>
                   <div style={{ padding: '0', maxHeight: '350px', overflowY: 'auto' }}>
-                    
                     {notifications.length === 0 ? (
-                      <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No recent activity to display.</div>
+                      <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No recent activity for your domain.</div>
                     ) : (
                       notifications.map((notif, idx) => (
                         <div key={idx} style={{ padding: '15px', display: 'flex', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                          <div style={{ background: notif.bg, color: notif.color, width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                            {notif.icon}
-                          </div>
+                          <div style={{ background: notif.bg, color: notif.color, width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{notif.icon}</div>
                           <div>
                             <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginBottom: '3px' }}>{notif.title}</div>
                             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>{notif.desc}</div>
@@ -169,9 +168,7 @@ export default function Layout({ children }) {
             </div>
 
             <div className="header-profile" onClick={() => setIsDrawerOpen(true)} style={{ cursor: 'pointer' }}>
-              <div className="header-avatar" style={{ width: '40px', height: '40px', borderRadius: '50%', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card-border)', border: '2px solid rgba(255,255,255,0.1)' }}>
-                {renderAvatar()}
-              </div>
+              <div className="header-avatar" style={{ width: '40px', height: '40px', borderRadius: '50%', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--card-border)', border: '2px solid rgba(255,255,255,0.1)' }}>{renderAvatar()}</div>
             </div>
           </div>
         </header>
@@ -179,10 +176,7 @@ export default function Layout({ children }) {
         <div className="page-container" style={{ padding: '20px 30px', position: 'relative' }} onClick={() => setIsNotifOpen(false)}>
           {location.pathname !== '/dashboard' && (
             <div style={{ marginBottom: '25px' }}>
-              <button 
-                onClick={() => navigate('/dashboard')}
-                style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-muted)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 'bold', transition: '0.2s' }}
-              >
+              <button onClick={() => navigate('/dashboard')} style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-muted)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 'bold', transition: '0.2s' }}>
                 <CaretLeft weight="bold" size={16} /> Back to Dashboard
               </button>
             </div>
@@ -209,7 +203,8 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => handleNav('/dashboard')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><SquaresFour size={22} color={isActive('/dashboard')} /> <span style={{ color: isActive('/dashboard') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Dashboard</span></div><span style={{ color: '#64748b' }}>›</span></div>
             <div className="drawer-item" onClick={() => handleNav('/students')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/students')} /> <span style={{ color: isActive('/students') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Students Directory</span></div><span style={{ color: '#64748b' }}>›</span></div>
             
-            {showReports && (
+            {/* 🚨 RESTRICTED: Job Tracker & Reports */}
+            {showTrackerAndReports && (
               <>
                 <div className="drawer-item" onClick={() => handleNav('/tracker')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Files size={22} color={isActive('/tracker')} /> <span style={{ color: isActive('/tracker') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Job Tracker</span></div><span style={{ color: '#64748b' }}>›</span></div>
                 <div className="drawer-item" onClick={() => handleNav('/reports')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> <span style={{ color: isActive('/reports') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Reports</span></div><span style={{ color: '#64748b' }}>›</span></div>
@@ -224,14 +219,18 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => handleNav('/events')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><CalendarStar size={22} color={isActive('/events')} /> <span style={{ color: isActive('/events') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Events</span></div><span style={{ color: '#64748b' }}>›</span></div>
             <div className="drawer-item" onClick={() => handleNav('/talentino')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> <span style={{ color: isActive('/talentino') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Talentino</span></div><span style={{ color: '#64748b' }}>›</span></div>
             
-            {(isSuperAdmin || userRole.includes('RTH')) && (
-               <>
-                 <div className="drawer-item" onClick={() => handleNav('/study-materials')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Book size={22} color={isActive('/study-materials')} /> <span style={{ color: isActive('/study-materials') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Study Materials</span></div><span style={{ color: '#64748b' }}>›</span></div>
-                 <div className="drawer-item" onClick={() => handleNav('/exams')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><FileText size={22} color={isActive('/exams')} /> <span style={{ color: isActive('/exams') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Exams Hub</span></div><span style={{ color: '#64748b' }}>›</span></div>
-               </>
+            {/* 🚨 RESTRICTED: Study Materials */}
+            {showStudyMaterials && (
+               <div className="drawer-item" onClick={() => handleNav('/study-materials')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Book size={22} color={isActive('/study-materials')} /> <span style={{ color: isActive('/study-materials') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Study Materials</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            )}
+            
+            {/* EXAMS HUB - Hidden only from generic managers */}
+            {!userRole.includes('MANAGER') && (
+               <div className="drawer-item" onClick={() => handleNav('/exams')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><FileText size={22} color={isActive('/exams')} /> <span style={{ color: isActive('/exams') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Exams Hub</span></div><span style={{ color: '#64748b' }}>›</span></div>
             )}
 
-            {isSuperAdmin && (
+            {/* 🚨 RESTRICTED: Admin Panels */}
+            {showManageAdmin && (
                <>
                  <div className="drawer-item" onClick={() => handleNav('/branches')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><MapPin size={22} color={isActive('/branches')} /> <span style={{ color: isActive('/branches') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Manage Branches</span></div><span style={{ color: '#64748b' }}>›</span></div>
                  <div className="drawer-item" onClick={() => handleNav('/courses')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Bookmarks size={22} color={isActive('/courses')} /> <span style={{ color: isActive('/courses') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Manage Courses</span></div><span style={{ color: '#64748b' }}>›</span></div>

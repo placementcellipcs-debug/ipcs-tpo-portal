@@ -9,16 +9,27 @@ import Layout from './Layout';
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
 
+const getStandardCourse = (c) => {
+  if (!c) return 'Others';
+  const lower = c.toLowerCase().trim();
+  if (lower.includes('bms') || lower.includes('cctv')) return 'BMS AND CCTV';
+  if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
+  if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
+  if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
+  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
+  return 'Others';
+};
+
 export default function StudyMaterials() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   
-  const isSuperAdmin = tpoData?.accessType === 'superadmin';
   const upperRole = (tpoData?.role || '').toUpperCase();
+  const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
   
+  // 🚨 RTH CAN ADD MATERIALS
   const canManage = isSuperAdmin || isRth;
-  const rthAssignedCourse = tpoData?.assignedCourse || '';
 
   const [courseDict, setCourseDict] = useState({});
   const [materials, setMaterials] = useState([]);
@@ -26,7 +37,7 @@ export default function StudyMaterials() {
   const [searchQuery, setSearchQuery] = useState('');
   
   const [viewLevel, setViewLevel] = useState(isSuperAdmin ? 'main_courses' : 'sub_courses');
-  const [selectedMainCourse, setSelectedMainCourse] = useState(isSuperAdmin ? null : rthAssignedCourse);
+  const [selectedMainCourse, setSelectedMainCourse] = useState(null);
   const [selectedSubCourse, setSelectedSubCourse] = useState(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -44,7 +55,17 @@ export default function StudyMaterials() {
         axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/courses')
       ]);
       if (matRes.data.success) setMaterials(matRes.data.materials || []);
-      if (courseRes.data.success) setCourseDict(courseRes.data.courses || {});
+      if (courseRes.data.success) {
+        const cDict = courseRes.data.courses || {};
+        setCourseDict(cDict);
+        
+        // 🚨 Exact Matching for RTH
+        if (!isSuperAdmin && tpoData) {
+          const stdAssigned = getStandardCourse(tpoData.assignedCourse);
+          const matchKey = Object.keys(cDict).find(k => getStandardCourse(k) === stdAssigned);
+          setSelectedMainCourse(matchKey || tpoData.assignedCourse);
+        }
+      }
     } catch (err) {
       console.error("Failed to load data", err);
     } finally {

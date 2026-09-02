@@ -30,6 +30,9 @@ const parseDate = (dStr) => {
 };
 
 export default function StudentApps() {
+  const tpoDataStr = localStorage.getItem('tpoData');
+  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedBranch, setSelectedBranch] = useState(null);
@@ -37,6 +40,11 @@ export default function StudentApps() {
   const [searchQuery, setSearchQuery] = useState('');
   const [monthFilter, setMonthFilter] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
+
+  // 🚨 RESTRICT DATA BY COURSE
+  const upperRole = (tpoData?.role || '').toUpperCase();
+  const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
+  const displayCourse = tpoData?.assignedCourse || '';
 
   useEffect(() => {
     const fetchApps = async () => {
@@ -71,6 +79,9 @@ export default function StudentApps() {
   };
 
   const globallyFiltered = applications.filter(a => {
+    // 🚨 Strict Course Restriction for specific roles
+    if (isCourseSpecific && getStandardCourse(a.course) !== getStandardCourse(displayCourse)) return false;
+
     let dateObj = parseDate(a.date);
     let monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
     let mMatch = monthFilter === '' ? true : monthKey === monthFilter;
@@ -100,7 +111,6 @@ export default function StudentApps() {
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        {/* HEADER */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '15px' }}>
           <div>
             {selectedBranch ? (
@@ -122,23 +132,25 @@ export default function StudentApps() {
           </div>
         </div>
 
-        {/* UNIVERSAL FILTER BAR */}
         <div className="header-controls" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '1.5rem', alignItems: 'center', background: 'var(--card-bg)', padding: '14px 18px', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
           {selectedBranch && (
             <input type="text" className="sleek-input" placeholder="Search student, roll, job ID..." style={{ minWidth: '220px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
-            <select className="sleek-select" style={{ minWidth: '190px' }} value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
-              <option value="All">All Main Courses</option>
-              <option value="Industrial Automation">Industrial Automation</option>
-              <option value="BMS AND CCTV">BMS AND CCTV</option>
-              <option value="Embedded and IoT">Embedded and IoT</option>
-              <option value="Digital Marketing">Digital Marketing</option>
-              <option value="Information technology (IT)">Information technology (IT)</option>
-            </select>
-          </div>
+          {/* 🚨 Course Filter Hidden for Course-Specific Roles */}
+          {!isCourseSpecific && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
+              <select className="sleek-select" style={{ minWidth: '190px' }} value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
+                <option value="All">All Main Courses</option>
+                <option value="Industrial Automation">Industrial Automation</option>
+                <option value="BMS AND CCTV">BMS AND CCTV</option>
+                <option value="Embedded and IoT">Embedded and IoT</option>
+                <option value="Digital Marketing">Digital Marketing</option>
+                <option value="Information technology (IT)">Information technology (IT)</option>
+              </select>
+            </div>
+          )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Month/Year:</span>
@@ -152,7 +164,6 @@ export default function StudentApps() {
           )}
         </div>
 
-        {/* CONTENT */}
         {loading ? (
           <div style={{ textAlign: 'center', marginTop: '4rem', color: '#3b82f6' }}>
             <CircleNotch size={50} className="ph-spin" />
