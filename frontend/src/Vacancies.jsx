@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, Users, Eye, X, Prohibit, EnvelopeSimple, Phone, Plus, FloppyDisk } from '@phosphor-icons/react';
+import { CircleNotch, Users, Eye, X, Prohibit, EnvelopeSimple, Phone, Plus } from '@phosphor-icons/react';
 import Layout from './Layout';
 
 const API_BASE = "https://api-talenzo.ipcsglobal.info";
@@ -32,56 +32,32 @@ export default function Vacancies() {
   const [selectedJob, setSelectedJob] = useState(null);
   const [isJobDetailsModalOpen, setIsJobDetailsModalOpen] = useState(false);
   const [isApplicantsModalOpen, setIsApplicantsModalOpen] = useState(false);
-  
-  // ADD MODAL STATE
-  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [savingStatus, setSavingStatus] = useState(false);
-  const [addForm, setAddForm] = useState({
-    id: '', company: '', position: '', location: '', state: '', mode: 'Work at Office', lastDate: '', course: 'Industrial Automation', qualification: '', description: '', experience: '', salary: '', gender: 'Any'
-  });
-
-  const fetchData = async () => {
-    const localTpoStr = localStorage.getItem('tpoData');
-    if (!localTpoStr) return;
-    const localTpo = JSON.parse(localTpoStr);
-    
-    try {
-      const [vacRes, appRes] = await Promise.all([
-        axios.get(`${API_BASE}/api/tpo/vacancies`),
-        axios.post(`${API_BASE}/api/tpo/applications`, { 
-          assignedBranchesArray: localTpo.assignedBranchesArray,
-          tpoName: localTpo.name,
-          role: localTpo.role,
-          assignedCourse: localTpo.assignedCourse
-        })
-      ]);
-      
-      if (vacRes.data.success) setVacancies(vacRes.data.vacancies);
-      if (appRes.data.success) setApplications(appRes.data.applications);
-
-    } catch (error) { console.error("Failed to fetch data", error); } finally { setLoading(false); }
-  };
 
   useEffect(() => {
-    fetchData();
-  }, []);
+    const fetchAllData = async () => {
+      const localTpoStr = localStorage.getItem('tpoData');
+      if (!localTpoStr) return;
+      const localTpo = JSON.parse(localTpoStr);
+      
+      try {
+        const [vacRes, appRes] = await Promise.all([
+          axios.get(`${API_BASE}/api/tpo/vacancies`),
+          axios.post(`${API_BASE}/api/tpo/applications`, { 
+            assignedBranchesArray: localTpo.assignedBranchesArray,
+            tpoName: localTpo.name,
+            role: localTpo.role,
+            assignedCourse: localTpo.assignedCourse
+          })
+        ]);
+        
+        if (vacRes.data.success) setVacancies(vacRes.data.vacancies);
+        if (appRes.data.success) setApplications(appRes.data.applications);
 
-  const handleAddSubmit = async () => {
-    if (!addForm.id || !addForm.company || !addForm.position) return alert("Job ID, Company, and Position are required.");
-    setSavingStatus(true);
-    try {
-      const res = await axios.post(`${API_BASE}/api/tpo/vacancies/add`, addForm);
-      if (res.data.success) {
-        setIsAddModalOpen(false);
-        setAddForm({ id: '', company: '', position: '', location: '', state: '', mode: 'Work at Office', lastDate: '', course: 'Industrial Automation', qualification: '', description: '', experience: '', salary: '', gender: 'Any' });
-        fetchData(); // Refresh list automatically
-      }
-    } catch (err) {
-      alert("Failed to add vacancy.");
-    } finally {
-      setSavingStatus(false);
-    }
-  };
+      } catch (error) { console.error("Failed to fetch data", error); } finally { setLoading(false); }
+    };
+    
+    fetchAllData();
+  }, []);
 
   const appsByJobId = {};
   applications.forEach(app => {
@@ -127,9 +103,13 @@ export default function Vacancies() {
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Current openings and applicant tracking for your branches.</p>
           </div>
           
-          {/* 🚨 ADD OPENING BUTTON: VISIBLE ONLY TO TPO & ADMINS */}
+          {/* 🚨 ADD OPENING BUTTON LINKS DIRECTLY TO GOOGLE FORM */}
           {canAddOpening && (
-            <button className="btn-action" style={{ background: '#38bdf8', color: '#0f1523', display: 'flex', alignItems: 'center', gap: '8px', width: 'auto', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold' }} onClick={() => setIsAddModalOpen(true)}>
+            <button 
+              className="btn-action" 
+              style={{ background: '#38bdf8', color: '#0f1523', display: 'flex', alignItems: 'center', gap: '8px', width: 'auto', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold' }} 
+              onClick={() => window.open('https://forms.gle/9Gxbwx1S2uqeXHne9', '_blank')}
+            >
               <Plus weight="bold" size={20} /> Add Opening
             </button>
           )}
@@ -237,7 +217,6 @@ export default function Vacancies() {
         )}
       </div>
 
-      {/* VIEW JOB DETAILS MODAL */}
       {isJobDetailsModalOpen && selectedJob && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsJobDetailsModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
@@ -274,7 +253,6 @@ export default function Vacancies() {
         </div>
       )}
 
-      {/* VIEW APPLICANTS MODAL */}
       {isApplicantsModalOpen && selectedJob && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsApplicantsModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '900px', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
@@ -342,86 +320,6 @@ export default function Vacancies() {
                 </tbody>
               </table>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* 🚨 NEW MODAL: ADD JOB OPENING */}
-      {isAddModalOpen && canAddOpening && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
-          <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid #1e293b', paddingBottom: '15px' }}>
-              <h2 style={{ margin: 0, fontSize: '1.4rem', color: '#fff' }}>Post New Job Opening</h2>
-              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsAddModalOpen(false)} />
-            </div>
-            
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
-              <div>
-                <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Job ID *</label>
-                <input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.id} onChange={e=>setAddForm({...addForm, id: e.target.value})} placeholder="e.g. JOB-10200" />
-              </div>
-              <div>
-                <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Company Name *</label>
-                <input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.company} onChange={e=>setAddForm({...addForm, company: e.target.value})} />
-              </div>
-              <div>
-                <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Position *</label>
-                <input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.position} onChange={e=>setAddForm({...addForm, position: e.target.value})} />
-              </div>
-              <div>
-                <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Location (City)</label>
-                <input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.location} onChange={e=>setAddForm({...addForm, location: e.target.value})} />
-              </div>
-              <div>
-                <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>State</label>
-                <input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.state} onChange={e=>setAddForm({...addForm, state: e.target.value})} />
-              </div>
-              <div>
-                <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Work Mode</label>
-                <select className="sleek-select" style={{ width: '100%' }} value={addForm.mode} onChange={e=>setAddForm({...addForm, mode: e.target.value})}>
-                  <option>Work at Office</option>
-                  <option>Hybrid</option>
-                  <option>Remote</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Course Category</label>
-                <select className="sleek-select" style={{ width: '100%' }} value={addForm.course} onChange={e=>setAddForm({...addForm, course: e.target.value})}>
-                  <option>Industrial Automation</option>
-                  <option>BMS & CCTV</option>
-                  <option>Embedded and IoT</option>
-                  <option>Digital Marketing</option>
-                  <option>Information technology (IT)</option>
-                  <option>Any Course</option>
-                </select>
-              </div>
-              <div>
-                <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Last Date to Apply</label>
-                <input type="date" className="sleek-input" style={{ width: '100%' }} value={addForm.lastDate} onChange={e=>setAddForm({...addForm, lastDate: e.target.value})} />
-              </div>
-              <div>
-                <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Salary Package</label>
-                <input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.salary} onChange={e=>setAddForm({...addForm, salary: e.target.value})} placeholder="e.g. 3.5 LPA" />
-              </div>
-              <div>
-                <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Experience Req.</label>
-                <input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.experience} onChange={e=>setAddForm({...addForm, experience: e.target.value})} placeholder="e.g. Fresher / 1 Year" />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '15px' }}>
-              <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Qualification</label>
-              <input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.qualification} onChange={e=>setAddForm({...addForm, qualification: e.target.value})} placeholder="e.g. B.Tech / Diploma" />
-            </div>
-
-            <div style={{ marginBottom: '25px' }}>
-              <label style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Job Description</label>
-              <textarea className="sleek-input" style={{ width: '100%', minHeight: '120px', resize: 'vertical' }} value={addForm.description} onChange={e=>setAddForm({...addForm, description: e.target.value})} placeholder="Enter full job description..."></textarea>
-            </div>
-
-            <button className="btn-action" style={{ background: '#38bdf8', color: '#0f172a', width: '100%', padding: '12px', fontWeight: 'bold', fontSize: '1.05rem' }} onClick={handleAddSubmit} disabled={savingStatus}>
-              {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> Publish Vacancy</>}
-            </button>
           </div>
         </div>
       )}
