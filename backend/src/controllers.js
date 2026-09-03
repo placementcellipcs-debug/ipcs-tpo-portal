@@ -18,7 +18,7 @@ const getTpoEmailByBranch = (branch) => {
   const row = cache.contacts.find(r => {
     const assigned = (r.get('Assigned Branches') || '').toLowerCase();
     const sitting = (r.get('Sitting Branch') || '').toLowerCase();
-    if (assigned.includes('all') || sitting.includes('all')) return false; // Skip general accounts
+    if (assigned.includes('all') || sitting.includes('all')) return false; 
     return assigned.includes(searchBranch) || searchBranch.includes(assigned) || sitting.includes(searchBranch);
   });
   return row ? row.get('Mail ID') : '';
@@ -34,13 +34,17 @@ const getTpoEmail = (tpoName) => {
   return row ? row.get('Mail ID') : '';
 };
 
+// 🚨 FIXED: Robust Branch Manager Lookup from "User" Sheet
 const getBranchManagerEmail = (branch) => {
   const cache = getCache();
   if (!cache || !cache.users) return '';
+  // Clean the branch name (e.g., convert "Calicut Branch" to just "calicut")
+  const searchBranch = (branch || '').toLowerCase().replace('branch', '').trim();
+  
   const row = cache.users.find(r => {
-    const role = (r.get('Role') || '').toLowerCase();
+    const role = (r.get('Role') || '').toLowerCase().trim();
     const br = (r.get('Sitting Branch') || r.get('Assigned Branches') || '').toLowerCase();
-    return role.includes('manager') && br.includes((branch || '').toLowerCase());
+    return role === 'branch manager' && br.includes(searchBranch);
   });
   return row ? row.get('Mail ID') : '';
 };
@@ -51,11 +55,12 @@ const getAllTpoEmails = () => {
   return cache.contacts.map(r => r.get('Mail ID')).filter(Boolean);
 };
 
+// 🚨 FIXED: Pulls ALL Branch Managers specifically from User sheet
 const getAllBranchManagerEmails = () => {
   const cache = getCache();
   if (!cache || !cache.users) return [];
   return cache.users
-    .filter(r => (r.get('Role') || '').toLowerCase().includes('manager'))
+    .filter(r => (r.get('Role') || '').toLowerCase().trim() === 'branch manager')
     .map(r => r.get('Mail ID')).filter(Boolean);
 };
 
@@ -89,7 +94,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE (UPDATED CC LOGIC)
+// 🚨 MASTER STUDENT EMAIL ENGINE (STRICT CC LOGIC & LOGOS)
 // ---------------------------------------------------------
 const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
@@ -116,8 +121,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   const noAttendCount = noAttendJobs.size;
   const rejectCount = rejectedJobs.size;
 
-  // 🚨 NEW STRICT CC LOGIC FOR STUDENT MAILS
-  // Base CC: Scheduling TPO + Student's Assigned TPO
+  // 🚨 CC LOGIC FOR STUDENT MAILS
   const assignedTpoEmail = getTpoEmail(studentData.tpoName);
   let ccArray = [currentUserEmail, assignedTpoEmail];
 
@@ -132,9 +136,10 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   let subject = ''; let html = ''; let mailType = '';
   const refId = Math.floor(10000 + Math.random() * 90000); 
 
-  const logo1 = "https://drive.google.com/uc?export=view&id=1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
-  const logo2 = "https://drive.google.com/uc?export=view&id=1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
-  const watermark = "https://drive.google.com/uc?export=view&id=1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
+  // 🚨 FIXED: Image links now use lh3.googleusercontent.com for 100% email client compatibility
+  const logo1 = "https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
+  const logo2 = "https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
+  const watermark = "https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
 
   const buildBrandedEmail = (title, headerColor, bodyContent) => `
     <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
@@ -214,121 +219,6 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   }
 };
 
-
-// ---------------------------------------------------------
-// 🚨 EVENTS ENGINE (DRIVE & TALENTINO MAILS)
-// ---------------------------------------------------------
-exports.addEvent = async (req, res) => {
-  const { date, tpo, branch, type, title, description, time, location } = req.body;
-  try {
-    const eventSheet = doc.sheetsByTitle["Event"];
-    let posterLink = '';
-    if (req.file) posterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS); 
-    await eventSheet.addRow({ 'Date of the Event': date, 'TPO': tpo, 'Branch': branch, 'Event': type, 'Title': title, 'Descripation': description || '', 'Time of the Event': time || '', 'Event Happening in': location || '', 'Poster Link': posterLink });
-    
-    const evType = (type || '').toLowerCase();
-    const refId = Math.floor(10000 + Math.random() * 90000); 
-
-    const logo1 = "https://drive.google.com/uc?export=view&id=1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
-    const logo2 = "https://drive.google.com/uc?export=view&id=1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
-    const watermark = "https://drive.google.com/uc?export=view&id=1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
-    
-    // 🚨 PLACEMENT DRIVE LOGIC
-    if (evType.includes('placement drive')) {
-      const allTpos = getAllTpoEmails();
-      const allBMs = getAllBranchManagerEmails();
-      const bccList = [...new Set([...allTpos, ...allBMs])].join(',');
-      const ccList = 'gifty@ipcsglobal.com,rakesh@ipcsglobal.com,ajith@ipcsglobal.com';
-
-      const html = `<div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
-          <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #3b82f6;">
-            <div style="margin-bottom: 12px;"><img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" /><img src="${logo2}" alt="Talenzo Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" /></div>
-            <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase;">Placement Drive Notification</h2>
-          </div>
-          <div style="padding: 35px 30px;">
-            <p>Dear Team,<br/>A Placement Drive has been scheduled. Details below:</p>
-            <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 5px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 20px 0;">
-              <b>Drive Title:</b> ${title}<br/><b>Date:</b> ${date}<br/><b>Location:</b> ${location}
-            </div>
-          </div></div>`;
-
-      sendMailAndLog({ from: `"IPCS Placements" <${process.env.EMAIL_USER}>`, to: process.env.EMAIL_USER, bcc: bccList, cc: ccList, subject: `Placement Drive Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`, html: html }, { name: 'All Branches', email: 'Broadcast', type: 'Event Notification' });
-
-    // 🚨 TALENTINO LOGIC
-    } else if (evType.includes('talentino')) {
-      const tpoMail = getTpoEmail(tpo);
-      const bmMail = getBranchManagerEmail(branch);
-      const ccList = [...new Set([tpoMail, bmMail, 'gifty@ipcsglobal.com'])].filter(Boolean).join(',');
-      
-      const html = `<div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
-          <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #a855f7;">
-            <div style="margin-bottom: 12px;"><img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" /><img src="${logo2}" alt="Talenzo Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" /></div>
-            <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase;">Talentino Session Notification</h2>
-          </div>
-          <div style="padding: 35px 30px;">
-            <p>Dear Team,<br/>A Talentino Session has been scheduled. Details below:</p>
-            <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 5px solid #a855f7; border-radius: 8px; padding: 20px; margin: 20px 0;">
-              <b>Date:</b> ${date}<br/><b>Time:</b> ${time}<br/><b>Conducted By:</b> ${tpo}
-            </div>
-          </div></div>`;
-
-      if (tpoMail) {
-        sendMailAndLog({ from: `"IPCS Talentino" <${process.env.EMAIL_USER}>`, to: tpoMail, cc: ccList, subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`, html: html }, { name: tpo, email: tpoMail, type: 'Event Notification' });
-      }
-    }
-
-    refreshCache(); res.json({ success: true, message: "Event added successfully" });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
-};
-
-// ---------------------------------------------------------
-// 🚨 ADMIN USERS ENGINE (FETCH TARGET & EMP ID)
-// ---------------------------------------------------------
-exports.getAdminUsers = async (req, res) => {
-  try {
-    await doc.loadInfo();
-    let allUsers = [];
-
-    const contactSheet = doc.sheetsByTitle["Contact"];
-    if (contactSheet) {
-      const cRows = await contactSheet.getRows();
-      const headers = contactSheet.headerValues;
-      const hName = getFuzzyHeader(headers, 'tponame'); const hMail = getFuzzyHeader(headers, 'mailid'); 
-      const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); 
-      const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); 
-      const hPhoto = getFuzzyHeader(headers, 'profilephoto'); 
-      const hTarget = getFuzzyHeader(headers, 'target') || getFuzzyHeader(headers, 'targetofthemonth');
-      const hEmpId = getFuzzyHeader(headers, 'empid');
-
-      cRows.forEach(r => {
-        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
-        if (email.trim() !== '' || name.trim() !== '') {
-          allUsers.push({ sheet: 'Contact', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: 'TPO', course: 'All Courses', access: 'View & Edit', profilePhoto: r.get(hPhoto) || '', target: r.get(hTarget) || '20', empId: r.get(hEmpId) || `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}` });
-        }
-      });
-    }
-
-    const userSheet = doc.sheetsByTitle["User"];
-    if (userSheet) {
-      const uRows = await userSheet.getRows();
-      const headers = userSheet.headerValues;
-      const hName = getFuzzyHeader(headers, 'username'); const hMail = getFuzzyHeader(headers, 'mailid'); 
-      const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); 
-      const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); 
-      const hRole = getFuzzyHeader(headers, 'role'); const hCourse = getFuzzyHeader(headers, 'course'); 
-      const hAccess = getFuzzyHeader(headers, 'access'); const hPhoto = getFuzzyHeader(headers, 'profilephoto');
-
-      uRows.forEach(r => {
-        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
-        if (email.trim() !== '' || name.trim() !== '') {
-          allUsers.push({ sheet: 'User', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: r.get(hRole) || 'Unassigned', course: r.get(hCourse) || 'All Courses', access: r.get(hAccess) || 'View Only', profilePhoto: r.get(hPhoto) || '', target: 'N/A', empId: `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}` });
-        }
-      });
-    }
-    res.json({ success: true, users: allUsers.reverse() });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
 // ---------------------------------------------------------
 // AUTHENTICATION
 // ---------------------------------------------------------
@@ -348,7 +238,6 @@ exports.login = async (req, res) => {
     let course = 'All'; 
     let userName = '';
 
-    // 1. Check Contact Sheet (Strictly for TPOs)
     for (let row of cache.contacts) {
       const rowObj = row.toObject();
       const cleanKeys = {};
@@ -366,7 +255,6 @@ exports.login = async (req, res) => {
       }
     }
 
-    // 2. Check User Sheet (For Admins, Managers, RTH, Trainers, etc.)
     if (!foundUser) {
       for (let row of cache.users) {
         const rowObj = row.toObject();
@@ -571,57 +459,6 @@ exports.updateStudent = async (req, res) => {
       const cStatusH = getFuzzyHeader(headers, 'currentlystudying'); 
       if (cStatusH && courseStatus !== undefined) {
         updateObj[cStatusH] = courseStatus;
-        
-        let oldStatus = '';
-        if (rows[0].get) {
-           oldStatus = (rows[0].get(cStatusH) || '').toString().toLowerCase();
-        } else {
-           oldStatus = (rows[0][cStatusH] || '').toString().toLowerCase();
-        }
-        
-        const isNowCompleted = courseStatus.toLowerCase().includes('completed') || courseStatus.toLowerCase().includes('90%');
-        const wasCompleted = oldStatus.includes('completed') || oldStatus.includes('90%');
-
-        if (!wasCompleted && isNowCompleted) {
-          let sName = 'Student'; let sEmail = '';
-          if (rows[0].get) {
-             sName = rows[0].get('Name') || 'Student';
-             sEmail = rows[0].get('Mail ID') || rows[0].get('Email') || '';
-          } else {
-             sName = rows[0]['Name'] || 'Student';
-             sEmail = rows[0]['Mail ID'] || rows[0]['Email'] || '';
-          }
-
-          const refId = Math.floor(10000 + Math.random() * 90000); 
-          
-          if (sEmail) {
-            const html = `
-              <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-                <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;">
-                  <h2 style="color: #ffffff; margin: 0;">PORTAL ACCESS GRANTED!</h2>
-                </div>
-                <div style="padding: 30px; background-color: #ffffff;">
-                  <p style="font-size: 16px; margin-top: 0;">Dear <b>${sName}</b>,</p>
-                  <p style="font-size: 15px; line-height: 1.6; color: #475569;">Congratulations! Your trainer has confirmed your exceptional performance.</p>
-                  <p style="font-size: 15px; line-height: 1.6; color: #475569;"><b>Your placement portal access is now fully active.</b> You can now browse active vacancies and apply directly for job openings.</p>
-                  <div style="text-align: center; margin: 35px 0;">
-                    <a href="https://ipcs-tpo-portal.vercel.app" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">Access Placement Portal</a>
-                  </div>
-                  <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
-                    <p style="margin: 0 0 5px 0;">Regards,</p>
-                    <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">IPCS Placement Cell</p>
-                  </div>
-                </div>
-              </div>
-            `;
-            sendMailAndLog({
-              from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`,
-              to: sEmail,
-              subject: `Welcome to IPCS Placements! Your Profile is Active [Ref: ${refId}]`,
-              html: html
-            }, { name: sName, email: sEmail, type: 'Course Completion Welcome' });
-          }
-        }
       }
 
       rows[0].assign(updateObj); 
@@ -695,7 +532,6 @@ exports.updateApplication = async (req, res) => {
   const rowNumber = parseInt(req.body.rowNumber);
   const { status, remarks, datePlaced, packageLpa, joiningStatus, currentUserEmail, interviewDate, interviewTime, interviewVenue } = req.body;
   
-  // 🚨 FIX: Safely parse fullApp depending on if it's sent as a string (FormData) or JSON
   let fullApp = {};
   if (typeof req.body.fullApp === 'string') {
     try {
@@ -745,7 +581,6 @@ exports.updateApplication = async (req, res) => {
       const hOffer = getFuzzyHeader(headers, 'offerletter'); if (hOffer && offerLetterLink) updateObj[hOffer] = offerLetterLink;
       const hJoining = getFuzzyHeader(headers, 'joiningstatus'); if (hJoining && joiningStatus !== undefined) updateObj[hJoining] = joiningStatus;
       
-      // Update Opening_Applied interview fields
       const hDate = getFuzzyHeader(headers, 'interviewdate');
       const hTime = getFuzzyHeader(headers, 'interviewtime') || getFuzzyHeader(headers, 'intervewtime');
       const hVenue = getFuzzyHeader(headers, 'interviewvenue');
@@ -757,7 +592,6 @@ exports.updateApplication = async (req, res) => {
       rows[0].assign(updateObj); 
       await rows[0].save(); 
       
-      // 🚨 SAFETY NET: Write to TPO_Log without breaking the save
       try {
         const logSheet = doc.sheetsByTitle["TPO_Log"];
         if (logSheet) {
@@ -797,7 +631,6 @@ exports.updateApplication = async (req, res) => {
         }
       } catch(e) { console.error("TPO Log skipped due to column mismatch"); }
       
-      // 🚨 SAFETY NET: Send mail in the background
       if (oldStatus !== (status || '').toLowerCase()) {
          checkAndSendStudentMails({
            name: sName, roll: sRoll, email: sMail, company: sCompany, 
@@ -856,7 +689,9 @@ exports.addApplication = async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-// --- EVENTS ---
+// ---------------------------------------------------------
+// 🚨 EVENTS ENGINE (DRIVE & TALENTINO MAILS)
+// ---------------------------------------------------------
 exports.getEvents = (req, res) => {
   let allEvents = getCache().events.map(row => {
     const rowData = row.toObject();
@@ -878,113 +713,53 @@ exports.addEvent = async (req, res) => {
     
     const evType = (type || '').toLowerCase();
     const refId = Math.floor(10000 + Math.random() * 90000); 
+
+    // 🚨 FIXED: Image links now use lh3.googleusercontent.com
+    const logo1 = "https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
+    const logo2 = "https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
+    const watermark = "https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
     
+    // 🚨 PLACEMENT DRIVE LOGIC
     if (evType.includes('placement drive')) {
       const allTpos = getAllTpoEmails();
       const allBMs = getAllBranchManagerEmails();
-      const bccList = [...new Set([...allTpos, ...allBMs])].join(',');
-
-      const logo1 = "https://drive.google.com/uc?export=view&id=1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
-      const logo2 = "https://drive.google.com/uc?export=view&id=1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
-      const watermark = "https://drive.google.com/uc?export=view&id=1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
       
-      const html = `
-        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
-          
-          <!-- Header -->
+      // BCC: All TPOs and All Branch Managers
+      const bccList = [...new Set([...allTpos, ...allBMs])].filter(Boolean).join(',');
+      // CC: EXACTLY Gifty, Rakesh, and Ajith
+      const ccList = 'gifty@ipcsglobal.com,rakesh@ipcsglobal.com,ajith@ipcsglobal.com';
+
+      const html = `<div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
           <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #3b82f6;">
-            <div style="margin-bottom: 12px;">
-              <img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
-              <img src="${logo2}" alt="Talenzo Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
-            </div>
-            <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px;">Placement Drive Notification</h2>
-            <p style="color: #94a3b8; margin: 5px 0 0 0; font-size: 13px;">IPCS Global Placement Cell</p>
+            <div style="margin-bottom: 12px;"><img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" /><img src="${logo2}" alt="Talenzo Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" /></div>
+            <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase;">Placement Drive Notification</h2>
           </div>
-
-          <!-- Body Container -->
-          <div style="background-image: url('${watermark}'); background-repeat: no-repeat; background-position: center center; background-size: cover; background-color: #ffffff;">
-            <div style="padding: 35px 30px; background-color: rgba(255, 255, 255, 0.94); color: #334155; font-size: 15px; line-height: 1.65;">
-              
-              <p style="font-size: 16px; font-weight: bold; color: #0f1523; margin-top: 0;">Dear Team,</p>
-              <p>Greetings from the Placement Department, IPCS Global.</p>
-              <p>This is to inform you that a Placement Drive has been scheduled. Kindly find the details below:</p>
-
-              <!-- Details Card -->
-              <div style="background-color: rgba(248, 250, 252, 0.95); border: 1px solid #cbd5e1; border-left: 5px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 25px 0;">
-                <h3 style="margin: 0 0 12px 0; color: #0f1523; font-size: 15px; text-transform: uppercase;">📌 Placement Drive Details</h3>
-                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-                  <tr><td style="padding: 6px 0; color: #64748b; width: 35%;">Drive Title:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${title}</td></tr>
-                  <tr><td style="padding: 6px 0; color: #64748b;">Date:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${date}</td></tr>
-                  <tr><td style="padding: 6px 0; color: #64748b;">Time:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${time || 'TBD'}</td></tr>
-                  <tr><td style="padding: 6px 0; color: #64748b;">Location / Mode:</td><td style="padding: 6px 0; color: #0284c7; font-weight: bold;">${location || 'Venue / Online'}</td></tr>
-                  <tr><td style="padding: 6px 0; color: #64748b;">Eligible Branch:</td><td style="padding: 6px 0; color: #0f1523;">${branch || 'All Branches'}</td></tr>
-                  <tr><td style="padding: 6px 0; color: #64748b;">Description:</td><td style="padding: 6px 0; color: #334155;">${description || 'N/A'}</td></tr>
-                </table>
-              </div>
-
-              <h3 style="color: #ef4444; margin: 20px 0 10px 0; font-size: 16px;">⚠️ Action Required</h3>
-              <p>All concerned branches are requested to immediately inform all eligible students about this placement opportunity and encourage maximum participation.</p>
-              
-              <p>Please ensure that the interested and eligible students strictly register for the drive through the IPCS Global Student Portal:</p>
-
-              <!-- Portal Callout -->
-              <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0;">
-                <p style="margin: 0; font-size: 15px; color: #1e3a8a;">
-                  🌐 <b>Student Portal:</b> <a href="https://placement.ipcsglobal.info" target="_blank" style="color: #0284c7; font-weight: bold; text-decoration: underline;">placement.ipcsglobal.info</a>
-                </p>
-              </div>
-
-              <p style="color: #b91c1c; font-weight: bold;">
-                Portal registration is mandatory for participation in the placement drive.
-              </p>
-
-              <p>Students must complete their registration through the portal within the given registration period. Branch-level confirmation, WhatsApp confirmation, or verbal confirmation will not be considered as a substitute for portal registration.</p>
-
-              <p style="font-weight: bold; margin-bottom: 5px;">We request all branches to ensure that:</p>
-              <ul style="padding-left: 20px; margin-top: 5px;">
-                <li style="margin-bottom: 6px;">All eligible students are informed about the drive.</li>
-                <li style="margin-bottom: 6px;">Interested students complete their registration through the Student Portal.</li>
-                <li style="margin-bottom: 6px;">Students are reminded to register strictly through the portal before the registration deadline.</li>
-                <li style="margin-bottom: 6px;">Registered students are properly informed about the drive and instructed to attend on time.</li>
-              </ul>
-
-              <p>Your support and coordination are essential to ensure smooth execution of the placement drive and maximum student participation.</p>
-              <p>For any clarification, please coordinate with the Placement Team.</p>
-              <p>Thank you for your cooperation.</p>
-
-              <!-- Sign-off -->
-              <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
-                <p style="margin: 0 0 3px 0;">Regards,</p>
-                <p style="margin: 0 0 2px 0; font-weight: bold;">Placement Team</p>
-                <p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p>
-              </div>
-
+          <div style="padding: 35px 30px;">
+            <p>Dear Team,<br/>A Placement Drive has been scheduled. Details below:</p>
+            <div style="background-color: #f8fafc; border: 1px solid #cbd5e1; border-left: 5px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 20px 0;">
+              <b>Drive Title:</b> ${title}<br/><b>Date:</b> ${date}<br/><b>Location:</b> ${location}
             </div>
-          </div>
-        </div>
-      `;
+          </div></div>`;
 
-      sendMailAndLog({
-        from: `"IPCS Placements" <${process.env.EMAIL_USER}>`,
+      sendMailAndLog({ 
+        from: `"IPCS Placements" <${process.env.EMAIL_USER}>`, 
         to: process.env.EMAIL_USER, 
         bcc: bccList, 
-        cc: 'RAKESH@ipcsglobal.com,Gifty@ipcsglobal.com',
-        subject: `Placement Drive Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
-        html: html
+        cc: ccList, 
+        subject: `Placement Drive Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`, 
+        html: html 
       }, { name: 'All Branches', email: 'Broadcast', type: 'Event Notification' });
 
+    // 🚨 TALENTINO LOGIC
     } else if (evType.includes('talentino')) {
       const tpoMail = getTpoEmail(tpo);
       const bmMail = getBranchManagerEmail(branch);
       
-      const logo1 = "https://drive.google.com/uc?export=view&id=1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
-      const logo2 = "https://drive.google.com/uc?export=view&id=1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
-      const watermark = "https://drive.google.com/uc?export=view&id=1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
+      // CC: Branch Manager + Gifty
+      const ccList = [...new Set([bmMail, 'gifty@ipcsglobal.com'])].filter(Boolean).join(',');
       
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
-          
-          <!-- Header -->
           <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #a855f7;">
             <div style="margin-bottom: 12px;">
               <img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
@@ -993,16 +768,11 @@ exports.addEvent = async (req, res) => {
             <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px;">Talentino Session Notification</h2>
             <p style="color: #94a3b8; margin: 5px 0 0 0; font-size: 13px;">IPCS Global Placement Cell</p>
           </div>
-
-          <!-- Body Container -->
           <div style="background-image: url('${watermark}'); background-repeat: no-repeat; background-position: center center; background-size: cover; background-color: #ffffff;">
             <div style="padding: 35px 30px; background-color: rgba(255, 255, 255, 0.94); color: #334155; font-size: 15px; line-height: 1.65;">
-              
               <p style="font-size: 16px; font-weight: bold; color: #0f1523; margin-top: 0;">Dear Team,</p>
               <p>Greetings from the Placement Department, IPCS Global.</p>
               <p>This is to inform you that a Talentino Session has been scheduled at your branch. Kindly find the details below:</p>
-
-              <!-- Details Card -->
               <div style="background-color: rgba(248, 250, 252, 0.95); border: 1px solid #cbd5e1; border-left: 5px solid #a855f7; border-radius: 8px; padding: 20px; margin: 25px 0;">
                 <h3 style="margin: 0 0 12px 0; color: #0f1523; font-size: 15px; text-transform: uppercase;">📌 Talentino Session Details</h3>
                 <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
@@ -1010,159 +780,536 @@ exports.addEvent = async (req, res) => {
                   <tr><td style="padding: 6px 0; color: #64748b;">Time:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${time || 'TBD'}</td></tr>
                   <tr><td style="padding: 6px 0; color: #64748b;">Location / Mode:</td><td style="padding: 6px 0; color: #0284c7; font-weight: bold;">${location || branch || 'Branch Venue'}</td></tr>
                   <tr><td style="padding: 6px 0; color: #64748b;">Conducted By:</td><td style="padding: 6px 0; color: #0f1523;">${tpo}</td></tr>
-                  <tr><td style="padding: 6px 0; color: #64748b;">Description:</td><td style="padding: 6px 0; color: #334155;">${description || 'N/A'}</td></tr>
                 </table>
               </div>
-
-              <h3 style="color: #ef4444; margin: 20px 0 10px 0; font-size: 16px;">⚠️ Action Required</h3>
-              <p>The concerned branch is requested to inform the students about the scheduled Talentino session and ensure maximum participation.</p>
-              
-              <p style="font-weight: bold; margin-bottom: 5px;">Please ensure that:</p>
-              <ul style="padding-left: 20px; margin-top: 5px;">
-                <li style="margin-bottom: 6px;">All concerned students are informed about the session in advance.</li>
-                <li style="margin-bottom: 6px;">Students are instructed to be present at the branch on time.</li>
-                <li style="margin-bottom: 6px;">The required arrangements are made at the branch for conducting the session smoothly.</li>
-                <li style="margin-bottom: 6px;">Students are encouraged to actively participate in all the activities conducted during Talentino.</li>
-                <li style="margin-bottom: 6px;">The concerned TPO coordinates with the branch team and students throughout the session.</li>
-              </ul>
-
-              <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                <p style="margin: 0; font-size: 14px; color: #1e3a8a;">
-                  <b>Note:</b> No separate registration is required for the Talentino session. Students can participate directly as instructed by the concerned TPO.
-                </p>
-              </div>
-
-              <p>The Talentino session is designed to engage students through interactive activities, challenges, and placement-oriented exercises, helping them improve their confidence, communication, aptitude, problem-solving, and overall placement readiness.</p>
-              
-              <p>Your support and coordination are essential to ensure the smooth execution of the Talentino session and active student participation.</p>
-              
-              <p>For any clarification or coordination, please connect with the Placement Team.<br/>Thank you for your cooperation.</p>
-
-              <!-- Sign-off -->
-              <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
-                <p style="margin: 0 0 3px 0;">Regards,</p>
-                <p style="margin: 0 0 2px 0; font-weight: bold;">Placement Team</p>
-                <p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p>
-              </div>
-
             </div>
           </div>
         </div>
       `;
 
-      if (tpoMail) {
-        sendMailAndLog({
-          from: `"IPCS Talentino" <${process.env.EMAIL_USER}>`,
-          to: tpoMail,
-          cc: `Gifty@ipcsglobal.com,${bmMail}`,
-          subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
-          html: html
-        }, { name: tpo, email: tpoMail, type: 'Event Notification' });
-      }
+      // Ensures the email fires even if TPO mail isn't found
+      const primaryTo = tpoMail || bmMail || 'gifty@ipcsglobal.com';
+
+      sendMailAndLog({
+        from: `"IPCS Talentino" <${process.env.EMAIL_USER}>`,
+        to: primaryTo,
+        cc: ccList,
+        subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
+        html: html
+      }, { name: tpo, email: primaryTo, type: 'Event Notification' });
     }
 
     refreshCache(); res.json({ success: true, message: "Event added successfully" });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-// --- CRON HELPER (RESUME DELIVERY) ---
-exports.runDailyCron = async () => {
-  const cache = getCache();
-  if (!cache) return;
-  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
-  const yStr = yesterday.toISOString().split('T')[0]; 
-  
-  const expiredJobs = cache.vacancies.filter(v => {
-    if (!v.get('Last Date')) return false;
-    try { 
-      let pd = v.get('Last Date');
-      if (pd.includes('/')) {
-        const parts = pd.split(/[/\s,.-]+/);
-        if (parts.length >= 3) pd = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-      }
-      return new Date(pd).toISOString().split('T')[0] === yStr; 
-    } catch(e) { return false; }
-  });
+// ---------------------------------------------------------
+// 🚨 ADMIN USERS ENGINE (FETCH TARGET & EMP ID)
+// ---------------------------------------------------------
+exports.getAdminUsers = async (req, res) => {
+  try {
+    await doc.loadInfo();
+    let allUsers = [];
 
-  for (let job of expiredJobs) {
-    const jobId = job.get('Job ID') || job.get('ID');
-    const companyEmail = job.get('Company Mail ID') || job.get('Company Email'); 
-    if (!companyEmail) continue;
+    const contactSheet = doc.sheetsByTitle["Contact"];
+    if (contactSheet) {
+      const cRows = await contactSheet.getRows();
+      const headers = contactSheet.headerValues;
+      const hName = getFuzzyHeader(headers, 'tponame'); const hMail = getFuzzyHeader(headers, 'mailid'); 
+      const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); 
+      const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); 
+      const hPhoto = getFuzzyHeader(headers, 'profilephoto'); 
+      const hTarget = getFuzzyHeader(headers, 'target') || getFuzzyHeader(headers, 'targetofthemonth');
+      const hEmpId = getFuzzyHeader(headers, 'empid');
 
-    const applicants = cache.applications.filter(app => app.get('Job ID') === jobId);
-    if (applicants.length === 0) continue;
+      cRows.forEach(r => {
+        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
+        if (email.trim() !== '' || name.trim() !== '') {
+          allUsers.push({ sheet: 'Contact', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: 'TPO', course: 'All Courses', access: 'View & Edit', profilePhoto: r.get(hPhoto) || '', target: r.get(hTarget) || '20', empId: r.get(hEmpId) || `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}` });
+        }
+      });
+    }
 
-    const tpoName = applicants[0].get('Placement Officer');
-    const tpoEmail = getTpoEmail(tpoName);
+    const userSheet = doc.sheetsByTitle["User"];
+    if (userSheet) {
+      const uRows = await userSheet.getRows();
+      const headers = userSheet.headerValues;
+      const hName = getFuzzyHeader(headers, 'username'); const hMail = getFuzzyHeader(headers, 'mailid'); 
+      const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); 
+      const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); 
+      const hRole = getFuzzyHeader(headers, 'role'); const hCourse = getFuzzyHeader(headers, 'course'); 
+      const hAccess = getFuzzyHeader(headers, 'access'); const hPhoto = getFuzzyHeader(headers, 'profilephoto');
 
-    let tableRows = ''; let attachments = [];
-    applicants.forEach((appRow, index) => {
-      const rd = appRow.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().includes(str.toLowerCase()));
-      const info = { name: rd[getH('name')] || '', phone: rd[getH('contact')] || rd[getH('phone')] || '', email: rd[getH('mail')] || rd[getH('email')] || '', qual: rd[getH('qual')] || '', resume: rd[getH('resume')] || rd[getH('cv')] || '' };
-      
-      let resumeBtn = 'N/A';
-      if (info.resume) {
-        const driveMatch = info.resume.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
-        if (driveMatch) {
-            const driveId = driveMatch[1];
-            resumeBtn = `<a href="https://drive.google.com/file/d/${driveId}/view" style="background: #0f172a; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; display: inline-block; white-space: nowrap;">View CV</a>`;
-            attachments.push({ filename: `${info.name.replace(/\s+/g, '_')}_Resume.pdf`, href: `https://drive.google.com/uc?export=download&id=${driveId}` });
-        } else { resumeBtn = `<a href="${info.resume}">Link</a>`; }
-      }
-      tableRows += `<tr><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${index+1}</td><td style="padding:10px;border:1px solid #cbd5e1;"><b>${info.name}</b></td><td style="padding:10px;border:1px solid #cbd5e1;">${info.phone}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.email}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.qual}</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${resumeBtn}</td></tr>`;
-    });
-
-    const html = `
-      <div style="font-family: Arial, sans-serif; color: #333; max-width: 800px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-        <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #10b981;">
-          <h2 style="color: #ffffff; margin: 0; letter-spacing: 1px;">APPLICANT RESUMES</h2>
-        </div>
-        <div style="padding: 30px; background-color: #ffffff;">
-          <p style="font-size: 16px; margin-top: 0;">Dear <b>${job.get('Company Name') || job.get('Company')}</b> Hiring Team,</p>
-          <p style="font-size: 15px; line-height: 1.6; color: #475569;">Greetings from IPCS Global Placement Cell.</p>
-          <p style="font-size: 15px; line-height: 1.6; color: #475569;">Please find attached the consolidated list of pre-screened resumes for the <b>${job.get('Position')}</b> opening (Ref: ${jobId}).</p>
-          
-          <table style="width: 100%; border-collapse: collapse; margin-top: 25px;">
-            <thead>
-              <tr style="background-color: #f1f5f9; text-align: left; font-size: 13px;">
-                <th style="padding: 10px; border: 1px solid #cbd5e1; text-align:center;">#</th>
-                <th style="padding: 10px; border: 1px solid #cbd5e1;">Applicant Name</th>
-                <th style="padding: 10px; border: 1px solid #cbd5e1;">Phone</th>
-                <th style="padding: 10px; border: 1px solid #cbd5e1;">Email</th>
-                <th style="padding: 10px; border: 1px solid #cbd5e1;">Qualification</th>
-                <th style="padding: 10px; border: 1px solid #cbd5e1;">Resume Link</th>
-              </tr>
-            </thead>
-            <tbody style="font-size: 13px;">
-              ${tableRows}
-            </tbody>
-          </table>
-          
-          <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
-            <p style="margin: 0 0 5px 0;">If you require further shortlisting or have interview dates finalized, please reply directly to this email.</p>
-            <p style="margin: 15px 0 2px 0;">Regards,</p>
-            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName}</p>
-            <p style="margin: 0;">Placement Officer, IPCS Global</p>
-          </div>
-        </div>
-      </div>
-    `;
-
-    await sendMailAndLog({
-      from: `"IPCS Corporate Relations" <${process.env.EMAIL_USER}>`, 
-      to: companyEmail,
-      cc: tpoEmail || '',
-      subject: `Applicant Resumes: ${job.get('Position')} Opening [Ref: ${jobId}]`,
-      html: html,
-      attachments: attachments
-    }, { name: job.get('Company Name'), email: companyEmail, type: 'Resume Delivery' }); 
-  }
+      uRows.forEach(r => {
+        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
+        if (email.trim() !== '' || name.trim() !== '') {
+          allUsers.push({ sheet: 'User', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: r.get(hRole) || 'Unassigned', course: r.get(hCourse) || 'All Courses', access: r.get(hAccess) || 'View Only', profilePhoto: r.get(hPhoto) || '', target: 'N/A', empId: `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}` });
+        }
+      });
+    }
+    res.json({ success: true, users: allUsers.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 // ---------------------------------------------------------
 // EVERYTHING ELSE (Untouched, safe to keep exactly as is)
 // ---------------------------------------------------------
+exports.login = async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const cache = getCache();
+    
+    if (!cache || !cache.contacts || !cache.users) {
+       return res.status(503).json({ success: false, message: "System is booting up. Please try again in 5 seconds." });
+    }
+
+    const cleanInput = (email || '').toString().trim().toLowerCase();
+    const cleanPass = (password || '').toString().trim();
+    let foundUser = null; 
+    let role = 'TPO'; 
+    let course = 'All'; 
+    let userName = '';
+
+    for (let row of cache.contacts) {
+      const rowObj = row.toObject();
+      const cleanKeys = {};
+      for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
+      
+      const sheetMail = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
+      const sheetPass = (cleanKeys['password'] || '').toString().trim();
+      
+      if (sheetMail === cleanInput && sheetPass === cleanPass && cleanInput !== '') {
+        foundUser = cleanKeys;
+        role = 'TPO';
+        course = 'All Courses';
+        userName = cleanKeys['tponame'] || cleanKeys['name'] || 'TPO User';
+        break;
+      }
+    }
+
+    if (!foundUser) {
+      for (let row of cache.users) {
+        const rowObj = row.toObject();
+        const cleanKeys = {};
+        for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
+        
+        const sheetUsername = (cleanKeys['username'] || cleanKeys['name'] || '').toString().trim().toLowerCase();
+        const sheetMail = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
+        const sheetLoginId = (cleanKeys['loginid'] || '').toString().trim().toLowerCase();
+        const sheetPass = (cleanKeys['password'] || '').toString().trim();
+        
+        if ((sheetUsername === cleanInput || sheetMail === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
+          foundUser = cleanKeys;
+          role = (cleanKeys['role'] || 'RTH').toString().trim();
+          course = (cleanKeys['course'] || 'All').toString().trim();
+          userName = cleanKeys['username'] || cleanKeys['name'] || 'User';
+          break;
+        }
+      }
+    }
+
+    if (!foundUser) {
+      return res.status(401).json({ success: false, message: "Invalid Login ID or Password." });
+    }
+
+    const assignedRaw = foundUser['assignedbranches'] || foundUser['sittingbranch'] || '';
+    let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
+    const upperRole = role.toUpperCase();
+    let accessType = 'edit';
+    const sheetAccess = (foundUser['access'] || '').toString().toUpperCase();
+    
+    if (upperRole.includes('ADMIN') || upperRole === 'GENERAL MANAGER' || upperRole === 'TECHNICAL HEAD' || upperRole === 'ZONAL PLACEMENT HEAD' || sheetAccess.includes('SUPER ADMIN')) {
+      accessType = 'superadmin';
+    } else if (sheetAccess.includes('VIEW ONLY') && !sheetAccess.includes('EDIT')) {
+      accessType = 'view';
+    } else if (sheetAccess.includes('VIEW & EDIT') || sheetAccess.includes('EDIT')) {
+      accessType = 'edit';
+    }
+
+    if (accessType === 'superadmin' || upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD' || assignedArray.length === 0) {
+      assignedArray = ['all'];
+    }
+
+    return res.json({ 
+      success: true, 
+      tpo: { 
+        name: userName, 
+        email: foundUser['mailid'] || foundUser['email'] || cleanInput, 
+        loginId: cleanInput, 
+        sittingBranch: foundUser['sittingbranch'] || 'N/A', 
+        assignedBranchesArray: assignedArray, 
+        photo: foundUser['profilephoto'] || foundUser['photo'] || '', 
+        phone: foundUser['contactnumber'] || foundUser['contact'] || foundUser['phoneno'] || 'Not Provided', 
+        role: role, 
+        assignedCourse: course, 
+        accessType: accessType 
+      } 
+    });
+  } catch (error) { 
+    res.status(500).json({ success: false, message: error.message }); 
+  }
+};
+
+exports.getDashboardStats = (req, res) => {
+  const { assignedBranchesArray, role, assignedCourse } = req.body;
+  const cache = getCache();
+  let studentCount = 0, pendingApps = 0, placedCount = 0, activeVacs = 0;
+
+  cache.students.forEach(row => { 
+    const rowData = row.toObject();
+    const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
+    if (hasAccess(rowData[getHeader('branch')], rowData[getHeader('course')], role, assignedBranchesArray, assignedCourse)) studentCount++; 
+  });
+  
+  const logsSource = cache.tpoLogs || [];
+  const dedupedLogs = {};
+  logsSource.forEach(row => {
+    const rowData = row.toObject();
+    const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
+    const roll = rowData[getHeader('roll')] || rowData[getHeader('rollnumber')] || '';
+    const name = rowData[getHeader('name')] || rowData[getHeader('studentname')] || '';
+    const company = rowData[getHeader('company')] || rowData[getHeader('companyname')] || '';
+    const key = `${roll || name}_${company}`.toLowerCase();
+    dedupedLogs[key] = rowData;
+  });
+
+  Object.values(dedupedLogs).forEach(rowData => {
+    const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
+    if (hasAccess(rowData[getHeader('branch')], rowData[getHeader('course')], role, assignedBranchesArray, assignedCourse)) {
+      const stat = (rowData[getHeader('status')] || '').toString().toLowerCase();
+      const joinStat = (rowData[getHeader('joiningstatus')] || '').toString().toLowerCase();
+      const placeStat = (rowData[getHeader('placementstatus')] || '').toString().toLowerCase();
+
+      if (stat === 'applied') pendingApps++;
+      if (stat.includes('placed') || stat.includes('got offer') || stat.includes('offer') || joinStat.includes('join') || placeStat.includes('placed')) {
+        placedCount++;
+      }
+    }
+  });
+  
+  const todayStart = new Date();
+  todayStart.setHours(0,0,0,0);
+
+  cache.vacancies.forEach(row => {
+    const status = (row.get('Status') || 'Open').toString().toLowerCase();
+    const lastDateStr = row.get('Last Date');
+    let isExpired = false;
+
+    if (lastDateStr) {
+      try {
+        let parsedDate;
+        if (lastDateStr.includes('/')) {
+          const parts = lastDateStr.split(/[/\s,.-]+/);
+          if (parts.length >= 3 && parts[2].length === 4) {
+            parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+          }
+        } else {
+          parsedDate = new Date(lastDateStr);
+        }
+        if (parsedDate && !isNaN(parsedDate)) {
+          if (parsedDate < todayStart) isExpired = true;
+        }
+      } catch(e) {}
+    }
+
+    if ((status.includes('open') || status.includes('yes')) && !isExpired) {
+      activeVacs++;
+    }
+  });
+
+  let eventsList = cache.events.slice(-8).map(row => ({ title: row.get('Title') || 'Event', date: row.get('Date') || '', time: row.get('Time') || '', type: row.get('Type') || 'Placement Drive', location: row.get('Location') || '' }));
+  
+  res.json({ success: true, stats: { totalStudents: studentCount, pendingApps, placed: placedCount, activeVacancies: activeVacs }, events: eventsList.reverse() });
+};
+
+exports.getStudents = (req, res) => {
+  const { assignedBranchesArray, role, assignedCourse } = req.body;
+  const cache = getCache();
+  let students = []; let stats = { total: 0, pending: 0, notResponding: 0, noNeed: 0, branchCounts: {}, courseCounts: {} };
+
+  cache.students.forEach(row => {
+    const rowData = row.toObject();
+    const getHeader = (searchString) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(searchString.toLowerCase().replace(/\s/g, '')));
+    const branch = rowData[getHeader('branch')] || 'Unknown';
+    const course = rowData[getHeader('course')] || 'Unknown';
+
+    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse)) {
+      stats.total++;
+      const pStatKey = getHeader('placementstat');
+      const pStatus = (pStatKey && rowData[pStatKey] ? rowData[pStatKey] : 'Pending').toString().trim();
+      const pLower = pStatus.toLowerCase();
+      
+      if (pLower.includes('not responding')) stats.notResponding++;
+      else if (pLower.includes('no need')) stats.noNeed++;
+      else if (pLower.includes('pending') || pLower === '') stats.pending++;
+
+      stats.branchCounts[branch] = (stats.branchCounts[branch] || 0) + 1;
+      stats.courseCounts[course] = (stats.courseCounts[course] || 0) + 1;
+
+      const phone = rowData[getHeader('phone')] || rowData[getHeader('contact')] || 'N/A';
+      const statusKey = getHeader('currentlystudying');
+      const status = statusKey && rowData[statusKey] ? rowData[statusKey] : 'N/A';
+      const vacKey = getHeader('vacancyopen') || getHeader('vaccancyopen');
+      const studyKey = getHeader('studymaterialaccess');
+      const examKey = getHeader('technialexam');
+
+      students.push({
+        rowIdx: row.rowNumber, name: rowData[getHeader('name')] || '', email: rowData[getHeader('mailid')] || rowData[getHeader('email')] || '', 
+        phone: phone, roll: rowData[getHeader('ipcsrollnumber')] || rowData[getHeader('rollnumber')] || rowData[getHeader('roll')] || '', 
+        branch: branch, course: course, photo: rowData[getHeader('profilephoto')] || rowData[getHeader('photo')] || '', 
+        qual: rowData[getHeader('qualification')] || '', stream: rowData[getHeader('stream')] || '', status: status, 
+        resume: rowData[getHeader('resume')] || rowData[getHeader('cv')] || '', certificate: rowData[getHeader('certificate')] || '',
+        vacOpen: (vacKey && rowData[vacKey] ? rowData[vacKey] : 'Yes'), 
+        studyAccess: (studyKey && rowData[studyKey] ? rowData[studyKey] : 'No'), 
+        examAccess: (examKey && rowData[examKey] ? rowData[examKey] : 'No'), 
+        placementStatus: pStatus, rawData: rowData
+      });
+    }
+  });
+  res.json({ success: true, students: students.reverse(), stats });
+};
+
+exports.updateStudent = async (req, res) => {
+  const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus } = req.body;
+  try {
+    const stuSheet = doc.sheetsByTitle["Data"];
+    const rows = await stuSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (rows.length > 0) {
+      const headers = stuSheet.headerValues;
+      const updateObj = {};
+      const vH = getFuzzyHeader(headers, 'vacancyopen'); if(vH) updateObj[vH] = vacOpen;
+      const pH = getFuzzyHeader(headers, 'placementstat'); if(pH) updateObj[pH] = placementStatus;
+      const sH = getFuzzyHeader(headers, 'studymaterialaccess'); if(sH) updateObj[sH] = studyAccess;
+      const eH = getFuzzyHeader(headers, 'technialexam'); if(eH) updateObj[eH] = examAccess;
+      
+      const cStatusH = getFuzzyHeader(headers, 'currentlystudying'); 
+      if (cStatusH && courseStatus !== undefined) {
+        updateObj[cStatusH] = courseStatus;
+      }
+
+      rows[0].assign(updateObj); 
+      await rows[0].save(); 
+      refreshCache(); 
+      res.json({ success: true, message: "Student record updated!" });
+    } else { res.status(404).json({ success: false, message: "Row not found." }); }
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+exports.getApplications = (req, res) => {
+  const { assignedBranchesArray, role, assignedCourse, tpoName } = req.body;
+  let appsList = []; 
+  const cleanTpoName = (tpoName || '').toString().toLowerCase().trim();
+  const cache = getCache();
+  
+  const sourceData = cache.applications || [];
+
+  sourceData.forEach((row) => {
+    const rowData = row.toObject();
+    const getHeader = (searchString) => {
+      const cleanSearch = searchString.toLowerCase().replace(/\s/g, '');
+      const keys = Object.keys(rowData);
+      const exact = keys.find(k => k.toLowerCase().replace(/\s/g, '') === cleanSearch);
+      return exact || keys.find(k => k.toLowerCase().replace(/\s/g, '').includes(cleanSearch));
+    };
+    const branch = rowData[getHeader('branch')] || 'Unknown';
+    const course = rowData[getHeader('course')] || 'Unknown';
+    const officerKey = getHeader('placementofficer');
+    const officerName = officerKey && rowData[officerKey] ? rowData[officerKey].toString().toLowerCase().trim() : '';
+
+    const tpoMatch = (!role || role === 'TPO') && (cleanTpoName !== '' && officerName === cleanTpoName);
+
+    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse) || tpoMatch) {
+      const roll = rowData[getHeader('roll')] || ''; 
+      const jobId = rowData[getHeader('jobid')] || '';
+      let phone = rowData[getHeader('contact')] || rowData[getHeader('phone')] || '';
+      let email = rowData[getHeader('mail')] || rowData[getHeader('email')] || '';
+      let resume = rowData[getHeader('resume')] || rowData[getHeader('cv')] || '';
+      let qual = rowData[getHeader('qual')] || '';
+
+      if (!phone || !email) {
+        const studentData = cache.students.find(s => {
+          const sRow = s.toObject();
+          const sRollKey = Object.keys(sRow).find(k => k.toLowerCase().includes('roll'));
+          return sRollKey && sRow[sRollKey] === roll;
+        });
+        if (studentData) {
+          const sRow = studentData.toObject();
+          const sGetHeader = (str) => Object.keys(sRow).find(k => k.toLowerCase().includes(str.toLowerCase()));
+          if (!phone) phone = sRow[sGetHeader('phone')] || sRow[sGetHeader('contact')] || '';
+          if (!email) email = sRow[sGetHeader('mail')] || sRow[sGetHeader('email')] || '';
+          if (!resume) resume = sRow[sGetHeader('resume')] || sRow[sGetHeader('cv')] || '';
+          if (!qual) qual = sRow[sGetHeader('qual')] || '';
+        }
+      }
+
+      appsList.push({
+        rowNumber: row.rowNumber, name: rowData[getHeader('name')] || '', roll: roll, branch: branch, course: course, qual: qual || 'Not Specified', jobId: jobId, company: rowData[getHeader('company')] || 'Unknown Company', position: rowData[getHeader('position')] || 'Unknown Position', date: rowData[getHeader('time')] || rowData[getHeader('date')] || '', status: rowData[getHeader('status')] || 'Applied', remarks: rowData[getHeader('remarks')] || '', tpoName: rowData[getHeader('placementofficer')] || '', phone: phone, email: email, resume: resume, datePlaced: rowData[getHeader('dateplaced')] || '', packageLpa: rowData[getHeader('package')] || '', offerLetter: rowData[getHeader('offerletter')] || '', joiningStatus: rowData[getHeader('joiningstatus')] || ''
+      });
+    }
+  });
+  
+  res.json({ success: true, applications: appsList });
+};
+
+exports.updateApplication = async (req, res) => {
+  const rowNumber = parseInt(req.body.rowNumber);
+  const { status, remarks, datePlaced, packageLpa, joiningStatus, currentUserEmail, interviewDate, interviewTime, interviewVenue } = req.body;
+  
+  let fullApp = {};
+  if (typeof req.body.fullApp === 'string') {
+    try {
+      if (req.body.fullApp !== "[object Object]") {
+        fullApp = JSON.parse(req.body.fullApp);
+      }
+    } catch(e) {}
+  } else if (typeof req.body.fullApp === 'object' && req.body.fullApp !== null) {
+    fullApp = req.body.fullApp;
+  }
+
+  let offerLetterLink = req.body.offerLetter || fullApp.offerLetter || '';
+
+  try {
+    if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
+    
+    const appSheet = doc.sheetsByTitle["Opening_Applied"];
+    if (!appSheet || isNaN(rowNumber)) return res.status(400).json({ success: false, message: "Invalid payload or sheet missing." });
+
+    const rows = await appSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    
+    if (rows.length > 0) {
+      const headers = appSheet.headerValues;
+      const currentRowData = rows[0].toObject();
+      const getHeader = (s) => Object.keys(currentRowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
+      
+      const oldStatus = (currentRowData[getHeader('status')] || '').toString().toLowerCase();
+
+      const sName = currentRowData[getHeader('name')] || currentRowData[getHeader('studentname')] || fullApp.name || '';
+      const sContact = currentRowData[getHeader('contact')] || currentRowData[getHeader('phone')] || fullApp.phone || '';
+      const sMail = currentRowData[getHeader('mail')] || currentRowData[getHeader('email')] || fullApp.email || '';
+      const sRoll = currentRowData[getHeader('roll')] || fullApp.roll || '';
+      const sCourse = currentRowData[getHeader('course')] || fullApp.course || '';
+      const sBranch = currentRowData[getHeader('branch')] || fullApp.branch || '';
+      const sQual = currentRowData[getHeader('qual')] || fullApp.qual || '';
+      const sResume = currentRowData[getHeader('resume')] || currentRowData[getHeader('cv')] || fullApp.resume || '';
+      const sJobId = currentRowData[getHeader('jobid')] || fullApp.jobId || '';
+      const sCompany = currentRowData[getHeader('company')] || fullApp.company || '';
+      const sPosition = currentRowData[getHeader('position')] || fullApp.position || '';
+      const sTpo = currentRowData[getHeader('placementofficer')] || fullApp.tpoName || '';
+
+      const updateObj = { 'Status': status };
+      const hRemarks = getFuzzyHeader(headers, 'remarks'); if (hRemarks && remarks !== undefined) updateObj[hRemarks] = remarks;
+      const hDatePlaced = getFuzzyHeader(headers, 'dateplaced'); if (hDatePlaced && datePlaced !== undefined) updateObj[hDatePlaced] = datePlaced;
+      const hPackage = getFuzzyHeader(headers, 'package'); if (hPackage && packageLpa !== undefined) updateObj[hPackage] = packageLpa;
+      const hOffer = getFuzzyHeader(headers, 'offerletter'); if (hOffer && offerLetterLink) updateObj[hOffer] = offerLetterLink;
+      const hJoining = getFuzzyHeader(headers, 'joiningstatus'); if (hJoining && joiningStatus !== undefined) updateObj[hJoining] = joiningStatus;
+      
+      const hDate = getFuzzyHeader(headers, 'interviewdate');
+      const hTime = getFuzzyHeader(headers, 'interviewtime') || getFuzzyHeader(headers, 'intervewtime');
+      const hVenue = getFuzzyHeader(headers, 'interviewvenue');
+      
+      if (hDate && interviewDate !== undefined) updateObj[hDate] = interviewDate;
+      if (hTime && interviewTime !== undefined) updateObj[hTime] = interviewTime;
+      if (hVenue && interviewVenue !== undefined) updateObj[hVenue] = interviewVenue;
+
+      rows[0].assign(updateObj); 
+      await rows[0].save(); 
+      
+      try {
+        const logSheet = doc.sheetsByTitle["TPO_Log"];
+        if (logSheet) {
+          const logHeaders = logSheet.headerValues;
+          const logObj = {};
+          
+          const setLogH = (key, val) => {
+             const h = getFuzzyHeader(logHeaders, key);
+             if (h) logObj[h] = val;
+          };
+
+          setLogH('timestamp', new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
+          setLogH('studentname', sName);
+          setLogH('contact', sContact);
+          setLogH('mailid', sMail);
+          setLogH('rollnumber', sRoll);
+          setLogH('course', sCourse);
+          setLogH('branch', sBranch);
+          setLogH('qualification', sQual);
+          setLogH('resume', sResume);
+          setLogH('jobid', sJobId);
+          setLogH('companyname', sCompany);
+          setLogH('position', sPosition);
+          setLogH('placementofficer', sTpo);
+          setLogH('status', status || '');
+          setLogH('remarks', remarks !== undefined ? remarks : (currentRowData[getHeader('remarks')] || ''));
+          setLogH('dateplaced', datePlaced !== undefined ? datePlaced : (currentRowData[getHeader('dateplaced')] || ''));
+          setLogH('package', packageLpa !== undefined ? packageLpa : (currentRowData[getHeader('package')] || ''));
+          setLogH('offerletterstatus', offerLetterLink || currentRowData[getHeader('offerletter')] || '');
+          setLogH('joiningstatus', joiningStatus !== undefined ? joiningStatus : (currentRowData[getHeader('joiningstatus')] || ''));
+          setLogH('interviewdate', interviewDate || '');
+          setLogH('interviewtime', interviewTime || '');
+          setLogH('intervewtime', interviewTime || ''); 
+          setLogH('interviewvenue', interviewVenue || '');
+
+          await logSheet.addRow(logObj);
+        }
+      } catch(e) {}
+      
+      if (oldStatus !== (status || '').toLowerCase()) {
+         checkAndSendStudentMails({
+           name: sName, roll: sRoll, email: sMail, company: sCompany, 
+           position: sPosition, tpoName: sTpo, branch: sBranch, jobId: sJobId
+         }, status, { date: interviewDate, time: interviewTime, venue: interviewVenue }, currentUserEmail)
+         .catch(e => console.error("Background Mail Error")); 
+      }
+
+      refreshCache(); 
+      res.json({ success: true, message: "Updated!" });
+    } else { 
+      res.status(404).json({ success: false, message: "Row not found." }); 
+    }
+  } catch (error) { 
+    res.status(500).json({ success: false, message: error.message }); 
+  }
+};
+
+exports.addApplication = async (req, res) => {
+  let appData = {};
+  if (typeof req.body.appData === 'string') {
+    try {
+      if (req.body.appData !== "[object Object]") appData = JSON.parse(req.body.appData);
+    } catch(e) {}
+  } else if (typeof req.body.appData === 'object' && req.body.appData !== null) {
+    appData = req.body.appData;
+  }
+  
+  const tpoName = req.body.tpoName;
+  try {
+    let offerLetterLink = '';
+    if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
+    
+    const appSheet = doc.sheetsByTitle["Opening_Applied"];
+    const logSheet = doc.sheetsByTitle["TPO_Log"];
+
+    const newRowObj = {
+      'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), 
+      'Student Name': appData.name || '', 'Contact': appData.phone || '', 'Mail ID': appData.email || '', 
+      'Roll Number': appData.roll || '', 'Course': appData.course || '', 'Branch': appData.branch || '', 
+      'Qualification': appData.qual || '', 'Resume': appData.resume || '', 'Job ID': 'MANUAL-ADD', 
+      'Company Name': appData.company || '', 'Position': appData.position || '', 
+      'Placement Officer': tpoName || '', 'Status': appData.status || 'Placed', 
+      'Remarks': appData.remarks || '', 'DATE PLACED': appData.datePlaced || '', 
+      'PACKAGE (LPA)': appData.packageLpa || '', 'Offer Letter': offerLetterLink, 
+      'Joining Status': appData.joiningStatus || '' 
+    };
+
+    if (appSheet) await appSheet.addRow(newRowObj);
+    if (logSheet) await logSheet.addRow({ ...newRowObj, 'Offer Letter Status': offerLetterLink });
+    
+    checkAndSendStudentMails({ ...appData, tpoName: tpoName }, appData.status || 'Placed', {}, req.body.currentUserEmail);
+
+    refreshCache(); res.json({ success: true, message: "Placement added manually." });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
 exports.getVacancies = (req, res) => {
   let vacs = getCache().vacancies.map((row, i) => {
     const rowData = row.toObject();
@@ -1434,85 +1581,6 @@ exports.updatePhoto = async (req, res) => {
       res.status(404).json({ success: false, message: "User not found." }); 
     }
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
-};
-
-exports.getAdminUsers = async (req, res) => {
-  try {
-    await doc.loadInfo();
-    let allUsers = [];
-
-    const contactSheet = doc.sheetsByTitle["Contact"];
-    if (contactSheet) {
-      const cRows = await contactSheet.getRows();
-      const headers = contactSheet.headerValues;
-      const hName = getFuzzyHeader(headers, 'tponame'); const hMail = getFuzzyHeader(headers, 'mailid'); const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); const hPhoto = getFuzzyHeader(headers, 'profilephoto');
-
-      cRows.forEach(r => {
-        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
-        if (email.trim() !== '' || name.trim() !== '') {
-          allUsers.push({ sheet: 'Contact', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: 'TPO', course: 'All Courses', access: 'View & Edit', profilePhoto: r.get(hPhoto) || r.get('Profile Photo') || '' });
-        }
-      });
-    }
-
-    const userSheet = doc.sheetsByTitle["User"];
-    if (userSheet) {
-      const uRows = await userSheet.getRows();
-      const headers = userSheet.headerValues;
-      const hName = getFuzzyHeader(headers, 'username'); const hMail = getFuzzyHeader(headers, 'mailid'); const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); const hRole = getFuzzyHeader(headers, 'role'); const hCourse = getFuzzyHeader(headers, 'course'); const hAccess = getFuzzyHeader(headers, 'access'); const hPhoto = getFuzzyHeader(headers, 'profilephoto');
-
-      uRows.forEach(r => {
-        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
-        if (email.trim() !== '' || name.trim() !== '') {
-          allUsers.push({ sheet: 'User', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: r.get(hRole) || 'Unassigned', course: r.get(hCourse) || 'All Courses', access: r.get(hAccess) || 'View Only', profilePhoto: r.get(hPhoto) || r.get('Profile Photo') || '' });
-        }
-      });
-    }
-    res.json({ success: true, users: allUsers.reverse() });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.addAdminUser = async (req, res) => {
-  try {
-    const { userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
-    if (role === 'TPO') {
-      const s = doc.sheetsByTitle["Contact"]; const h = s.headerValues;
-      await s.addRow({ [getFuzzyHeader(h, 'tponame')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password });
-    } else {
-      const s = doc.sheetsByTitle["User"]; const h = s.headerValues;
-      await s.addRow({ [getFuzzyHeader(h, 'username')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password, [getFuzzyHeader(h, 'role')]: role, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'access')]: access });
-    }
-    refreshCache(); res.json({ success: true, message: "User added" });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.updateAdminUser = async (req, res) => {
-  try {
-    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
-    const s = doc.sheetsByTitle[sheet];
-    const rows = await s.getRows({ offset: rowNumber - 2, limit: 1 });
-    if (rows.length > 0) {
-      const h = s.headerValues;
-      if (sheet === 'Contact') {
-        rows[0].assign({ [getFuzzyHeader(h, 'tponame')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password });
-      } else {
-        rows[0].assign({ [getFuzzyHeader(h, 'username')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password, [getFuzzyHeader(h, 'role')]: role, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'access')]: access });
-      }
-      await rows[0].save(); refreshCache(); res.json({ success: true, message: "User updated" });
-    } else { res.status(404).json({ success: false, message: "User row not found" }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.deleteAdminUser = async (req, res) => {
-  try {
-    const { sheet, rowNumber } = req.body;
-    const targetSheet = doc.sheetsByTitle[sheet];
-    if (!targetSheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const rows = await targetSheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    if (rows.length > 0) {
-      await rows[0].delete(); refreshCache(); res.json({ success: true, message: "User deleted" });
-    } else { res.status(404).json({ success: false, message: "User not found" }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 exports.getMaterials = (req, res) => {
