@@ -862,6 +862,49 @@ exports.getAdminUsers = async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
+exports.addAdminUser = async (req, res) => {
+  try {
+    const { userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
+    if (role === 'TPO') {
+      const s = doc.sheetsByTitle["Contact"]; const h = s.headerValues;
+      await s.addRow({ [getFuzzyHeader(h, 'tponame')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password });
+    } else {
+      const s = doc.sheetsByTitle["User"]; const h = s.headerValues;
+      await s.addRow({ [getFuzzyHeader(h, 'username')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password, [getFuzzyHeader(h, 'role')]: role, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'access')]: access });
+    }
+    refreshCache(); res.json({ success: true, message: "User added" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateAdminUser = async (req, res) => {
+  try {
+    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
+    const s = doc.sheetsByTitle[sheet];
+    const rows = await s.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (rows.length > 0) {
+      const h = s.headerValues;
+      if (sheet === 'Contact') {
+        rows[0].assign({ [getFuzzyHeader(h, 'tponame')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password });
+      } else {
+        rows[0].assign({ [getFuzzyHeader(h, 'username')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password, [getFuzzyHeader(h, 'role')]: role, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'access')]: access });
+      }
+      await rows[0].save(); refreshCache(); res.json({ success: true, message: "User updated" });
+    } else { res.status(404).json({ success: false, message: "User row not found" }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteAdminUser = async (req, res) => {
+  try {
+    const { sheet, rowNumber } = req.body;
+    const targetSheet = doc.sheetsByTitle[sheet];
+    if (!targetSheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await targetSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (rows.length > 0) {
+      await rows[0].delete(); refreshCache(); res.json({ success: true, message: "User deleted" });
+    } else { res.status(404).json({ success: false, message: "User not found" }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
 // ---------------------------------------------------------
 // EVERYTHING ELSE (Untouched, safe to keep exactly as is)
 // ---------------------------------------------------------
