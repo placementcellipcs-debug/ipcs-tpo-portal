@@ -1368,13 +1368,21 @@ exports.addApplication = async (req, res) => {
 exports.runDailyCron = async () => {
   const cache = getCache();
   if (!cache) return;
-  const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+  
+  // 1. Get yesterday's date
+  const yesterday = new Date(); 
+  yesterday.setDate(yesterday.getDate() - 1);
   const yStr = yesterday.toISOString().split('T')[0]; 
   
+  // 2. Find jobs where the 'Last Date' was exactly yesterday (Fuzzy Match)
   const expiredJobs = cache.vacancies.filter(v => {
-    if (!v.get('Last Date')) return false;
+    const rowData = v.toObject();
+    const getH = (str) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+    const lastDateKey = getH('lastdate');
+    
+    if (!lastDateKey || !rowData[lastDateKey]) return false;
     try { 
-      let pd = v.get('Last Date');
+      let pd = rowData[lastDateKey];
       if (pd.includes('/')) {
         const parts = pd.split(/[/\s,.-]+/);
         if (parts.length >= 3) pd = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
@@ -1383,33 +1391,58 @@ exports.runDailyCron = async () => {
     } catch(e) { return false; }
   });
 
+  // 3. For every expired job, gather applicants and send email
   for (let job of expiredJobs) {
-    const jobId = job.get('Job ID') || job.get('ID');
-    const companyEmail = job.get('Company Mail ID') || job.get('Company Email'); 
+    const jobData = job.toObject();
+    const getJobH = (str) => Object.keys(jobData).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+    
+    const jobId = jobData[getJobH('jobid')] || jobData[getJobH('id')] || '';
+    const companyEmail = jobData[getJobH('companymailid')] || jobData[getJobH('companyemail')] || ''; 
+    const companyName = jobData[getJobH('companyname')] || jobData[getJobH('company')] || '';
+    const position = jobData[getJobH('position')] || jobData[getJobH('role')] || '';
+
     if (!companyEmail) continue;
 
-    const applicants = cache.applications.filter(app => app.get('Job ID') === jobId);
+    // Clean the Job ID to ignore spaces (so "JOB - 10132" perfectly matches "JOB-10132")
+    const cleanTargetJobId = jobId.toString().toLowerCase().replace(/\s/g, '');
+
+    const applicants = cache.applications.filter(app => {
+      const appData = app.toObject();
+      const getAppH = (str) => Object.keys(appData).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      const appJobId = (appData[getAppH('jobid')] || '').toString().toLowerCase().replace(/\s/g, '');
+      return appJobId === cleanTargetJobId && cleanTargetJobId !== '';
+    });
+
+    // 🚨 IF NO STUDENTS HAVE APPLIED, ABORT AND SKIP THIS JOB SO WE DONT SEND A BLANK EMAIL
     if (applicants.length === 0) continue;
 
-    const tpoName = applicants[0].get('Placement Officer');
+    const firstApp = applicants[0].toObject();
+    const getFirstAppH = (str) => Object.keys(firstApp).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+    const tpoName = firstApp[getFirstAppH('placementofficer')];
     const tpoEmail = getTpoEmail(tpoName);
 
     let tableRows = ''; let attachments = [];
     applicants.forEach((appRow, index) => {
       const rd = appRow.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().includes(str.toLowerCase()));
-      const info = { name: rd[getH('name')] || '', phone: rd[getH('contact')] || rd[getH('phone')] || '', email: rd[getH('mail')] || rd[getH('email')] || '', qual: rd[getH('qual')] || '', resume: rd[getH('resume')] || rd[getH('cv')] || '' };
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      const info = { 
+        name: rd[getH('name')] || rd[getH('studentname')] || '', 
+        phone: rd[getH('contact')] || rd[getH('phone')] || '', 
+        email: rd[getH('mail')] || rd[getH('email')] || rd[getH('mailid')] || '', 
+        qual: rd[getH('qual')] || rd[getH('qualification')] || '', 
+        resume: rd[getH('resume')] || rd[getH('cv')] || '' 
+      };
       
       let resumeBtn = 'N/A';
       if (info.resume) {
         const driveMatch = info.resume.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
         if (driveMatch) {
             const driveId = driveMatch[1];
-            resumeBtn = `<a href="https://drive.google.com/file/d/${driveId}/view" style="background: #0f172a; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; display: inline-block; white-space: nowrap;">View CV</a>`;
-            attachments.push({ filename: `${info.name.replace(/\s+/g, '_')}_Resume.pdf`, href: `https://drive.google.com/uc?export=download&id=${driveId}` });
-        } else { resumeBtn = `<a href="${info.resume}">Link</a>`; }
+            resumeBtn = '<a href="https://drive.google.com/file/d/' + driveId + '/view" style="background: #0f172a; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; display: inline-block; white-space: nowrap;">View CV</a>';
+            attachments.push({ filename: info.name.replace(/\s+/g, '_') + '_Resume.pdf', href: "https://drive.google.com/uc?export=download&id=" + driveId });
+        } else { resumeBtn = '<a href="' + info.resume + '">Link</a>'; }
       }
-      tableRows += `<tr><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${index+1}</td><td style="padding:10px;border:1px solid #cbd5e1;"><b>${info.name}</b></td><td style="padding:10px;border:1px solid #cbd5e1;">${info.phone}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.email}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.qual}</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${resumeBtn}</td></tr>`;
+      tableRows += '<tr><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">' + (index+1) + '</td><td style="padding:10px;border:1px solid #cbd5e1;"><b>' + info.name + '</b></td><td style="padding:10px;border:1px solid #cbd5e1;">' + info.phone + '</td><td style="padding:10px;border:1px solid #cbd5e1;">' + info.email + '</td><td style="padding:10px;border:1px solid #cbd5e1;">' + info.qual + '</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">' + resumeBtn + '</td></tr>';
     });
 
     const html = `
@@ -1418,9 +1451,9 @@ exports.runDailyCron = async () => {
           <h2 style="color: #ffffff; margin: 0; letter-spacing: 1px;">APPLICANT RESUMES</h2>
         </div>
         <div style="padding: 30px; background-color: #ffffff;">
-          <p style="font-size: 16px; margin-top: 0;">Dear <b>${job.get('Company Name') || job.get('Company')}</b> Hiring Team,</p>
+          <p style="font-size: 16px; margin-top: 0;">Dear <b>${companyName}</b> Hiring Team,</p>
           <p style="font-size: 15px; line-height: 1.6; color: #475569;">Greetings from IPCS Global Placement Cell.</p>
-          <p style="font-size: 15px; line-height: 1.6; color: #475569;">Please find attached the consolidated list of pre-screened resumes for the <b>${job.get('Position')}</b> opening (Ref: ${jobId}).</p>
+          <p style="font-size: 15px; line-height: 1.6; color: #475569;">Please find attached the consolidated list of pre-screened resumes for the <b>${position}</b> opening (Ref: ${jobId}).</p>
           
           <table style="width: 100%; border-collapse: collapse; margin-top: 25px;">
             <thead>
@@ -1441,7 +1474,7 @@ exports.runDailyCron = async () => {
           <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
             <p style="margin: 0 0 5px 0;">If you require further shortlisting or have interview dates finalized, please reply directly to this email.</p>
             <p style="margin: 15px 0 2px 0;">Regards,</p>
-            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName}</p>
+            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName || 'Placement Team'}</p>
             <p style="margin: 0;">Placement Officer, IPCS Global</p>
           </div>
         </div>
@@ -1449,13 +1482,13 @@ exports.runDailyCron = async () => {
     `;
 
     await sendMailAndLog({
-      from: `"IPCS Corporate Relations" <${process.env.EMAIL_USER}>`, 
+      from: '"IPCS Corporate Relations" <' + process.env.EMAIL_USER + '>', 
       to: companyEmail,
       cc: tpoEmail || '',
-      subject: `Applicant Resumes: ${job.get('Position')} Opening [Ref: ${jobId}]`,
+      subject: "Applicant Resumes: " + position + " Opening [Ref: " + jobId + "]",
       html: html,
       attachments: attachments
-    }, { name: job.get('Company Name'), email: companyEmail, type: 'Resume Delivery' }); 
+    }, { name: companyName, email: companyEmail, type: 'Resume Delivery' }); 
   }
 };
 
