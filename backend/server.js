@@ -104,6 +104,6 @@ app.post('/api/talentino-exams/questions/add', controllers.addTalExamQuestion);
 app.post('/api/talentino-exams/questions/update', controllers.updateTalExamQuestion);
 app.post('/api/talentino-exams/questions/delete', controllers.deleteTalExamQuestion); 
 
-cron.schedule('* * * * *', controllers.runDailyCron);
+cron.schedule('0 8 * * *', controllers.runDailyCron);
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 IPCS Backend is running on http://localhost:${PORT}`));
