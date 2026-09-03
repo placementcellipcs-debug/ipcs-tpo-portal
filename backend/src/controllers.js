@@ -454,7 +454,7 @@ exports.getStudents = (req, res) => {
 };
 
 exports.updateStudent = async (req, res) => {
-  const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus } = req.body;
+  const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus, coursePercentage } = req.body;
   try {
     const stuSheet = doc.sheetsByTitle["Data"];
     const rows = await stuSheet.getRows({ offset: rowNumber - 2, limit: 1 });
@@ -466,9 +466,19 @@ exports.updateStudent = async (req, res) => {
       const sH = getFuzzyHeader(headers, 'studymaterialaccess'); if(sH) updateObj[sH] = studyAccess;
       const eH = getFuzzyHeader(headers, 'technialexam'); if(eH) updateObj[eH] = examAccess;
       
-      const cStatusH = getFuzzyHeader(headers, 'currentlystudying'); 
-      if (cStatusH && courseStatus !== undefined) {
-        updateObj[cStatusH] = courseStatus;
+      const cPercH = getFuzzyHeader(headers, 'coursecompleted');
+      if (cPercH && coursePercentage !== undefined) {
+        updateObj[cPercH] = coursePercentage;
+      }
+
+      // 🚨 AUTOMATION: Ensure the status instantly flips to 'Completed Course' when it hits 100%
+      const cStatusH = getFuzzyHeader(headers, 'currentlystudying') || getFuzzyHeader(headers, 'status(currentlystudying'); 
+      if (cStatusH) {
+        if (coursePercentage === '100% completed') {
+          updateObj[cStatusH] = 'Completed Course';
+        } else if (courseStatus !== undefined) {
+          updateObj[cStatusH] = courseStatus;
+        }
       }
 
       rows[0].assign(updateObj); 

@@ -59,6 +59,7 @@ export default function StudentsDirectory() {
   const [localStudyAccess, setLocalStudyAccess] = useState('');
   const [localExamAccess, setLocalExamAccess] = useState('');
   const [localCourseStatus, setLocalCourseStatus] = useState(''); 
+  const [localCoursePercentage, setLocalCoursePercentage] = useState('');
 
   // 🚨 STRICT PERMISSIONS LOGIC
   const upperRole = (tpoData?.role || '').toUpperCase();
@@ -143,7 +144,19 @@ export default function StudentsDirectory() {
     const cStatKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().includes('currentlystudying'));
     setLocalCourseStatus(cStatKey && student.rawData[cStatKey] ? student.rawData[cStatKey] : 'Currently Studying');
 
+    const cPercKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().replace(/\s/g, '') === 'coursecompleted');
+    setLocalCoursePercentage(cPercKey && student.rawData[cPercKey] ? student.rawData[cPercKey] : '50% completed');
+
     setIsModalOpen(true);
+  };
+
+  const handleCoursePercentageChange = (e) => {
+    const val = e.target.value;
+    setLocalCoursePercentage(val);
+    // 🚨 SMART AUTOMATION: Instantly trigger "Completed Course" if 100% is selected
+    if (val === '100% completed') {
+      setLocalCourseStatus('Completed Course');
+    }
   };
 
   const saveStudentUpdates = async () => {
@@ -155,7 +168,8 @@ export default function StudentsDirectory() {
         placementStatus: localPlacementState,
         studyAccess: localStudyAccess, 
         examAccess: localExamAccess,
-        courseStatus: localCourseStatus 
+        courseStatus: localCourseStatus,
+        coursePercentage: localCoursePercentage
       });
       
       if (response.data.success) {
@@ -471,7 +485,7 @@ export default function StudentsDirectory() {
           {/* Scrollable Specific Info Body */}
           <div style={{ padding: '2rem' }}>
              {/* Strictly Filtered Read-Only Grid */}
-             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px', marginBottom: '2.5rem' }}>
+             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '2.5rem' }}>
                 {(() => {
                    const raw = selectedStudent.rawData || {};
                    const getF = (keys) => {
@@ -516,7 +530,17 @@ export default function StudentsDirectory() {
                   
                   {/* Academic Controls (RTH/Trainers/TPO/Admin) */}
                   <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
-                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Course Completed</span>
+                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Course Percentage</span>
+                    <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localCoursePercentage} onChange={handleCoursePercentageChange} disabled={!canEditAcademic}>
+                      <option value="50% completed">50% completed</option>
+                      <option value="80% completed">80% completed</option>
+                      <option value="90% completed">90% completed</option>
+                      <option value="100% completed">100% completed</option>
+                    </select>
+                  </div>
+
+                  <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Course Status</span>
                     <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localCourseStatus} onChange={(e) => setLocalCourseStatus(e.target.value)} disabled={!canEditAcademic}>
                       <option value="Currently Studying">Currently Studying</option>
                       <option value="Completed Course">Completed Course</option>
