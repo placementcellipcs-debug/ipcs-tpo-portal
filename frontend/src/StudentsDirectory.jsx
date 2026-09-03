@@ -272,7 +272,7 @@ export default function StudentsDirectory() {
             <input type="text" className="sleek-input" placeholder="Search name or roll..." style={{ minWidth: '200px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           )}
 
-          {!isCourseSpecific && (
+          {!isCourseSpecific && !selectedBranch && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
               <select className="sleek-select" style={{ minWidth: '190px' }} value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
@@ -286,10 +286,12 @@ export default function StudentsDirectory() {
             </div>
           )}
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Month/Year:</span>
-            <input type="month" className="sleek-input" style={{ minWidth: '150px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
-          </div>
+          {!selectedBranch && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Month/Year:</span>
+              <input type="month" className="sleek-input" style={{ minWidth: '150px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
+            </div>
+          )}
 
           {selectedBranch && (
             <>
@@ -508,6 +510,8 @@ export default function StudentsDirectory() {
                      { label: 'Specific Requirement', val: getF(['specificrequirement', 'requirement']) },
                      { label: 'Parent Name', val: getF(['parentname', 'father', 'mother']) },
                      { label: 'Parent Contact', val: getF(['parentcontact', 'parentphone']) },
+                     { label: 'Course Status', val: getF(['status(currently', 'coursestatus']) || localCourseStatus },
+                     { label: 'Course Percentage', val: getF(['coursepercentage', 'coursecompleted']) || localCoursePercentage },
                      { label: 'IPCS Course Completed Date', val: getF(['coursecompleteddate', 'completeddate']) },
                      { label: 'Age', val: getF(['age', 'dob']) },
                      { label: 'Gender', val: getF(['gender', 'sex']) }

@@ -464,15 +464,15 @@ exports.updateStudent = async (req, res) => {
       const vH = getFuzzyHeader(headers, 'vacancyopen'); if(vH) updateObj[vH] = vacOpen;
       const pH = getFuzzyHeader(headers, 'placementstat'); if(pH) updateObj[pH] = placementStatus;
       const sH = getFuzzyHeader(headers, 'studymaterialaccess'); if(sH) updateObj[sH] = studyAccess;
-      const eH = getFuzzyHeader(headers, 'technialexam'); if(eH) updateObj[eH] = examAccess;
+      const eH = getFuzzyHeader(headers, 'technialexam') || getFuzzyHeader(headers, 'technicalexam'); if(eH) updateObj[eH] = examAccess;
       
-      const cPercH = getFuzzyHeader(headers, 'coursecompleted');
+      const cPercH = getFuzzyHeader(headers, 'coursepercentage') || getFuzzyHeader(headers, 'coursecompleted');
       if (cPercH && coursePercentage !== undefined) {
         updateObj[cPercH] = coursePercentage;
       }
 
       // 🚨 AUTOMATION: Ensure the status instantly flips to 'Completed Course' when it hits 100%
-      const cStatusH = getFuzzyHeader(headers, 'currentlystudying') || getFuzzyHeader(headers, 'status(currentlystudying'); 
+      const cStatusH = getFuzzyHeader(headers, 'status(currentlystudyingorcompletedcourse)') || getFuzzyHeader(headers, 'coursestatus'); 
       if (cStatusH) {
         if (coursePercentage === '100% completed') {
           updateObj[cStatusH] = 'Completed Course';
