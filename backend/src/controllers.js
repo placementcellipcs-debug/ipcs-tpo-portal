@@ -164,11 +164,6 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
       <div style="background-image: url('${watermark}'); background-repeat: no-repeat; background-position: center center; background-size: cover; background-color: #ffffff;">
         <div style="padding: 35px 30px; background-color: rgba(255, 255, 255, 0.94); color: #334155; font-size: 15px; line-height: 1.65;">
           ${bodyContent}
-          <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
-            <p style="margin: 0 0 3px 0;">Regards,</p>
-            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523;">Placement Team</p>
-            <p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p>
-          </div>
         </div>
       </div>
     </div>
@@ -177,51 +172,68 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   if (status === 'interview scheduled') {
     subject = `Congratulations, ${studentData.name} ! Your Interview Awaits! # ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Interview Schedule';
-    html = buildBrandedEmail('Interview Invitation', '#38bdf8', `
-      <p style="font-size: 16px; font-weight: bold; color: #0f1523; margin-top: 0;">Greetings ${studentData.name},</p>
-      <p>I hope this message finds you well and in high spirits. We are thrilled to inform you that you have been <b>selected for an interview opportunity</b> with one of our esteemed partner companies!</p>
+    
+    // Original formatting with green Agenda box, red Important box, and blue Event Details borders
+    html = buildBrandedEmail('INTERVIEW INVITATION', '#38bdf8', `
+      <h2 style="color: #0f1523; margin-top: 0; font-size: 18px;">Congratulations, ${studentData.name}!</h2>
+      <p>We are thrilled to inform you that you have been <b>selected for an interview</b> with one of our esteemed partner companies. This is a fantastic step towards achieving your career goals, and we are excited to see your hard work and dedication paying off.</p>
+      
       <div style="background-color: rgba(248, 250, 252, 0.95); border: 1px solid #cbd5e1; border-left: 5px solid #38bdf8; border-radius: 8px; padding: 20px; margin: 25px 0;">
-        <h3 style="margin: 0 0 12px 0; color: #0f1523; font-size: 15px; text-transform: uppercase;">Interview Details</h3>
+        <h3 style="margin: 0 0 12px 0; color: #0f1523; font-size: 14px; text-transform: uppercase;">EVENT DETAILS</h3>
         <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
-          <tr><td style="padding: 6px 0; color: #64748b; width: 35%;">NewLetterID:</td><td style="padding: 6px 0; color: #8b5cf6; font-weight: bold;">${studentData.jobId || 'N/A'}</td></tr>
-          <tr><td style="padding: 6px 0; color: #64748b;">Company Name:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${studentData.company}</td></tr>
-          <tr><td style="padding: 6px 0; color: #64748b;">Hiring For:</td><td style="padding: 6px 0; color: #0f1523;">${studentData.position || 'Professional'}</td></tr>
-          <tr><td style="padding: 6px 0; color: #64748b;">Interview Date:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${interviewDetails.date || 'TBD'}</td></tr>
-          <tr><td style="padding: 6px 0; color: #64748b;">Interview Time:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${interviewDetails.time || 'TBD'}</td></tr>
-          <tr><td style="padding: 6px 0; color: #64748b;">Interview Venue:</td><td style="padding: 6px 0; color: #0284c7; font-weight: bold;">${interviewDetails.venue || 'TBD'}</td></tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 8px 0; color: #64748b; width: 35%;">Company:</td><td style="padding: 8px 0; color: #0f1523; font-weight: bold;">${studentData.company}</td></tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 8px 0; color: #64748b;">Position:</td><td style="padding: 8px 0; color: #0f1523;">${studentData.position || 'Professional'}</td></tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 8px 0; color: #64748b;">Date:</td><td style="padding: 8px 0; color: #0f1523; font-weight: bold;">${interviewDetails.date || 'TBD'}</td></tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 8px 0; color: #64748b;">Time:</td><td style="padding: 8px 0; color: #0f1523; font-weight: bold;">${interviewDetails.time || 'TBD'}</td></tr>
+          <tr style="border-bottom: 1px solid #e2e8f0;"><td style="padding: 8px 0; color: #64748b;">Venue / Link:</td><td style="padding: 8px 0; color: #0284c7; font-weight: bold;"><a href="${interviewDetails.venue || '#'}" style="color: #0284c7; text-decoration: none;">${interviewDetails.venue || 'TBD'}</a></td></tr>
+          <tr><td style="padding: 8px 0; color: #64748b;">Newsletter ID:</td><td style="padding: 8px 0; color: #64748b;">${studentData.jobId || 'N/A'}</td></tr>
         </table>
       </div>
-      <p style="color: #1e3a8a; background-color: rgba(56, 189, 248, 0.05); padding: 12px 15px; border-radius: 6px; font-style: italic;">
-        "The interview may consist of multiple rounds, including technical assessments, behavioral interviews, or HR rounds. Please be prepared accordingly."
+      
+      <h3 style="color: #0f1523; font-size: 16px;">Agenda & Expectations</h3>
+      <p style="color: #1e3a8a; background-color: #f0fdf4; border: 1px solid #bbf7d0; padding: 15px; border-radius: 8px; font-style: italic; font-size: 13px;">
+        "The interview may consist of multiple rounds, including technical assessments, behavioral interviews, or HR rounds. You may also be required to provide specific documents or complete certain tasks, so please be prepared accordingly."
       </p>
+      
+      <div style="background-color: #fef2f2; border: 1px solid #fecaca; padding: 15px; border-radius: 8px; margin-top: 15px;">
+        <p style="color: #b91c1c; margin: 0; font-size: 13px;">
+          <b>Important Note:</b> Please make sure to arrive on time for the interview or log in to the online meeting platform a few minutes before the scheduled time. If, for any reason, you are unable to attend, please inform us at your earliest convenience so we can make alternative arrangements.
+        </p>
+      </div>
+
+      <div style="margin-top: 35px; padding-top: 20px; font-size: 14px; color: #334155;">
+        <p style="margin: 0 0 15px 0;">If you have any questions or need further information about the interview, please do not hesitate to contact the placement department. We wish you the very best of luck!</p>
+        <p style="margin: 0 0 3px 0; font-weight: bold;">Regards,</p>
+        <p style="margin: 0; font-weight: bold; color: #0ea5e9;">IPCS Placement Cell</p>
+      </div>
     `);
   }
   else if (status === 'interview not attended') {
     if (noAttendCount === 2) {
       subject = `❗Warning – Non-Attendance for Scheduled Interview [Ref: ${refId}]`;
       mailType = 'Warning Mail';
-      html = buildBrandedEmail('Official Warning', '#f59e0b', `<p>Dear <b>${studentData.name}</b>,</p><p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the second time</b> without prior intimation.</p><p>Please consider this email as an <b>official warning</b>.</p>`);
+      html = buildBrandedEmail('Official Warning', '#f59e0b', `<p>Dear <b>${studentData.name}</b>,</p><p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the second time</b> without prior intimation.</p><p>Please consider this email as an <b>official warning</b>.</p><div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;"><p style="margin: 0 0 3px 0;">Regards,</p><p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523;">Placement Team</p><p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p></div>`);
     } else if (noAttendCount >= 3) {
       subject = `❗Final Warning – Placement Assistance Put on Hold [Ref: ${refId}]`;
       mailType = 'Hold Mail';
-      html = buildBrandedEmail('Placement Assistance Put on Hold', '#ef4444', `<p>Dear <b>${studentData.name}</b>,</p><p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the third time.</b></p><p>This is considered a serious violation. Therefore, your placement assistance is hereby <b>put on hold</b> with immediate effect.</p>`);
+      html = buildBrandedEmail('Placement Assistance Put on Hold', '#ef4444', `<p>Dear <b>${studentData.name}</b>,</p><p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the third time.</b></p><p>This is considered a serious violation. Therefore, your placement assistance is hereby <b>put on hold</b> with immediate effect.</p><div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;"><p style="margin: 0 0 3px 0;">Regards,</p><p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523;">Placement Team</p><p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p></div>`);
     }
   }
   else if (status.includes('student rejected') || status.includes('offer rejected')) {
     if (rejectCount === 2) {
       subject = `❗Warning – Rejection of Job Offer for the Second Time [Ref: ${refId}]`;
       mailType = 'Warning Mail';
-      html = buildBrandedEmail('Official Warning', '#f59e0b', `<p>Dear <b>${studentData.name}</b>,</p><p>This is to formally inform you that you have <b>rejected a job offer for the second time</b>.</p><p>Please consider this email as an <b>official warning.</b></p>`);
+      html = buildBrandedEmail('Official Warning', '#f59e0b', `<p>Dear <b>${studentData.name}</b>,</p><p>This is to formally inform you that you have <b>rejected a job offer for the second time</b>.</p><p>Please consider this email as an <b>official warning.</b></p><div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;"><p style="margin: 0 0 3px 0;">Regards,</p><p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523;">Placement Team</p><p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p></div>`);
     } else if (rejectCount >= 3) {
       subject = `❗Final Warning – Placement Assistance Put on Hold [Ref: ${refId}]`;
       mailType = 'Hold Mail';
-      html = buildBrandedEmail('Placement Assistance Put on Hold', '#ef4444', `<p>Dear <b>${studentData.name}</b>,</p><p>This is to formally inform you that you have <b>rejected a job offer for the third time</b>.</p><p>Your placement assistance is hereby <b>put on hold</b> with immediate effect.</p>`);
+      html = buildBrandedEmail('Placement Assistance Put on Hold', '#ef4444', `<p>Dear <b>${studentData.name}</b>,</p><p>This is to formally inform you that you have <b>rejected a job offer for the third time</b>.</p><p>Your placement assistance is hereby <b>put on hold</b> with immediate effect.</p><div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;"><p style="margin: 0 0 3px 0;">Regards,</p><p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523;">Placement Team</p><p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p></div>`);
     }
   }
   else if (status.includes('placed') || status.includes('joined') || status.includes('got offer')) {
     subject = `Congratulations! Placement Confirmed at ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Congratulation Mail';
-    html = buildBrandedEmail('Congratulations on Your Placement!', '#10b981', `<p style="font-size: 18px; color: #10b981; font-weight: bold;">Congratulations on your placement!</p><p>Dear <b>${studentData.name}</b>,</p><p>We are incredibly proud to announce that your placement at <b>${studentData.company}</b> has been confirmed!</p>`);
+    html = buildBrandedEmail('Congratulations on Your Placement!', '#10b981', `<p style="font-size: 18px; color: #10b981; font-weight: bold;">Congratulations on your placement!</p><p>Dear <b>${studentData.name}</b>,</p><p>We are incredibly proud to announce that your placement at <b>${studentData.company}</b> has been confirmed!</p><div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;"><p style="margin: 0 0 3px 0;">Regards,</p><p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523;">Placement Team</p><p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p></div>`);
   }
 
   if (subject && html) {
@@ -466,7 +478,8 @@ exports.updateStudent = async (req, res) => {
       const sH = getFuzzyHeader(headers, 'studymaterialaccess'); if(sH) updateObj[sH] = studyAccess;
       const eH = getFuzzyHeader(headers, 'technialexam') || getFuzzyHeader(headers, 'technicalexam'); if(eH) updateObj[eH] = examAccess;
       
-      const cPercH = getFuzzyHeader(headers, 'coursepercentage') || getFuzzyHeader(headers, 'coursecompleted');
+      // Strict match to prevent grabbing the "Date" column
+      const cPercH = headers.find(h => h.toLowerCase().replace(/\s/g, '') === 'coursepercentage');
       if (cPercH && coursePercentage !== undefined) {
         updateObj[cPercH] = coursePercentage;
       }
@@ -619,7 +632,8 @@ exports.updateApplication = async (req, res) => {
           const logObj = {};
           
           const setLogH = (key, val) => {
-             const h = getFuzzyHeader(logHeaders, key);
+             // 🚨 FIXED: Strict internal matching prevents Google Sheets API from crashing on missing columns
+             const h = logHeaders.find(col => col.toLowerCase().replace(/\s/g, '') === key.toLowerCase().replace(/\s/g, ''));
              if (h) logObj[h] = val;
           };
 

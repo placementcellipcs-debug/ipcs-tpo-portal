@@ -511,7 +511,7 @@ export default function StudentsDirectory() {
                      { label: 'Parent Name', val: getF(['parentname', 'father', 'mother']) },
                      { label: 'Parent Contact', val: getF(['parentcontact', 'parentphone']) },
                      { label: 'Course Status', val: getF(['status(currently', 'coursestatus']) || localCourseStatus },
-                     { label: 'Course Percentage', val: getF(['coursepercentage', 'coursecompleted']) || localCoursePercentage },
+                     { label: 'Course Percentage', val: getF(['coursepercentage']) || localCoursePercentage },
                      { label: 'IPCS Course Completed Date', val: getF(['coursecompleteddate', 'completeddate']) },
                      { label: 'Age', val: getF(['age', 'dob']) },
                      { label: 'Gender', val: getF(['gender', 'sex']) }
