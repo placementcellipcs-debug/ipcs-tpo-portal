@@ -10,7 +10,30 @@ const controllers = require('./src/controllers');
 const { getCache } = require('./src/config');
 
 const app = express();
-app.use(cors());
+
+// 🚨 DYNAMIC CORS CONFIGURATION
+const allowedOrigins = [
+  'https://talenzo.ipcsglobal.info',
+  'https://ipcs-tpo-portal.vercel.app',
+  'http://localhost:5173',
+  'http://localhost:3000'
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, postman, or curl requests)
+    if (!origin) return callback(null, true);
+    
+    // Check if the origin is in the allowed list, or if it's a Vercel preview branch
+    if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+      return callback(null, true);
+    } else {
+      return callback(new Error('Blocked by CORS'));
+    }
+  },
+  credentials: true
+}));
+
 app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
