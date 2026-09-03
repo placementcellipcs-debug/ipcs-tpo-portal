@@ -1426,13 +1426,6 @@ exports.getVacancies = (req, res) => {
   });
   res.json({ success: true, vacancies: vacs.reverse() });
 };
-    const getVal = (possibleKeys) => { for(let key of Object.keys(rowData)) { if (possibleKeys.includes(key.trim())) return rowData[key]; } return ''; };
-    return {
-      id: getVal(['JOBID', 'Job ID', 'ID']) || `JOB-${i+1}`, company: getVal(['Company Name', 'Company']), position: getVal(['Position', 'Role']), location: getVal(['Opening AT ( Location )', 'Opening AT( Location )', 'Location']), state: getVal(['State']), mode: getVal(['Work Mode', 'Mode']), lastDate: getVal(['Last Date']), course: getVal(['Course']), qualification: getVal(['Qualification']), description: getVal(['Job Description']), experience: getVal(['Experience']), salary: getVal(['Salary']), gender: getVal(['Gender Preference']), status: getVal(['Status']) || 'Open'
-    };
-  });
-  res.json({ success: true, vacancies: vacs.reverse() });
-};
 
 exports.getIssues = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
