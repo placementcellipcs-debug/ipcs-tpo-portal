@@ -55,13 +55,23 @@ const getAllTpoEmails = () => {
   return cache.contacts.map(r => r.get('Mail ID')).filter(Boolean);
 };
 
-// 🚨 FIXED: Pulls ALL Branch Managers specifically from User sheet
 const getAllBranchManagerEmails = () => {
   const cache = getCache();
   if (!cache || !cache.users) return [];
   return cache.users
     .filter(r => (r.get('Role') || '').toLowerCase().trim() === 'branch manager')
     .map(r => r.get('Mail ID')).filter(Boolean);
+};
+
+// 🚨 NEW: Pulls all Super Admins from User Sheet
+const getSuperAdminEmails = () => {
+  const cache = getCache();
+  if (!cache || !cache.users) return [];
+  return cache.users.filter(r => {
+    const role = (r.get('Role') || '').toLowerCase().trim();
+    const access = (r.get('Access') || '').toLowerCase().trim();
+    return access.includes('super admin') || role === 'general manager' || role === 'technical head' || role === 'zonal placement head';
+  }).map(r => r.get('Mail ID')).filter(Boolean);
 };
 
 const logMailToSheet = async (receiverName, receiverMail, mailType, subject, status) => {
@@ -136,7 +146,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   let subject = ''; let html = ''; let mailType = '';
   const refId = Math.floor(10000 + Math.random() * 90000); 
 
-  // 🚨 FIXED: Image links now use lh3.googleusercontent.com for 100% email client compatibility
+  // 🚨 FIXED: Image links now use lh3.googleusercontent.com
   const logo1 = "https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
   const logo2 = "https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
   const watermark = "https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
@@ -723,11 +733,12 @@ exports.addEvent = async (req, res) => {
     if (evType.includes('placement drive')) {
       const allTpos = getAllTpoEmails();
       const allBMs = getAllBranchManagerEmails();
+      const superAdmins = getSuperAdminEmails(); // Pulls General Manager, Tech Head, Zonal Head
       
-      // BCC: All TPOs and All Branch Managers
-      const bccList = [...new Set([...allTpos, ...allBMs])].filter(Boolean).join(',');
-      // CC: EXACTLY Gifty, Rakesh, and Ajith
-      const ccList = 'gifty@ipcsglobal.com,rakesh@ipcsglobal.com,ajith@ipcsglobal.com';
+      // BCC: All Branch Managers ONLY
+      const bccList = [...new Set(allBMs)].filter(Boolean).join(',');
+      // CC: Super Admins + All TPOs
+      const ccList = [...new Set([...superAdmins, ...allTpos])].filter(Boolean).join(',');
 
       const html = `<div style="font-family: Arial, sans-serif; max-width: 650px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
           <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #3b82f6;">
