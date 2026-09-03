@@ -4,7 +4,7 @@ import {
   CircleNotch, SquaresFour, List, PencilSimple, X, FloppyDisk, 
   UserMinus, ClockClockwise, Prohibit, UsersThree, Briefcase, Files, Confetti, 
   FilePdf, GraduationCap, CaretLeft, Phone, WhatsappLogo, EnvelopeSimple, LinkedinLogo,
-  ArrowsClockwise
+  InstagramLogo, ArrowsClockwise
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -65,13 +65,14 @@ export default function StudentsDirectory() {
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
   const isTpo = upperRole === 'TPO';
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
-  const isCourseSpecific = isRth || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
+  const isTrainer = upperRole.includes('TRAINER');
+  const isCourseSpecific = isRth || upperRole.includes('TTH') || isTrainer || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
 
-  // Specific edit rights
-  const canEditCore = isSuperAdmin || isTpo; // Can edit Course Status, Placement Status, Vacancy
-  const canEditAcademic = isSuperAdmin || isTpo || isRth; // Can edit Study & Exam Access
-  const canSave = canEditCore || canEditAcademic; // Show Save Button if they can edit anything
+  // 🚨 UI ACCESS CONTROL
+  const canEditAll = isSuperAdmin || isTpo; 
+  const canEditAcademic = canEditAll || isRth || isTrainer; 
+  const canSave = canEditAll || canEditAcademic;
 
   useEffect(() => {
     const fetchData = async () => {
@@ -395,38 +396,63 @@ export default function StudentsDirectory() {
 
       {/* MODAL */}
       {isModalOpen && selectedStudent && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', overflow: 'hidden' }} onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
-          <div className="modal-card" style={{ maxWidth: '850px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
-            
-            <div className="student-modal-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '1px solid #1e293b', paddingBottom: '1.2rem', margin: '0 0 1.5rem 0', flexWrap: 'wrap', gap: '15px' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
-                <div style={{ width: '60px', height: '60px', borderRadius: '50%', overflow: 'hidden', border: '2px solid var(--card-border)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)' }}>
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '15px', overflow: 'hidden' }} onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
+        <div className="modal-card" style={{ maxWidth: '950px', width: '100%', maxHeight: '95vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
+          
+          {/* Sticky Header with Actions */}
+          <div style={{ position: 'sticky', top: 0, background: '#0f1523', zIndex: 10, padding: '1.5rem 2rem', borderBottom: '1px solid #1e293b' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '15px' }}>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+                <div style={{ width: '65px', height: '65px', borderRadius: '50%', overflow: 'hidden', border: '2px solid #38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)', flexShrink: 0 }}>
                   {renderAvatar(selectedStudent.photo, selectedStudent.name)}
                 </div>
                 <div>
-                  <h2 style={{ margin: '0 0 4px 0', fontSize: '1.4rem' }}>{selectedStudent.name}</h2>
-                  <span style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{selectedStudent.roll}</span>
+                  <h2 style={{ margin: '0 0 4px 0', fontSize: '1.4rem', color: '#fff' }}>{selectedStudent.name}</h2>
+                  <span style={{ fontSize: '0.85rem', color: '#38bdf8', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{selectedStudent.roll}</span>
                   
+                  {/* Social/Contact Action Buttons */}
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <a href={`tel:${selectedStudent.phone}`} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(14, 165, 233, 0.15)', color: '#0ea5e9', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none' }}>
-                      <Phone size={14} weight="fill" /> Call
-                    </a>
-                    <a href={`https://api.whatsapp.com/send?phone=${selectedStudent.phone ? (selectedStudent.phone.replace(/\D/g, '').length === 10 ? '91' + selectedStudent.phone.replace(/\D/g, '') : selectedStudent.phone.replace(/\D/g, '')) : ''}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(37, 211, 102, 0.15)', color: '#25D366', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none' }}>
-                      <WhatsappLogo size={14} weight="fill" /> WhatsApp
-                    </a>
-                    <a href={`mailto:${selectedStudent.email}`} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(234, 67, 53, 0.15)', color: '#ea4335', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none' }}>
-                      <EnvelopeSimple size={14} weight="fill" /> Mail
-                    </a>
-                    {getLinkedInUrl(selectedStudent.rawData) && (
-                      <a href={getLinkedInUrl(selectedStudent.rawData)} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(10, 102, 194, 0.15)', color: '#4facfe', padding: '4px 10px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', textDecoration: 'none' }}>
-                        <LinkedinLogo size={14} weight="fill" /> LinkedIn
-                      </a>
-                    )}
+                    {(() => {
+                       const raw = selectedStudent.rawData || {};
+                       const getF = (keys) => {
+                         const fK = Object.keys(raw).find(k => keys.some(search => k.toLowerCase().replace(/\s/g, '').includes(search.toLowerCase().replace(/\s/g, ''))));
+                         return fK && raw[fK] && raw[fK] !== 'N/A' ? raw[fK] : null;
+                       };
+                       const linkedInUrl = getF(['linkedin']);
+                       let instaUrl = getF(['instagram', 'insta']);
+                       if (instaUrl && !instaUrl.includes('instagram.com')) instaUrl = `https://instagram.com/${instaUrl.replace('@', '')}`;
+                       
+                       return (
+                         <>
+                           <a href={`tel:${selectedStudent.phone}`} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(14, 165, 233, 0.15)', color: '#0ea5e9', padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', textDecoration: 'none', transition: 'all 0.2s' }}>
+                             <Phone size={14} weight="fill" /> Call
+                           </a>
+                           <a href={`https://api.whatsapp.com/send?phone=${selectedStudent.phone ? (selectedStudent.phone.replace(/\D/g, '').length === 10 ? '91' + selectedStudent.phone.replace(/\D/g, '') : selectedStudent.phone.replace(/\D/g, '')) : ''}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(37, 211, 102, 0.15)', color: '#25D366', padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', textDecoration: 'none', transition: 'all 0.2s' }}>
+                             <WhatsappLogo size={14} weight="fill" /> WhatsApp
+                           </a>
+                           <a href={`mailto:${selectedStudent.email}`} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(234, 67, 53, 0.15)', color: '#ea4335', padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', textDecoration: 'none', transition: 'all 0.2s' }}>
+                             <EnvelopeSimple size={14} weight="fill" /> Mail
+                           </a>
+                           {linkedInUrl && (
+                             <a href={linkedInUrl.startsWith('http') ? linkedInUrl : `https://${linkedInUrl}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(10, 102, 194, 0.15)', color: '#4facfe', padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', textDecoration: 'none', transition: 'all 0.2s' }}>
+                               <LinkedinLogo size={14} weight="fill" /> LinkedIn
+                             </a>
+                           )}
+                           {instaUrl && (
+                             <a href={instaUrl} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(225, 48, 108, 0.15)', color: '#e1306c', padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', textDecoration: 'none', transition: 'all 0.2s' }}>
+                               <InstagramLogo size={14} weight="fill" /> Instagram
+                             </a>
+                           )}
+                         </>
+                       );
+                    })()}
                   </div>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              {/* Documents & Close */}
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                 {selectedStudent.resume && selectedStudent.resume !== 'N/A' && (
                   <button className="btn-secondary" onClick={() => window.open(getDrivePdf(selectedStudent.resume) || selectedStudent.resume, '_blank')} style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', border: '1px solid #f59e0b', margin: 0, padding: '0.5rem 0.8rem' }}>
                     <FilePdf size={18} weight="fill" /> Resume
@@ -437,74 +463,109 @@ export default function StudentsDirectory() {
                     <GraduationCap size={18} weight="fill" /> Certificate
                   </button>
                 )}
-                <X size={28} style={{ cursor: 'pointer', color: 'var(--text-muted)', marginLeft: '10px' }} onClick={() => setIsModalOpen(false)} />
+                <X size={28} style={{ cursor: 'pointer', color: 'var(--text-muted)', marginLeft: 'auto' }} onClick={() => setIsModalOpen(false)} />
               </div>
             </div>
+          </div>
 
-            <div className="student-modal-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1.5rem' }}>
-              {Object.entries(selectedStudent.rawData).map(([key, val]) => {
-                const lowerKey = key.toLowerCase();
-                if(!val || val === 'N/A' || lowerKey.includes('photo') || lowerKey.includes('resume') || lowerKey.includes('certificate') || lowerKey.includes('timestamp') || lowerKey === 'row' || lowerKey === 'time' || lowerKey.includes('linkedin')) return null;
-                return (
-                  <div key={key} className="data-cell" style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                    <span className="data-label" style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>{key}</span>
-                    <span className="data-value" style={{ fontSize: '0.95rem', color: '#fff', fontWeight: 700, wordBreak: 'break-word' }}>{val}</span>
+          {/* Scrollable Specific Info Body */}
+          <div style={{ padding: '2rem' }}>
+             {/* Strictly Filtered Read-Only Grid */}
+             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '15px', marginBottom: '2.5rem' }}>
+                {(() => {
+                   const raw = selectedStudent.rawData || {};
+                   const getF = (keys) => {
+                     const fK = Object.keys(raw).find(k => keys.some(search => k.toLowerCase().replace(/\s/g, '').includes(search.toLowerCase().replace(/\s/g, ''))));
+                     return fK && raw[fK] && raw[fK] !== 'N/A' ? raw[fK] : null;
+                   };
+                   
+                   const specificFields = [
+                     { label: 'Name', val: getF(['name', 'studentname']) || selectedStudent.name },
+                     { label: 'Phone No.', val: getF(['phone', 'contact']) || selectedStudent.phone },
+                     { label: 'Mail ID', val: getF(['mail', 'email']) || selectedStudent.email },
+                     { label: 'IPCS Roll Number', val: getF(['ipcsroll', 'rollnumber', 'roll']) || selectedStudent.roll },
+                     { label: 'Joining Date', val: getF(['joiningdate']) },
+                     { label: 'Course', val: getF(['course']) || selectedStudent.course },
+                     { label: 'Branch', val: getF(['branch']) || selectedStudent.branch },
+                     { label: 'Home Town', val: getF(['hometown', 'town', 'city']) },
+                     { label: 'Qualification', val: getF(['qual']) || selectedStudent.qual },
+                     { label: 'Stream', val: getF(['stream']) || selectedStudent.stream },
+                     { label: 'Experience Status', val: getF(['fresher', 'experience', 'status(fresher']) },
+                     { label: 'Specific Requirement', val: getF(['specificrequirement', 'requirement']) },
+                     { label: 'Parent Name', val: getF(['parentname', 'father', 'mother']) },
+                     { label: 'Parent Contact', val: getF(['parentcontact', 'parentphone']) },
+                     { label: 'IPCS Course Completed Date', val: getF(['coursecompleteddate', 'completeddate']) },
+                     { label: 'Age', val: getF(['age', 'dob']) },
+                     { label: 'Gender', val: getF(['gender', 'sex']) }
+                   ].filter(f => f.val);
+
+                   return specificFields.map((field, idx) => (
+                      <div key={idx} style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '10px', border: '1px solid #1e293b' }}>
+                        <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>{field.label}</span>
+                        <span style={{ fontSize: '0.95rem', color: '#fff', fontWeight: 700, wordBreak: 'break-word' }}>{field.val}</span>
+                      </div>
+                   ));
+                })()}
+             </div>
+
+             {/* Permission-Based Toggles Container */}
+             <div style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid #1e293b', borderRadius: '16px', padding: '1.5rem' }}>
+                <h3 style={{ margin: '0 0 1.2rem 0', color: '#fff', fontSize: '1.1rem', borderBottom: '1px solid #1e293b', paddingBottom: '0.8rem' }}>Access & Permissions Control</h3>
+                
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+                  
+                  {/* Academic Controls (RTH/Trainers/TPO/Admin) */}
+                  <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Course Completed</span>
+                    <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localCourseStatus} onChange={(e) => setLocalCourseStatus(e.target.value)} disabled={!canEditAcademic}>
+                      <option value="Currently Studying">Currently Studying</option>
+                      <option value="Completed Course">Completed Course</option>
+                    </select>
                   </div>
-                );
-              })}
-            </div>
 
-            {/* 🚨 ALWAYS VISIBLE DROPDOWNS: ONLY DISABLED BASED ON ROLE */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '1.5rem' }}>
-              
-              <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
-                <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Course Status</span>
-                <select className="sleek-select" style={{ width: '100%', cursor: !canEditCore ? 'not-allowed' : 'pointer', opacity: !canEditCore ? 0.7 : 1 }} value={localCourseStatus} onChange={(e) => setLocalCourseStatus(e.target.value)} disabled={!canEditCore}>
-                  <option value="Currently Studying">Currently Studying</option>
-                  <option value="Completed Course">Completed Course</option>
-                </select>
-              </div>
+                  <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Study Material Access</span>
+                    <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localStudyAccess} onChange={(e) => setLocalStudyAccess(e.target.value)} disabled={!canEditAcademic}>
+                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                    </select>
+                  </div>
 
-              <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
-                <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Placement Status</span>
-                <select className="sleek-select" style={{ width: '100%', cursor: !canEditCore ? 'not-allowed' : 'pointer', opacity: !canEditCore ? 0.7 : 1 }} value={localPlacementState} onChange={(e) => setLocalPlacementState(e.target.value)} disabled={!canEditCore}>
-                  <option value="Pending">Pending</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
-                </select>
-              </div>
+                  <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Technical Exam Access</span>
+                    <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localExamAccess} onChange={(e) => setLocalExamAccess(e.target.value)} disabled={!canEditAcademic}>
+                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                    </select>
+                  </div>
 
-              <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
-                <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Vacancy Access</span>
-                <select className="sleek-select" style={{ width: '100%', cursor: !canEditCore ? 'not-allowed' : 'pointer', opacity: !canEditCore ? 0.7 : 1 }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)} disabled={!canEditCore}>
-                  <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
-                </select>
-              </div>
+                  {/* Core Placement Controls (TPO/Admin ONLY) */}
+                  <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Vacancy Open</span>
+                    <select className="sleek-select" style={{ width: '100%', cursor: !canEditAll ? 'not-allowed' : 'pointer', opacity: !canEditAll ? 0.7 : 1, background: '#161e2e' }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)} disabled={!canEditAll}>
+                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                    </select>
+                  </div>
 
-              <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
-                <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Study Material Access</span>
-                <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1 }} value={localStudyAccess} onChange={(e) => setLocalStudyAccess(e.target.value)} disabled={!canEditAcademic}>
-                  <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
-                </select>
-              </div>
+                  <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Placement Status</span>
+                    <select className="sleek-select" style={{ width: '100%', cursor: !canEditAll ? 'not-allowed' : 'pointer', opacity: !canEditAll ? 0.7 : 1, background: '#161e2e' }} value={localPlacementState} onChange={(e) => setLocalPlacementState(e.target.value)} disabled={!canEditAll}>
+                      <option value="Pending">Pending</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
+                    </select>
+                  </div>
 
-              <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
-                <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Technical Exam Access</span>
-                <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1 }} value={localExamAccess} onChange={(e) => setLocalExamAccess(e.target.value)} disabled={!canEditAcademic}>
-                  <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
-                </select>
-              </div>
-            </div>
+                </div>
 
-            <div style={{ display: 'flex', justifyContent: !canSave ? 'space-between' : 'flex-end', alignItems: 'center', borderTop: '1px solid #1e293b', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
-               {!canSave && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission</span>}
-               
-               {/* Show Save Button if they have ANY edit permissions */}
-               <button className="btn-action" style={{ width: 'auto', background: !canSave ? '#1e293b' : '#38bdf8', color: !canSave ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: !canSave ? 'not-allowed' : 'pointer' }} onClick={saveStudentUpdates} disabled={savingStatus || !canSave}>
-                  {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> {!canSave ? 'Edit Locked' : 'Save All Changes'}</>}
-                </button>
-            </div>
-            
+                {/* Lock warning & Save Button */}
+                <div style={{ display: 'flex', justifyContent: !canSave ? 'space-between' : 'flex-end', alignItems: 'center', marginTop: '1.5rem' }}>
+                   {!canSave && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission for Toggles</span>}
+                   
+                   <button className="btn-action" style={{ width: 'auto', background: !canSave ? '#1e293b' : '#38bdf8', color: !canSave ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: !canSave ? 'not-allowed' : 'pointer', opacity: canSave ? 1 : 0.5 }} onClick={saveStudentUpdates} disabled={savingStatus || !canSave}>
+                      {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> {!canSave ? 'Locked' : 'Save Changes'}</>}
+                    </button>
+                </div>
+             </div>
           </div>
         </div>
+      </div>
       )}
     </Layout>
   );
