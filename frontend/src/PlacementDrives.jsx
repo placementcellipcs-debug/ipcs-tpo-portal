@@ -21,7 +21,7 @@ export default function PlacementDrives() {
 
   const fetchDrives = async () => {
     try {
-      const res = await axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/drives');
+      const res = await axios.get('https://api-talenzo.ipcsglobal.info/api/tpo/drives');
       if(res.data.success) setDrivesData(res.data.drives);
     } catch(err) { console.error("Failed to load drives"); } finally { setLoading(false); }
   };
@@ -30,7 +30,7 @@ export default function PlacementDrives() {
     // Optimistic UI update for instant feedback
     setDrivesData(prev => prev.map(d => d.rowNumber === rowNumber ? { ...d, studentStatus: newStatus } : d));
     try {
-      await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/drives/update', { rowNumber, studentStatus: newStatus });
+      await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/drives/update', { rowNumber, studentStatus: newStatus });
     } catch(err) { 
       alert("Failed to sync status to Google Sheets"); 
       fetchDrives(); 

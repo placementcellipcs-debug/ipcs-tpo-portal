@@ -36,7 +36,7 @@ export default function Settings() {
     setMessage({ text: '', type: '' });
 
     try {
-      const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/profile/update-password', {
+      const response = await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/profile/update-password', {
         email: tpoData.email || '',
         loginId: tpoData.loginId || '',
         newPassword: passwords.new
@@ -66,7 +66,7 @@ export default function Settings() {
     formData.append('photo', file);
 
     try {
-      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/profile/update-photo', formData, {
+      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/profile/update-photo', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       if (res.data.success) {

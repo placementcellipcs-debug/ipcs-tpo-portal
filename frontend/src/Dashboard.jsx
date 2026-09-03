@@ -167,8 +167,8 @@ export default function Dashboard() {
         };
         
         const [statsRes, reportsRes] = await Promise.all([
-          axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/dashboard-stats', reqPayload),
-          axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/reports', reqPayload)
+          axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/dashboard-stats', reqPayload),
+          axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/reports', reqPayload)
         ]);
         
         if (statsRes.data.success) {

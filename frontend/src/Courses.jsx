@@ -34,7 +34,7 @@ export default function Courses() {
 
   const fetchCourses = async () => {
     try {
-      const res = await axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/courses');
+      const res = await axios.get('https://api-talenzo.ipcsglobal.info/api/admin/courses');
       if (res.data.success && res.data.courses) {
         // 🚨 Validate if backend parsed the sheet properly
         let hasPrograms = false;
@@ -73,7 +73,7 @@ export default function Courses() {
     setError('');
 
     try {
-      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/courses/add', formData);
+      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/admin/courses/add', formData);
       if (res.data.success) {
         setIsModalOpen(false);
         setLoading(true);
@@ -90,7 +90,7 @@ export default function Courses() {
     if(!window.confirm(`Are you sure you want to permanently delete the program: ${subCourse}?`)) return;
     
     try {
-      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/courses/delete', { subCourse });
+      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/admin/courses/delete', { subCourse });
       if (res.data.success) {
         setLoading(true);
         fetchCourses();

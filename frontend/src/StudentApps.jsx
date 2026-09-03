@@ -54,7 +54,7 @@ export default function StudentApps() {
       
       try {
         setLoading(true);
-        const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications', { 
+        const response = await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/applications', { 
           assignedBranchesArray: localTpo.assignedBranchesArray,
           tpoName: localTpo.name,
           role: localTpo.role,

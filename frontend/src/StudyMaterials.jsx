@@ -51,8 +51,8 @@ export default function StudyMaterials() {
   const fetchData = async () => {
     try {
       const [matRes, courseRes] = await Promise.all([
-        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials'),
-        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/courses')
+        axios.get('https://api-talenzo.ipcsglobal.info/api/lms/materials'),
+        axios.get('https://api-talenzo.ipcsglobal.info/api/admin/courses')
       ]);
       if (matRes.data.success) setMaterials(matRes.data.materials || []);
       if (courseRes.data.success) {
@@ -112,8 +112,8 @@ export default function StudyMaterials() {
 
     try {
       const endpoint = isEditMode 
-        ? 'https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/update' 
-        : 'https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/add';
+        ? 'https://api-talenzo.ipcsglobal.info/api/lms/materials/update' 
+        : 'https://api-talenzo.ipcsglobal.info/api/lms/materials/add';
 
       const res = await axios.post(endpoint, formData);
       if (res.data.success) {
@@ -131,7 +131,7 @@ export default function StudyMaterials() {
   const handleDeleteMaterial = async (id) => {
     if (!window.confirm("Are you sure you want to permanently delete this study material?")) return;
     try {
-      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/delete', { id });
+      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/lms/materials/delete', { id });
       if (res.data.success) {
         setMaterials(materials.filter(m => m.id !== id));
       }

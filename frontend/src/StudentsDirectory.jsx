@@ -60,11 +60,18 @@ export default function StudentsDirectory() {
   const [localExamAccess, setLocalExamAccess] = useState('');
   const [localCourseStatus, setLocalCourseStatus] = useState(''); 
 
+  // 🚨 STRICT PERMISSIONS LOGIC
   const upperRole = (tpoData?.role || '').toUpperCase();
+  const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
+  const isTpo = upperRole === 'TPO';
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
-  const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
+  const isCourseSpecific = isRth || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
-  const isViewOnly = tpoData?.accessType === 'view'; 
+
+  // Specific edit rights
+  const canEditCore = isSuperAdmin || isTpo; // Can edit Course Status, Placement Status, Vacancy
+  const canEditAcademic = isSuperAdmin || isTpo || isRth; // Can edit Study & Exam Access
+  const canSave = canEditCore || canEditAcademic; // Show Save Button if they can edit anything
 
   useEffect(() => {
     const fetchData = async () => {
@@ -81,8 +88,8 @@ export default function StudentsDirectory() {
         };
 
         const [stuRes, statRes] = await Promise.all([
-          axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/students', payload),
-          axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/dashboard-stats', payload)
+          axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/students', payload),
+          axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/dashboard-stats', payload)
         ]);
         
         if (stuRes.data.success) {
@@ -141,7 +148,7 @@ export default function StudentsDirectory() {
   const saveStudentUpdates = async () => {
     setSavingStatus(true);
     try {
-      const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/students/update-student', {
+      const response = await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/students/update-student', {
         rowNumber: selectedStudent.rowIdx,
         vacOpen: localVacState, 
         placementStatus: localPlacementState,
@@ -232,7 +239,7 @@ export default function StudentsDirectory() {
               {selectedBranch ? `${selectedBranch} Student Directory` : (isCourseSpecific ? `Branches with ${displayCourse} Students` : 'Student Directory')}
             </h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>
-              {selectedBranch ? (isViewOnly ? 'View student profiles, resumes, and vacancy statuses.' : 'Manage student profiles, view resumes, and control access levels.') : 'Select an assigned branch to view its registered students and placement statistics.'}
+              {selectedBranch ? (!canSave ? 'View student profiles, resumes, and vacancy statuses.' : 'Manage student profiles, view resumes, and control access levels.') : 'Select an assigned branch to view its registered students and placement statistics.'}
             </p>
           </div>
         </div>
@@ -250,7 +257,6 @@ export default function StudentsDirectory() {
             <input type="text" className="sleek-input" placeholder="Search name or roll..." style={{ minWidth: '200px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           )}
 
-          {/* 🚨 Course Filter Hidden for Course-Specific Roles */}
           {!isCourseSpecific && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
@@ -387,6 +393,7 @@ export default function StudentsDirectory() {
         )}
       </div>
 
+      {/* MODAL */}
       {isModalOpen && selectedStudent && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', overflow: 'hidden' }} onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '850px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
@@ -447,56 +454,52 @@ export default function StudentsDirectory() {
               })}
             </div>
 
+            {/* 🚨 ALWAYS VISIBLE DROPDOWNS: ONLY DISABLED BASED ON ROLE */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '1.5rem' }}>
               
               <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
                 <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Course Status</span>
-                <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localCourseStatus} onChange={(e) => setLocalCourseStatus(e.target.value)} disabled={isViewOnly}>
+                <select className="sleek-select" style={{ width: '100%', cursor: !canEditCore ? 'not-allowed' : 'pointer', opacity: !canEditCore ? 0.7 : 1 }} value={localCourseStatus} onChange={(e) => setLocalCourseStatus(e.target.value)} disabled={!canEditCore}>
                   <option value="Currently Studying">Currently Studying</option>
                   <option value="Completed Course">Completed Course</option>
                 </select>
               </div>
 
-              {(tpoData?.accessType === 'superadmin' || !isCourseSpecific) && (
-                <>
-                  <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
-                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Placement Status</span>
-                    <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localPlacementState} onChange={(e) => setLocalPlacementState(e.target.value)} disabled={isViewOnly}>
-                      <option value="Pending">Pending</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
-                    </select>
-                  </div>
-                  <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
-                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Vacancy Access</span>
-                    <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly ? 'not-allowed' : 'pointer', opacity: isViewOnly ? 0.7 : 1 }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)} disabled={isViewOnly}>
-                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
-                    </select>
-                  </div>
-                </>
-              )}
+              <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
+                <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Placement Status</span>
+                <select className="sleek-select" style={{ width: '100%', cursor: !canEditCore ? 'not-allowed' : 'pointer', opacity: !canEditCore ? 0.7 : 1 }} value={localPlacementState} onChange={(e) => setLocalPlacementState(e.target.value)} disabled={!canEditCore}>
+                  <option value="Pending">Pending</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
+                </select>
+              </div>
 
-              {/* 🚨 RTH CAN NOW EDIT THESE TWO DROPDOWNS */}
-              {(tpoData?.accessType === 'superadmin' || isCourseSpecific) && (
-                <>
-                  <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
-                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Study Material Access</span>
-                    <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly && !isRth ? 'not-allowed' : 'pointer', opacity: isViewOnly && !isRth ? 0.7 : 1 }} value={localStudyAccess} onChange={(e) => setLocalStudyAccess(e.target.value)} disabled={isViewOnly && !isRth}>
-                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
-                    </select>
-                  </div>
-                  <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
-                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Technical Exam Access</span>
-                    <select className="sleek-select" style={{ width: '100%', cursor: isViewOnly && !isRth ? 'not-allowed' : 'pointer', opacity: isViewOnly && !isRth ? 0.7 : 1 }} value={localExamAccess} onChange={(e) => setLocalExamAccess(e.target.value)} disabled={isViewOnly && !isRth}>
-                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
-                    </select>
-                  </div>
-                </>
-              )}
+              <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
+                <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Vacancy Access</span>
+                <select className="sleek-select" style={{ width: '100%', cursor: !canEditCore ? 'not-allowed' : 'pointer', opacity: !canEditCore ? 0.7 : 1 }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)} disabled={!canEditCore}>
+                  <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                </select>
+              </div>
+
+              <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
+                <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Study Material Access</span>
+                <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1 }} value={localStudyAccess} onChange={(e) => setLocalStudyAccess(e.target.value)} disabled={!canEditAcademic}>
+                  <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                </select>
+              </div>
+
+              <div className="control-box" style={{ background: '#161e2e', border: '1px solid #1e293b', padding: '1rem 1.5rem', borderRadius: '12px' }}>
+                <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px' }}>Technical Exam Access</span>
+                <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1 }} value={localExamAccess} onChange={(e) => setLocalExamAccess(e.target.value)} disabled={!canEditAcademic}>
+                  <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                </select>
+              </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: isViewOnly && !isRth ? 'space-between' : 'flex-end', alignItems: 'center', borderTop: '1px solid #1e293b', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
-               {isViewOnly && !isRth && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission</span>}
-               <button className="btn-action" style={{ width: 'auto', background: isViewOnly && !isRth ? '#1e293b' : '#38bdf8', color: isViewOnly && !isRth ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: isViewOnly && !isRth ? 'not-allowed' : 'pointer' }} onClick={saveStudentUpdates} disabled={savingStatus || (isViewOnly && !isRth)}>
-                  {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> {isViewOnly && !isRth ? 'Edit Locked' : 'Save All Changes'}</>}
+            <div style={{ display: 'flex', justifyContent: !canSave ? 'space-between' : 'flex-end', alignItems: 'center', borderTop: '1px solid #1e293b', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
+               {!canSave && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission</span>}
+               
+               {/* Show Save Button if they have ANY edit permissions */}
+               <button className="btn-action" style={{ width: 'auto', background: !canSave ? '#1e293b' : '#38bdf8', color: !canSave ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: !canSave ? 'not-allowed' : 'pointer' }} onClick={saveStudentUpdates} disabled={savingStatus || !canSave}>
+                  {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> {!canSave ? 'Edit Locked' : 'Save All Changes'}</>}
                 </button>
             </div>
             

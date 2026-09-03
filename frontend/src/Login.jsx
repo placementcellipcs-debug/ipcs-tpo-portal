@@ -16,7 +16,7 @@ export default function Login() {
     setError('');
     
     try {
-      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/auth/login', { 
+      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/auth/login', { 
         email: loginId, 
         password: password 
       });

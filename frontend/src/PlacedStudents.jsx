@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   CircleNotch, Plus, PencilSimple, X, FloppyDisk, 
-  CaretLeft, Trophy, ArrowsClockwise 
+  CaretLeft, Trophy, ArrowsClockwise, FilePdf
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -32,6 +32,12 @@ const parseDate = (dStr) => {
   return isNaN(d) ? null : d;
 };
 
+const getDrivePdf = (url) => {
+  if (!url || typeof url !== 'string') return null;
+  const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+  return match ? `https://drive.google.com/file/d/${match[1]}/view` : url;
+};
+
 export default function PlacedStudents() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
@@ -39,11 +45,13 @@ export default function PlacedStudents() {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // 🚨 RESTRICT ADD PLACEMENT BUTTON
+  // 🚨 RESTRICT ACTIONS BY ROLE
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isTpo = upperRole === 'TPO';
   const isSuper = (tpoData?.accessType === 'superadmin') || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
-  const canAddPlacement = isTpo || isSuper;
+  
+  // Only Admins and TPOs can Add or Edit placements
+  const canEditPlacement = isTpo || isSuper;
 
   // 🚨 RESTRICT DATA BY COURSE
   const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
@@ -81,8 +89,8 @@ export default function PlacedStudents() {
     try {
       setLoading(true);
       const [appRes, repRes] = await Promise.all([
-        axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications', payload),
-        axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/reports', payload)
+        axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/applications', payload),
+        axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/reports', payload)
       ]);
 
       if (repRes.data.success) {
@@ -142,7 +150,6 @@ export default function PlacedStudents() {
   };
 
   const globallyFiltered = applications.filter(a => {
-    // 🚨 Strict Course Restriction for specific roles
     if (isCourseSpecific && getStandardCourse(a.course) !== getStandardCourse(displayCourse)) return false;
 
     let cMatch = courseFilter === 'All' || getStandardCourse(a.course) === getStandardCourse(courseFilter);
@@ -196,7 +203,7 @@ export default function PlacedStudents() {
       formData.append('joiningStatus', editForm.joiningStatus || '');
       if (editForm.offerLetterFile) formData.append('offerLetterFile', editForm.offerLetterFile);
 
-      await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications/update', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/applications/update', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       setIsEditModalOpen(false);
       fetchData();
     } catch (error) { alert("Failed to save placement updates."); } finally { setSavingStatus(false); }
@@ -211,7 +218,7 @@ export default function PlacedStudents() {
       formData.append('appData', JSON.stringify(addForm));
       if (addForm.offerLetterFile) formData.append('offerLetterFile', addForm.offerLetterFile);
 
-      await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications/add', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/applications/add', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       setIsAddModalOpen(false);
       setAddForm({ name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', company: '', position: '', status: 'Placed', remarks: '', datePlaced: new Date().toISOString().split('T')[0], packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null });
       fetchData();
@@ -242,7 +249,7 @@ export default function PlacedStudents() {
             )}
           </div>
           
-          {canAddPlacement && (
+          {canEditPlacement && (
             <button className="btn-action" style={{ background: '#10b981', color: '#fff', display: 'flex', alignItems: 'center', gap: '8px', width: 'auto' }} onClick={() => setIsAddModalOpen(true)}>
               <Plus weight="bold" /> Add Placement
             </button>
@@ -254,7 +261,6 @@ export default function PlacedStudents() {
             <input type="text" className="sleek-input" placeholder="Search student, roll, or company..." style={{ minWidth: '220px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           )}
 
-          {/* 🚨 Course Filter Hidden for Course-Specific Roles */}
           {!isCourseSpecific && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
@@ -289,7 +295,6 @@ export default function PlacedStudents() {
           )}
         </div>
 
-        {/* CONTENT AREA */}
         {loading ? (
           <div style={{ textAlign: 'center', marginTop: '4rem', color: '#10b981' }}>
             <CircleNotch size={50} className="ph-spin" />
@@ -351,9 +356,20 @@ export default function PlacedStudents() {
                       <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '6px' }}>{app.joiningStatus || 'Joined'}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'center' }}>
-                      <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem', display: 'flex', justifyContent: 'center', gap: '6px' }} onClick={() => openEditModal(app)}>
-                        <PencilSimple weight="bold" size={14} /> Edit
-                      </button>
+                      {/* 🚨 DYNAMIC BUTTON: EDIT FOR TPO/ADMIN, VIEW OFFER LETTER FOR OTHERS */}
+                      {canEditPlacement ? (
+                        <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem', display: 'flex', justifyContent: 'center', gap: '6px' }} onClick={() => openEditModal(app)}>
+                          <PencilSimple weight="bold" size={14} /> Edit
+                        </button>
+                      ) : (
+                        (app.offerLetter && app.offerLetter !== 'N/A') ? (
+                          <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.75rem', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', borderColor: '#38bdf8', display: 'flex', alignItems: 'center', gap: '5px' }} onClick={() => window.open(getDrivePdf(app.offerLetter) || app.offerLetter, '_blank')}>
+                            <FilePdf weight="fill" size={14} /> Offer Letter
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: '0.75rem', color: '#64748b' }}>No File</span>
+                        )
+                      )}
                     </div>
                   </div>
                 ))}
@@ -363,7 +379,6 @@ export default function PlacedStudents() {
         )}
       </div>
 
-      {/* EDIT PLACEMENT MODAL */}
       {isEditModalOpen && selectedApp && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
@@ -410,8 +425,7 @@ export default function PlacedStudents() {
         </div>
       )}
 
-      {/* ADD PLACEMENT MODAL */}
-      {isAddModalOpen && canAddPlacement && (
+      {isAddModalOpen && canEditPlacement && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>

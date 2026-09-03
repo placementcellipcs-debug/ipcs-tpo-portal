@@ -44,7 +44,7 @@ export default function UserManagement() {
 
   const fetchUsers = async () => {
     try {
-      const res = await axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/users');
+      const res = await axios.get('https://api-talenzo.ipcsglobal.info/api/admin/users');
       if (res.data && res.data.success) {
         setUsers(res.data.users || []);
       }
@@ -113,8 +113,8 @@ export default function UserManagement() {
 
     try {
       const endpoint = isEditMode 
-        ? 'https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/users/update' 
-        : 'https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/users/add';
+        ? 'https://api-talenzo.ipcsglobal.info/api/admin/users/update' 
+        : 'https://api-talenzo.ipcsglobal.info/api/admin/users/add';
         
       const res = await axios.post(endpoint, payload);
       if (res.data.success) {
@@ -132,7 +132,7 @@ export default function UserManagement() {
   const handleDeleteUser = async (sheet, rowNumber, userName) => {
     if (!window.confirm(`Are you sure you want to permanently delete user: ${userName}?`)) return;
     try {
-      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/users/delete', { sheet, rowNumber });
+      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/admin/users/delete', { sheet, rowNumber });
       if (res.data.success) {
         setUsers(users.filter(u => u.rowNumber !== rowNumber || u.sheet !== sheet));
       }

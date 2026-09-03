@@ -3,7 +3,7 @@ import axios from 'axios';
 import { CircleNotch, Users, Eye, X, Prohibit, EnvelopeSimple, Phone } from '@phosphor-icons/react';
 import Layout from './Layout';
 
-const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
+const API_BASE = "https://api-talenzo.ipcsglobal.info";
 
 const DetailBox = ({ label, value }) => (
   <div style={{ background: '#161e2e', padding: '12px', borderRadius: '8px', border: '1px solid #1e293b' }}>

@@ -34,7 +34,7 @@ export default function JobTracker() {
     if (!tpoData) return;
     const fetchData = async () => {
       try {
-        const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications', { 
+        const response = await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/applications', { 
           assignedBranchesArray: tpoData.assignedBranchesArray,
           tpoName: tpoData.name 
         });
@@ -77,7 +77,7 @@ export default function JobTracker() {
         interviewVenue: interviewModal.appRowNumber === rowNum ? interviewModal.venue : ''
       };
 
-      const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/applications/update', payload);
+      const response = await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/applications/update', payload);
       
       if (response.data.success) {
         setSavingStatus(prev => ({ ...prev, [rowNum]: 'success' }));

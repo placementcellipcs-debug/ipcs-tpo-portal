@@ -34,7 +34,7 @@ export default function CertificateSign() {
   const currentDate = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
 
   useEffect(() => {
-    axios.get(`https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/clients/${id}`)
+    axios.get(`https://api-talenzo.ipcsglobal.info/api/tpo/clients/${id}`)
       .then(res => {
         if (res.data.success) {
           setClient(res.data.client);
@@ -100,7 +100,7 @@ export default function CertificateSign() {
       formData.append('companyName', client.companyName);
       formData.append('companyEmail', client.email);
 
-      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/clients/submit-mou', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/clients/submit-mou', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       if(res.data.success) setIsSuccess(true);
     } catch (error) {
       console.error(error);

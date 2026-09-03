@@ -42,9 +42,9 @@ export default function TechnicalExams() {
   const fetchData = async () => {
     try {
       const [qRes, rRes, courseRes] = await Promise.all([
-        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/questions'), 
-        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/results'),
-        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/courses')
+        axios.get('https://api-talenzo.ipcsglobal.info/api/exams/questions'), 
+        axios.get('https://api-talenzo.ipcsglobal.info/api/exams/results'),
+        axios.get('https://api-talenzo.ipcsglobal.info/api/admin/courses')
       ]);
       if (qRes.data.success) setQuestions(qRes.data.questions || []);
       if (rRes.data.success) setResults(rRes.data.results || []);
@@ -96,8 +96,8 @@ export default function TechnicalExams() {
 
     try {
       const endpoint = isEditMode 
-        ? 'https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/questions/update' 
-        : 'https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/questions/add';
+        ? 'https://api-talenzo.ipcsglobal.info/api/exams/questions/update' 
+        : 'https://api-talenzo.ipcsglobal.info/api/exams/questions/add';
 
       const res = await axios.post(endpoint, formData);
       if (res.data.success) {
@@ -115,7 +115,7 @@ export default function TechnicalExams() {
   const handleDeleteQuestion = async (id) => {
     if(!window.confirm("Are you sure you want to delete this question?")) return;
     try {
-      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/exams/questions/delete', { id });
+      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/exams/questions/delete', { id });
       if (res.data.success) {
         setQuestions(questions.filter(q => q.id !== id));
       }

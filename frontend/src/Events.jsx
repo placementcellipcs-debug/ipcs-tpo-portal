@@ -6,7 +6,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
-const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
+const API_BASE = "https://api-talenzo.ipcsglobal.info";
 
 const parseDate = (dateStr) => {
   if (!dateStr) return null;
