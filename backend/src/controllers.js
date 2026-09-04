@@ -548,6 +548,7 @@ exports.getStudents = (req, res) => {
   res.json({ success: true, students: students.reverse(), stats });
 };
 
+// 🚨 FULLY RESTORED ORIGINAL WORKING SHEET SAVING WITH ADDED PERCENTAGE LOGIC
 exports.updateStudent = async (req, res) => {
   const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus, coursePercentage } = req.body;
   try {
@@ -561,6 +562,7 @@ exports.updateStudent = async (req, res) => {
       const sH = getFuzzyHeader(headers, 'studymaterialaccess'); if(sH) updateObj[sH] = studyAccess;
       const eH = getFuzzyHeader(headers, 'technialexam') || getFuzzyHeader(headers, 'technicalexam'); if(eH) updateObj[eH] = examAccess;
       
+      // Strict match to prevent grabbing the "Date" column
       const cPercH = headers.find(h => h.toLowerCase().replace(/\s/g, '') === 'coursepercentage');
       if (cPercH && coursePercentage !== undefined) {
         updateObj[cPercH] = coursePercentage;
@@ -614,6 +616,9 @@ exports.updateStudent = async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
+// ---------------------------------------------------------
+// APPLICATIONS (BULLETPROOF UPDATES)
+// ---------------------------------------------------------
 exports.getApplications = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, tpoName } = req.body;
   let appsList = []; 
@@ -670,6 +675,7 @@ exports.getApplications = (req, res) => {
   res.json({ success: true, applications: appsList });
 };
 
+// 🚨 FIX: Safe TPO Log Writing (Prevents crashing in Job Tracker)
 exports.updateApplication = async (req, res) => {
   const rowNumber = parseInt(req.body.rowNumber);
   const { status, remarks, datePlaced, packageLpa, joiningStatus, currentUserEmail, interviewDate, interviewTime, interviewVenue } = req.body;
@@ -1538,9 +1544,8 @@ exports.updatePhoto = async (req, res) => {
 };
 
 // =========================================================
-// 🚨 RESTORED LMS, EXAMS, COURSES & STUDY MATERIALS
+// 🚨 RESTORED LMS, EXAMS, COURSES, & BRANCHES 
 // =========================================================
-
 exports.getMaterials = (req, res) => {
   try {
     let materials = getCache().materials.map(row => {

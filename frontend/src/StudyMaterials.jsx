@@ -3,7 +3,7 @@ import axios from 'axios';
 import { 
   CircleNotch, BookOpenText, Plus, CaretLeft, Link as LinkIcon, 
   FilePdf, FileImage, FileText, FileVideo, CheckCircle, WarningCircle, X,
-  FolderOpen, BookBookmark, PencilSimple, Trash
+  FolderOpen, PencilSimple, Trash
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -28,7 +28,7 @@ export default function StudyMaterials() {
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
   
-  // 🚨 RTH CAN ADD MATERIALS
+  // 🚨 RTH & ADMIN CAN ADD MATERIALS
   const canManage = isSuperAdmin || isRth;
 
   const [courseDict, setCourseDict] = useState({});
@@ -36,9 +36,9 @@ export default function StudyMaterials() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  const [viewLevel, setViewLevel] = useState(isSuperAdmin ? 'main_courses' : 'sub_courses');
+  // 🚨 FIXED: We bypass the broken sub-courses view completely.
+  const [viewLevel, setViewLevel] = useState(isSuperAdmin ? 'main_courses' : 'materials');
   const [selectedMainCourse, setSelectedMainCourse] = useState(null);
-  const [selectedSubCourse, setSelectedSubCourse] = useState(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -50,7 +50,6 @@ export default function StudyMaterials() {
 
   const fetchData = async () => {
     try {
-      // 🚨 FIXED: Updated URLs to the new Render Backend
       const [matRes, courseRes] = await Promise.all([
         axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials'),
         axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/courses')
@@ -60,11 +59,12 @@ export default function StudyMaterials() {
         const cDict = courseRes.data.courses || {};
         setCourseDict(cDict);
         
-        // 🚨 Exact Matching for RTH
+        // Exact Matching for RTH
         if (!isSuperAdmin && tpoData) {
           const stdAssigned = getStandardCourse(tpoData.assignedCourse);
           const matchKey = Object.keys(cDict).find(k => getStandardCourse(k) === stdAssigned);
-          setSelectedMainCourse(matchKey || tpoData.assignedCourse);
+          setSelectedMainCourse(matchKey || stdAssigned || 'Others');
+          setViewLevel('materials');
         }
       }
     } catch (err) {
@@ -78,7 +78,9 @@ export default function StudyMaterials() {
     fetchData();
   }, []);
 
-  const MAIN_COURSES = Object.keys(courseDict);
+  const MAIN_COURSES = Object.keys(courseDict).length > 0 ? Object.keys(courseDict) : [
+    'Industrial Automation', 'BMS AND CCTV', 'Embedded and IoT', 'Digital Marketing', 'Information technology (IT)'
+  ];
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -88,7 +90,7 @@ export default function StudyMaterials() {
     const randomId = `MAT${Math.floor(1000 + Math.random() * 9000)}`;
     setFormData({
       id: randomId, 
-      course: selectedSubCourse || '', 
+      course: '', // Let the user type it or select from datalist
       module: '', title: '', fileType: 'pdf', link: '', status: 'Active'
     });
     setIsEditMode(false);
@@ -112,7 +114,6 @@ export default function StudyMaterials() {
     setError('');
 
     try {
-      // 🚨 FIXED: Updated URLs to the new Render Backend
       const endpoint = isEditMode 
         ? 'https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/update' 
         : 'https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/add';
@@ -133,7 +134,6 @@ export default function StudyMaterials() {
   const handleDeleteMaterial = async (id) => {
     if (!window.confirm("Are you sure you want to permanently delete this study material?")) return;
     try {
-      // 🚨 FIXED: Updated URLs to the new Render Backend
       const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/delete', { id });
       if (res.data.success) {
         setMaterials(materials.filter(m => m.id !== id));
@@ -149,24 +149,33 @@ export default function StudyMaterials() {
     return <FileImage size={24} color="#10b981" weight="fill" />;
   };
 
+  // 🚨 FIXED: Filter strictly by Domain instantly, skipping the empty subcourse view
   const filteredMaterials = materials.filter(m => {
-    const matchSubCourse = m.course === selectedSubCourse;
+    const matchDomain = getStandardCourse(m.course) === getStandardCourse(selectedMainCourse);
     const matchSearch = (m.title || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                        (m.module || '').toLowerCase().includes(searchQuery.toLowerCase());
-    return matchSubCourse && matchSearch;
+                        (m.module || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                        (m.course || '').toLowerCase().includes(searchQuery.toLowerCase());
+    return matchDomain && matchSearch;
   });
+
+  // Suggest sub-courses for the Add Modal based on what already exists
+  const suggestedCourses = Array.from(new Set([
+    ...(courseDict[selectedMainCourse] || []),
+    ...materials.filter(m => getStandardCourse(m.course) === getStandardCourse(selectedMainCourse)).map(m => m.course)
+  ])).filter(Boolean);
 
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
+        {/* DOMAINS VIEW (SUPER ADMIN ONLY) */}
         {viewLevel === 'main_courses' && isSuperAdmin && (
           <>
             <div style={{ marginBottom: '30px' }}>
               <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <FolderOpen color="var(--accent-primary)" weight="fill" /> Study Materials Management
               </h1>
-              <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a domain from your Courses sheet to manage materials.</p>
+              <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a domain to manage all materials within it.</p>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px' }}>
@@ -175,13 +184,13 @@ export default function StudyMaterials() {
                 return (
                   <div 
                     key={course} 
-                    onClick={() => { setSelectedMainCourse(course); setViewLevel('sub_courses'); }}
+                    onClick={() => { setSelectedMainCourse(course); setViewLevel('materials'); }}
                     style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}
                   >
                     <h2 style={{ color: '#ffffff', fontSize: '1.6rem', margin: '0 0 15px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>{course}</h2>
                     <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <BookOpenText size={20} color="#ffffff" weight="bold" />
-                      <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: 'bold' }}>View Modules</span>
+                      <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: 'bold' }}>View Materials</span>
                     </div>
                   </div>
                 );
@@ -190,46 +199,18 @@ export default function StudyMaterials() {
           </>
         )}
 
-        {viewLevel === 'sub_courses' && (
-          <>
-            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '15px', flexWrap: 'wrap' }}>
-              {isSuperAdmin && (
-                <button onClick={() => { setViewLevel('main_courses'); setSelectedMainCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <CaretLeft weight="bold" size={18} /> Domains
-                </button>
-              )}
-              <div>
-                <h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedMainCourse}</h1>
-                <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a specific program fetched directly from your Courses sheet.</p>
-              </div>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-              {(courseDict[selectedMainCourse] || []).map((subCourse) => (
-                <div 
-                  key={subCourse}
-                  onClick={() => { setSelectedSubCourse(subCourse); setViewLevel('materials'); }}
-                  style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.5rem', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', gap: '15px' }}
-                >
-                  <div style={{ width: '45px', height: '45px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <BookBookmark size={24} weight="fill" />
-                  </div>
-                  <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-main)', lineHeight: 1.4 }}>{subCourse}</h3>
-                </div>
-              ))}
-            </div>
-          </>
-        )}
-
+        {/* MATERIALS LIST VIEW */}
         {viewLevel === 'materials' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                <button onClick={() => { setViewLevel('sub_courses'); setSelectedSubCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                  <CaretLeft weight="bold" size={18} /> Programs
-                </button>
+                {isSuperAdmin && (
+                  <button onClick={() => { setViewLevel('main_courses'); setSelectedMainCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <CaretLeft weight="bold" size={18} /> Domains
+                  </button>
+                )}
                 <div>
-                  <h1 style={{ fontSize: '1.6rem', margin: 0 }}>{selectedSubCourse}</h1>
+                  <h1 style={{ fontSize: '1.6rem', margin: 0 }}>{selectedMainCourse} Materials</h1>
                   <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>Upload presentations, PDFs, and notes for student access.</p>
                 </div>
               </div>
@@ -244,7 +225,7 @@ export default function StudyMaterials() {
             <div style={{ marginBottom: '20px', maxWidth: '400px', position: 'relative' }}>
               <input 
                 type="text" 
-                placeholder="Search by topic or title..." 
+                placeholder="Search by topic, program, or title..." 
                 className="sleek-input" 
                 style={{ width: '100%' }}
                 value={searchQuery}
@@ -257,6 +238,7 @@ export default function StudyMaterials() {
                 <thead>
                   <tr>
                     <th>Module / Topic</th>
+                    <th>Program (Course)</th>
                     <th>Document Title</th>
                     <th>Format</th>
                     <th>Drive Link</th>
@@ -266,15 +248,18 @@ export default function StudyMaterials() {
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={canManage ? 6 : 5} style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="var(--accent-primary)" /></td></tr>
+                    <tr><td colSpan={canManage ? 7 : 6} style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="var(--accent-primary)" /></td></tr>
                   ) : filteredMaterials.length === 0 ? (
-                    <tr><td colSpan={canManage ? 6 : 5} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No study materials uploaded for this course yet.</td></tr>
+                    <tr><td colSpan={canManage ? 7 : 6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No study materials uploaded for this domain yet.</td></tr>
                   ) : (
                     filteredMaterials.map((mat, i) => (
                       <tr key={i}>
                         <td>
                           <span className="primary-text">{mat.module || 'General'}</span>
                           <span className="sub-text">ID: {mat.id}</span>
+                        </td>
+                        <td>
+                          <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>{mat.course}</span>
                         </td>
                         <td><strong style={{ color: 'var(--text-main)' }}>{mat.title}</strong></td>
                         <td>
@@ -328,11 +313,23 @@ export default function StudyMaterials() {
             <form onSubmit={handleSubmit}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '15px', marginBottom: '15px' }}>
                 <div className="form-group"><label>Material ID</label><input type="text" name="id" value={formData.id} readOnly style={{ background: 'var(--bg-dark)', opacity: 0.7 }} /></div>
+                
+                {/* 🚨 FIXED: Allow free text typing OR selecting from suggestions */}
                 <div className="form-group">
-                  <label>Assigned Program</label>
-                  <select name="course" value={formData.course} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }} required>
-                    {(courseDict[selectedMainCourse] || []).map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  <label>Assigned Program (Course Name)</label>
+                  <input 
+                    type="text" 
+                    name="course" 
+                    value={formData.course} 
+                    onChange={handleInputChange} 
+                    className="sleek-input" 
+                    list="course-suggestions"
+                    placeholder="e.g. Java Full Stack" 
+                    required 
+                  />
+                  <datalist id="course-suggestions">
+                    {suggestedCourses.map(c => <option key={c} value={c} />)}
+                  </datalist>
                 </div>
               </div>
 
