@@ -34,7 +34,7 @@ export default function CertificateSign() {
   const currentDate = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
 
   useEffect(() => {
-    // 🚨 POINTING TO NEW RENDER BACKEND
+    // 🚨 UPDATED TO NEW RENDER BACKEND URL
     axios.get(`https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/clients/${id}`)
       .then(res => {
         if (res.data.success) {
@@ -43,7 +43,7 @@ export default function CertificateSign() {
           
           if (res.data.client.logo && typeof res.data.client.logo === 'string') {
             const match = res.data.client.logo.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
-            // 🚨 USING CORS-FRIENDLY GOOGLE IMAGE LINK FOR HTML2CANVAS
+            // 🚨 FIXED: Using the modern, unblocked Google Image URL format
             if (match) setLogoPreview(`https://lh3.googleusercontent.com/d/${match[1]}`);
             else setLogoPreview(res.data.client.logo);
           }
@@ -71,9 +71,11 @@ export default function CertificateSign() {
       return alert("Please complete all required fields (Address, Logo, Signature, Name, and Designation) before submitting.");
     }
     
+    // Trigger state to hide all dotted lines BEFORE taking the picture
     setIsSubmitting(true);
 
     try {
+      // Wait 300 milliseconds for React to erase the borders from the screen
       await new Promise(resolve => setTimeout(resolve, 300));
 
       const canvas = await html2canvas(certificateRef.current, { 
@@ -101,21 +103,28 @@ export default function CertificateSign() {
       formData.append('companyName', client.companyName);
       formData.append('companyEmail', client.email);
 
-      // 🚨 POINTING TO NEW RENDER BACKEND
+      // 🚨 UPDATED TO NEW RENDER BACKEND URL
       const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/clients/submit-mou', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       if(res.data.success) setIsSuccess(true);
     } catch (error) {
       console.error(error);
       alert(`Submission Error: ${error.response?.data?.message || error.message}`);
-      setIsSubmitting(false); 
+      setIsSubmitting(false); // Only reset if it fails, otherwise keep lines hidden
     }
   };
 
+  // Dynamic Input Style: The border vanishes completely when isSubmitting is true
   const inputStyle = {
-    flex: 1, border: 'none', 
+    flex: 1, 
+    border: 'none', 
     borderBottom: isSubmitting ? '1px solid transparent' : '1px dashed #94a3b8', 
-    outline: 'none', background: 'transparent', fontSize: '15px', fontFamily: 'inherit', 
-    color: '#000000', padding: '2px 0', transition: 'border-color 0.2s'
+    outline: 'none', 
+    background: 'transparent', 
+    fontSize: '15px', 
+    fontFamily: 'inherit', 
+    color: '#000000', 
+    padding: '2px 0',
+    transition: 'border-color 0.2s'
   };
 
   if (loading) return (
@@ -150,23 +159,42 @@ export default function CertificateSign() {
         </div>
       )}
 
+      {/* PROFESSIONAL CONTRACT CONTAINER */}
       <div 
         ref={certificateRef} 
         style={{ 
-          width: '850px', background: '#ffffff', padding: '80px', color: '#000000', 
-          boxShadow: '0 20px 40px rgba(0,0,0,0.1)', position: 'relative', fontSize: '15px', 
-          lineHeight: '1.8', fontFamily: '"Georgia", "Times New Roman", serif', 
-          textAlign: 'justify', overflow: 'hidden'
+          width: '850px', 
+          background: '#ffffff', 
+          padding: '80px', 
+          color: '#000000', 
+          boxShadow: '0 20px 40px rgba(0,0,0,0.1)', 
+          position: 'relative', 
+          fontSize: '15px', 
+          lineHeight: '1.8', 
+          fontFamily: '"Georgia", "Times New Roman", serif', 
+          textAlign: 'justify',
+          overflow: 'hidden'
         }}
       >
         
+        {/* THE WATERMARK FIX */}
         <img 
           src="https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB" 
           crossOrigin="anonymous" 
           alt="Watermark"
-          style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '70%', opacity: 0.08, zIndex: 0, pointerEvents: 'none' }} 
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '70%',
+            opacity: 0.08,
+            zIndex: 0,
+            pointerEvents: 'none'
+          }} 
         />
 
+        {/* CONTENT LAYER */}
         <div style={{ position: 'relative', zIndex: 1 }}>
           <div style={{ marginBottom: '35px' }}>
             <p style={{ margin: '0 0 15px 0' }}><strong>Date:</strong> {currentDate}</p>
@@ -250,8 +278,18 @@ export default function CertificateSign() {
               <p style={{ margin: '0 0 15px 0' }}>Email: {client.email}</p>
 
               <div style={{ height: '85px', display: 'flex', alignItems: 'flex-start' }}>
+                {/* 🚨 THE FAILSAFE: IF GOOGLE BLOCKS IT, ALLOW MANUAL UPLOAD */}
                 {logoPreview ? (
-                  <img src={logoPreview} style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} crossOrigin="anonymous" alt="Logo" />
+                  <img 
+                    src={logoPreview} 
+                    style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} 
+                    crossOrigin="anonymous" 
+                    alt="Logo" 
+                    onError={() => {
+                      setLogoPreview(''); // Instantly clears the broken image
+                      console.warn("Google Drive blocked image. Reverting to manual upload.");
+                    }}
+                  />
                 ) : (
                   <label style={{ background: '#f8fafc', color: '#334155', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', border: '1px dashed #cbd5e1', display: isSubmitting ? 'none' : 'inline-block' }}>
                     Upload Company Logo
@@ -263,15 +301,18 @@ export default function CertificateSign() {
 
             <div style={{ width: '45%' }}>
               <p style={{ fontWeight: 'bold', marginBottom: '15px', fontSize: '16px' }}>IPCS Global</p>
+              
               <div style={{ height: '90px', marginBottom: '10px', display: 'flex', alignItems: 'flex-start' }}>
-                <img src={ipcsSignature} alt="IPCS Signature" style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} crossOrigin="anonymous" /> 
+                <img src={ipcsSignature} alt="IPCS Signature" style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} /> 
               </div>
+
               <p style={{ margin: '0 0 5px 0' }}><strong>Authorized Signatory:</strong></p>
               <p style={{ margin: '0 0 5px 0' }}>Name: Gifty KP</p>
               <p style={{ margin: '0 0 15px 0' }}>Designation: Zonal Manager - Placements</p>
               <p style={{ margin: '0 0 15px 0' }}>Email: gifty@ipcsglobal.com</p>
+
               <div style={{ height: '85px', display: 'flex', alignItems: 'flex-start' }}>
-                <img src={ipcsLogo} alt="IPCS Logo" style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} crossOrigin="anonymous" />
+                <img src={ipcsLogo} alt="IPCS Logo" style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} />
               </div>
             </div>
 
