@@ -1871,3 +1871,335 @@ exports.deleteBranch = async (req, res) => {
     else { res.status(404).json({ success: false, message: "Branch not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
+
+// =========================================================
+// 🚨 RESTORED LMS, EXAMS, COURSES, & BRANCHES 
+// =========================================================
+exports.getMaterials = (req, res) => {
+  try {
+    let materials = getCache().materials.map(row => {
+      const rd = row.toObject();
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      return { id: rd[getH('materialid')] || '', course: rd[getH('course')] || '', module: rd[getH('module/topic')] || rd[getH('module')] || rd[getH('topic')] || '', title: rd[getH('title')] || '', fileType: rd[getH('filetype')] || '', link: rd[getH('onedrivelink')] || rd[getH('link')] || '', status: rd[getH('status')] || 'Active' };
+    });
+    res.json({ success: true, materials: materials.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addMaterial = async (req, res) => {
+  try {
+    const { id, course, module, title, fileType, link, status } = req.body;
+    const sheet = doc.sheetsByTitle["Study_Materials"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const h = sheet.headerValues;
+    await sheet.addRow({ [getFuzzyHeader(h, 'materialid')]: id, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'module/topic')]: module, [getFuzzyHeader(h, 'title')]: title, [getFuzzyHeader(h, 'filetype')]: fileType, [getFuzzyHeader(h, 'onedrivelink')]: link, [getFuzzyHeader(h, 'status')]: status || 'Active' });
+    refreshCache(); res.json({ success: true, message: "Material added successfully!" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateMaterial = async (req, res) => {
+  try {
+    const { id, course, module, title, fileType, link, status } = req.body;
+    const sheet = doc.sheetsByTitle["Study_Materials"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => (r.get('Material ID') || r.get('materialid') || '').toString().trim() === id.toString().trim());
+    if (rowToUpdate) {
+      const h = sheet.headerValues;
+      rowToUpdate.assign({ [getFuzzyHeader(h, 'materialid')]: id, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'module/topic')]: module, [getFuzzyHeader(h, 'title')]: title, [getFuzzyHeader(h, 'filetype')]: fileType, [getFuzzyHeader(h, 'onedrivelink')]: link, [getFuzzyHeader(h, 'status')]: status || 'Active' });
+      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Material updated successfully!" });
+    } else { res.status(404).json({ success: false, message: "Material ID not found." }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteMaterial = async (req, res) => {
+  try {
+    const { id } = req.body;
+    const sheet = doc.sheetsByTitle["Study_Materials"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToDelete = rows.find(r => (r.get('Material ID') || r.get('materialid') || '').toString().trim() === id.toString().trim());
+    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Material deleted successfully!" }); } 
+    else { res.status(404).json({ success: false, message: "Material ID not found." }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.getQuestions = (req, res) => {
+  try {
+    let questions = getCache().techQuestions.map(row => {
+      const rd = row.toObject();
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      return { id: rd[getH('questionid')] || '', course: rd[getH('course')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active' };
+    });
+    res.json({ success: true, questions: questions.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addQuestion = async (req, res) => {
+  try {
+    const { id, course, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
+    const sheet = doc.sheetsByTitle["Tech_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    await sheet.addRow({ 'Question ID': id, 'Course': course, 'Question': question, 'Option A': optA, 'Option B': optB, 'Option C': optC, 'Option D': optD, 'Correct Option': correct, 'Explanation': explanation, 'Status': status || 'Active' });
+    refreshCache(); res.json({ success: true, message: "Question added successfully!" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateQuestion = async (req, res) => {
+  try {
+    const { id, course, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
+    const sheet = doc.sheetsByTitle["Tech_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => (r.get('Question ID') || '').toString().trim() === id.toString().trim());
+    if (rowToUpdate) {
+      rowToUpdate.assign({ 'Question ID': id, 'Course': course, 'Question': question, 'Option A': optA, 'Option B': optB, 'Option C': optC, 'Option D': optD, 'Correct Option': correct, 'Explanation': explanation, 'Status': status || 'Active' });
+      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Technical question updated successfully!" });
+    } else { res.status(404).json({ success: false, message: "Question ID not found." }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteQuestion = async (req, res) => {
+  try {
+    const { id } = req.body;
+    const sheet = doc.sheetsByTitle["Tech_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToDelete = rows.find(r => r.get('Question ID') === id);
+    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Question deleted" }); } 
+    else { res.status(404).json({ success: false, message: "Question not found" }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.getResults = (req, res) => {
+  try {
+    let results = getCache().techResults.map(row => {
+      const rd = row.toObject();
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', course: rd[getH('course')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '' };
+    });
+    res.json({ success: true, results: results.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.getCourses = (req, res) => {
+  try { res.json({ success: true, courses: getCache().coursesDict }); } 
+  catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addCourse = async (req, res) => {
+  try {
+    const { mainCourse, subCourse } = req.body;
+    const sheet = doc.sheetsByTitle["Courses"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    await sheet.addRow([mainCourse, subCourse]);
+    refreshCache(); res.json({ success: true, message: "Course saved" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteCourse = async (req, res) => {
+  try {
+    const { subCourse } = req.body;
+    const sheet = doc.sheetsByTitle["Courses"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToDelete = rows.find(r => r._rawData[1] && r._rawData[1].trim() === subCourse.trim());
+    if (rowToDelete) {
+      await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Course deleted" });
+    } else { res.status(404).json({ success: false, message: "Course not found" }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.getAptQuestions = (req, res) => {
+  try {
+    let questions = getCache().aptQuestions.map(row => {
+      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      return { id: rd[getH('qid')] || '', category: rd[getH('category')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active', level: rd[getH('level')] || 'Easy' };
+    });
+    res.json({ success: true, questions: questions.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.getAptResults = (req, res) => {
+  try {
+    let results = getCache().aptResults.map(row => {
+      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('email')] || rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', score: rd[getH('score')] || '', total: rd[getH('total')] || rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '', categoryBreakdown: rd[getH('categorybreakdown')] || '' };
+    });
+    res.json({ success: true, results: results.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addAptQuestion = async (req, res) => {
+  try {
+    const { id, category, question, optA, optB, optC, optD, correct, explanation, status, level } = req.body;
+    const sheet = doc.sheetsByTitle["Aptitude_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const h = sheet.headerValues;
+    await sheet.addRow({ [getFuzzyHeader(h, 'qid')]: id, [getFuzzyHeader(h, 'category')]: category, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA, [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct, [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active', [getFuzzyHeader(h, 'level')]: level || 'Medium' });
+    refreshCache(); res.json({ success: true, message: "Question added" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateAptQuestion = async (req, res) => {
+  try {
+    const { id, category, question, optA, optB, optC, optD, correct, explanation, status, level } = req.body;
+    const sheet = doc.sheetsByTitle["Aptitude_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => (r.get('QID') || r.get('qid') || '').toString().trim() === id.toString().trim());
+    if (rowToUpdate) {
+      const h = sheet.headerValues;
+      rowToUpdate.assign({ [getFuzzyHeader(h, 'qid')]: id, [getFuzzyHeader(h, 'category')]: category, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA, [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct, [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active', [getFuzzyHeader(h, 'level')]: level || 'Medium' });
+      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Aptitude question updated successfully!" });
+    } else { res.status(404).json({ success: false, message: "Question ID not found." }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteAptQuestion = async (req, res) => {
+  try {
+    const { id } = req.body;
+    const sheet = doc.sheetsByTitle["Aptitude_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToDelete = rows.find(r => r.get('QID') === id || r.get('qid') === id);
+    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Question deleted" }); } 
+    else { res.status(404).json({ success: false, message: "Question not found" }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.getTalExamQuestions = (req, res) => {
+  try {
+    let questions = getCache().talQuestions.map(row => {
+      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      return { id: rd[getH('questionid')] || '', testNumber: rd[getH('textnumber')] || rd[getH('testnumber')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active' };
+    });
+    res.json({ success: true, questions: questions.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.getTalExamResults = (req, res) => {
+  try {
+    let results = getCache().talResults.map(row => {
+      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || rd[getH('email')] || '', branch: rd[getH('branch')] || '', testNumber: rd[getH('testnumbercompleted')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '' };
+    });
+    res.json({ success: true, results: results.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addTalExamQuestion = async (req, res) => {
+  try {
+    const { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
+    const sheet = doc.sheetsByTitle["Talentino_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const h = sheet.headerValues;
+    await sheet.addRow({ [getFuzzyHeader(h, 'questionid')]: id, [getFuzzyHeader(h, 'testnumber')]: testNumber, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA, [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct, [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active' });
+    refreshCache(); res.json({ success: true, message: "Question added" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateTalExamQuestion = async (req, res) => {
+  try {
+    const { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
+    const sheet = doc.sheetsByTitle["Talentino_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => (r.get('Question ID') || r.get('questionid') || '').toString().trim() === id.toString().trim());
+    if (rowToUpdate) {
+      const h = sheet.headerValues;
+      rowToUpdate.assign({ [getFuzzyHeader(h, 'questionid')]: id, [getFuzzyHeader(h, 'testnumber')]: testNumber, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA, [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct, [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active' });
+      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Talentino question updated successfully!" });
+    } else { res.status(404).json({ success: false, message: "Question ID not found." }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteTalExamQuestion = async (req, res) => {
+  try {
+    const { id } = req.body;
+    const sheet = doc.sheetsByTitle["Talentino_Questions"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToDelete = rows.find(r => r.get('Question ID') === id || r.get('questionid') === id);
+    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Question deleted" }); } 
+    else { res.status(404).json({ success: false, message: "Question not found" }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.getDrives = (req, res) => {
+  try {
+    const drivesData = (getCache().drives || []).map(row => {
+      const rd = row.toObject();
+      const getH = (str) => {
+        const c = str.toLowerCase().replace(/\s/g, ''); const keys = Object.keys(rd);
+        return keys.find(k => k.toLowerCase().replace(/\s/g, '') === c) || keys.find(k => k.toLowerCase().replace(/\s/g, '').includes(c));
+      };
+      return {
+        rowNumber: row.rowNumber, driveId: rd[getH('driveid')] || '', name: rd[getH('name')] || '', phone: rd[getH('contact')] || '',
+        email: rd[getH('mailid')] || rd[getH('email')] || '', course: rd[getH('course')] || '', branch: rd[getH('branch')] || '',
+        resume: rd[getH('resume')] || '', qual: rd[getH('qualification')] || '', regStatus: rd[getH('status')] || '',
+        regDate: rd[getH('registeddate')] || rd[getH('timestamp')] || '', studentStatus: rd[getH('studentstatus')] || ''
+      };
+    });
+    res.json({ success: true, drives: drivesData.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateDriveStatus = async (req, res) => {
+  const { rowNumber, studentStatus } = req.body;
+  try {
+    const sheet = doc.sheetsByTitle["Drive_Registration"];
+    const rows = await sheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    if(rows.length > 0) {
+      const statHead = getFuzzyHeader(sheet.headerValues, 'studentstatus');
+      rows[0].assign({ [statHead]: studentStatus }); await rows[0].save();
+      refreshCache(); res.json({ success: true });
+    }
+  } catch(err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.getBranches = (req, res) => {
+  try {
+    const branches = getCache().branches.map(row => {
+      const rd = row._rawData; 
+      return { no: rd[0] || '', region: rd[1] || '', branch: rd[2] || '' };
+    });
+    res.json({ success: true, branches });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addBranch = async (req, res) => {
+  try {
+    const { no, region, branch } = req.body;
+    const sheet = doc.sheetsByTitle["Branches"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    await sheet.addRow([no, region, branch]);
+    refreshCache(); res.json({ success: true, message: "Branch saved" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateBranch = async (req, res) => {
+  try {
+    const { oldBranch, no, region, branch } = req.body;
+    const sheet = doc.sheetsByTitle["Branches"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToUpdate = rows.find(r => r._rawData[2] === oldBranch);
+    if (rowToUpdate) {
+      rowToUpdate._rawData[0] = no; rowToUpdate._rawData[1] = region; rowToUpdate._rawData[2] = branch;
+      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Branch updated" });
+    } else { res.status(404).json({ success: false, message: "Branch not found" }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteBranch = async (req, res) => {
+  try {
+    const { branch } = req.body;
+    const sheet = doc.sheetsByTitle["Branches"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await sheet.getRows();
+    const rowToDelete = rows.find(r => r._rawData[2] === branch);
+    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Branch deleted" }); } 
+    else { res.status(404).json({ success: false, message: "Branch not found" }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
