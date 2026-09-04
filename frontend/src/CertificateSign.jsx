@@ -34,7 +34,8 @@ export default function CertificateSign() {
   const currentDate = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
 
   useEffect(() => {
-    axios.get(`https://api-talenzo.ipcsglobal.info/api/tpo/clients/${id}`)
+    // 🚨 POINTING TO NEW RENDER BACKEND
+    axios.get(`https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/clients/${id}`)
       .then(res => {
         if (res.data.success) {
           setClient(res.data.client);
@@ -42,7 +43,9 @@ export default function CertificateSign() {
           
           if (res.data.client.logo && typeof res.data.client.logo === 'string') {
             const match = res.data.client.logo.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
-            if (match) setLogoPreview(`https://drive.google.com/thumbnail?id=${match[1]}&sz=w400`);
+            // 🚨 USING CORS-FRIENDLY GOOGLE IMAGE LINK FOR HTML2CANVAS
+            if (match) setLogoPreview(`https://lh3.googleusercontent.com/d/${match[1]}`);
+            else setLogoPreview(res.data.client.logo);
           }
         }
       })
@@ -68,11 +71,9 @@ export default function CertificateSign() {
       return alert("Please complete all required fields (Address, Logo, Signature, Name, and Designation) before submitting.");
     }
     
-    // 🚨 Trigger state to hide all dotted lines BEFORE taking the picture
     setIsSubmitting(true);
 
     try {
-      // Wait 300 milliseconds for React to erase the borders from the screen
       await new Promise(resolve => setTimeout(resolve, 300));
 
       const canvas = await html2canvas(certificateRef.current, { 
@@ -100,27 +101,21 @@ export default function CertificateSign() {
       formData.append('companyName', client.companyName);
       formData.append('companyEmail', client.email);
 
-      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/clients/submit-mou', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      // 🚨 POINTING TO NEW RENDER BACKEND
+      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/clients/submit-mou', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       if(res.data.success) setIsSuccess(true);
     } catch (error) {
       console.error(error);
       alert(`Submission Error: ${error.response?.data?.message || error.message}`);
-      setIsSubmitting(false); // Only reset if it fails, otherwise keep lines hidden
+      setIsSubmitting(false); 
     }
   };
 
-  // 🚨 Dynamic Input Style: The border vanishes completely when isSubmitting is true
   const inputStyle = {
-    flex: 1, 
-    border: 'none', 
+    flex: 1, border: 'none', 
     borderBottom: isSubmitting ? '1px solid transparent' : '1px dashed #94a3b8', 
-    outline: 'none', 
-    background: 'transparent', 
-    fontSize: '15px', 
-    fontFamily: 'inherit', 
-    color: '#000000', 
-    padding: '2px 0',
-    transition: 'border-color 0.2s'
+    outline: 'none', background: 'transparent', fontSize: '15px', fontFamily: 'inherit', 
+    color: '#000000', padding: '2px 0', transition: 'border-color 0.2s'
   };
 
   if (loading) return (
@@ -155,42 +150,23 @@ export default function CertificateSign() {
         </div>
       )}
 
-      {/* 🚨 PROFESSIONAL CONTRACT CONTAINER */}
       <div 
         ref={certificateRef} 
         style={{ 
-          width: '850px', 
-          background: '#ffffff', 
-          padding: '80px', 
-          color: '#000000', 
-          boxShadow: '0 20px 40px rgba(0,0,0,0.1)', 
-          position: 'relative', 
-          fontSize: '15px', 
-          lineHeight: '1.8', 
-          fontFamily: '"Georgia", "Times New Roman", serif', 
-          textAlign: 'justify',
-          overflow: 'hidden'
+          width: '850px', background: '#ffffff', padding: '80px', color: '#000000', 
+          boxShadow: '0 20px 40px rgba(0,0,0,0.1)', position: 'relative', fontSize: '15px', 
+          lineHeight: '1.8', fontFamily: '"Georgia", "Times New Roman", serif', 
+          textAlign: 'justify', overflow: 'hidden'
         }}
       >
         
-        {/* 🚨 THE WATERMARK FIX: Rendered as a true image for html2canvas */}
         <img 
           src="https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB" 
           crossOrigin="anonymous" 
           alt="Watermark"
-          style={{
-            position: 'absolute',
-            top: '50%',
-            left: '50%',
-            transform: 'translate(-50%, -50%)',
-            width: '70%',
-            opacity: 0.08,
-            zIndex: 0,
-            pointerEvents: 'none'
-          }} 
+          style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '70%', opacity: 0.08, zIndex: 0, pointerEvents: 'none' }} 
         />
 
-        {/* CONTENT LAYER (Sits on top of the watermark) */}
         <div style={{ position: 'relative', zIndex: 1 }}>
           <div style={{ marginBottom: '35px' }}>
             <p style={{ margin: '0 0 15px 0' }}><strong>Date:</strong> {currentDate}</p>
@@ -252,7 +228,6 @@ export default function CertificateSign() {
           <h4 style={{ fontSize: '16px', marginBottom: '10px', textDecoration: 'underline', fontWeight: 'bold' }}>Acknowledgement</h4>
           <p style={{ marginBottom: '40px' }}>We, <strong>{client.companyName}</strong>, hereby acknowledge the above Hiring Partnership terms and express our willingness to collaborate with IPCS Global for our current and future recruitment requirements.</p>
 
-          {/* 🚨 ENLARGED & ALIGNED SIGNATURE SECTION */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: '50px' }}>
             
             <div style={{ width: '45%' }}>
@@ -274,7 +249,6 @@ export default function CertificateSign() {
               <p style={{ margin: '0 0 15px 0' }}>Designation: {employerDesig || '__________________'}</p>
               <p style={{ margin: '0 0 15px 0' }}>Email: {client.email}</p>
 
-              {/* 🚨 COMPANY LOGO - Perfect Alignment */}
               <div style={{ height: '85px', display: 'flex', alignItems: 'flex-start' }}>
                 {logoPreview ? (
                   <img src={logoPreview} style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} crossOrigin="anonymous" alt="Logo" />
@@ -289,19 +263,15 @@ export default function CertificateSign() {
 
             <div style={{ width: '45%' }}>
               <p style={{ fontWeight: 'bold', marginBottom: '15px', fontSize: '16px' }}>IPCS Global</p>
-              
               <div style={{ height: '90px', marginBottom: '10px', display: 'flex', alignItems: 'flex-start' }}>
-                <img src={ipcsSignature} alt="IPCS Signature" style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} /> 
+                <img src={ipcsSignature} alt="IPCS Signature" style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} crossOrigin="anonymous" /> 
               </div>
-
               <p style={{ margin: '0 0 5px 0' }}><strong>Authorized Signatory:</strong></p>
               <p style={{ margin: '0 0 5px 0' }}>Name: Gifty KP</p>
               <p style={{ margin: '0 0 15px 0' }}>Designation: Zonal Manager - Placements</p>
               <p style={{ margin: '0 0 15px 0' }}>Email: gifty@ipcsglobal.com</p>
-
-              {/* 🚨 IPCS LOGO - Perfect Alignment */}
               <div style={{ height: '85px', display: 'flex', alignItems: 'flex-start' }}>
-                <img src={ipcsLogo} alt="IPCS Logo" style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} />
+                <img src={ipcsLogo} alt="IPCS Logo" style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} crossOrigin="anonymous" />
               </div>
             </div>
 

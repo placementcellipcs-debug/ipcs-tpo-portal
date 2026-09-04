@@ -6,16 +6,17 @@ import {
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
-const API_BASE = "https://api-talenzo.ipcsglobal.info";
+// 🚨 UPDATED: POINT TO THE NEW RENDER URL
+const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
 
-// 🚨 SMART IMAGE FALLBACK COMPONENT - NOW FULLY RESPONSIVE
 const ClientLogo = ({ client, size = 70, noMargin = false }) => {
   const [imgErr, setImgErr] = useState(false);
   
   const getDriveImage = (url) => {
     if (!url) return null;
     const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
-    return match ? `https://drive.google.com/thumbnail?id=${match[1]}&sz=w400` : url;
+    // 🚨 FIX: Use CORS friendly link instead of thumbnail
+    return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : url;
   };
 
   const logoUrl = getDriveImage(client.logo);
@@ -23,18 +24,9 @@ const ClientLogo = ({ client, size = 70, noMargin = false }) => {
 
   return (
     <div style={{ 
-      width: `${size}px`, 
-      height: `${size}px`, 
-      borderRadius: '12px', 
-      background: '#fff', 
-      overflow: 'hidden', 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center', 
-      marginBottom: noMargin ? '0' : '12px', 
-      padding: '6px', 
-      border: '1px solid var(--card-border)',
-      flexShrink: 0
+      width: `${size}px`, height: `${size}px`, borderRadius: '12px', background: '#fff', 
+      overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', 
+      marginBottom: noMargin ? '0' : '12px', padding: '6px', border: '1px solid var(--card-border)', flexShrink: 0
     }}>
       {(!logoUrl || imgErr) ? (
         <span style={{ color: '#0f172a', fontWeight: 'bold', fontSize: size > 55 ? '1.8rem' : '1.3rem' }}>{initial}</span>
@@ -54,8 +46,6 @@ export default function Clients() {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // TPO Tabs: 'pending' vs 'signed'
   const [tpoTab, setTpoTab] = useState('pending');
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -88,11 +78,8 @@ export default function Clients() {
           setClients(res.data.clients || []);
           localStorage.setItem('dash_clients', JSON.stringify(res.data.clients || [])); 
         }
-      } catch (err) { 
-        console.error("Failed to fetch clients:", err); 
-      } finally { 
-        setLoading(false); 
-      }
+      } catch (err) { console.error("Failed to fetch clients:", err); } 
+      finally { setLoading(false); }
     };
     fetchClientsInitial(); 
   }, []); 
@@ -132,11 +119,8 @@ export default function Clients() {
         showToast("Company details updated successfully!");
         fetchClientsManual();
       }
-    } catch (error) { 
-      showToast(`Failed to update: ${error.response?.data?.message || error.message}`, 'error'); 
-    } finally { 
-      setSavingStatus(false); 
-    }
+    } catch (error) { showToast(`Failed to update: ${error.response?.data?.message || error.message}`, 'error'); } 
+    finally { setSavingStatus(false); }
   };
 
   const sendRequest = async (client) => {
@@ -150,11 +134,8 @@ export default function Clients() {
         showToast(`Email sent successfully to ${client.companyName}!`);
         fetchClientsManual(); 
       }
-    } catch (error) { 
-      showToast(`Failed to send request: ${error.response?.data?.message || error.message}`, 'error'); 
-    } finally { 
-      setSendingRequest(null); 
-    }
+    } catch (error) { showToast(`Failed to send request: ${error.response?.data?.message || error.message}`, 'error'); } 
+    finally { setSendingRequest(null); }
   };
 
   const filteredClients = clients.filter(c => 
@@ -200,14 +181,7 @@ export default function Clients() {
         )}
 
         <div style={{ marginBottom: '20px', maxWidth: '400px' }}>
-          <input 
-            type="text" 
-            className="sleek-input" 
-            placeholder="Search company name or location..." 
-            style={{ width: '100%' }} 
-            value={searchQuery} 
-            onChange={(e) => setSearchQuery(e.target.value)} 
-          />
+          <input type="text" className="sleek-input" placeholder="Search company name or location..." style={{ width: '100%' }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
 
         {loading ? (
@@ -221,28 +195,21 @@ export default function Clients() {
                 ) : (
                   filteredClients.map(client => (
                     <div 
-                      key={client.rowNumber} 
-                      onClick={() => client.mouLink && window.open(client.mouLink, '_blank')}
-                      style={{ 
-                        background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', cursor: client.mouLink ? 'pointer' : 'default', transition: '0.2s', boxShadow: '0 4px 15px rgba(0,0,0,0.1)'
-                      }}
+                      key={client.rowNumber} onClick={() => client.mouLink && window.open(client.mouLink, '_blank')}
+                      style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', cursor: client.mouLink ? 'pointer' : 'default', transition: '0.2s', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}
                       onMouseEnter={(e) => { if(client.mouLink) { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.borderColor = 'var(--accent-primary)'; } }}
                       onMouseLeave={(e) => { if(client.mouLink) { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.borderColor = 'var(--card-border)'; } }}
                     >
                       <ClientLogo client={client} />
                       <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', color: '#fff' }}>{client.companyName}</h3>
-                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '15px' }}>
-                        <MapPin size={14} /> {client.location || 'Location N/A'}
-                      </span>
+                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '15px' }}><MapPin size={14} /> {client.location || 'Location N/A'}</span>
                       <div style={{ marginTop: 'auto', width: '100%' }}>
                         {client.mouLink ? (
                           <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', border: '1px solid #10b981', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', width: '100%', justifyContent: 'center' }}>
                             <FilePdf size={18} weight="fill" /> Open Signed MOU <ArrowSquareOut size={16} />
                           </div>
                         ) : (
-                          <div style={{ display: 'inline-block', background: 'var(--bg-dark)', color: 'var(--text-muted)', border: '1px solid var(--card-border)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', width: '100%' }}>
-                            MOU In Progress
-                          </div>
+                          <div style={{ display: 'inline-block', background: 'var(--bg-dark)', color: 'var(--text-muted)', border: '1px solid var(--card-border)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', width: '100%' }}>MOU In Progress</div>
                         )}
                       </div>
                     </div>
@@ -259,10 +226,7 @@ export default function Clients() {
                   pendingClients.map(client => (
                     <div key={client.rowNumber} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '15px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                        
-                        {/* 🚨 FIXED LOGO IMPLEMENTATION */}
                         <ClientLogo client={client} size={60} noMargin={true} />
-
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <strong style={{ fontSize: '1.1rem', color: '#fff', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{client.companyName}</strong>
                           <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{client.location || 'Location N/A'}</span>
