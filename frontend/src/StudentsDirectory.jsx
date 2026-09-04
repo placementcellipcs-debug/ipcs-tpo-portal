@@ -67,13 +67,18 @@ export default function StudentsDirectory() {
   const isTpo = upperRole === 'TPO';
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
   const isTrainer = upperRole.includes('TRAINER');
+  
+  // 🚨 IDENTIFY BRANCH MANAGER
+  const isBranchManager = upperRole.includes('BRANCH MANAGER') || (upperRole.includes('MANAGER') && !isSuperAdmin);
+  
   const isCourseSpecific = isRth || upperRole.includes('TTH') || isTrainer || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
+  const isViewOnly = tpoData?.accessType === 'view'; 
 
-  // 🚨 UI ACCESS CONTROL
+  // UI ACCESS CONTROL
   const canEditAll = isSuperAdmin || isTpo; 
   const canEditAcademic = canEditAll || isRth || isTrainer; 
-  const canSave = canEditAll || canEditAcademic;
+  const canSave = canEditAll || canEditAcademic; 
 
   useEffect(() => {
     const fetchData = async () => {
@@ -90,8 +95,8 @@ export default function StudentsDirectory() {
         };
 
         const [stuRes, statRes] = await Promise.all([
-          axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/students', payload),
-          axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/dashboard-stats', payload)
+          axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/students', payload),
+          axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/dashboard-stats', payload)
         ]);
         
         if (stuRes.data.success) {
@@ -141,11 +146,11 @@ export default function StudentsDirectory() {
     setLocalStudyAccess(student.studyAccess || 'No');
     setLocalExamAccess(student.examAccess || 'No');
     
-    const cStatKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().includes('currentlystudying'));
-    setLocalCourseStatus(cStatKey && student.rawData[cStatKey] ? student.rawData[cStatKey] : 'Currently Studying');
+    const cStatKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().replace(/\s/g, '') === 'coursestatus' || k.toLowerCase().replace(/\s/g, '').includes('status(currently'));
+    setLocalCourseStatus(cStatKey && student.rawData[cStatKey] && student.rawData[cStatKey] !== 'N/A' ? student.rawData[cStatKey] : 'Currently Studying');
 
-    const cPercKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().replace(/\s/g, '') === 'coursecompleted');
-    setLocalCoursePercentage(cPercKey && student.rawData[cPercKey] ? student.rawData[cPercKey] : '50% completed');
+    const cPercKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().replace(/\s/g, '') === 'coursepercentage');
+    setLocalCoursePercentage(cPercKey && student.rawData[cPercKey] && student.rawData[cPercKey] !== 'N/A' ? student.rawData[cPercKey] : '50% completed');
 
     setIsModalOpen(true);
   };
@@ -153,8 +158,7 @@ export default function StudentsDirectory() {
   const handleCoursePercentageChange = (e) => {
     const val = e.target.value;
     setLocalCoursePercentage(val);
-    // 🚨 SMART AUTOMATION: Instantly trigger "Completed Course" if 100% is selected
-    if (val === '100% completed') {
+    if (val === '100% completed' || val === '100%') {
       setLocalCourseStatus('Completed Course');
     }
   };
@@ -162,7 +166,7 @@ export default function StudentsDirectory() {
   const saveStudentUpdates = async () => {
     setSavingStatus(true);
     try {
-      const response = await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/students/update-student', {
+      const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/students/update-student', {
         rowNumber: selectedStudent.rowIdx,
         vacOpen: localVacState, 
         placementStatus: localPlacementState,
@@ -427,7 +431,6 @@ export default function StudentsDirectory() {
                   <h2 style={{ margin: '0 0 4px 0', fontSize: '1.4rem', color: '#fff' }}>{selectedStudent.name}</h2>
                   <span style={{ fontSize: '0.85rem', color: '#38bdf8', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{selectedStudent.roll}</span>
                   
-                  {/* Social/Contact Action Buttons */}
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {(() => {
                        const raw = selectedStudent.rawData || {};
@@ -467,7 +470,6 @@ export default function StudentsDirectory() {
                 </div>
               </div>
 
-              {/* Documents & Close */}
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                 {selectedStudent.resume && selectedStudent.resume !== 'N/A' && (
                   <button className="btn-secondary" onClick={() => window.open(getDrivePdf(selectedStudent.resume) || selectedStudent.resume, '_blank')} style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', border: '1px solid #f59e0b', margin: 0, padding: '0.5rem 0.8rem' }}>
@@ -484,9 +486,7 @@ export default function StudentsDirectory() {
             </div>
           </div>
 
-          {/* Scrollable Specific Info Body */}
           <div style={{ padding: '2rem' }}>
-             {/* Strictly Filtered Read-Only Grid */}
              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '2.5rem' }}>
                 {(() => {
                    const raw = selectedStudent.rawData || {};
@@ -517,6 +517,19 @@ export default function StudentsDirectory() {
                      { label: 'Gender', val: getF(['gender', 'sex']) }
                    ].filter(f => f.val);
 
+                   // 🚨 BRANCH MANAGER EXCLUSIVE FIELDS
+                   if (isBranchManager) {
+                     const f1Name = Object.keys(raw).find(k => k.toLowerCase().replace(/\s/g, '') === 'name(friend1)');
+                     const f1Cont = Object.keys(raw).find(k => k.toLowerCase().replace(/\s/g, '') === 'contactnumber');
+                     const f2Name = Object.keys(raw).find(k => k.toLowerCase().replace(/\s/g, '') === 'name(friend2)');
+                     const f2Cont = Object.keys(raw).find(k => k.toLowerCase().replace(/\s/g, '') === 'contactnumber2');
+
+                     if (f1Name && raw[f1Name]) specificFields.push({ label: 'Name (Friend 1)', val: raw[f1Name] });
+                     if (f1Cont && raw[f1Cont]) specificFields.push({ label: 'Contact Number 1', val: raw[f1Cont] });
+                     if (f2Name && raw[f2Name]) specificFields.push({ label: 'Name (Friend 2)', val: raw[f2Name] });
+                     if (f2Cont && raw[f2Cont]) specificFields.push({ label: 'Contact Number 2', val: raw[f2Cont] });
+                   }
+
                    return specificFields.map((field, idx) => (
                       <div key={idx} style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '10px', border: '1px solid #1e293b' }}>
                         <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>{field.label}</span>
@@ -526,71 +539,69 @@ export default function StudentsDirectory() {
                 })()}
              </div>
 
-             {/* Permission-Based Toggles Container */}
-             <div style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid #1e293b', borderRadius: '16px', padding: '1.5rem' }}>
-                <h3 style={{ margin: '0 0 1.2rem 0', color: '#fff', fontSize: '1.1rem', borderBottom: '1px solid #1e293b', paddingBottom: '0.8rem' }}>Access & Permissions Control</h3>
-                
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+             {/* 🚨 HIDDEN COMPLETELY FOR BRANCH MANAGERS */}
+             {!isBranchManager && (
+               <div style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid #1e293b', borderRadius: '16px', padding: '1.5rem' }}>
+                  <h3 style={{ margin: '0 0 1.2rem 0', color: '#fff', fontSize: '1.1rem', borderBottom: '1px solid #1e293b', paddingBottom: '0.8rem' }}>Access & Permissions Control</h3>
                   
-                  {/* Academic Controls (RTH/Trainers/TPO/Admin) */}
-                  <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
-                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Course Percentage</span>
-                    <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localCoursePercentage} onChange={handleCoursePercentageChange} disabled={!canEditAcademic}>
-                      <option value="50% completed">50% completed</option>
-                      <option value="80% completed">80% completed</option>
-                      <option value="90% completed">90% completed</option>
-                      <option value="100% completed">100% completed</option>
-                    </select>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+                    <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                      <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Course Percentage</span>
+                      <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localCoursePercentage} onChange={handleCoursePercentageChange} disabled={!canEditAcademic}>
+                        <option value="50% completed">50% completed</option>
+                        <option value="80% completed">80% completed</option>
+                        <option value="90% completed">90% completed</option>
+                        <option value="100% completed">100% completed</option>
+                      </select>
+                    </div>
+
+                    <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                      <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Course Status</span>
+                      <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localCourseStatus} onChange={(e) => setLocalCourseStatus(e.target.value)} disabled={!canEditAcademic}>
+                        <option value="Currently Studying">Currently Studying</option>
+                        <option value="Completed Course">Completed Course</option>
+                      </select>
+                    </div>
+
+                    <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                      <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Study Material Access</span>
+                      <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localStudyAccess} onChange={(e) => setLocalStudyAccess(e.target.value)} disabled={!canEditAcademic}>
+                        <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                      </select>
+                    </div>
+
+                    <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                      <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Technical Exam Access</span>
+                      <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localExamAccess} onChange={(e) => setLocalExamAccess(e.target.value)} disabled={!canEditAcademic}>
+                        <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                      </select>
+                    </div>
+
+                    <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                      <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Vacancy Open</span>
+                      <select className="sleek-select" style={{ width: '100%', cursor: !canEditAll ? 'not-allowed' : 'pointer', opacity: !canEditAll ? 0.7 : 1, background: '#161e2e' }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)} disabled={!canEditAll}>
+                        <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                      </select>
+                    </div>
+
+                    <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                      <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Placement Status</span>
+                      <select className="sleek-select" style={{ width: '100%', cursor: !canEditAll ? 'not-allowed' : 'pointer', opacity: !canEditAll ? 0.7 : 1, background: '#161e2e' }} value={localPlacementState} onChange={(e) => setLocalPlacementState(e.target.value)} disabled={!canEditAll}>
+                        <option value="Pending">Pending</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
+                      </select>
+                    </div>
+
                   </div>
 
-                  <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
-                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Course Status</span>
-                    <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localCourseStatus} onChange={(e) => setLocalCourseStatus(e.target.value)} disabled={!canEditAcademic}>
-                      <option value="Currently Studying">Currently Studying</option>
-                      <option value="Completed Course">Completed Course</option>
-                    </select>
+                  <div style={{ display: 'flex', justifyContent: !canSave ? 'space-between' : 'flex-end', alignItems: 'center', marginTop: '1.5rem' }}>
+                     {!canSave && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission for Toggles</span>}
+                     
+                     <button className="btn-action" style={{ width: 'auto', background: !canSave ? '#1e293b' : '#38bdf8', color: !canSave ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: !canSave ? 'not-allowed' : 'pointer', opacity: canSave ? 1 : 0.5 }} onClick={saveStudentUpdates} disabled={savingStatus || !canSave}>
+                        {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> {!canSave ? 'Locked' : 'Save Changes'}</>}
+                      </button>
                   </div>
-
-                  <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
-                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Study Material Access</span>
-                    <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localStudyAccess} onChange={(e) => setLocalStudyAccess(e.target.value)} disabled={!canEditAcademic}>
-                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
-                    </select>
-                  </div>
-
-                  <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
-                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Technical Exam Access</span>
-                    <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localExamAccess} onChange={(e) => setLocalExamAccess(e.target.value)} disabled={!canEditAcademic}>
-                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
-                    </select>
-                  </div>
-
-                  {/* Core Placement Controls (TPO/Admin ONLY) */}
-                  <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
-                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Vacancy Open</span>
-                    <select className="sleek-select" style={{ width: '100%', cursor: !canEditAll ? 'not-allowed' : 'pointer', opacity: !canEditAll ? 0.7 : 1, background: '#161e2e' }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)} disabled={!canEditAll}>
-                      <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
-                    </select>
-                  </div>
-
-                  <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
-                    <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Placement Status</span>
-                    <select className="sleek-select" style={{ width: '100%', cursor: !canEditAll ? 'not-allowed' : 'pointer', opacity: !canEditAll ? 0.7 : 1, background: '#161e2e' }} value={localPlacementState} onChange={(e) => setLocalPlacementState(e.target.value)} disabled={!canEditAll}>
-                      <option value="Pending">Pending</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
-                    </select>
-                  </div>
-
-                </div>
-
-                {/* Lock warning & Save Button */}
-                <div style={{ display: 'flex', justifyContent: !canSave ? 'space-between' : 'flex-end', alignItems: 'center', marginTop: '1.5rem' }}>
-                   {!canSave && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission for Toggles</span>}
-                   
-                   <button className="btn-action" style={{ width: 'auto', background: !canSave ? '#1e293b' : '#38bdf8', color: !canSave ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: !canSave ? 'not-allowed' : 'pointer', opacity: canSave ? 1 : 0.5 }} onClick={saveStudentUpdates} disabled={savingStatus || !canSave}>
-                      {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> {!canSave ? 'Locked' : 'Save Changes'}</>}
-                    </button>
-                </div>
-             </div>
+               </div>
+             )}
           </div>
         </div>
       </div>
