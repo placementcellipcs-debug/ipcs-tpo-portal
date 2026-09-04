@@ -3,7 +3,7 @@ import axios from 'axios';
 import { 
   CircleNotch, BookOpenText, Plus, CaretLeft, Link as LinkIcon, 
   FilePdf, FileImage, FileText, FileVideo, CheckCircle, WarningCircle, X,
-  FolderOpen, PencilSimple, Trash
+  FolderOpen, BookBookmark, PencilSimple, Trash, Info
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -36,9 +36,10 @@ export default function StudyMaterials() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // 🚨 FIXED: We bypass the broken sub-courses view completely.
-  const [viewLevel, setViewLevel] = useState(isSuperAdmin ? 'main_courses' : 'materials');
+  // 🚨 RESTORED 3-STEP VIEW LEVEL: main_courses -> sub_courses -> materials
+  const [viewLevel, setViewLevel] = useState(isSuperAdmin ? 'main_courses' : 'sub_courses');
   const [selectedMainCourse, setSelectedMainCourse] = useState(null);
+  const [selectedSubCourse, setSelectedSubCourse] = useState(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -64,7 +65,7 @@ export default function StudyMaterials() {
           const stdAssigned = getStandardCourse(tpoData.assignedCourse);
           const matchKey = Object.keys(cDict).find(k => getStandardCourse(k) === stdAssigned);
           setSelectedMainCourse(matchKey || stdAssigned || 'Others');
-          setViewLevel('materials');
+          setViewLevel('sub_courses');
         }
       }
     } catch (err) {
@@ -78,9 +79,19 @@ export default function StudyMaterials() {
     fetchData();
   }, []);
 
-  const MAIN_COURSES = Object.keys(courseDict).length > 0 ? Object.keys(courseDict) : [
-    'Industrial Automation', 'BMS AND CCTV', 'Embedded and IoT', 'Digital Marketing', 'Information technology (IT)'
-  ];
+  const MAIN_COURSES = ['Industrial Automation', 'BMS AND CCTV', 'Embedded and IoT', 'Digital Marketing', 'Information technology (IT)'];
+
+  // Smart Sub-course generator based on dict + existing materials
+  const getSubCourses = (mainCourse) => {
+    const stdMain = getStandardCourse(mainCourse);
+    const dictMatch = Object.keys(courseDict).find(k => getStandardCourse(k) === stdMain);
+    let subs = dictMatch ? courseDict[dictMatch] : [];
+    
+    // Also grab any courses currently in the materials sheet that match this domain
+    const materialSubs = materials.filter(m => getStandardCourse(m.course) === stdMain).map(m => m.course);
+    
+    return Array.from(new Set([...subs, ...materialSubs])).filter(Boolean).sort();
+  };
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -90,7 +101,7 @@ export default function StudyMaterials() {
     const randomId = `MAT${Math.floor(1000 + Math.random() * 9000)}`;
     setFormData({
       id: randomId, 
-      course: '', // Let the user type it or select from datalist
+      course: selectedSubCourse || '', // Locks to the currently viewed subcourse
       module: '', title: '', fileType: 'pdf', link: '', status: 'Active'
     });
     setIsEditMode(false);
@@ -121,7 +132,15 @@ export default function StudyMaterials() {
       const res = await axios.post(endpoint, formData);
       if (res.data.success) {
         setIsModalOpen(false);
-        setLoading(true);
+        
+        // 🚨 INSTANT OPTIMISTIC UI UPDATE: Instantly updates screen without waiting for Cache
+        if (isEditMode) {
+          setMaterials(prev => prev.map(m => m.id === formData.id ? formData : m));
+        } else {
+          setMaterials(prev => [formData, ...prev]);
+        }
+        
+        // Fetch background sync
         fetchData(); 
       }
     } catch (err) {
@@ -133,12 +152,17 @@ export default function StudyMaterials() {
 
   const handleDeleteMaterial = async (id) => {
     if (!window.confirm("Are you sure you want to permanently delete this study material?")) return;
+    
+    // 🚨 INSTANT OPTIMISTIC UI UPDATE: Removes from screen instantly
+    setMaterials(prev => prev.filter(m => m.id !== id));
+
     try {
-      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/delete', { id });
-      if (res.data.success) {
-        setMaterials(materials.filter(m => m.id !== id));
-      }
-    } catch (err) { alert("Failed to delete study material."); }
+      await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/delete', { id });
+      fetchData(); // background sync
+    } catch (err) { 
+      alert("Failed to delete study material."); 
+      fetchData(); // Rollback if it fails
+    }
   };
 
   const getFileIcon = (type) => {
@@ -149,33 +173,30 @@ export default function StudyMaterials() {
     return <FileImage size={24} color="#10b981" weight="fill" />;
   };
 
-  // 🚨 FIXED: Filter strictly by Domain instantly, skipping the empty subcourse view
+  // Filter materials for the selected SUB-COURSE
   const filteredMaterials = materials.filter(m => {
-    const matchDomain = getStandardCourse(m.course) === getStandardCourse(selectedMainCourse);
+    const matchSubCourse = m.course === selectedSubCourse;
     const matchSearch = (m.title || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                        (m.module || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-                        (m.course || '').toLowerCase().includes(searchQuery.toLowerCase());
-    return matchDomain && matchSearch;
+                        (m.module || '').toLowerCase().includes(searchQuery.toLowerCase());
+    return matchSubCourse && matchSearch;
   });
 
-  // Suggest sub-courses for the Add Modal based on what already exists
-  const suggestedCourses = Array.from(new Set([
-    ...(courseDict[selectedMainCourse] || []),
-    ...materials.filter(m => getStandardCourse(m.course) === getStandardCourse(selectedMainCourse)).map(m => m.course)
-  ])).filter(Boolean);
+  const subCoursesList = selectedMainCourse ? getSubCourses(selectedMainCourse) : [];
 
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        {/* DOMAINS VIEW (SUPER ADMIN ONLY) */}
+        {/* --------------------------------------------------- */}
+        {/* STEP 1: DOMAINS VIEW (SUPER ADMIN ONLY)             */}
+        {/* --------------------------------------------------- */}
         {viewLevel === 'main_courses' && isSuperAdmin && (
           <>
             <div style={{ marginBottom: '30px' }}>
               <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <FolderOpen color="var(--accent-primary)" weight="fill" /> Study Materials Management
               </h1>
-              <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a domain to manage all materials within it.</p>
+              <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a primary domain to view associated programs.</p>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px' }}>
@@ -184,13 +205,13 @@ export default function StudyMaterials() {
                 return (
                   <div 
                     key={course} 
-                    onClick={() => { setSelectedMainCourse(course); setViewLevel('materials'); }}
+                    onClick={() => { setSelectedMainCourse(course); setViewLevel('sub_courses'); }}
                     style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}
                   >
                     <h2 style={{ color: '#ffffff', fontSize: '1.6rem', margin: '0 0 15px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>{course}</h2>
                     <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <BookOpenText size={20} color="#ffffff" weight="bold" />
-                      <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: 'bold' }}>View Materials</span>
+                      <span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: 'bold' }}>View Programs</span>
                     </div>
                   </div>
                 );
@@ -199,18 +220,68 @@ export default function StudyMaterials() {
           </>
         )}
 
-        {/* MATERIALS LIST VIEW */}
+        {/* --------------------------------------------------- */}
+        {/* STEP 2: SUB-COURSES VIEW (PROGRAMS)                 */}
+        {/* --------------------------------------------------- */}
+        {viewLevel === 'sub_courses' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '15px', flexWrap: 'wrap' }}>
+              {isSuperAdmin && (
+                <button onClick={() => { setViewLevel('main_courses'); setSelectedMainCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <CaretLeft weight="bold" size={18} /> Back to Domains
+                </button>
+              )}
+              <div>
+                <h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedMainCourse}</h1>
+                <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a specific program to manage its study materials.</p>
+              </div>
+            </div>
+
+            {subCoursesList.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
+                <Info size={40} color="var(--text-muted)" style={{ marginBottom: '10px' }} />
+                <h3 style={{ margin: '0 0 10px 0', color: '#fff' }}>No Programs Found</h3>
+                <p style={{ color: 'var(--text-muted)', margin: '0 0 20px 0' }}>No specific programs are mapped to this domain yet.</p>
+                
+                {canManage && (
+                  <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
+                    <button className="btn-action" onClick={() => { setSelectedSubCourse('General'); setViewLevel('materials'); }} style={{ width: 'auto' }}>
+                      Create First Material
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+                {subCoursesList.map((subCourse) => (
+                  <div 
+                    key={subCourse}
+                    onClick={() => { setSelectedSubCourse(subCourse); setViewLevel('materials'); }}
+                    style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.5rem', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', gap: '15px' }}
+                  >
+                    <div style={{ width: '45px', height: '45px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <BookBookmark size={24} weight="fill" />
+                    </div>
+                    <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-main)', lineHeight: 1.4 }}>{subCourse}</h3>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* --------------------------------------------------- */}
+        {/* STEP 3: MATERIALS LIST VIEW                         */}
+        {/* --------------------------------------------------- */}
         {viewLevel === 'materials' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                {isSuperAdmin && (
-                  <button onClick={() => { setViewLevel('main_courses'); setSelectedMainCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    <CaretLeft weight="bold" size={18} /> Domains
-                  </button>
-                )}
+                <button onClick={() => { setViewLevel('sub_courses'); setSelectedSubCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <CaretLeft weight="bold" size={18} /> Programs
+                </button>
                 <div>
-                  <h1 style={{ fontSize: '1.6rem', margin: 0 }}>{selectedMainCourse} Materials</h1>
+                  <h1 style={{ fontSize: '1.6rem', margin: 0 }}>{selectedSubCourse} Materials</h1>
                   <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>Upload presentations, PDFs, and notes for student access.</p>
                 </div>
               </div>
@@ -225,7 +296,7 @@ export default function StudyMaterials() {
             <div style={{ marginBottom: '20px', maxWidth: '400px', position: 'relative' }}>
               <input 
                 type="text" 
-                placeholder="Search by topic, program, or title..." 
+                placeholder="Search by topic or title..." 
                 className="sleek-input" 
                 style={{ width: '100%' }}
                 value={searchQuery}
@@ -238,7 +309,6 @@ export default function StudyMaterials() {
                 <thead>
                   <tr>
                     <th>Module / Topic</th>
-                    <th>Program (Course)</th>
                     <th>Document Title</th>
                     <th>Format</th>
                     <th>Drive Link</th>
@@ -248,18 +318,15 @@ export default function StudyMaterials() {
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={canManage ? 7 : 6} style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="var(--accent-primary)" /></td></tr>
+                    <tr><td colSpan={canManage ? 6 : 5} style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="var(--accent-primary)" /></td></tr>
                   ) : filteredMaterials.length === 0 ? (
-                    <tr><td colSpan={canManage ? 7 : 6} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No study materials uploaded for this domain yet.</td></tr>
+                    <tr><td colSpan={canManage ? 6 : 5} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No study materials uploaded for this program yet.</td></tr>
                   ) : (
                     filteredMaterials.map((mat, i) => (
                       <tr key={i}>
                         <td>
                           <span className="primary-text">{mat.module || 'General'}</span>
                           <span className="sub-text">ID: {mat.id}</span>
-                        </td>
-                        <td>
-                          <span style={{ color: '#cbd5e1', fontSize: '0.85rem' }}>{mat.course}</span>
                         </td>
                         <td><strong style={{ color: 'var(--text-main)' }}>{mat.title}</strong></td>
                         <td>
@@ -300,6 +367,9 @@ export default function StudyMaterials() {
         )}
       </div>
 
+      {/* --------------------------------------------------- */}
+      {/* MODAL: ADD / EDIT MATERIAL                          */}
+      {/* --------------------------------------------------- */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
@@ -314,22 +384,18 @@ export default function StudyMaterials() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '15px', marginBottom: '15px' }}>
                 <div className="form-group"><label>Material ID</label><input type="text" name="id" value={formData.id} readOnly style={{ background: 'var(--bg-dark)', opacity: 0.7 }} /></div>
                 
-                {/* 🚨 FIXED: Allow free text typing OR selecting from suggestions */}
                 <div className="form-group">
                   <label>Assigned Program (Course Name)</label>
+                  {/* Lock the course to the one currently being viewed to prevent user errors */}
                   <input 
                     type="text" 
                     name="course" 
                     value={formData.course} 
                     onChange={handleInputChange} 
                     className="sleek-input" 
-                    list="course-suggestions"
-                    placeholder="e.g. Java Full Stack" 
+                    style={{ background: 'var(--bg-dark)' }} 
                     required 
                   />
-                  <datalist id="course-suggestions">
-                    {suggestedCourses.map(c => <option key={c} value={c} />)}
-                  </datalist>
                 </div>
               </div>
 
