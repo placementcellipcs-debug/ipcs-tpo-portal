@@ -9,17 +9,6 @@ import Layout from './Layout';
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
 
-const getStandardCourse = (c) => {
-  if (!c) return 'Others';
-  const lower = c.toLowerCase().trim();
-  if (lower.includes('bms') || lower.includes('cctv')) return 'BMS AND CCTV';
-  if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
-  if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
-  if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
-  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
-  return 'Others';
-};
-
 export default function StudyMaterials() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
@@ -28,7 +17,7 @@ export default function StudyMaterials() {
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
   
-  // 🚨 RTH & ADMIN CAN ADD MATERIALS
+  // 🚨 Permissions to Manage Materials
   const canManage = isSuperAdmin || isRth;
 
   const [courseDict, setCourseDict] = useState({});
@@ -36,8 +25,8 @@ export default function StudyMaterials() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // 🚨 RESTORED 3-STEP VIEW LEVEL: main_courses -> sub_courses -> materials
-  const [viewLevel, setViewLevel] = useState(isSuperAdmin ? 'main_courses' : 'sub_courses');
+  // 🚨 3-STEP NAVIGATION STATE
+  const [viewLevel, setViewLevel] = useState('main_courses');
   const [selectedMainCourse, setSelectedMainCourse] = useState(null);
   const [selectedSubCourse, setSelectedSubCourse] = useState(null);
 
@@ -45,6 +34,7 @@ export default function StudyMaterials() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  
   const [formData, setFormData] = useState({
     id: '', course: '', module: '', title: '', fileType: 'pdf', link: '', status: 'Active'
   });
@@ -52,20 +42,26 @@ export default function StudyMaterials() {
   const fetchData = async () => {
     try {
       const [matRes, courseRes] = await Promise.all([
-        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials'),
-        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/courses')
+        axios.get('https://api-talenzo.ipcsglobal.info/api/lms/materials'),
+        axios.get('https://api-talenzo.ipcsglobal.info/api/admin/courses')
       ]);
-      if (matRes.data.success) setMaterials(matRes.data.materials || []);
+      
+      if (matRes.data.success) {
+        setMaterials(matRes.data.materials || []);
+      }
+      
       if (courseRes.data.success) {
         const cDict = courseRes.data.courses || {};
         setCourseDict(cDict);
         
-        // Exact Matching for RTH
-        if (!isSuperAdmin && tpoData) {
-          const stdAssigned = getStandardCourse(tpoData.assignedCourse);
-          const matchKey = Object.keys(cDict).find(k => getStandardCourse(k) === stdAssigned);
-          setSelectedMainCourse(matchKey || stdAssigned || 'Others');
+        // Auto-route RTHs directly to their assigned domain
+        if (!isSuperAdmin && tpoData?.assignedCourse && tpoData.assignedCourse !== 'All') {
+          const userCourse = tpoData.assignedCourse.toLowerCase();
+          const matchKey = Object.keys(cDict).find(k => k.toLowerCase().includes(userCourse) || userCourse.includes(k.toLowerCase()));
+          setSelectedMainCourse(matchKey || tpoData.assignedCourse);
           setViewLevel('sub_courses');
+        } else {
+          setViewLevel('main_courses');
         }
       }
     } catch (err) {
@@ -79,29 +75,30 @@ export default function StudyMaterials() {
     fetchData();
   }, []);
 
-  const MAIN_COURSES = ['Industrial Automation', 'BMS AND CCTV', 'Embedded and IoT', 'Digital Marketing', 'Information technology (IT)'];
+  const MAIN_COURSES = Object.keys(courseDict).length > 0 
+    ? Object.keys(courseDict) 
+    : ['Industrial Automation', 'BMS AND CCTV', 'Embedded and IoT', 'Digital Marketing', 'Information technology (IT)'];
 
-  // Smart Sub-course generator based on dict + existing materials
-  const getSubCourses = (mainCourse) => {
-    const stdMain = getStandardCourse(mainCourse);
-    const dictMatch = Object.keys(courseDict).find(k => getStandardCourse(k) === stdMain);
-    let subs = dictMatch ? courseDict[dictMatch] : [];
-    
-    // Also grab any courses currently in the materials sheet that match this domain
-    const materialSubs = materials.filter(m => getStandardCourse(m.course) === stdMain).map(m => m.course);
-    
-    return Array.from(new Set([...subs, ...materialSubs])).filter(Boolean).sort();
-  };
+  // Fetches subcourses mapped under the selected Domain from the Courses sheet
+  const subCoursesList = (selectedMainCourse && courseDict[selectedMainCourse]) ? courseDict[selectedMainCourse] : [];
+
+  // Filters Study Materials subsheet specifically for the clicked Subcourse
+  const filteredMaterials = materials.filter(m => {
+    const matchSubCourse = (m.course || '').trim() === (selectedSubCourse || '').trim();
+    const matchSearch = (m.title || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                        (m.module || '').toLowerCase().includes(searchQuery.toLowerCase());
+    return matchSubCourse && matchSearch;
+  });
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
   const openAddModal = () => {
-    const randomId = `MAT${Math.floor(1000 + Math.random() * 9000)}`;
+    const randomId = `MAT${Math.floor(10000 + Math.random() * 90000)}`;
     setFormData({
       id: randomId, 
-      course: selectedSubCourse || '', // Locks to the currently viewed subcourse
+      course: selectedSubCourse, // 🚨 Locks the assignment to the currently selected subcourse
       module: '', title: '', fileType: 'pdf', link: '', status: 'Active'
     });
     setIsEditMode(false);
@@ -126,22 +123,21 @@ export default function StudyMaterials() {
 
     try {
       const endpoint = isEditMode 
-        ? 'https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/update' 
-        : 'https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/add';
+        ? 'https://api-talenzo.ipcsglobal.info/api/lms/materials/update' 
+        : 'https://api-talenzo.ipcsglobal.info/api/lms/materials/add';
 
       const res = await axios.post(endpoint, formData);
       if (res.data.success) {
         setIsModalOpen(false);
         
-        // 🚨 INSTANT OPTIMISTIC UI UPDATE: Instantly updates screen without waiting for Cache
+        // 🚨 Optimistic UI Update: Instantly shows on screen before cache clears
         if (isEditMode) {
           setMaterials(prev => prev.map(m => m.id === formData.id ? formData : m));
         } else {
           setMaterials(prev => [formData, ...prev]);
         }
         
-        // Fetch background sync
-        fetchData(); 
+        fetchData(); // Trigger background sync
       }
     } catch (err) {
       setError(err.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'add'} material.`);
@@ -153,15 +149,15 @@ export default function StudyMaterials() {
   const handleDeleteMaterial = async (id) => {
     if (!window.confirm("Are you sure you want to permanently delete this study material?")) return;
     
-    // 🚨 INSTANT OPTIMISTIC UI UPDATE: Removes from screen instantly
+    // 🚨 Optimistic UI Update: Instantly removes from screen
     setMaterials(prev => prev.filter(m => m.id !== id));
 
     try {
-      await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/delete', { id });
-      fetchData(); // background sync
+      await axios.post('https://api-talenzo.ipcsglobal.info/api/lms/materials/delete', { id });
+      fetchData(); 
     } catch (err) { 
       alert("Failed to delete study material."); 
-      fetchData(); // Rollback if it fails
+      fetchData(); 
     }
   };
 
@@ -173,30 +169,20 @@ export default function StudyMaterials() {
     return <FileImage size={24} color="#10b981" weight="fill" />;
   };
 
-  // Filter materials for the selected SUB-COURSE
-  const filteredMaterials = materials.filter(m => {
-    const matchSubCourse = m.course === selectedSubCourse;
-    const matchSearch = (m.title || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                        (m.module || '').toLowerCase().includes(searchQuery.toLowerCase());
-    return matchSubCourse && matchSearch;
-  });
-
-  const subCoursesList = selectedMainCourse ? getSubCourses(selectedMainCourse) : [];
-
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        {/* --------------------------------------------------- */}
-        {/* STEP 1: DOMAINS VIEW (SUPER ADMIN ONLY)             */}
-        {/* --------------------------------------------------- */}
+        {/* ========================================================= */}
+        {/* STEP 1: DOMAINS (MAIN COURSES)                            */}
+        {/* ========================================================= */}
         {viewLevel === 'main_courses' && isSuperAdmin && (
           <>
             <div style={{ marginBottom: '30px' }}>
               <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <FolderOpen color="var(--accent-primary)" weight="fill" /> Study Materials Management
               </h1>
-              <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a primary domain to view associated programs.</p>
+              <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a domain fetched directly from the Courses sheet.</p>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px' }}>
@@ -220,9 +206,9 @@ export default function StudyMaterials() {
           </>
         )}
 
-        {/* --------------------------------------------------- */}
-        {/* STEP 2: SUB-COURSES VIEW (PROGRAMS)                 */}
-        {/* --------------------------------------------------- */}
+        {/* ========================================================= */}
+        {/* STEP 2: PROGRAMS (SUB-COURSES)                            */}
+        {/* ========================================================= */}
         {viewLevel === 'sub_courses' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '15px', flexWrap: 'wrap' }}>
@@ -232,8 +218,8 @@ export default function StudyMaterials() {
                 </button>
               )}
               <div>
-                <h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedMainCourse}</h1>
-                <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a specific program to manage its study materials.</p>
+                <h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedMainCourse} Programs</h1>
+                <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a specific program to view and manage its materials.</p>
               </div>
             </div>
 
@@ -241,15 +227,7 @@ export default function StudyMaterials() {
               <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
                 <Info size={40} color="var(--text-muted)" style={{ marginBottom: '10px' }} />
                 <h3 style={{ margin: '0 0 10px 0', color: '#fff' }}>No Programs Found</h3>
-                <p style={{ color: 'var(--text-muted)', margin: '0 0 20px 0' }}>No specific programs are mapped to this domain yet.</p>
-                
-                {canManage && (
-                  <div style={{ display: 'flex', justifyContent: 'center', gap: '10px' }}>
-                    <button className="btn-action" onClick={() => { setSelectedSubCourse('General'); setViewLevel('materials'); }} style={{ width: 'auto' }}>
-                      Create First Material
-                    </button>
-                  </div>
-                )}
+                <p style={{ color: 'var(--text-muted)', margin: 0 }}>There are currently no subcourses mapped to this domain in the Courses sheet.</p>
               </div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
@@ -270,9 +248,9 @@ export default function StudyMaterials() {
           </>
         )}
 
-        {/* --------------------------------------------------- */}
-        {/* STEP 3: MATERIALS LIST VIEW                         */}
-        {/* --------------------------------------------------- */}
+        {/* ========================================================= */}
+        {/* STEP 3: MATERIALS TABLE & ADD BUTTON                      */}
+        {/* ========================================================= */}
         {viewLevel === 'materials' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
@@ -367,9 +345,9 @@ export default function StudyMaterials() {
         )}
       </div>
 
-      {/* --------------------------------------------------- */}
-      {/* MODAL: ADD / EDIT MATERIAL                          */}
-      {/* --------------------------------------------------- */}
+      {/* ========================================================= */}
+      {/* ADD / EDIT MATERIAL MODAL                                 */}
+      {/* ========================================================= */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
@@ -385,16 +363,15 @@ export default function StudyMaterials() {
                 <div className="form-group"><label>Material ID</label><input type="text" name="id" value={formData.id} readOnly style={{ background: 'var(--bg-dark)', opacity: 0.7 }} /></div>
                 
                 <div className="form-group">
-                  <label>Assigned Program (Course Name)</label>
-                  {/* Lock the course to the one currently being viewed to prevent user errors */}
+                  <label>Assigned Program</label>
+                  {/* 🚨 LOCKED INPUT: Automatically bound to the exact subcourse clicked */}
                   <input 
                     type="text" 
                     name="course" 
                     value={formData.course} 
-                    onChange={handleInputChange} 
+                    readOnly 
                     className="sleek-input" 
-                    style={{ background: 'var(--bg-dark)' }} 
-                    required 
+                    style={{ background: 'var(--bg-dark)', opacity: 0.7, color: 'var(--text-muted)' }} 
                   />
                 </div>
               </div>
