@@ -166,6 +166,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   if (status === 'interview scheduled') {
     subject = `Congratulations, ${studentData.name} ! Your Interview Awaits! # ${studentData.company} [Ref: ${refId}]`;
     mailType = 'Interview Schedule';
+    
     html = buildBrandedEmail('INTERVIEW INVITATION', '#38bdf8', `
       <h2 style="color: #0f1523; margin-top: 0; font-size: 18px;">Congratulations, ${studentData.name}!</h2>
       <p>We are thrilled to inform you that you have been <b>selected for an interview</b> with one of our esteemed partner companies. This is a fantastic step towards achieving your career goals, and we are excited to see your hard work and dedication paying off.</p>
@@ -547,6 +548,7 @@ exports.getStudents = (req, res) => {
   res.json({ success: true, students: students.reverse(), stats });
 };
 
+// 🚨 FULLY RESTORED ORIGINAL WORKING SHEET SAVING WITH ADDED PERCENTAGE LOGIC
 exports.updateStudent = async (req, res) => {
   const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus, coursePercentage } = req.body;
   try {
@@ -560,13 +562,12 @@ exports.updateStudent = async (req, res) => {
       const sH = getFuzzyHeader(headers, 'studymaterialaccess'); if(sH) updateObj[sH] = studyAccess;
       const eH = getFuzzyHeader(headers, 'technialexam') || getFuzzyHeader(headers, 'technicalexam'); if(eH) updateObj[eH] = examAccess;
       
-      // 🚨 FIXED: Strict match to prevent grabbing the "Date" column
+      // Strict match to prevent grabbing the "Date" column
       const cPercH = headers.find(h => h.toLowerCase().replace(/\s/g, '') === 'coursepercentage');
       if (cPercH && coursePercentage !== undefined) {
         updateObj[cPercH] = coursePercentage;
       }
 
-      // 🚨 AUTOMATION: Ensure the status instantly flips to 'Completed Course' when it hits 100%
       const cStatusH = getFuzzyHeader(headers, 'status(currentlystudyingorcompletedcourse)') || getFuzzyHeader(headers, 'coursestatus') || getFuzzyHeader(headers, 'status(currentlystudying'); 
       if (cStatusH) {
         let oldStatus = rows[0].get ? (rows[0].get(cStatusH) || '').toString().toLowerCase() : (rows[0][cStatusH] || '').toString().toLowerCase();
@@ -615,6 +616,9 @@ exports.updateStudent = async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
+// ---------------------------------------------------------
+// APPLICATIONS (BULLETPROOF UPDATES)
+// ---------------------------------------------------------
 exports.getApplications = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, tpoName } = req.body;
   let appsList = []; 
@@ -671,6 +675,7 @@ exports.getApplications = (req, res) => {
   res.json({ success: true, applications: appsList });
 };
 
+// 🚨 FIX: Safe TPO Log Writing (Prevents crashing in Job Tracker)
 exports.updateApplication = async (req, res) => {
   const rowNumber = parseInt(req.body.rowNumber);
   const { status, remarks, datePlaced, packageLpa, joiningStatus, currentUserEmail, interviewDate, interviewTime, interviewVenue } = req.body;
@@ -681,7 +686,7 @@ exports.updateApplication = async (req, res) => {
       if (req.body.fullApp !== "[object Object]") {
         fullApp = JSON.parse(req.body.fullApp);
       }
-    } catch(e) { console.error("Parse payload skipped"); }
+    } catch(e) {}
   } else if (typeof req.body.fullApp === 'object' && req.body.fullApp !== null) {
     fullApp = req.body.fullApp;
   }
@@ -741,7 +746,6 @@ exports.updateApplication = async (req, res) => {
       rows[0].assign(updateObj); 
       await rows[0].save(); 
       
-      // 🚨 FIXED TPO LOG CRASH (No fuzzy match guesswork)
       try {
         const logSheet = doc.sheetsByTitle["TPO_Log"];
         if (logSheet) {
@@ -1037,15 +1041,15 @@ exports.addEvent = async (req, res) => {
         </div>
       `;
 
-      const primaryTo = tpoMail || bmMail || 'gifty@ipcsglobal.com';
-
-      sendMailAndLog({
-        from: `"IPCS Talentino" <${process.env.EMAIL_USER}>`,
-        to: primaryTo,
-        cc: ccList,
-        subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
-        html: html
-      }, { name: tpo, email: primaryTo, type: 'Event Notification' });
+      if (tpoMail) {
+        sendMailAndLog({
+          from: `"IPCS Talentino" <${process.env.EMAIL_USER}>`,
+          to: tpoMail,
+          cc: ccList,
+          subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
+          html: html
+        }, { name: tpo, email: tpoMail, type: 'Event Notification' });
+      }
     }
 
     refreshCache(); res.json({ success: true, message: "Event added successfully" });
@@ -1157,7 +1161,7 @@ exports.runDailyCron = async () => {
           <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
             <p style="margin: 0 0 5px 0;">If you require further shortlisting or have interview dates finalized, please reply directly to this email.</p>
             <p style="margin: 15px 0 2px 0;">Regards,</p>
-            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName || 'Placement Team'}</p>
+            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName}</p>
             <p style="margin: 0;">Placement Officer, IPCS Global</p>
           </div>
         </div>
@@ -1178,6 +1182,94 @@ exports.runDailyCron = async () => {
 // ---------------------------------------------------------
 // EVERYTHING ELSE (Untouched, safe to keep exactly as is)
 // ---------------------------------------------------------
+exports.getAdminUsers = async (req, res) => {
+  try {
+    await doc.loadInfo();
+    let allUsers = [];
+
+    const contactSheet = doc.sheetsByTitle["Contact"];
+    if (contactSheet) {
+      const cRows = await contactSheet.getRows();
+      const headers = contactSheet.headerValues;
+      const hName = getFuzzyHeader(headers, 'tponame'); const hMail = getFuzzyHeader(headers, 'mailid'); 
+      const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); 
+      const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); 
+      const hPhoto = getFuzzyHeader(headers, 'profilephoto'); 
+      const hTarget = getFuzzyHeader(headers, 'target') || getFuzzyHeader(headers, 'targetofthemonth');
+      const hEmpId = getFuzzyHeader(headers, 'empid');
+
+      cRows.forEach(r => {
+        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
+        if (email.trim() !== '' || name.trim() !== '') {
+          allUsers.push({ sheet: 'Contact', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: 'TPO', course: 'All Courses', access: 'View & Edit', profilePhoto: r.get(hPhoto) || '', target: r.get(hTarget) || '20', empId: r.get(hEmpId) || `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}` });
+        }
+      });
+    }
+
+    const userSheet = doc.sheetsByTitle["User"];
+    if (userSheet) {
+      const uRows = await userSheet.getRows();
+      const headers = userSheet.headerValues;
+      const hName = getFuzzyHeader(headers, 'username'); const hMail = getFuzzyHeader(headers, 'mailid'); 
+      const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); 
+      const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); 
+      const hRole = getFuzzyHeader(headers, 'role'); const hCourse = getFuzzyHeader(headers, 'course'); 
+      const hAccess = getFuzzyHeader(headers, 'access'); const hPhoto = getFuzzyHeader(headers, 'profilephoto');
+
+      uRows.forEach(r => {
+        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
+        if (email.trim() !== '' || name.trim() !== '') {
+          allUsers.push({ sheet: 'User', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: r.get(hRole) || 'Unassigned', course: r.get(hCourse) || 'All Courses', access: r.get(hAccess) || 'View Only', profilePhoto: r.get(hPhoto) || '', target: 'N/A', empId: `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}` });
+        }
+      });
+    }
+    res.json({ success: true, users: allUsers.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addAdminUser = async (req, res) => {
+  try {
+    const { userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
+    if (role === 'TPO') {
+      const s = doc.sheetsByTitle["Contact"]; const h = s.headerValues;
+      await s.addRow({ [getFuzzyHeader(h, 'tponame')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password });
+    } else {
+      const s = doc.sheetsByTitle["User"]; const h = s.headerValues;
+      await s.addRow({ [getFuzzyHeader(h, 'username')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password, [getFuzzyHeader(h, 'role')]: role, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'access')]: access });
+    }
+    refreshCache(); res.json({ success: true, message: "User added" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateAdminUser = async (req, res) => {
+  try {
+    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
+    const s = doc.sheetsByTitle[sheet];
+    const rows = await s.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (rows.length > 0) {
+      const h = s.headerValues;
+      if (sheet === 'Contact') {
+        rows[0].assign({ [getFuzzyHeader(h, 'tponame')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password });
+      } else {
+        rows[0].assign({ [getFuzzyHeader(h, 'username')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password, [getFuzzyHeader(h, 'role')]: role, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'access')]: access });
+      }
+      await rows[0].save(); refreshCache(); res.json({ success: true, message: "User updated" });
+    } else { res.status(404).json({ success: false, message: "User row not found" }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteAdminUser = async (req, res) => {
+  try {
+    const { sheet, rowNumber } = req.body;
+    const targetSheet = doc.sheetsByTitle[sheet];
+    if (!targetSheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await targetSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (rows.length > 0) {
+      await rows[0].delete(); refreshCache(); res.json({ success: true, message: "User deleted" });
+    } else { res.status(404).json({ success: false, message: "User not found" }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
 exports.getVacancies = (req, res) => {
   let vacs = getCache().vacancies.map((row, i) => {
     const rowData = row.toObject();
