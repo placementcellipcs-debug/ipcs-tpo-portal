@@ -1270,6 +1270,279 @@ exports.deleteAdminUser = async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
+exports.getVacancies = (req, res) => {
+  let vacs = getCache().vacancies.map((row, i) => {
+    const rowData = row.toObject();
+    const getVal = (possibleKeys) => { for(let key of Object.keys(rowData)) { if (possibleKeys.includes(key.trim())) return rowData[key]; } return ''; };
+    return {
+      id: getVal(['JOBID', 'Job ID', 'ID']) || `JOB-${i+1}`, company: getVal(['Company Name', 'Company']), position: getVal(['Position', 'Role']), location: getVal(['Opening AT ( Location )', 'Opening AT( Location )', 'Location']), state: getVal(['State']), mode: getVal(['Work Mode', 'Mode']), lastDate: getVal(['Last Date']), course: getVal(['Course']), qualification: getVal(['Qualification']), description: getVal(['Job Description']), experience: getVal(['Experience']), salary: getVal(['Salary']), gender: getVal(['Gender Preference']), status: getVal(['Status']) || 'Open'
+    };
+  });
+  res.json({ success: true, vacancies: vacs.reverse() });
+};
+
+exports.getIssues = (req, res) => {
+  const { assignedBranchesArray, role, assignedCourse } = req.body;
+  let issuesList = getCache().issues.filter(row => {
+    const rowBranch = row.get('Branch');
+    const studentName = row.get('Name') || '';
+    const studentData = getCache().students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
+    const sCourse = studentData ? studentData.get('Course') : 'Unknown';
+    return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
+  }).map(row => ({ rowNumber: row.rowNumber, name: row.get('Name') || 'Student', branch: row.get('Branch'), details: row.get('Issue Details') || '', status: row.get('Status') || 'Pending', remarks: row.get('Remarks') || '' }));
+  res.json({ success: true, issues: issuesList.reverse() });
+};
+
+exports.updateIssue = async (req, res) => {
+  const { rowNumber, status, remarks } = req.body;
+  try {
+    const issueSheet = doc.sheetsByTitle["Issues"];
+    const rows = await issueSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (rows.length > 0) { rows[0].assign({ 'Status': status, 'Remarks': remarks }); await rows[0].save(); refreshCache(); res.json({ success: true, message: "Issue updated!" }); } 
+    else { res.status(404).json({ success: false, message: "Row not found." }); }
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+exports.getReports = (req, res) => {
+  const { assignedBranchesArray, role, assignedCourse } = req.body;
+  let students = [], applications = [], issues = [], talentino = [], tpoLogs = [];
+  
+  getCache().students.forEach(row => {
+    if(!hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) return;
+    students.push({ name: row.get('Name'), roll: row.get('Roll Number'), branch: row.get('Branch'), course: row.get('Course'), status: row.get('Status'), placementStatus: row.get('Placement Stat') || row.get('Placement Status') });
+  });
+  
+  getCache().applications.forEach(row => {
+    if(!hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) return;
+    applications.push({ name: row.get('Student Name'), roll: row.get('Roll Number'), jobId: row.get('Job ID'), company: row.get('Company Name'), date: row.get('TimeStamp'), status: row.get('Status'), remarks: row.get('Remarks'), tpoName: row.get('Placement Officer'), branch: row.get('Branch'), course: row.get('Course') });
+  });
+  
+  getCache().issues.forEach(row => { 
+    if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) issues.push({ name: row.get('Name'), branch: row.get('Branch'), details: row.get('Issue Details'), status: row.get('Status'), remarks: row.get('Remarks') }); 
+  });
+  
+  getCache().tAtt.forEach(row => { 
+    if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) talentino.push({ name: row.get('Name'), branch: row.get('Branch'), date: row.get('Check-in') || row.get('Date'), rating: row.get('Rating'), notes: row.get('Notes') }); 
+  });
+  
+  let vacancies = getCache().vacancies.map(row => ({ id: row.get('Job ID') || row.get('ID') || '', company: row.get('Company') || '', location: row.get('Location') || '', mode: row.get('Mode') || '', status: row.get('Status') || 'Open', course: row.get('Course') || '', date: row.get('Last Date') || row.get('Date') || '' }));
+  let events = getCache().events.map(row => ({ date: row.get('Date') || '' }));
+
+  if (getCache().tpoLogs) {
+    getCache().tpoLogs.forEach(row => {
+      tpoLogs.push(row.toObject());
+    });
+  }
+
+  res.json({ success: true, students, applications, issues, talentino, vacancies, events, tpoLogs });
+};
+
+exports.getTalentino = (req, res) => {
+  const { assignedBranchesArray, role, assignedCourse } = req.body;
+  let records = getCache().tAtt.filter(row => {
+    const rowBranch = row.get('Branch');
+    const studentName = row.get('Name') || row.get('Student') || '';
+    const studentData = getCache().students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
+    const sCourse = studentData ? studentData.get('Course') : 'Unknown';
+    return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
+  }).map(row => {
+    const rowData = row.toObject();
+    const getVal = (searchStrings) => { for (let key of Object.keys(rowData)) { for (let str of searchStrings) { if (key.toLowerCase().includes(str.toLowerCase())) return rowData[key]; } } return ''; };
+    return { name: getVal(['name', 'student']), branch: getVal(['branch']), date: getVal(['present check-ins date', 'timestamp', 'date', 'time']), rating: getVal(['rating']), notes: getVal(['notes', 'remark']) };
+  });
+  let dates = new Set();
+  records.forEach(r => { const cleanDate = (r.date || '').split(' ')[0].trim(); if (cleanDate && cleanDate !== 'N/A') dates.add(cleanDate); });
+  res.json({ success: true, dates: Array.from(dates).sort().reverse(), records: records.reverse() });
+};
+
+exports.getClients = (req, res) => {
+  const cleanTpoName = (req.body.tpoName || '').toString().toLowerCase().trim();
+  let clients = [];
+  getCache().clients.forEach(row => {
+    const rowData = row.toObject();
+    const officer = (rowData['Placement Officer'] || '').toString().toLowerCase().trim();
+    if (cleanTpoName === '' || officer === '' || officer.includes(cleanTpoName) || cleanTpoName.includes(officer)) {
+      clients.push({ rowNumber: row.rowNumber, companyName: rowData['Company Name'] || 'Unknown', website: rowData['Company Website'] || '', location: rowData['Company Location'] || '', contact: rowData['Company Contact'] || '', email: rowData['Company Mail ID'] || '', contactPerson: rowData['Company Contact Person'] || '', logo: rowData['Company Logo'] || '', mailStatus: rowData['Mail Status'] || 'Pending', documentStatus: rowData['Document Status'] || 'Pending', mouLink: rowData['MOU'] || '' });
+    }
+  });
+  res.json({ success: true, clients: clients.reverse() });
+};
+
+exports.getClientById = (req, res) => {
+  const targetRow = parseInt(req.params.id);
+  const row = getCache().clients.find(r => r.rowNumber === targetRow);
+  if (!row) return res.status(404).json({ success: false, message: "Client not found" });
+  const rowData = row.toObject();
+  const getHeader = (str) => Object.keys(rowData).find(k => k.toLowerCase().includes(str.toLowerCase()));
+  res.json({ success: true, client: { rowNumber: row.rowNumber, companyName: rowData[getHeader('company name') || getHeader('company')] || 'Unknown', email: rowData[getHeader('mail id') || getHeader('email')] || '', contactPerson: rowData[getHeader('contact person') || getHeader('person')] || '', contact: rowData[getHeader('company contact') || getHeader('contact')] || '', logo: rowData[getHeader('logo')] || '', documentStatus: rowData[getHeader('document status') || getHeader('doc status')] || 'Pending' }});
+};
+
+exports.updateClient = async (req, res) => {
+  const { rowNumber, email, phone, location, contactPerson } = req.body;
+  const existingLogo = req.body.logo || '';
+  try {
+    let logoLink = existingLogo;
+    if (req.file) { logoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); }
+    const sheet = doc.sheetsByTitle["Clients"]; 
+    const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
+    if (rows.length > 0) {
+      const headers = sheet.headerValues;
+      const getHeader = (str) => headers.find(h => h.toLowerCase() === str.toLowerCase() || h.toLowerCase().includes(str.toLowerCase()));
+      const updateObj = {};
+      if(getHeader('mail id') || getHeader('email')) updateObj[getHeader('mail id') || getHeader('email')] = email;
+      if(headers.find(h => h.toLowerCase() === 'company contact' || h.toLowerCase() === 'contact')) updateObj[headers.find(h => h.toLowerCase() === 'company contact' || h.toLowerCase() === 'contact')] = phone;
+      if(getHeader('location')) updateObj[getHeader('location')] = location;
+      if(getHeader('contact person') || getHeader('person')) updateObj[getHeader('contact person') || getHeader('person')] = contactPerson;
+      if(getHeader('logo')) updateObj[getHeader('logo')] = logoLink;
+      rows[0].assign(updateObj); await rows[0].save(); refreshCache(); res.json({ success: true, logoLink });
+    } else { res.status(404).json({ success: false, message: "Row not found." }); }
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+exports.requestMou = async (req, res) => {
+  const { rowNumber, companyEmail, companyName } = req.body;
+  try {
+    const signingLink = `https://ipcs-tpo-portal.vercel.app/sign-certificate/${rowNumber}`;
+    const refId = Math.floor(10000 + Math.random() * 90000); 
+    const mailOptions = {
+      from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`, to: companyEmail,
+      subject: `Action Required:  IPCS Global Hiring Partnership Confirmation With ${companyName} [Ref: ${refId}]`, 
+      html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;"><h2 style="color: #ffffff; margin: 0;">IPCS HIRING PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${companyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Confirmation of Hiring Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review & Sign</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, copy and paste this link into your browser: <br/>${signingLink}</p></div></div>`
+    };
+    await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Request' }); 
+    const sheet = doc.sheetsByTitle["Clients"]; 
+    const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
+    if(rows.length > 0) {
+      const statusCol = sheet.headerValues.find(h => h.toLowerCase().includes('mail status'));
+      if (statusCol) { rows[0].assign({ [statusCol]: 'Request Sent' }); await rows[0].save(); }
+    }
+    refreshCache(); res.json({ success: true });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+exports.submitMou = async (req, res) => {
+  const { rowNumber, companyName, companyEmail, tpoEmail } = req.body;
+  try {
+    const certFile = req.files.find(f => f.fieldname === 'certificatePdf');
+    const logoFile = req.files.find(f => f.fieldname === 'logoFile');
+    if (!certFile) return res.status(400).json({ success: false, message: "PDF missing" });
+
+    const pdfLink = await uploadToDrive(certFile, FOLDER_MOU_CERTIFICATES);
+    let logoLink = null;
+    if (logoFile) { logoLink = await uploadToDrive(logoFile, FOLDER_CLIENT_LOGOS); }
+
+    const sheet = doc.sheetsByTitle["Clients"]; 
+    const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
+    if (rows.length > 0) {
+      const headers = sheet.headerValues;
+      const getHeader = (str) => headers.find(h => h.toLowerCase() === str.toLowerCase() || h.toLowerCase().includes(str.toLowerCase()));
+      const updateObj = {};
+      if(getHeader('document status') || getHeader('doc status')) updateObj[getHeader('document status') || getHeader('doc status')] = 'Completed';
+      if(getHeader('mou') || getHeader('mou link')) updateObj[getHeader('mou') || getHeader('mou link')] = pdfLink;
+      if(logoLink && getHeader('logo')) updateObj[getHeader('logo')] = logoLink;
+      rows[0].assign(updateObj); await rows[0].save();
+    }
+
+    const zonalManagerEmail = 'giftyipcsglobal@gmail.com'; 
+    const refId = Math.floor(10000 + Math.random() * 90000); 
+    const mailOptions = {
+      from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`,
+      to: [companyEmail, zonalManagerEmail, tpoEmail].filter(Boolean).join(','),
+      subject: `MOU Completed: Hiring Partnership Confirmation – ${companyName} [Ref: ${refId}]`, 
+      html: `
+        <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+          <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #10b981;">
+            <h2 style="color: #ffffff; margin: 0; font-size: 22px; letter-spacing: 1px;">PARTNERSHIP CONFIRMED</h2>
+          </div>
+          <div style="padding: 30px; background-color: #ffffff;">
+            <p style="font-size: 16px; margin-top: 0;">Dear <b>${companyName}</b> Team,</p>
+            <p style="font-size: 15px; line-height: 1.6; color: #475569;">The Hiring Partnership Confirmation has been digitally signed and successfully processed. We are incredibly excited to officially partner with you!</p>
+            <p style="font-size: 15px; line-height: 1.6; color: #475569;">You can securely view and download your official, countersigned partnership agreement below:</p>
+            <div style="text-align: center; margin: 35px 0;">
+              <a href="${pdfLink}" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">View Official Agreement</a>
+            </div>
+            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
+              <p style="margin: 0 0 5px 0;">Regards,</p>
+              <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">IPCS Placement Portal</p>
+            </div>
+          </div>
+        </div>
+      `,
+      attachments: [{ filename: `${companyName.replace(/\s+/g, '_')}_Agreement.pdf`, content: certFile.buffer }]
+    };
+    await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Completion' }); 
+    refreshCache(); res.json({ success: true, pdfLink });
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+exports.updatePassword = async (req, res) => {
+  const { email, loginId, newPassword } = req.body;
+  try {
+    const cache = getCache();
+    let targetRow = null;
+    const identifiers = [(email || '').toString().trim().toLowerCase(), (loginId || '').toString().trim().toLowerCase()].filter(Boolean);
+
+    if (cache.contacts) {
+        targetRow = cache.contacts.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
+    }
+    if (!targetRow && cache.users) {
+        targetRow = cache.users.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
+    }
+
+    if (targetRow) {
+      const headers = targetRow._worksheet.headerValues;
+      const pHead = getFuzzyHeader(headers, 'password');
+      targetRow.assign({ [pHead]: newPassword });
+      await targetRow.save();
+      refreshCache();
+      res.json({ success: true, message: "Password updated successfully" });
+    } else {
+      res.status(404).json({ success: false, message: "User account not found in database." });
+    }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updatePhoto = async (req, res) => {
+  const { email, loginId } = req.body;
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: "No file provided." });
+    const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
+    const cache = getCache();
+    let targetRow = null;
+    const identifiers = [(email || '').toString().trim().toLowerCase(), (loginId || '').toString().trim().toLowerCase()].filter(Boolean);
+
+    if (cache.contacts) {
+        targetRow = cache.contacts.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
+    }
+    if (!targetRow && cache.users) {
+        targetRow = cache.users.find(row => {
+            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
+            return identifiers.some(id => rd.includes(id));
+        });
+    }
+
+    if (targetRow) {
+      const headers = targetRow._worksheet.headerValues;
+      const photoHeader = headers.find(h => h.toLowerCase().includes('photo') || h.toLowerCase().includes('profile')) || 'Profile Photo';
+      targetRow.assign({ [photoHeader]: photoLink });
+      await targetRow.save(); 
+      refreshCache(); 
+      res.json({ success: true, photoUrl: photoLink });
+    } else { 
+      res.status(404).json({ success: false, message: "User not found." }); 
+    }
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
 // =========================================================
 // 🚨 RESTORED LMS, EXAMS, COURSES, & BRANCHES 
 // =========================================================
@@ -1601,606 +1874,3 @@ exports.deleteBranch = async (req, res) => {
     else { res.status(404).json({ success: false, message: "Branch not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
-
-exports.getVacancies = (req, res) => {
-  let vacs = getCache().vacancies.map((row, i) => {
-    const rowData = row.toObject();
-    const getVal = (possibleKeys) => { for(let key of Object.keys(rowData)) { if (possibleKeys.includes(key.trim())) return rowData[key]; } return ''; };
-    return {
-      id: getVal(['JOBID', 'Job ID', 'ID']) || `JOB-${i+1}`, company: getVal(['Company Name', 'Company']), position: getVal(['Position', 'Role']), location: getVal(['Opening AT ( Location )', 'Opening AT( Location )', 'Location']), state: getVal(['State']), mode: getVal(['Work Mode', 'Mode']), lastDate: getVal(['Last Date']), course: getVal(['Course']), qualification: getVal(['Qualification']), description: getVal(['Job Description']), experience: getVal(['Experience']), salary: getVal(['Salary']), gender: getVal(['Gender Preference']), status: getVal(['Status']) || 'Open'
-    };
-  });
-  res.json({ success: true, vacancies: vacs.reverse() });
-};
-
-exports.getIssues = (req, res) => {
-  const { assignedBranchesArray, role, assignedCourse } = req.body;
-  let issuesList = getCache().issues.filter(row => {
-    const rowBranch = row.get('Branch');
-    const studentName = row.get('Name') || '';
-    const studentData = getCache().students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
-    const sCourse = studentData ? studentData.get('Course') : 'Unknown';
-    return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
-  }).map(row => ({ rowNumber: row.rowNumber, name: row.get('Name') || 'Student', branch: row.get('Branch'), details: row.get('Issue Details') || '', status: row.get('Status') || 'Pending', remarks: row.get('Remarks') || '' }));
-  res.json({ success: true, issues: issuesList.reverse() });
-};
-
-exports.updateIssue = async (req, res) => {
-  const { rowNumber, status, remarks } = req.body;
-  try {
-    const issueSheet = doc.sheetsByTitle["Issues"];
-    const rows = await issueSheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    if (rows.length > 0) { rows[0].assign({ 'Status': status, 'Remarks': remarks }); await rows[0].save(); refreshCache(); res.json({ success: true, message: "Issue updated!" }); } 
-    else { res.status(404).json({ success: false, message: "Row not found." }); }
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
-};
-
-exports.getReports = (req, res) => {
-  const { assignedBranchesArray, role, assignedCourse } = req.body;
-  let students = [], applications = [], issues = [], talentino = [], tpoLogs = [];
-  
-  getCache().students.forEach(row => {
-    if(!hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) return;
-    students.push({ name: row.get('Name'), roll: row.get('Roll Number'), branch: row.get('Branch'), course: row.get('Course'), status: row.get('Status'), placementStatus: row.get('Placement Stat') || row.get('Placement Status') });
-  });
-  
-  getCache().applications.forEach(row => {
-    if(!hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) return;
-    applications.push({ name: row.get('Student Name'), roll: row.get('Roll Number'), jobId: row.get('Job ID'), company: row.get('Company Name'), date: row.get('TimeStamp'), status: row.get('Status'), remarks: row.get('Remarks'), tpoName: row.get('Placement Officer'), branch: row.get('Branch'), course: row.get('Course') });
-  });
-  
-  getCache().issues.forEach(row => { 
-    if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) issues.push({ name: row.get('Name'), branch: row.get('Branch'), details: row.get('Issue Details'), status: row.get('Status'), remarks: row.get('Remarks') }); 
-  });
-  
-  getCache().tAtt.forEach(row => { 
-    if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) talentino.push({ name: row.get('Name'), branch: row.get('Branch'), date: row.get('Check-in') || row.get('Date'), rating: row.get('Rating'), notes: row.get('Notes') }); 
-  });
-  
-  let vacancies = getCache().vacancies.map(row => ({ id: row.get('Job ID') || row.get('ID') || '', company: row.get('Company') || '', location: row.get('Location') || '', mode: row.get('Mode') || '', status: row.get('Status') || 'Open', course: row.get('Course') || '', date: row.get('Last Date') || row.get('Date') || '' }));
-  let events = getCache().events.map(row => ({ date: row.get('Date') || '' }));
-
-  if (getCache().tpoLogs) {
-    getCache().tpoLogs.forEach(row => {
-      tpoLogs.push(row.toObject());
-    });
-  }
-
-  res.json({ success: true, students, applications, issues, talentino, vacancies, events, tpoLogs });
-};
-
-exports.getTalentino = (req, res) => {
-  const { assignedBranchesArray, role, assignedCourse } = req.body;
-  let records = getCache().tAtt.filter(row => {
-    const rowBranch = row.get('Branch');
-    const studentName = row.get('Name') || row.get('Student') || '';
-    const studentData = getCache().students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
-    const sCourse = studentData ? studentData.get('Course') : 'Unknown';
-    return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
-  }).map(row => {
-    const rowData = row.toObject();
-    const getVal = (searchStrings) => { for (let key of Object.keys(rowData)) { for (let str of searchStrings) { if (key.toLowerCase().includes(str.toLowerCase())) return rowData[key]; } } return ''; };
-    return { name: getVal(['name', 'student']), branch: getVal(['branch']), date: getVal(['present check-ins date', 'timestamp', 'date', 'time']), rating: getVal(['rating']), notes: getVal(['notes', 'remark']) };
-  });
-  let dates = new Set();
-  records.forEach(r => { const cleanDate = (r.date || '').split(' ')[0].trim(); if (cleanDate && cleanDate !== 'N/A') dates.add(cleanDate); });
-  res.json({ success: true, dates: Array.from(dates).sort().reverse(), records: records.reverse() });
-};
-
-exports.getClients = (req, res) => {
-  const cleanTpoName = (req.body.tpoName || '').toString().toLowerCase().trim();
-  let clients = [];
-  getCache().clients.forEach(row => {
-    const rowData = row.toObject();
-    const officer = (rowData['Placement Officer'] || '').toString().toLowerCase().trim();
-    if (cleanTpoName === '' || officer === '' || officer.includes(cleanTpoName) || cleanTpoName.includes(officer)) {
-      clients.push({ rowNumber: row.rowNumber, companyName: rowData['Company Name'] || 'Unknown', website: rowData['Company Website'] || '', location: rowData['Company Location'] || '', contact: rowData['Company Contact'] || '', email: rowData['Company Mail ID'] || '', contactPerson: rowData['Company Contact Person'] || '', logo: rowData['Company Logo'] || '', mailStatus: rowData['Mail Status'] || 'Pending', documentStatus: rowData['Document Status'] || 'Pending', mouLink: rowData['MOU'] || '' });
-    }
-  });
-  res.json({ success: true, clients: clients.reverse() });
-};
-
-exports.getClientById = (req, res) => {
-  const targetRow = parseInt(req.params.id);
-  const row = getCache().clients.find(r => r.rowNumber === targetRow);
-  if (!row) return res.status(404).json({ success: false, message: "Client not found" });
-  const rowData = row.toObject();
-  const getHeader = (str) => Object.keys(rowData).find(k => k.toLowerCase().includes(str.toLowerCase()));
-  res.json({ success: true, client: { rowNumber: row.rowNumber, companyName: rowData[getHeader('company name') || getHeader('company')] || 'Unknown', email: rowData[getHeader('mail id') || getHeader('email')] || '', contactPerson: rowData[getHeader('contact person') || getHeader('person')] || '', contact: rowData[getHeader('company contact') || getHeader('contact')] || '', logo: rowData[getHeader('logo')] || '', documentStatus: rowData[getHeader('document status') || getHeader('doc status')] || 'Pending' }});
-};
-
-exports.updateClient = async (req, res) => {
-  const { rowNumber, email, phone, location, contactPerson } = req.body;
-  const existingLogo = req.body.logo || '';
-  try {
-    let logoLink = existingLogo;
-    if (req.file) { logoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); }
-    const sheet = doc.sheetsByTitle["Clients"]; 
-    const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
-    if (rows.length > 0) {
-      const headers = sheet.headerValues;
-      const getHeader = (str) => headers.find(h => h.toLowerCase() === str.toLowerCase() || h.toLowerCase().includes(str.toLowerCase()));
-      const updateObj = {};
-      if(getHeader('mail id') || getHeader('email')) updateObj[getHeader('mail id') || getHeader('email')] = email;
-      if(headers.find(h => h.toLowerCase() === 'company contact' || h.toLowerCase() === 'contact')) updateObj[headers.find(h => h.toLowerCase() === 'company contact' || h.toLowerCase() === 'contact')] = phone;
-      if(getHeader('location')) updateObj[getHeader('location')] = location;
-      if(getHeader('contact person') || getHeader('person')) updateObj[getHeader('contact person') || getHeader('person')] = contactPerson;
-      if(getHeader('logo')) updateObj[getHeader('logo')] = logoLink;
-      rows[0].assign(updateObj); await rows[0].save(); refreshCache(); res.json({ success: true, logoLink });
-    } else { res.status(404).json({ success: false, message: "Row not found." }); }
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
-};
-
-exports.requestMou = async (req, res) => {
-  const { rowNumber, companyEmail, companyName } = req.body;
-  try {
-    const signingLink = `https://ipcs-tpo-portal.vercel.app/sign-certificate/${rowNumber}`;
-    const refId = Math.floor(10000 + Math.random() * 90000); 
-    const mailOptions = {
-      from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`, to: companyEmail,
-      subject: `Action Required:  IPCS Global Hiring Partnership Confirmation With ${companyName} [Ref: ${refId}]`, 
-      html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;"><h2 style="color: #ffffff; margin: 0;">IPCS HIRING PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${companyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Confirmation of Hiring Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review & Sign</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, copy and paste this link into your browser: <br/>${signingLink}</p></div></div>`
-    };
-    await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Request' }); 
-    const sheet = doc.sheetsByTitle["Clients"]; 
-    const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
-    if(rows.length > 0) {
-      const statusCol = sheet.headerValues.find(h => h.toLowerCase().includes('mail status'));
-      if (statusCol) { rows[0].assign({ [statusCol]: 'Request Sent' }); await rows[0].save(); }
-    }
-    refreshCache(); res.json({ success: true });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
-};
-
-exports.submitMou = async (req, res) => {
-  const { rowNumber, companyName, companyEmail, tpoEmail } = req.body;
-  try {
-    const certFile = req.files.find(f => f.fieldname === 'certificatePdf');
-    const logoFile = req.files.find(f => f.fieldname === 'logoFile');
-    if (!certFile) return res.status(400).json({ success: false, message: "PDF missing" });
-
-    const pdfLink = await uploadToDrive(certFile, FOLDER_MOU_CERTIFICATES);
-    let logoLink = null;
-    if (logoFile) { logoLink = await uploadToDrive(logoFile, FOLDER_CLIENT_LOGOS); }
-
-    const sheet = doc.sheetsByTitle["Clients"]; 
-    const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
-    if (rows.length > 0) {
-      const headers = sheet.headerValues;
-      const getHeader = (str) => headers.find(h => h.toLowerCase() === str.toLowerCase() || h.toLowerCase().includes(str.toLowerCase()));
-      const updateObj = {};
-      if(getHeader('document status') || getHeader('doc status')) updateObj[getHeader('document status') || getHeader('doc status')] = 'Completed';
-      if(getHeader('mou') || getHeader('mou link')) updateObj[getHeader('mou') || getHeader('mou link')] = pdfLink;
-      if(logoLink && getHeader('logo')) updateObj[getHeader('logo')] = logoLink;
-      rows[0].assign(updateObj); await rows[0].save();
-    }
-
-    const zonalManagerEmail = 'giftyipcsglobal@gmail.com'; 
-    const refId = Math.floor(10000 + Math.random() * 90000); 
-    const mailOptions = {
-      from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`,
-      to: [companyEmail, zonalManagerEmail, tpoEmail].filter(Boolean).join(','),
-      subject: `MOU Completed: Hiring Partnership Confirmation – ${companyName} [Ref: ${refId}]`, 
-      html: `
-        <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-          <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #10b981;">
-            <h2 style="color: #ffffff; margin: 0; font-size: 22px; letter-spacing: 1px;">PARTNERSHIP CONFIRMED</h2>
-          </div>
-          <div style="padding: 30px; background-color: #ffffff;">
-            <p style="font-size: 16px; margin-top: 0;">Dear <b>${companyName}</b> Team,</p>
-            <p style="font-size: 15px; line-height: 1.6; color: #475569;">The Hiring Partnership Confirmation has been digitally signed and successfully processed. We are incredibly excited to officially partner with you!</p>
-            <p style="font-size: 15px; line-height: 1.6; color: #475569;">You can securely view and download your official, countersigned partnership agreement below:</p>
-            <div style="text-align: center; margin: 35px 0;">
-              <a href="${pdfLink}" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">View Official Agreement</a>
-            </div>
-            <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
-              <p style="margin: 0 0 5px 0;">Regards,</p>
-              <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">IPCS Placement Portal</p>
-            </div>
-          </div>
-        </div>
-      `,
-      attachments: [{ filename: `${companyName.replace(/\s+/g, '_')}_Agreement.pdf`, content: certFile.buffer }]
-    };
-    await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Completion' }); 
-    refreshCache(); res.json({ success: true, pdfLink });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
-};
-
-exports.updatePassword = async (req, res) => {
-  const { email, loginId, newPassword } = req.body;
-  try {
-    const cache = getCache();
-    let targetRow = null;
-    const identifiers = [(email || '').toString().trim().toLowerCase(), (loginId || '').toString().trim().toLowerCase()].filter(Boolean);
-
-    if (cache.contacts) {
-        targetRow = cache.contacts.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
-    if (!targetRow && cache.users) {
-        targetRow = cache.users.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
-
-    if (targetRow) {
-      const headers = targetRow._worksheet.headerValues;
-      const pHead = getFuzzyHeader(headers, 'password');
-      targetRow.assign({ [pHead]: newPassword });
-      await targetRow.save();
-      refreshCache();
-      res.json({ success: true, message: "Password updated successfully" });
-    } else {
-      res.status(404).json({ success: false, message: "User account not found in database." });
-    }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.updatePhoto = async (req, res) => {
-  const { email, loginId } = req.body;
-  try {
-    if (!req.file) return res.status(400).json({ success: false, message: "No file provided." });
-    const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
-    const cache = getCache();
-    let targetRow = null;
-    const identifiers = [(email || '').toString().trim().toLowerCase(), (loginId || '').toString().trim().toLowerCase()].filter(Boolean);
-
-    if (cache.contacts) {
-        targetRow = cache.contacts.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
-    if (!targetRow && cache.users) {
-        targetRow = cache.users.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
-
-    if (targetRow) {
-      const headers = targetRow._worksheet.headerValues;
-      const photoHeader = headers.find(h => h.toLowerCase().includes('photo') || h.toLowerCase().includes('profile')) || 'Profile Photo';
-      targetRow.assign({ [photoHeader]: photoLink });
-      await targetRow.save(); 
-      refreshCache(); 
-      res.json({ success: true, photoUrl: photoLink });
-    } else { 
-      res.status(404).json({ success: false, message: "User not found." }); 
-    }
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
-};
-
-exports.getMaterials = (req, res) => {
-  try {
-    let materials = getCache().materials.map(row => {
-      const rd = row.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return { id: rd[getH('materialid')] || '', course: rd[getH('course')] || '', module: rd[getH('module/topic')] || rd[getH('module')] || rd[getH('topic')] || '', title: rd[getH('title')] || '', fileType: rd[getH('filetype')] || '', link: rd[getH('onedrivelink')] || rd[getH('link')] || '', status: rd[getH('status')] || 'Active' };
-    });
-    res.json({ success: true, materials: materials.reverse() });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.addMaterial = async (req, res) => {
-  try {
-    const { id, course, module, title, fileType, link, status } = req.body;
-    const sheet = doc.sheetsByTitle["Study_Materials"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const h = sheet.headerValues;
-    await sheet.addRow({ [getFuzzyHeader(h, 'materialid')]: id, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'module/topic')]: module, [getFuzzyHeader(h, 'title')]: title, [getFuzzyHeader(h, 'filetype')]: fileType, [getFuzzyHeader(h, 'onedrivelink')]: link, [getFuzzyHeader(h, 'status')]: status || 'Active' });
-    refreshCache(); res.json({ success: true, message: "Material added successfully!" });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.updateMaterial = async (req, res) => {
-  try {
-    const { id, course, module, title, fileType, link, status } = req.body;
-    const sheet = doc.sheetsByTitle["Study_Materials"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => (r.get('Material ID') || r.get('materialid') || '').toString().trim() === id.toString().trim());
-    if (rowToUpdate) {
-      const h = sheet.headerValues;
-      rowToUpdate.assign({ [getFuzzyHeader(h, 'materialid')]: id, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'module/topic')]: module, [getFuzzyHeader(h, 'title')]: title, [getFuzzyHeader(h, 'filetype')]: fileType, [getFuzzyHeader(h, 'onedrivelink')]: link, [getFuzzyHeader(h, 'status')]: status || 'Active' });
-      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Material updated successfully!" });
-    } else { res.status(404).json({ success: false, message: "Material ID not found." }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.deleteMaterial = async (req, res) => {
-  try {
-    const { id } = req.body;
-    const sheet = doc.sheetsByTitle["Study_Materials"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const rows = await sheet.getRows();
-    const rowToDelete = rows.find(r => (r.get('Material ID') || r.get('materialid') || '').toString().trim() === id.toString().trim());
-    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Material deleted successfully!" }); } 
-    else { res.status(404).json({ success: false, message: "Material ID not found." }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.getQuestions = (req, res) => {
-  try {
-    let questions = getCache().techQuestions.map(row => {
-      const rd = row.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return { id: rd[getH('questionid')] || '', course: rd[getH('course')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active' };
-    });
-    res.json({ success: true, questions: questions.reverse() });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.addQuestion = async (req, res) => {
-  try {
-    const { id, course, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
-    const sheet = doc.sheetsByTitle["Tech_Questions"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    await sheet.addRow({ 'Question ID': id, 'Course': course, 'Question': question, 'Option A': optA, 'Option B': optB, 'Option C': optC, 'Option D': optD, 'Correct Option': correct, 'Explanation': explanation, 'Status': status || 'Active' });
-    refreshCache(); res.json({ success: true, message: "Question added successfully!" });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.updateQuestion = async (req, res) => {
-  try {
-    const { id, course, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
-    const sheet = doc.sheetsByTitle["Tech_Questions"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => (r.get('Question ID') || '').toString().trim() === id.toString().trim());
-    if (rowToUpdate) {
-      rowToUpdate.assign({ 'Question ID': id, 'Course': course, 'Question': question, 'Option A': optA, 'Option B': optB, 'Option C': optC, 'Option D': optD, 'Correct Option': correct, 'Explanation': explanation, 'Status': status || 'Active' });
-      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Technical question updated successfully!" });
-    } else { res.status(404).json({ success: false, message: "Question ID not found." }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.deleteQuestion = async (req, res) => {
-  try {
-    const { id } = req.body;
-    const sheet = doc.sheetsByTitle["Tech_Questions"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const rows = await sheet.getRows();
-    const rowToDelete = rows.find(r => r.get('Question ID') === id);
-    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Question deleted" }); } 
-    else { res.status(404).json({ success: false, message: "Question not found" }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.getResults = (req, res) => {
-  try {
-    let results = getCache().techResults.map(row => {
-      const rd = row.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', course: rd[getH('course')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '' };
-    });
-    res.json({ success: true, results: results.reverse() });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.getCourses = (req, res) => {
-  try { res.json({ success: true, courses: getCache().coursesDict }); } 
-  catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.addCourse = async (req, res) => {
-  try {
-    const { mainCourse, subCourse } = req.body;
-    const sheet = doc.sheetsByTitle["Courses"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    await sheet.addRow([mainCourse, subCourse]);
-    refreshCache(); res.json({ success: true, message: "Course saved" });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.deleteCourse = async (req, res) => {
-  try {
-    const { subCourse } = req.body;
-    const sheet = doc.sheetsByTitle["Courses"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const rows = await sheet.getRows();
-    const rowToDelete = rows.find(r => r._rawData[1] && r._rawData[1].trim() === subCourse.trim());
-    if (rowToDelete) {
-      await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Course deleted" });
-    } else { res.status(404).json({ success: false, message: "Course not found" }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.getAptQuestions = (req, res) => {
-  try {
-    let questions = getCache().aptQuestions.map(row => {
-      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return { id: rd[getH('qid')] || '', category: rd[getH('category')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active', level: rd[getH('level')] || 'Easy' };
-    });
-    res.json({ success: true, questions: questions.reverse() });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.getAptResults = (req, res) => {
-  try {
-    let results = getCache().aptResults.map(row => {
-      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('email')] || rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', score: rd[getH('score')] || '', total: rd[getH('total')] || rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '', categoryBreakdown: rd[getH('categorybreakdown')] || '' };
-    });
-    res.json({ success: true, results: results.reverse() });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.addAptQuestion = async (req, res) => {
-  try {
-    const { id, category, question, optA, optB, optC, optD, correct, explanation, status, level } = req.body;
-    const sheet = doc.sheetsByTitle["Aptitude_Questions"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const h = sheet.headerValues;
-    await sheet.addRow({ [getFuzzyHeader(h, 'qid')]: id, [getFuzzyHeader(h, 'category')]: category, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA, [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct, [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active', [getFuzzyHeader(h, 'level')]: level || 'Medium' });
-    refreshCache(); res.json({ success: true, message: "Question added" });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.updateAptQuestion = async (req, res) => {
-  try {
-    const { id, category, question, optA, optB, optC, optD, correct, explanation, status, level } = req.body;
-    const sheet = doc.sheetsByTitle["Aptitude_Questions"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => (r.get('QID') || r.get('qid') || '').toString().trim() === id.toString().trim());
-    if (rowToUpdate) {
-      const h = sheet.headerValues;
-      rowToUpdate.assign({ [getFuzzyHeader(h, 'qid')]: id, [getFuzzyHeader(h, 'category')]: category, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA, [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct, [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active', [getFuzzyHeader(h, 'level')]: level || 'Medium' });
-      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Aptitude question updated successfully!" });
-    } else { res.status(404).json({ success: false, message: "Question ID not found." }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.deleteAptQuestion = async (req, res) => {
-  try {
-    const { id } = req.body;
-    const sheet = doc.sheetsByTitle["Aptitude_Questions"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const rows = await sheet.getRows();
-    const rowToDelete = rows.find(r => r.get('QID') === id || r.get('qid') === id);
-    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Question deleted" }); } 
-    else { res.status(404).json({ success: false, message: "Question not found" }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.getTalExamQuestions = (req, res) => {
-  try {
-    let questions = getCache().talQuestions.map(row => {
-      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return { id: rd[getH('questionid')] || '', testNumber: rd[getH('textnumber')] || rd[getH('testnumber')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active' };
-    });
-    res.json({ success: true, questions: questions.reverse() });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.getTalExamResults = (req, res) => {
-  try {
-    let results = getCache().talResults.map(row => {
-      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || rd[getH('email')] || '', branch: rd[getH('branch')] || '', testNumber: rd[getH('testnumbercompleted')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '' };
-    });
-    res.json({ success: true, results: results.reverse() });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.addTalExamQuestion = async (req, res) => {
-  try {
-    const { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
-    const sheet = doc.sheetsByTitle["Talentino_Questions"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const h = sheet.headerValues;
-    await sheet.addRow({ [getFuzzyHeader(h, 'questionid')]: id, [getFuzzyHeader(h, 'testnumber')]: testNumber, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA, [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct, [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active' });
-    refreshCache(); res.json({ success: true, message: "Question added" });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.updateTalExamQuestion = async (req, res) => {
-  try {
-    const { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
-    const sheet = doc.sheetsByTitle["Talentino_Questions"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => (r.get('Question ID') || r.get('questionid') || '').toString().trim() === id.toString().trim());
-    if (rowToUpdate) {
-      const h = sheet.headerValues;
-      rowToUpdate.assign({ [getFuzzyHeader(h, 'questionid')]: id, [getFuzzyHeader(h, 'testnumber')]: testNumber, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA, [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct, [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active' });
-      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Talentino question updated successfully!" });
-    } else { res.status(404).json({ success: false, message: "Question ID not found." }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.deleteTalExamQuestion = async (req, res) => {
-  try {
-    const { id } = req.body;
-    const sheet = doc.sheetsByTitle["Talentino_Questions"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const rows = await sheet.getRows();
-    const rowToDelete = rows.find(r => r.get('Question ID') === id || r.get('questionid') === id);
-    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Question deleted" }); } 
-    else { res.status(404).json({ success: false, message: "Question not found" }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.getDrives = (req, res) => {
-  try {
-    const drivesData = (getCache().drives || []).map(row => {
-      const rd = row.toObject();
-      const getH = (str) => {
-        const c = str.toLowerCase().replace(/\s/g, ''); const keys = Object.keys(rd);
-        return keys.find(k => k.toLowerCase().replace(/\s/g, '') === c) || keys.find(k => k.toLowerCase().replace(/\s/g, '').includes(c));
-      };
-      return {
-        rowNumber: row.rowNumber, driveId: rd[getH('driveid')] || '', name: rd[getH('name')] || '', phone: rd[getH('contact')] || '',
-        email: rd[getH('mailid')] || rd[getH('email')] || '', course: rd[getH('course')] || '', branch: rd[getH('branch')] || '',
-        resume: rd[getH('resume')] || '', qual: rd[getH('qualification')] || '', regStatus: rd[getH('status')] || '',
-        regDate: rd[getH('registeddate')] || rd[getH('timestamp')] || '', studentStatus: rd[getH('studentstatus')] || ''
-      };
-    });
-    res.json({ success: true, drives: drivesData.reverse() });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.updateDriveStatus = async (req, res) => {
-  const { rowNumber, studentStatus } = req.body;
-  try {
-    const sheet = doc.sheetsByTitle["Drive_Registration"];
-    const rows = await sheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    if(rows.length > 0) {
-      const statHead = getFuzzyHeader(sheet.headerValues, 'studentstatus');
-      rows[0].assign({ [statHead]: studentStatus }); await rows[0].save();
-      refreshCache(); res.json({ success: true });
-    }
-  } catch(err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.getBranches = (req, res) => {
-  try {
-    const branches = getCache().branches.map(row => {
-      const rd = row._rawData; 
-      return { no: rd[0] || '', region: rd[1] || '', branch: rd[2] || '' };
-    });
-    res.json({ success: true, branches });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.addBranch = async (req, res) => {
-  try {
-    const { no, region, branch } = req.body;
-    const sheet = doc.sheetsByTitle["Branches"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    await sheet.addRow([no, region, branch]);
-    refreshCache(); res.json({ success: true, message: "Branch saved" });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.updateBranch = async (req, res) => {
-  try {
-    const { oldBranch, no, region, branch } = req.body;
-    const sheet = doc.sheetsByTitle["Branches"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => r._rawData[2] === oldBranch);
-    if (rowToUpdate) {
-      rowToUpdate._rawData[0] = no; rowToUpdate._rawData[1] = region; rowToUpdate._rawData[2] = branch;
-      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Branch updated" });
-    } else { res.status(404).json({ success: false, message: "Branch not found" }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.deleteBranch = async (req, res) => {
-  try {
-    const { branch } = req.body;
-    const sheet = doc.sheetsByTitle["Branches"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const rows = await sheet.getRows();
-    const rowToDelete = rows.find(r => r._rawData[2] === branch);
-    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Branch deleted" }); } 
-    else { res.status(404).json({ success: false, message: "Branch not found" }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
