@@ -69,7 +69,7 @@ export default function StudentsDirectory() {
   const isTrainer = upperRole.includes('TRAINER');
   
   // 🚨 IDENTIFY BRANCH MANAGER
-  const isBranchManager = upperRole.includes('BRANCH MANAGER') || (upperRole.includes('MANAGER') && !isSuperAdmin);
+  const isBranchManager = upperRole.includes('BRANCH MANAGER');
   
   const isCourseSpecific = isRth || upperRole.includes('TTH') || isTrainer || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
@@ -146,9 +146,11 @@ export default function StudentsDirectory() {
     setLocalStudyAccess(student.studyAccess || 'No');
     setLocalExamAccess(student.examAccess || 'No');
     
+    // Strict matching for Status
     const cStatKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().replace(/\s/g, '') === 'coursestatus' || k.toLowerCase().replace(/\s/g, '').includes('status(currently'));
     setLocalCourseStatus(cStatKey && student.rawData[cStatKey] && student.rawData[cStatKey] !== 'N/A' ? student.rawData[cStatKey] : 'Currently Studying');
 
+    // Strict matching for Percentage (to avoid grabbing the date)
     const cPercKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().replace(/\s/g, '') === 'coursepercentage');
     setLocalCoursePercentage(cPercKey && student.rawData[cPercKey] && student.rawData[cPercKey] !== 'N/A' ? student.rawData[cPercKey] : '50% completed');
 
@@ -158,6 +160,7 @@ export default function StudentsDirectory() {
   const handleCoursePercentageChange = (e) => {
     const val = e.target.value;
     setLocalCoursePercentage(val);
+    // 🚨 SMART AUTOMATION: Instantly trigger "Completed Course" if 100% is selected
     if (val === '100% completed' || val === '100%') {
       setLocalCourseStatus('Completed Course');
     }
@@ -225,14 +228,6 @@ export default function StudentsDirectory() {
 
   if (sortOrder === 'az') filteredAndSorted.sort((a, b) => (a.name || '').toString().localeCompare((b.name || '').toString()));
   if (sortOrder === 'za') filteredAndSorted.sort((a, b) => (b.name || '').toString().localeCompare((a.name || '').toString()));
-
-  const getLinkedInUrl = (rawData) => {
-    if (!rawData) return null;
-    const key = Object.keys(rawData).find(k => k.toLowerCase().includes('linkedin'));
-    let url = key ? rawData[key] : null;
-    if (url && url !== 'N/A' && !url.startsWith('http')) url = 'https://' + url;
-    return url && url !== 'N/A' ? url : null;
-  };
 
   return (
     <Layout>
@@ -431,6 +426,7 @@ export default function StudentsDirectory() {
                   <h2 style={{ margin: '0 0 4px 0', fontSize: '1.4rem', color: '#fff' }}>{selectedStudent.name}</h2>
                   <span style={{ fontSize: '0.85rem', color: '#38bdf8', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{selectedStudent.roll}</span>
                   
+                  {/* Social/Contact Action Buttons */}
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {(() => {
                        const raw = selectedStudent.rawData || {};
@@ -470,6 +466,7 @@ export default function StudentsDirectory() {
                 </div>
               </div>
 
+              {/* Documents & Close */}
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                 {selectedStudent.resume && selectedStudent.resume !== 'N/A' && (
                   <button className="btn-secondary" onClick={() => window.open(getDrivePdf(selectedStudent.resume) || selectedStudent.resume, '_blank')} style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', border: '1px solid #f59e0b', margin: 0, padding: '0.5rem 0.8rem' }}>
@@ -486,7 +483,9 @@ export default function StudentsDirectory() {
             </div>
           </div>
 
+          {/* Scrollable Specific Info Body */}
           <div style={{ padding: '2rem' }}>
+             {/* Strictly Filtered Read-Only Grid */}
              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '2.5rem' }}>
                 {(() => {
                    const raw = selectedStudent.rawData || {};
@@ -497,7 +496,7 @@ export default function StudentsDirectory() {
                    
                    const specificFields = [
                      { label: 'Name', val: getF(['name', 'studentname']) || selectedStudent.name },
-                     { label: 'Phone No.', val: getF(['phone', 'contact']) || selectedStudent.phone },
+                     { label: 'Phone No.', val: getF(['phone']) || selectedStudent.phone },
                      { label: 'Mail ID', val: getF(['mail', 'email']) || selectedStudent.email },
                      { label: 'IPCS Roll Number', val: getF(['ipcsroll', 'rollnumber', 'roll']) || selectedStudent.roll },
                      { label: 'Joining Date', val: getF(['joiningdate']) },
@@ -517,19 +516,6 @@ export default function StudentsDirectory() {
                      { label: 'Gender', val: getF(['gender', 'sex']) }
                    ].filter(f => f.val);
 
-                   // 🚨 BRANCH MANAGER EXCLUSIVE FIELDS
-                   if (isBranchManager) {
-                     const f1Name = Object.keys(raw).find(k => k.toLowerCase().replace(/\s/g, '') === 'name(friend1)');
-                     const f1Cont = Object.keys(raw).find(k => k.toLowerCase().replace(/\s/g, '') === 'contactnumber');
-                     const f2Name = Object.keys(raw).find(k => k.toLowerCase().replace(/\s/g, '') === 'name(friend2)');
-                     const f2Cont = Object.keys(raw).find(k => k.toLowerCase().replace(/\s/g, '') === 'contactnumber2');
-
-                     if (f1Name && raw[f1Name]) specificFields.push({ label: 'Name (Friend 1)', val: raw[f1Name] });
-                     if (f1Cont && raw[f1Cont]) specificFields.push({ label: 'Contact Number 1', val: raw[f1Cont] });
-                     if (f2Name && raw[f2Name]) specificFields.push({ label: 'Name (Friend 2)', val: raw[f2Name] });
-                     if (f2Cont && raw[f2Cont]) specificFields.push({ label: 'Contact Number 2', val: raw[f2Cont] });
-                   }
-
                    return specificFields.map((field, idx) => (
                       <div key={idx} style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '10px', border: '1px solid #1e293b' }}>
                         <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>{field.label}</span>
@@ -539,12 +525,64 @@ export default function StudentsDirectory() {
                 })()}
              </div>
 
+             {/* 🚨 BRANCH MANAGER EXCLUSIVE FIELDS */}
+             {isBranchManager && (
+               <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #1e293b' }}>
+                 <h3 style={{ margin: '0 0 15px 0', color: '#38bdf8', fontSize: '1.1rem' }}>Reference Contacts</h3>
+                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+                   {(() => {
+                      const raw = selectedStudent.rawData || {};
+                      const getExact = (str) => {
+                        const key = Object.keys(raw).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+                        return key && raw[key] && raw[key] !== 'N/A' ? raw[key] : null;
+                      };
+                      
+                      const f1Name = getExact('name(friend1)');
+                      const f1Cont = raw['Contact Number'] || getExact('contactnumber'); 
+                      const f2Name = getExact('name(friend2)');
+                      const f2Cont = getExact('contactnumber2');
+
+                      return (
+                        <>
+                          {f1Name && (
+                            <div style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '10px', border: '1px solid #1e293b' }}>
+                              <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>Friend 1 Name</span>
+                              <span style={{ fontSize: '0.95rem', color: '#fff', fontWeight: 700 }}>{f1Name}</span>
+                            </div>
+                          )}
+                          {f1Cont && (
+                            <div style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '10px', border: '1px solid #1e293b' }}>
+                              <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>Contact Number 1</span>
+                              <span style={{ fontSize: '0.95rem', color: '#fff', fontWeight: 700 }}>{f1Cont}</span>
+                            </div>
+                          )}
+                          {f2Name && (
+                            <div style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '10px', border: '1px solid #1e293b' }}>
+                              <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>Friend 2 Name</span>
+                              <span style={{ fontSize: '0.95rem', color: '#fff', fontWeight: 700 }}>{f2Name}</span>
+                            </div>
+                          )}
+                          {f2Cont && (
+                            <div style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '10px', border: '1px solid #1e293b' }}>
+                              <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>Contact Number 2</span>
+                              <span style={{ fontSize: '0.95rem', color: '#fff', fontWeight: 700 }}>{f2Cont}</span>
+                            </div>
+                          )}
+                        </>
+                      );
+                   })()}
+                 </div>
+               </div>
+             )}
+
              {/* 🚨 HIDDEN COMPLETELY FOR BRANCH MANAGERS */}
              {!isBranchManager && (
-               <div style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid #1e293b', borderRadius: '16px', padding: '1.5rem' }}>
+               <div style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid #1e293b', borderRadius: '16px', padding: '1.5rem', marginTop: '2.5rem' }}>
                   <h3 style={{ margin: '0 0 1.2rem 0', color: '#fff', fontSize: '1.1rem', borderBottom: '1px solid #1e293b', paddingBottom: '0.8rem' }}>Access & Permissions Control</h3>
                   
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+                    
+                    {/* Academic Controls (RTH/Trainers/TPO/Admin) */}
                     <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
                       <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Course Percentage</span>
                       <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localCoursePercentage} onChange={handleCoursePercentageChange} disabled={!canEditAcademic}>
@@ -577,6 +615,7 @@ export default function StudentsDirectory() {
                       </select>
                     </div>
 
+                    {/* Core Placement Controls (TPO/Admin ONLY) */}
                     <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
                       <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Vacancy Open</span>
                       <select className="sleek-select" style={{ width: '100%', cursor: !canEditAll ? 'not-allowed' : 'pointer', opacity: !canEditAll ? 0.7 : 1, background: '#161e2e' }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)} disabled={!canEditAll}>
@@ -593,6 +632,7 @@ export default function StudentsDirectory() {
 
                   </div>
 
+                  {/* Lock warning & Save Button */}
                   <div style={{ display: 'flex', justifyContent: !canSave ? 'space-between' : 'flex-end', alignItems: 'center', marginTop: '1.5rem' }}>
                      {!canSave && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission for Toggles</span>}
                      
