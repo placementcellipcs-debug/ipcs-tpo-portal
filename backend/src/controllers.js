@@ -115,15 +115,23 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   const noAttendJobs = new Set();
   const rejectedJobs = new Set();
 
+  // 🚨 FIXED: Bulletproof Unique Key matching prevents miscounting empty Job IDs
   logs.forEach(r => {
     const s = (r.get('Status') || '').toLowerCase();
-    const jobId = r.get('Job ID') || r.get('Company Name') || r.get('Company') || '';
-    if (s === 'interview not attended') noAttendJobs.add(jobId);
-    if (s.includes('student rejected') || s.includes('offer rejected')) rejectedJobs.add(jobId);
+    const jId = r.get('Job ID') || 'NO_ID';
+    const cName = r.get('Company Name') || r.get('Company') || 'NO_COMP';
+    const uniqueKey = `${jId}_${cName}`;
+    
+    if (s === 'interview not attended') noAttendJobs.add(uniqueKey);
+    if (s.includes('student rejected') || s.includes('offer rejected')) rejectedJobs.add(uniqueKey);
   });
 
-  if (status === 'interview not attended') noAttendJobs.add(studentData.jobId || studentData.company);
-  if (status.includes('student rejected') || status.includes('offer rejected')) rejectedJobs.add(studentData.jobId || studentData.company);
+  const currJId = studentData.jobId || 'NO_ID';
+  const currCName = studentData.company || 'NO_COMP';
+  const currKey = `${currJId}_${currCName}`;
+
+  if (status === 'interview not attended') noAttendJobs.add(currKey);
+  if (status.includes('student rejected') || status.includes('offer rejected')) rejectedJobs.add(currKey);
 
   const noAttendCount = noAttendJobs.size;
   const rejectCount = rejectedJobs.size;
