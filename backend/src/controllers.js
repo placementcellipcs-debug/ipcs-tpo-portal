@@ -645,7 +645,7 @@ exports.updateStudent = async (req, res) => {
                       <p style="font-size: 15px; line-height: 1.6; color: #475569;">Congratulations! Your trainer has confirmed your exceptional performance.</p>
                       <p style="font-size: 15px; line-height: 1.6; color: #475569;"><b>Your placement portal access is now fully active.</b> You can now browse active vacancies and apply directly for job openings.</p>
                       <div style="text-align: center; margin: 35px 0;">
-                        <a href="https://placement.ipcsglobal.info" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">Access Placement Portal</a>
+                        <a href="https://ipcs-tpo-portal.vercel.app" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">Access Placement Portal</a>
                       </div>
                       <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
                         <p style="margin: 0 0 5px 0;">Regards,</p>
@@ -1359,7 +1359,7 @@ exports.updateClient = async (req, res) => {
 exports.requestMou = async (req, res) => {
   const { rowNumber, companyEmail, companyName } = req.body;
   try {
-    const signingLink = `https://talenzo.ipcsglobal.info/sign-certificate/${rowNumber}`;
+    const signingLink = `https://ipcs-tpo-portal.vercel.app/sign-certificate/${rowNumber}`;
     const refId = Math.floor(10000 + Math.random() * 90000); 
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`, to: companyEmail,
