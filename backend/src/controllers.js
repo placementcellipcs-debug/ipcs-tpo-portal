@@ -226,7 +226,32 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
           <p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p>
         </div>
       `);
-    } else if (noAttendCount >= 3) {
+    } else if (status === 'interview not attended') {
+    if (noAttendCount === 2) {
+      subject = `❗Warning – Non-Attendance for Scheduled Interview [Ref: ${refId}]`;
+      mailType = 'Warning Mail';
+      html = buildBrandedEmail('OFFICIAL WARNING', '#f59e0b', `
+        <p>Dear <b>${studentData.name}</b>,</p>
+        <p>Greetings from the Placement Team.</p>
+        <p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the second time</b> without prior intimation or a valid reason.</p>
+        <p>Please consider this email as an <b>official warning</b>. Attending interviews scheduled through the Placement Team is an important responsibility of every student registered for placement assistance.</p>
+        <p>You are hereby instructed to ensure your attendance for all future interviews and recruitment processes scheduled for you.</p>
+        <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-left: 5px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 8px;">
+          <p style="color: #b45309; margin: 0; font-weight: bold;">
+            Please note that <b>if you fail to attend a scheduled interview for the third time, your placement assistance will be put on hold</b>, and you may not be considered for further placement opportunities until further review by the Placement Team.
+          </p>
+        </div>
+        <p>We strongly advise you to take this matter seriously and maintain proper communication with the Placement Team in case of any genuine difficulty or unavoidable circumstance.</p>
+        <p>We expect your full cooperation and commitment towards the placement process.</p>
+        <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
+          <p style="margin: 0 0 3px 0;">Regards,</p>
+          <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523;">Placement Team</p>
+          <p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p>
+        </div>
+      `);
+    } 
+  } 
+    else if (noAttendCount >= 3) {
       subject = `❗Final Warning – Placement Assistance Put on Hold [Ref: ${refId}]`;
       mailType = 'Hold Mail';
       html = buildBrandedEmail('PLACEMENT ASSISTANCE PUT ON HOLD', '#ef4444', `
@@ -234,18 +259,15 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
         <p>Greetings from the Placement Team.</p>
         <p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the third time.</b></p>
         <p>Despite the previous warning regarding non-attendance, you have again failed to participate in the scheduled interview without prior intimation to the Placement Team.</p>
-        
-        <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-left: 5px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 8px;">
-          <p style="color: #b91c1c; margin: 0; font-weight: bold;">
-            This is considered a serious violation of the placement process. Therefore, your placement assistance is hereby put on hold with immediate effect.
-          </p>
-        </div>
-        
+        <p>This is considered a serious violation of the placement process. Therefore, <b>your placement assistance is hereby put on hold with immediate effect.</b></p>
         <p>You will not be considered for further interview opportunities or placement drives until your case is reviewed by the Placement Team and further instructions are communicated to you.</p>
         <p>We expect students to take the placement opportunities provided to them seriously and maintain proper communication with the Placement Team regarding any genuine or unavoidable circumstances.</p>
         <p>If you have a valid reason for your repeated non-attendance, you may submit a written explanation to the Placement Team for review.</p>
-        <p><b>Please treat this matter as serious and final.</b></p>
-
+        <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-left: 5px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 8px;">
+          <p style="color: #b91c1c; margin: 0; font-weight: bold;">
+            Please treat this matter as serious and final.
+          </p>
+        </div>
         <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
           <p style="margin: 0 0 3px 0;">Regards,</p>
           <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523;">Placement Team</p>
@@ -300,6 +322,54 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
         <p>Please treat this communication as an <b>official warning and confirmation of the placement assistance hold.</b></p>
         <p>We expect you to take future career opportunities and the placement process seriously.</p>
         
+        <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
+          <p style="margin: 0 0 3px 0;">Regards,</p>
+          <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523;">Placement Team</p>
+          <p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p>
+        </div>
+      `);
+    }
+  }
+  else if (status.includes('student rejected') || status.includes('offer rejected')) {
+    if (rejectCount === 2) {
+      subject = `❗Warning – Rejection of Job Offer for the Second Time [Ref: ${refId}]`;
+      mailType = 'Warning Mail';
+      html = buildBrandedEmail('OFFICIAL WARNING', '#f59e0b', `
+        <p>Dear <b>${studentData.name}</b>,</p>
+        <p>Greetings from the Placement Team.</p>
+        <p>This is to formally inform you that you have <b>rejected a job offer for the second time</b> after being selected through the IPCS Global placement process.</p>
+        <p>As per the <b>IPCS Placement Policy</b>, students are expected to seriously consider and accept suitable employment opportunities provided through the Placement Team. Repeated rejection of offers after selection affects the placement process and the opportunities provided to other students.</p>
+        <p>Please consider this email as an <b>official warning.</b></p>
+        <div style="background-color: #fffbeb; border: 1px solid #fde68a; border-left: 5px solid #f59e0b; padding: 15px; margin: 20px 0; border-radius: 8px;">
+          <p style="color: #b45309; margin: 0; font-weight: bold;">
+            You are hereby advised that <b>if you reject a job offer for the third time, your placement assistance will be put on hold</b>, as per the IPCS Placement Policy. In such a situation, you may not be considered for further placement opportunities until further review by the Placement Team.
+          </p>
+        </div>
+        <p>We strongly advise you to carefully evaluate the opportunities shared with you before participating in the recruitment process and to communicate with the Placement Team in advance if you have any genuine concerns regarding an offer.</p>
+        <p>Please take this warning seriously and ensure strict adherence to the IPCS Placement Policy going forward.</p>
+        <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
+          <p style="margin: 0 0 3px 0;">Regards,</p>
+          <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523;">Placement Team</p>
+          <p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p>
+        </div>
+      `);
+    } else if (rejectCount >= 3) {
+      subject = `❗Final Warning – Placement Assistance Put on Hold [Ref: ${refId}]`;
+      mailType = 'Hold Mail';
+      html = buildBrandedEmail('PLACEMENT ASSISTANCE PUT ON HOLD', '#ef4444', `
+        <p>Dear <b>${studentData.name}</b>,</p>
+        <p>Greetings from the Placement Team.</p>
+        <p>This is to formally inform you that you have <b>rejected a job offer for the third time</b> after being selected through the IPCS Global placement process.</p>
+        <p>You were previously informed about the consequences of repeated offer rejections. However, despite the warnings, you have again declined the opportunity provided to you.</p>
+        <div style="background-color: #fef2f2; border: 1px solid #fecaca; border-left: 5px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 8px;">
+          <p style="color: #b91c1c; margin: 0; font-weight: bold;">
+            As per the <b>IPCS Placement Policy</b>, repeated rejection of job offers after selection may result in the withdrawal of placement assistance. Accordingly, <b>your placement assistance is hereby put on hold with immediate effect.</b>
+          </p>
+        </div>
+        <p>During this period, you will not be considered for further placement opportunities or interview processes through IPCS Global unless your case is reviewed and the Placement Team communicates otherwise.</p>
+        <p>If you have any genuine or unavoidable reason for rejecting the offer, you may submit a written explanation to the Placement Team for review.</p>
+        <p>Please treat this communication as an <b>official warning and confirmation of the placement assistance hold.</b></p>
+        <p>We expect you to take future career opportunities and the placement process seriously.</p>
         <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
           <p style="margin: 0 0 3px 0;">Regards,</p>
           <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523;">Placement Team</p>
