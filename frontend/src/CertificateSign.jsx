@@ -204,18 +204,15 @@ export default function CertificateSign() {
             <input type="text" placeholder={isSubmitting ? "" : "[Enter Company Address]"} value={companyAddress} onChange={e => setCompanyAddress(e.target.value)} style={{ ...inputStyle, width: '350px', display: 'block', marginBottom: '8px' }} />
             
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', width: '350px' }}>
-              <strong>GSTIN:</strong> 
-              <input type="text" placeholder={isSubmitting ? "" : "[Enter GSTIN]"} value={gstin} onChange={e => setGstin(e.target.value)} style={{ ...inputStyle, marginLeft: '8px' }} />
+              <strong>GSTIN:</strong> <input type="text" placeholder={isSubmitting ? "" : "[Enter GSTIN]"} value={gstin} onChange={e => setGstin(e.target.value)} style={{ ...inputStyle, marginLeft: '8px' }} />
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', width: '350px' }}>
-              <strong>Kind Attn:</strong> 
-              <input type="text" placeholder={isSubmitting ? "" : "[Authorized Person]"} value={employerName} onChange={e => setEmployerName(e.target.value)} style={{ ...inputStyle, marginLeft: '8px' }} />
+              <strong>Kind Attn:</strong> <input type="text" placeholder={isSubmitting ? "" : "[Authorized Person]"} value={employerName} onChange={e => setEmployerName(e.target.value)} style={{ ...inputStyle, marginLeft: '8px' }} />
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '8px', width: '350px' }}>
-              <strong>Designation:</strong> 
-              <input type="text" placeholder={isSubmitting ? "" : "[Enter Designation]"} value={employerDesig} onChange={e => setEmployerDesig(e.target.value)} style={{ ...inputStyle, marginLeft: '8px' }} />
+              <strong>Designation:</strong> <input type="text" placeholder={isSubmitting ? "" : "[Enter Designation]"} value={employerDesig} onChange={e => setEmployerDesig(e.target.value)} style={{ ...inputStyle, marginLeft: '8px' }} />
             </div>
           </div>
 
@@ -245,7 +242,10 @@ export default function CertificateSign() {
             <li style={{ marginBottom: '8px' }}><strong>No Candidate Guarantee:</strong> IPCS Global does not guarantee that every recruitment requirement will result in a successful placement. Candidate selection shall be based on the employer's recruitment process and requirements.</li>
             <li style={{ marginBottom: '8px' }}><strong>Confidentiality:</strong> Both parties shall maintain confidentiality regarding candidate information, company information and other sensitive recruitment-related information shared during the association.</li>
             <li style={{ marginBottom: '8px' }}><strong>Non-Exclusivity:</strong> This hiring partnership is non-exclusive unless otherwise agreed upon in writing by both parties.</li>
-            <li style={{ marginBottom: '8px' }}><strong>No Recruitment Fee / Recruitment Charges:</strong> No recruitment fee shall be charged to the employer for candidates sourced through IPCS Global, unless otherwise mutually agreed in writing.</li>
+            
+            {/* 🚨 UPDATED 7TH POINT */}
+            <li style={{ marginBottom: '8px' }}><strong>No Charges to Students Without Prior Knowledge of IPCS:</strong> The employer shall not collect any recruitment, hiring, training, or related charges from candidates referred through IPCS Global without the prior knowledge and approval of IPCS Global. Any proposed fee or charge to a student must be communicated to and mutually acknowledged by IPCS Global in advance.</li>
+            
             <li style={{ marginBottom: '8px' }}><strong>Offer Acceptance:</strong> After receiving an offer letter, the candidate has the complete freedom to accept or reject the offer. IPCS Global will not be responsible for the candidate's decision.</li>
             <li style={{ marginBottom: '8px' }}><strong>Non-Joining:</strong> If a selected candidate does not join the organization after accepting the offer letter, IPCS Global will not be responsible for the same.</li>
             <li style={{ marginBottom: '8px' }}><strong>Replacement:</strong> If a candidate joins and leaves the organization after days or months, IPCS Global will not be responsible for providing a replacement. Suitable candidates will be shared if available and interested.</li>

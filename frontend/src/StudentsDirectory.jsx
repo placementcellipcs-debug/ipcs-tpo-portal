@@ -61,21 +61,17 @@ export default function StudentsDirectory() {
   const [localCourseStatus, setLocalCourseStatus] = useState(''); 
   const [localCoursePercentage, setLocalCoursePercentage] = useState('');
 
-  // 🚨 STRICT PERMISSIONS LOGIC
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
   const isTpo = upperRole === 'TPO';
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
   const isTrainer = upperRole.includes('TRAINER');
   
-  // 🚨 IDENTIFY BRANCH MANAGER
   const isBranchManager = upperRole.includes('BRANCH MANAGER');
   
   const isCourseSpecific = isRth || upperRole.includes('TTH') || isTrainer || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
-  const isViewOnly = tpoData?.accessType === 'view'; 
 
-  // UI ACCESS CONTROL
   const canEditAll = isSuperAdmin || isTpo; 
   const canEditAcademic = canEditAll || isRth || isTrainer; 
   const canSave = canEditAll || canEditAcademic; 
@@ -146,11 +142,9 @@ export default function StudentsDirectory() {
     setLocalStudyAccess(student.studyAccess || 'No');
     setLocalExamAccess(student.examAccess || 'No');
     
-    // Strict matching for Status
     const cStatKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().replace(/\s/g, '') === 'coursestatus' || k.toLowerCase().replace(/\s/g, '').includes('status(currently'));
     setLocalCourseStatus(cStatKey && student.rawData[cStatKey] && student.rawData[cStatKey] !== 'N/A' ? student.rawData[cStatKey] : 'Currently Studying');
 
-    // Strict matching for Percentage (to avoid grabbing the date)
     const cPercKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().replace(/\s/g, '') === 'coursepercentage');
     setLocalCoursePercentage(cPercKey && student.rawData[cPercKey] && student.rawData[cPercKey] !== 'N/A' ? student.rawData[cPercKey] : '50% completed');
 
@@ -160,7 +154,6 @@ export default function StudentsDirectory() {
   const handleCoursePercentageChange = (e) => {
     const val = e.target.value;
     setLocalCoursePercentage(val);
-    // 🚨 SMART AUTOMATION: Instantly trigger "Completed Course" if 100% is selected
     if (val === '100% completed' || val === '100%') {
       setLocalCourseStatus('Completed Course');
     }
@@ -322,7 +315,7 @@ export default function StudentsDirectory() {
         ) : !selectedBranch ? (
           branchList.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
-              No students found for the selected course and month filters.
+              No students found. If you just loaded the portal, wait 10 seconds and refresh while Google Sheets syncs.
             </div>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '25px' }}>
@@ -409,12 +402,10 @@ export default function StudentsDirectory() {
         )}
       </div>
 
-      {/* MODAL */}
       {isModalOpen && selectedStudent && (
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '15px', overflow: 'hidden' }} onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
         <div className="modal-card" style={{ maxWidth: '950px', width: '100%', maxHeight: '95vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
           
-          {/* Sticky Header with Actions */}
           <div style={{ position: 'sticky', top: 0, background: '#0f1523', zIndex: 10, padding: '1.5rem 2rem', borderBottom: '1px solid #1e293b' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '15px' }}>
               
@@ -426,7 +417,6 @@ export default function StudentsDirectory() {
                   <h2 style={{ margin: '0 0 4px 0', fontSize: '1.4rem', color: '#fff' }}>{selectedStudent.name}</h2>
                   <span style={{ fontSize: '0.85rem', color: '#38bdf8', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{selectedStudent.roll}</span>
                   
-                  {/* Social/Contact Action Buttons */}
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {(() => {
                        const raw = selectedStudent.rawData || {};
@@ -466,7 +456,6 @@ export default function StudentsDirectory() {
                 </div>
               </div>
 
-              {/* Documents & Close */}
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
                 {selectedStudent.resume && selectedStudent.resume !== 'N/A' && (
                   <button className="btn-secondary" onClick={() => window.open(getDrivePdf(selectedStudent.resume) || selectedStudent.resume, '_blank')} style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', border: '1px solid #f59e0b', margin: 0, padding: '0.5rem 0.8rem' }}>
@@ -483,9 +472,7 @@ export default function StudentsDirectory() {
             </div>
           </div>
 
-          {/* Scrollable Specific Info Body */}
           <div style={{ padding: '2rem' }}>
-             {/* Strictly Filtered Read-Only Grid */}
              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '2.5rem' }}>
                 {(() => {
                    const raw = selectedStudent.rawData || {};
@@ -525,20 +512,21 @@ export default function StudentsDirectory() {
                 })()}
              </div>
 
-             {/* 🚨 BRANCH MANAGER EXCLUSIVE FIELDS */}
              {isBranchManager && (
                <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #1e293b' }}>
                  <h3 style={{ margin: '0 0 15px 0', color: '#38bdf8', fontSize: '1.1rem' }}>Reference Contacts</h3>
                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
                    {(() => {
                       const raw = selectedStudent.rawData || {};
+                      
+                      // 🚨 FIXED: STRICT AND SAFE MATCHING TO PREVENT WRONG COLUMN MAPPING
                       const getExact = (str) => {
                         const key = Object.keys(raw).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
                         return key && raw[key] && raw[key] !== 'N/A' ? raw[key] : null;
                       };
                       
                       const f1Name = getExact('name(friend1)');
-                      const f1Cont = raw['Contact Number'] || getExact('contactnumber'); 
+                      const f1Cont = getExact('contactnumber'); 
                       const f2Name = getExact('name(friend2)');
                       const f2Cont = getExact('contactnumber2');
 
@@ -575,14 +563,11 @@ export default function StudentsDirectory() {
                </div>
              )}
 
-             {/* 🚨 HIDDEN COMPLETELY FOR BRANCH MANAGERS */}
              {!isBranchManager && (
                <div style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid #1e293b', borderRadius: '16px', padding: '1.5rem', marginTop: '2.5rem' }}>
                   <h3 style={{ margin: '0 0 1.2rem 0', color: '#fff', fontSize: '1.1rem', borderBottom: '1px solid #1e293b', paddingBottom: '0.8rem' }}>Access & Permissions Control</h3>
                   
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
-                    
-                    {/* Academic Controls (RTH/Trainers/TPO/Admin) */}
                     <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
                       <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Course Percentage</span>
                       <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localCoursePercentage} onChange={handleCoursePercentageChange} disabled={!canEditAcademic}>
@@ -615,7 +600,6 @@ export default function StudentsDirectory() {
                       </select>
                     </div>
 
-                    {/* Core Placement Controls (TPO/Admin ONLY) */}
                     <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
                       <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Vacancy Open</span>
                       <select className="sleek-select" style={{ width: '100%', cursor: !canEditAll ? 'not-allowed' : 'pointer', opacity: !canEditAll ? 0.7 : 1, background: '#161e2e' }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)} disabled={!canEditAll}>
@@ -629,13 +613,10 @@ export default function StudentsDirectory() {
                         <option value="Pending">Pending</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
                       </select>
                     </div>
-
                   </div>
 
-                  {/* Lock warning & Save Button */}
                   <div style={{ display: 'flex', justifyContent: !canSave ? 'space-between' : 'flex-end', alignItems: 'center', marginTop: '1.5rem' }}>
                      {!canSave && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission for Toggles</span>}
-                     
                      <button className="btn-action" style={{ width: 'auto', background: !canSave ? '#1e293b' : '#38bdf8', color: !canSave ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: !canSave ? 'not-allowed' : 'pointer', opacity: canSave ? 1 : 0.5 }} onClick={saveStudentUpdates} disabled={savingStatus || !canSave}>
                         {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> {!canSave ? 'Locked' : 'Save Changes'}</>}
                       </button>
