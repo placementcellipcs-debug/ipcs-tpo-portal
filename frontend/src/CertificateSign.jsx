@@ -201,7 +201,7 @@ export default function CertificateSign() {
             <p style={{ margin: '0 0 5px 0' }}><strong>To,</strong></p>
             <p style={{ margin: '0 0 5px 0', fontWeight: 'bold', fontSize: '18px' }}>{client.companyName}</p>
             
-            {/* 🚨 THE FIX: Convert to multiline text wrapping for the Address */}
+            {/* 🚨 THE ADDRESS FIX: Uses Textarea normally, but converts to wrapped div for the PDF */}
             {isSubmitting ? (
               <div style={{ width: '350px', marginBottom: '8px', wordWrap: 'break-word', whiteSpace: 'pre-wrap', lineHeight: '1.5', padding: '2px 0', color: '#000' }}>
                 {companyAddress}
@@ -257,7 +257,10 @@ export default function CertificateSign() {
             <li style={{ marginBottom: '8px' }}><strong>No Candidate Guarantee:</strong> IPCS Global does not guarantee that every recruitment requirement will result in a successful placement. Candidate selection shall be based on the employer's recruitment process and requirements.</li>
             <li style={{ marginBottom: '8px' }}><strong>Confidentiality:</strong> Both parties shall maintain confidentiality regarding candidate information, company information and other sensitive recruitment-related information shared during the association.</li>
             <li style={{ marginBottom: '8px' }}><strong>Non-Exclusivity:</strong> This hiring partnership is non-exclusive unless otherwise agreed upon in writing by both parties.</li>
+            
+            {/* 🚨 THE UPDATED 7TH POINT */}
             <li style={{ marginBottom: '8px' }}><strong>No Charges to Students Without Prior Knowledge of IPCS:</strong> The employer shall not collect any recruitment, hiring, training, or related charges from candidates referred through IPCS Global without the prior knowledge and approval of IPCS Global. Any proposed fee or charge to a student must be communicated to and mutually acknowledged by IPCS Global in advance.</li>
+            
             <li style={{ marginBottom: '8px' }}><strong>Offer Acceptance:</strong> After receiving an offer letter, the candidate has the complete freedom to accept or reject the offer. IPCS Global will not be responsible for the candidate's decision.</li>
             <li style={{ marginBottom: '8px' }}><strong>Non-Joining:</strong> If a selected candidate does not join the organization after accepting the offer letter, IPCS Global will not be responsible for the same.</li>
             <li style={{ marginBottom: '8px' }}><strong>Replacement:</strong> If a candidate joins and leaves the organization after days or months, IPCS Global will not be responsible for providing a replacement. Suitable candidates will be shared if available and interested.</li>
@@ -297,9 +300,9 @@ export default function CertificateSign() {
                     style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} 
                     crossOrigin="anonymous" 
                     alt="Logo" 
-                    onError={() => {
-                      setLogoPreview(''); // Instantly clears the broken image
-                      console.warn("Google Drive blocked image. Reverting to manual upload.");
+                    onError={(e) => {
+                      e.target.style.display = 'none'; // Instantly hides the broken image
+                      setLogoPreview(''); // Triggers React to show the upload label instead
                     }}
                   />
                 ) : (

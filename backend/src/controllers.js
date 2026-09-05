@@ -101,7 +101,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE (RESTORED HTML DESIGNS)
+// 🚨 MASTER STUDENT EMAIL ENGINE
 // ---------------------------------------------------------
 const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
@@ -501,7 +501,6 @@ exports.getDashboardStats = (req, res) => {
   res.json({ success: true, stats: { totalStudents: studentCount, pendingApps, placed: placedCount, activeVacancies: activeVacs }, events: eventsList.reverse() });
 };
 
-// 🚨 SMART HEADER FINDER APPLIED TO STUDENTS DIRECTORY 
 exports.getStudents = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
   const cache = getCache();
@@ -511,7 +510,6 @@ exports.getStudents = (req, res) => {
     const rowData = row.toObject();
     const keys = Object.keys(rowData);
     
-    // The exact same bulletproof header finder we used for Clients!
     const getSafeH = (searchStrs) => {
       for (let s of searchStrs) {
         const clean = s.toLowerCase().replace(/\s/g, '');
@@ -555,7 +553,6 @@ exports.getStudents = (req, res) => {
       const resumeH = getSafeH(['resume', 'cv']);
       const certH = getSafeH(['certificate']);
       
-      // THIS FIXED IT: Strictly grabs the actual exact column name instead of falling back to a string
       const statusKey = getSafeH(['coursestatus', 'status(currently']);
       const vacKey = getSafeH(['vacancyopen', 'vaccancyopen']);
       const studyKey = getSafeH(['studymaterialaccess']);
@@ -586,7 +583,6 @@ exports.getStudents = (req, res) => {
   res.json({ success: true, students: students.reverse(), stats });
 };
 
-// 🚨 SMART HEADER FINDER APPLIED TO UPDATE STUDENT
 exports.updateStudent = async (req, res) => {
   const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus, coursePercentage } = req.body;
   try {
@@ -620,7 +616,6 @@ exports.updateStudent = async (req, res) => {
         updateObj[cPercH] = coursePercentage;
       }
 
-      // THIS FIXED IT: It now properly finds "Course Status" without failing!
       const cStatusH = getSafeH(['coursestatus', 'status(currently']); 
       
       if (cStatusH) {
@@ -635,6 +630,7 @@ exports.updateStudent = async (req, res) => {
              
              if (sEmail) {
                 const refId = Math.floor(10000 + Math.random() * 90000); 
+                // 🚨 FIXED URL TO placement.ipcsglobal.info
                 const html = `
                   <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
                     <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;">
@@ -645,7 +641,7 @@ exports.updateStudent = async (req, res) => {
                       <p style="font-size: 15px; line-height: 1.6; color: #475569;">Congratulations! Your trainer has confirmed your exceptional performance.</p>
                       <p style="font-size: 15px; line-height: 1.6; color: #475569;"><b>Your placement portal access is now fully active.</b> You can now browse active vacancies and apply directly for job openings.</p>
                       <div style="text-align: center; margin: 35px 0;">
-                        <a href="https://ipcs-tpo-portal.vercel.app" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">Access Placement Portal</a>
+                        <a href="https://placement.ipcsglobal.info" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">Access Placement Portal</a>
                       </div>
                       <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
                         <p style="margin: 0 0 5px 0;">Regards,</p>
@@ -670,9 +666,6 @@ exports.updateStudent = async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-// ---------------------------------------------------------
-// APPLICATIONS (BULLETPROOF UPDATES)
-// ---------------------------------------------------------
 exports.getApplications = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, tpoName } = req.body;
   let appsList = []; 
@@ -898,8 +891,93 @@ exports.addApplication = async (req, res) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 EVENTS ENGINE (DRIVE & TALENTINO MAILS)
+// 🚨 EVENTS / VACANCIES / ISSUES / REPORTS
 // ---------------------------------------------------------
+
+exports.getVacancies = (req, res) => {
+  let vacs = getCache().vacancies.map((row, i) => {
+    const rowData = row.toObject();
+    const getVal = (possibleKeys) => { for(let key of Object.keys(rowData)) { if (possibleKeys.includes(key.trim())) return rowData[key]; } return ''; };
+    return {
+      id: getVal(['JOBID', 'Job ID', 'ID']) || `JOB-${i+1}`, company: getVal(['Company Name', 'Company']), position: getVal(['Position', 'Role']), location: getVal(['Opening AT ( Location )', 'Opening AT( Location )', 'Location']), state: getVal(['State']), mode: getVal(['Work Mode', 'Mode']), lastDate: getVal(['Last Date']), course: getVal(['Course']), qualification: getVal(['Qualification']), description: getVal(['Job Description']), experience: getVal(['Experience']), salary: getVal(['Salary']), gender: getVal(['Gender Preference']), status: getVal(['Status']) || 'Open'
+    };
+  });
+  res.json({ success: true, vacancies: vacs.reverse() });
+};
+
+exports.getIssues = (req, res) => {
+  const { assignedBranchesArray, role, assignedCourse } = req.body;
+  let issuesList = getCache().issues.filter(row => {
+    const rowBranch = row.get('Branch');
+    const studentName = row.get('Name') || '';
+    const studentData = getCache().students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
+    const sCourse = studentData ? studentData.get('Course') : 'Unknown';
+    return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
+  }).map(row => ({ rowNumber: row.rowNumber, name: row.get('Name') || 'Student', branch: row.get('Branch'), details: row.get('Issue Details') || '', status: row.get('Status') || 'Pending', remarks: row.get('Remarks') || '' }));
+  res.json({ success: true, issues: issuesList.reverse() });
+};
+
+exports.updateIssue = async (req, res) => {
+  const { rowNumber, status, remarks } = req.body;
+  try {
+    const issueSheet = doc.sheetsByTitle["Issues"];
+    const rows = await issueSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (rows.length > 0) { rows[0].assign({ 'Status': status, 'Remarks': remarks }); await rows[0].save(); refreshCache(); res.json({ success: true, message: "Issue updated!" }); } 
+    else { res.status(404).json({ success: false, message: "Row not found." }); }
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+exports.getReports = (req, res) => {
+  const { assignedBranchesArray, role, assignedCourse } = req.body;
+  let students = [], applications = [], issues = [], talentino = [], tpoLogs = [];
+  
+  getCache().students.forEach(row => {
+    if(!hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) return;
+    students.push({ name: row.get('Name'), roll: row.get('Roll Number'), branch: row.get('Branch'), course: row.get('Course'), status: row.get('Status'), placementStatus: row.get('Placement Stat') || row.get('Placement Status') });
+  });
+  
+  getCache().applications.forEach(row => {
+    if(!hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) return;
+    applications.push({ name: row.get('Student Name'), roll: row.get('Roll Number'), jobId: row.get('Job ID'), company: row.get('Company Name'), date: row.get('TimeStamp'), status: row.get('Status'), remarks: row.get('Remarks'), tpoName: row.get('Placement Officer'), branch: row.get('Branch'), course: row.get('Course') });
+  });
+  
+  getCache().issues.forEach(row => { 
+    if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) issues.push({ name: row.get('Name'), branch: row.get('Branch'), details: row.get('Issue Details'), status: row.get('Status'), remarks: row.get('Remarks') }); 
+  });
+  
+  getCache().tAtt.forEach(row => { 
+    if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) talentino.push({ name: row.get('Name'), branch: row.get('Branch'), date: row.get('Check-in') || row.get('Date'), rating: row.get('Rating'), notes: row.get('Notes') }); 
+  });
+  
+  let vacancies = getCache().vacancies.map(row => ({ id: row.get('Job ID') || row.get('ID') || '', company: row.get('Company') || '', location: row.get('Location') || '', mode: row.get('Mode') || '', status: row.get('Status') || 'Open', course: row.get('Course') || '', date: row.get('Last Date') || row.get('Date') || '' }));
+  let events = getCache().events.map(row => ({ date: row.get('Date') || '' }));
+
+  if (getCache().tpoLogs) {
+    getCache().tpoLogs.forEach(row => { tpoLogs.push(row.toObject()); });
+  }
+
+  res.json({ success: true, students, applications, issues, talentino, vacancies, events, tpoLogs });
+};
+
+exports.getTalentino = (req, res) => {
+  const { assignedBranchesArray, role, assignedCourse } = req.body;
+  let records = getCache().tAtt.filter(row => {
+    const rowBranch = row.get('Branch');
+    const studentName = row.get('Name') || row.get('Student') || '';
+    const studentData = getCache().students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
+    const sCourse = studentData ? studentData.get('Course') : 'Unknown';
+    return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
+  }).map(row => {
+    const rowData = row.toObject();
+    const getVal = (searchStrings) => { for (let key of Object.keys(rowData)) { for (let str of searchStrings) { if (key.toLowerCase().includes(str.toLowerCase())) return rowData[key]; } } return ''; };
+    return { name: getVal(['name', 'student']), branch: getVal(['branch']), date: getVal(['present check-ins date', 'timestamp', 'date', 'time']), rating: getVal(['rating']), notes: getVal(['notes', 'remark']) };
+  });
+  let dates = new Set();
+  records.forEach(r => { const cleanDate = (r.date || '').split(' ')[0].trim(); if (cleanDate && cleanDate !== 'N/A') dates.add(cleanDate); });
+  res.json({ success: true, dates: Array.from(dates).sort().reverse(), records: records.reverse() });
+};
+
+
 exports.getEvents = (req, res) => {
   let allEvents = getCache().events.map(row => {
     const rowData = row.toObject();
@@ -1214,7 +1292,7 @@ exports.runDailyCron = async () => {
           <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
             <p style="margin: 0 0 5px 0;">If you require further shortlisting or have interview dates finalized, please reply directly to this email.</p>
             <p style="margin: 15px 0 2px 0;">Regards,</p>
-            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName || 'Placement Team'}</p>
+            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName}</p>
             <p style="margin: 0;">Placement Officer, IPCS Global</p>
           </div>
         </div>
@@ -1359,7 +1437,8 @@ exports.updateClient = async (req, res) => {
 exports.requestMou = async (req, res) => {
   const { rowNumber, companyEmail, companyName } = req.body;
   try {
-    const signingLink = `https://ipcs-tpo-portal.vercel.app/sign-certificate/${rowNumber}`;
+    // 🚨 FIXED: Now explicitly uses talenzo.ipcsglobal.info
+    const signingLink = `https://talenzo.ipcsglobal.info/sign-certificate/${rowNumber}`;
     const refId = Math.floor(10000 + Math.random() * 90000); 
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`, to: companyEmail,

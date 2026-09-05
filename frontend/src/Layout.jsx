@@ -49,7 +49,7 @@ export default function Layout({ children }) {
       const logsStr = localStorage.getItem('dash_logs');
       if (logsStr) {
         const logs = JSON.parse(logsStr);
-        const sorted = logs.sort((a,b) => new Date(b.TimeStamp || b.Timestamp || b['Time Stamp'] || 0) - new Date(a.TimeStamp || a.Timestamp || a['Time Stamp'] || 0)).slice(0, 20); // Check more logs so we can filter
+        const sorted = logs.sort((a,b) => new Date(b.TimeStamp || b.Timestamp || b['Time Stamp'] || 0) - new Date(a.TimeStamp || a.Timestamp || a['Time Stamp'] || 0)).slice(0, 20); 
         
         const mappedNotifs = sorted.map(log => {
           const getVal = (s) => {
@@ -80,12 +80,11 @@ export default function Layout({ children }) {
           return { title, desc, icon, color, bg, time: getVal('timestamp') || 'Recently', courseRaw };
         });
 
-        // 🚨 Filter Notifications strictly for the user's course
         const finalNotifs = mappedNotifs.filter(n => {
           if (isSuperAdmin || userRole === 'TPO' || userRole.includes('MANAGER')) return true;
           if (isCourseSpecific) return getStandardCourse(n.courseRaw) === myCourse;
           return true;
-        }).slice(0, 5); // Only keep the 5 most recent relevant ones
+        }).slice(0, 5); 
 
         setNotifications(finalNotifs);
       }
@@ -103,7 +102,8 @@ export default function Layout({ children }) {
 
   const showTrackerAndReports = isSuperAdmin || isTpo;
   const showManageAdmin = isSuperAdmin;
-  const showStudyMaterials = isSuperAdmin || isTpo || isRth; // Hidden for TTH, RM, TM, BM, Leads, Trainers
+  // 🚨 FIXED: Completely hides Study Materials for TPO
+  const showStudyMaterials = isSuperAdmin || isRth; 
 
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
@@ -203,7 +203,7 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => handleNav('/dashboard')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><SquaresFour size={22} color={isActive('/dashboard')} /> <span style={{ color: isActive('/dashboard') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Dashboard</span></div><span style={{ color: '#64748b' }}>›</span></div>
             <div className="drawer-item" onClick={() => handleNav('/students')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/students')} /> <span style={{ color: isActive('/students') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Students Directory</span></div><span style={{ color: '#64748b' }}>›</span></div>
             
-            {/* 🚨 RESTRICTED: Job Tracker & Reports */}
+            {/* RESTRICTED: Job Tracker & Reports */}
             {showTrackerAndReports && (
               <>
                 <div className="drawer-item" onClick={() => handleNav('/tracker')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Files size={22} color={isActive('/tracker')} /> <span style={{ color: isActive('/tracker') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Job Tracker</span></div><span style={{ color: '#64748b' }}>›</span></div>
@@ -224,12 +224,12 @@ export default function Layout({ children }) {
                <div className="drawer-item" onClick={() => handleNav('/study-materials')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Book size={22} color={isActive('/study-materials')} /> <span style={{ color: isActive('/study-materials') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Study Materials</span></div><span style={{ color: '#64748b' }}>›</span></div>
             )}
             
-            {/* EXAMS HUB - Hidden only from generic managers */}
-            {!userRole.includes('MANAGER') && (
+            {/* 🚨 RESTRICTED: EXAMS HUB - Completely Hidden from TPO */}
+            {!userRole.includes('MANAGER') && !isTpo && (
                <div className="drawer-item" onClick={() => handleNav('/exams')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><FileText size={22} color={isActive('/exams')} /> <span style={{ color: isActive('/exams') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Exams Hub</span></div><span style={{ color: '#64748b' }}>›</span></div>
             )}
 
-            {/* 🚨 RESTRICTED: Admin Panels */}
+            {/* RESTRICTED: Admin Panels */}
             {showManageAdmin && (
                <>
                  <div className="drawer-item" onClick={() => handleNav('/branches')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><MapPin size={22} color={isActive('/branches')} /> <span style={{ color: isActive('/branches') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Manage Branches</span></div><span style={{ color: '#64748b' }}>›</span></div>
