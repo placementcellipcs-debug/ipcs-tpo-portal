@@ -501,6 +501,7 @@ exports.getDashboardStats = (req, res) => {
   res.json({ success: true, stats: { totalStudents: studentCount, pendingApps, placed: placedCount, activeVacancies: activeVacs }, events: eventsList.reverse() });
 };
 
+// 🚨 SMART HEADER FINDER APPLIED TO STUDENTS DIRECTORY 
 exports.getStudents = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
   const cache = getCache();
@@ -508,13 +509,32 @@ exports.getStudents = (req, res) => {
 
   cache.students.forEach(row => {
     const rowData = row.toObject();
-    const getHeader = (searchString) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(searchString.toLowerCase().replace(/\s/g, '')));
-    const branch = rowData[getHeader('branch')] || 'Unknown';
-    const course = rowData[getHeader('course')] || 'Unknown';
+    const keys = Object.keys(rowData);
+    
+    // The exact same bulletproof header finder we used for Clients!
+    const getSafeH = (searchStrs) => {
+      for (let s of searchStrs) {
+        const clean = s.toLowerCase().replace(/\s/g, '');
+        const exact = keys.find(k => k.toLowerCase().replace(/\s/g, '') === clean);
+        if (exact) return exact;
+      }
+      for (let s of searchStrs) {
+        const clean = s.toLowerCase().replace(/\s/g, '');
+        const partial = keys.find(k => k.toLowerCase().replace(/\s/g, '').includes(clean));
+        if (partial) return partial;
+      }
+      return null;
+    };
+
+    const branchH = getSafeH(['branch']);
+    const courseH = getSafeH(['course']);
+    const branch = branchH ? rowData[branchH] : 'Unknown';
+    const course = courseH ? rowData[courseH] : 'Unknown';
 
     if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse)) {
       stats.total++;
-      const pStatKey = getHeader('placementstat');
+      
+      const pStatKey = getSafeH(['placementstat', 'placementstatus']);
       const pStatus = (pStatKey && rowData[pStatKey] ? rowData[pStatKey] : 'Pending').toString().trim();
       const pLower = pStatus.toLowerCase();
       
@@ -525,30 +545,48 @@ exports.getStudents = (req, res) => {
       stats.branchCounts[branch] = (stats.branchCounts[branch] || 0) + 1;
       stats.courseCounts[course] = (stats.courseCounts[course] || 0) + 1;
 
-      const phone = rowData[getHeader('phone')] || rowData[getHeader('contact')] || 'N/A';
-      const statusKey = getHeader('currentlystudying');
-      const status = statusKey && rowData[statusKey] ? rowData[statusKey] : 'N/A';
-      const vacKey = getHeader('vacancyopen') || getHeader('vaccancyopen');
-      const studyKey = getHeader('studymaterialaccess');
-      const examKey = getHeader('technialexam');
+      const phoneH = getSafeH(['phone', 'contact']);
+      const nameH = getSafeH(['name', 'studentname']);
+      const emailH = getSafeH(['mailid', 'email']);
+      const rollH = getSafeH(['ipcsrollnumber', 'rollnumber', 'roll']);
+      const photoH = getSafeH(['profilephoto', 'photo']);
+      const qualH = getSafeH(['qualification', 'qual']);
+      const streamH = getSafeH(['stream']);
+      const resumeH = getSafeH(['resume', 'cv']);
+      const certH = getSafeH(['certificate']);
+      
+      // THIS FIXED IT: Strictly grabs the actual exact column name instead of falling back to a string
+      const statusKey = getSafeH(['coursestatus', 'status(currently']);
+      const vacKey = getSafeH(['vacancyopen', 'vaccancyopen']);
+      const studyKey = getSafeH(['studymaterialaccess']);
+      const examKey = getSafeH(['technialexam', 'technicalexam']);
 
       students.push({
-        rowIdx: row.rowNumber, name: rowData[getHeader('name')] || '', email: rowData[getHeader('mailid')] || rowData[getHeader('email')] || '', 
-        phone: phone, roll: rowData[getHeader('ipcsrollnumber')] || rowData[getHeader('rollnumber')] || rowData[getHeader('roll')] || '', 
-        branch: branch, course: course, photo: rowData[getHeader('profilephoto')] || rowData[getHeader('photo')] || '', 
-        qual: rowData[getHeader('qualification')] || '', stream: rowData[getHeader('stream')] || '', status: status, 
-        resume: rowData[getHeader('resume')] || rowData[getHeader('cv')] || '', certificate: rowData[getHeader('certificate')] || '',
-        vacOpen: (vacKey && rowData[vacKey] ? rowData[vacKey] : 'Yes'), 
-        studyAccess: (studyKey && rowData[studyKey] ? rowData[studyKey] : 'No'), 
-        examAccess: (examKey && rowData[examKey] ? rowData[examKey] : 'No'), 
-        placementStatus: pStatus, rawData: rowData
+        rowIdx: row.rowNumber, 
+        name: nameH ? rowData[nameH] : '', 
+        email: emailH ? rowData[emailH] : '', 
+        phone: phoneH ? rowData[phoneH] : 'N/A', 
+        roll: rollH ? rowData[rollH] : '', 
+        branch: branch, 
+        course: course, 
+        photo: photoH ? rowData[photoH] : '', 
+        qual: qualH ? rowData[qualH] : '', 
+        stream: streamH ? rowData[streamH] : '', 
+        status: statusKey && rowData[statusKey] ? rowData[statusKey] : 'N/A', 
+        resume: resumeH ? rowData[resumeH] : '', 
+        certificate: certH ? rowData[certH] : '',
+        vacOpen: vacKey && rowData[vacKey] ? rowData[vacKey] : 'Yes', 
+        studyAccess: studyKey && rowData[studyKey] ? rowData[studyKey] : 'No', 
+        examAccess: examKey && rowData[examKey] ? rowData[examKey] : 'No', 
+        placementStatus: pStatus, 
+        rawData: rowData
       });
     }
   });
   res.json({ success: true, students: students.reverse(), stats });
 };
 
-// 🚨 FULLY RESTORED ORIGINAL WORKING SHEET SAVING WITH ADDED PERCENTAGE LOGIC
+// 🚨 SMART HEADER FINDER APPLIED TO UPDATE STUDENT
 exports.updateStudent = async (req, res) => {
   const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus, coursePercentage } = req.body;
   try {
@@ -557,18 +595,34 @@ exports.updateStudent = async (req, res) => {
     if (rows.length > 0) {
       const headers = stuSheet.headerValues;
       const updateObj = {};
-      const vH = getFuzzyHeader(headers, 'vacancyopen'); if(vH) updateObj[vH] = vacOpen;
-      const pH = getFuzzyHeader(headers, 'placementstat'); if(pH) updateObj[pH] = placementStatus;
-      const sH = getFuzzyHeader(headers, 'studymaterialaccess'); if(sH) updateObj[sH] = studyAccess;
-      const eH = getFuzzyHeader(headers, 'technialexam') || getFuzzyHeader(headers, 'technicalexam'); if(eH) updateObj[eH] = examAccess;
       
-      // Strict match to prevent grabbing the "Date" column
-      const cPercH = headers.find(h => h.toLowerCase().replace(/\s/g, '') === 'coursepercentage');
+      const getSafeH = (searchStrs) => {
+        for (let s of searchStrs) {
+          const clean = s.toLowerCase().replace(/\s/g, '');
+          const exact = headers.find(h => h.toLowerCase().replace(/\s/g, '') === clean);
+          if (exact) return exact;
+        }
+        for (let s of searchStrs) {
+          const clean = s.toLowerCase().replace(/\s/g, '');
+          const partial = headers.find(h => h.toLowerCase().replace(/\s/g, '').includes(clean));
+          if (partial) return partial;
+        }
+        return null;
+      };
+
+      const vH = getSafeH(['vacancyopen', 'vaccancyopen']); if(vH) updateObj[vH] = vacOpen;
+      const pH = getSafeH(['placementstatus', 'placementstat', 'placementstatsu']); if(pH) updateObj[pH] = placementStatus;
+      const sH = getSafeH(['studymaterialaccess']); if(sH) updateObj[sH] = studyAccess;
+      const eH = getSafeH(['technicalexam', 'technialexam']); if(eH) updateObj[eH] = examAccess;
+      
+      const cPercH = getSafeH(['coursepercentage']);
       if (cPercH && coursePercentage !== undefined) {
         updateObj[cPercH] = coursePercentage;
       }
 
-      const cStatusH = getFuzzyHeader(headers, 'status(currentlystudyingorcompletedcourse)') || getFuzzyHeader(headers, 'coursestatus') || getFuzzyHeader(headers, 'status(currentlystudying'); 
+      // THIS FIXED IT: It now properly finds "Course Status" without failing!
+      const cStatusH = getSafeH(['coursestatus', 'status(currently']); 
+      
       if (cStatusH) {
         let oldStatus = rows[0].get ? (rows[0].get(cStatusH) || '').toString().toLowerCase() : (rows[0][cStatusH] || '').toString().toLowerCase();
         
@@ -591,7 +645,7 @@ exports.updateStudent = async (req, res) => {
                       <p style="font-size: 15px; line-height: 1.6; color: #475569;">Congratulations! Your trainer has confirmed your exceptional performance.</p>
                       <p style="font-size: 15px; line-height: 1.6; color: #475569;"><b>Your placement portal access is now fully active.</b> You can now browse active vacancies and apply directly for job openings.</p>
                       <div style="text-align: center; margin: 35px 0;">
-                        <a href="https://ipcs-tpo-portal.vercel.app" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">Access Placement Portal</a>
+                        <a href="https://placement.ipcsglobal.info" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">Access Placement Portal</a>
                       </div>
                       <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
                         <p style="margin: 0 0 5px 0;">Regards,</p>
@@ -675,7 +729,6 @@ exports.getApplications = (req, res) => {
   res.json({ success: true, applications: appsList });
 };
 
-// 🚨 FIX: Safe TPO Log Writing (Prevents crashing in Job Tracker)
 exports.updateApplication = async (req, res) => {
   const rowNumber = parseInt(req.body.rowNumber);
   const { status, remarks, datePlaced, packageLpa, joiningStatus, currentUserEmail, interviewDate, interviewTime, interviewVenue } = req.body;
@@ -1161,7 +1214,7 @@ exports.runDailyCron = async () => {
           <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
             <p style="margin: 0 0 5px 0;">If you require further shortlisting or have interview dates finalized, please reply directly to this email.</p>
             <p style="margin: 15px 0 2px 0;">Regards,</p>
-            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName}</p>
+            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName || 'Placement Team'}</p>
             <p style="margin: 0;">Placement Officer, IPCS Global</p>
           </div>
         </div>
@@ -1179,180 +1232,21 @@ exports.runDailyCron = async () => {
   }
 };
 
-// ---------------------------------------------------------
-// EVERYTHING ELSE (Untouched, safe to keep exactly as is)
-// ---------------------------------------------------------
-exports.getAdminUsers = async (req, res) => {
-  try {
-    await doc.loadInfo();
-    let allUsers = [];
-
-    const contactSheet = doc.sheetsByTitle["Contact"];
-    if (contactSheet) {
-      const cRows = await contactSheet.getRows();
-      const headers = contactSheet.headerValues;
-      const hName = getFuzzyHeader(headers, 'tponame'); const hMail = getFuzzyHeader(headers, 'mailid'); 
-      const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); 
-      const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); 
-      const hPhoto = getFuzzyHeader(headers, 'profilephoto'); 
-      const hTarget = getFuzzyHeader(headers, 'target') || getFuzzyHeader(headers, 'targetofthemonth');
-      const hEmpId = getFuzzyHeader(headers, 'empid');
-
-      cRows.forEach(r => {
-        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
-        if (email.trim() !== '' || name.trim() !== '') {
-          allUsers.push({ sheet: 'Contact', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: 'TPO', course: 'All Courses', access: 'View & Edit', profilePhoto: r.get(hPhoto) || '', target: r.get(hTarget) || '20', empId: r.get(hEmpId) || `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}` });
-        }
-      });
-    }
-
-    const userSheet = doc.sheetsByTitle["User"];
-    if (userSheet) {
-      const uRows = await userSheet.getRows();
-      const headers = userSheet.headerValues;
-      const hName = getFuzzyHeader(headers, 'username'); const hMail = getFuzzyHeader(headers, 'mailid'); 
-      const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); 
-      const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); 
-      const hRole = getFuzzyHeader(headers, 'role'); const hCourse = getFuzzyHeader(headers, 'course'); 
-      const hAccess = getFuzzyHeader(headers, 'access'); const hPhoto = getFuzzyHeader(headers, 'profilephoto');
-
-      uRows.forEach(r => {
-        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
-        if (email.trim() !== '' || name.trim() !== '') {
-          allUsers.push({ sheet: 'User', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: r.get(hRole) || 'Unassigned', course: r.get(hCourse) || 'All Courses', access: r.get(hAccess) || 'View Only', profilePhoto: r.get(hPhoto) || '', target: 'N/A', empId: `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}` });
-        }
-      });
-    }
-    res.json({ success: true, users: allUsers.reverse() });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.addAdminUser = async (req, res) => {
-  try {
-    const { userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
-    if (role === 'TPO') {
-      const s = doc.sheetsByTitle["Contact"]; const h = s.headerValues;
-      await s.addRow({ [getFuzzyHeader(h, 'tponame')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password });
-    } else {
-      const s = doc.sheetsByTitle["User"]; const h = s.headerValues;
-      await s.addRow({ [getFuzzyHeader(h, 'username')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password, [getFuzzyHeader(h, 'role')]: role, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'access')]: access });
-    }
-    refreshCache(); res.json({ success: true, message: "User added" });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.updateAdminUser = async (req, res) => {
-  try {
-    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
-    const s = doc.sheetsByTitle[sheet];
-    const rows = await s.getRows({ offset: rowNumber - 2, limit: 1 });
-    if (rows.length > 0) {
-      const h = s.headerValues;
-      if (sheet === 'Contact') {
-        rows[0].assign({ [getFuzzyHeader(h, 'tponame')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password });
-      } else {
-        rows[0].assign({ [getFuzzyHeader(h, 'username')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password, [getFuzzyHeader(h, 'role')]: role, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'access')]: access });
-      }
-      await rows[0].save(); refreshCache(); res.json({ success: true, message: "User updated" });
-    } else { res.status(404).json({ success: false, message: "User row not found" }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.deleteAdminUser = async (req, res) => {
-  try {
-    const { sheet, rowNumber } = req.body;
-    const targetSheet = doc.sheetsByTitle[sheet];
-    if (!targetSheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    const rows = await targetSheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    if (rows.length > 0) {
-      await rows[0].delete(); refreshCache(); res.json({ success: true, message: "User deleted" });
-    } else { res.status(404).json({ success: false, message: "User not found" }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.getVacancies = (req, res) => {
-  let vacs = getCache().vacancies.map((row, i) => {
-    const rowData = row.toObject();
-    const getVal = (possibleKeys) => { for(let key of Object.keys(rowData)) { if (possibleKeys.includes(key.trim())) return rowData[key]; } return ''; };
-    return {
-      id: getVal(['JOBID', 'Job ID', 'ID']) || `JOB-${i+1}`, company: getVal(['Company Name', 'Company']), position: getVal(['Position', 'Role']), location: getVal(['Opening AT ( Location )', 'Opening AT( Location )', 'Location']), state: getVal(['State']), mode: getVal(['Work Mode', 'Mode']), lastDate: getVal(['Last Date']), course: getVal(['Course']), qualification: getVal(['Qualification']), description: getVal(['Job Description']), experience: getVal(['Experience']), salary: getVal(['Salary']), gender: getVal(['Gender Preference']), status: getVal(['Status']) || 'Open'
-    };
-  });
-  res.json({ success: true, vacancies: vacs.reverse() });
-};
-
-exports.getIssues = (req, res) => {
-  const { assignedBranchesArray, role, assignedCourse } = req.body;
-  let issuesList = getCache().issues.filter(row => {
-    const rowBranch = row.get('Branch');
-    const studentName = row.get('Name') || '';
-    const studentData = getCache().students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
-    const sCourse = studentData ? studentData.get('Course') : 'Unknown';
-    return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
-  }).map(row => ({ rowNumber: row.rowNumber, name: row.get('Name') || 'Student', branch: row.get('Branch'), details: row.get('Issue Details') || '', status: row.get('Status') || 'Pending', remarks: row.get('Remarks') || '' }));
-  res.json({ success: true, issues: issuesList.reverse() });
-};
-
-exports.updateIssue = async (req, res) => {
-  const { rowNumber, status, remarks } = req.body;
-  try {
-    const issueSheet = doc.sheetsByTitle["Issues"];
-    const rows = await issueSheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    if (rows.length > 0) { rows[0].assign({ 'Status': status, 'Remarks': remarks }); await rows[0].save(); refreshCache(); res.json({ success: true, message: "Issue updated!" }); } 
-    else { res.status(404).json({ success: false, message: "Row not found." }); }
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
-};
-
-exports.getReports = (req, res) => {
-  const { assignedBranchesArray, role, assignedCourse } = req.body;
-  let students = [], applications = [], issues = [], talentino = [], tpoLogs = [];
-  
-  getCache().students.forEach(row => {
-    if(!hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) return;
-    students.push({ name: row.get('Name'), roll: row.get('Roll Number'), branch: row.get('Branch'), course: row.get('Course'), status: row.get('Status'), placementStatus: row.get('Placement Stat') || row.get('Placement Status') });
-  });
-  
-  getCache().applications.forEach(row => {
-    if(!hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) return;
-    applications.push({ name: row.get('Student Name'), roll: row.get('Roll Number'), jobId: row.get('Job ID'), company: row.get('Company Name'), date: row.get('TimeStamp'), status: row.get('Status'), remarks: row.get('Remarks'), tpoName: row.get('Placement Officer'), branch: row.get('Branch'), course: row.get('Course') });
-  });
-  
-  getCache().issues.forEach(row => { 
-    if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) issues.push({ name: row.get('Name'), branch: row.get('Branch'), details: row.get('Issue Details'), status: row.get('Status'), remarks: row.get('Remarks') }); 
-  });
-  
-  getCache().tAtt.forEach(row => { 
-    if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) talentino.push({ name: row.get('Name'), branch: row.get('Branch'), date: row.get('Check-in') || row.get('Date'), rating: row.get('Rating'), notes: row.get('Notes') }); 
-  });
-  
-  let vacancies = getCache().vacancies.map(row => ({ id: row.get('Job ID') || row.get('ID') || '', company: row.get('Company') || '', location: row.get('Location') || '', mode: row.get('Mode') || '', status: row.get('Status') || 'Open', course: row.get('Course') || '', date: row.get('Last Date') || row.get('Date') || '' }));
-  let events = getCache().events.map(row => ({ date: row.get('Date') || '' }));
-
-  if (getCache().tpoLogs) {
-    getCache().tpoLogs.forEach(row => {
-      tpoLogs.push(row.toObject());
-    });
+// =========================================================
+// 🚨 SAFER STRICT MATCHING FOR CLIENTS SHEET
+// =========================================================
+const getSafeClientHeader = (keys, searchStrs) => {
+  for (let s of searchStrs) {
+    const cleanSearch = s.toLowerCase().replace(/\s/g, '');
+    const exact = keys.find(k => k.toLowerCase().replace(/\s/g, '') === cleanSearch);
+    if (exact) return exact;
   }
-
-  res.json({ success: true, students, applications, issues, talentino, vacancies, events, tpoLogs });
-};
-
-exports.getTalentino = (req, res) => {
-  const { assignedBranchesArray, role, assignedCourse } = req.body;
-  let records = getCache().tAtt.filter(row => {
-    const rowBranch = row.get('Branch');
-    const studentName = row.get('Name') || row.get('Student') || '';
-    const studentData = getCache().students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
-    const sCourse = studentData ? studentData.get('Course') : 'Unknown';
-    return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
-  }).map(row => {
-    const rowData = row.toObject();
-    const getVal = (searchStrings) => { for (let key of Object.keys(rowData)) { for (let str of searchStrings) { if (key.toLowerCase().includes(str.toLowerCase())) return rowData[key]; } } return ''; };
-    return { name: getVal(['name', 'student']), branch: getVal(['branch']), date: getVal(['present check-ins date', 'timestamp', 'date', 'time']), rating: getVal(['rating']), notes: getVal(['notes', 'remark']) };
-  });
-  let dates = new Set();
-  records.forEach(r => { const cleanDate = (r.date || '').split(' ')[0].trim(); if (cleanDate && cleanDate !== 'N/A') dates.add(cleanDate); });
-  res.json({ success: true, dates: Array.from(dates).sort().reverse(), records: records.reverse() });
+  for (let s of searchStrs) {
+    const cleanSearch = s.toLowerCase().replace(/\s/g, '');
+    const partial = keys.find(k => k.toLowerCase().replace(/\s/g, '').includes(cleanSearch));
+    if (partial) return partial;
+  }
+  return null;
 };
 
 exports.getClients = (req, res) => {
@@ -1360,9 +1254,36 @@ exports.getClients = (req, res) => {
   let clients = [];
   getCache().clients.forEach(row => {
     const rowData = row.toObject();
-    const officer = (rowData['Placement Officer'] || '').toString().toLowerCase().trim();
+    const keys = Object.keys(rowData);
+    
+    const hOfficer = getSafeClientHeader(keys, ['placementofficer', 'tponame']);
+    const hComp = getSafeClientHeader(keys, ['companyname', 'company']);
+    const hWeb = getSafeClientHeader(keys, ['companywebsite', 'website']);
+    const hLoc = getSafeClientHeader(keys, ['companylocation', 'location']);
+    const hContact = getSafeClientHeader(keys, ['companycontact', 'contactnumber', 'phone']);
+    const hEmail = getSafeClientHeader(keys, ['companymailid', 'companyemail', 'mailid', 'email']);
+    const hPerson = getSafeClientHeader(keys, ['companycontactperson', 'contactperson', 'person']);
+    const hLogo = getSafeClientHeader(keys, ['companylogo', 'logo']);
+    const hMailStat = getSafeClientHeader(keys, ['mailstatus']);
+    const hDocStat = getSafeClientHeader(keys, ['documentstatus', 'docstatus']);
+    const hMou = getSafeClientHeader(keys, ['mou', 'moulink']);
+
+    const officer = hOfficer && rowData[hOfficer] ? rowData[hOfficer].toString().toLowerCase().trim() : '';
+    
     if (cleanTpoName === '' || officer === '' || officer.includes(cleanTpoName) || cleanTpoName.includes(officer)) {
-      clients.push({ rowNumber: row.rowNumber, companyName: rowData['Company Name'] || 'Unknown', website: rowData['Company Website'] || '', location: rowData['Company Location'] || '', contact: rowData['Company Contact'] || '', email: rowData['Company Mail ID'] || '', contactPerson: rowData['Company Contact Person'] || '', logo: rowData['Company Logo'] || '', mailStatus: rowData['Mail Status'] || 'Pending', documentStatus: rowData['Document Status'] || 'Pending', mouLink: rowData['MOU'] || '' });
+      clients.push({ 
+        rowNumber: row.rowNumber, 
+        companyName: (hComp && rowData[hComp]) || 'Unknown', 
+        website: (hWeb && rowData[hWeb]) || '', 
+        location: (hLoc && rowData[hLoc]) || '', 
+        contact: (hContact && rowData[hContact]) || '', 
+        email: (hEmail && rowData[hEmail]) || '', 
+        contactPerson: (hPerson && rowData[hPerson]) || '', 
+        logo: (hLogo && rowData[hLogo]) || '', 
+        mailStatus: (hMailStat && rowData[hMailStat]) || 'Pending', 
+        documentStatus: (hDocStat && rowData[hDocStat]) || 'Pending', 
+        mouLink: (hMou && rowData[hMou]) || '' 
+      });
     }
   });
   res.json({ success: true, clients: clients.reverse() });
@@ -1372,9 +1293,26 @@ exports.getClientById = (req, res) => {
   const targetRow = parseInt(req.params.id);
   const row = getCache().clients.find(r => r.rowNumber === targetRow);
   if (!row) return res.status(404).json({ success: false, message: "Client not found" });
+  
   const rowData = row.toObject();
-  const getHeader = (str) => Object.keys(rowData).find(k => k.toLowerCase().includes(str.toLowerCase()));
-  res.json({ success: true, client: { rowNumber: row.rowNumber, companyName: rowData[getHeader('company name') || getHeader('company')] || 'Unknown', email: rowData[getHeader('mail id') || getHeader('email')] || '', contactPerson: rowData[getHeader('contact person') || getHeader('person')] || '', contact: rowData[getHeader('company contact') || getHeader('contact')] || '', logo: rowData[getHeader('logo')] || '', documentStatus: rowData[getHeader('document status') || getHeader('doc status')] || 'Pending' }});
+  const keys = Object.keys(rowData);
+  
+  const hComp = getSafeClientHeader(keys, ['companyname', 'company']);
+  const hEmail = getSafeClientHeader(keys, ['companymailid', 'companyemail', 'mailid', 'email']);
+  const hPerson = getSafeClientHeader(keys, ['companycontactperson', 'contactperson', 'person']);
+  const hContact = getSafeClientHeader(keys, ['companycontact', 'contactnumber', 'phone']);
+  const hLogo = getSafeClientHeader(keys, ['companylogo', 'logo']);
+  const hDocStat = getSafeClientHeader(keys, ['documentstatus', 'docstatus']);
+
+  res.json({ success: true, client: { 
+    rowNumber: row.rowNumber, 
+    companyName: (hComp && rowData[hComp]) || 'Unknown', 
+    email: (hEmail && rowData[hEmail]) || '', 
+    contactPerson: (hPerson && rowData[hPerson]) || '', 
+    contact: (hContact && rowData[hContact]) || '', 
+    logo: (hLogo && rowData[hLogo]) || '', 
+    documentStatus: (hDocStat && rowData[hDocStat]) || 'Pending' 
+  }});
 };
 
 exports.updateClient = async (req, res) => {
@@ -1383,37 +1321,56 @@ exports.updateClient = async (req, res) => {
   try {
     let logoLink = existingLogo;
     if (req.file) { logoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); }
+    
     const sheet = doc.sheetsByTitle["Clients"]; 
     const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
+    
     if (rows.length > 0) {
       const headers = sheet.headerValues;
-      const getHeader = (str) => headers.find(h => h.toLowerCase() === str.toLowerCase() || h.toLowerCase().includes(str.toLowerCase()));
       const updateObj = {};
-      if(getHeader('mail id') || getHeader('email')) updateObj[getHeader('mail id') || getHeader('email')] = email;
-      if(headers.find(h => h.toLowerCase() === 'company contact' || h.toLowerCase() === 'contact')) updateObj[headers.find(h => h.toLowerCase() === 'company contact' || h.toLowerCase() === 'contact')] = phone;
-      if(getHeader('location')) updateObj[getHeader('location')] = location;
-      if(getHeader('contact person') || getHeader('person')) updateObj[getHeader('contact person') || getHeader('person')] = contactPerson;
-      if(getHeader('logo')) updateObj[getHeader('logo')] = logoLink;
-      rows[0].assign(updateObj); await rows[0].save(); refreshCache(); res.json({ success: true, logoLink });
-    } else { res.status(404).json({ success: false, message: "Row not found." }); }
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+      
+      const hEmail = getSafeClientHeader(headers, ['companymailid', 'companyemail', 'mailid', 'email']);
+      if(hEmail && email !== undefined) updateObj[hEmail] = email;
+      
+      const hPhone = getSafeClientHeader(headers, ['companycontact', 'contactnumber', 'contact', 'phone']);
+      if(hPhone && phone !== undefined) updateObj[hPhone] = phone;
+      
+      const hLoc = getSafeClientHeader(headers, ['companylocation', 'location']);
+      if(hLoc && location !== undefined) updateObj[hLoc] = location;
+      
+      const hPerson = getSafeClientHeader(headers, ['companycontactperson', 'contactperson', 'person']);
+      if(hPerson && contactPerson !== undefined) updateObj[hPerson] = contactPerson;
+      
+      const hLogo = getSafeClientHeader(headers, ['companylogo', 'logo']);
+      if(hLogo && logoLink) updateObj[hLogo] = logoLink;
+
+      rows[0].assign(updateObj); 
+      await rows[0].save(); 
+      refreshCache(); 
+      res.json({ success: true, logoLink });
+    } else { 
+      res.status(404).json({ success: false, message: "Row not found." }); 
+    }
+  } catch (error) { 
+    res.status(500).json({ success: false, message: error.message }); 
+  }
 };
 
 exports.requestMou = async (req, res) => {
   const { rowNumber, companyEmail, companyName } = req.body;
   try {
-    const signingLink = `https://ipcs-tpo-portal.vercel.app/sign-certificate/${rowNumber}`;
+    const signingLink = `https://placement.ipcsglobal.info/sign-certificate/${rowNumber}`;
     const refId = Math.floor(10000 + Math.random() * 90000); 
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`, to: companyEmail,
-      subject: `Action Required:  IPCS Global Hiring Partnership Confirmation With ${companyName} [Ref: ${refId}]`, 
+      subject: `Action Required: IPCS Global Hiring Partnership Confirmation With ${companyName} [Ref: ${refId}]`, 
       html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;"><h2 style="color: #ffffff; margin: 0;">IPCS HIRING PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${companyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Confirmation of Hiring Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review & Sign</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, copy and paste this link into your browser: <br/>${signingLink}</p></div></div>`
     };
     await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Request' }); 
     const sheet = doc.sheetsByTitle["Clients"]; 
     const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
     if(rows.length > 0) {
-      const statusCol = sheet.headerValues.find(h => h.toLowerCase().includes('mail status'));
+      const statusCol = getSafeClientHeader(sheet.headerValues, ['mailstatus', 'status']);
       if (statusCol) { rows[0].assign({ [statusCol]: 'Request Sent' }); await rows[0].save(); }
     }
     refreshCache(); res.json({ success: true });
@@ -1435,11 +1392,17 @@ exports.submitMou = async (req, res) => {
     const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
     if (rows.length > 0) {
       const headers = sheet.headerValues;
-      const getHeader = (str) => headers.find(h => h.toLowerCase() === str.toLowerCase() || h.toLowerCase().includes(str.toLowerCase()));
       const updateObj = {};
-      if(getHeader('document status') || getHeader('doc status')) updateObj[getHeader('document status') || getHeader('doc status')] = 'Completed';
-      if(getHeader('mou') || getHeader('mou link')) updateObj[getHeader('mou') || getHeader('mou link')] = pdfLink;
-      if(logoLink && getHeader('logo')) updateObj[getHeader('logo')] = logoLink;
+      
+      const hDocStat = getSafeClientHeader(headers, ['documentstatus', 'docstatus']);
+      if(hDocStat) updateObj[hDocStat] = 'Completed';
+      
+      const hMou = getSafeClientHeader(headers, ['mou', 'moulink']);
+      if(hMou) updateObj[hMou] = pdfLink;
+      
+      const hLogo = getSafeClientHeader(headers, ['companylogo', 'logo']);
+      if(hLogo && logoLink) updateObj[hLogo] = logoLink;
+
       rows[0].assign(updateObj); await rows[0].save();
     }
 
@@ -1475,36 +1438,99 @@ exports.submitMou = async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
+// =========================================================
+// 🚨 ADMIN USERS & LMS MANAGEMENT
+// =========================================================
+exports.getAdminUsers = async (req, res) => {
+  try {
+    await doc.loadInfo();
+    let allUsers = [];
+
+    const contactSheet = doc.sheetsByTitle["Contact"];
+    if (contactSheet) {
+      const cRows = await contactSheet.getRows(); const headers = contactSheet.headerValues;
+      const hName = getFuzzyHeader(headers, 'tponame'); const hMail = getFuzzyHeader(headers, 'mailid'); 
+      const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); 
+      const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); 
+      const hPhoto = getFuzzyHeader(headers, 'profilephoto'); const hTarget = getFuzzyHeader(headers, 'target') || getFuzzyHeader(headers, 'targetofthemonth'); const hEmpId = getFuzzyHeader(headers, 'empid');
+
+      cRows.forEach(r => {
+        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
+        if (email.trim() !== '' || name.trim() !== '') {
+          allUsers.push({ sheet: 'Contact', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: 'TPO', course: 'All Courses', access: 'View & Edit', profilePhoto: r.get(hPhoto) || '', target: r.get(hTarget) || '20', empId: r.get(hEmpId) || `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}` });
+        }
+      });
+    }
+
+    const userSheet = doc.sheetsByTitle["User"];
+    if (userSheet) {
+      const uRows = await userSheet.getRows(); const headers = userSheet.headerValues;
+      const hName = getFuzzyHeader(headers, 'username'); const hMail = getFuzzyHeader(headers, 'mailid'); 
+      const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); 
+      const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); 
+      const hRole = getFuzzyHeader(headers, 'role'); const hCourse = getFuzzyHeader(headers, 'course'); 
+      const hAccess = getFuzzyHeader(headers, 'access'); const hPhoto = getFuzzyHeader(headers, 'profilephoto');
+
+      uRows.forEach(r => {
+        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
+        if (email.trim() !== '' || name.trim() !== '') {
+          allUsers.push({ sheet: 'User', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: r.get(hRole) || 'Unassigned', course: r.get(hCourse) || 'All Courses', access: r.get(hAccess) || 'View Only', profilePhoto: r.get(hPhoto) || '', target: 'N/A', empId: `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}` });
+        }
+      });
+    }
+    res.json({ success: true, users: allUsers.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addAdminUser = async (req, res) => {
+  try {
+    const { userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
+    if (role === 'TPO') {
+      const s = doc.sheetsByTitle["Contact"]; const h = s.headerValues;
+      await s.addRow({ [getFuzzyHeader(h, 'tponame')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password });
+    } else {
+      const s = doc.sheetsByTitle["User"]; const h = s.headerValues;
+      await s.addRow({ [getFuzzyHeader(h, 'username')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password, [getFuzzyHeader(h, 'role')]: role, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'access')]: access });
+    }
+    refreshCache(); res.json({ success: true, message: "User added" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateAdminUser = async (req, res) => {
+  try {
+    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
+    const s = doc.sheetsByTitle[sheet]; const rows = await s.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (rows.length > 0) {
+      const h = s.headerValues;
+      if (sheet === 'Contact') { rows[0].assign({ [getFuzzyHeader(h, 'tponame')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password }); } 
+      else { rows[0].assign({ [getFuzzyHeader(h, 'username')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password, [getFuzzyHeader(h, 'role')]: role, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'access')]: access }); }
+      await rows[0].save(); refreshCache(); res.json({ success: true, message: "User updated" });
+    } else { res.status(404).json({ success: false, message: "User row not found" }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.deleteAdminUser = async (req, res) => {
+  try {
+    const { sheet, rowNumber } = req.body; const targetSheet = doc.sheetsByTitle[sheet];
+    if (!targetSheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const rows = await targetSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (rows.length > 0) { await rows[0].delete(); refreshCache(); res.json({ success: true, message: "User deleted" }); } 
+    else { res.status(404).json({ success: false, message: "User not found" }); }
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
 exports.updatePassword = async (req, res) => {
   const { email, loginId, newPassword } = req.body;
   try {
-    const cache = getCache();
-    let targetRow = null;
+    const cache = getCache(); let targetRow = null;
     const identifiers = [(email || '').toString().trim().toLowerCase(), (loginId || '').toString().trim().toLowerCase()].filter(Boolean);
-
-    if (cache.contacts) {
-        targetRow = cache.contacts.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
-    if (!targetRow && cache.users) {
-        targetRow = cache.users.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
+    if (cache.contacts) targetRow = cache.contacts.find(row => identifiers.some(id => row._rawData.map(v => (v || '').toString().trim().toLowerCase()).includes(id)));
+    if (!targetRow && cache.users) targetRow = cache.users.find(row => identifiers.some(id => row._rawData.map(v => (v || '').toString().trim().toLowerCase()).includes(id)));
 
     if (targetRow) {
-      const headers = targetRow._worksheet.headerValues;
-      const pHead = getFuzzyHeader(headers, 'password');
-      targetRow.assign({ [pHead]: newPassword });
-      await targetRow.save();
-      refreshCache();
-      res.json({ success: true, message: "Password updated successfully" });
-    } else {
-      res.status(404).json({ success: false, message: "User account not found in database." });
-    }
+      targetRow.assign({ [getFuzzyHeader(targetRow._worksheet.headerValues, 'password')]: newPassword });
+      await targetRow.save(); refreshCache(); res.json({ success: true, message: "Password updated successfully" });
+    } else { res.status(404).json({ success: false, message: "User account not found in database." }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -1513,44 +1539,23 @@ exports.updatePhoto = async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ success: false, message: "No file provided." });
     const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
-    const cache = getCache();
-    let targetRow = null;
+    const cache = getCache(); let targetRow = null;
     const identifiers = [(email || '').toString().trim().toLowerCase(), (loginId || '').toString().trim().toLowerCase()].filter(Boolean);
 
-    if (cache.contacts) {
-        targetRow = cache.contacts.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
-    if (!targetRow && cache.users) {
-        targetRow = cache.users.find(row => {
-            const rd = row._rawData.map(v => (v || '').toString().trim().toLowerCase());
-            return identifiers.some(id => rd.includes(id));
-        });
-    }
+    if (cache.contacts) targetRow = cache.contacts.find(row => identifiers.some(id => row._rawData.map(v => (v || '').toString().trim().toLowerCase()).includes(id)));
+    if (!targetRow && cache.users) targetRow = cache.users.find(row => identifiers.some(id => row._rawData.map(v => (v || '').toString().trim().toLowerCase()).includes(id)));
 
     if (targetRow) {
-      const headers = targetRow._worksheet.headerValues;
-      const photoHeader = headers.find(h => h.toLowerCase().includes('photo') || h.toLowerCase().includes('profile')) || 'Profile Photo';
-      targetRow.assign({ [photoHeader]: photoLink });
-      await targetRow.save(); 
-      refreshCache(); 
-      res.json({ success: true, photoUrl: photoLink });
-    } else { 
-      res.status(404).json({ success: false, message: "User not found." }); 
-    }
+      const headers = targetRow._worksheet.headerValues; const photoHeader = headers.find(h => h.toLowerCase().includes('photo') || h.toLowerCase().includes('profile')) || 'Profile Photo';
+      targetRow.assign({ [photoHeader]: photoLink }); await targetRow.save(); refreshCache(); res.json({ success: true, photoUrl: photoLink });
+    } else { res.status(404).json({ success: false, message: "User not found." }); }
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-// =========================================================
-// 🚨 RESTORED LMS, EXAMS, COURSES, & BRANCHES 
-// =========================================================
 exports.getMaterials = (req, res) => {
   try {
     let materials = getCache().materials.map(row => {
-      const rd = row.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
       return { id: rd[getH('materialid')] || '', course: rd[getH('course')] || '', module: rd[getH('module/topic')] || rd[getH('module')] || rd[getH('topic')] || '', title: rd[getH('title')] || '', fileType: rd[getH('filetype')] || '', link: rd[getH('onedrivelink')] || rd[getH('link')] || '', status: rd[getH('status')] || 'Active' };
     });
     res.json({ success: true, materials: materials.reverse() });
@@ -1598,8 +1603,7 @@ exports.deleteMaterial = async (req, res) => {
 exports.getQuestions = (req, res) => {
   try {
     let questions = getCache().techQuestions.map(row => {
-      const rd = row.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
       return { id: rd[getH('questionid')] || '', course: rd[getH('course')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active' };
     });
     res.json({ success: true, questions: questions.reverse() });
@@ -1645,8 +1649,7 @@ exports.deleteQuestion = async (req, res) => {
 exports.getResults = (req, res) => {
   try {
     let results = getCache().techResults.map(row => {
-      const rd = row.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
       return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', course: rd[getH('course')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '' };
     });
     res.json({ success: true, results: results.reverse() });
