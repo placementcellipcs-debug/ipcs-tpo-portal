@@ -1359,7 +1359,7 @@ exports.updateClient = async (req, res) => {
 exports.requestMou = async (req, res) => {
   const { rowNumber, companyEmail, companyName } = req.body;
   try {
-    const signingLink = `https://placement.ipcsglobal.info/sign-certificate/${rowNumber}`;
+    const signingLink = `https://talenzo.ipcsglobal.info/sign-certificate/${rowNumber}`;
     const refId = Math.floor(10000 + Math.random() * 90000); 
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`, to: companyEmail,
