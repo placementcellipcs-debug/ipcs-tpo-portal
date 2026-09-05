@@ -307,9 +307,9 @@ export default function CertificateSign() {
               </div>
 
               <p style={{ margin: '0 0 5px 0' }}><strong>Authorized Signatory:</strong></p>
-              <p style={{ margin: '0 0 5px 0' }}>Name: Gifty KP</p>
-              <p style={{ margin: '0 0 15px 0' }}>Designation: Zonal Manager - Placements</p>
-              <p style={{ margin: '0 0 15px 0' }}>Email: gifty@ipcsglobal.com</p>
+              <p style={{ margin: '0 0 5px 0' }}>Gifty KP</p>
+              <p style={{ margin: '0 0 15px 0' }}>Zonal Manager - Placements</p>
+              <p style={{ margin: '0 0 15px 0' }}>gifty@ipcsglobal.com</p>
 
               <div style={{ height: '85px', display: 'flex', alignItems: 'flex-start' }}>
                 <img src={ipcsLogo} alt="IPCS Logo" style={{ maxHeight: '85px', maxWidth: '250px', objectFit: 'contain' }} />
