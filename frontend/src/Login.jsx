@@ -45,11 +45,15 @@ export default function Login() {
     return (
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 99999, backgroundColor: '#000000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <video 
-          src="/intro.mp4" 
+          src="/Into.mp4" /* 🚨 Updated to match your exact file name */
           autoPlay 
           muted 
           playsInline 
           onEnded={() => navigate('/dashboard')} 
+          onError={(e) => {
+            console.error("Video failed to load. Skipping to dashboard.", e);
+            navigate('/dashboard'); /* 🚨 FAILSAFE: If the video breaks, skip instantly to dashboard */
+          }}
           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
         />
       </div>
