@@ -10,6 +10,8 @@ export default function Login() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
+  const [showIntro, setShowIntro] = useState(false);
+
   const handleLogin = async (e) => {
     e.preventDefault();
     setLoading(true);
@@ -23,7 +25,7 @@ export default function Login() {
       
       if (res.data.success) {
         localStorage.setItem('tpoData', JSON.stringify(res.data.tpo || res.data.tpoData));
-        navigate('/dashboard');
+        setShowIntro(true);
       } else {
         setError(res.data.message || 'Login failed. Please check your credentials.');
         setLoading(false); 
@@ -35,6 +37,22 @@ export default function Login() {
       setLoading(false);
     }
   };
+
+  // 🚨 If login is successful, render ONLY the full-screen video
+  if (showIntro) {
+    return (
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 99999, backgroundColor: '#000000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <video 
+          src="/intro.mp4" 
+          autoPlay 
+          muted 
+          playsInline 
+          onEnded={() => navigate('/dashboard')} 
+          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        />
+      </div>
+    );
+  }
 
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#020617', fontFamily: 'Inter, sans-serif' }}>
