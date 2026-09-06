@@ -7,6 +7,7 @@ import {
   CalendarCheck, ListChecks, ArrowRight, ChartBar
 } from '@phosphor-icons/react';
 import Layout from './Layout';
+import { API_BASE } from './apiConfig';
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -167,8 +168,8 @@ export default function Dashboard() {
         };
         
         const [statsRes, reportsRes] = await Promise.all([
-          axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/dashboard-stats', reqPayload),
-          axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/reports', reqPayload)
+          axios.post(`${API_BASE}/api/tpo/dashboard-stats`, reqPayload),
+          axios.post(`${API_BASE}/api/tpo/reports`, reqPayload)
         ]);
         
         if (statsRes.data.success) {

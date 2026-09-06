@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { CircleNotch, CaretLeft, Files, ArrowsClockwise } from '@phosphor-icons/react';
 import Layout from './Layout';
+import { API_BASE } from './apiConfig';
 
 const TILE_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 
@@ -54,7 +55,7 @@ export default function StudentApps() {
       
       try {
         setLoading(true);
-        const response = await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/applications', { 
+        const response = await axios.post('`${API_BASE}/api/tpo/applications', { 
           assignedBranchesArray: localTpo.assignedBranchesArray,
           tpoName: localTpo.name,
           role: localTpo.role,

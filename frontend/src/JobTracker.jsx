@@ -5,6 +5,7 @@ import {
   WhatsappLogo, EnvelopeSimple, FilePdf, X 
 } from '@phosphor-icons/react';
 import Layout from './Layout';
+import { API_BASE } from './apiConfig';
 
 export default function JobTracker() {
   const [interviewModal, setInterviewModal] = useState({
@@ -34,7 +35,7 @@ export default function JobTracker() {
     if (!tpoData) return;
     const fetchData = async () => {
       try {
-        const response = await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/applications', { 
+        const response = await axios.post(`${API_BASE}/api/tpo/applications`, { 
           assignedBranchesArray: tpoData.assignedBranchesArray,
           tpoName: tpoData.name 
         });
@@ -77,7 +78,7 @@ export default function JobTracker() {
         interviewVenue: interviewModal.appRowNumber === rowNum ? interviewModal.venue : ''
       };
 
-      const response = await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/applications/update', payload);
+      const response = await axios.post(`${API_BASE}/api/tpo/applications/update`, payload);
       
       if (response.data.success) {
         setSavingStatus(prev => ({ ...prev, [rowNum]: 'success' }));

@@ -7,4 +7,4 @@ export const API_BASE =
   import.meta.env.VITE_API_BASE ||
   (window.location.hostname.includes('vercel.app') || window.location.hostname.includes('localhost')
     ? 'https://ipcs-tpo-portal-u0l6.onrender.com'   // Staging Backend (Render & Local Testing)
-    : 'https://api-talenzo.ipcsglobal.info');       // Live Production Backend
+    : '`${API_BASE}');       // Live Production Backend

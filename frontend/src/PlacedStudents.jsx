@@ -5,6 +5,7 @@ import {
   CaretLeft, Trophy, ArrowsClockwise, FilePdf
 } from '@phosphor-icons/react';
 import Layout from './Layout';
+import { API_BASE } from './apiConfig';
 
 const TILE_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 
@@ -89,8 +90,8 @@ export default function PlacedStudents() {
     try {
       setLoading(true);
       const [appRes, repRes] = await Promise.all([
-        axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/applications', payload),
-        axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/reports', payload)
+        axios.post(`${API_BASE}/api/tpo/applications`, payload),
+        axios.post(`${API_BASE}/api/tpo/reports`, payload)
       ]);
 
       if (repRes.data.success) {
@@ -203,7 +204,7 @@ export default function PlacedStudents() {
       formData.append('joiningStatus', editForm.joiningStatus || '');
       if (editForm.offerLetterFile) formData.append('offerLetterFile', editForm.offerLetterFile);
 
-      await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/applications/update', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      await axios.post(`${API_BASE}/api/tpo/applications/update`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       setIsEditModalOpen(false);
       fetchData();
     } catch (error) { alert("Failed to save placement updates."); } finally { setSavingStatus(false); }
@@ -218,7 +219,7 @@ export default function PlacedStudents() {
       formData.append('appData', JSON.stringify(addForm));
       if (addForm.offerLetterFile) formData.append('offerLetterFile', addForm.offerLetterFile);
 
-      await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/applications/add', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      await axios.post(`${API_BASE}/api/tpo/applications/add`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       setIsAddModalOpen(false);
       setAddForm({ name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', company: '', position: '', status: 'Placed', remarks: '', datePlaced: new Date().toISOString().split('T')[0], packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null });
       fetchData();

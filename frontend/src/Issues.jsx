@@ -3,7 +3,7 @@ import axios from 'axios';
 import { CircleNotch, FloppyDisk, CheckCircle, Headset, CaretLeft } from '@phosphor-icons/react';
 import Layout from './Layout';
 
-const API_BASE = "https://api-talenzo.ipcsglobal.info";
+import { API_BASE } from './apiConfig';
 const TILE_COLORS = ['#ec4899', '#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#0ea5e9', '#f43f5e'];
 
 export default function Issues() {

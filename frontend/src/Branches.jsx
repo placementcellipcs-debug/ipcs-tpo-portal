@@ -5,7 +5,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
-const API_BASE = "https://api-talenzo.ipcsglobal.info";
+import { API_BASE } from './apiConfig';
 
 export default function Branches() {
   const tpoDataStr = localStorage.getItem('tpoData');

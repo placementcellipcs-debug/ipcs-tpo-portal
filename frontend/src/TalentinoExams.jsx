@@ -5,6 +5,7 @@ import {
   WarningCircle, X, Trash, Eye, PencilSimple, CaretLeft
 } from '@phosphor-icons/react';
 import Layout from './Layout';
+import { API_BASE } from './apiConfig';
 
 export default function TalentinoExams() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -31,8 +32,8 @@ export default function TalentinoExams() {
   const fetchData = async () => {
     try {
       const [qRes, rRes] = await Promise.all([
-        axios.get('https://api-talenzo.ipcsglobal.info/api/talentino-exams/questions'),
-        axios.get('https://api-talenzo.ipcsglobal.info/api/talentino-exams/results')
+        axios.get(`${API_BASE}/api/talentino-exams/questions`),
+        axios.get(`${API_BASE}/api/talentino-exams/results`)
       ]);
       if (qRes.data.success) setQuestions(qRes.data.questions || []);
       if (rRes.data.success) setResults(rRes.data.results || []);
@@ -79,8 +80,8 @@ export default function TalentinoExams() {
 
     try {
       const endpoint = isEditMode
-        ? 'https://api-talenzo.ipcsglobal.info/api/talentino-exams/questions/update'
-        : 'https://api-talenzo.ipcsglobal.info/api/talentino-exams/questions/add';
+        ? `${API_BASE}/api/talentino-exams/questions/update`
+        : `${API_BASE}/api/talentino-exams/questions/add`;
 
       const res = await axios.post(endpoint, formData);
       if (res.data.success) {
@@ -98,7 +99,7 @@ export default function TalentinoExams() {
   const handleDeleteQuestion = async (id) => {
     if(!window.confirm("Are you sure you want to permanently delete this question?")) return;
     try {
-      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/talentino-exams/questions/delete', { id });
+      const res = await axios.post(`${API_BASE}/api/talentino-exams/questions/delete`, { id });
       if (res.data.success) setQuestions(questions.filter(q => q.id !== id));
     } catch (err) { alert("Failed to delete question."); }
   };

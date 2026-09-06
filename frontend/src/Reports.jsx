@@ -3,7 +3,7 @@ import axios from 'axios';
 import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree } from '@phosphor-icons/react';
 import Layout from './Layout';
 
-const API_BASE = "https://api-talenzo.ipcsglobal.info";
+import { API_BASE } from './apiConfig';
 const COURSES = ['Automation', 'BMS', 'IT', 'DM', 'Embedded'];
 
 export default function Reports() {

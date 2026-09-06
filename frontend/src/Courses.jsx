@@ -5,6 +5,7 @@ import {
   WarningCircle, X, FolderOpen, GraduationCap
 } from '@phosphor-icons/react';
 import Layout from './Layout';
+import { API_BASE } from './apiConfig';
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#0ea5e9'];
 
@@ -34,7 +35,7 @@ export default function Courses() {
 
   const fetchCourses = async () => {
     try {
-      const res = await axios.get('https://api-talenzo.ipcsglobal.info/api/admin/courses');
+      const res = await axios.get(`${API_BASE}/api/admin/courses`);
       if (res.data.success && res.data.courses) {
         // 🚨 Validate if backend parsed the sheet properly
         let hasPrograms = false;
@@ -73,7 +74,7 @@ export default function Courses() {
     setError('');
 
     try {
-      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/admin/courses/add', formData);
+      const res = await axios.post(`${API_BASE}/api/admin/courses/add`, formData);
       if (res.data.success) {
         setIsModalOpen(false);
         setLoading(true);
@@ -90,7 +91,7 @@ export default function Courses() {
     if(!window.confirm(`Are you sure you want to permanently delete the program: ${subCourse}?`)) return;
     
     try {
-      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/admin/courses/delete', { subCourse });
+      const res = await axios.post(`${API_BASE}/api/admin/courses/delete`, { subCourse });
       if (res.data.success) {
         setLoading(true);
         fetchCourses();

@@ -3,7 +3,7 @@ import axios from 'axios';
 import { CircleNotch, CaretLeft, MagnifyingGlass, Star, GraduationCap } from '@phosphor-icons/react';
 import Layout from './Layout';
 
-const API_BASE = "https://api-talenzo.ipcsglobal.info";
+import { API_BASE } from './apiConfig';
 
 const TILE_COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { CircleNotch, CaretLeft, IdentificationCard, Users, Clock } from '@phosphor-icons/react';
 import Layout from './Layout';
+import { API_BASE } from './apiConfig';
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#0ea5e9'];
 
@@ -21,7 +22,7 @@ export default function PlacementDrives() {
 
   const fetchDrives = async () => {
     try {
-      const res = await axios.get('https://api-talenzo.ipcsglobal.info/api/tpo/drives');
+      const res = await axios.get(`${API_BASE}/api/tpo/drives`);
       if(res.data.success) setDrivesData(res.data.drives);
     } catch(err) { console.error("Failed to load drives"); } finally { setLoading(false); }
   };
@@ -30,7 +31,7 @@ export default function PlacementDrives() {
     // Optimistic UI update for instant feedback
     setDrivesData(prev => prev.map(d => d.rowNumber === rowNumber ? { ...d, studentStatus: newStatus } : d));
     try {
-      await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/drives/update', { rowNumber, studentStatus: newStatus });
+      await axios.post(`${API_BASE}/api/tpo/drives/update`, { rowNumber, studentStatus: newStatus });
     } catch(err) { 
       alert("Failed to sync status to Google Sheets"); 
       fetchDrives(); 

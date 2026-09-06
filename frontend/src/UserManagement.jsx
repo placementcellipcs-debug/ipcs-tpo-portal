@@ -5,6 +5,7 @@ import {
   CaretLeft, SquaresFour, List, IdentificationCard
 } from '@phosphor-icons/react';
 import Layout from './Layout';
+import { API_BASE } from './apiConfig';
 
 // Colors for the Position Tiles
 const TILE_COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#0ea5e9', '#ef4444', '#f43f5e'];
@@ -44,7 +45,7 @@ export default function UserManagement() {
 
   const fetchUsers = async () => {
     try {
-      const res = await axios.get('https://api-talenzo.ipcsglobal.info/api/admin/users');
+      const res = await axios.get('`${API_BASE}/api/admin/users');
       if (res.data && res.data.success) {
         setUsers(res.data.users || []);
       }
@@ -113,8 +114,8 @@ export default function UserManagement() {
 
     try {
       const endpoint = isEditMode 
-        ? 'https://api-talenzo.ipcsglobal.info/api/admin/users/update' 
-        : 'https://api-talenzo.ipcsglobal.info/api/admin/users/add';
+        ? '`${API_BASE}/api/admin/users/update' 
+        : '`${API_BASE}/api/admin/users/add';
         
       const res = await axios.post(endpoint, payload);
       if (res.data.success) {
@@ -132,7 +133,7 @@ export default function UserManagement() {
   const handleDeleteUser = async (sheet, rowNumber, userName) => {
     if (!window.confirm(`Are you sure you want to permanently delete user: ${userName}?`)) return;
     try {
-      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/admin/users/delete', { sheet, rowNumber });
+      const res = await axios.post('`${API_BASE}/api/admin/users/delete', { sheet, rowNumber });
       if (res.data.success) {
         setUsers(users.filter(u => u.rowNumber !== rowNumber || u.sheet !== sheet));
       }

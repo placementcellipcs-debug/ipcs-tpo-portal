@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import axios from 'axios';
 import { Camera, ShieldCheck, User, LockKey, CircleNotch, CheckCircle, WarningCircle } from '@phosphor-icons/react';
 import Layout from './Layout';
+import { API_BASE } from './apiConfig'; // 🚨 Imports your smart URL!
 
 export default function Settings() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -36,7 +37,7 @@ export default function Settings() {
     setMessage({ text: '', type: '' });
 
     try {
-      const response = await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/profile/update-password', {
+      const response = await axios.post(`${API_BASE}/api/tpo/profile/update-password`, {
         email: tpoData.email || '',
         loginId: tpoData.loginId || '',
         newPassword: passwords.new
@@ -66,7 +67,7 @@ export default function Settings() {
     formData.append('photo', file);
 
     try {
-      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/tpo/profile/update-photo', formData, {
+      const res = await axios.post(`${API_BASE}/api/tpo/profile/update-photo`, formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       if (res.data.success) {
