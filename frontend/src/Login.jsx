@@ -2,6 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { CircleNotch } from '@phosphor-icons/react';
+import { API_BASE } from './apiConfig'; // 🚨 Imports your smart URL!
 
 export default function Login() {
   const [loginId, setLoginId] = useState('');
@@ -12,7 +13,7 @@ export default function Login() {
 
   // Video Intro State
   const [showIntro, setShowIntro] = useState(false);
-  const [videoOpacity, setVideoOpacity] = useState(1); // 🚨 Added for fade effect
+  const [videoOpacity, setVideoOpacity] = useState(1);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -20,15 +21,14 @@ export default function Login() {
     setError('');
     
     try {
-      // 🚨 FIXED: Now points to the correct Render Backend!
-      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/auth/login', { 
+      // 🚨 Uses your smart URL based on where you are testing
+      const res = await axios.post(`${API_BASE}/api/auth/login`, { 
         email: loginId, 
         password: password 
       });
       
       if (res.data.success) {
         localStorage.setItem('tpoData', JSON.stringify(res.data.tpo || res.data.tpoData));
-        // Trigger the full-screen video intro instead of navigating instantly
         setShowIntro(true);
       } else {
         setError(res.data.message || 'Login failed. Please check your credentials.');
@@ -36,7 +36,6 @@ export default function Login() {
       }
     } catch (err) {
       console.error("Login Error:", err);
-      // Give a highly accurate error message
       setError(err.response?.data?.message || 'Server connection failed. Please check your internet and try again.');
       setLoading(false);
     }
@@ -50,15 +49,15 @@ export default function Login() {
         zIndex: 99999, backgroundColor: '#000000', display: 'flex', 
         alignItems: 'center', justifyContent: 'center',
         opacity: videoOpacity, 
-        transition: 'opacity 1s ease-in-out' /* 🚨 Smooth 1-second fade effect */
+        transition: 'opacity 1s ease-in-out' 
       }}>
         <video 
-          src="/Into.mp4" /* 🚨 Updated to match your exact file name */
+          src="/Into.mp4" 
           autoPlay 
           muted 
           playsInline 
           onTimeUpdate={(e) => {
-            // 🚨 Trigger the fade-out exactly 1 second before the video finishes
+            // Trigger fade out 1 sec before end
             if (e.target.duration - e.target.currentTime <= 1) {
               setVideoOpacity(0);
             }
@@ -66,11 +65,11 @@ export default function Login() {
           onEnded={() => navigate('/dashboard')} 
           onError={(e) => {
             console.error("Video failed to load. Skipping to dashboard.", e);
-            navigate('/dashboard'); /* 🚨 FAILSAFE: If the video breaks, skip instantly to dashboard */
+            navigate('/dashboard'); 
           }}
           style={{ 
             width: '100%', height: '100%', objectFit: 'cover',
-            transform: 'scale(1.08)' /* 🚨 Zooms the video in by 8% to push the AI logo off-screen */
+            transform: 'scale(1.08)' // Hides the AI watermark
           }}
         />
       </div>
