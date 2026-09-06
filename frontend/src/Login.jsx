@@ -10,6 +10,7 @@ export default function Login() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
+  // Video Intro State
   const [showIntro, setShowIntro] = useState(false);
 
   const handleLogin = async (e) => {
@@ -18,13 +19,15 @@ export default function Login() {
     setError('');
     
     try {
-      const res = await axios.post('https://api-talenzo.ipcsglobal.info/api/auth/login', { 
+      // 🚨 FIXED: Now points to the correct Render Backend!
+      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/auth/login', { 
         email: loginId, 
         password: password 
       });
       
       if (res.data.success) {
         localStorage.setItem('tpoData', JSON.stringify(res.data.tpo || res.data.tpoData));
+        // Trigger the full-screen video intro instead of navigating instantly
         setShowIntro(true);
       } else {
         setError(res.data.message || 'Login failed. Please check your credentials.');
@@ -32,7 +35,6 @@ export default function Login() {
       }
     } catch (err) {
       console.error("Login Error:", err);
-      // Give a highly accurate error message
       setError(err.response?.data?.message || 'Server connection failed. Please check your internet and try again.');
       setLoading(false);
     }
@@ -54,6 +56,7 @@ export default function Login() {
     );
   }
 
+  // Standard Login UI
   return (
     <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#020617', fontFamily: 'Inter, sans-serif' }}>
       
