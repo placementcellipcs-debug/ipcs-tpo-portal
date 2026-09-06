@@ -12,6 +12,7 @@ export default function Login() {
 
   // Video Intro State
   const [showIntro, setShowIntro] = useState(false);
+  const [videoOpacity, setVideoOpacity] = useState(1); // 🚨 Added for fade effect
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -35,6 +36,7 @@ export default function Login() {
       }
     } catch (err) {
       console.error("Login Error:", err);
+      // Give a highly accurate error message
       setError(err.response?.data?.message || 'Server connection failed. Please check your internet and try again.');
       setLoading(false);
     }
@@ -43,18 +45,33 @@ export default function Login() {
   // 🚨 If login is successful, render ONLY the full-screen video
   if (showIntro) {
     return (
-      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 99999, backgroundColor: '#000000', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ 
+        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
+        zIndex: 99999, backgroundColor: '#000000', display: 'flex', 
+        alignItems: 'center', justifyContent: 'center',
+        opacity: videoOpacity, 
+        transition: 'opacity 1s ease-in-out' /* 🚨 Smooth 1-second fade effect */
+      }}>
         <video 
           src="/Into.mp4" /* 🚨 Updated to match your exact file name */
           autoPlay 
           muted 
           playsInline 
+          onTimeUpdate={(e) => {
+            // 🚨 Trigger the fade-out exactly 1 second before the video finishes
+            if (e.target.duration - e.target.currentTime <= 1) {
+              setVideoOpacity(0);
+            }
+          }}
           onEnded={() => navigate('/dashboard')} 
           onError={(e) => {
             console.error("Video failed to load. Skipping to dashboard.", e);
             navigate('/dashboard'); /* 🚨 FAILSAFE: If the video breaks, skip instantly to dashboard */
           }}
-          style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+          style={{ 
+            width: '100%', height: '100%', objectFit: 'cover',
+            transform: 'scale(1.08)' /* 🚨 Zooms the video in by 8% to push the AI logo off-screen */
+          }}
         />
       </div>
     );
