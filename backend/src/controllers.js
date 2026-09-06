@@ -1025,22 +1025,8 @@ exports.addEvent = async (req, res) => {
 
     const logo1 = "https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
     const logo2 = "https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
-    
-    const buildEventEmail = (mailTitle, headerColor, bodyContent) => `
-      <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
-        <div style="background-color: #0f1523; padding: 35px 20px; text-align: center; border-bottom: 5px solid ${headerColor};">
-          <div style="margin-bottom: 15px;">
-            <img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
-            <img src="${logo2}" alt="Talenzo Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
-          </div>
-          <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 1px; text-transform: uppercase;">${mailTitle}</h1>
-          <p style="color: #94a3b8; margin: 10px 0 0 0; font-size: 14px;">IPCS Global Placement Cell</p>
-        </div>
-        <div style="padding: 40px 35px;">
-          ${bodyContent}
-        </div>
-      </div>
-    `;
+    const watermark = "https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
+    const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
     
     if (evType.includes('placement drive')) {
       const allTpos = getAllTpoEmails();
@@ -1050,50 +1036,71 @@ exports.addEvent = async (req, res) => {
       const bccList = [...new Set(allBMs)].filter(Boolean).join(',');
       const ccList = [...new Set([...superAdmins, ...allTpos])].filter(Boolean).join(',');
 
-      const html = buildEventEmail('Placement Drive Notification', '#3b82f6', `
-        <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 15px 0;">Dear Team,</p>
-        <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 25px 0;">Greetings from the Placement Department, IPCS Global.<br><br>This is to inform you that a Placement Drive has been scheduled. Kindly find the details below:</p>
+      const html = `
+        <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
+          <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #3b82f6;">
+            <div style="margin-bottom: 12px;">
+              <img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
+              <img src="${logo2}" alt="Talenzo Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
+            </div>
+            <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px;">Placement Drive Notification</h2>
+            <p style="color: #94a3b8; margin: 5px 0 0 0; font-size: 13px;">IPCS Global Placement Cell</p>
+          </div>
+          <div style="background-image: url('${watermark}'); background-repeat: no-repeat; background-position: center center; background-size: cover; background-color: #ffffff;">
+            <div style="padding: 35px 30px; background-color: rgba(255, 255, 255, 0.94); color: #334155; font-size: 15px; line-height: 1.65;">
+              <p style="font-size: 16px; font-weight: bold; color: #0f1523; margin-top: 0;">Dear Team,</p>
+              <p>Greetings from the Placement Department, IPCS Global.</p>
+              <p>This is to inform you that a Placement Drive has been scheduled. Kindly find the details below:</p>
+              
+              <div style="background-color: rgba(248, 250, 252, 0.95); border: 1px solid #cbd5e1; border-left: 5px solid #3b82f6; border-radius: 8px; padding: 20px; margin: 25px 0;">
+                <h3 style="margin: 0 0 12px 0; color: #0f1523; font-size: 15px; text-transform: uppercase;">&#128204; Placement Drive Details</h3>
+                <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                  <tr><td style="padding: 6px 0; color: #64748b; width: 35%;">Drive Title:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${title}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Date:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${date}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Time:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${time || 'TBD'}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Location / Mode:</td><td style="padding: 6px 0; color: #0284c7; font-weight: bold;">${location || 'Venue / Online'}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Eligible Branch:</td><td style="padding: 6px 0; color: #0f1523;">${branch || 'All Branches'}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Description:</td><td style="padding: 6px 0; color: #334155;">${description || 'N/A'}</td></tr>
+                </table>
+              </div>
 
-        <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 5px solid #3b82f6; border-radius: 8px; padding: 25px; margin-bottom: 30px;">
-          <h3 style="margin: 0 0 15px 0; color: #0f1523; font-size: 16px; text-transform: uppercase; letter-spacing: 0.5px;">📌 Placement Drive Details</h3>
-          <table style="width: 100%; border-collapse: collapse;">
-            <tbody>
-              <tr><td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; width: 35%; border-bottom: 1px solid #e2e8f0;">Drive Title:</td><td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${title}</td></tr>
-              <tr><td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Date:</td><td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${date}</td></tr>
-              <tr><td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Time:</td><td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${time || 'TBD'}</td></tr>
-              <tr><td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Location / Mode:</td><td style="padding: 10px 0; color: #38bdf8; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${location || 'Venue / Online'}</td></tr>
-              <tr><td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Eligible Branch:</td><td style="padding: 10px 0; color: #0f1523; font-size: 15px; border-bottom: 1px solid #e2e8f0;">${branch || 'All Branches'}</td></tr>
-              <tr><td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: 600;">Description:</td><td style="padding: 10px 0; color: #64748b; font-size: 14px;">${description || 'N/A'}</td></tr>
-            </tbody>
-          </table>
+              <h3 style="color: #ef4444; margin: 20px 0 10px 0; font-size: 16px;">&#9888;&#65039; Action Required</h3>
+              <p>All concerned branches are requested to immediately inform all eligible students about this placement opportunity and encourage maximum participation.</p>
+              <p>Please ensure that the interested and eligible students strictly register for the drive through the IPCS Global Student Portal:</p>
+              
+              <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0;">
+                <p style="margin: 0; font-size: 15px; color: #1e3a8a;">
+                  &#127760; <b>Student Portal:</b> <a href="https://placement.ipcsglobal.info" target="_blank" style="color: #0284c7; font-weight: bold; text-decoration: underline;">placement.ipcsglobal.info</a>
+                </p>
+              </div>
+
+              <p style="color: #b91c1c; font-weight: bold;">Portal registration is mandatory for participation in the placement drive.</p>
+              <p>Students must complete their registration through the portal within the given registration period. Branch-level confirmation, WhatsApp confirmation, or verbal confirmation will not be considered as a substitute for portal registration.</p>
+              <p style="font-weight: bold; margin-bottom: 5px;">We request all branches to ensure that:</p>
+              <ul style="padding-left: 20px; margin-top: 5px;">
+                <li style="margin-bottom: 6px;">All eligible students are informed about the drive.</li>
+                <li style="margin-bottom: 6px;">Interested students complete their registration through the Student Portal.</li>
+                <li style="margin-bottom: 6px;">Students are reminded to register strictly through the portal before the registration deadline.</li>
+                <li style="margin-bottom: 6px;">Registered students are properly informed about the drive and instructed to attend on time.</li>
+              </ul>
+              <p>Your support and coordination are essential to ensure smooth execution of the placement drive and maximum student participation.</p>
+              <p>For any clarification, please coordinate with the Placement Team.</p>
+              <p>Thank you for your cooperation.</p>
+
+              <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
+                <p style="margin: 0 0 3px 0;">Regards,</p>
+                <p style="margin: 0 0 2px 0; font-weight: bold;">Placement Team</p>
+                <p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p>
+              </div>
+            </div>
+          </div>
         </div>
+      `;
 
-        <h3 style="margin: 0 0 15px 0; color: #ef4444; font-size: 16px;">⚠️ Action Required</h3>
-        <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 15px 0;">All concerned branches are requested to immediately inform all eligible students about this placement opportunity and encourage maximum participation.</p>
-        <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 15px 0;">Please ensure that the interested and eligible students strictly register for the drive through the IPCS Global Student Portal:</p>
-        
-        <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 15px 0;">🌐 <b>Student Portal:</b> <a href="https://placement.ipcsglobal.info" style="color: #0284c7; font-weight: bold; text-decoration: underline;">placement.ipcsglobal.info</a></p>
-        
-        <p style="font-size: 15px; line-height: 1.6; color: #b91c1c; margin: 0 0 15px 0;"><b>Portal registration is mandatory for participation in the placement drive.</b></p>
-        <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 15px 0;">Students must complete their registration through the portal within the given registration period. Branch-level confirmation, WhatsApp confirmation, or verbal confirmation will not be considered as a substitute for portal registration.</p>
-        <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 5px 0;"><b>We request all branches to ensure that:</b></p>
-        <ul style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 20px 0; padding-left: 20px;">
-          <li style="margin-bottom: 5px;">All eligible students are informed about the drive.</li>
-          <li style="margin-bottom: 5px;">Interested students complete their registration through the Student Portal.</li>
-          <li style="margin-bottom: 5px;">Students are reminded to register strictly through the portal before the registration deadline.</li>
-          <li style="margin-bottom: 5px;">Registered students are properly informed about the drive and instructed to attend on time.</li>
-        </ul>
-        <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 15px 0;">Your support and coordination are essential to ensure smooth execution of the placement drive and maximum student participation.</p>
-        <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 25px 0;">For any clarification, please coordinate with the Placement Team.<br>Thank you for your cooperation.</p>
-        <div style="border-top: 1px solid #e2e8f0; padding-top: 25px;">
-          <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 5px 0;">Regards,</p>
-          <p style="font-size: 15px; color: #0f1523; font-weight: bold; margin: 0;">Placement Team<br><span style="color: #38bdf8;">IPCS Global</span></p>
-        </div>
-      `);
-
-      sendMailAndLog({
-        from: `"IPCS Placements" <${process.env.EMAIL_USER}>`,
-        to: process.env.EMAIL_USER, 
+      // 🚨 CRITICAL FIX: Await prevents the request from ending before the email is sent
+      await sendMailAndLog({
+        from: `"IPCS Placements" <${senderEmail}>`,
+        to: senderEmail, 
         bcc: bccList, 
         cc: ccList,
         subject: `Placement Drive Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
@@ -1103,13 +1110,11 @@ exports.addEvent = async (req, res) => {
     } else if (evType.includes('talentino')) {
       const tpoMail = getTpoEmail(tpo);
       const bmMail = getBranchManagerEmail(branch);
-      
-      const ccList = [...new Set([bmMail, 'gifty@ipcsglobal.com'])].filter(Boolean).join(',');
+      const ccList = [bmMail, 'gifty@ipcsglobal.com'].filter(Boolean).join(',');
+      const sendTo = tpoMail || bmMail || 'gifty@ipcsglobal.com';
       
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
-          
-          <!-- Header -->
           <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #a855f7;">
             <div style="margin-bottom: 12px;">
               <img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
@@ -1118,18 +1123,14 @@ exports.addEvent = async (req, res) => {
             <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px;">Talentino Session Notification</h2>
             <p style="color: #94a3b8; margin: 5px 0 0 0; font-size: 13px;">IPCS Global Placement Cell</p>
           </div>
-
-          <!-- Body Container -->
           <div style="background-image: url('${watermark}'); background-repeat: no-repeat; background-position: center center; background-size: cover; background-color: #ffffff;">
             <div style="padding: 35px 30px; background-color: rgba(255, 255, 255, 0.94); color: #334155; font-size: 15px; line-height: 1.65;">
-              
               <p style="font-size: 16px; font-weight: bold; color: #0f1523; margin-top: 0;">Dear Team,</p>
               <p>Greetings from the Placement Department, IPCS Global.</p>
               <p>This is to inform you that a Talentino Session has been scheduled at your branch. Kindly find the details below:</p>
-
-              <!-- Details Card -->
+              
               <div style="background-color: rgba(248, 250, 252, 0.95); border: 1px solid #cbd5e1; border-left: 5px solid #a855f7; border-radius: 8px; padding: 20px; margin: 25px 0;">
-                <h3 style="margin: 0 0 12px 0; color: #0f1523; font-size: 15px; text-transform: uppercase;">📌 Talentino Session Details</h3>
+                <h3 style="margin: 0 0 12px 0; color: #0f1523; font-size: 15px; text-transform: uppercase;">&#128204; Talentino Session Details</h3>
                 <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
                   <tr><td style="padding: 6px 0; color: #64748b; width: 35%;">Date:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${date}</td></tr>
                   <tr><td style="padding: 6px 0; color: #64748b;">Time:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${time || 'TBD'}</td></tr>
@@ -1139,9 +1140,8 @@ exports.addEvent = async (req, res) => {
                 </table>
               </div>
 
-              <h3 style="color: #ef4444; margin: 20px 0 10px 0; font-size: 16px;">⚠️ Action Required</h3>
+              <h3 style="color: #ef4444; margin: 20px 0 10px 0; font-size: 16px;">&#9888;&#65039; Action Required</h3>
               <p>The concerned branch is requested to inform the students about the scheduled Talentino session and ensure maximum participation.</p>
-              
               <p style="font-weight: bold; margin-bottom: 5px;">Please ensure that:</p>
               <ul style="padding-left: 20px; margin-top: 5px;">
                 <li style="margin-bottom: 6px;">All concerned students are informed about the session in advance.</li>
@@ -1158,36 +1158,34 @@ exports.addEvent = async (req, res) => {
               </div>
 
               <p>The Talentino session is designed to engage students through interactive activities, challenges, and placement-oriented exercises, helping them improve their confidence, communication, aptitude, problem-solving, and overall placement readiness.</p>
-              
               <p>Your support and coordination are essential to ensure the smooth execution of the Talentino session and active student participation.</p>
-              
               <p>For any clarification or coordination, please connect with the Placement Team.<br/>Thank you for your cooperation.</p>
 
-              <!-- Sign-off -->
               <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
                 <p style="margin: 0 0 3px 0;">Regards,</p>
                 <p style="margin: 0 0 2px 0; font-weight: bold;">Placement Team</p>
                 <p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p>
               </div>
-
             </div>
           </div>
         </div>
       `;
 
-      if (tpoMail) {
-        sendMailAndLog({
-          from: `"IPCS Talentino" <${process.env.EMAIL_USER}>`,
-          to: tpoMail,
-          cc: `Gifty@ipcsglobal.com,${bmMail}`,
-          subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
-          html: html
-        }, { name: tpo, email: tpoMail, type: 'Event Notification' });
-      }
+      // 🚨 CRITICAL FIX: Await prevents the request from ending before the email is sent
+      await sendMailAndLog({
+        from: `"IPCS Talentino" <${senderEmail}>`,
+        to: sendTo,
+        cc: ccList,
+        subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
+        html: html
+      }, { name: tpo, email: sendTo, type: 'Event Notification' });
     }
 
     refreshCache(); res.json({ success: true, message: "Event added successfully" });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+  } catch (error) { 
+    console.error("Event add error:", error);
+    res.status(500).json({ success: false, message: error.message }); 
+  }
 };
 
 // --- CRON HELPER (RESUME DELIVERY) ---
