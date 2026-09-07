@@ -23,6 +23,7 @@ export default function Dashboard() {
   const userRole = (tpoData?.role || '').toUpperCase();
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
   const showReports = isSuperAdmin || userRole === 'TPO';
+  const isTrainer = userRole.includes('TRAINER');
   
   const [stats, setStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0 });
   const [events, setEvents] = useState([]);
@@ -33,6 +34,10 @@ export default function Dashboard() {
   const [domainData, setDomainData] = useState([]);
   const [pipeline, setPipeline] = useState({ applied: 0, interview: 0, offers: 0, placed: 0 });
   const [totalAppsCount, setTotalAppsCount] = useState(0);
+
+  // 🚨 NEW STATES FOR LIVE TICKER AND TRAINER LOGS
+  const [allPlaced, setAllPlaced] = useState([]);
+  const [trainerLogs, setTrainerLogs] = useState([]);
 
   const parseDateRobust = (dStr) => {
     if (!dStr) return null;
@@ -48,7 +53,6 @@ export default function Dashboard() {
     return isNaN(d) ? null : d;
   };
 
-  // 🚨 STANDARD DOMAIN MAPPER
   const getStandardDomain = (courseStr) => {
     if (!courseStr) return 'Other Domains';
     const c = courseStr.toLowerCase();
@@ -81,7 +85,6 @@ export default function Dashboard() {
     const deduped = {};
     mappedLogs.forEach(log => {
       const key = `${log.roll || log.name}_${log.company}`.toLowerCase();
-      // Ensure we don't accidentally overwrite a 'placed' status with an older 'applied' log
       if (!deduped[key] || (log.status.toLowerCase().includes('placed') || log.status.toLowerCase().includes('offer'))) {
         deduped[key] = log;
       }
@@ -92,7 +95,6 @@ export default function Dashboard() {
     const currentYear = new Date().getFullYear();
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
     
-    // 🚨 RESET TREND PROPERLY TO AVOID OVERLAPPING LINES
     let newTrend = months.map(m => ({ m, apps: 0, off: 0, pl: 0 }));
     let domCount = {};
     let pApp = 0, pInt = 0, pOff = 0, pPl = 0;
@@ -103,18 +105,16 @@ export default function Dashboard() {
       const jSt = (app.joiningStatus || '').toLowerCase();
       
       const isPlaced = st.includes('placed') || st.includes('got offer') || st.includes('offer') || jSt.includes('join');
-      const isOffer = st.includes('offer') || isPlaced; // If placed, they had an offer
+      const isOffer = st.includes('offer') || isPlaced;
       const isInterview = st.includes('interview') || st.includes('shortlist');
       
       if (isPlaced) placedRecent.push(app);
 
-      // Pipeline Aggregation
       if (st.includes('applied') || st.includes('register') || st.includes('pending')) pApp++;
       if (isInterview) pInt++;
       if (st.includes('offer')) pOff++;
       if (isPlaced) pPl++;
 
-      // 🚨 MAPPING ALL SUBCOURSES TO 5 MAIN DOMAINS
       if (isPlaced) {
         let c = getStandardDomain(app.course);
         domCount[c] = (domCount[c] || 0) + 1;
@@ -123,10 +123,6 @@ export default function Dashboard() {
       const d = parseDateRobust(app.date);
       if (d && d.getFullYear() === currentYear) {
         const mIdx = d.getMonth();
-        // Graph Metric Logic: 
-        // 1. ALL entries count towards "Applications"
-        // 2. Only those with Offer/Placed count towards "Offers"
-        // 3. Only final Placed count towards "Placed"
         newTrend[mIdx].apps++;
         if (isOffer) newTrend[mIdx].off++;
         if (isPlaced) newTrend[mIdx].pl++;
@@ -142,11 +138,24 @@ export default function Dashboard() {
     setDomainData(formattedDomains);
     setPipeline({ applied: pApp, interview: pInt, offers: pOff, placed: pPl });
     
+    // 🚨 SAVE ALL PLACEMENTS FOR THE LIVE TICKER
+    setAllPlaced(placedRecent);
+    
     const sortedRecent = placedRecent.sort((a, b) => {
       return new Date(parseDateRobust(b.date) || 0) - new Date(parseDateRobust(a.date) || 0);
     }).slice(0, 5);
     setRecentPlacements(sortedRecent);
   };
+
+  // 🚨 LIVE TICKER: RANDOMIZE PLACEMENTS EVERY 60 SECONDS
+  useEffect(() => {
+    if (allPlaced.length === 0) return;
+    const interval = setInterval(() => {
+      const shuffled = [...allPlaced].sort(() => 0.5 - Math.random());
+      setRecentPlacements(shuffled.slice(0, 5));
+    }, 60000); // 60,000ms = 1 Minute
+    return () => clearInterval(interval);
+  }, [allPlaced]);
 
   useEffect(() => {
     const localTpoStr = localStorage.getItem('tpoData');
@@ -183,6 +192,18 @@ export default function Dashboard() {
           localStorage.setItem('dash_logs', JSON.stringify(logs));
           processApps(logs);
         }
+
+        // 🚨 FETCH TRAINER LOGS FOR THE DASHBOARD WIDGET
+        if ((localTpo.role || '').toUpperCase().includes('TRAINER')) {
+          try {
+            const trRes = await axios.get(`${API_BASE}/api/admin/trainer-logs`);
+            if (trRes.data.success) {
+              const myLogs = trRes.data.logs.filter(l => l.trainerName === localTpo.name);
+              setTrainerLogs(myLogs.slice(0, 5));
+            }
+          } catch (e) { console.error("Failed to load trainer logs"); }
+        }
+
       } catch (err) { console.error(err); } finally { setLoading(false); }
     };
     fetchData();
@@ -340,11 +361,37 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* 🚨 TRAINER LOG WIDGET */}
+        {isTrainer && (
+          <div className="dash-card" style={{ marginBottom: '20px' }}>
+            <div className="card-top">
+              <h3>My Daily Reports</h3>
+              <button className="text-link" onClick={() => navigate('/trainer-logs')}>View All</button>
+            </div>
+            <table className="mini-table">
+              <thead><tr><th>Date</th><th>Present</th><th>Absent</th><th>Remarks</th></tr></thead>
+              <tbody>
+                {trainerLogs.length > 0 ? trainerLogs.map((l, i) => (
+                  <tr key={i}>
+                    <td><span className="primary-text">{l.timestamp.split(' ')[0]}</span></td>
+                    <td style={{ color: '#10b981', fontWeight: 'bold' }}>{l.present}</td>
+                    <td style={{ color: '#ef4444', fontWeight: 'bold' }}>{l.absentees}</td>
+                    <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.feedbacks || '-'}</td>
+                  </tr>
+                )) : <tr><td colSpan="4" style={{textAlign:'center', padding:'20px'}}>No logs submitted yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
+
         <div className="grid-3-col" style={{ marginBottom: '20px' }}>
           <div className="dash-card" style={{ gridColumn: 'span 2' }}>
             <div className="card-top">
               <h3>Recent Placement Activity</h3>
-              <button className="text-link" onClick={()=>navigate('/placed')}>View All</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.7rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '4px 8px', borderRadius: '12px' }}><CircleNotch size={12} className="ph-spin" /> Live Updates</span>
+                <button className="text-link" onClick={()=>navigate('/placed')}>View All</button>
+              </div>
             </div>
             <table className="mini-table">
               <thead>
@@ -352,11 +399,14 @@ export default function Dashboard() {
               </thead>
               <tbody>
                 {recentPlacements.length > 0 ? recentPlacements.map((p, i) => (
-                  <tr key={i}>
+                  <tr key={i} style={{ animation: 'fadeInReveal 0.5s ease' }}>
                     <td><div style={{display:'flex', alignItems:'center', gap:'8px'}}><div className="tiny-avatar">{p.name.charAt(0)}</div> <span style={{color:'#fff'}}>{p.name}</span></div></td>
                     <td><span style={{color:'#3b82f6', fontWeight:'bold'}}>{p.company}</span></td>
                     <td>{p.course}</td>
-                    <td style={{textAlign:'right', fontWeight:'bold', color:'#fff'}}>{p.packageLpa ? `${p.packageLpa} LPA` : '-'}</td>
+                    {/* 🚨 FIXED THE 'LPALPA' BUG */}
+                    <td style={{textAlign:'right', fontWeight:'bold', color:'#fff'}}>
+                      {p.packageLpa ? `${String(p.packageLpa).toUpperCase().replace('LPA', '').trim()} LPA` : '-'}
+                    </td>
                     <td style={{textAlign:'right'}}><span className="status-badge green">{(p.status||'Placed').toUpperCase()}</span></td>
                   </tr>
                 )) : <tr><td colSpan="5" style={{textAlign:'center', padding:'20px'}}>No records found</td></tr>}
@@ -472,6 +522,12 @@ export default function Dashboard() {
           .db-wrapper { font-family: 'Inter', sans-serif; }
           .dash-card { background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; }
           .dash-card h3 { margin: 0; font-size: 1rem; color: #fff; }
+          
+          /* 🚨 ADDED FADE IN ANIMATION FOR LIVE TICKER */
+          @keyframes fadeInReveal {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
           
           .kpi-header { display: flex; align-items: center; gap: 15px; }
           .icon-c { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }

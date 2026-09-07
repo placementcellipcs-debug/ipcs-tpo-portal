@@ -11,14 +11,17 @@ export default function Aptitude() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   
-  // 🚨 STRICT PERMISSION: Only Super Admin (Admin) can edit/delete aptitude questions
+  // 🚨 STRICT PERMISSION: Role Checks
   const canManage = tpoData?.accessType === 'superadmin';
+  const isTrainer = (tpoData?.role || '').toUpperCase() === 'TRAINER';
 
   const [questions, setQuestions] = useState([]);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('leaderboard'); 
+  
+  // 🚨 FIXED: Force trainers into the leaderboard tab
+  const [activeTab, setActiveTab] = useState(isTrainer ? 'leaderboard' : 'questions'); 
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -144,7 +147,7 @@ export default function Aptitude() {
             </h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Manage quantitative, logical, and verbal assessments.</p>
           </div>
-          {activeTab === 'questions' && canManage && (
+          {activeTab === 'questions' && canManage && !isTrainer && (
             <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
               <Plus size={20} weight="bold" /> Add Question
             </button>
@@ -155,13 +158,17 @@ export default function Aptitude() {
           <button onClick={() => setActiveTab('leaderboard')} style={{ background: activeTab === 'leaderboard' ? 'rgba(245, 158, 11, 0.1)' : 'transparent', color: activeTab === 'leaderboard' ? '#f59e0b' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <Trophy size={20} weight={activeTab === 'leaderboard' ? "fill" : "regular"} /> Global Leaderboard
           </button>
-          <button onClick={() => setActiveTab('questions')} style={{ background: activeTab === 'questions' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'questions' ? 'var(--accent-primary)' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Question size={20} weight={activeTab === 'questions' ? "fill" : "regular"} /> Question Bank
-          </button>
+          
+          {/* 🚨 FIXED: Hidden from Trainers */}
+          {!isTrainer && (
+            <button onClick={() => setActiveTab('questions')} style={{ background: activeTab === 'questions' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'questions' ? 'var(--accent-primary)' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Question size={20} weight={activeTab === 'questions' ? "fill" : "regular"} /> Question Bank
+            </button>
+          )}
         </div>
 
         <div style={{ marginBottom: '20px', maxWidth: '400px', position: 'relative' }}>
-          <input type="text" placeholder={activeTab === 'questions' ? "Search questions or categories..." : "Search student or branch..."} className="sleek-input" style={{ width: '100%' }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <input type="text" placeholder={activeTab === 'questions' && !isTrainer ? "Search questions or categories..." : "Search student or branch..."} className="sleek-input" style={{ width: '100%' }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
 
         {activeTab === 'leaderboard' && (
@@ -183,7 +190,8 @@ export default function Aptitude() {
           </div>
         )}
 
-        {activeTab === 'questions' && (
+        {/* 🚨 FIXED: Block question bank render for trainers entirely */}
+        {activeTab === 'questions' && !isTrainer && (
           <div className="table-container">
             <table className="modern-table">
               <thead>

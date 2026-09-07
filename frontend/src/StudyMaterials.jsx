@@ -6,6 +6,7 @@ import {
   FolderOpen, BookBookmark, PencilSimple, Trash, Info
 } from '@phosphor-icons/react';
 import Layout from './Layout';
+import { API_BASE } from './apiConfig'; // 🚨 Added explicit import
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
 
@@ -16,6 +17,8 @@ export default function StudyMaterials() {
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
+  const isTrainer = upperRole.includes('TRAINER');
+  
   const canManage = isSuperAdmin || isRth;
 
   const [courseDict, setCourseDict] = useState({});
@@ -38,10 +41,9 @@ export default function StudyMaterials() {
 
   const fetchData = async () => {
     try {
-      // 🚨 FIXED: Now pointing to Render instead of api-talenzo
       const [matRes, courseRes] = await Promise.all([
-        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials'),
-        axios.get('https://ipcs-tpo-portal-u0l6.onrender.com/api/admin/courses')
+        axios.get(`${API_BASE}/api/lms/materials`),
+        axios.get(`${API_BASE}/api/admin/courses`)
       ]);
       
       if (matRes.data.success) {
@@ -52,11 +54,15 @@ export default function StudyMaterials() {
         const cDict = courseRes.data.courses || {};
         setCourseDict(cDict);
         
-        if (!isSuperAdmin && tpoData?.assignedCourse && tpoData.assignedCourse !== 'All') {
-          const userCourse = tpoData.assignedCourse.toLowerCase();
-          const matchKey = Object.keys(cDict).find(k => k.toLowerCase().includes(userCourse) || userCourse.includes(k.toLowerCase()));
-          setSelectedMainCourse(matchKey || tpoData.assignedCourse);
-          setViewLevel('sub_courses');
+        // 🚨 PERFECT TRAINER BYPASS TO SUB-COURSES (PROGRAMS)
+        if (!isSuperAdmin && tpoData?.assignedCourse && tpoData.assignedCourse !== 'All Courses' && tpoData.assignedCourse !== 'All') {
+          const myCourse = tpoData.assignedCourse.toLowerCase().trim();
+          
+          // Find the parent domain for their course
+          const mainDomain = Object.keys(cDict).find(k => k.toLowerCase().includes(myCourse) || myCourse.includes(k.toLowerCase())) || tpoData.assignedCourse;
+          
+          setSelectedMainCourse(mainDomain);
+          setViewLevel('sub_courses'); // Jumps straight to the programs page!
         } else {
           setViewLevel('main_courses');
         }
@@ -118,17 +124,12 @@ export default function StudyMaterials() {
 
     try {
       const endpoint = isEditMode 
-        ? 'https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/update' 
-        : 'https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/add';
+        ? `${API_BASE}/api/lms/materials/update` 
+        : `${API_BASE}/api/lms/materials/add`;
 
       const res = await axios.post(endpoint, formData);
       if (res.data.success) {
         setIsModalOpen(false);
-        if (isEditMode) {
-          setMaterials(prev => prev.map(m => m.id === formData.id ? formData : m));
-        } else {
-          setMaterials(prev => [formData, ...prev]);
-        }
         fetchData(); 
       }
     } catch (err) {
@@ -142,7 +143,7 @@ export default function StudyMaterials() {
     if (!window.confirm("Are you sure you want to permanently delete this study material?")) return;
     setMaterials(prev => prev.filter(m => m.id !== id));
     try {
-      await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/lms/materials/delete', { id });
+      await axios.post(`${API_BASE}/api/lms/materials/delete`, { id });
       fetchData(); 
     } catch (err) { 
       alert("Failed to delete study material."); 
@@ -186,7 +187,8 @@ export default function StudyMaterials() {
         {viewLevel === 'sub_courses' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '15px', flexWrap: 'wrap' }}>
-              <button onClick={() => { setViewLevel('main_courses'); setSelectedMainCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}><CaretLeft weight="bold" size={18} /> Back to Domains</button>
+              {/* 🚨 ONLY ADMINS CAN GO BACK TO DOMAINS */}
+              {isSuperAdmin && <button onClick={() => { setViewLevel('main_courses'); setSelectedMainCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}><CaretLeft weight="bold" size={18} /> Back to Domains</button>}
               <div><h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedMainCourse} Programs</h1><p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a specific program to view and manage its materials.</p></div>
             </div>
 
