@@ -15,7 +15,6 @@ const ClientLogo = ({ client, size = 70, noMargin = false }) => {
   const getDriveImage = (url) => {
     if (!url) return null;
     const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
-    // 🚨 FIX: Use CORS friendly link instead of thumbnail
     return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : url;
   };
 
@@ -41,7 +40,9 @@ export default function Clients() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   const isSuperAdmin = tpoData?.accessType === 'superadmin';
-  const isTpo = (tpoData?.role || '').toUpperCase() === 'TPO';
+  
+  // 🚨 FIXED: Changed from === 'TPO' to .includes('TPO') to handle trailing spaces in the DB
+  const isTpo = (tpoData?.role || '').toUpperCase().includes('TPO');
 
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -66,7 +67,9 @@ export default function Clients() {
       if (!localStr) return;
       const localTpo = JSON.parse(localStr);
       const isSA = localTpo.accessType === 'superadmin';
-      const isT = (localTpo.role || '').toUpperCase() === 'TPO';
+      
+      // 🚨 FIXED: Trailing space handler
+      const isT = (localTpo.role || '').toUpperCase().includes('TPO');
 
       const cached = localStorage.getItem('dash_clients');
       if (cached) { setClients(JSON.parse(cached)); setLoading(false); }
@@ -235,7 +238,7 @@ export default function Clients() {
 
                       <div style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>
                         <div style={{ marginBottom: '4px' }}>👤 {client.contactPerson || 'No Contact Person'}</div>
-                        <div style={{ marginBottom: '4px' }}>✉️ {client.email || 'No Email'}</div>
+                        <div style={{ marginBottom: '4px' }}>📧 {client.email || 'No Email'}</div>
                         <div>📞 {client.contact || 'No Phone'}</div>
                       </div>
 

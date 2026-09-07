@@ -10,16 +10,20 @@ import { API_BASE } from './apiConfig';
 
 const parseDate = (dateStr) => {
   if (!dateStr) return null;
+  
+  // 🚨 FIXED: Let standard JS handle Google Sheets 'M/D/YYYY' format perfectly!
+  const standardDate = new Date(dateStr);
+  if (!isNaN(standardDate)) return standardDate;
+
+  // Fallback for tricky string formats if standard parsing fails
   let cleanStr = typeof dateStr === 'string' ? dateStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dateStr;
   if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
     const parts = cleanStr.split(/[/-]/);
     if (parts.length === 3) {
       if (parts[2].length === 4) return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-      if (parts[0].length === 4) return new Date(`${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`);
     }
   }
-  const d = new Date(cleanStr);
-  return isNaN(d) ? null : d;
+  return null;
 };
 
 export default function Events() {
@@ -27,7 +31,7 @@ export default function Events() {
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   
   const [events, setEvents] = useState([]);
-  const [branchList, setBranchList] = useState([]); // 🚨 State to hold dynamic branches
+  const [branchList, setBranchList] = useState([]); 
   const [loading, setLoading] = useState(true);
   
   const [categoryTab, setCategoryTab] = useState('calendar');
@@ -57,12 +61,10 @@ export default function Events() {
     }
   };
 
-  // 🚨 Fetch dynamic branches from the backend
   const fetchBranches = async () => {
     try {
       const res = await axios.get(`${API_BASE}/api/admin/branches`);
       if (res.data.success) {
-        // Extract branch names, remove empties, and sort alphabetically
         const branches = res.data.branches
           .map(b => b.branch)
           .filter(Boolean)
@@ -152,7 +154,6 @@ export default function Events() {
       
       const dayEvents = events.filter(e => {
         const pd = parseDate(e.date);
-        // 🚨 FIXED: Timezone-safe date matching
         return pd && 
                pd.getFullYear() === cellDate.getFullYear() && 
                pd.getMonth() === cellDate.getMonth() && 
@@ -204,8 +205,7 @@ export default function Events() {
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Track corporate drives and training sessions across branches.</p>
           </div>
           
-          {/* 🚨 RESTRICT ADD EVENT BUTTON TO ADMINS & TPOs ONLY */}
-          {(tpoData?.accessType === 'superadmin' || (tpoData?.role || '').toUpperCase() === 'TPO') && (
+          {(tpoData?.accessType === 'superadmin' || (tpoData?.role || '').toUpperCase().includes('TPO')) && (
             <button className="btn-action" style={{ width: 'auto', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }} onClick={() => setIsModalOpen(true)}>
               <Plus weight="bold" /> Add Event
             </button>
@@ -342,7 +342,6 @@ export default function Events() {
 
             <div className="form-group" style={{ marginBottom: '15px' }}>
               <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Eligible Branch</label>
-              {/* 🚨 DYNAMIC BRANCH DROPDOWN */}
               <select className="sleek-input" style={{ width: '100%' }} value={newEvent.branch} onChange={e => setNewEvent({...newEvent, branch: e.target.value})}>
                 <option value="All Branches">All Branches</option>
                 {branchList.map((branchName, idx) => (
