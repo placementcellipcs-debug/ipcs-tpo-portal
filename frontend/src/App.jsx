@@ -20,10 +20,11 @@ import TalentinoExams from './TalentinoExams';
 import Courses from './Courses';
 import PlacementDrives from './PlacementDrives';
 import ExamsHub from './ExamsHub';
-import Branches from './Branches'; // 🚨 NEW IMPORT
+import Branches from './Branches';
 import TrainerLog from './TrainerLog';
 import SecurityActivity from './SecurityActivity';
-import AddAsset from './AddAsset';
+
+// 🚨 ASSET MANAGEMENT (IMPORTED EXACTLY ONCE)
 import AssetList from './AssetList';
 import AddAsset from './AddAsset';
 
@@ -48,22 +49,17 @@ function App() {
         <Route path="/study-materials" element={<StudyMaterials />} />
         <Route path="/courses" element={<Courses />} />
         <Route path="/placement-drives" element={<PlacementDrives />} />
-        
-        {/* 🚨 THE NEW BRANCHES ROUTE */}
         <Route path="/branches" element={<Branches />} />
         <Route path="/trainer-logs" element={<TrainerLog />} />
-
         <Route path="/exams" element={<ExamsHub />} />
         <Route path="/exams/technical" element={<TechnicalExams />} />
         <Route path="/exams/aptitude" element={<Aptitude />} />
         <Route path="/exams/talentino" element={<TalentinoExams />} />
         <Route path="/security-logs" element={<SecurityActivity />} />
-
-        <Route path="/assets/add" element={<AddAsset />} />
-        <Route path="/assets" element={<AssetList />} />
-        <Route path="/assets/add" element={<AddAsset />} />s                                
         
-
+        {/* ASSET MANAGEMENT ERP ROUTES */}
+        <Route path="/assets" element={<AssetList />} />
+        <Route path="/assets/add" element={<AddAsset />} />
       </Routes>
     </BrowserRouter>
   );
