@@ -18,7 +18,6 @@ let globalCache = null;
 let isFetching = false;
 
 const getCache = () => globalCache;
-
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchSheetWithRetry(sheet, retries = 3) {
@@ -51,7 +50,8 @@ async function refreshCache() {
       getSheet("Study_Materials"), getSheet("Tech_Questions"), getSheet("Tech_Results"),
       getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"),
       getSheet("Courses"), getSheet("Drive_Registration"), getSheet("Contact"), getSheet("User"), getSheet("Branches"), getSheet("Mail"),
-      getSheet("Trainer/TL_Log") // 🚨 ADDED THE NEW TRAINER SHEET HERE
+      getSheet("Trainer/TL_Log"),
+      getSheet("Security_Logs") // 🚨 CACHING SECURITY LOGS
     ];
 
     const fetchedData = [];
@@ -60,11 +60,10 @@ async function refreshCache() {
       await delay(200); 
     }
 
-    // 🚨 EXACT 1-TO-1 DESTRUCTURING 
     const [
       stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, 
       matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows,
-      courseRows, driveRows, contactRows, userRows, branchRows, mailRows, trainerLogRows // 🚨 DESTRUCTURED HERE
+      courseRows, driveRows, contactRows, userRows, branchRows, mailRows, trainerLogRows, securityRows
     ] = fetchedData;
 
     let coursesDict = {};
@@ -89,7 +88,8 @@ async function refreshCache() {
       techQuestions: tqRows, techResults: trRows, aptQuestions: aptQRows, aptResults: aptRRows, 
       talQuestions: talQRows, talResults: talRRows, coursesDict: coursesDict, drives: driveRows,
       contacts: contactRows, users: userRows, branches: branchRows, mails: mailRows,
-      trainerLogs: trainerLogRows // 🚨 CACHED FOR THE FRONTEND
+      trainerLogs: trainerLogRows,
+      securityLogs: securityRows // 🚨 LOADED INTO MEMORY
     };
     
     console.log("✅ Cache successfully synced with Google Sheets!");
@@ -186,37 +186,25 @@ async function logMailToSheet(receiverName, receiverMail, mailType, subject, sta
         'Status': status || 'Sent'
       });
     }
-  } catch (e) {
-    console.error("Failed to log mail to sheet:", e);
-  }
+  } catch (e) { console.error("Failed to log mail to sheet:", e); }
 }
 
 const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, family: 4, auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }});
 
 async function sendIPCSMail(mailOptions, logDetails) {
   try {
-    // 🚨 UPDATED: Uses your new Mailing System Web App URL by default
     const emailWebAppUrl = process.env.APPS_SCRIPT_EMAIL_URL || "https://script.google.com/macros/s/AKfycbzKAEsc5_OR2YjHeO_8yyS9BoxFeJOXjNUzNMqGby7pIHuoIQVM5f31GxXJHxleGds4dQ/exec";
     
     if (process.env.EMAIL_MODE === 'APPS_SCRIPT' || true) {
       const payload = { 
-        to: mailOptions.to, 
-        cc: mailOptions.cc || '', 
-        bcc: mailOptions.bcc || '', 
-        subject: mailOptions.subject, 
-        html: mailOptions.html, 
-        attachments: [] 
+        to: mailOptions.to, cc: mailOptions.cc || '', bcc: mailOptions.bcc || '', 
+        subject: mailOptions.subject, html: mailOptions.html, attachments: [] 
       };
-
-      console.log(`📨 Dispatching email to: ${payload.to} | CC: ${payload.cc || 'None'}`);
 
       if (mailOptions.attachments && Array.isArray(mailOptions.attachments)) {
         mailOptions.attachments.forEach(att => {
-          if (att.content) {
-            payload.attachments.push({ filename: att.filename, mimeType: 'application/pdf', contentBytes: att.content.toString('base64') });
-          } else if (att.href) {
-            payload.attachments.push({ filename: att.filename, href: att.href });
-          }
+          if (att.content) { payload.attachments.push({ filename: att.filename, mimeType: 'application/pdf', contentBytes: att.content.toString('base64') }); } 
+          else if (att.href) { payload.attachments.push({ filename: att.filename, href: att.href }); }
         });
       }
 
@@ -230,7 +218,6 @@ async function sendIPCSMail(mailOptions, logDetails) {
     return true;
   } catch (err) {
     if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, `Failed: ${err.message}`);
-    console.error("❌ Email dispatch failed:", err.message);
     throw err;
   }
 }

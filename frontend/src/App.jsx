@@ -22,6 +22,7 @@ import PlacementDrives from './PlacementDrives';
 import ExamsHub from './ExamsHub';
 import Branches from './Branches'; // 🚨 NEW IMPORT
 import TrainerLog from './TrainerLog';
+import SecurityActivity from './SecurityActivity';
 
 function App() {
   return (
@@ -53,6 +54,7 @@ function App() {
         <Route path="/exams/technical" element={<TechnicalExams />} />
         <Route path="/exams/aptitude" element={<Aptitude />} />
         <Route path="/exams/talentino" element={<TalentinoExams />} />
+        <Route path="/security-logs" element={<SecurityActivity />} />
       </Routes>
     </BrowserRouter>
   );

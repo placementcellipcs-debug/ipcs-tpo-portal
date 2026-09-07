@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import axios from 'axios';
 import { 
-  Bell, X, SquaresFour, Trophy, ListChecks, 
+  Bell, X, SquaresFour, Trophy, ListChecks, ShieldCheck,
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
-  Book, FileText, Bookmarks, ShieldCheck, IdentificationCard, CaretLeft, MapPin,
+  Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin,
   WarningCircle, Notebook 
 } from '@phosphor-icons/react';
+import { API_BASE } from './apiConfig';
 
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
@@ -26,9 +28,7 @@ export default function Layout({ children }) {
     try {
       const data = localStorage.getItem('tpoData');
       return data ? JSON.parse(data) : null;
-    } catch (error) {
-      return null;
-    }
+    } catch (error) { return null; }
   });
   
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -36,8 +36,61 @@ export default function Layout({ children }) {
   const [imgError, setImgError] = useState(false);
   const [notifications, setNotifications] = useState([]);
 
+  // 🚨 SECURITY: MULTI-DEVICE RESTRICTION & IDLE AUTO-LOGOUT
   useEffect(() => {
-    if (!tpoData) navigate('/');
+    if (!tpoData) {
+      navigate('/');
+      return;
+    }
+
+    const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 Minutes
+    let lastActivity = Date.now();
+
+    const handleUserInteraction = () => { lastActivity = Date.now(); };
+
+    const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
+    activityEvents.forEach((evt) => window.addEventListener(evt, handleUserInteraction, { passive: true }));
+
+    // INACTIVITY CHECK
+    const inactivityInterval = setInterval(() => {
+      if (Date.now() - lastActivity >= INACTIVITY_TIMEOUT) {
+        clearInterval(inactivityInterval);
+        activityEvents.forEach((evt) => window.removeEventListener(evt, handleUserInteraction));
+        localStorage.removeItem('tpoData');
+        alert("Session Expired: You have been logged out due to 15 minutes of inactivity.");
+        window.location.href = '/';
+      }
+    }, 10000);
+
+    // MULTI-DEVICE CHECK
+    const sessionHeartbeat = setInterval(async () => {
+      try {
+        if (!tpoData?.email || !tpoData?.sessionToken) return;
+        const res = await axios.post(`${API_BASE}/api/auth/verify-session`, {
+          email: tpoData.email,
+          sessionToken: tpoData.sessionToken
+        });
+
+        if (res.data && res.data.valid === false) {
+          clearInterval(sessionHeartbeat);
+          clearInterval(inactivityInterval);
+          activityEvents.forEach((evt) => window.removeEventListener(evt, handleUserInteraction));
+          localStorage.removeItem('tpoData');
+          alert("Security Notice: " + (res.data.message || "Your account was logged in on another device."));
+          window.location.href = '/';
+        }
+      } catch (err) {}
+    }, 30000);
+
+    return () => {
+      clearInterval(inactivityInterval);
+      clearInterval(sessionHeartbeat);
+      activityEvents.forEach((evt) => window.removeEventListener(evt, handleUserInteraction));
+    };
+  }, [tpoData, navigate]);
+
+  useEffect(() => {
+    if (!tpoData) return;
     document.body.setAttribute('data-theme', 'dark');
     
     const userRole = (tpoData?.role || '').toUpperCase();
@@ -81,7 +134,7 @@ export default function Layout({ children }) {
         });
 
         const finalNotifs = mappedNotifs.filter(n => {
-          if (isSuperAdmin || userRole === 'TPO' || userRole.includes('MANAGER')) return true;
+          if (isSuperAdmin || userRole.includes('TPO') || userRole.includes('MANAGER')) return true;
           if (isCourseSpecific) return getStandardCourse(n.courseRaw) === myCourse;
           return true;
         }).slice(0, 5); 
@@ -89,24 +142,20 @@ export default function Layout({ children }) {
         setNotifications(finalNotifs);
       }
     } catch(e) { console.error("Error parsing notifications"); }
-
-  }, [tpoData, navigate]);
+  }, [tpoData]);
 
   if (!tpoData) return null;
 
-  // 🚨 STRICT ROLE-BASED ACCESS CONTROL FLAGS
   const userRole = (tpoData.role || '').toUpperCase();
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
-  const isTpo = userRole === 'TPO';
-  const isTrainer = userRole === 'TRAINER';
+  const isTpo = userRole.includes('TPO');
+  const isTrainer = userRole.includes('TRAINER');
   const isRth = userRole.includes('RTH') || userRole.includes('REGIONAL TECHNICAL HEAD');
   const isTL = userRole.includes('TECHNICAL LEAD') || userRole.includes('TTH') || isRth || userRole.includes('MANAGER') || isSuperAdmin;
 
-  // 🚨 FIXED: Separated Tracker and Reports permissions
-  const showTracker = isTpo; // ONLY TPOs can see this
+  const showTracker = isTpo; 
   const showReports = isSuperAdmin || isTpo; 
   const showManageAdmin = isSuperAdmin;
-  
   const showStudyMaterials = isSuperAdmin || isRth || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD') || isTrainer; 
   const showTrainerLogs = isTrainer || isTL;
 
@@ -132,7 +181,6 @@ export default function Layout({ children }) {
     <div className="app-layout">
       <main className="main-content">
         <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px' }}>
-          
           <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" style={{ height: '35px', objectFit: 'contain' }} />
             <div style={{ width: '1px', height: '25px', backgroundColor: 'rgba(255, 255, 255, 0.15)' }}></div>
@@ -208,12 +256,10 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => handleNav('/dashboard')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><SquaresFour size={22} color={isActive('/dashboard')} /> <span style={{ color: isActive('/dashboard') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Dashboard</span></div><span style={{ color: '#64748b' }}>›</span></div>
             <div className="drawer-item" onClick={() => handleNav('/students')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/students')} /> <span style={{ color: isActive('/students') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Students Directory</span></div><span style={{ color: '#64748b' }}>›</span></div>
             
-            {/* 🚨 STRICT RESTRICTION: ONLY TPO SEES JOB TRACKER */}
             {showTracker && (
                <div className="drawer-item" onClick={() => handleNav('/tracker')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Files size={22} color={isActive('/tracker')} /> <span style={{ color: isActive('/tracker') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Job Tracker</span></div><span style={{ color: '#64748b' }}>›</span></div>
             )}
             
-            {/* REPORTS VISIBLE TO ADMINS & TPOs */}
             {showReports && (
                <div className="drawer-item" onClick={() => handleNav('/reports')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> <span style={{ color: isActive('/reports') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Reports</span></div><span style={{ color: '#64748b' }}>›</span></div>
             )}
@@ -249,6 +295,7 @@ export default function Layout({ children }) {
                  <div className="drawer-item" onClick={() => handleNav('/branches')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><MapPin size={22} color={isActive('/branches')} /> <span style={{ color: isActive('/branches') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Manage Branches</span></div><span style={{ color: '#64748b' }}>›</span></div>
                  <div className="drawer-item" onClick={() => handleNav('/courses')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Bookmarks size={22} color={isActive('/courses')} /> <span style={{ color: isActive('/courses') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Manage Courses</span></div><span style={{ color: '#64748b' }}>›</span></div>
                  <div className="drawer-item" onClick={() => handleNav('/users')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/users')} /> <span style={{ color: isActive('/users') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>User Management</span></div><span style={{ color: '#64748b' }}>›</span></div>
+                 <div className="drawer-item" onClick={() => handleNav('/security-logs')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/security-logs')} /> <span style={{ color: isActive('/security-logs') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Security Logs</span></div><span style={{ color: '#64748b' }}>›</span></div>
                </>
             )}
 

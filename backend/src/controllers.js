@@ -1,3 +1,29 @@
+// 🚨 IN-MEMORY MULTI-DEVICE SESSION REGISTRY
+const activeSessions = new Map();
+
+function parseUserAgent(ua = '') {
+  let browser = 'Unknown Browser';
+  let os = 'Unknown OS';
+  let device = 'Desktop';
+
+  if (/mobile/i.test(ua)) device = 'Mobile';
+  else if (/tablet|ipad/i.test(ua)) device = 'Tablet';
+
+  if (/windows/i.test(ua)) os = 'Windows';
+  else if (/android/i.test(ua)) os = 'Android';
+  else if (/iphone|ipad|ipod/i.test(ua)) os = 'iOS';
+  else if (/macintosh|mac os x/i.test(ua)) os = 'macOS';
+  else if (/linux/i.test(ua)) os = 'Linux';
+
+  if (/edg/i.test(ua)) browser = 'Edge';
+  else if (/chrome|crios/i.test(ua) && !/opr|opera/i.test(ua)) browser = 'Chrome';
+  else if (/safari/i.test(ua) && !/chrome/i.test(ua)) browser = 'Safari';
+  else if (/firefox|fxios/i.test(ua)) browser = 'Firefox';
+  else if (/opr|opera/i.test(ua)) browser = 'Opera';
+
+  return { browser, os, device };
+}
+
 const { 
   doc, getCache, refreshCache, hasAccess, getFuzzyHeader, 
   sendIPCSMail, uploadToDrive
@@ -432,6 +458,46 @@ exports.login = async (req, res) => {
       assignedArray = ['all'];
     }
 
+    // 🚨 GENERATE SESSION TOKEN
+    const sessionToken = `IPCS_SESS_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    activeSessions.set(cleanInput, sessionToken);
+
+    if (accessType === 'superadmin' || upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD' || assignedArray.length === 0) {
+      assignedArray = ['all'];
+    }
+
+    // 🚨 GENERATE SESSION TOKEN
+    const sessionToken = `IPCS_SESS_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    activeSessions.set(cleanInput, sessionToken);
+
+    // 🚨 ASYNCHRONOUS SECURITY LOGGING
+    (async () => {
+      try {
+        const sheet = doc.sheetsByIndex.find(s => s.title.replace(/\s/g, '').toLowerCase().includes('security_logs'));
+        if (sheet) {
+          const rawIp = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || 'Unknown IP';
+          const cleanIp = rawIp.replace('::ffff:', '').trim();
+          const uaInfo = parseUserAgent(req.headers['user-agent'] || '');
+
+          await sheet.addRow({
+            'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+            'UserName': userName,
+            'Email': foundUser['mailid'] || foundUser['email'] || cleanInput,
+            'Role': role,
+            'Branch': foundUser['sittingbranch'] || 'All Branches',
+            'IPAddress': cleanIp,
+            'Device': uaInfo.device,
+            'OS': uaInfo.os,
+            'Browser': uaInfo.browser,
+            'Status': 'Active'
+          });
+          refreshCache();
+        }
+      } catch (logErr) {
+        console.error("Security session logging failed:", logErr.message);
+      }
+    })();
+
     return res.json({ 
       success: true, 
       tpo: { 
@@ -444,7 +510,29 @@ exports.login = async (req, res) => {
         phone: foundUser['contactnumber'] || foundUser['contact'] || foundUser['phoneno'] || 'Not Provided', 
         role: role, 
         assignedCourse: course, 
-        accessType: accessType 
+        accessType: accessType,
+        sessionToken: sessionToken
+      } 
+    });
+  } catch (error) { 
+    res.status(500).json({ success: false, message: error.message }); 
+  }
+};
+
+    return res.json({ 
+      success: true, 
+      tpo: { 
+        name: userName, 
+        email: foundUser['mailid'] || foundUser['email'] || cleanInput, 
+        loginId: cleanInput, 
+        sittingBranch: foundUser['sittingbranch'] || 'N/A', 
+        assignedBranchesArray: assignedArray, 
+        photo: foundUser['profilephoto'] || foundUser['photo'] || '', 
+        phone: foundUser['contactnumber'] || foundUser['contact'] || foundUser['phoneno'] || 'Not Provided', 
+        role: role, 
+        assignedCourse: course, 
+        accessType: accessType,
+        sessionToken: sessionToken
       } 
     });
   } catch (error) { 
@@ -1958,6 +2046,34 @@ exports.deleteBranch = async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
+// 🚨 ASYNCHRONOUS SECURITY LOGGING
+    (async () => {
+      try {
+        const sheet = doc.sheetsByIndex.find(s => s.title.replace(/\s/g, '').toLowerCase().includes('security_logs'));
+        if (sheet) {
+          const rawIp = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || 'Unknown IP';
+          const cleanIp = rawIp.replace('::ffff:', '').trim();
+          const uaInfo = parseUserAgent(req.headers['user-agent'] || '');
+
+          await sheet.addRow({
+            'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+            'UserName': userName,
+            'Email': foundUser['mailid'] || foundUser['email'] || cleanInput,
+            'Role': role,
+            'Branch': foundUser['sittingbranch'] || 'All Branches',
+            'IPAddress': cleanIp,
+            'Device': uaInfo.device,
+            'OS': uaInfo.os,
+            'Browser': uaInfo.browser,
+            'Status': 'Active'
+          });
+          refreshCache();
+        }
+      } catch (logErr) {
+        console.error("Security session logging failed:", logErr.message);
+      }
+    })();
+
 // =========================================================
 // 🚨 TRAINER / TL DAILY LOGS
 // =========================================================
@@ -1992,29 +2108,6 @@ exports.getTrainerLogs = (req, res) => {
 exports.addTrainerLog = async (req, res) => {
   try {
     const { branch, trainerName, course, studentCount, present, absentees, feedbacks } = req.body;
-    const sheet = doc.sheetsByTitle["Trainer/TL_Log"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Trainer Log sheet missing." });
-    
-    await sheet.addRow({
-      'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
-      'Branch': branch,
-      'TrainerName': trainerName,
-      'Course': course,
-      'Student Count': studentCount,
-      'Currently Present in Lab': present,
-      'Absentees': absentees,
-      'Any Feedbacks': feedbacks
-    });
-    
-    refreshCache(); 
-    res.json({ success: true, message: "Daily log submitted!" });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-};
-
-exports.addTrainerLog = async (req, res) => {
-  try {
-    const { branch, trainerName, course, studentCount, present, absentees, feedbacks } = req.body;
-    // 🚨 Safe Fuzzy Finder: Ignores spaces or case issues in the sheet name
     const sheet = doc.sheetsByIndex.find(s => s.title.replace(/\s/g, '').toLowerCase().includes('trainer/tl'));
     if (!sheet) return res.status(404).json({ success: false, message: "Trainer Log sheet missing." });
     
@@ -2054,4 +2147,63 @@ exports.updateTrainerLog = async (req, res) => {
       res.status(404).json({ success: false, message: "Record not found." });
     }
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+// =========================================================
+// 🚨 SECURITY ACTIVITY LOGS (SUPER ADMIN ONLY)
+// =========================================================
+exports.getSecurityLogs = (req, res) => {
+  try {
+    const cache = getCache();
+    if (!cache || !cache.securityLogs) return res.json({ success: true, logs: [] });
+
+    let logs = cache.securityLogs.map(row => {
+      const rd = row.toObject();
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      return {
+        rowNumber: row.rowNumber,
+        timestamp: rd[getH('timestamp')] || '',
+        userName: rd[getH('username')] || '',
+        email: rd[getH('email')] || '',
+        role: rd[getH('role')] || '',
+        branch: rd[getH('branch')] || '',
+        ipAddress: rd[getH('ipaddress')] || '',
+        device: rd[getH('device')] || 'Desktop',
+        os: rd[getH('os')] || '',
+        browser: rd[getH('browser')] || '',
+        status: rd[getH('status')] || 'Active'
+      };
+    });
+
+    res.json({ success: true, logs: logs.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+// =========================================================
+// 🚨 VERIFY ACTIVE SESSION (MULTI-DEVICE ENFORCEMENT)
+// =========================================================
+exports.verifySession = (req, res) => {
+  const { email, sessionToken } = req.body;
+  if (!email || !sessionToken) {
+    return res.json({ valid: false, reason: 'MISSING_PAYLOAD' });
+  }
+
+  const cleanEmail = email.toString().trim().toLowerCase();
+  const currentActiveToken = activeSessions.get(cleanEmail);
+
+  // If server restarted, re-anchor current session
+  if (!currentActiveToken) {
+    activeSessions.set(cleanEmail, sessionToken);
+    return res.json({ valid: true });
+  }
+
+  if (currentActiveToken !== sessionToken) {
+    return res.json({ 
+      valid: false, 
+      reason: 'CONCURRENT_LOGIN', 
+      message: 'Your account was logged in from another device or window.' 
+    });
+  }
+
+  return res.json({ valid: true });
 };

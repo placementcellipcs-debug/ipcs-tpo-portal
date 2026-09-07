@@ -38,6 +38,7 @@ app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.post('/api/auth/login', controllers.login);
+app.post('/api/auth/verify-session', controllers.verifySession); // 🚨 NEW VERIFICATION ROUTE
 
 app.use('/api', (req, res, next) => {
   if (!getCache()) return res.status(503).json({ success: false, message: "Server is syncing data..." });
@@ -76,6 +77,8 @@ app.post('/api/admin/users/delete', controllers.deleteAdminUser);
 app.get('/api/admin/courses', controllers.getCourses);
 app.post('/api/admin/courses/add', controllers.addCourse);
 app.post('/api/admin/courses/delete', controllers.deleteCourse); 
+// 🚨 SECURITY AUDIT ROUTE
+app.get('/api/admin/security-logs', controllers.getSecurityLogs);
 
 // 🚨 BRANCH MANAGEMENT ROUTES
 app.get('/api/admin/branches', controllers.getBranches);
