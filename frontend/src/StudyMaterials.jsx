@@ -3,12 +3,21 @@ import axios from 'axios';
 import { 
   CircleNotch, BookOpenText, Plus, CaretLeft, Link as LinkIcon, 
   FilePdf, FileImage, FileText, FileVideo, CheckCircle, WarningCircle, X,
-  FolderOpen, BookBookmark, PencilSimple, Trash, Info
+  FolderOpen, BookBookmark, PencilSimple, Trash
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
+
+// 🚨 OFFICIAL IPCS COURSES - FALLBACK IF DATABASE IS EMPTY
+const DEFAULT_COURSES = {
+  'BMS AND CCTV': ['Diploma In Building Management System', 'Certified BMS Engineer', 'CCTV & Security Systems', 'CCTV Training'],
+  'Industrial Automation': ['Automation System Engineer', 'Professional Diploma in Industrial Automation', 'Advanced Automation System Professional', 'Advanced PLC Program Professional', 'DCS Engineering & Maintenance', 'Electrical Control & Panel Designing', 'Industrial Networking', 'Diploma in Marine Automation Systems', 'VFD Installation Professional', 'Customize programming PLC SCADA'],
+  'Embedded and IoT': ['Certified Embedded Engineer', 'Embedded System Design (Crash)', 'Certified Raspberry Pi Programmer', 'Certified Embedded System Engineer', 'Certified IoT Professional', 'LabView Course', 'Certified IIoT Professional'],
+  'Digital Marketing': ['Professional Diploma in Digital Marketing', 'Advanced Course in Online Entrepreneurship', 'Advanced Certificate Course in Digital Marketing', 'Search Engine Optimization Certification Course', 'Certificate Course in Digital Marketing', 'Search Engine Marketing Certification Course', 'Social Media Marketing Certification Course', 'Online Money Making Courses', 'Digital Marketing Corporate Training', 'Affiliate Marketing Certification Course', 'Certificate Course in Email Marketing', 'Video Blogging', 'Google Analytics Fundamentals Course', 'International Web Professional', 'Inbound Marketing Certification Course', 'AI Digital Marketing'],
+  'Information technology (IT)': ['PHP AND MYSQL', 'JAVA Full Stack', 'Web Designing and Development', 'Python & Data Science', 'Python Programming', 'Data Science & Analytics', 'Android App Development', 'Python Full Stack Development', 'Artificial Intelligence', 'Diploma in Artificial Intelligence', 'AI & Machine Learning with Python', 'Software Testing', 'Basics of Software Testing', 'Advanced QA Automation Testing', 'Cyber Security', 'Cyber Security & Network Security Essentials', 'MERN Stack', 'Data Analytics']
+};
 
 export default function StudyMaterials() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -21,7 +30,7 @@ export default function StudyMaterials() {
   
   const canManage = isSuperAdmin || isRth;
 
-  const [courseDict, setCourseDict] = useState({});
+  const [courseDict, setCourseDict] = useState(DEFAULT_COURSES);
   const [materials, setMaterials] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -50,19 +59,25 @@ export default function StudyMaterials() {
         setMaterials(matRes.data.materials || []);
       }
       
-      if (courseRes.data.success) {
-        const cDict = courseRes.data.courses || {};
-        setCourseDict(cDict);
-        
-        if (!isSuperAdmin && tpoData?.assignedCourse && tpoData.assignedCourse !== 'All Courses' && tpoData.assignedCourse !== 'All') {
-          const myCourse = tpoData.assignedCourse.toLowerCase().trim();
-          const mainDomain = Object.keys(cDict).find(k => k.toLowerCase().includes(myCourse) || myCourse.includes(k.toLowerCase())) || tpoData.assignedCourse;
-          
-          setSelectedMainCourse(mainDomain);
-          setViewLevel('sub_courses'); 
-        } else {
-          setViewLevel('main_courses');
+      // 🚨 MERGE LOGIC: Uses default courses, but updates them if the backend has valid arrays!
+      let cDict = { ...DEFAULT_COURSES };
+      if (courseRes.data.success && Object.keys(courseRes.data.courses || {}).length > 0) {
+        for (const key in courseRes.data.courses) {
+           if (courseRes.data.courses[key] && courseRes.data.courses[key].length > 0) {
+              cDict[key] = courseRes.data.courses[key];
+           }
         }
+      }
+      setCourseDict(cDict);
+      
+      if (!isSuperAdmin && tpoData?.assignedCourse && tpoData.assignedCourse !== 'All Courses' && tpoData.assignedCourse !== 'All') {
+        const myCourse = tpoData.assignedCourse.toLowerCase().trim();
+        const mainDomain = Object.keys(cDict).find(k => k.toLowerCase().includes(myCourse) || myCourse.includes(k.toLowerCase())) || tpoData.assignedCourse;
+        
+        setSelectedMainCourse(mainDomain);
+        setViewLevel('sub_courses'); 
+      } else {
+        setViewLevel('main_courses');
       }
     } catch (err) {
       console.error("Failed to load data", err);
@@ -75,14 +90,10 @@ export default function StudyMaterials() {
     fetchData();
   }, []);
 
-  const MAIN_COURSES = Object.keys(courseDict).length > 0 
-    ? Object.keys(courseDict) 
-    : ['Industrial Automation', 'BMS AND CCTV', 'Embedded and IoT', 'Digital Marketing', 'Information technology (IT)'];
+  const MAIN_COURSES = Object.keys(courseDict);
 
-  // 🚨 FIXED: If no sub-courses exist, fallback to the main course so the Admin can still click and add materials!
-  const subCoursesList = (selectedMainCourse && courseDict[selectedMainCourse] && courseDict[selectedMainCourse].length > 0) 
-    ? courseDict[selectedMainCourse] 
-    : (selectedMainCourse ? [selectedMainCourse] : []);
+  // 🚨 Guaranteed to load an array of subcourses
+  const subCoursesList = courseDict[selectedMainCourse] || [selectedMainCourse] || [];
 
   const filteredMaterials = materials.filter(m => {
     const matchSubCourse = (m.course || '').trim() === (selectedSubCourse || '').trim();
@@ -191,7 +202,6 @@ export default function StudyMaterials() {
               <div><h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedMainCourse} Programs</h1><p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a specific program to view and manage its materials.</p></div>
             </div>
 
-            {/* 🚨 THE FALLBACK LOGIC MAKES SURE THIS IS NEVER 0 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
               {subCoursesList.map((subCourse) => (
                 <div key={subCourse} onClick={() => { setSelectedSubCourse(subCourse); setViewLevel('materials'); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.5rem', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', gap: '15px' }}>

@@ -36,22 +36,18 @@ export default function Layout({ children }) {
   const [imgError, setImgError] = useState(false);
   const [notifications, setNotifications] = useState([]);
 
-  // 🚨 SECURITY: MULTI-DEVICE RESTRICTION & IDLE AUTO-LOGOUT
   useEffect(() => {
     if (!tpoData) {
       navigate('/');
       return;
     }
 
-    const INACTIVITY_TIMEOUT = 15 * 60 * 1000; // 15 Minutes
+    const INACTIVITY_TIMEOUT = 15 * 60 * 1000; 
     let lastActivity = Date.now();
-
     const handleUserInteraction = () => { lastActivity = Date.now(); };
-
     const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
     activityEvents.forEach((evt) => window.addEventListener(evt, handleUserInteraction, { passive: true }));
 
-    // INACTIVITY CHECK
     const inactivityInterval = setInterval(() => {
       if (Date.now() - lastActivity >= INACTIVITY_TIMEOUT) {
         clearInterval(inactivityInterval);
@@ -62,7 +58,6 @@ export default function Layout({ children }) {
       }
     }, 10000);
 
-    // MULTI-DEVICE CHECK
     const sessionHeartbeat = setInterval(async () => {
       try {
         if (!tpoData?.email || !tpoData?.sessionToken) return;
@@ -70,7 +65,6 @@ export default function Layout({ children }) {
           email: tpoData.email,
           sessionToken: tpoData.sessionToken
         });
-
         if (res.data && res.data.valid === false) {
           clearInterval(sessionHeartbeat);
           clearInterval(inactivityInterval);
@@ -129,7 +123,6 @@ export default function Layout({ children }) {
              title = "Action Alert"; desc = `Status changed to '${getVal('status')}' for ${name}.`;
              icon = <WarningCircle size={18} weight="bold" />; color = "#ef4444"; bg = "rgba(239, 68, 68, 0.1)";
           }
-
           return { title, desc, icon, color, bg, time: getVal('timestamp') || 'Recently', courseRaw };
         });
 
@@ -153,11 +146,14 @@ export default function Layout({ children }) {
   const isRth = userRole.includes('RTH') || userRole.includes('REGIONAL TECHNICAL HEAD');
   const isTL = userRole.includes('TECHNICAL LEAD') || userRole.includes('TTH') || isRth || userRole.includes('MANAGER') || isSuperAdmin;
 
-  const showTracker = isTpo; 
+  const showTracker = isTpo && !isSuperAdmin; 
   const showReports = isSuperAdmin || isTpo; 
   const showManageAdmin = isSuperAdmin;
   const showStudyMaterials = isSuperAdmin || isRth || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD') || isTrainer; 
   const showTrainerLogs = isTrainer || isTL;
+  
+  // 🚨 STRICT FIX: Entirely hides Student Apps from Admins
+  const showStudentApps = isTpo && !isSuperAdmin;
 
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
@@ -265,7 +261,11 @@ export default function Layout({ children }) {
             )}
 
             <div className="drawer-item" onClick={() => handleNav('/placed')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Trophy size={22} color={isActive('/placed')} /> <span style={{ color: isActive('/placed') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Placed Students</span></div><span style={{ color: '#64748b' }}>›</span></div>
-            <div className="drawer-item" onClick={() => handleNav('/applications')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ListChecks size={22} color={isActive('/applications')} /> <span style={{ color: isActive('/applications') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Student Apps</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            
+            {showStudentApps && (
+              <div className="drawer-item" onClick={() => handleNav('/applications')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ListChecks size={22} color={isActive('/applications')} /> <span style={{ color: isActive('/applications') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Student Apps</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            )}
+
             <div className="drawer-item" onClick={() => handleNav('/vacancies')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Briefcase size={22} color={isActive('/vacancies')} /> <span style={{ color: isActive('/vacancies') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Vacancies</span></div><span style={{ color: '#64748b' }}>›</span></div>
             
             {!isTrainer && (

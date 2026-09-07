@@ -42,16 +42,21 @@ async function refreshCache() {
   isFetching = true;
   try {
     await doc.loadInfo();
-    const getSheet = (title) => doc.sheetsByIndex.find(s => s.title.trim().toLowerCase() === title.toLowerCase());
+    
+    // 🚨 INDESTRUCTIBLE FUZZY MATCHER: Ignores spaces, underscores, hyphens, and casing
+    const getSheetFuzzy = (keyword) => {
+      const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
+      return doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanKeyword));
+    };
 
     const sheetsToFetch = [
-      getSheet("Data"), getSheet("Opening_Applied"), getSheet("NewsLetter"), getSheet("Event"), getSheet("Issues"), 
-      getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients"), getSheet("TPO_Log"), 
-      getSheet("Study_Materials"), getSheet("Tech_Questions"), getSheet("Tech_Results"),
-      getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"),
-      getSheet("Courses"), getSheet("Drive_Registration"), getSheet("Contact"), getSheet("User"), getSheet("Branches"), getSheet("Mail"),
-      getSheet("Trainer/TL_Log"),
-      getSheet("Security_Logs") // 🚨 CACHING SECURITY LOGS
+      getSheetFuzzy("Data"), getSheetFuzzy("OpeningApplied"), getSheetFuzzy("NewsLetter"), getSheetFuzzy("Event"), getSheetFuzzy("Issues"), 
+      getSheetFuzzy("TalentinoSchedule"), getSheetFuzzy("TalentinoAttendance"), getSheetFuzzy("Clients"), getSheetFuzzy("TPOLog"), 
+      getSheetFuzzy("StudyMaterials"), getSheetFuzzy("TechQuestions"), getSheetFuzzy("TechResults"),
+      getSheetFuzzy("AptitudeQuestions"), getSheetFuzzy("AptitudeResults"), getSheetFuzzy("TalentinoQuestions"), getSheetFuzzy("TalentinoResults"),
+      getSheetFuzzy("Courses"), getSheetFuzzy("DriveRegistration"), getSheetFuzzy("Contact"), getSheetFuzzy("User"), getSheetFuzzy("Branches"), getSheetFuzzy("Mail"),
+      getSheetFuzzy("trainer"), // Matches Trainer/TL_Log
+      getSheetFuzzy("security") // Matches Security_Logs
     ];
 
     const fetchedData = [];
@@ -89,7 +94,7 @@ async function refreshCache() {
       talQuestions: talQRows, talResults: talRRows, coursesDict: coursesDict, drives: driveRows,
       contacts: contactRows, users: userRows, branches: branchRows, mails: mailRows,
       trainerLogs: trainerLogRows,
-      securityLogs: securityRows // 🚨 LOADED INTO MEMORY
+      securityLogs: securityRows
     };
     
     console.log("✅ Cache successfully synced with Google Sheets!");
@@ -138,8 +143,8 @@ function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCo
 }
 
 const getFuzzyHeader = (headers, target) => {
-  const cleanTarget = target.toLowerCase().replace(/\s/g, '');
-  return headers.find(h => h.toLowerCase().replace(/\s/g, '') === cleanTarget) || target;
+  const cleanTarget = target.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return headers.find(h => h.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanTarget) || target;
 };
 
 const getTpoEmail = (tpoName) => {

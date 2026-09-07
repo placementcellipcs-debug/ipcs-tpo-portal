@@ -9,15 +9,17 @@ import { API_BASE } from './apiConfig';
 
 const parseDate = (dStr) => {
   if (!dStr) return 0;
-  let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0] : dStr;
-  if (typeof cleanStr === 'string' && cleanStr.includes('/')) {
-    const parts = cleanStr.split('/');
-    if (parts.length === 3 && parts[2].length === 4) {
-      return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`).getTime();
-    }
-  }
-  const d = new Date(cleanStr).getTime();
-  return isNaN(d) ? 0 : d;
+  try {
+      let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0] : dStr;
+      if (typeof cleanStr === 'string' && cleanStr.includes('/')) {
+        const parts = cleanStr.split(/[/\-]/);
+        if (parts.length === 3 && parts[2].length === 4) {
+          return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`).getTime();
+        }
+      }
+      const d = new Date(cleanStr).getTime();
+      return isNaN(d) ? 0 : d;
+  } catch(e) { return 0; }
 };
 
 export default function PlacementDrives() {
@@ -45,11 +47,11 @@ export default function PlacementDrives() {
 
   useEffect(() => { fetchDrives(); }, []);
 
-  // 🚨 SECURITY CHECK: Can this user edit the drive?
   const canEditDrive = (drive) => {
     if (isSuperAdmin) return true;
-    const myName = (tpoData?.name || '').toLowerCase().trim();
-    const driveOwner = (drive.driveTpo || '').toLowerCase().trim();
+    if (!tpoData || !tpoData.name) return false;
+    const myName = String(tpoData.name).toLowerCase().trim();
+    const driveOwner = String(drive.driveTpo || '').toLowerCase().trim();
     return myName !== '' && myName === driveOwner;
   };
 
@@ -59,12 +61,17 @@ export default function PlacementDrives() {
       const res = await axios.post(`${API_BASE}/api/tpo/drives/update`, { rowNumber, studentStatus: newStatus });
       if (res.data.success) {
         setDrives(drives.map(d => d.rowNumber === rowNumber ? { ...d, studentStatus: newStatus } : d));
+        if (selectedDrive) {
+           setSelectedDrive(prev => ({
+              ...prev,
+              applicants: prev.applicants.map(a => a.rowNumber === rowNumber ? { ...a, studentStatus: newStatus } : a)
+           }));
+        }
       }
     } catch (err) { alert("Failed to update status"); }
     finally { setSavingRow(null); }
   };
 
-  // Grouping students by Drive ID for the Landing View
   const groupedDrives = {};
   drives.forEach(d => {
     if (!d.driveId) return;
@@ -75,15 +82,15 @@ export default function PlacementDrives() {
   });
   
   const driveList = Object.values(groupedDrives).sort((a, b) => {
-    const d1 = Math.max(...a.applicants.map(ap => parseDate(ap.regDate)));
-    const d2 = Math.max(...b.applicants.map(ap => parseDate(ap.regDate)));
+    const d1 = a.applicants.length > 0 ? Math.max(...a.applicants.map(ap => parseDate(ap.regDate))) : 0;
+    const d2 = b.applicants.length > 0 ? Math.max(...b.applicants.map(ap => parseDate(ap.regDate))) : 0;
     return d2 - d1;
   });
 
   const filteredApplicants = selectedDrive ? selectedDrive.applicants.filter(a => 
-    (a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (a.branch || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (a.email || '').toLowerCase().includes(searchQuery.toLowerCase())
+    String(a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+    String(a.branch || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+    String(a.email || '').toLowerCase().includes(searchQuery.toLowerCase())
   ) : [];
 
   return (
@@ -111,8 +118,8 @@ export default function PlacementDrives() {
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <div style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', padding: '8px', borderRadius: '8px' }}><CalendarCheck size={24} weight="fill" /></div>
                         <div>
-                          <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fff' }}>{drive.driveId}</h3>
-                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Created by: {drive.driveTpo || 'Admin'}</span>
+                          <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fff' }}>{String(drive.driveId || 'N/A')}</h3>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Created by: {String(drive.driveTpo || 'Admin')}</span>
                         </div>
                       </div>
                     </div>
@@ -131,7 +138,7 @@ export default function PlacementDrives() {
                 <CaretLeft weight="bold" size={18} /> Back to Drives
               </button>
               <div>
-                <h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedDrive.driveId} Registrations</h1>
+                <h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{String(selectedDrive.driveId || 'N/A')} Registrations</h1>
                 <p style={{ color: 'var(--text-muted)', margin: 0 }}>Track attendance and offer status for students in this drive.</p>
               </div>
             </div>
@@ -151,16 +158,16 @@ export default function PlacementDrives() {
                 filteredApplicants.map((app, i) => (
                   <div key={i} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1rem 1.5rem', display: 'grid', gridTemplateColumns: '2fr 1.5fr 2fr 1fr', alignItems: 'center', gap: '15px' }}>
                     <div>
-                      <strong style={{ display: 'block', color: '#fff', fontSize: '1.05rem', marginBottom: '4px' }}>{app.name}</strong>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{app.email} • {app.phone}</span>
+                      <strong style={{ display: 'block', color: '#fff', fontSize: '1.05rem', marginBottom: '4px' }}>{String(app.name || 'Unknown Student')}</strong>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{String(app.email || 'N/A')} • {String(app.phone || 'N/A')}</span>
                     </div>
                     <div>
-                      <strong style={{ display: 'block', color: '#fff', fontSize: '1rem', marginBottom: '4px' }}>{app.branch}</strong>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{app.course}</span>
+                      <strong style={{ display: 'block', color: '#fff', fontSize: '1rem', marginBottom: '4px' }}>{String(app.branch || 'Unknown Branch')}</strong>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{String(app.course || 'Unknown Course')}</span>
                     </div>
                     <div>
-                      <span style={{ color: '#cbd5e1', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '5px' }}><Clock size={14}/> {app.regDate}</span>
-                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '4px', display: 'block' }}>Status: {app.regStatus || 'Registered'}</span>
+                      <span style={{ color: '#cbd5e1', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '5px' }}>{String(app.regDate || 'N/A')}</span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '4px', display: 'block' }}>Status: {String(app.regStatus || 'Registered')}</span>
                     </div>
                     <div style={{ textAlign: 'center' }}>
                       {savingRow === app.rowNumber ? (

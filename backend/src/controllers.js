@@ -1973,17 +1973,18 @@ exports.getTrainerLogs = (req, res) => {
     
     let logs = cache.trainerLogs.map(row => {
       const rd = row.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      // 🚨 INDESTRUCTIBLE HEADER MAPPER
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       return {
         rowNumber: row.rowNumber,
         timestamp: rd[getH('timestamp')] || '',
         branch: rd[getH('branch')] || '',
-        trainerName: rd[getH('trainername')] || '',
+        trainerName: rd[getH('trainername')] || rd[getH('name')] || '',
         course: rd[getH('course')] || '',
         studentCount: rd[getH('studentcount')] || '',
-        present: rd[getH('currentlypresentinlab')] || '',
-        absentees: rd[getH('absentees')] || '',
-        feedbacks: rd[getH('anyfeedbacks')] || '',
+        present: rd[getH('present')] || rd[getH('currentlypresentinlab')] || '',
+        absentees: rd[getH('absentees')] || rd[getH('absent')] || '',
+        feedbacks: rd[getH('feedbacks')] || rd[getH('anyfeedbacks')] || '',
         resignations: rd[getH('staffresignations')] || '',
         vacancy: rd[getH('trainervacancy')] || '',
         tuv: rd[getH('tuvregistration')] || '',
@@ -1997,7 +1998,7 @@ exports.getTrainerLogs = (req, res) => {
 exports.addTrainerLog = async (req, res) => {
   try {
     const { branch, trainerName, course, studentCount, present, absentees, feedbacks } = req.body;
-    const sheet = doc.sheetsByIndex.find(s => s.title.replace(/\s/g, '').toLowerCase().includes('trainer/tl'));
+    const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('trainer'));
     if (!sheet) return res.status(404).json({ success: false, message: "Trainer Log sheet missing." });
     
     await sheet.addRow({
@@ -2019,7 +2020,7 @@ exports.addTrainerLog = async (req, res) => {
 exports.updateTrainerLog = async (req, res) => {
   const { rowNumber, resignations, vacancy, tuv, mockTest } = req.body;
   try {
-    const sheet = doc.sheetsByIndex.find(s => s.title.replace(/\s/g, '').toLowerCase().includes('trainer/tl'));
+    const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('trainer'));
     const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
     if (rows.length > 0) {
       const h = sheet.headerValues;
@@ -2048,15 +2049,16 @@ exports.getSecurityLogs = (req, res) => {
 
     let logs = cache.securityLogs.map(row => {
       const rd = row.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      // 🚨 INDESTRUCTIBLE HEADER MAPPER
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       return {
         rowNumber: row.rowNumber,
         timestamp: rd[getH('timestamp')] || '',
-        userName: rd[getH('username')] || '',
-        email: rd[getH('email')] || '',
+        userName: rd[getH('username')] || rd[getH('name')] || '',
+        email: rd[getH('email')] || rd[getH('mailid')] || '',
         role: rd[getH('role')] || '',
         branch: rd[getH('branch')] || '',
-        ipAddress: rd[getH('ipaddress')] || '',
+        ipAddress: rd[getH('ipaddress')] || rd[getH('ip')] || '',
         device: rd[getH('device')] || 'Desktop',
         os: rd[getH('os')] || '',
         browser: rd[getH('browser')] || '',
@@ -2064,7 +2066,7 @@ exports.getSecurityLogs = (req, res) => {
       };
     });
 
-    res.json({ success: true, logs: logs.reverse() });
+    res.json({ success: true, logs: logs.filter(l => l.email !== '').reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -2080,7 +2082,6 @@ exports.verifySession = (req, res) => {
   const cleanEmail = email.toString().trim().toLowerCase();
   const currentActiveToken = activeSessions.get(cleanEmail);
 
-  // If server restarted, re-anchor current session
   if (!currentActiveToken) {
     activeSessions.set(cleanEmail, sessionToken);
     return res.json({ valid: true });

@@ -4,7 +4,7 @@ import axios from 'axios';
 import { 
   Users, Briefcase, Files, Trophy, CalendarStar, CircleNotch, 
   Buildings, BookOpen, Clock, NotePencil, Desktop, FolderOpen,
-  CalendarCheck, ListChecks, ArrowRight, ChartBar
+  CalendarCheck, ListChecks, ArrowRight, ChartBar, UsersThree, CheckCircle, WarningCircle
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
@@ -22,7 +22,7 @@ export default function Dashboard() {
   
   const userRole = (tpoData?.role || '').toUpperCase();
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
-  const showReports = isSuperAdmin || userRole === 'TPO';
+  const showReports = isSuperAdmin || userRole.includes('TPO');
   const isTpo = userRole.includes('TPO'); 
   const isTrainer = userRole.includes('TRAINER');
   
@@ -191,7 +191,7 @@ export default function Dashboard() {
           processApps(logs);
         }
 
-        // 🚨 FIXED: SHOW FOR TRAINERS *AND* SUPER ADMINS
+        // Fetch Trainer Logs for both Trainers and Super Admins
         if ((localTpo.role || '').toUpperCase().includes('TRAINER') || localTpo.accessType === 'superadmin') {
           try {
             const trRes = await axios.get(`${API_BASE}/api/admin/trainer-logs`);
@@ -201,7 +201,7 @@ export default function Dashboard() {
               if (localTpo.accessType !== 'superadmin') {
                  myLogs = myLogs.filter(l => l.trainerName === localTpo.name);
               }
-              setTrainerLogs(myLogs.slice(0, 5));
+              setTrainerLogs(myLogs);
             }
           } catch (e) { console.error("Failed to load trainer logs"); }
         }
@@ -260,6 +260,11 @@ export default function Dashboard() {
     );
   };
 
+  // 🚨 GLOBAL TRAINER STATS FOR SUPER ADMIN VIEW
+  const tTotal = trainerLogs.reduce((acc, curr) => acc + (parseInt(curr.studentCount) || 0), 0);
+  const tPresent = trainerLogs.reduce((acc, curr) => acc + (parseInt(curr.present) || 0), 0);
+  const tAbsent = trainerLogs.reduce((acc, curr) => acc + (parseInt(curr.absentees) || 0), 0);
+
   return (
     <Layout>
       <div className="db-wrapper" style={{ paddingBottom: '40px', maxWidth: '1600px', margin: '0 auto' }}>
@@ -291,15 +296,54 @@ export default function Dashboard() {
             <div className="kpi-header"><div className="icon-c orange"><ChartBar weight="fill" size={20}/></div><div><div className="kpi-title">Placement Rate</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : `${placementRate}%`}</div></div></div>
             <div className="kpi-trend green">↑ Global Average</div>{makeSparkline('#f59e0b')}
           </div>
-          <div className="dash-card">
-            <div className="kpi-header"><div className="icon-c pink"><CalendarCheck weight="fill" size={20}/></div><div><div className="kpi-title">Upcoming Drives</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : upDrivesCount}</div></div></div>
-            <div className="kpi-trend green">↑ Scheduled Events</div>{makeSparkline('#ec4899')}
-          </div>
-          <div className="dash-card">
-            <div className="kpi-header"><div className="icon-c teal"><ListChecks weight="fill" size={20}/></div><div><div className="kpi-title">Total Applications</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : totalAppsCount}</div></div></div>
-            <div className="kpi-trend green">↑ Submitted</div>{makeSparkline('#0ea5e9')}
-          </div>
         </div>
+
+        {/* 🚨 ADMIN TRAINER WIDGET SUMMARY */}
+        {isSuperAdmin && (
+          <div className="dash-card" style={{ marginBottom: '20px' }}>
+            <div className="card-top">
+              <h3>Global Trainer Academic Reports (All Time)</h3>
+              <button className="text-link" onClick={() => navigate('/trainer-logs')}>View Full Logs</button>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+              <div style={{ background: '#0f1523', padding: '15px', borderRadius: '12px', border: '1px solid #1e293b' }}>
+                <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '5px' }}>Logged Enrolled Students</div>
+                <div style={{ fontSize: '1.8rem', color: '#38bdf8', fontWeight: 'bold' }}>{tTotal}</div>
+              </div>
+              <div style={{ background: '#0f1523', padding: '15px', borderRadius: '12px', border: '1px solid #1e293b' }}>
+                <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '5px' }}>Cumulative Present</div>
+                <div style={{ fontSize: '1.8rem', color: '#10b981', fontWeight: 'bold' }}>{tPresent}</div>
+              </div>
+              <div style={{ background: '#0f1523', padding: '15px', borderRadius: '12px', border: '1px solid #1e293b' }}>
+                <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '5px' }}>Cumulative Absent</div>
+                <div style={{ fontSize: '1.8rem', color: '#ef4444', fontWeight: 'bold' }}>{tAbsent}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 🚨 TRAINER WIDGET TABLE */}
+        {isTrainer && !isSuperAdmin && (
+          <div className="dash-card" style={{ marginBottom: '20px' }}>
+            <div className="card-top">
+              <h3>My Daily Reports</h3>
+              <button className="text-link" onClick={() => navigate('/trainer-logs')}>View All</button>
+            </div>
+            <table className="mini-table">
+              <thead><tr><th>Date</th><th>Present</th><th>Absent</th><th>Remarks</th></tr></thead>
+              <tbody>
+                {trainerLogs.length > 0 ? trainerLogs.slice(0,5).map((l, i) => (
+                  <tr key={i}>
+                    <td><span className="primary-text">{l.timestamp.split(' ')[0]}</span></td>
+                    <td style={{ color: '#10b981', fontWeight: 'bold' }}>{l.present}</td>
+                    <td style={{ color: '#ef4444', fontWeight: 'bold' }}>{l.absentees}</td>
+                    <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.feedbacks || '-'}</td>
+                  </tr>
+                )) : <tr><td colSpan="4" style={{textAlign:'center', padding:'20px'}}>No logs submitted yet.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         <div className="grid-3-col" style={{ marginBottom: '20px' }}>
           <div className="dash-card" style={{ gridColumn: 'span 2' }}>
@@ -363,29 +407,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 🚨 FIXED: SHOW FOR TRAINERS *AND* SUPER ADMINS */}
-        {(isTrainer || isSuperAdmin) && (
-          <div className="dash-card" style={{ marginBottom: '20px' }}>
-            <div className="card-top">
-              <h3>{isSuperAdmin ? "Global Trainer Reports" : "My Daily Reports"}</h3>
-              <button className="text-link" onClick={() => navigate('/trainer-logs')}>View All</button>
-            </div>
-            <table className="mini-table">
-              <thead><tr><th>Date</th><th>Present</th><th>Absent</th><th>Remarks</th></tr></thead>
-              <tbody>
-                {trainerLogs.length > 0 ? trainerLogs.map((l, i) => (
-                  <tr key={i}>
-                    <td><span className="primary-text">{l.timestamp.split(' ')[0]}</span></td>
-                    <td style={{ color: '#10b981', fontWeight: 'bold' }}>{l.present}</td>
-                    <td style={{ color: '#ef4444', fontWeight: 'bold' }}>{l.absentees}</td>
-                    <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.feedbacks || '-'}</td>
-                  </tr>
-                )) : <tr><td colSpan="4" style={{textAlign:'center', padding:'20px'}}>No logs submitted yet.</td></tr>}
-              </tbody>
-            </table>
-          </div>
-        )}
-
         <div className="grid-3-col" style={{ marginBottom: '20px' }}>
           <div className="dash-card" style={{ gridColumn: 'span 2' }}>
             <div className="card-top">
@@ -402,7 +423,7 @@ export default function Dashboard() {
               <tbody>
                 {recentPlacements.length > 0 ? recentPlacements.map((p, i) => (
                   <tr key={i} style={{ animation: 'fadeInReveal 0.5s ease' }}>
-                    <td><div style={{display:'flex', alignItems:'center', gap:'8px'}}><div className="tiny-avatar">{p.name.charAt(0)}</div> <span style={{color:'#fff'}}>{p.name}</span></div></td>
+                    <td><div style={{display:'flex', alignItems:'center', gap:'8px'}}><div className="tiny-avatar">{String(p.name || '').charAt(0)}</div> <span style={{color:'#fff'}}>{p.name}</span></div></td>
                     <td><span style={{color:'#3b82f6', fontWeight:'bold'}}>{p.company}</span></td>
                     <td>{p.course}</td>
                     <td style={{textAlign:'right', fontWeight:'bold', color:'#fff'}}>
@@ -444,7 +465,7 @@ export default function Dashboard() {
               <div className="qa-box" onClick={()=>navigate('/students')}><div className="qa-icon blue"><Users weight="fill"/></div>Add Student</div>
               
               {/* 🚨 STRICT RESTRICTION: ONLY TPOs CAN CLICK TRACKER */}
-              {isTpo && <div className="qa-box" onClick={()=>navigate('/tracker')}><div className="qa-icon green"><ListChecks weight="fill"/></div>Tracker</div>}
+              {isTpo && !isSuperAdmin && <div className="qa-box" onClick={()=>navigate('/tracker')}><div className="qa-icon green"><ListChecks weight="fill"/></div>Tracker</div>}
               
               <div className="qa-box" onClick={()=>navigate('/exams')}><div className="qa-icon orange"><NotePencil weight="fill"/></div>Exams</div>
               <div className="qa-box" onClick={()=>navigate('/study-materials')}><div className="qa-icon pink"><BookOpen weight="fill"/></div>Material</div>
@@ -459,7 +480,8 @@ export default function Dashboard() {
           <div className="dash-card">
             <div className="card-top">
               <h3>Live Application Pipeline</h3>
-              <button className="text-link" onClick={()=>navigate('/applications')}>View Apps →</button>
+              {/* 🚨 STRICT RESTRICTION: Admins cannot see the student apps link */}
+              {isTpo && !isSuperAdmin && <button className="text-link" onClick={()=>navigate('/applications')}>View Apps →</button>}
             </div>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', textAlign: 'center' }}>
@@ -489,38 +511,6 @@ export default function Dashboard() {
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-
-        <h3 style={{ margin: '0 0 20px 0', fontSize: '1.2rem', color: '#fff' }}>Access Important Modules</h3>
-        
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginBottom: '40px' }}>
-          <div onClick={() => navigate('/students')} className="module-card blue">
-            <h4 style={{ color: '#3b82f6' }}>Student Directory</h4><p>View and manage student information</p><div className="link">View Students <ArrowRight size={14} weight="bold"/></div>
-          </div>
-          {isSuperAdmin && (
-            <div onClick={() => navigate('/courses')} className="module-card green">
-              <h4 style={{ color: '#10b981' }}>Course Management</h4><p>Create and manage courses & syllabus</p><div className="link">Manage Courses <ArrowRight size={14} weight="bold"/></div>
-            </div>
-          )}
-          {(isSuperAdmin || userRole.includes('RTH')) && (
-            <div onClick={() => navigate('/exams')} className="module-card purple">
-              <h4 style={{ color: '#a855f7' }}>Assessment Center</h4><p>Create tests and evaluate students</p><div className="link">Go to Assessments <ArrowRight size={14} weight="bold"/></div>
-            </div>
-          )}
-          <div onClick={() => navigate('/talentino')} className="module-card yellow">
-            <h4 style={{ color: '#f59e0b' }}>Attendance Tracking</h4><p>Monitor daily Talentino check-ins</p><div className="link">View Attendance <ArrowRight size={14} weight="bold"/></div>
-          </div>
-          <div onClick={() => navigate('/placement-drives')} className="module-card pink">
-            <h4 style={{ color: '#ec4899' }}>Placement Management</h4><p>Manage drives, offers and placements</p><div className="link">Manage Placements <ArrowRight size={14} weight="bold"/></div>
-          </div>
-          {showReports && (
-            <div onClick={() => navigate('/reports')} className="module-card teal">
-              <h4 style={{ color: '#0ea5e9' }}>Reports & Analytics</h4><p>Detailed insights and performance reports</p><div className="link">View Reports <ArrowRight size={14} weight="bold"/></div>
-            </div>
-          )}
-          <div onClick={() => navigate('/clients')} className="module-card orange">
-            <h4 style={{ color: '#f97316' }}>Document Center</h4><p>Store and manage important MOUs</p><div className="link">View Documents <ArrowRight size={14} weight="bold"/></div>
           </div>
         </div>
 
