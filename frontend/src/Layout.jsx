@@ -262,6 +262,7 @@ export default function Layout({ children }) {
 
             <div className="drawer-item" onClick={() => handleNav('/placed')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Trophy size={22} color={isActive('/placed')} /> <span style={{ color: isActive('/placed') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Placed Students</span></div><span style={{ color: '#64748b' }}>›</span></div>
             
+            {/* 🚨 FIXED: Hide Student Apps strictly from Admins */}
             {showStudentApps && (
               <div className="drawer-item" onClick={() => handleNav('/applications')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ListChecks size={22} color={isActive('/applications')} /> <span style={{ color: isActive('/applications') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Student Apps</span></div><span style={{ color: '#64748b' }}>›</span></div>
             )}
@@ -297,6 +298,15 @@ export default function Layout({ children }) {
                  <div className="drawer-item" onClick={() => handleNav('/users')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/users')} /> <span style={{ color: isActive('/users') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>User Management</span></div><span style={{ color: '#64748b' }}>›</span></div>
                  <div className="drawer-item" onClick={() => handleNav('/security-logs')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/security-logs')} /> <span style={{ color: isActive('/security-logs') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Security Logs</span></div><span style={{ color: '#64748b' }}>›</span></div>
                </>
+            )}
+
+            {/* 🚨 ASSET MANAGEMENT (ERP) */}
+            {(isSuperAdmin || userRole.includes('MANAGER')) && (
+              <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                <span style={{ display: 'block', padding: '0 1.5rem', fontSize: '0.75rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>Asset Management</span>
+                <div className="drawer-item" onClick={() => handleNav('/assets')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Barcode size={22} color={isActive('/assets')} /> <span style={{ color: isActive('/assets') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>All Assets</span></div><span style={{ color: '#64748b' }}>›</span></div>
+                <div className="drawer-item" onClick={() => handleNav('/assets/add')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Plus size={22} color={isActive('/assets/add')} /> <span style={{ color: isActive('/assets/add') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Register Asset</span></div><span style={{ color: '#64748b' }}>›</span></div>
+              </div>
             )}
 
             <div className="drawer-item" onClick={() => handleNav('/settings')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Gear size={22} color={isActive('/settings')} /> <span style={{ color: isActive('/settings') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Settings</span></div><span style={{ color: '#64748b' }}>›</span></div>

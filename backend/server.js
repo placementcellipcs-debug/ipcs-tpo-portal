@@ -6,8 +6,14 @@ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const cron = require('node-cron');
+
+// 🚨 IMPORT CONTROLLERS EXACTLY ONCE
 const controllers = require('./src/controllers');
+const assetControllers = require('./src/assetControllers');
+
+// 🚨 IMPORT CACHES EXACTLY ONCE
 const { getCache } = require('./src/config');
+const { getAssetCache } = require('./src/assetConfig');
 
 const app = express();
 
@@ -22,10 +28,7 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, postman, or curl requests)
     if (!origin) return callback(null, true);
-    
-    // Check if the origin is in the allowed list, or if it's a Vercel preview branch
     if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
       return callback(null, true);
     } else {
@@ -38,15 +41,24 @@ app.use(cors({
 app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage() });
 
+// ---------------------------------------------------------
+// AUTHENTICATION ROUTES
+// ---------------------------------------------------------
 app.post('/api/auth/login', controllers.login);
-app.post('/api/auth/verify-session', controllers.verifySession); // 🚨 NEW VERIFICATION ROUTE
+app.post('/api/auth/verify-session', controllers.verifySession);
 
+// 🚨 GLOBAL CACHE MIDDLEWARE
 app.use('/api', (req, res, next) => {
-  if (!getCache()) return res.status(503).json({ success: false, message: "Server is syncing data..." });
+  // Checks if BOTH the Placement DB and Asset DB have finished loading
+  if (!getCache() || !getAssetCache()) {
+    return res.status(503).json({ success: false, message: "Server is syncing data from Google Sheets... Please wait 5 seconds and refresh." });
+  }
   next();
 });
 
-// CORE ROUTES
+// ---------------------------------------------------------
+// TPO & PLACEMENT ROUTES
+// ---------------------------------------------------------
 app.post('/api/tpo/dashboard-stats', controllers.getDashboardStats);
 app.post('/api/tpo/students', controllers.getStudents);
 app.post('/api/tpo/students/update-student', controllers.updateStudent);
@@ -70,7 +82,9 @@ app.post('/api/tpo/profile/update-password', controllers.updatePassword);
 app.get('/api/tpo/drives', controllers.getDrives);
 app.post('/api/tpo/drives/update', controllers.updateDriveStatus);
 
+// ---------------------------------------------------------
 // ADMIN ROUTES
+// ---------------------------------------------------------
 app.get('/api/admin/users', controllers.getAdminUsers);
 app.post('/api/admin/users/add', controllers.addAdminUser);
 app.post('/api/admin/users/update', controllers.updateAdminUser);
@@ -78,21 +92,18 @@ app.post('/api/admin/users/delete', controllers.deleteAdminUser);
 app.get('/api/admin/courses', controllers.getCourses);
 app.post('/api/admin/courses/add', controllers.addCourse);
 app.post('/api/admin/courses/delete', controllers.deleteCourse); 
-// 🚨 SECURITY AUDIT ROUTE
 app.get('/api/admin/security-logs', controllers.getSecurityLogs);
-
-// 🚨 BRANCH MANAGEMENT ROUTES
 app.get('/api/admin/branches', controllers.getBranches);
 app.post('/api/admin/branches/add', controllers.addBranch);
 app.post('/api/admin/branches/update', controllers.updateBranch); 
 app.post('/api/admin/branches/delete', controllers.deleteBranch);
-
-// 🚨 TRAINER LOG ROUTES
 app.get('/api/admin/trainer-logs', controllers.getTrainerLogs);
 app.post('/api/admin/trainer-logs/add', controllers.addTrainerLog);
 app.post('/api/admin/trainer-logs/update', controllers.updateTrainerLog);
 
-// STUDY MATERIAL & EXAMS
+// ---------------------------------------------------------
+// STUDY MATERIAL & EXAMS ROUTES
+// ---------------------------------------------------------
 app.get('/api/lms/materials', controllers.getMaterials);
 app.post('/api/lms/materials/add', controllers.addMaterial);
 app.post('/api/lms/materials/update', controllers.updateMaterial);
@@ -113,6 +124,19 @@ app.post('/api/talentino-exams/questions/add', controllers.addTalExamQuestion);
 app.post('/api/talentino-exams/questions/update', controllers.updateTalExamQuestion);
 app.post('/api/talentino-exams/questions/delete', controllers.deleteTalExamQuestion); 
 
+// ---------------------------------------------------------
+// 🚨 ASSET MANAGEMENT (ERP) ROUTES
+// ---------------------------------------------------------
+app.get('/api/v1/assets/form-data', assetControllers.getRegistrationData);
+app.post('/api/v1/assets/add', assetControllers.addAsset);
+app.get('/api/v1/assets', assetControllers.getAssets);
+app.get('/api/v1/assets/:assetId/details', assetControllers.getAssetDetails);
+app.post('/api/v1/assets/assign', assetControllers.assignAsset);
+app.post('/api/v1/assets/return', assetControllers.returnAsset);
+
+// ---------------------------------------------------------
+// SERVER INITIALIZATION
+// ---------------------------------------------------------
 cron.schedule('0 8 * * *', controllers.runDailyCron);
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 IPCS Backend is running on http://localhost:${PORT}`));

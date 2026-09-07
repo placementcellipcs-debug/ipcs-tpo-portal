@@ -23,6 +23,9 @@ import ExamsHub from './ExamsHub';
 import Branches from './Branches'; // 🚨 NEW IMPORT
 import TrainerLog from './TrainerLog';
 import SecurityActivity from './SecurityActivity';
+import AddAsset from './AddAsset';
+import AssetList from './AssetList';
+import AddAsset from './AddAsset';
 
 function App() {
   return (
@@ -55,6 +58,12 @@ function App() {
         <Route path="/exams/aptitude" element={<Aptitude />} />
         <Route path="/exams/talentino" element={<TalentinoExams />} />
         <Route path="/security-logs" element={<SecurityActivity />} />
+
+        <Route path="/assets/add" element={<AddAsset />} />
+        <Route path="/assets" element={<AssetList />} />
+        <Route path="/assets/add" element={<AddAsset />} />s                                
+        
+
       </Routes>
     </BrowserRouter>
   );
