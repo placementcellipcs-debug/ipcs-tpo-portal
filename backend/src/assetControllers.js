@@ -7,17 +7,30 @@ const getH = (headers, target) => {
   return headers.find(h => (h||'').toLowerCase().replace(/[^a-z0-9]/g, '') === cleanTarget) || target;
 };
 
-// 1. Fetch Form Prerequisites (Dropdowns)
+// =========================================================
+// 1. FETCH FORM PREREQUISITES (DROPDOWNS)
+// =========================================================
 exports.getRegistrationData = async (req, res) => {
   try {
     const cache = getAssetCache();
-    const gCache = getCache();
+    const gCache = getCache(); // The Main Placement Portal Cache
 
-    // Pull active branches from your Global Portal cache to prevent double-entry!
-    const branches = (gCache?.branches || []).map(b => b.branch || b._rawData[2]).filter(Boolean);
+    // 🚨 FIXED: Bulletproof extractor for the Branches sheet
+    let branches = [];
+    if (gCache && gCache.branches) {
+       branches = gCache.branches.map(r => {
+         if (typeof r.get === 'function') return r.get('Branch');
+         if (r._rawData && r._rawData.length > 2) return r._rawData[2]; // Fallback to column C
+         return null;
+       }).filter(Boolean);
+    }
+
+    // Deduplicate and sort branches alphabetically
+    branches = [...new Set(branches)].sort();
 
     // Map Asset DB Sheets
     const mapSheet = (rows) => rows.map(r => {
+      if (typeof r.toObject !== 'function') return {};
       const obj = r.toObject();
       const cleanObj = {};
       Object.keys(obj).forEach(k => { cleanObj[k.toLowerCase().replace(/[^a-z0-9]/g, '')] = obj[k]; });
@@ -37,7 +50,9 @@ exports.getRegistrationData = async (req, res) => {
   }
 };
 
-// 2. Register New Asset
+// =========================================================
+// 2. REGISTER NEW ASSET
+// =========================================================
 exports.addAsset = async (req, res) => {
   try {
     const { asset, customFields, userName, userEmail } = req.body;
