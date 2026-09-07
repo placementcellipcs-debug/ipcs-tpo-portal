@@ -6,7 +6,7 @@ import {
   FolderOpen, BookBookmark, PencilSimple, Trash, Info
 } from '@phosphor-icons/react';
 import Layout from './Layout';
-import { API_BASE } from './apiConfig'; // 🚨 Added explicit import
+import { API_BASE } from './apiConfig';
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
 
@@ -54,15 +54,12 @@ export default function StudyMaterials() {
         const cDict = courseRes.data.courses || {};
         setCourseDict(cDict);
         
-        // 🚨 PERFECT TRAINER BYPASS TO SUB-COURSES (PROGRAMS)
         if (!isSuperAdmin && tpoData?.assignedCourse && tpoData.assignedCourse !== 'All Courses' && tpoData.assignedCourse !== 'All') {
           const myCourse = tpoData.assignedCourse.toLowerCase().trim();
-          
-          // Find the parent domain for their course
           const mainDomain = Object.keys(cDict).find(k => k.toLowerCase().includes(myCourse) || myCourse.includes(k.toLowerCase())) || tpoData.assignedCourse;
           
           setSelectedMainCourse(mainDomain);
-          setViewLevel('sub_courses'); // Jumps straight to the programs page!
+          setViewLevel('sub_courses'); 
         } else {
           setViewLevel('main_courses');
         }
@@ -82,7 +79,10 @@ export default function StudyMaterials() {
     ? Object.keys(courseDict) 
     : ['Industrial Automation', 'BMS AND CCTV', 'Embedded and IoT', 'Digital Marketing', 'Information technology (IT)'];
 
-  const subCoursesList = (selectedMainCourse && courseDict[selectedMainCourse]) ? courseDict[selectedMainCourse] : [];
+  // 🚨 FIXED: If no sub-courses exist, fallback to the main course so the Admin can still click and add materials!
+  const subCoursesList = (selectedMainCourse && courseDict[selectedMainCourse] && courseDict[selectedMainCourse].length > 0) 
+    ? courseDict[selectedMainCourse] 
+    : (selectedMainCourse ? [selectedMainCourse] : []);
 
   const filteredMaterials = materials.filter(m => {
     const matchSubCourse = (m.course || '').trim() === (selectedSubCourse || '').trim();
@@ -187,27 +187,19 @@ export default function StudyMaterials() {
         {viewLevel === 'sub_courses' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '15px', flexWrap: 'wrap' }}>
-              {/* 🚨 ONLY ADMINS CAN GO BACK TO DOMAINS */}
               {isSuperAdmin && <button onClick={() => { setViewLevel('main_courses'); setSelectedMainCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}><CaretLeft weight="bold" size={18} /> Back to Domains</button>}
               <div><h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedMainCourse} Programs</h1><p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a specific program to view and manage its materials.</p></div>
             </div>
 
-            {subCoursesList.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
-                <Info size={40} color="var(--text-muted)" style={{ marginBottom: '10px' }} />
-                <h3 style={{ margin: '0 0 10px 0', color: '#fff' }}>No Programs Found</h3>
-                <p style={{ color: 'var(--text-muted)', margin: 0 }}>There are currently no subcourses mapped to this domain in the Courses sheet.</p>
-              </div>
-            ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-                {subCoursesList.map((subCourse) => (
-                  <div key={subCourse} onClick={() => { setSelectedSubCourse(subCourse); setViewLevel('materials'); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.5rem', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', gap: '15px' }}>
-                    <div style={{ width: '45px', height: '45px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><BookBookmark size={24} weight="fill" /></div>
-                    <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-main)', lineHeight: 1.4 }}>{subCourse}</h3>
-                  </div>
-                ))}
-              </div>
-            )}
+            {/* 🚨 THE FALLBACK LOGIC MAKES SURE THIS IS NEVER 0 */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+              {subCoursesList.map((subCourse) => (
+                <div key={subCourse} onClick={() => { setSelectedSubCourse(subCourse); setViewLevel('materials'); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.5rem', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <div style={{ width: '45px', height: '45px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><BookBookmark size={24} weight="fill" /></div>
+                  <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-main)', lineHeight: 1.4 }}>{subCourse}</h3>
+                </div>
+              ))}
+            </div>
           </>
         )}
 
@@ -215,7 +207,7 @@ export default function StudyMaterials() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                <button onClick={() => { setViewLevel('sub_courses'); setSelectedSubCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}><CaretLeft weight="bold" size={18} /> Programs</button>
+                {isSuperAdmin && <button onClick={() => { setViewLevel('sub_courses'); setSelectedSubCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}><CaretLeft weight="bold" size={18} /> Programs</button>}
                 <div><h1 style={{ fontSize: '1.6rem', margin: 0 }}>{selectedSubCourse} Materials</h1><p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>Upload presentations, PDFs, and notes for student access.</p></div>
               </div>
               {canManage && <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}><Plus size={20} weight="bold" /> Upload Material</button>}

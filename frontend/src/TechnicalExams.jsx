@@ -5,7 +5,7 @@ import {
   WarningCircle, X, FolderOpen, BookBookmark, ListChecks, PencilSimple, Trash, Eye
 } from '@phosphor-icons/react';
 import Layout from './Layout';
-import { API_BASE } from './apiConfig'; // 🚨 Added explicit import just in case
+import { API_BASE } from './apiConfig';
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
 
@@ -16,7 +16,7 @@ export default function TechnicalExams() {
   const isSuperAdmin = tpoData?.accessType === 'superadmin';
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
-  const isTrainer = upperRole === 'TRAINER';
+  const isTrainer = upperRole.includes('TRAINER');
   
   const canManage = isSuperAdmin || isRth;
   const rthAssignedCourse = tpoData?.assignedCourse || '';
@@ -31,7 +31,6 @@ export default function TechnicalExams() {
   const [selectedMainCourse, setSelectedMainCourse] = useState(isSuperAdmin ? null : rthAssignedCourse);
   const [selectedSubCourse, setSelectedSubCourse] = useState(null);
   
-  // 🚨 FIXED: Removed duplicate declaration and forces Trainers into Results tab
   const [activeTab, setActiveTab] = useState(isTrainer ? 'results' : 'questions'); 
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -45,7 +44,6 @@ export default function TechnicalExams() {
 
   const fetchData = async () => {
     try {
-      // 🚨 FIXED: Template literals syntax was broken by the find-and-replace
       const [qRes, rRes, courseRes] = await Promise.all([
         axios.get(`${API_BASE}/api/exams/questions`), 
         axios.get(`${API_BASE}/api/exams/results`),
@@ -65,7 +63,14 @@ export default function TechnicalExams() {
     fetchData();
   }, []);
 
-  const MAIN_COURSES = Object.keys(courseDict);
+  const MAIN_COURSES = Object.keys(courseDict).length > 0 
+    ? Object.keys(courseDict) 
+    : ['Industrial Automation', 'BMS AND CCTV', 'Embedded and IoT', 'Digital Marketing', 'Information technology (IT)'];
+
+  // 🚨 FIXED: If no sub-courses exist, fallback to the main course so the Admin can still click and add materials!
+  const subCoursesList = (selectedMainCourse && courseDict[selectedMainCourse] && courseDict[selectedMainCourse].length > 0) 
+    ? courseDict[selectedMainCourse] 
+    : (selectedMainCourse ? [selectedMainCourse] : []);
 
   const handleInputChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -100,7 +105,6 @@ export default function TechnicalExams() {
     setError('');
 
     try {
-      // 🚨 FIXED: Template literals syntax
       const endpoint = isEditMode 
         ? `${API_BASE}/api/exams/questions/update` 
         : `${API_BASE}/api/exams/questions/add`;
@@ -121,7 +125,6 @@ export default function TechnicalExams() {
   const handleDeleteQuestion = async (id) => {
     if(!window.confirm("Are you sure you want to delete this question?")) return;
     try {
-      // 🚨 FIXED: Template literals syntax
       const res = await axios.post(`${API_BASE}/api/exams/questions/delete`, { id });
       if (res.data.success) {
         setQuestions(questions.filter(q => q.id !== id));
@@ -202,7 +205,7 @@ export default function TechnicalExams() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-              {(courseDict[selectedMainCourse] || []).map((subCourse) => (
+              {subCoursesList.map((subCourse) => (
                 <div 
                   key={subCourse}
                   onClick={() => { setSelectedSubCourse(subCourse); setViewLevel('exam_dashboard'); }}
@@ -238,7 +241,6 @@ export default function TechnicalExams() {
             </div>
 
             <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '1px solid var(--card-border)', paddingBottom: '10px' }}>
-              {/* 🚨 FIXED: Trainers cannot see the Question Bank tab */}
               {!isTrainer && (
                 <button onClick={() => setActiveTab('questions')} style={{ background: activeTab === 'questions' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'questions' ? 'var(--accent-primary)' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <Question size={20} weight={activeTab === 'questions' ? "fill" : "regular"} /> Question Bank
@@ -366,7 +368,7 @@ export default function TechnicalExams() {
                 <div className="form-group">
                   <label>Assigned Program</label>
                   <select name="course" value={formData.course} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }} required>
-                    {(courseDict[selectedMainCourse] || []).map(c => <option key={c} value={c}>{c}</option>)}
+                    {subCoursesList.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
               </div>

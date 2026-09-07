@@ -23,6 +23,7 @@ export default function Dashboard() {
   const userRole = (tpoData?.role || '').toUpperCase();
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
   const showReports = isSuperAdmin || userRole === 'TPO';
+  const isTpo = userRole.includes('TPO'); 
   const isTrainer = userRole.includes('TRAINER');
   
   const [stats, setStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0 });
@@ -35,7 +36,6 @@ export default function Dashboard() {
   const [pipeline, setPipeline] = useState({ applied: 0, interview: 0, offers: 0, placed: 0 });
   const [totalAppsCount, setTotalAppsCount] = useState(0);
 
-  // 🚨 NEW STATES FOR LIVE TICKER AND TRAINER LOGS
   const [allPlaced, setAllPlaced] = useState([]);
   const [trainerLogs, setTrainerLogs] = useState([]);
 
@@ -138,7 +138,6 @@ export default function Dashboard() {
     setDomainData(formattedDomains);
     setPipeline({ applied: pApp, interview: pInt, offers: pOff, placed: pPl });
     
-    // 🚨 SAVE ALL PLACEMENTS FOR THE LIVE TICKER
     setAllPlaced(placedRecent);
     
     const sortedRecent = placedRecent.sort((a, b) => {
@@ -147,13 +146,12 @@ export default function Dashboard() {
     setRecentPlacements(sortedRecent);
   };
 
-  // 🚨 LIVE TICKER: RANDOMIZE PLACEMENTS EVERY 60 SECONDS
   useEffect(() => {
     if (allPlaced.length === 0) return;
     const interval = setInterval(() => {
       const shuffled = [...allPlaced].sort(() => 0.5 - Math.random());
       setRecentPlacements(shuffled.slice(0, 5));
-    }, 60000); // 60,000ms = 1 Minute
+    }, 60000); 
     return () => clearInterval(interval);
   }, [allPlaced]);
 
@@ -193,12 +191,16 @@ export default function Dashboard() {
           processApps(logs);
         }
 
-        // 🚨 FETCH TRAINER LOGS FOR THE DASHBOARD WIDGET
-        if ((localTpo.role || '').toUpperCase().includes('TRAINER')) {
+        // 🚨 FIXED: SHOW FOR TRAINERS *AND* SUPER ADMINS
+        if ((localTpo.role || '').toUpperCase().includes('TRAINER') || localTpo.accessType === 'superadmin') {
           try {
             const trRes = await axios.get(`${API_BASE}/api/admin/trainer-logs`);
             if (trRes.data.success) {
-              const myLogs = trRes.data.logs.filter(l => l.trainerName === localTpo.name);
+              let myLogs = trRes.data.logs;
+              // If it's a trainer, only show THEIR logs. If Admin, show ALL logs.
+              if (localTpo.accessType !== 'superadmin') {
+                 myLogs = myLogs.filter(l => l.trainerName === localTpo.name);
+              }
               setTrainerLogs(myLogs.slice(0, 5));
             }
           } catch (e) { console.error("Failed to load trainer logs"); }
@@ -361,11 +363,11 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* 🚨 TRAINER LOG WIDGET */}
-        {isTrainer && (
+        {/* 🚨 FIXED: SHOW FOR TRAINERS *AND* SUPER ADMINS */}
+        {(isTrainer || isSuperAdmin) && (
           <div className="dash-card" style={{ marginBottom: '20px' }}>
             <div className="card-top">
-              <h3>My Daily Reports</h3>
+              <h3>{isSuperAdmin ? "Global Trainer Reports" : "My Daily Reports"}</h3>
               <button className="text-link" onClick={() => navigate('/trainer-logs')}>View All</button>
             </div>
             <table className="mini-table">
@@ -403,7 +405,6 @@ export default function Dashboard() {
                     <td><div style={{display:'flex', alignItems:'center', gap:'8px'}}><div className="tiny-avatar">{p.name.charAt(0)}</div> <span style={{color:'#fff'}}>{p.name}</span></div></td>
                     <td><span style={{color:'#3b82f6', fontWeight:'bold'}}>{p.company}</span></td>
                     <td>{p.course}</td>
-                    {/* 🚨 FIXED THE 'LPALPA' BUG */}
                     <td style={{textAlign:'right', fontWeight:'bold', color:'#fff'}}>
                       {p.packageLpa ? `${String(p.packageLpa).toUpperCase().replace('LPA', '').trim()} LPA` : '-'}
                     </td>
@@ -441,11 +442,16 @@ export default function Dashboard() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginTop: '15px' }}>
               <div className="qa-box" onClick={()=>navigate('/placement-drives')}><div className="qa-icon blue"><CalendarCheck weight="fill"/></div>Add Drive</div>
               <div className="qa-box" onClick={()=>navigate('/students')}><div className="qa-icon blue"><Users weight="fill"/></div>Add Student</div>
-              {showReports && <div className="qa-box" onClick={()=>navigate('/tracker')}><div className="qa-icon green"><ListChecks weight="fill"/></div>Tracker</div>}
+              
+              {/* 🚨 STRICT RESTRICTION: ONLY TPOs CAN CLICK TRACKER */}
+              {isTpo && <div className="qa-box" onClick={()=>navigate('/tracker')}><div className="qa-icon green"><ListChecks weight="fill"/></div>Tracker</div>}
+              
               <div className="qa-box" onClick={()=>navigate('/exams')}><div className="qa-icon orange"><NotePencil weight="fill"/></div>Exams</div>
               <div className="qa-box" onClick={()=>navigate('/study-materials')}><div className="qa-icon pink"><BookOpen weight="fill"/></div>Material</div>
+              
               {showReports && <div className="qa-box" onClick={()=>navigate('/reports')}><div className="qa-icon teal"><ChartBar weight="fill"/></div>Gen. Report</div>}
               {showReports && <div className="qa-box" onClick={()=>navigate('/reports')}><div className="qa-icon purple"><Desktop weight="fill"/></div>View Reports</div>}
+              
               <div className="qa-box" onClick={()=>navigate('/clients')}><div className="qa-icon orange"><FolderOpen weight="fill"/></div>Documents</div>
             </div>
           </div>
@@ -523,7 +529,6 @@ export default function Dashboard() {
           .dash-card { background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; }
           .dash-card h3 { margin: 0; font-size: 1rem; color: #fff; }
           
-          /* 🚨 ADDED FADE IN ANIMATION FOR LIVE TICKER */
           @keyframes fadeInReveal {
             from { opacity: 0; transform: translateY(5px); }
             to { opacity: 1; transform: translateY(0); }

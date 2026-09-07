@@ -46,15 +46,11 @@ export default function PlacedStudents() {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // 🚨 RESTRICT ACTIONS BY ROLE
+  // 🚨 RESTRICT ACTIONS BY ROLE: ONLY TPO CAN ADD/EDIT
   const upperRole = (tpoData?.role || '').toUpperCase();
-  const isTpo = upperRole === 'TPO';
-  const isSuper = (tpoData?.accessType === 'superadmin') || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
-  
-  // Only Admins and TPOs can Add or Edit placements
-  const canEditPlacement = isTpo || isSuper;
+  const isTpo = upperRole.includes('TPO');
+  const canEditPlacement = isTpo; // 🚨 Admin is no longer allowed
 
-  // 🚨 RESTRICT DATA BY COURSE
   const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
   
@@ -357,7 +353,6 @@ export default function PlacedStudents() {
                       <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '6px' }}>{app.joiningStatus || 'Joined'}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'center' }}>
-                      {/* 🚨 DYNAMIC BUTTON: EDIT FOR TPO/ADMIN, VIEW OFFER LETTER FOR OTHERS */}
                       {canEditPlacement ? (
                         <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem', display: 'flex', justifyContent: 'center', gap: '6px' }} onClick={() => openEditModal(app)}>
                           <PencilSimple weight="bold" size={14} /> Edit

@@ -16,11 +16,11 @@ export default function Vacancies() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   
-  // 🚨 RESTRICT ACCESS: ONLY TPO & SUPER ADMIN CAN ADD VACANCIES
+  // 🚨 RESTRICT ACCESS: ONLY TPO CAN ADD VACANCIES
   const upperRole = (tpoData?.role || '').toUpperCase();
-  const isTpo = upperRole === 'TPO';
-  const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
-  const canAddOpening = isTpo || isSuperAdmin;
+  const isTpo = upperRole.includes('TPO');
+  const canAddOpening = isTpo; // 🚨 Admin is no longer allowed
+
   const isCourseSpecific = upperRole.includes('TRAINER') || upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
 
@@ -74,7 +74,6 @@ export default function Vacancies() {
                        (v.position || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchCourse = courseFilter === 'All' || (v.course || '').toLowerCase().includes(courseFilter.toLowerCase());
     
-    // 🚨 STRICT TRAINER COURSE FILTER
     let matchTrainerScope = true;
     if (isCourseSpecific && displayCourse !== 'All Courses') {
        const vCourse = (v.course || '').toLowerCase();
@@ -114,7 +113,6 @@ export default function Vacancies() {
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Current openings and applicant tracking for your branches.</p>
           </div>
           
-          {/* 🚨 ADD OPENING BUTTON LINKS DIRECTLY TO GOOGLE FORM */}
           {canAddOpening && (
             <button 
               className="btn-action" 

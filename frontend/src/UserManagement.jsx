@@ -7,10 +7,8 @@ import {
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
 
-// Colors for the Position Tiles
 const TILE_COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#0ea5e9', '#ef4444', '#f43f5e'];
 
-// Master List of IPCS Branches for Dropdowns
 const ALL_BRANCHES = [
   "Trivandrum", "Attingal", "Kollam", "Calicut", "Kannur", "Perinthalmanna", 
   "Palakkad", "Kochi", "Kottayam", "Thrissur", "Coimbatore", "Trichy", 
@@ -25,11 +23,9 @@ export default function UserManagement() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // View & Filtering States
   const [selectedRole, setSelectedRole] = useState(null); 
   const [viewType, setViewType] = useState('list');
   
-  // Modal & Form States
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -45,7 +41,8 @@ export default function UserManagement() {
 
   const fetchUsers = async () => {
     try {
-      const res = await axios.get('`${API_BASE}/api/admin/users');
+      // 🚨 FIXED: API string typo
+      const res = await axios.get(`${API_BASE}/api/admin/users`);
       if (res.data && res.data.success) {
         setUsers(res.data.users || []);
       }
@@ -113,9 +110,10 @@ export default function UserManagement() {
     };
 
     try {
+      // 🚨 FIXED: API string typo
       const endpoint = isEditMode 
-        ? '`${API_BASE}/api/admin/users/update' 
-        : '`${API_BASE}/api/admin/users/add';
+        ? `${API_BASE}/api/admin/users/update` 
+        : `${API_BASE}/api/admin/users/add`;
         
       const res = await axios.post(endpoint, payload);
       if (res.data.success) {
@@ -133,7 +131,8 @@ export default function UserManagement() {
   const handleDeleteUser = async (sheet, rowNumber, userName) => {
     if (!window.confirm(`Are you sure you want to permanently delete user: ${userName}?`)) return;
     try {
-      const res = await axios.post('`${API_BASE}/api/admin/users/delete', { sheet, rowNumber });
+      // 🚨 FIXED: API string typo
+      const res = await axios.post(`${API_BASE}/api/admin/users/delete`, { sheet, rowNumber });
       if (res.data.success) {
         setUsers(users.filter(u => u.rowNumber !== rowNumber || u.sheet !== sheet));
       }
@@ -148,7 +147,6 @@ export default function UserManagement() {
     return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : url;
   };
 
-  // Safe Fallback for non-Super Admins
   if (tpoData?.accessType !== 'superadmin') {
     return (
       <Layout>
@@ -161,14 +159,8 @@ export default function UserManagement() {
     );
   }
 
-  // ==========================================
-  // DATA PREP FOR TILES & DIRECTORY
-  // ==========================================
-  
-  // 1. Remove the logged-in super admin from the array so they don't see/edit themselves
   const validUsers = (users || []).filter(u => String(u.email || '').toLowerCase() !== String(tpoData.email).toLowerCase());
 
-  // 2. Count users per Position/Role
   const roleData = {};
   validUsers.forEach(u => {
     const r = u.role || 'Unassigned';
@@ -176,7 +168,6 @@ export default function UserManagement() {
   });
   const roleList = Object.keys(roleData).sort();
 
-  // 3. Filter data for the specific directory view
   const activeUsers = selectedRole ? validUsers.filter(u => (u.role || 'Unassigned') === selectedRole) : [];
   const filteredUsers = activeUsers.filter(u => 
     String(u.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -187,9 +178,6 @@ export default function UserManagement() {
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        {/* ========================================== */}
-        {/* VIEW 1: LANDING PAGE - POSITION TILES */}
-        {/* ========================================== */}
         {!selectedRole ? (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
@@ -232,9 +220,6 @@ export default function UserManagement() {
             )}
           </>
         ) : (
-          /* ========================================== */
-          /* VIEW 2: DIRECTORY DETAILS FOR SELECTED ROLE */
-          /* ========================================== */
           <>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
@@ -387,9 +372,7 @@ export default function UserManagement() {
         )}
       </div>
 
-      {/* ========================================== */}
-      {/* UNIVERSAL ADD/EDIT MODAL OVERLAY */}
-      {/* ========================================== */}
+      {/* MODAL FORM REMAINS THE SAME */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="modal-card" style={{ maxWidth: '650px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
