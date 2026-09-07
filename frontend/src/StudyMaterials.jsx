@@ -161,7 +161,7 @@ export default function StudyMaterials() {
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
-        {viewLevel === 'main_courses' && isSuperAdmin && (
+        {viewLevel === 'main_courses' && (
           <>
             <div style={{ marginBottom: '30px' }}>
               <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -186,7 +186,7 @@ export default function StudyMaterials() {
         {viewLevel === 'sub_courses' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '15px', flexWrap: 'wrap' }}>
-              {isSuperAdmin && <button onClick={() => { setViewLevel('main_courses'); setSelectedMainCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}><CaretLeft weight="bold" size={18} /> Back to Domains</button>}
+              <button onClick={() => { setViewLevel('main_courses'); setSelectedMainCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}><CaretLeft weight="bold" size={18} /> Back to Domains</button>
               <div><h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedMainCourse} Programs</h1><p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a specific program to view and manage its materials.</p></div>
             </div>
 

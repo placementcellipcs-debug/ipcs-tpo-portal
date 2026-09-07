@@ -51,7 +51,7 @@ export default function TrainerLog() {
       setIsAddModalOpen(false);
       setAddForm({ studentCount: '', present: '', absentees: '', feedbacks: '' });
       fetchLogs();
-    } catch (err) { alert("Failed to submit log."); } finally { setIsSubmitting(false); }
+    } catch (err) { alert("Failed to submit: " + (err.response?.data?.message || err.message)); } finally { setIsSubmitting(false); }
   };
 
   const handleTlSubmit = async (e) => {
@@ -64,7 +64,7 @@ export default function TrainerLog() {
       });
       setIsEditModalOpen(false);
       fetchLogs();
-    } catch (err) { alert("Failed to update TL records."); } finally { setIsSubmitting(false); }
+    } catch (err) { alert("Failed to update: " + (err.response?.data?.message || err.message)); } finally { setIsSubmitting(false); }
   };
 
   return (

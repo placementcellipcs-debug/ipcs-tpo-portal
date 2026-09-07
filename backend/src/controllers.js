@@ -2011,10 +2011,33 @@ exports.addTrainerLog = async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
+exports.addTrainerLog = async (req, res) => {
+  try {
+    const { branch, trainerName, course, studentCount, present, absentees, feedbacks } = req.body;
+    // 🚨 Safe Fuzzy Finder: Ignores spaces or case issues in the sheet name
+    const sheet = doc.sheetsByIndex.find(s => s.title.replace(/\s/g, '').toLowerCase().includes('trainer/tl'));
+    if (!sheet) return res.status(404).json({ success: false, message: "Trainer Log sheet missing." });
+    
+    await sheet.addRow({
+      'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      'Branch': branch,
+      'TrainerName': trainerName,
+      'Course': course,
+      'Student Count': studentCount,
+      'Currently Present in Lab': present,
+      'Absentees': absentees,
+      'Any Feedbacks': feedbacks
+    });
+    
+    refreshCache(); 
+    res.json({ success: true, message: "Daily log submitted!" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
 exports.updateTrainerLog = async (req, res) => {
   const { rowNumber, resignations, vacancy, tuv, mockTest } = req.body;
   try {
-    const sheet = doc.sheetsByTitle["Trainer/TL_Log"];
+    const sheet = doc.sheetsByIndex.find(s => s.title.replace(/\s/g, '').toLowerCase().includes('trainer/tl'));
     const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
     if (rows.length > 0) {
       const h = sheet.headerValues;

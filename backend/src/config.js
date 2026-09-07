@@ -50,7 +50,8 @@ async function refreshCache() {
       getSheet("Talentino_Schedule"), getSheet("Talentino_Attendance"), getSheet("Clients"), getSheet("TPO_Log"), 
       getSheet("Study_Materials"), getSheet("Tech_Questions"), getSheet("Tech_Results"),
       getSheet("Aptitude_Questions"), getSheet("Aptitude_Results"), getSheet("Talentino_Questions"), getSheet("Talentino_Results"),
-      getSheet("Courses"), getSheet("Drive_Registration"), getSheet("Contact"), getSheet("User"), getSheet("Branches"), getSheet("Mail")
+      getSheet("Courses"), getSheet("Drive_Registration"), getSheet("Contact"), getSheet("User"), getSheet("Branches"), getSheet("Mail"),
+      getSheet("Trainer/TL_Log") // 🚨 ADDED THE NEW TRAINER SHEET HERE
     ];
 
     const fetchedData = [];
@@ -59,11 +60,11 @@ async function refreshCache() {
       await delay(200); 
     }
 
-    // 🚨 EXACT 1-TO-1 DESTRUCTURING FIX (courseRows restored at index 16)
+    // 🚨 EXACT 1-TO-1 DESTRUCTURING 
     const [
       stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, 
       matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows,
-      courseRows, driveRows, contactRows, userRows, branchRows, mailRows
+      courseRows, driveRows, contactRows, userRows, branchRows, mailRows, trainerLogRows // 🚨 DESTRUCTURED HERE
     ] = fetchedData;
 
     let coursesDict = {};
@@ -87,7 +88,8 @@ async function refreshCache() {
       tSched: tSchedRows, tAtt: tAttRows, clients: clientRows, tpoLogs: tpoLogRows, materials: matRows, 
       techQuestions: tqRows, techResults: trRows, aptQuestions: aptQRows, aptResults: aptRRows, 
       talQuestions: talQRows, talResults: talRRows, coursesDict: coursesDict, drives: driveRows,
-      contacts: contactRows, users: userRows, branches: branchRows, mails: mailRows
+      contacts: contactRows, users: userRows, branches: branchRows, mails: mailRows,
+      trainerLogs: trainerLogRows // 🚨 CACHED FOR THE FRONTEND
     };
     
     console.log("✅ Cache successfully synced with Google Sheets!");
