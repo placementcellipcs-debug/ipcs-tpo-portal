@@ -7,7 +7,7 @@ import {
 import Layout from './Layout';
 
 // 🚨 UPDATED: POINT TO THE NEW RENDER URL
-const API_BASE = "https://ipcs-tpo-portal-u0l6.onrender.com";
+import { API_BASE } from './apiConfig';
 
 const ClientLogo = ({ client, size = 70, noMargin = false }) => {
   const [imgErr, setImgErr] = useState(false);

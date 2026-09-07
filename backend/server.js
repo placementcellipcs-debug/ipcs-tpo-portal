@@ -14,6 +14,7 @@ const app = express();
 // 🚨 DYNAMIC CORS CONFIGURATION
 const allowedOrigins = [
   'https://talenzo.ipcsglobal.info',
+  'https://api-talenzo.ipcsglobal.info',
   'https://ipcs-tpo-portal.vercel.app',
   'http://localhost:5173',
   'http://localhost:3000'

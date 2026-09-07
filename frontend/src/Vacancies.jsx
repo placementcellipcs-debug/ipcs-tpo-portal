@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, Users, Eye, X, Prohibit, EnvelopeSimple, Phone, Plus } from '@phosphor-icons/react';
+import { CircleNotch, Users, Eye, X, Prohibit, EnvelopeSimple, Phone, Plus, Funnel } from '@phosphor-icons/react';
 import Layout from './Layout';
 
 import { API_BASE } from './apiConfig';
@@ -19,7 +19,7 @@ export default function Vacancies() {
   // 🚨 RESTRICT ACCESS: ONLY TPO CAN ADD VACANCIES
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isTpo = upperRole.includes('TPO');
-  const canAddOpening = isTpo; // 🚨 Admin is no longer allowed
+  const canAddOpening = isTpo;
 
   const isCourseSpecific = upperRole.includes('TRAINER') || upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
@@ -30,6 +30,9 @@ export default function Vacancies() {
   
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
+  
+  // 🚨 NEW STATUS FILTER
+  const [statusFilter, setStatusFilter] = useState('All');
 
   const [selectedJob, setSelectedJob] = useState(null);
   const [isJobDetailsModalOpen, setIsJobDetailsModalOpen] = useState(false);
@@ -68,10 +71,21 @@ export default function Vacancies() {
     appsByJobId[jobId].push(app);
   });
 
+  // 🚨 ROBUST DATE PARSER (Fixes Expiry Bug)
+  const parseDate = (dateStr) => {
+    if (!dateStr) return new Date(8640000000000000); 
+    const d = new Date(dateStr);
+    return isNaN(d) ? new Date(8640000000000000) : d;
+  };
+  
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
   const filteredVacs = vacancies.filter(v => {
     const matchQuery = (v.id || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                        (v.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                        (v.position || '').toLowerCase().includes(searchQuery.toLowerCase());
+    
     const matchCourse = courseFilter === 'All' || (v.course || '').toLowerCase().includes(courseFilter.toLowerCase());
     
     let matchTrainerScope = true;
@@ -81,7 +95,16 @@ export default function Vacancies() {
        matchTrainerScope = vCourse.includes(myCourse) || myCourse.includes(vCourse);
     }
 
-    return matchQuery && matchCourse && matchTrainerScope;
+    // 🚨 APPLY STATUS FILTER
+    const deadline = parseDate(v.lastDate);
+    const isExpired = deadline < today || (v.status || '').toLowerCase().includes('expire');
+    const isClosed = (v.status || '').toLowerCase().includes('close') || (v.status || '').toLowerCase().includes('no');
+    
+    const statMatch = statusFilter === 'All' ||
+                      (statusFilter === 'Open' && !isExpired && !isClosed) ||
+                      (statusFilter === 'Expired' && (isExpired || isClosed));
+
+    return matchQuery && matchCourse && matchTrainerScope && statMatch;
   });
 
   const groupedVacs = {};
@@ -90,18 +113,6 @@ export default function Vacancies() {
     if (!groupedVacs[loc]) groupedVacs[loc] = [];
     groupedVacs[loc].push(v);
   });
-
-  const parseDate = (dateStr) => {
-    if (!dateStr) return new Date(8640000000000000);
-    if (dateStr.includes('/')) {
-      const parts = dateStr.split('/');
-      return new Date(`${parts[2]}-${parts[1]}-${parts[0]}`); 
-    }
-    return new Date(dateStr);
-  };
-  
-  const today = new Date();
-  today.setHours(0,0,0,0);
 
   return (
     <Layout>
@@ -124,6 +135,7 @@ export default function Vacancies() {
           )}
         </div>
 
+        {/* 🚨 ADDED STATUS FILTER */}
         <div className="header-controls" style={{ justifyContent: 'flex-start' }}>
           <input type="text" className="sleek-input" placeholder="Search ID or Company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           <select className="sleek-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
@@ -132,6 +144,11 @@ export default function Vacancies() {
             <option value="BMS & CCTV">BMS & CCTV</option>
             <option value="Python and Data Science">Python</option>
             <option value="Digital Marketing">Digital Marketing</option>
+          </select>
+          <select className="sleek-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+            <option value="All">All Statuses</option>
+            <option value="Open">Open Now</option>
+            <option value="Expired">Expired & Closed</option>
           </select>
         </div>
 

@@ -4,6 +4,7 @@ import axios from 'axios';
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { CircleNotch, WarningCircle, CheckCircle } from '@phosphor-icons/react';
+import { API_BASE } from './apiConfig';
 
 // 🚨 IMPORTING THE IMAGES DIRECTLY FROM THE SRC FOLDER
 import ipcsLogo from './ipcs-logo.png';
@@ -35,7 +36,7 @@ export default function CertificateSign() {
 
   useEffect(() => {
     // 🚨 UPDATED TO NEW RENDER BACKEND URL
-    axios.get(`https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/clients/${id}`)
+    axios.get(`${API_BASE}/api/tpo/clients/${id}`)
       .then(res => {
         if (res.data.success) {
           setClient(res.data.client);
@@ -104,7 +105,7 @@ export default function CertificateSign() {
       formData.append('companyEmail', client.email);
 
       // 🚨 UPDATED TO NEW RENDER BACKEND URL
-      const res = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/clients/submit-mou', formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      const res = await axios.post(`${API_BASE}/api/tpo/clients/submit-mou`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       if(res.data.success) setIsSuccess(true);
     } catch (error) {
       console.error(error);

@@ -734,6 +734,7 @@ exports.getApplications = (req, res) => {
   res.json({ success: true, applications: appsList });
 };
 
+// 🚨 FIXED: Bulletproof Application Update logic to fix the Tracker Error
 exports.updateApplication = async (req, res) => {
   const rowNumber = parseInt(req.body.rowNumber);
   const { status, remarks, datePlaced, packageLpa, joiningStatus, currentUserEmail, interviewDate, interviewTime, interviewVenue } = req.body;
@@ -759,107 +760,107 @@ exports.updateApplication = async (req, res) => {
 
     const rows = await appSheet.getRows({ offset: rowNumber - 2, limit: 1 });
     
-    if (rows.length > 0) {
-      const headers = appSheet.headerValues;
-      const currentRowData = rows[0].toObject();
-      const getHeader = (s) => Object.keys(currentRowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
-      
-      const oldStatus = (currentRowData[getHeader('status')] || '').toString().toLowerCase();
-
-      const sName = currentRowData[getHeader('name')] || currentRowData[getHeader('studentname')] || fullApp.name || '';
-      const sContact = currentRowData[getHeader('contact')] || currentRowData[getHeader('phone')] || fullApp.phone || '';
-      const sMail = currentRowData[getHeader('mail')] || currentRowData[getHeader('email')] || fullApp.email || '';
-      const sRoll = currentRowData[getHeader('roll')] || fullApp.roll || '';
-      const sCourse = currentRowData[getHeader('course')] || fullApp.course || '';
-      const sBranch = currentRowData[getHeader('branch')] || fullApp.branch || '';
-      const sQual = currentRowData[getHeader('qual')] || fullApp.qual || '';
-      const sResume = currentRowData[getHeader('resume')] || currentRowData[getHeader('cv')] || fullApp.resume || '';
-      const sJobId = currentRowData[getHeader('jobid')] || fullApp.jobId || '';
-      const sCompany = currentRowData[getHeader('company')] || fullApp.company || '';
-      const sPosition = currentRowData[getHeader('position')] || fullApp.position || '';
-      const sTpo = currentRowData[getHeader('placementofficer')] || fullApp.tpoName || '';
-
-      const updateObj = { 'Status': status };
-      
-      const getSafeH = (sheetHeaders, searchStr) => {
-        const cleanStr = searchStr.toLowerCase().replace(/\s/g, '');
-        return sheetHeaders.find(h => h.toLowerCase().replace(/\s/g, '') === cleanStr) || 
-               sheetHeaders.find(h => h.toLowerCase().replace(/\s/g, '').includes(cleanStr));
-      };
-
-      const hRemarks = getSafeH(headers, 'remarks'); if (hRemarks && remarks !== undefined) updateObj[hRemarks] = remarks;
-      const hDatePlaced = getSafeH(headers, 'dateplaced'); if (hDatePlaced && datePlaced !== undefined) updateObj[hDatePlaced] = datePlaced;
-      const hPackage = getSafeH(headers, 'package'); if (hPackage && packageLpa !== undefined) updateObj[hPackage] = packageLpa;
-      const hOffer = getSafeH(headers, 'offerletter'); if (hOffer && offerLetterLink) updateObj[hOffer] = offerLetterLink;
-      const hJoining = getSafeH(headers, 'joiningstatus'); if (hJoining && joiningStatus !== undefined) updateObj[hJoining] = joiningStatus;
-      
-      const hDate = getSafeH(headers, 'interviewdate');
-      const hTime = getSafeH(headers, 'interviewtime') || getSafeH(headers, 'intervewtime');
-      const hVenue = getSafeH(headers, 'interviewvenue');
-      
-      if (hDate && interviewDate !== undefined) updateObj[hDate] = interviewDate;
-      if (hTime && interviewTime !== undefined) updateObj[hTime] = interviewTime;
-      if (hVenue && interviewVenue !== undefined) updateObj[hVenue] = interviewVenue;
-
-      rows[0].assign(updateObj); 
-      await rows[0].save(); 
-      
-      try {
-        const logSheet = doc.sheetsByTitle["TPO_Log"];
-        if (logSheet) {
-          const logHeaders = logSheet.headerValues;
-          const logObj = {};
-          
-          const setLogH = (key, val) => {
-             const cleanKey = key.toLowerCase().replace(/\s/g, '');
-             const foundHeader = logHeaders.find(h => h.toLowerCase().replace(/\s/g, '') === cleanKey);
-             if (foundHeader) logObj[foundHeader] = val;
-          };
-
-          setLogH('timestamp', new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
-          setLogH('studentname', sName);
-          setLogH('contact', sContact);
-          setLogH('mailid', sMail);
-          setLogH('rollnumber', sRoll);
-          setLogH('course', sCourse);
-          setLogH('branch', sBranch);
-          setLogH('qualification', sQual);
-          setLogH('resume', sResume);
-          setLogH('jobid', sJobId);
-          setLogH('companyname', sCompany);
-          setLogH('position', sPosition);
-          setLogH('placementofficer', sTpo);
-          setLogH('status', status || '');
-          setLogH('remarks', remarks !== undefined ? remarks : (currentRowData[getHeader('remarks')] || ''));
-          setLogH('dateplaced', datePlaced !== undefined ? datePlaced : (currentRowData[getHeader('dateplaced')] || ''));
-          setLogH('package', packageLpa !== undefined ? packageLpa : (currentRowData[getHeader('package')] || ''));
-          setLogH('offerletterstatus', offerLetterLink || currentRowData[getHeader('offerletter')] || '');
-          setLogH('joiningstatus', joiningStatus !== undefined ? joiningStatus : (currentRowData[getHeader('joiningstatus')] || ''));
-          setLogH('interviewdate', interviewDate || '');
-          setLogH('interviewtime', interviewTime || '');
-          setLogH('intervewtime', interviewTime || ''); 
-          setLogH('interviewvenue', interviewVenue || '');
-
-          await logSheet.addRow(logObj);
-        }
-      } catch(e) { console.error("TPO Log skipped due to column mismatch"); }
-      
-      if (oldStatus !== (status || '').toLowerCase()) {
-         checkAndSendStudentMails({
-           name: sName, roll: sRoll, email: sMail, company: sCompany, 
-           position: sPosition, tpoName: sTpo, branch: sBranch, jobId: sJobId
-         }, status, { date: interviewDate, time: interviewTime, venue: interviewVenue }, currentUserEmail)
-         .catch(e => console.error("Background Mail Error")); 
-      }
-
-      refreshCache(); 
-      res.json({ success: true, message: "Updated!" });
-    } else { 
-      res.status(404).json({ success: false, message: "Row not found." }); 
+    if (!rows || rows.length === 0) {
+      return res.status(404).json({ success: false, message: "Application record not found in Google Sheets. It may have been deleted." });
     }
+    
+    const headers = appSheet.headerValues;
+    const currentRowData = rows[0].toObject();
+    const getHeader = (s) => Object.keys(currentRowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
+    
+    const oldStatus = (currentRowData[getHeader('status')] || '').toString().toLowerCase();
+
+    const sName = currentRowData[getHeader('name')] || currentRowData[getHeader('studentname')] || fullApp.name || '';
+    const sContact = currentRowData[getHeader('contact')] || currentRowData[getHeader('phone')] || fullApp.phone || '';
+    const sMail = currentRowData[getHeader('mail')] || currentRowData[getHeader('email')] || fullApp.email || '';
+    const sRoll = currentRowData[getHeader('roll')] || fullApp.roll || '';
+    const sCourse = currentRowData[getHeader('course')] || fullApp.course || '';
+    const sBranch = currentRowData[getHeader('branch')] || fullApp.branch || '';
+    const sQual = currentRowData[getHeader('qual')] || fullApp.qual || '';
+    const sResume = currentRowData[getHeader('resume')] || currentRowData[getHeader('cv')] || fullApp.resume || '';
+    const sJobId = currentRowData[getHeader('jobid')] || fullApp.jobId || '';
+    const sCompany = currentRowData[getHeader('company')] || fullApp.company || '';
+    const sPosition = currentRowData[getHeader('position')] || fullApp.position || '';
+    const sTpo = currentRowData[getHeader('placementofficer')] || fullApp.tpoName || '';
+
+    const updateObj = { 'Status': status };
+    
+    const getSafeH = (sheetHeaders, searchStr) => {
+      const cleanStr = searchStr.toLowerCase().replace(/\s/g, '');
+      return sheetHeaders.find(h => h.toLowerCase().replace(/\s/g, '') === cleanStr) || 
+             sheetHeaders.find(h => h.toLowerCase().replace(/\s/g, '').includes(cleanStr));
+    };
+
+    const hRemarks = getSafeH(headers, 'remarks'); if (hRemarks && remarks !== undefined) updateObj[hRemarks] = remarks;
+    const hDatePlaced = getSafeH(headers, 'dateplaced'); if (hDatePlaced && datePlaced !== undefined) updateObj[hDatePlaced] = datePlaced;
+    const hPackage = getSafeH(headers, 'package'); if (hPackage && packageLpa !== undefined) updateObj[hPackage] = packageLpa;
+    const hOffer = getSafeH(headers, 'offerletter'); if (hOffer && offerLetterLink) updateObj[hOffer] = offerLetterLink;
+    const hJoining = getSafeH(headers, 'joiningstatus'); if (hJoining && joiningStatus !== undefined) updateObj[hJoining] = joiningStatus;
+    
+    const hDate = getSafeH(headers, 'interviewdate');
+    const hTime = getSafeH(headers, 'interviewtime') || getSafeH(headers, 'intervewtime');
+    const hVenue = getSafeH(headers, 'interviewvenue');
+    
+    if (hDate && interviewDate !== undefined) updateObj[hDate] = interviewDate;
+    if (hTime && interviewTime !== undefined) updateObj[hTime] = interviewTime;
+    if (hVenue && interviewVenue !== undefined) updateObj[hVenue] = interviewVenue;
+
+    rows[0].assign(updateObj); 
+    await rows[0].save(); 
+    
+    try {
+      const logSheet = doc.sheetsByTitle["TPO_Log"];
+      if (logSheet) {
+        const logHeaders = logSheet.headerValues;
+        const logObj = {};
+        
+        const setLogH = (key, val) => {
+           const cleanKey = key.toLowerCase().replace(/\s/g, '');
+           const foundHeader = logHeaders.find(h => h.toLowerCase().replace(/\s/g, '') === cleanKey);
+           if (foundHeader) logObj[foundHeader] = val;
+        };
+
+        setLogH('timestamp', new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
+        setLogH('studentname', sName);
+        setLogH('contact', sContact);
+        setLogH('mailid', sMail);
+        setLogH('rollnumber', sRoll);
+        setLogH('course', sCourse);
+        setLogH('branch', sBranch);
+        setLogH('qualification', sQual);
+        setLogH('resume', sResume);
+        setLogH('jobid', sJobId);
+        setLogH('companyname', sCompany);
+        setLogH('position', sPosition);
+        setLogH('placementofficer', sTpo);
+        setLogH('status', status || '');
+        setLogH('remarks', remarks !== undefined ? remarks : (currentRowData[getHeader('remarks')] || ''));
+        setLogH('dateplaced', datePlaced !== undefined ? datePlaced : (currentRowData[getHeader('dateplaced')] || ''));
+        setLogH('package', packageLpa !== undefined ? packageLpa : (currentRowData[getHeader('package')] || ''));
+        setLogH('offerletterstatus', offerLetterLink || currentRowData[getHeader('offerletter')] || '');
+        setLogH('joiningstatus', joiningStatus !== undefined ? joiningStatus : (currentRowData[getHeader('joiningstatus')] || ''));
+        setLogH('interviewdate', interviewDate || '');
+        setLogH('interviewtime', interviewTime || '');
+        setLogH('intervewtime', interviewTime || ''); 
+        setLogH('interviewvenue', interviewVenue || '');
+
+        await logSheet.addRow(logObj);
+      }
+    } catch(e) { console.error("TPO Log skipped due to column mismatch"); }
+    
+    if (oldStatus !== (status || '').toLowerCase()) {
+       checkAndSendStudentMails({
+         name: sName, roll: sRoll, email: sMail, company: sCompany, 
+         position: sPosition, tpoName: sTpo, branch: sBranch, jobId: sJobId
+       }, status, { date: interviewDate, time: interviewTime, venue: interviewVenue }, currentUserEmail)
+       .catch(e => console.error("Background Mail Error")); 
+    }
+
+    refreshCache(); 
+    res.json({ success: true, message: "Updated!" });
   } catch (error) { 
     console.error(error);
-    res.status(500).json({ success: false, message: error.message }); 
+    res.status(500).json({ success: false, message: `Update Failed: ${error.message}` }); 
   }
 };
 
@@ -1866,19 +1867,37 @@ exports.deleteTalExamQuestion = async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
+// 🚨 UPDATED: `getDrives` now maps `driveTpo` to `drives` data
 exports.getDrives = (req, res) => {
   try {
-    const drivesData = (getCache().drives || []).map(row => {
+    const cache = getCache();
+    
+    // Extract events to map Drive ID to TPO
+    const eventsMap = {};
+    (cache.events || []).forEach(r => {
+       const rd = r.toObject();
+       const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+       const dId = rd[getH('driveid')] || '';
+       const tpo = rd[getH('tpo')] || rd[getH('placementofficer')] || '';
+       if (dId) eventsMap[dId.toUpperCase().trim()] = tpo;
+    });
+
+    const drivesData = (cache.drives || []).map(row => {
       const rd = row.toObject();
       const getH = (str) => {
         const c = str.toLowerCase().replace(/\s/g, ''); const keys = Object.keys(rd);
         return keys.find(k => k.toLowerCase().replace(/\s/g, '') === c) || keys.find(k => k.toLowerCase().replace(/\s/g, '').includes(c));
       };
+      
+      const dId = rd[getH('driveid')] || '';
+      const driveTpo = eventsMap[dId.toUpperCase().trim()] || '';
+
       return {
-        rowNumber: row.rowNumber, driveId: rd[getH('driveid')] || '', name: rd[getH('name')] || '', phone: rd[getH('contact')] || '',
+        rowNumber: row.rowNumber, driveId: dId, name: rd[getH('name')] || '', phone: rd[getH('contact')] || '',
         email: rd[getH('mailid')] || rd[getH('email')] || '', course: rd[getH('course')] || '', branch: rd[getH('branch')] || '',
         resume: rd[getH('resume')] || '', qual: rd[getH('qualification')] || '', regStatus: rd[getH('status')] || '',
-        regDate: rd[getH('registeddate')] || rd[getH('timestamp')] || '', studentStatus: rd[getH('studentstatus')] || ''
+        regDate: rd[getH('registeddate')] || rd[getH('timestamp')] || '', studentStatus: rd[getH('studentstatus')] || '',
+        driveTpo: driveTpo // 🚨 INCLUDE THIS
       };
     });
     res.json({ success: true, drives: drivesData.reverse() });

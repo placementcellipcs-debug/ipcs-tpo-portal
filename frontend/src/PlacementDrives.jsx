@@ -1,180 +1,194 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, CaretLeft, IdentificationCard, Users, Clock } from '@phosphor-icons/react';
+import { 
+  CircleNotch, CalendarCheck, Users, 
+  CaretLeft, X, IdentificationCard, Phone, EnvelopeSimple 
+} from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
 
-const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#0ea5e9'];
+const parseDate = (dStr) => {
+  if (!dStr) return 0;
+  let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0] : dStr;
+  if (typeof cleanStr === 'string' && cleanStr.includes('/')) {
+    const parts = cleanStr.split('/');
+    if (parts.length === 3 && parts[2].length === 4) {
+      return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`).getTime();
+    }
+  }
+  const d = new Date(cleanStr).getTime();
+  return isNaN(d) ? 0 : d;
+};
 
 export default function PlacementDrives() {
-  const tpoData = JSON.parse(localStorage.getItem('tpoData'));
-  const isTpo = (tpoData?.role || '').toUpperCase() === 'TPO';
-  
-  const [drivesData, setDrivesData] = useState([]);
+  const tpoDataStr = localStorage.getItem('tpoData');
+  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  const isSuperAdmin = tpoData?.accessType === 'superadmin';
+
+  const [drives, setDrives] = useState([]);
   const [loading, setLoading] = useState(true);
-  
   const [selectedDrive, setSelectedDrive] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-
-  useEffect(() => {
-    fetchDrives();
-  }, []);
+  
+  const [savingRow, setSavingRow] = useState(null);
 
   const fetchDrives = async () => {
     try {
+      setLoading(true);
       const res = await axios.get(`${API_BASE}/api/tpo/drives`);
-      if(res.data.success) setDrivesData(res.data.drives);
-    } catch(err) { console.error("Failed to load drives"); } finally { setLoading(false); }
+      if (res.data.success) {
+        setDrives(res.data.drives || []);
+      }
+    } catch (error) { console.error("Failed to load drives"); }
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchDrives(); }, []);
+
+  // 🚨 SECURITY CHECK: Can this user edit the drive?
+  const canEditDrive = (drive) => {
+    if (isSuperAdmin) return true;
+    const myName = (tpoData?.name || '').toLowerCase().trim();
+    const driveOwner = (drive.driveTpo || '').toLowerCase().trim();
+    return myName !== '' && myName === driveOwner;
   };
 
   const updateStudentStatus = async (rowNumber, newStatus) => {
-    // Optimistic UI update for instant feedback
-    setDrivesData(prev => prev.map(d => d.rowNumber === rowNumber ? { ...d, studentStatus: newStatus } : d));
+    setSavingRow(rowNumber);
     try {
-      await axios.post(`${API_BASE}/api/tpo/drives/update`, { rowNumber, studentStatus: newStatus });
-    } catch(err) { 
-      alert("Failed to sync status to Google Sheets"); 
-      fetchDrives(); 
-    }
+      const res = await axios.post(`${API_BASE}/api/tpo/drives/update`, { rowNumber, studentStatus: newStatus });
+      if (res.data.success) {
+        setDrives(drives.map(d => d.rowNumber === rowNumber ? { ...d, studentStatus: newStatus } : d));
+      }
+    } catch (err) { alert("Failed to update status"); }
+    finally { setSavingRow(null); }
   };
 
-  // Group data by Drive ID
+  // Grouping students by Drive ID for the Landing View
   const groupedDrives = {};
-  drivesData.forEach(d => {
-    const id = d.driveId || 'Unknown Drive';
-    if(!groupedDrives[id]) groupedDrives[id] = [];
-    groupedDrives[id].push(d);
+  drives.forEach(d => {
+    if (!d.driveId) return;
+    if (!groupedDrives[d.driveId]) {
+      groupedDrives[d.driveId] = { driveId: d.driveId, driveTpo: d.driveTpo, applicants: [] };
+    }
+    groupedDrives[d.driveId].applicants.push(d);
   });
-  const driveIds = Object.keys(groupedDrives).sort();
+  
+  const driveList = Object.values(groupedDrives).sort((a, b) => {
+    const d1 = Math.max(...a.applicants.map(ap => parseDate(ap.regDate)));
+    const d2 = Math.max(...b.applicants.map(ap => parseDate(ap.regDate)));
+    return d2 - d1;
+  });
 
-  const activeStudents = selectedDrive ? groupedDrives[selectedDrive] || [] : [];
-  const filteredStudents = activeStudents.filter(s => 
-    (s.name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (s.branch || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
-
-  if (!selectedDrive) {
-    return (
-      <Layout>
-        <div className="page-container" style={{ padding: 0 }}>
-          <h1 style={{ fontSize: '2rem', marginBottom: '5px', textAlign: 'center', marginTop: '20px' }}>Placement Drives</h1>
-          <p style={{ color: 'var(--text-muted)', marginBottom: '3rem', textAlign: 'center' }}>Select a Drive ID to view registered students and track attendance.</p>
-          
-          {loading ? (
-            <div style={{ textAlign: 'center', marginTop: '4rem', color: '#38bdf8' }}><CircleNotch size={50} className="ph-spin" /></div>
-          ) : driveIds.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2rem' }}>No placement drive registrations found.</div>
-          ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px', padding: '0 20px' }}>
-              {driveIds.map((id, index) => {
-                const color = TILE_COLORS[index % TILE_COLORS.length];
-                const count = groupedDrives[id].length;
-                return (
-                  <div 
-                    key={id} 
-                    onClick={() => setSelectedDrive(id)}
-                    style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '220px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease' }}
-                    onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; }}
-                  >
-                    <h2 style={{ color: '#ffffff', fontSize: '2rem', margin: '0 0 10px 0' }}>{id}</h2>
-                    <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <Users size={20} color="#ffffff" weight="bold" />
-                      <span style={{ color: '#ffffff', fontSize: '1rem', fontWeight: 'bold' }}>{count} Registered</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      </Layout>
-    );
-  }
+  const filteredApplicants = selectedDrive ? selectedDrive.applicants.filter(a => 
+    (a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (a.branch || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (a.email || '').toLowerCase().includes(searchQuery.toLowerCase())
+  ) : [];
 
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
         
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '25px', gap: '15px' }}>
-          <button 
-            onClick={() => setSelectedDrive(null)} 
-            style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
-          >
-            <CaretLeft weight="bold" size={18} /> Back to Drives
-          </button>
-          <div>
-            <h1 style={{ fontSize: '1.8rem', margin: 0 }}>{selectedDrive} Registrations</h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Track attendance and offer status for students in this drive.</p>
-          </div>
-        </div>
+        {!selectedDrive ? (
+          <>
+            <div style={{ marginBottom: '2rem' }}>
+              <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <IdentificationCard color="var(--accent-primary)" weight="fill" /> Placement Drives
+              </h1>
+              <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a drive ID below to track registrations and update outcomes.</p>
+            </div>
 
-        <div style={{ marginBottom: '20px', maxWidth: '400px' }}>
-          <input 
-            type="text" 
-            placeholder="Search student or branch..." 
-            className="sleek-input" 
-            style={{ width: '100%' }}
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
+            {loading ? (
+              <div style={{ textAlign: 'center', marginTop: '4rem', color: '#38bdf8' }}><CircleNotch size={40} className="ph-spin" /></div>
+            ) : driveList.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>No drive registrations recorded yet.</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
+                {driveList.map((drive, idx) => (
+                  <div key={idx} onClick={() => setSelectedDrive(drive)} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '20px', cursor: 'pointer', transition: '0.2s', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <div style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', padding: '8px', borderRadius: '8px' }}><CalendarCheck size={24} weight="fill" /></div>
+                        <div>
+                          <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#fff' }}>{drive.driveId}</h3>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Created by: {drive.driveTpo || 'Admin'}</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'rgba(255,255,255,0.05)', padding: '8px 12px', borderRadius: '8px', fontSize: '0.85rem', color: '#cbd5e1' }}>
+                      <Users size={16} /> <strong>{drive.applicants.length}</strong> Registered Students
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', marginBottom: '25px', gap: '15px', flexWrap: 'wrap' }}>
+              <button onClick={() => { setSelectedDrive(null); setSearchQuery(''); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <CaretLeft weight="bold" size={18} /> Back to Drives
+              </button>
+              <div>
+                <h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedDrive.driveId} Registrations</h1>
+                <p style={{ color: 'var(--text-muted)', margin: 0 }}>Track attendance and offer status for students in this drive.</p>
+              </div>
+            </div>
 
-        <div className="table-container">
-          <table className="modern-table">
-            <thead>
-              <tr>
-                <th>Student Info</th>
-                <th>Course & Branch</th>
-                <th>Registration Data</th>
-                <th style={{ textAlign: 'center' }}>Student Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredStudents.length === 0 ? (
-                <tr><td colSpan="4" style={{ textAlign: 'center', padding: '2rem' }}>No students match your search.</td></tr>
+            <div style={{ marginBottom: '20px', maxWidth: '400px' }}>
+              <input type="text" className="sleek-input" placeholder="Search student or branch..." style={{ width: '100%' }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 2fr 1fr', padding: '0 1.5rem', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.5px' }}>
+                <span>STUDENT INFO</span><span>COURSE & BRANCH</span><span>REGISTRATION DATA</span><span style={{ textAlign: 'center' }}>STUDENT STATUS</span>
+              </div>
+
+              {filteredApplicants.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>No students match your search.</div>
               ) : (
-                filteredStudents.map((s, i) => (
-                  <tr key={i}>
-                    <td>
-                      <span className="primary-text">{s.name}</span>
-                      <span className="sub-text">{s.email} • {s.phone}</span>
-                    </td>
-                    <td>
-                      <span className="primary-text">{s.branch}</span>
-                      <span className="sub-text">{s.course}</span>
-                    </td>
-                    <td>
-                      <span style={{ fontSize: '0.85rem', color: 'var(--text-main)', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <Clock size={14} color="var(--accent-primary)"/> {s.regDate}
-                      </span>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Status: {s.regStatus || 'Registered'}</span>
-                    </td>
-                    <td style={{ textAlign: 'center' }}>
-                      {isTpo ? (
+                filteredApplicants.map((app, i) => (
+                  <div key={i} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1rem 1.5rem', display: 'grid', gridTemplateColumns: '2fr 1.5fr 2fr 1fr', alignItems: 'center', gap: '15px' }}>
+                    <div>
+                      <strong style={{ display: 'block', color: '#fff', fontSize: '1.05rem', marginBottom: '4px' }}>{app.name}</strong>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{app.email} • {app.phone}</span>
+                    </div>
+                    <div>
+                      <strong style={{ display: 'block', color: '#fff', fontSize: '1rem', marginBottom: '4px' }}>{app.branch}</strong>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{app.course}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: '#cbd5e1', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '5px' }}><Clock size={14}/> {app.regDate}</span>
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '4px', display: 'block' }}>Status: {app.regStatus || 'Registered'}</span>
+                    </div>
+                    <div style={{ textAlign: 'center' }}>
+                      {savingRow === app.rowNumber ? (
+                        <CircleNotch size={20} className="ph-spin" color="#38bdf8" />
+                      ) : (
                         <select 
                           className="sleek-select" 
-                          style={{ background: 'var(--bg-dark)', border: '1px solid var(--card-border)', color: '#fff', fontSize: '0.85rem', padding: '6px 12px' }}
-                          value={s.studentStatus}
-                          onChange={(e) => updateStudentStatus(s.rowNumber, e.target.value)}
+                          style={{ width: '100%', opacity: canEditDrive(selectedDrive) ? 1 : 0.6 }} 
+                          value={app.studentStatus || 'Pending / Unknown'} 
+                          onChange={(e) => updateStudentStatus(app.rowNumber, e.target.value)}
+                          disabled={!canEditDrive(selectedDrive)}
                         >
-                          <option value="">Pending / Unknown</option>
-                          <option value="Attended">Attended</option>
-                          <option value="Not Attended">Not Attended</option>
-                          <option value="Shortlisted">Shortlisted</option>
-                          <option value="Placed">Placed / Got Offer</option>
-                          <option value="Rejected">Rejected</option>
+                          <option value="Pending / Unknown">Pending / Unknown</option>
+                          <option value="Interview Attended">Interview Attended</option>
+                          <option value="Interview Not Attended">Interview Not Attended</option>
+                          <option value="Placed / Got Offer">Placed / Got Offer</option>
+                          <option value="Offer Rejected">Offer Rejected</option>
+                          <option value="Not Interested">Not Interested</option>
                         </select>
-                      ) : (
-                        <span className="badge badge-blue">{s.studentStatus || 'Pending'}</span>
                       )}
-                    </td>
-                  </tr>
+                    </div>
+                  </div>
                 ))
               )}
-            </tbody>
-          </table>
-        </div>
+            </div>
+          </>
+        )}
+
       </div>
     </Layout>
   );
