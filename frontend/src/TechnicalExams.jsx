@@ -5,6 +5,7 @@ import {
   WarningCircle, X, FolderOpen, BookBookmark, ListChecks, PencilSimple, Trash, Eye
 } from '@phosphor-icons/react';
 import Layout from './Layout';
+import { API_BASE } from './apiConfig'; // 🚨 Added explicit import just in case
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
 
@@ -15,6 +16,7 @@ export default function TechnicalExams() {
   const isSuperAdmin = tpoData?.accessType === 'superadmin';
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
+  const isTrainer = upperRole === 'TRAINER';
   
   const canManage = isSuperAdmin || isRth;
   const rthAssignedCourse = tpoData?.assignedCourse || '';
@@ -28,7 +30,9 @@ export default function TechnicalExams() {
   const [viewLevel, setViewLevel] = useState(isSuperAdmin ? 'main_courses' : 'sub_courses');
   const [selectedMainCourse, setSelectedMainCourse] = useState(isSuperAdmin ? null : rthAssignedCourse);
   const [selectedSubCourse, setSelectedSubCourse] = useState(null);
-  const [activeTab, setActiveTab] = useState('questions'); 
+  
+  // 🚨 FIXED: Removed duplicate declaration and forces Trainers into Results tab
+  const [activeTab, setActiveTab] = useState(isTrainer ? 'results' : 'questions'); 
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -41,10 +45,11 @@ export default function TechnicalExams() {
 
   const fetchData = async () => {
     try {
+      // 🚨 FIXED: Template literals syntax was broken by the find-and-replace
       const [qRes, rRes, courseRes] = await Promise.all([
-        axios.get('`${API_BASE}/api/exams/questions'), 
-        axios.get('`${API_BASE}/api/exams/results'),
-        axios.get('`${API_BASE}/api/admin/courses')
+        axios.get(`${API_BASE}/api/exams/questions`), 
+        axios.get(`${API_BASE}/api/exams/results`),
+        axios.get(`${API_BASE}/api/admin/courses`)
       ]);
       if (qRes.data.success) setQuestions(qRes.data.questions || []);
       if (rRes.data.success) setResults(rRes.data.results || []);
@@ -95,9 +100,10 @@ export default function TechnicalExams() {
     setError('');
 
     try {
+      // 🚨 FIXED: Template literals syntax
       const endpoint = isEditMode 
-        ? '`${API_BASE}/api/exams/questions/update' 
-        : '`${API_BASE}/api/exams/questions/add';
+        ? `${API_BASE}/api/exams/questions/update` 
+        : `${API_BASE}/api/exams/questions/add`;
 
       const res = await axios.post(endpoint, formData);
       if (res.data.success) {
@@ -115,7 +121,8 @@ export default function TechnicalExams() {
   const handleDeleteQuestion = async (id) => {
     if(!window.confirm("Are you sure you want to delete this question?")) return;
     try {
-      const res = await axios.post('`${API_BASE}/api/exams/questions/delete', { id });
+      // 🚨 FIXED: Template literals syntax
+      const res = await axios.post(`${API_BASE}/api/exams/questions/delete`, { id });
       if (res.data.success) {
         setQuestions(questions.filter(q => q.id !== id));
       }
@@ -223,7 +230,7 @@ export default function TechnicalExams() {
                   <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>Assessment question bank and student scores.</p>
                 </div>
               </div>
-              {activeTab === 'questions' && canManage && (
+              {activeTab === 'questions' && canManage && !isTrainer && (
                 <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
                   <Plus size={20} weight="bold" /> Add Question
                 </button>
@@ -231,9 +238,12 @@ export default function TechnicalExams() {
             </div>
 
             <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '1px solid var(--card-border)', paddingBottom: '10px' }}>
-              <button onClick={() => setActiveTab('questions')} style={{ background: activeTab === 'questions' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'questions' ? 'var(--accent-primary)' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Question size={20} weight={activeTab === 'questions' ? "fill" : "regular"} /> Question Bank
-              </button>
+              {/* 🚨 FIXED: Trainers cannot see the Question Bank tab */}
+              {!isTrainer && (
+                <button onClick={() => setActiveTab('questions')} style={{ background: activeTab === 'questions' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'questions' ? 'var(--accent-primary)' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Question size={20} weight={activeTab === 'questions' ? "fill" : "regular"} /> Question Bank
+                </button>
+              )}
               <button onClick={() => setActiveTab('results')} style={{ background: activeTab === 'results' ? 'rgba(16, 185, 129, 0.1)' : 'transparent', color: activeTab === 'results' ? '#10b981' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <ChartBar size={20} weight={activeTab === 'results' ? "fill" : "regular"} /> Student Results
               </button>
@@ -243,7 +253,7 @@ export default function TechnicalExams() {
               <input type="text" placeholder={activeTab === 'questions' ? "Search questions..." : "Search student name or roll..."} className="sleek-input" style={{ width: '100%' }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             </div>
 
-            {activeTab === 'questions' && (
+            {activeTab === 'questions' && !isTrainer && (
               <div className="table-container">
                 <table className="modern-table">
                   <thead>

@@ -80,8 +80,13 @@ app.post('/api/admin/courses/delete', controllers.deleteCourse);
 // 🚨 BRANCH MANAGEMENT ROUTES
 app.get('/api/admin/branches', controllers.getBranches);
 app.post('/api/admin/branches/add', controllers.addBranch);
-app.post('/api/admin/branches/update', controllers.updateBranch); // <-- NEW!
+app.post('/api/admin/branches/update', controllers.updateBranch); 
 app.post('/api/admin/branches/delete', controllers.deleteBranch);
+
+// 🚨 TRAINER LOG ROUTES
+app.get('/api/admin/trainer-logs', controllers.getTrainerLogs);
+app.post('/api/admin/trainer-logs/add', controllers.addTrainerLog);
+app.post('/api/admin/trainer-logs/update', controllers.updateTrainerLog);
 
 // STUDY MATERIAL & EXAMS
 app.get('/api/lms/materials', controllers.getMaterials);

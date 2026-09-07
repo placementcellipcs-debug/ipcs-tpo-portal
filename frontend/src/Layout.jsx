@@ -4,7 +4,7 @@ import {
   Bell, X, SquaresFour, Trophy, ListChecks, 
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
   Book, FileText, Bookmarks, ShieldCheck, IdentificationCard, CaretLeft, MapPin,
-  WarningCircle
+  WarningCircle, Notebook // 🚨 Added Notebook Icon
 } from '@phosphor-icons/react';
 
 const getStandardCourse = (c) => {
@@ -98,12 +98,18 @@ export default function Layout({ children }) {
   const userRole = (tpoData.role || '').toUpperCase();
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
   const isTpo = userRole === 'TPO';
+  const isTrainer = userRole === 'TRAINER';
   const isRth = userRole.includes('RTH') || userRole.includes('REGIONAL TECHNICAL HEAD');
+  const isTL = userRole.includes('TECHNICAL LEAD') || userRole.includes('TTH') || isRth || userRole.includes('MANAGER') || isSuperAdmin;
 
   const showTrackerAndReports = isSuperAdmin || isTpo;
   const showManageAdmin = isSuperAdmin;
-  // 🚨 FIXED: Completely hides Study Materials for TPO
-  const showStudyMaterials = isSuperAdmin || isRth; 
+  
+  // 🚨 FIXED: Study Materials visible to Tech Staff & Trainers
+  const showStudyMaterials = isSuperAdmin || isRth || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD') || isTrainer; 
+  
+  // 🚨 FIXED: Trainer Logs visible to Trainers and TL/Admins
+  const showTrainerLogs = isTrainer || isTL;
 
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
@@ -214,17 +220,29 @@ export default function Layout({ children }) {
             <div className="drawer-item" onClick={() => handleNav('/placed')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Trophy size={22} color={isActive('/placed')} /> <span style={{ color: isActive('/placed') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Placed Students</span></div><span style={{ color: '#64748b' }}>›</span></div>
             <div className="drawer-item" onClick={() => handleNav('/applications')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ListChecks size={22} color={isActive('/applications')} /> <span style={{ color: isActive('/applications') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Student Apps</span></div><span style={{ color: '#64748b' }}>›</span></div>
             <div className="drawer-item" onClick={() => handleNav('/vacancies')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Briefcase size={22} color={isActive('/vacancies')} /> <span style={{ color: isActive('/vacancies') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Vacancies</span></div><span style={{ color: '#64748b' }}>›</span></div>
-            <div className="drawer-item" onClick={() => handleNav('/placement-drives')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><IdentificationCard size={22} color={isActive('/placement-drives')} /> <span style={{ color: isActive('/placement-drives') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Placement Drives</span></div><span style={{ color: '#64748b' }}>›</span></div>
-            <div className="drawer-item" onClick={() => handleNav('/clients')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Handshake size={22} color={isActive('/clients')} /> <span style={{ color: isActive('/clients') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Clients & Partners</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            
+            {/* 🚨 RESTRICTED: Hidden from Trainers */}
+            {!isTrainer && (
+              <div className="drawer-item" onClick={() => handleNav('/placement-drives')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><IdentificationCard size={22} color={isActive('/placement-drives')} /> <span style={{ color: isActive('/placement-drives') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Placement Drives</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            )}
+            {!isTrainer && (
+              <div className="drawer-item" onClick={() => handleNav('/clients')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Handshake size={22} color={isActive('/clients')} /> <span style={{ color: isActive('/clients') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Clients & Partners</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            )}
+
             <div className="drawer-item" onClick={() => handleNav('/events')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><CalendarStar size={22} color={isActive('/events')} /> <span style={{ color: isActive('/events') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Events</span></div><span style={{ color: '#64748b' }}>›</span></div>
             <div className="drawer-item" onClick={() => handleNav('/talentino')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> <span style={{ color: isActive('/talentino') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Talentino</span></div><span style={{ color: '#64748b' }}>›</span></div>
             
-            {/* 🚨 RESTRICTED: Study Materials */}
+            {/* 🚨 RESTRICTED: Study Materials visible to Tech Staff & Trainers */}
             {showStudyMaterials && (
                <div className="drawer-item" onClick={() => handleNav('/study-materials')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Book size={22} color={isActive('/study-materials')} /> <span style={{ color: isActive('/study-materials') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Study Materials</span></div><span style={{ color: '#64748b' }}>›</span></div>
             )}
+
+            {/* 🚨 RESTRICTED: Trainer Logs */}
+            {showTrainerLogs && (
+               <div className="drawer-item" onClick={() => handleNav('/trainer-logs')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Notebook size={22} color={isActive('/trainer-logs')} /> <span style={{ color: isActive('/trainer-logs') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Daily Log Report</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            )}
             
-            {/* 🚨 RESTRICTED: EXAMS HUB - Completely Hidden from TPO */}
+            {/* 🚨 RESTRICTED: EXAMS HUB - Completely Hidden from TPO and Managers */}
             {!userRole.includes('MANAGER') && !isTpo && (
                <div className="drawer-item" onClick={() => handleNav('/exams')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><FileText size={22} color={isActive('/exams')} /> <span style={{ color: isActive('/exams') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Exams Hub</span></div><span style={{ color: '#64748b' }}>›</span></div>
             )}

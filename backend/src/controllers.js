@@ -1957,3 +1957,78 @@ exports.deleteBranch = async (req, res) => {
     else { res.status(404).json({ success: false, message: "Branch not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
+
+// =========================================================
+// 🚨 TRAINER / TL DAILY LOGS
+// =========================================================
+exports.getTrainerLogs = (req, res) => {
+  try {
+    const cache = getCache();
+    if (!cache || !cache.trainerLogs) return res.json({ success: true, logs: [] });
+    
+    let logs = cache.trainerLogs.map(row => {
+      const rd = row.toObject();
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      return {
+        rowNumber: row.rowNumber,
+        timestamp: rd[getH('timestamp')] || '',
+        branch: rd[getH('branch')] || '',
+        trainerName: rd[getH('trainername')] || '',
+        course: rd[getH('course')] || '',
+        studentCount: rd[getH('studentcount')] || '',
+        present: rd[getH('currentlypresentinlab')] || '',
+        absentees: rd[getH('absentees')] || '',
+        feedbacks: rd[getH('anyfeedbacks')] || '',
+        resignations: rd[getH('staffresignations')] || '',
+        vacancy: rd[getH('trainervacancy')] || '',
+        tuv: rd[getH('tuvregistration')] || '',
+        mockTest: rd[getH('mocktestconducted')] || ''
+      };
+    });
+    res.json({ success: true, logs: logs.reverse() });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addTrainerLog = async (req, res) => {
+  try {
+    const { branch, trainerName, course, studentCount, present, absentees, feedbacks } = req.body;
+    const sheet = doc.sheetsByTitle["Trainer/TL_Log"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Trainer Log sheet missing." });
+    
+    await sheet.addRow({
+      'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      'Branch': branch,
+      'TrainerName': trainerName,
+      'Course': course,
+      'Student Count': studentCount,
+      'Currently Present in Lab': present,
+      'Absentees': absentees,
+      'Any Feedbacks': feedbacks
+    });
+    
+    refreshCache(); 
+    res.json({ success: true, message: "Daily log submitted!" });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.updateTrainerLog = async (req, res) => {
+  const { rowNumber, resignations, vacancy, tuv, mockTest } = req.body;
+  try {
+    const sheet = doc.sheetsByTitle["Trainer/TL_Log"];
+    const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
+    if (rows.length > 0) {
+      const h = sheet.headerValues;
+      rows[0].assign({
+        [getFuzzyHeader(h, 'staffresignations')]: resignations,
+        [getFuzzyHeader(h, 'trainervacancy')]: vacancy,
+        [getFuzzyHeader(h, 'tuvregistration')]: tuv,
+        [getFuzzyHeader(h, 'mocktestconducted')]: mockTest
+      });
+      await rows[0].save();
+      refreshCache();
+      res.json({ success: true, message: "TL details updated!" });
+    } else {
+      res.status(404).json({ success: false, message: "Record not found." });
+    }
+  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};

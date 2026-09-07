@@ -21,6 +21,8 @@ export default function Vacancies() {
   const isTpo = upperRole === 'TPO';
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
   const canAddOpening = isTpo || isSuperAdmin;
+  const isCourseSpecific = upperRole.includes('TRAINER') || upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TECHNICAL LEAD');
+  const displayCourse = tpoData?.assignedCourse || '';
 
   const [vacancies, setVacancies] = useState([]);
   const [applications, setApplications] = useState([]); 
@@ -71,7 +73,16 @@ export default function Vacancies() {
                        (v.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                        (v.position || '').toLowerCase().includes(searchQuery.toLowerCase());
     const matchCourse = courseFilter === 'All' || (v.course || '').toLowerCase().includes(courseFilter.toLowerCase());
-    return matchQuery && matchCourse;
+    
+    // 🚨 STRICT TRAINER COURSE FILTER
+    let matchTrainerScope = true;
+    if (isCourseSpecific && displayCourse !== 'All Courses') {
+       const vCourse = (v.course || '').toLowerCase();
+       const myCourse = displayCourse.toLowerCase();
+       matchTrainerScope = vCourse.includes(myCourse) || myCourse.includes(vCourse);
+    }
+
+    return matchQuery && matchCourse && matchTrainerScope;
   });
 
   const groupedVacs = {};

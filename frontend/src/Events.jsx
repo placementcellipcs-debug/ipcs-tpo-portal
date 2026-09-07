@@ -152,7 +152,11 @@ export default function Events() {
       
       const dayEvents = events.filter(e => {
         const pd = parseDate(e.date);
-        return pd && pd.toDateString() === cellDate.toDateString();
+        // 🚨 FIXED: Timezone-safe date matching
+        return pd && 
+               pd.getFullYear() === cellDate.getFullYear() && 
+               pd.getMonth() === cellDate.getMonth() && 
+               pd.getDate() === cellDate.getDate();
       });
       
       const hasEvents = dayEvents.length > 0;

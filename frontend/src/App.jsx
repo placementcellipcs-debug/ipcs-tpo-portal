@@ -21,6 +21,7 @@ import Courses from './Courses';
 import PlacementDrives from './PlacementDrives';
 import ExamsHub from './ExamsHub';
 import Branches from './Branches'; // 🚨 NEW IMPORT
+import TrainerLog from './TrainerLog';
 
 function App() {
   return (
@@ -46,6 +47,7 @@ function App() {
         
         {/* 🚨 THE NEW BRANCHES ROUTE */}
         <Route path="/branches" element={<Branches />} />
+        <Route path="/trainer-logs" element={<TrainerLog />} />
 
         <Route path="/exams" element={<ExamsHub />} />
         <Route path="/exams/technical" element={<TechnicalExams />} />

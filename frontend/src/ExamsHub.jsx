@@ -4,6 +4,11 @@ import Layout from './Layout';
 
 export default function ExamsHub() {
   const navigate = useNavigate();
+  
+  // 🚨 Read the user role from localStorage
+  const tpoDataStr = localStorage.getItem('tpoData');
+  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  const isTrainer = (tpoData?.role || '').toUpperCase() === 'TRAINER';
 
   return (
     <Layout>
@@ -14,7 +19,7 @@ export default function ExamsHub() {
             <FolderOpen color="var(--accent-primary)" weight="fill" /> Unified Exams Hub
           </h1>
           <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '1.1rem' }}>
-            Select an assessment module to manage question banks and track student performance.
+            Select an assessment module to view student performance results.
           </p>
         </div>
 
@@ -42,16 +47,19 @@ export default function ExamsHub() {
             <div style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 14px', borderRadius: '20px', fontSize: '0.9rem', color: '#fff', fontWeight: 'bold' }}>Quant, Logical, Verbal</div>
           </div>
 
-          <div 
-            onClick={() => navigate('/exams/talentino')}
-            style={{ backgroundColor: '#a855f7', borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '240px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
-            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
-          >
-            <PencilSimple size={56} color="#ffffff" weight="fill" style={{ marginBottom: '15px' }} />
-            <h2 style={{ color: '#ffffff', fontSize: '2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>Talentino Exams</h2>
-            <div style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 14px', borderRadius: '20px', fontSize: '0.9rem', color: '#fff', fontWeight: 'bold' }}>Soft skills & development</div>
-          </div>
+          {/* 🚨 HIDDEN FOR TRAINERS */}
+          {!isTrainer && (
+            <div 
+              onClick={() => navigate('/exams/talentino')}
+              style={{ backgroundColor: '#a855f7', borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '240px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
+            >
+              <PencilSimple size={56} color="#ffffff" weight="fill" style={{ marginBottom: '15px' }} />
+              <h2 style={{ color: '#ffffff', fontSize: '2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>Talentino Exams</h2>
+              <div style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 14px', borderRadius: '20px', fontSize: '0.9rem', color: '#fff', fontWeight: 'bold' }}>Soft skills & development</div>
+            </div>
+          )}
 
         </div>
       </div>
