@@ -42,7 +42,6 @@ export default function StudentApps() {
   const [monthFilter, setMonthFilter] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
 
-  // 🚨 RESTRICT DATA BY COURSE
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
@@ -55,7 +54,8 @@ export default function StudentApps() {
       
       try {
         setLoading(true);
-        const response = await axios.post('`${API_BASE}/api/tpo/applications', { 
+        // 🚨 FIXED: Removed the stray single quote before the template literal
+        const response = await axios.post(`${API_BASE}/api/tpo/applications`, { 
           assignedBranchesArray: localTpo.assignedBranchesArray,
           tpoName: localTpo.name,
           role: localTpo.role,
@@ -80,7 +80,6 @@ export default function StudentApps() {
   };
 
   const globallyFiltered = applications.filter(a => {
-    // 🚨 Strict Course Restriction for specific roles
     if (isCourseSpecific && getStandardCourse(a.course) !== getStandardCourse(displayCourse)) return false;
 
     let dateObj = parseDate(a.date);
@@ -138,7 +137,6 @@ export default function StudentApps() {
             <input type="text" className="sleek-input" placeholder="Search student, roll, job ID..." style={{ minWidth: '220px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           )}
 
-          {/* 🚨 Course Filter Hidden for Course-Specific Roles */}
           {!isCourseSpecific && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>

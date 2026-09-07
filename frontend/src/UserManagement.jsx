@@ -41,7 +41,7 @@ export default function UserManagement() {
 
   const fetchUsers = async () => {
     try {
-      // 🚨 FIXED: API string typo
+      // 🚨 FIXED: Removed the stray single quote before the backtick
       const res = await axios.get(`${API_BASE}/api/admin/users`);
       if (res.data && res.data.success) {
         setUsers(res.data.users || []);
@@ -110,7 +110,7 @@ export default function UserManagement() {
     };
 
     try {
-      // 🚨 FIXED: API string typo
+      // 🚨 FIXED: Removed the stray single quotes before the backticks
       const endpoint = isEditMode 
         ? `${API_BASE}/api/admin/users/update` 
         : `${API_BASE}/api/admin/users/add`;
@@ -131,7 +131,7 @@ export default function UserManagement() {
   const handleDeleteUser = async (sheet, rowNumber, userName) => {
     if (!window.confirm(`Are you sure you want to permanently delete user: ${userName}?`)) return;
     try {
-      // 🚨 FIXED: API string typo
+      // 🚨 FIXED: Removed the stray single quote before the backtick
       const res = await axios.post(`${API_BASE}/api/admin/users/delete`, { sheet, rowNumber });
       if (res.data.success) {
         setUsers(users.filter(u => u.rowNumber !== rowNumber || u.sheet !== sheet));
@@ -372,7 +372,6 @@ export default function UserManagement() {
         )}
       </div>
 
-      {/* MODAL FORM REMAINS THE SAME */}
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
           <div className="modal-card" style={{ maxWidth: '650px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>

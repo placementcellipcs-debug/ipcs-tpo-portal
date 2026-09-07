@@ -5,10 +5,11 @@ import Layout from './Layout';
 export default function ExamsHub() {
   const navigate = useNavigate();
   
-  // 🚨 Read the user role from localStorage
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
-  const isTrainer = (tpoData?.role || '').toUpperCase() === 'TRAINER';
+  
+  // 🚨 FIXED: Uses .includes() to protect against trailing spaces in the DB
+  const isTrainer = (tpoData?.role || '').toUpperCase().includes('TRAINER');
 
   return (
     <Layout>

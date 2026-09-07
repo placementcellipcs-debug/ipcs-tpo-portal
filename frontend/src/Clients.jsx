@@ -2,11 +2,10 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   CircleNotch, PencilSimple, PaperPlaneRight, FilePdf, X, FloppyDisk, 
-  CheckCircle, WarningCircle, Handshake, Clock, FileText, ArrowSquareOut, MapPin
+  CheckCircle, WarningCircle, Handshake, Clock, FileText, ArrowSquareOut, MapPin,
+  User, EnvelopeSimple, Phone // 🚨 IMPORTED NEW SAFE ICONS
 } from '@phosphor-icons/react';
 import Layout from './Layout';
-
-// 🚨 UPDATED: POINT TO THE NEW RENDER URL
 import { API_BASE } from './apiConfig';
 
 const ClientLogo = ({ client, size = 70, noMargin = false }) => {
@@ -40,8 +39,6 @@ export default function Clients() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   const isSuperAdmin = tpoData?.accessType === 'superadmin';
-  
-  // 🚨 FIXED: Changed from === 'TPO' to .includes('TPO') to handle trailing spaces in the DB
   const isTpo = (tpoData?.role || '').toUpperCase().includes('TPO');
 
   const [clients, setClients] = useState([]);
@@ -67,8 +64,6 @@ export default function Clients() {
       if (!localStr) return;
       const localTpo = JSON.parse(localStr);
       const isSA = localTpo.accessType === 'superadmin';
-      
-      // 🚨 FIXED: Trailing space handler
       const isT = (localTpo.role || '').toUpperCase().includes('TPO');
 
       const cached = localStorage.getItem('dash_clients');
@@ -236,10 +231,11 @@ export default function Clients() {
                         </div>
                       </div>
 
+                      {/* 🚨 FIXED: Used standard React icons instead of corrupted system emojis */}
                       <div style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>
-                        <div style={{ marginBottom: '4px' }}>👤 {client.contactPerson || 'No Contact Person'}</div>
-                        <div style={{ marginBottom: '4px' }}>📧 {client.email || 'No Email'}</div>
-                        <div>📞 {client.contact || 'No Phone'}</div>
+                        <div style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}><User size={16} weight="fill" color="var(--text-muted)" /> {client.contactPerson || 'No Contact Person'}</div>
+                        <div style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}><EnvelopeSimple size={16} weight="fill" color="var(--text-muted)" /> {client.email || 'No Email'}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Phone size={16} weight="fill" color="var(--text-muted)" /> {client.contact || 'No Phone'}</div>
                       </div>
 
                       <div style={{ marginTop: 'auto', paddingTop: '15px', borderTop: '1px solid var(--card-border)', display: 'flex', gap: '10px' }}>
@@ -278,7 +274,6 @@ export default function Clients() {
         )}
       </div>
 
-      {/* EDIT MODAL */}
       {isEditModalOpen && selectedClient && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>

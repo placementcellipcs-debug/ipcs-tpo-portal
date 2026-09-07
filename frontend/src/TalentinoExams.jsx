@@ -11,14 +11,17 @@ export default function TalentinoExams() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   
-  // 🚨 STRICT PERMISSION: Only Super Admin (Admin) can edit/delete Talentino questions
   const canManage = tpoData?.accessType === 'superadmin';
+  // 🚨 FIXED: Explicitly checks if the user is a trainer
+  const isTrainer = (tpoData?.role || '').toUpperCase().includes('TRAINER');
 
   const [questions, setQuestions] = useState([]);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('questions'); 
+  
+  // 🚨 FIXED: Forces trainers into the results tab if they somehow access this page
+  const [activeTab, setActiveTab] = useState(isTrainer ? 'results' : 'questions'); 
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -134,7 +137,7 @@ export default function TalentinoExams() {
             </h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Manage specialized soft skills and talent assessment exams.</p>
           </div>
-          {activeTab === 'questions' && canManage && (
+          {activeTab === 'questions' && canManage && !isTrainer && (
             <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}>
               <Plus size={20} weight="bold" /> Add Question
             </button>
@@ -142,19 +145,23 @@ export default function TalentinoExams() {
         </div>
 
         <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '1px solid var(--card-border)', paddingBottom: '10px' }}>
-          <button onClick={() => setActiveTab('questions')} style={{ background: activeTab === 'questions' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'questions' ? 'var(--accent-primary)' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <Question size={20} weight={activeTab === 'questions' ? "fill" : "regular"} /> Question Bank
-          </button>
+          {/* 🚨 FIXED: Hides the Question Bank button entirely from Trainers */}
+          {!isTrainer && (
+            <button onClick={() => setActiveTab('questions')} style={{ background: activeTab === 'questions' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'questions' ? 'var(--accent-primary)' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <Question size={20} weight={activeTab === 'questions' ? "fill" : "regular"} /> Question Bank
+            </button>
+          )}
           <button onClick={() => setActiveTab('results')} style={{ background: activeTab === 'results' ? 'rgba(16, 185, 129, 0.1)' : 'transparent', color: activeTab === 'results' ? '#10b981' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <ChartBar size={20} weight={activeTab === 'results' ? "fill" : "regular"} /> Student Results
           </button>
         </div>
 
         <div style={{ marginBottom: '20px', maxWidth: '400px', position: 'relative' }}>
-          <input type="text" placeholder={activeTab === 'questions' ? "Search questions or test number..." : "Search student or branch..."} className="sleek-input" style={{ width: '100%' }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          <input type="text" placeholder={activeTab === 'questions' && !isTrainer ? "Search questions or test number..." : "Search student or branch..."} className="sleek-input" style={{ width: '100%' }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
         </div>
 
-        {activeTab === 'questions' && (
+        {/* 🚨 FIXED: Extra protection ensuring Trainers can't view the Questions table */}
+        {activeTab === 'questions' && !isTrainer && (
           <div className="table-container">
             <table className="modern-table">
               <thead>

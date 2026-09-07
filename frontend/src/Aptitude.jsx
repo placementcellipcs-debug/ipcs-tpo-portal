@@ -13,14 +13,14 @@ export default function Aptitude() {
   
   // 🚨 STRICT PERMISSION: Role Checks
   const canManage = tpoData?.accessType === 'superadmin';
-  const isTrainer = (tpoData?.role || '').toUpperCase() === 'TRAINER';
+  // 🚨 FIXED: Changed to .includes() to handle trailing spaces
+  const isTrainer = (tpoData?.role || '').toUpperCase().includes('TRAINER');
 
   const [questions, setQuestions] = useState([]);
   const [results, setResults] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // 🚨 FIXED: Force trainers into the leaderboard tab
   const [activeTab, setActiveTab] = useState(isTrainer ? 'leaderboard' : 'questions'); 
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -159,7 +159,6 @@ export default function Aptitude() {
             <Trophy size={20} weight={activeTab === 'leaderboard' ? "fill" : "regular"} /> Global Leaderboard
           </button>
           
-          {/* 🚨 FIXED: Hidden from Trainers */}
           {!isTrainer && (
             <button onClick={() => setActiveTab('questions')} style={{ background: activeTab === 'questions' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'questions' ? 'var(--accent-primary)' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <Question size={20} weight={activeTab === 'questions' ? "fill" : "regular"} /> Question Bank
@@ -190,7 +189,6 @@ export default function Aptitude() {
           </div>
         )}
 
-        {/* 🚨 FIXED: Block question bank render for trainers entirely */}
         {activeTab === 'questions' && !isTrainer && (
           <div className="table-container">
             <table className="modern-table">
