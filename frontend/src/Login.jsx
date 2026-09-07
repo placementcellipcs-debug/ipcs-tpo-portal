@@ -2,7 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { CircleNotch } from '@phosphor-icons/react';
-import { API_BASE } from './apiConfig'; 
+import { API_BASE } from './apiConfig'; // 🚨 Imports your smart URL!
 
 export default function Login() {
   const [loginId, setLoginId] = useState('');
@@ -21,6 +21,7 @@ export default function Login() {
     setError('');
     
     try {
+      // 🚨 Uses your smart URL based on where you are testing
       const res = await axios.post(`${API_BASE}/api/auth/login`, { 
         email: loginId, 
         password: password 
@@ -51,9 +52,8 @@ export default function Login() {
         transition: 'opacity 1s ease-in-out' 
       }}>
         <video 
-          src="/Intro.mp4" /* 🚨 FIXED: Corrected spelling to Intro.mp4 */
+          src="/Into.mp4" 
           autoPlay 
-          /* 🚨 FIXED: Removed 'muted' so sound plays, removed 'loop' so the video can actually end */
           playsInline 
           onTimeUpdate={(e) => {
             // Trigger fade out 1 sec before end
