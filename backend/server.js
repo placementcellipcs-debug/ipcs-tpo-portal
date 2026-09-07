@@ -134,6 +134,19 @@ app.get('/api/v1/assets/:assetId/details', assetControllers.getAssetDetails);
 app.post('/api/v1/assets/assign', assetControllers.assignAsset);
 app.post('/api/v1/assets/return', assetControllers.returnAsset);
 
+// 🚨 NEW ROUTES:
+app.get('/api/v1/assets/inventory', assetControllers.getInventory);
+app.post('/api/v1/assets/inventory/add', assetControllers.addInventory);
+app.post('/api/v1/assets/inventory/stock', assetControllers.updateStock);
+
+app.get('/api/v1/assets/transfers', assetControllers.getTransfers);
+app.post('/api/v1/assets/transfers/request', assetControllers.requestTransfer);
+app.post('/api/v1/assets/transfers/approve', assetControllers.approveTransfer);
+
+app.get('/api/v1/assets/maintenance', assetControllers.getMaintenance);
+app.post('/api/v1/assets/maintenance/report', assetControllers.reportMaintenance);
+app.post('/api/v1/assets/maintenance/resolve', assetControllers.resolveMaintenance);
+
 // ---------------------------------------------------------
 // SERVER INITIALIZATION
 // ---------------------------------------------------------

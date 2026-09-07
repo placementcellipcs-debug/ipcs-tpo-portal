@@ -5,7 +5,7 @@ import {
   Bell, X, SquaresFour, Trophy, ListChecks, ShieldCheck,
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
   Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin,
-  WarningCircle, Notebook, Barcode, Plus // 🚨 Added Barcode and Plus imports here
+  WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench ,  Plus // 🚨 Added Barcode and Plus imports here
 } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
 
@@ -292,8 +292,10 @@ export default function Layout({ children }) {
             {(isSuperAdmin || userRole.includes('MANAGER')) && (
               <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ display: 'block', padding: '0 1.5rem', fontSize: '0.75rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>Asset Management</span>
-                <div className="drawer-item" onClick={() => handleNav('/assets')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Barcode size={22} color={isActive('/assets') === '#38bdf8' ? '#38bdf8' : '#94a3b8'} /> <span style={{ color: isActive('/assets') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Master Registry</span></div><span style={{ color: '#64748b' }}>›</span></div>
-                <div className="drawer-item" onClick={() => handleNav('/assets/add')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Plus size={22} color={isActive('/assets/add') === '#38bdf8' ? '#38bdf8' : '#94a3b8'} /> <span style={{ color: isActive('/assets/add') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Register Asset</span></div><span style={{ color: '#64748b' }}>›</span></div>
+                <div className="drawer-item" onClick={() => handleNav('/assets')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Barcode size={22} color={isActive('/assets')} /> <span style={{ color: isActive('/assets') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Master Registry</span></div><span style={{ color: '#64748b' }}>›</span></div>
+                <div className="drawer-item" onClick={() => handleNav('/assets/inventory')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Package size={22} color={isActive('/assets/inventory')} /> <span style={{ color: isActive('/assets/inventory') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Consumables</span></div><span style={{ color: '#64748b' }}>›</span></div>
+                <div className="drawer-item" onClick={() => handleNav('/assets/transfers')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ArrowsLeftRight size={22} color={isActive('/assets/transfers')} /> <span style={{ color: isActive('/assets/transfers') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Transfers</span></div><span style={{ color: '#64748b' }}>›</span></div>
+                <div className="drawer-item" onClick={() => handleNav('/assets/maintenance')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Wrench size={22} color={isActive('/assets/maintenance')} /> <span style={{ color: isActive('/assets/maintenance') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Maintenance</span></div><span style={{ color: '#64748b' }}>›</span></div>
               </div>
             )}
 

@@ -27,6 +27,9 @@ import SecurityActivity from './SecurityActivity';
 // 🚨 ASSET MANAGEMENT (IMPORTED EXACTLY ONCE)
 import AssetList from './AssetList';
 import AddAsset from './AddAsset';
+import Inventory from './Inventory';
+import AssetTransfers from './AssetTransfers';
+import AssetMaintenance from './AssetMaintenance';
 
 function App() {
   return (
@@ -60,6 +63,9 @@ function App() {
         {/* ASSET MANAGEMENT ERP ROUTES */}
         <Route path="/assets" element={<AssetList />} />
         <Route path="/assets/add" element={<AddAsset />} />
+        <Route path="/assets/inventory" element={<Inventory />} />
+        <Route path="/assets/transfers" element={<AssetTransfers />} />
+        <Route path="/assets/maintenance" element={<AssetMaintenance />} />
       </Routes>
     </BrowserRouter>
   );
