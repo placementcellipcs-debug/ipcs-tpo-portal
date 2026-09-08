@@ -53,7 +53,6 @@ export default function Login() {
         <video 
           src="/Intro.mp4" 
           autoPlay 
-          muted 
           playsInline 
           onTimeUpdate={(e) => {
             if (e.target.duration - e.target.currentTime <= 1) {
