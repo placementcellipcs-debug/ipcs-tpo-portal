@@ -99,7 +99,8 @@ const getBranchManagerEmail = (branch) => {
     const br1 = (br1Key && rd[br1Key] ? rd[br1Key].toString() : '').toLowerCase().trim();
     const br2 = (br2Key && rd[br2Key] ? rd[br2Key].toString() : '').toLowerCase().trim();
     
-    if (role.includes('manager') && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
+    // 🚨 STRICT CHECK: Must be "branch manager" (ignores Territory/General managers)
+    if (role.includes('branch manager') && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
       return mailKey && rd[mailKey] ? rd[mailKey].toString().trim() : '';
     }
   }
@@ -125,7 +126,7 @@ const getAllBranchManagerEmails = () => {
     const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
     const roleKey = getH('role');
     const role = (roleKey && rd[roleKey] ? rd[roleKey].toString() : '').toLowerCase().trim();
-    return role.includes('manager');
+    return role.includes('branch manager'); // Strict check
   }).map(r => {
     const rd = r.toObject();
     const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
@@ -1084,9 +1085,9 @@ exports.addEvent = async (req, res) => {
       const allBMs = getAllBranchManagerEmails();
       const superAdmins = getSuperAdminEmails();
       
-      const toEmail = senderEmail; // Primary to sender (broadcast style)
-      const ccList = 'ajith@ipcsglobal.com,rakesh@ipcsglobal.com,gifty@ipcsglobal.com';
-      const bccList = [...new Set([...allBMs, ...allTpos])].filter(Boolean).join(',');
+      const toEmail = senderEmail; 
+      const ccString = 'ajith@ipcsglobal.com,rakesh@ipcsglobal.com,gifty@ipcsglobal.com';
+      const bccString = [...new Set([...allBMs, ...allTpos])].filter(Boolean).join(',');
 
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
@@ -1152,8 +1153,8 @@ exports.addEvent = async (req, res) => {
       await sendMailAndLog({
         from: `"IPCS Placements" <${senderEmail}>`,
         to: toEmail, 
-        cc: ccList,
-        bcc: bccList,
+        cc: ccString,
+        bcc: bccString,
         subject: `Placement Drive Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
         html: html
       }, { name: 'All Branches', email: 'Broadcast', type: 'Event Notification' });
@@ -1162,11 +1163,9 @@ exports.addEvent = async (req, res) => {
       const tpoMail = getTpoEmail(tpo);
       const bmMail = getBranchManagerEmail(branch);
 
-      // 🚨 SPECIFIC ASSIGNMENT: TO -> BM | CC -> TPO & Gifty
-      const toEmail = bmMail || senderEmail; // Primary TO must be BM. If empty due to DB issue, defaults to self to avoid crash.
-      const ccList = [tpoMail, 'gifty@ipcsglobal.com'].filter(e => e && e !== toEmail).join(',');
-
-      console.log(`[ROUTING DEBUG] Talentino at ${branch} -> TO: ${toEmail} | CC: ${ccList}`);
+      // 🚨 EXACT ROUTING REQUESTED
+      const toEmail = bmMail ? bmMail : senderEmail; // Primary TO must be BM
+      const ccString = [tpoMail, 'gifty@ipcsglobal.com'].filter(e => e && e !== toEmail).join(','); 
 
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
@@ -1229,7 +1228,7 @@ exports.addEvent = async (req, res) => {
       await sendMailAndLog({
         from: `"IPCS Talentino" <${senderEmail}>`,
         to: toEmail,
-        cc: ccList,
+        cc: ccString,
         subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
         html: html
       }, { name: tpo, email: toEmail, type: 'Event Notification' });
