@@ -63,18 +63,15 @@ const getTpoEmail = (tpoName) => {
 const getBranchManagerEmail = (branch) => {
   const cache = getCache();
   if (!cache || !cache.users) return '';
-  
-  // 🚨 Strip out the word "Branch" and extra spaces to guarantee a match
+  // Strip out the word "Branch" and extra spaces so it perfectly matches the DB
   const searchBranch = (branch || '').toLowerCase().replace('branch', '').trim();
   
   const row = cache.users.find(r => {
     const role = (r.get('Role') || '').toLowerCase().trim();
     const br = (r.get('Sitting Branch') || r.get('Assigned Branches') || '').toLowerCase();
-    
-    // 🚨 Catches "Branch Manager" or just "Manager"
+    // Catch "Branch Manager" or "Manager"
     return role.includes('manager') && br.includes(searchBranch);
   });
-  
   return row ? row.get('Mail ID') : '';
 };
 
@@ -1023,7 +1020,7 @@ exports.addEvent = async (req, res) => {
     const watermark = "https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
     const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
     
-    // 🚨 FIX 1: Convert all physical Enters/Newlines into HTML <br/> tags!
+    // 🚨 FIXED: Convert all physical Enters/Newlines into HTML <br/> tags!
     const formattedDesc = (description || 'N/A').replace(/\n/g, '<br/>');
     
     if (evType.includes('placement drive')) {
@@ -1108,7 +1105,7 @@ exports.addEvent = async (req, res) => {
       const tpoMail = getTpoEmail(tpo);
       const bmMail = getBranchManagerEmail(branch);
       
-      // 🚨 FIX 2: We inject the Branch Manager AND TPO into the "To:" field directly so Apps Script doesn't drop them
+      // 🚨 FIXED: Injects the Branch Manager AND TPO into the "To:" field directly so Apps Script doesn't drop them
       const sendTo = [...new Set([tpoMail, bmMail, 'gifty@ipcsglobal.com'])].filter(Boolean).join(',');
       
       const html = `
