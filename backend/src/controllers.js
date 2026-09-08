@@ -1105,7 +1105,11 @@ exports.addEvent = async (req, res) => {
       const tpoMail = getTpoEmail(tpo);
       const bmMail = getBranchManagerEmail(branch);
       
-      // 🚨 FIXED: Injects the Branch Manager AND TPO into the "To:" field directly so Apps Script doesn't drop them
+      // 🚨 DEBUG LOG: This will print in Render so you can verify it found the manager!
+      console.log(`[MAIL ROUTING] Talentino at ${branch}. TPO: ${tpoMail}, BM: ${bmMail}`);
+
+      // 🚨 FIXED: We place ALL emails directly into the "To:" array. 
+      // This bypasses the Apps Script CC/BCC drop bug entirely!
       const sendTo = [...new Set([tpoMail, bmMail, 'gifty@ipcsglobal.com'])].filter(Boolean).join(',');
       
       const html = `
@@ -1168,13 +1172,14 @@ exports.addEvent = async (req, res) => {
 
       await sendMailAndLog({
         from: `"IPCS Talentino" <${senderEmail}>`,
-        to: sendTo,
+        to: sendTo, // 🚨 Now pushes TPO, BM, and Gifty into the main TO line
         subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
         html: html
       }, { name: tpo, email: sendTo, type: 'Event Notification' });
     }
 
-    refreshCache(); res.json({ success: true, message: "Event added successfully" });
+    refreshCache(); 
+    res.json({ success: true, message: "Event added successfully" });
   } catch (error) { 
     console.error("Event add error:", error);
     res.status(500).json({ success: false, message: error.message }); 
