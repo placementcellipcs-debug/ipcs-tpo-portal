@@ -77,19 +77,20 @@ const getTpoEmail = (tpoName) => {
 const getBranchManagerEmail = (branch) => {
   const cache = getCache();
   if (!cache || !cache.users) return '';
+  // Force removal of "branch" and extra spaces so "Calicut Branch" matches "Calicut" perfectly
   const searchBranch = (branch || '').toLowerCase().replace('branch', '').trim();
   
-  const row = cache.users.find(r => {
-    const rd = r.toObject();
-    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const role = (rd[getH('role')] || '').toLowerCase().trim();
-    const br = (rd[getH('sittingbranch')] || rd[getH('assignedbranches')] || '').toLowerCase();
-    return role.includes('manager') && br.includes(searchBranch);
-  });
-  if (row) {
+  for (let row of cache.users) {
     const rd = row.toObject();
     const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    return rd[getH('mailid')] || rd[getH('email')] || '';
+    const role = (rd[getH('role')] || '').toLowerCase().trim();
+    const br1 = (rd[getH('sittingbranch')] || '').toLowerCase().trim();
+    const br2 = (rd[getH('assignedbranches')] || '').toLowerCase().trim();
+    
+    // Check if role is Manager AND sitting/assigned branch matches
+    if (role.includes('manager') && (br1.includes(searchBranch) || br2.includes(searchBranch))) {
+      return rd[getH('mailid')] || rd[getH('email')] || '';
+    }
   }
   return '';
 };
@@ -1039,7 +1040,7 @@ exports.getEvents = (req, res) => {
   res.json({ success: true, events: allEvents.filter(e => e.date && e.title) });
 };
 
-// 🚨 FIXED: Indestructible Line Breaks and Guaranteed Email Routing
+// 🚨 FIXED EMAIL ROUTING FOR ALL EVENT TYPES
 exports.addEvent = async (req, res) => {
   const { date, tpo, branch, type, title, description, time, location } = req.body;
   try {
@@ -1056,16 +1057,16 @@ exports.addEvent = async (req, res) => {
     const watermark = "https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
     const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
     
-    // 🚨 INDESTRUCTIBLE REGEX: Captures all hidden line breaks (Windows & Mac) and replaces with HTML
+    // 🚨 REGEX FIX: This forces all types of line-breaks into HTML <br/> so paragraphs format perfectly!
     const formattedDesc = (description || 'N/A').replace(/(?:\r\n|\r|\n)/g, '<br/>');
     
     if (evType.includes('placement drive')) {
       const allTpos = getAllTpoEmails();
       const allBMs = getAllBranchManagerEmails();
-      const superAdmins = getSuperAdminEmails();
       
-      const bccList = [...new Set([...allBMs, 'gifty@ipcsglobal.com'])].filter(Boolean).join(',');
-      const ccList = [...new Set([...superAdmins, ...allTpos])].filter(Boolean).join(',');
+      const toEmail = senderEmail; // Primary TO field for broadcast
+      const ccList = 'ajith@ipcsglobal.com,rakesh@ipcsglobal.com,gifty@ipcsglobal.com';
+      const bccList = [...new Set([...allBMs, ...allTpos])].filter(Boolean).join(',');
 
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
@@ -1130,22 +1131,24 @@ exports.addEvent = async (req, res) => {
 
       await sendMailAndLog({
         from: `"IPCS Placements" <${senderEmail}>`,
-        to: senderEmail, 
-        bcc: bccList, 
+        to: toEmail, 
         cc: ccList,
+        bcc: bccList,
         subject: `Placement Drive Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
         html: html
       }, { name: 'All Branches', email: 'Broadcast', type: 'Event Notification' });
 
     } else if (evType.includes('talentino')) {
+      // 🚨 FLOWERPROOF LOOKUP: This bypasses formatting spaces perfectly
       const tpoMail = getTpoEmail(tpo);
       const bmMail = getBranchManagerEmail(branch);
+      
+      console.log(`[ROUTING DEBUG] Talentino generated at ${branch}. Branch Manager Email Found: ${bmMail || 'NONE'}`);
 
-      // 🚨 INDESTRUCTIBLE ROUTING: Collects, deduplicates, and places ALL emails directly in "To:"
-      const sendTo = [...new Set([tpoMail, bmMail, 'gifty@ipcsglobal.com'])].filter(Boolean).join(',');
-
-      console.log(`[MAIL ROUTING] Talentino at ${branch}. Generated TO string: ${sendTo}`);
-
+      // 🚨 STRICT ASSIGNMENT RULES AS REQUESTED
+      const toEmail = bmMail || senderEmail; // Primary receiver MUST be Branch Manager
+      const ccList = [tpoMail, 'gifty@ipcsglobal.com'].filter(e => e && e !== toEmail).join(','); // CC strictly to TPO & Gifty
+      
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
           <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #a855f7;">
@@ -1206,10 +1209,11 @@ exports.addEvent = async (req, res) => {
 
       await sendMailAndLog({
         from: `"IPCS Talentino" <${senderEmail}>`,
-        to: sendTo,
+        to: toEmail,
+        cc: ccList,
         subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
         html: html
-      }, { name: tpo, email: sendTo, type: 'Event Notification' });
+      }, { name: tpo, email: toEmail, type: 'Event Notification' });
     }
 
     refreshCache(); 
@@ -2076,7 +2080,7 @@ exports.getBranches = (req, res) => {
     const cache = getCache();
     if (!cache || !cache.branches) return res.json({ success: true, branches: [] });
 
-    // 🚨 FIXED: Safely extract data using Google Sheets .get() method
+    // Safely extract data using Google Sheets .get() method
     const branches = cache.branches.map((row, index) => {
       let branchName = '';
       let regionName = '';
@@ -2096,7 +2100,7 @@ exports.getBranches = (req, res) => {
       };
     }).filter(b => b.branch !== '');
 
-    // 🚨 BULLETPROOF FALLBACK: Guarantees the dropdown is never empty
+    // BULLETPROOF FALLBACK: Guarantees the dropdown is never empty
     if (branches.length === 0) {
       const fallbackList = [
         "Trivandrum", "Attingal", "Kollam", "Calicut", "Kannur", "Perinthalmanna", 
