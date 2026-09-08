@@ -42,20 +42,20 @@ const getTpoEmailByBranch = (branch) => {
   const searchBranch = (branch || '').toLowerCase().trim();
   
   for (let row of cache.contacts) {
-    const rd = row.toObject();
-    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const h = row._worksheet.headerValues;
+    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
     
-    const assignedKey = getH('assignedbranches');
-    const sittingKey = getH('sittingbranch');
-    const mailKey = getH('mailid') || getH('email');
+    const assignedH = getH('assignedbranches');
+    const sittingH = getH('sittingbranch');
+    const mailH = getH('mailid') || getH('email');
     
-    const assigned = (assignedKey && rd[assignedKey] ? rd[assignedKey].toString() : '').toLowerCase();
-    const sitting = (sittingKey && rd[sittingKey] ? rd[sittingKey].toString() : '').toLowerCase();
+    const assigned = assignedH && row.get(assignedH) ? row.get(assignedH).toString().toLowerCase() : '';
+    const sitting = sittingH && row.get(sittingH) ? row.get(sittingH).toString().toLowerCase() : '';
     
     if (assigned.includes('all') || sitting.includes('all')) continue; 
     
     if (assigned.includes(searchBranch) || searchBranch.includes(assigned) || sitting.includes(searchBranch)) {
-      return mailKey && rd[mailKey] ? rd[mailKey].toString().trim() : '';
+      return mailH && row.get(mailH) ? row.get(mailH).toString().trim() : '';
     }
   }
   return '';
@@ -67,15 +67,15 @@ const getTpoEmail = (tpoName) => {
   const searchName = (tpoName || '').toLowerCase().trim();
   
   for (let row of cache.contacts) {
-    const rd = row.toObject();
-    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const h = row._worksheet.headerValues;
+    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
     
-    const nameKey = getH('tponame') || getH('name');
-    const mailKey = getH('mailid') || getH('email');
+    const nameH = getH('tponame') || getH('name');
+    const mailH = getH('mailid') || getH('email');
     
-    const name = (nameKey && rd[nameKey] ? rd[nameKey].toString() : '').toLowerCase().trim();
+    const name = nameH && row.get(nameH) ? row.get(nameH).toString().toLowerCase().trim() : '';
     if (name && (name.includes(searchName) || searchName.includes(name))) {
-      return mailKey && rd[mailKey] ? rd[mailKey].toString().trim() : '';
+      return mailH && row.get(mailH) ? row.get(mailH).toString().trim() : '';
     }
   }
   return '';
@@ -84,24 +84,25 @@ const getTpoEmail = (tpoName) => {
 const getBranchManagerEmail = (branch) => {
   const cache = getCache();
   if (!cache || !cache.users) return '';
+  // Force removal of "branch" and extra spaces so "Calicut Branch" matches "Calicut" perfectly
   const searchBranch = (branch || '').toLowerCase().replace('branch', '').trim();
   
   for (let row of cache.users) {
-    const rd = row.toObject();
-    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const h = row._worksheet.headerValues;
+    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
     
-    const roleKey = getH('role');
-    const br1Key = getH('sittingbranch');
-    const br2Key = getH('assignedbranches');
-    const mailKey = getH('mailid') || getH('email');
+    const roleH = getH('role');
+    const br1H = getH('sittingbranch');
+    const br2H = getH('assignedbranches');
+    const mailH = getH('mailid') || getH('email');
     
-    const role = (roleKey && rd[roleKey] ? rd[roleKey].toString() : '').toLowerCase().trim();
-    const br1 = (br1Key && rd[br1Key] ? rd[br1Key].toString() : '').toLowerCase().trim();
-    const br2 = (br2Key && rd[br2Key] ? rd[br2Key].toString() : '').toLowerCase().trim();
+    const role = roleH && row.get(roleH) ? row.get(roleH).toString().toLowerCase().trim() : '';
+    const br1 = br1H && row.get(br1H) ? row.get(br1H).toString().toLowerCase().trim() : '';
+    const br2 = br2H && row.get(br2H) ? row.get(br2H).toString().toLowerCase().trim() : '';
     
-    // 🚨 STRICT CHECK: Must be "branch manager" (ignores Territory/General managers)
-    if (role.includes('branch manager') && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
-      return mailKey && rd[mailKey] ? rd[mailKey].toString().trim() : '';
+    // Check if role is Manager AND sitting/assigned branch matches
+    if (role.includes('manager') && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
+      return mailH && row.get(mailH) ? row.get(mailH).toString().trim() : '';
     }
   }
   return '';
@@ -110,49 +111,50 @@ const getBranchManagerEmail = (branch) => {
 const getAllTpoEmails = () => {
   const cache = getCache();
   if (!cache || !cache.contacts) return [];
-  return cache.contacts.map(r => {
-    const rd = r.toObject();
-    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const mailKey = getH('mailid') || getH('email');
-    return mailKey && rd[mailKey] ? rd[mailKey].toString().trim() : '';
+  return cache.contacts.map(row => {
+    const h = row._worksheet.headerValues;
+    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const mailH = getH('mailid') || getH('email');
+    return mailH && row.get(mailH) ? row.get(mailH).toString().trim() : '';
   }).filter(Boolean);
 };
 
 const getAllBranchManagerEmails = () => {
   const cache = getCache();
   if (!cache || !cache.users) return [];
-  return cache.users.filter(r => {
-    const rd = r.toObject();
-    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const roleKey = getH('role');
-    const role = (roleKey && rd[roleKey] ? rd[roleKey].toString() : '').toLowerCase().trim();
-    return role.includes('branch manager'); // Strict check
-  }).map(r => {
-    const rd = r.toObject();
-    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const mailKey = getH('mailid') || getH('email');
-    return mailKey && rd[mailKey] ? rd[mailKey].toString().trim() : '';
+  return cache.users.filter(row => {
+    const h = row._worksheet.headerValues;
+    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const roleH = getH('role');
+    const role = roleH && row.get(roleH) ? row.get(roleH).toString().toLowerCase().trim() : '';
+    return role.includes('manager');
+  }).map(row => {
+    const h = row._worksheet.headerValues;
+    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const mailH = getH('mailid') || getH('email');
+    return mailH && row.get(mailH) ? row.get(mailH).toString().trim() : '';
   }).filter(Boolean);
 };
 
 const getSuperAdminEmails = () => {
   const cache = getCache();
   if (!cache || !cache.users) return [];
-  return cache.users.filter(r => {
-    const rd = r.toObject();
-    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const roleKey = getH('role');
-    const accessKey = getH('access');
+  return cache.users.filter(row => {
+    const h = row._worksheet.headerValues;
+    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
     
-    const role = (roleKey && rd[roleKey] ? rd[roleKey].toString() : '').toLowerCase().trim();
-    const access = (accessKey && rd[accessKey] ? rd[accessKey].toString() : '').toLowerCase().trim();
+    const roleH = getH('role');
+    const accessH = getH('access');
+    
+    const role = roleH && row.get(roleH) ? row.get(roleH).toString().toLowerCase().trim() : '';
+    const access = accessH && row.get(accessH) ? row.get(accessH).toString().toLowerCase().trim() : '';
     
     return access.includes('admin') || role.includes('general manager') || role.includes('technical head') || role.includes('zonal');
-  }).map(r => {
-    const rd = r.toObject();
-    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const mailKey = getH('mailid') || getH('email');
-    return mailKey && rd[mailKey] ? rd[mailKey].toString().trim() : '';
+  }).map(row => {
+    const h = row._worksheet.headerValues;
+    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const mailH = getH('mailid') || getH('email');
+    return mailH && row.get(mailH) ? row.get(mailH).toString().trim() : '';
   }).filter(Boolean);
 };
 
@@ -1060,7 +1062,7 @@ exports.getEvents = (req, res) => {
   res.json({ success: true, events: allEvents.filter(e => e.date && e.title) });
 };
 
-// 🚨 FINAL FIXED EVENT ROUTER: 
+// 🚨 FINAL FIXED EVENT ROUTER
 exports.addEvent = async (req, res) => {
   const { date, tpo, branch, type, title, description, time, location } = req.body;
   try {
@@ -1077,7 +1079,7 @@ exports.addEvent = async (req, res) => {
     const watermark = "https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
     const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
     
-    // 🚨 INDESTRUCTIBLE REGEX: Captures all hidden line breaks (Windows & Mac) and replaces with HTML
+    // 🚨 REGEX FIX: Captures all hidden line breaks (Windows & Mac) and replaces with HTML
     const formattedDesc = String(description || 'N/A').replace(/(?:\r\n|\r|\n)/g, '<br/>');
     
     if (evType.includes('placement drive')) {
@@ -1085,9 +1087,9 @@ exports.addEvent = async (req, res) => {
       const allBMs = getAllBranchManagerEmails();
       const superAdmins = getSuperAdminEmails();
       
-      const toEmail = senderEmail; 
-      const ccString = 'ajith@ipcsglobal.com,rakesh@ipcsglobal.com,gifty@ipcsglobal.com';
-      const bccString = [...new Set([...allBMs, ...allTpos])].filter(Boolean).join(',');
+      const toEmail = senderEmail; // Primary to sender (broadcast style)
+      const ccList = 'ajith@ipcsglobal.com,rakesh@ipcsglobal.com,gifty@ipcsglobal.com';
+      const bccList = [...new Set([...allBMs, ...allTpos])].filter(Boolean).join(',');
 
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
@@ -1153,8 +1155,8 @@ exports.addEvent = async (req, res) => {
       await sendMailAndLog({
         from: `"IPCS Placements" <${senderEmail}>`,
         to: toEmail, 
-        cc: ccString,
-        bcc: bccString,
+        cc: ccList,
+        bcc: bccList,
         subject: `Placement Drive Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
         html: html
       }, { name: 'All Branches', email: 'Broadcast', type: 'Event Notification' });
@@ -1227,7 +1229,7 @@ exports.addEvent = async (req, res) => {
 
       await sendMailAndLog({
         from: `"IPCS Talentino" <${senderEmail}>`,
-        to: toEmail,
+        to: toEmail, 
         cc: ccString,
         subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
         html: html
