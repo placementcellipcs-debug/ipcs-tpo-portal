@@ -2,7 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { CircleNotch } from '@phosphor-icons/react';
-import { API_BASE } from './apiConfig'; // 🚨 Imports your smart URL!
+import { API_BASE } from './apiConfig'; 
 
 export default function Login() {
   const [loginId, setLoginId] = useState('');
@@ -21,7 +21,6 @@ export default function Login() {
     setError('');
     
     try {
-      // 🚨 Uses your smart URL based on where you are testing
       const res = await axios.post(`${API_BASE}/api/auth/login`, { 
         email: loginId, 
         password: password 
@@ -41,7 +40,7 @@ export default function Login() {
     }
   };
 
-  // 🚨 If login is successful, render ONLY the full-screen video
+  // 🚨 FIXED: Video source typo and added 'muted' to bypass Browser Autoplay blocks
   if (showIntro) {
     return (
       <div style={{ 
@@ -52,11 +51,11 @@ export default function Login() {
         transition: 'opacity 1s ease-in-out' 
       }}>
         <video 
-          src="/Into.mp4" 
+          src="/Intro.mp4" 
           autoPlay 
+          muted 
           playsInline 
           onTimeUpdate={(e) => {
-            // Trigger fade out 1 sec before end
             if (e.target.duration - e.target.currentTime <= 1) {
               setVideoOpacity(0);
             }
@@ -68,7 +67,7 @@ export default function Login() {
           }}
           style={{ 
             width: '100%', height: '100%', objectFit: 'cover',
-            transform: 'scale(1.08)' // Hides the AI watermark
+            transform: 'scale(1.08)' 
           }}
         />
       </div>

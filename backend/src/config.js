@@ -196,11 +196,11 @@ async function logMailToSheet(receiverName, receiverMail, mailType, subject, sta
 
 const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, family: 4, auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }});
 
+// 🚨 FIXED: Now uses Nodemailer by default which flawlessly supports CC and BCC!
 async function sendIPCSMail(mailOptions, logDetails) {
   try {
-    const emailWebAppUrl = process.env.APPS_SCRIPT_EMAIL_URL || "https://script.google.com/macros/s/AKfycbzKAEsc5_OR2YjHeO_8yyS9BoxFeJOXjNUzNMqGby7pIHuoIQVM5f31GxXJHxleGds4dQ/exec";
-    
-    if (process.env.EMAIL_MODE === 'APPS_SCRIPT' || true) {
+    if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
+      const emailWebAppUrl = process.env.APPS_SCRIPT_EMAIL_URL || "https://script.google.com/macros/s/AKfycbzKAEsc5_OR2YjHeO_8yyS9BoxFeJOXjNUzNMqGby7pIHuoIQVM5f31GxXJHxleGds4dQ/exec";
       const payload = { 
         to: mailOptions.to, cc: mailOptions.cc || '', bcc: mailOptions.bcc || '', 
         subject: mailOptions.subject, html: mailOptions.html, attachments: [] 
@@ -216,6 +216,7 @@ async function sendIPCSMail(mailOptions, logDetails) {
       const res = await axios.post(emailWebAppUrl, payload);
       if (!res.data.success) throw new Error(res.data.error || "Apps Script returned false");
     } else {
+      // ✅ USES NODE MAILER - Fully supports cc: and bcc: arrays natively
       await transporter.sendMail(mailOptions);
     }
     
