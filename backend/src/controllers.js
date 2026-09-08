@@ -734,7 +734,7 @@ exports.getApplications = (req, res) => {
   res.json({ success: true, applications: appsList });
 };
 
-// 🚨 FIXED: Bulletproof Application Update logic to fix the Tracker Error
+// 🚨 FIXED: Bulletproof Application Update logic
 exports.updateApplication = async (req, res) => {
   const rowNumber = parseInt(req.body.rowNumber);
   const { status, remarks, datePlaced, packageLpa, joiningStatus, currentUserEmail, interviewDate, interviewTime, interviewVenue } = req.body;
@@ -761,7 +761,7 @@ exports.updateApplication = async (req, res) => {
     const rows = await appSheet.getRows({ offset: rowNumber - 2, limit: 1 });
     
     if (!rows || rows.length === 0) {
-      return res.status(404).json({ success: false, message: "Application record not found in Google Sheets. It may have been deleted." });
+      return res.status(404).json({ success: false, message: "Application record not found in Google Sheets." });
     }
     
     const headers = appSheet.headerValues;
@@ -1187,7 +1187,7 @@ exports.runDailyCron = async () => {
   
   const expiredJobs = cache.vacancies.filter(v => {
     const rowData = v.toObject();
-    const getH = (str) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+    const getH = (str) => Object.keys(rowData).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
     const lastDateKey = getH('lastdate');
     
     if (!lastDateKey || !rowData[lastDateKey]) return false;
@@ -1203,7 +1203,7 @@ exports.runDailyCron = async () => {
 
   for (let job of expiredJobs) {
     const jobData = job.toObject();
-    const getJobH = (str) => Object.keys(jobData).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+    const getJobH = (str) => Object.keys(jobData).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
     
     const jobId = jobData[getJobH('jobid')] || jobData[getJobH('id')] || '';
     const companyEmail = jobData[getJobH('companymailid')] || jobData[getJobH('companyemail')] || ''; 
@@ -1212,26 +1212,26 @@ exports.runDailyCron = async () => {
 
     if (!companyEmail) continue;
 
-    const cleanTargetJobId = jobId.toString().toLowerCase().replace(/\s/g, '');
+    const cleanTargetJobId = jobId.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
 
     const applicants = cache.applications.filter(app => {
       const appData = app.toObject();
-      const getAppH = (str) => Object.keys(appData).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      const appJobId = (appData[getAppH('jobid')] || '').toString().toLowerCase().replace(/\s/g, '');
+      const getAppH = (str) => Object.keys(appData).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+      const appJobId = (appData[getAppH('jobid')] || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
       return appJobId === cleanTargetJobId && cleanTargetJobId !== '';
     });
 
     if (applicants.length === 0) continue;
 
     const firstApp = applicants[0].toObject();
-    const getFirstAppH = (str) => Object.keys(firstApp).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+    const getFirstAppH = (str) => Object.keys(firstApp).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
     const tpoName = firstApp[getFirstAppH('placementofficer')];
     const tpoEmail = getTpoEmail(tpoName);
 
     let tableRows = ''; let attachments = [];
     applicants.forEach((appRow, index) => {
       const rd = appRow.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       const info = { 
         name: rd[getH('name')] || rd[getH('studentname')] || '', 
         phone: rd[getH('contact')] || rd[getH('phone')] || '', 
@@ -1304,13 +1304,13 @@ exports.runDailyCron = async () => {
 // =========================================================
 const getSafeClientHeader = (keys, searchStrs) => {
   for (let s of searchStrs) {
-    const cleanSearch = s.toLowerCase().replace(/\s/g, '');
-    const exact = keys.find(k => k.toLowerCase().replace(/\s/g, '') === cleanSearch);
+    const cleanSearch = s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const exact = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanSearch);
     if (exact) return exact;
   }
   for (let s of searchStrs) {
-    const cleanSearch = s.toLowerCase().replace(/\s/g, '');
-    const partial = keys.find(k => k.toLowerCase().replace(/\s/g, '').includes(cleanSearch));
+    const cleanSearch = s.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const partial = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanSearch));
     if (partial) return partial;
   }
   return null;
@@ -1619,11 +1619,24 @@ exports.updatePhoto = async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
+// ---------------------------------------------------------
+// 🚨 L M S  -  S T U D Y   M A T E R I A L S
+// ---------------------------------------------------------
 exports.getMaterials = (req, res) => {
   try {
     let materials = getCache().materials.map(row => {
-      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-      return { id: rd[getH('materialid')] || '', course: rd[getH('course')] || '', module: rd[getH('module/topic')] || rd[getH('module')] || rd[getH('topic')] || '', title: rd[getH('title')] || '', fileType: rd[getH('filetype')] || '', link: rd[getH('onedrivelink')] || rd[getH('link')] || '', status: rd[getH('status')] || 'Active' };
+      const rd = row.toObject(); 
+      // Safely strip spaces and slashes for indestructible read
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+      return { 
+        id: rd[getH('materialid')] || '', 
+        course: rd[getH('course')] || '', 
+        module: rd[getH('moduletopic')] || rd[getH('module')] || rd[getH('topic')] || '', 
+        title: rd[getH('title')] || '', 
+        fileType: rd[getH('filetype')] || '', 
+        link: rd[getH('onedrivelink')] || rd[getH('link')] || '', 
+        status: rd[getH('status')] || 'Active' 
+      };
     });
     res.json({ success: true, materials: materials.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -1632,45 +1645,97 @@ exports.getMaterials = (req, res) => {
 exports.addMaterial = async (req, res) => {
   try {
     const { id, course, module, title, fileType, link, status } = req.body;
-    const sheet = doc.sheetsByTitle["Study_Materials"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    // Fuzzy match the sheet to ignore tab naming errors
+    const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('studymaterials'));
+    if (!sheet) return res.status(404).json({ success: false, message: "Study Materials sheet not found" });
+
     const h = sheet.headerValues;
-    await sheet.addRow({ [getFuzzyHeader(h, 'materialid')]: id, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'module/topic')]: module, [getFuzzyHeader(h, 'title')]: title, [getFuzzyHeader(h, 'filetype')]: fileType, [getFuzzyHeader(h, 'onedrivelink')]: link, [getFuzzyHeader(h, 'status')]: status || 'Active' });
-    refreshCache(); res.json({ success: true, message: "Material added successfully!" });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    
+    // Safely write to the exact columns regardless of hidden spaces/slashes
+    await sheet.addRow({
+      [getFuzzyHeader(h, 'materialid')]: id,
+      [getFuzzyHeader(h, 'course')]: course,
+      [getFuzzyHeader(h, 'moduletopic')]: module,
+      [getFuzzyHeader(h, 'title')]: title,
+      [getFuzzyHeader(h, 'filetype')]: fileType,
+      [getFuzzyHeader(h, 'onedrivelink')]: link,
+      [getFuzzyHeader(h, 'status')]: status || 'Active'
+    });
+
+    refreshCache();
+    res.json({ success: true, message: "Material added successfully" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
 exports.updateMaterial = async (req, res) => {
   try {
     const { id, course, module, title, fileType, link, status } = req.body;
-    const sheet = doc.sheetsByTitle["Study_Materials"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('studymaterials'));
+    if (!sheet) return res.status(404).json({ success: false, message: "Study Materials sheet not found" });
+
     const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => (r.get('Material ID') || r.get('materialid') || '').toString().trim() === id.toString().trim());
-    if (rowToUpdate) {
-      const h = sheet.headerValues;
-      rowToUpdate.assign({ [getFuzzyHeader(h, 'materialid')]: id, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'module/topic')]: module, [getFuzzyHeader(h, 'title')]: title, [getFuzzyHeader(h, 'filetype')]: fileType, [getFuzzyHeader(h, 'onedrivelink')]: link, [getFuzzyHeader(h, 'status')]: status || 'Active' });
-      await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Material updated successfully!" });
-    } else { res.status(404).json({ success: false, message: "Material ID not found." }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    const h = sheet.headerValues;
+    const idHeader = getFuzzyHeader(h, 'materialid');
+    
+    const row = rows.find(r => (r.get(idHeader) || '').toString().trim() === id.toString().trim());
+
+    if (row) {
+      row.assign({
+        [getFuzzyHeader(h, 'course')]: course,
+        [getFuzzyHeader(h, 'moduletopic')]: module,
+        [getFuzzyHeader(h, 'title')]: title,
+        [getFuzzyHeader(h, 'filetype')]: fileType,
+        [getFuzzyHeader(h, 'onedrivelink')]: link,
+        [getFuzzyHeader(h, 'status')]: status
+      });
+      await row.save();
+      refreshCache();
+      res.json({ success: true, message: "Updated successfully" });
+    } else {
+      res.status(404).json({ success: false, message: "Record not found in database." });
+    }
+  } catch (err) { 
+    res.status(500).json({ success: false, message: err.message }); 
+  }
 };
 
 exports.deleteMaterial = async (req, res) => {
   try {
     const { id } = req.body;
-    const sheet = doc.sheetsByTitle["Study_Materials"];
-    if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    
+    const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('studymaterials'));
+    if (!sheet) return res.status(404).json({ success: false, message: "Study Materials sheet not found" });
+
     const rows = await sheet.getRows();
-    const rowToDelete = rows.find(r => (r.get('Material ID') || r.get('materialid') || '').toString().trim() === id.toString().trim());
-    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Material deleted successfully!" }); } 
-    else { res.status(404).json({ success: false, message: "Material ID not found." }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    const h = sheet.headerValues;
+    const idHeader = getFuzzyHeader(h, 'materialid');
+    
+    const row = rows.find(r => (r.get(idHeader) || '').toString().trim() === id.toString().trim());
+
+    if (row) {
+      await row.delete();
+      refreshCache();
+      res.json({ success: true, message: "Deleted successfully" });
+    } else {
+      res.status(404).json({ success: false, message: "Record not found in database." });
+    }
+  } catch (err) { 
+    res.status(500).json({ success: false, message: err.message }); 
+  }
 };
 
+// ---------------------------------------------------------
+// 🚨 E X A M   H U B
+// ---------------------------------------------------------
 exports.getQuestions = (req, res) => {
   try {
     let questions = getCache().techQuestions.map(row => {
-      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      const rd = row.toObject(); 
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       return { id: rd[getH('questionid')] || '', course: rd[getH('course')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active' };
     });
     res.json({ success: true, questions: questions.reverse() });
@@ -1680,9 +1745,23 @@ exports.getQuestions = (req, res) => {
 exports.addQuestion = async (req, res) => {
   try {
     const { id, course, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
-    const sheet = doc.sheetsByTitle["Tech_Questions"];
+    const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('techquestions'));
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    await sheet.addRow({ 'Question ID': id, 'Course': course, 'Question': question, 'Option A': optA, 'Option B': optB, 'Option C': optC, 'Option D': optD, 'Correct Option': correct, 'Explanation': explanation, 'Status': status || 'Active' });
+    const h = sheet.headerValues;
+    
+    await sheet.addRow({ 
+      [getFuzzyHeader(h, 'questionid')]: id, 
+      [getFuzzyHeader(h, 'course')]: course, 
+      [getFuzzyHeader(h, 'question')]: question, 
+      [getFuzzyHeader(h, 'optiona')]: optA, 
+      [getFuzzyHeader(h, 'optionb')]: optB, 
+      [getFuzzyHeader(h, 'optionc')]: optC, 
+      [getFuzzyHeader(h, 'optiond')]: optD, 
+      [getFuzzyHeader(h, 'correctoption')]: correct, 
+      [getFuzzyHeader(h, 'explanation')]: explanation, 
+      [getFuzzyHeader(h, 'status')]: status || 'Active' 
+    });
+    
     refreshCache(); res.json({ success: true, message: "Question added successfully!" });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
@@ -1690,12 +1769,26 @@ exports.addQuestion = async (req, res) => {
 exports.updateQuestion = async (req, res) => {
   try {
     const { id, course, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
-    const sheet = doc.sheetsByTitle["Tech_Questions"];
+    const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('techquestions'));
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => (r.get('Question ID') || '').toString().trim() === id.toString().trim());
+    const h = sheet.headerValues;
+    const idHeader = getFuzzyHeader(h, 'questionid');
+    
+    const rowToUpdate = rows.find(r => (r.get(idHeader) || '').toString().trim() === id.toString().trim());
     if (rowToUpdate) {
-      rowToUpdate.assign({ 'Question ID': id, 'Course': course, 'Question': question, 'Option A': optA, 'Option B': optB, 'Option C': optC, 'Option D': optD, 'Correct Option': correct, 'Explanation': explanation, 'Status': status || 'Active' });
+      rowToUpdate.assign({ 
+        [getFuzzyHeader(h, 'questionid')]: id, 
+        [getFuzzyHeader(h, 'course')]: course, 
+        [getFuzzyHeader(h, 'question')]: question, 
+        [getFuzzyHeader(h, 'optiona')]: optA, 
+        [getFuzzyHeader(h, 'optionb')]: optB, 
+        [getFuzzyHeader(h, 'optionc')]: optC, 
+        [getFuzzyHeader(h, 'optiond')]: optD, 
+        [getFuzzyHeader(h, 'correctoption')]: correct, 
+        [getFuzzyHeader(h, 'explanation')]: explanation, 
+        [getFuzzyHeader(h, 'status')]: status || 'Active' 
+      });
       await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Technical question updated successfully!" });
     } else { res.status(404).json({ success: false, message: "Question ID not found." }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -1704,19 +1797,24 @@ exports.updateQuestion = async (req, res) => {
 exports.deleteQuestion = async (req, res) => {
   try {
     const { id } = req.body;
-    const sheet = doc.sheetsByTitle["Tech_Questions"];
+    const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('techquestions'));
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const rows = await sheet.getRows();
-    const rowToDelete = rows.find(r => r.get('Question ID') === id);
-    if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Question deleted" }); } 
-    else { res.status(404).json({ success: false, message: "Question not found" }); }
+    const h = sheet.headerValues;
+    const idHeader = getFuzzyHeader(h, 'questionid');
+    
+    const rowToDelete = rows.find(r => (r.get(idHeader) || '').toString().trim() === id.toString().trim());
+    if (rowToDelete) { 
+      await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Question deleted" }); 
+    } else { res.status(404).json({ success: false, message: "Question not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 exports.getResults = (req, res) => {
   try {
     let results = getCache().techResults.map(row => {
-      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      const rd = row.toObject(); 
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', course: rd[getH('course')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '' };
     });
     res.json({ success: true, results: results.reverse() });
@@ -1754,7 +1852,8 @@ exports.deleteCourse = async (req, res) => {
 exports.getAptQuestions = (req, res) => {
   try {
     let questions = getCache().aptQuestions.map(row => {
-      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      const rd = row.toObject(); 
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       return { id: rd[getH('qid')] || '', category: rd[getH('category')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active', level: rd[getH('level')] || 'Easy' };
     });
     res.json({ success: true, questions: questions.reverse() });
@@ -1764,7 +1863,8 @@ exports.getAptQuestions = (req, res) => {
 exports.getAptResults = (req, res) => {
   try {
     let results = getCache().aptResults.map(row => {
-      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      const rd = row.toObject(); 
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('email')] || rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', score: rd[getH('score')] || '', total: rd[getH('total')] || rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '', categoryBreakdown: rd[getH('categorybreakdown')] || '' };
     });
     res.json({ success: true, results: results.reverse() });
@@ -1788,9 +1888,11 @@ exports.updateAptQuestion = async (req, res) => {
     const sheet = doc.sheetsByTitle["Aptitude_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => (r.get('QID') || r.get('qid') || '').toString().trim() === id.toString().trim());
+    const h = sheet.headerValues;
+    const idHeader = getFuzzyHeader(h, 'qid');
+    const rowToUpdate = rows.find(r => (r.get(idHeader) || '').toString().trim() === id.toString().trim());
+    
     if (rowToUpdate) {
-      const h = sheet.headerValues;
       rowToUpdate.assign({ [getFuzzyHeader(h, 'qid')]: id, [getFuzzyHeader(h, 'category')]: category, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA, [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct, [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active', [getFuzzyHeader(h, 'level')]: level || 'Medium' });
       await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Aptitude question updated successfully!" });
     } else { res.status(404).json({ success: false, message: "Question ID not found." }); }
@@ -1803,7 +1905,10 @@ exports.deleteAptQuestion = async (req, res) => {
     const sheet = doc.sheetsByTitle["Aptitude_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const rows = await sheet.getRows();
-    const rowToDelete = rows.find(r => r.get('QID') === id || r.get('qid') === id);
+    const h = sheet.headerValues;
+    const idHeader = getFuzzyHeader(h, 'qid');
+    const rowToDelete = rows.find(r => (r.get(idHeader) || '').toString().trim() === id.toString().trim());
+    
     if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Question deleted" }); } 
     else { res.status(404).json({ success: false, message: "Question not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -1812,7 +1917,8 @@ exports.deleteAptQuestion = async (req, res) => {
 exports.getTalExamQuestions = (req, res) => {
   try {
     let questions = getCache().talQuestions.map(row => {
-      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      const rd = row.toObject(); 
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       return { id: rd[getH('questionid')] || '', testNumber: rd[getH('textnumber')] || rd[getH('testnumber')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active' };
     });
     res.json({ success: true, questions: questions.reverse() });
@@ -1822,7 +1928,8 @@ exports.getTalExamQuestions = (req, res) => {
 exports.getTalExamResults = (req, res) => {
   try {
     let results = getCache().talResults.map(row => {
-      const rd = row.toObject(); const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+      const rd = row.toObject(); 
+      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || rd[getH('email')] || '', branch: rd[getH('branch')] || '', testNumber: rd[getH('testnumbercompleted')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '' };
     });
     res.json({ success: true, results: results.reverse() });
@@ -1846,9 +1953,11 @@ exports.updateTalExamQuestion = async (req, res) => {
     const sheet = doc.sheetsByTitle["Talentino_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => (r.get('Question ID') || r.get('questionid') || '').toString().trim() === id.toString().trim());
+    const h = sheet.headerValues;
+    const idHeader = getFuzzyHeader(h, 'questionid');
+    const rowToUpdate = rows.find(r => (r.get(idHeader) || '').toString().trim() === id.toString().trim());
+    
     if (rowToUpdate) {
-      const h = sheet.headerValues;
       rowToUpdate.assign({ [getFuzzyHeader(h, 'questionid')]: id, [getFuzzyHeader(h, 'testnumber')]: testNumber, [getFuzzyHeader(h, 'question')]: question, [getFuzzyHeader(h, 'optiona')]: optA, [getFuzzyHeader(h, 'optionb')]: optB, [getFuzzyHeader(h, 'optionc')]: optC, [getFuzzyHeader(h, 'optiond')]: optD, [getFuzzyHeader(h, 'correctoption')]: correct, [getFuzzyHeader(h, 'explanation')]: explanation, [getFuzzyHeader(h, 'status')]: status || 'Active' });
       await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Talentino question updated successfully!" });
     } else { res.status(404).json({ success: false, message: "Question ID not found." }); }
@@ -1861,22 +1970,23 @@ exports.deleteTalExamQuestion = async (req, res) => {
     const sheet = doc.sheetsByTitle["Talentino_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const rows = await sheet.getRows();
-    const rowToDelete = rows.find(r => r.get('Question ID') === id || r.get('questionid') === id);
+    const h = sheet.headerValues;
+    const idHeader = getFuzzyHeader(h, 'questionid');
+    const rowToDelete = rows.find(r => (r.get(idHeader) || '').toString().trim() === id.toString().trim());
+    
     if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Question deleted" }); } 
     else { res.status(404).json({ success: false, message: "Question not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-// 🚨 UPDATED: `getDrives` now maps `driveTpo` to `drives` data
 exports.getDrives = (req, res) => {
   try {
     const cache = getCache();
     
-    // Extract events to map Drive ID to TPO
     const eventsMap = {};
     (cache.events || []).forEach(r => {
        const rd = r.toObject();
-       const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
+       const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
        const dId = rd[getH('driveid')] || '';
        const tpo = rd[getH('tpo')] || rd[getH('placementofficer')] || '';
        if (dId) eventsMap[dId.toUpperCase().trim()] = tpo;
@@ -1885,8 +1995,8 @@ exports.getDrives = (req, res) => {
     const drivesData = (cache.drives || []).map(row => {
       const rd = row.toObject();
       const getH = (str) => {
-        const c = str.toLowerCase().replace(/\s/g, ''); const keys = Object.keys(rd);
-        return keys.find(k => k.toLowerCase().replace(/\s/g, '') === c) || keys.find(k => k.toLowerCase().replace(/\s/g, '').includes(c));
+        const c = str.toLowerCase().replace(/[^a-z0-9]/g, ''); const keys = Object.keys(rd);
+        return keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === c) || keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '').includes(c));
       };
       
       const dId = rd[getH('driveid')] || '';
@@ -1897,7 +2007,7 @@ exports.getDrives = (req, res) => {
         email: rd[getH('mailid')] || rd[getH('email')] || '', course: rd[getH('course')] || '', branch: rd[getH('branch')] || '',
         resume: rd[getH('resume')] || '', qual: rd[getH('qualification')] || '', regStatus: rd[getH('status')] || '',
         regDate: rd[getH('registeddate')] || rd[getH('timestamp')] || '', studentStatus: rd[getH('studentstatus')] || '',
-        driveTpo: driveTpo // 🚨 INCLUDE THIS
+        driveTpo: driveTpo
       };
     });
     res.json({ success: true, drives: drivesData.reverse() });
@@ -1973,7 +2083,6 @@ exports.getTrainerLogs = (req, res) => {
     
     let logs = cache.trainerLogs.map(row => {
       const rd = row.toObject();
-      // 🚨 INDESTRUCTIBLE HEADER MAPPER
       const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       return {
         rowNumber: row.rowNumber,
@@ -2000,16 +2109,17 @@ exports.addTrainerLog = async (req, res) => {
     const { branch, trainerName, course, studentCount, present, absentees, feedbacks } = req.body;
     const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('trainer'));
     if (!sheet) return res.status(404).json({ success: false, message: "Trainer Log sheet missing." });
+    const h = sheet.headerValues;
     
     await sheet.addRow({
-      'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
-      'Branch': branch,
-      'TrainerName': trainerName,
-      'Course': course,
-      'Student Count': studentCount,
-      'Currently Present in Lab': present,
-      'Absentees': absentees,
-      'Any Feedbacks': feedbacks
+      [getFuzzyHeader(h, 'timestamp')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      [getFuzzyHeader(h, 'branch')]: branch,
+      [getFuzzyHeader(h, 'trainername')]: trainerName,
+      [getFuzzyHeader(h, 'course')]: course,
+      [getFuzzyHeader(h, 'studentcount')]: studentCount,
+      [getFuzzyHeader(h, 'currentlypresentinlab')]: present,
+      [getFuzzyHeader(h, 'absentees')]: absentees,
+      [getFuzzyHeader(h, 'anyfeedbacks')]: feedbacks
     });
     
     refreshCache(); 
@@ -2049,7 +2159,6 @@ exports.getSecurityLogs = (req, res) => {
 
     let logs = cache.securityLogs.map(row => {
       const rd = row.toObject();
-      // 🚨 INDESTRUCTIBLE HEADER MAPPER
       const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       return {
         rowNumber: row.rowNumber,
@@ -2070,9 +2179,6 @@ exports.getSecurityLogs = (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-// =========================================================
-// 🚨 VERIFY ACTIVE SESSION (MULTI-DEVICE ENFORCEMENT)
-// =========================================================
 exports.verifySession = (req, res) => {
   const { email, sessionToken } = req.body;
   if (!email || !sessionToken) {
