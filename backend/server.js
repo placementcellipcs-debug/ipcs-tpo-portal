@@ -133,6 +133,8 @@ app.get('/api/v1/assets', assetControllers.getAssets);
 app.get('/api/v1/assets/:assetId/details', assetControllers.getAssetDetails);
 app.post('/api/v1/assets/assign', assetControllers.assignAsset);
 app.post('/api/v1/assets/return', assetControllers.returnAsset);
+app.get('/api/v1/assets/dashboard', assetControllers.getAssetDashboardStats);
+app.get('/api/v1/assets/form-data', assetControllers.getRegistrationData);
 
 // 🚨 NEW ROUTES:
 app.get('/api/v1/assets/inventory', assetControllers.getInventory);

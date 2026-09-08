@@ -30,6 +30,7 @@ import AddAsset from './AddAsset';
 import Inventory from './Inventory';
 import AssetTransfers from './AssetTransfers';
 import AssetMaintenance from './AssetMaintenance';
+import AssetDashboard from './AssetDashboard';
 
 function App() {
   return (
@@ -66,6 +67,7 @@ function App() {
         <Route path="/assets/inventory" element={<Inventory />} />
         <Route path="/assets/transfers" element={<AssetTransfers />} />
         <Route path="/assets/maintenance" element={<AssetMaintenance />} />
+        <Route path="/assets/dashboard" element={<AssetDashboard />} />
       </Routes>
     </BrowserRouter>
   );
