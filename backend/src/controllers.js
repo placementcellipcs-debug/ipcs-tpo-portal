@@ -63,13 +63,18 @@ const getTpoEmail = (tpoName) => {
 const getBranchManagerEmail = (branch) => {
   const cache = getCache();
   if (!cache || !cache.users) return '';
+  
+  // 🚨 Strip out the word "Branch" and extra spaces to guarantee a match
   const searchBranch = (branch || '').toLowerCase().replace('branch', '').trim();
   
   const row = cache.users.find(r => {
     const role = (r.get('Role') || '').toLowerCase().trim();
     const br = (r.get('Sitting Branch') || r.get('Assigned Branches') || '').toLowerCase();
-    return role === 'branch manager' && br.includes(searchBranch);
+    
+    // 🚨 Catches "Branch Manager" or just "Manager"
+    return role.includes('manager') && br.includes(searchBranch);
   });
+  
   return row ? row.get('Mail ID') : '';
 };
 
@@ -1018,6 +1023,9 @@ exports.addEvent = async (req, res) => {
     const watermark = "https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
     const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
     
+    // 🚨 FIX 1: Convert all physical Enters/Newlines into HTML <br/> tags!
+    const formattedDesc = (description || 'N/A').replace(/\n/g, '<br/>');
+    
     if (evType.includes('placement drive')) {
       const allTpos = getAllTpoEmails();
       const allBMs = getAllBranchManagerEmails();
@@ -1050,7 +1058,7 @@ exports.addEvent = async (req, res) => {
                   <tr><td style="padding: 6px 0; color: #64748b;">Time:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${time || 'TBD'}</td></tr>
                   <tr><td style="padding: 6px 0; color: #64748b;">Location / Mode:</td><td style="padding: 6px 0; color: #0284c7; font-weight: bold;">${location || 'Venue / Online'}</td></tr>
                   <tr><td style="padding: 6px 0; color: #64748b;">Eligible Branch:</td><td style="padding: 6px 0; color: #0f1523;">${branch || 'All Branches'}</td></tr>
-                  <tr><td style="padding: 6px 0; color: #64748b;">Description:</td><td style="padding: 6px 0; color: #334155;">${description || 'N/A'}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b; vertical-align: top;">Description:</td><td style="padding: 6px 0; color: #334155;">${formattedDesc}</td></tr>
                 </table>
               </div>
 
@@ -1099,8 +1107,9 @@ exports.addEvent = async (req, res) => {
     } else if (evType.includes('talentino')) {
       const tpoMail = getTpoEmail(tpo);
       const bmMail = getBranchManagerEmail(branch);
-      const ccList = [bmMail, 'gifty@ipcsglobal.com'].filter(Boolean).join(',');
-      const sendTo = tpoMail || bmMail || 'gifty@ipcsglobal.com';
+      
+      // 🚨 FIX 2: We inject the Branch Manager AND TPO into the "To:" field directly so Apps Script doesn't drop them
+      const sendTo = [...new Set([tpoMail, bmMail, 'gifty@ipcsglobal.com'])].filter(Boolean).join(',');
       
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
@@ -1125,7 +1134,7 @@ exports.addEvent = async (req, res) => {
                   <tr><td style="padding: 6px 0; color: #64748b;">Time:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${time || 'TBD'}</td></tr>
                   <tr><td style="padding: 6px 0; color: #64748b;">Location / Mode:</td><td style="padding: 6px 0; color: #0284c7; font-weight: bold;">${location || branch || 'Branch Venue'}</td></tr>
                   <tr><td style="padding: 6px 0; color: #64748b;">Conducted By:</td><td style="padding: 6px 0; color: #0f1523;">${tpo}</td></tr>
-                  <tr><td style="padding: 6px 0; color: #64748b;">Description:</td><td style="padding: 6px 0; color: #334155;">${description || 'N/A'}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b; vertical-align: top;">Description:</td><td style="padding: 6px 0; color: #334155;">${formattedDesc}</td></tr>
                 </table>
               </div>
 
@@ -1163,7 +1172,6 @@ exports.addEvent = async (req, res) => {
       await sendMailAndLog({
         from: `"IPCS Talentino" <${senderEmail}>`,
         to: sendTo,
-        cc: ccList,
         subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
         html: html
       }, { name: tpo, email: sendTo, type: 'Event Notification' });
