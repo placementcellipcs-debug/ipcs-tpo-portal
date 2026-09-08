@@ -41,18 +41,22 @@ const getTpoEmailByBranch = (branch) => {
   if (!cache || !cache.contacts) return '';
   const searchBranch = (branch || '').toLowerCase().trim();
   
-  const row = cache.contacts.find(r => {
-    const rd = r.toObject();
-    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const assigned = (rd[getH('assignedbranches')] || '').toLowerCase();
-    const sitting = (rd[getH('sittingbranch')] || '').toLowerCase();
-    if (assigned.includes('all') || sitting.includes('all')) return false; 
-    return assigned.includes(searchBranch) || searchBranch.includes(assigned) || sitting.includes(searchBranch);
-  });
-  if (row) {
+  for (let row of cache.contacts) {
     const rd = row.toObject();
     const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    return rd[getH('mailid')] || rd[getH('email')] || '';
+    
+    const assignedKey = getH('assignedbranches');
+    const sittingKey = getH('sittingbranch');
+    const mailKey = getH('mailid') || getH('email');
+    
+    const assigned = (assignedKey && rd[assignedKey] ? rd[assignedKey].toString() : '').toLowerCase();
+    const sitting = (sittingKey && rd[sittingKey] ? rd[sittingKey].toString() : '').toLowerCase();
+    
+    if (assigned.includes('all') || sitting.includes('all')) continue; 
+    
+    if (assigned.includes(searchBranch) || searchBranch.includes(assigned) || sitting.includes(searchBranch)) {
+      return mailKey && rd[mailKey] ? rd[mailKey].toString().trim() : '';
+    }
   }
   return '';
 };
@@ -60,16 +64,19 @@ const getTpoEmailByBranch = (branch) => {
 const getTpoEmail = (tpoName) => {
   const cache = getCache();
   if (!cache || !cache.contacts) return '';
-  const row = cache.contacts.find(r => {
-    const rd = r.toObject();
-    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const name = (rd[getH('tponame')] || rd[getH('name')] || '').toLowerCase();
-    return name.includes((tpoName || '').toLowerCase());
-  });
-  if (row) {
+  const searchName = (tpoName || '').toLowerCase().trim();
+  
+  for (let row of cache.contacts) {
     const rd = row.toObject();
     const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    return rd[getH('mailid')] || rd[getH('email')] || '';
+    
+    const nameKey = getH('tponame') || getH('name');
+    const mailKey = getH('mailid') || getH('email');
+    
+    const name = (nameKey && rd[nameKey] ? rd[nameKey].toString() : '').toLowerCase().trim();
+    if (name && (name.includes(searchName) || searchName.includes(name))) {
+      return mailKey && rd[mailKey] ? rd[mailKey].toString().trim() : '';
+    }
   }
   return '';
 };
@@ -77,19 +84,23 @@ const getTpoEmail = (tpoName) => {
 const getBranchManagerEmail = (branch) => {
   const cache = getCache();
   if (!cache || !cache.users) return '';
-  // Force removal of "branch" and extra spaces so "Calicut Branch" matches "Calicut" perfectly
   const searchBranch = (branch || '').toLowerCase().replace('branch', '').trim();
   
   for (let row of cache.users) {
     const rd = row.toObject();
     const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const role = (rd[getH('role')] || '').toLowerCase().trim();
-    const br1 = (rd[getH('sittingbranch')] || '').toLowerCase().trim();
-    const br2 = (rd[getH('assignedbranches')] || '').toLowerCase().trim();
     
-    // Check if role is Manager AND sitting/assigned branch matches
-    if (role.includes('manager') && (br1.includes(searchBranch) || br2.includes(searchBranch))) {
-      return rd[getH('mailid')] || rd[getH('email')] || '';
+    const roleKey = getH('role');
+    const br1Key = getH('sittingbranch');
+    const br2Key = getH('assignedbranches');
+    const mailKey = getH('mailid') || getH('email');
+    
+    const role = (roleKey && rd[roleKey] ? rd[roleKey].toString() : '').toLowerCase().trim();
+    const br1 = (br1Key && rd[br1Key] ? rd[br1Key].toString() : '').toLowerCase().trim();
+    const br2 = (br2Key && rd[br2Key] ? rd[br2Key].toString() : '').toLowerCase().trim();
+    
+    if (role.includes('manager') && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
+      return mailKey && rd[mailKey] ? rd[mailKey].toString().trim() : '';
     }
   }
   return '';
@@ -101,7 +112,8 @@ const getAllTpoEmails = () => {
   return cache.contacts.map(r => {
     const rd = r.toObject();
     const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    return rd[getH('mailid')] || rd[getH('email')] || '';
+    const mailKey = getH('mailid') || getH('email');
+    return mailKey && rd[mailKey] ? rd[mailKey].toString().trim() : '';
   }).filter(Boolean);
 };
 
@@ -111,12 +123,14 @@ const getAllBranchManagerEmails = () => {
   return cache.users.filter(r => {
     const rd = r.toObject();
     const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const role = (rd[getH('role')] || '').toLowerCase().trim();
+    const roleKey = getH('role');
+    const role = (roleKey && rd[roleKey] ? rd[roleKey].toString() : '').toLowerCase().trim();
     return role.includes('manager');
   }).map(r => {
     const rd = r.toObject();
     const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    return rd[getH('mailid')] || rd[getH('email')] || '';
+    const mailKey = getH('mailid') || getH('email');
+    return mailKey && rd[mailKey] ? rd[mailKey].toString().trim() : '';
   }).filter(Boolean);
 };
 
@@ -126,13 +140,18 @@ const getSuperAdminEmails = () => {
   return cache.users.filter(r => {
     const rd = r.toObject();
     const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const role = (rd[getH('role')] || '').toLowerCase().trim();
-    const access = (rd[getH('access')] || '').toLowerCase().trim();
+    const roleKey = getH('role');
+    const accessKey = getH('access');
+    
+    const role = (roleKey && rd[roleKey] ? rd[roleKey].toString() : '').toLowerCase().trim();
+    const access = (accessKey && rd[accessKey] ? rd[accessKey].toString() : '').toLowerCase().trim();
+    
     return access.includes('admin') || role.includes('general manager') || role.includes('technical head') || role.includes('zonal');
   }).map(r => {
     const rd = r.toObject();
     const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    return rd[getH('mailid')] || rd[getH('email')] || '';
+    const mailKey = getH('mailid') || getH('email');
+    return mailKey && rd[mailKey] ? rd[mailKey].toString().trim() : '';
   }).filter(Boolean);
 };
 
@@ -1040,7 +1059,7 @@ exports.getEvents = (req, res) => {
   res.json({ success: true, events: allEvents.filter(e => e.date && e.title) });
 };
 
-// 🚨 FIXED EMAIL ROUTING FOR ALL EVENT TYPES
+// 🚨 FINAL FIXED EVENT ROUTER: 
 exports.addEvent = async (req, res) => {
   const { date, tpo, branch, type, title, description, time, location } = req.body;
   try {
@@ -1057,14 +1076,15 @@ exports.addEvent = async (req, res) => {
     const watermark = "https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
     const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
     
-    // 🚨 REGEX FIX: This forces all types of line-breaks into HTML <br/> so paragraphs format perfectly!
-    const formattedDesc = (description || 'N/A').replace(/(?:\r\n|\r|\n)/g, '<br/>');
+    // 🚨 INDESTRUCTIBLE REGEX: Captures all hidden line breaks (Windows & Mac) and replaces with HTML
+    const formattedDesc = String(description || 'N/A').replace(/(?:\r\n|\r|\n)/g, '<br/>');
     
     if (evType.includes('placement drive')) {
       const allTpos = getAllTpoEmails();
       const allBMs = getAllBranchManagerEmails();
+      const superAdmins = getSuperAdminEmails();
       
-      const toEmail = senderEmail; // Primary TO field for broadcast
+      const toEmail = senderEmail; // Primary to sender (broadcast style)
       const ccList = 'ajith@ipcsglobal.com,rakesh@ipcsglobal.com,gifty@ipcsglobal.com';
       const bccList = [...new Set([...allBMs, ...allTpos])].filter(Boolean).join(',');
 
@@ -1092,7 +1112,7 @@ exports.addEvent = async (req, res) => {
                   <tr><td style="padding: 6px 0; color: #64748b;">Time:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${time || 'TBD'}</td></tr>
                   <tr><td style="padding: 6px 0; color: #64748b;">Location / Mode:</td><td style="padding: 6px 0; color: #0284c7; font-weight: bold;">${location || 'Venue / Online'}</td></tr>
                   <tr><td style="padding: 6px 0; color: #64748b;">Eligible Branch:</td><td style="padding: 6px 0; color: #0f1523;">${branch || 'All Branches'}</td></tr>
-                  <tr><td style="padding: 6px 0; color: #64748b; vertical-align: top;">Description:</td><td style="padding: 6px 0; color: #334155;">${formattedDesc}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b; vertical-align: top;">Description:</td><td style="padding: 6px 0; color: #334155; white-space: pre-line;">${formattedDesc}</td></tr>
                 </table>
               </div>
 
@@ -1139,16 +1159,15 @@ exports.addEvent = async (req, res) => {
       }, { name: 'All Branches', email: 'Broadcast', type: 'Event Notification' });
 
     } else if (evType.includes('talentino')) {
-      // 🚨 FLOWERPROOF LOOKUP: This bypasses formatting spaces perfectly
       const tpoMail = getTpoEmail(tpo);
       const bmMail = getBranchManagerEmail(branch);
-      
-      console.log(`[ROUTING DEBUG] Talentino generated at ${branch}. Branch Manager Email Found: ${bmMail || 'NONE'}`);
 
-      // 🚨 STRICT ASSIGNMENT RULES AS REQUESTED
-      const toEmail = bmMail || senderEmail; // Primary receiver MUST be Branch Manager
-      const ccList = [tpoMail, 'gifty@ipcsglobal.com'].filter(e => e && e !== toEmail).join(','); // CC strictly to TPO & Gifty
-      
+      // 🚨 SPECIFIC ASSIGNMENT: TO -> BM | CC -> TPO & Gifty
+      const toEmail = bmMail || senderEmail; // Primary TO must be BM. If empty due to DB issue, defaults to self to avoid crash.
+      const ccList = [tpoMail, 'gifty@ipcsglobal.com'].filter(e => e && e !== toEmail).join(',');
+
+      console.log(`[ROUTING DEBUG] Talentino at ${branch} -> TO: ${toEmail} | CC: ${ccList}`);
+
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
           <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #a855f7;">
@@ -1172,7 +1191,7 @@ exports.addEvent = async (req, res) => {
                   <tr><td style="padding: 6px 0; color: #64748b;">Time:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${time || 'TBD'}</td></tr>
                   <tr><td style="padding: 6px 0; color: #64748b;">Location / Mode:</td><td style="padding: 6px 0; color: #0284c7; font-weight: bold;">${location || branch || 'Branch Venue'}</td></tr>
                   <tr><td style="padding: 6px 0; color: #64748b;">Conducted By:</td><td style="padding: 6px 0; color: #0f1523;">${tpo}</td></tr>
-                  <tr><td style="padding: 6px 0; color: #64748b; vertical-align: top;">Description:</td><td style="padding: 6px 0; color: #334155;">${formattedDesc}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b; vertical-align: top;">Description:</td><td style="padding: 6px 0; color: #334155; white-space: pre-line;">${formattedDesc}</td></tr>
                 </table>
               </div>
 
