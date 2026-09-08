@@ -1020,15 +1020,15 @@ exports.addEvent = async (req, res) => {
     const watermark = "https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
     const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
     
-    // 🚨 FIXED: Convert all physical Enters/Newlines into HTML <br/> tags!
-    const formattedDesc = (description || 'N/A').replace(/\n/g, '<br/>');
+    // 🚨 FIXED: Catches ALL forms of hidden line breaks (Windows & Mac) and makes them HTML breaks
+    const formattedDesc = (description || 'N/A').replace(/(?:\r\n|\r|\n)/g, '<br/>');
     
     if (evType.includes('placement drive')) {
       const allTpos = getAllTpoEmails();
       const allBMs = getAllBranchManagerEmails();
       const superAdmins = getSuperAdminEmails();
       
-      const bccList = [...new Set(allBMs)].filter(Boolean).join(',');
+      const bccList = [...new Set([...allBMs, 'gifty@ipcsglobal.com'])].filter(Boolean).join(',');
       const ccList = [...new Set([...superAdmins, ...allTpos])].filter(Boolean).join(',');
 
       const html = `
@@ -1104,15 +1104,15 @@ exports.addEvent = async (req, res) => {
     } else if (evType.includes('talentino')) {
       const tpoMail = getTpoEmail(tpo);
       const bmMail = getBranchManagerEmail(branch);
-      
-      // 🚨 DEBUG LOG: This will print in Render so you can verify it found the manager!
-      console.log(`[MAIL ROUTING] Talentino at ${branch}. TPO: ${tpoMail}, BM: ${bmMail}`);
 
-      // 🚨 FIXED: We place ALL emails directly into the "To:" array. 
-      // This bypasses the Apps Script CC/BCC drop bug entirely!
-      const sendTo = [...new Set([tpoMail, bmMail, 'gifty@ipcsglobal.com'])].filter(Boolean).join(',');
-      
-      const html = `
+      // 🚨 FIXED: Explicitly separating the TO, CC, and BCC fields so Apps Script handles them cleanly!
+      const mailOptions = {
+        from: `"IPCS Talentino" <${senderEmail}>`,
+        to: tpoMail || bmMail || senderEmail, 
+        cc: bmMail && bmMail !== tpoMail ? bmMail : '', 
+        bcc: 'gifty@ipcsglobal.com',
+        subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
+        html: `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
           <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #a855f7;">
             <div style="margin-bottom: 12px;">
@@ -1168,14 +1168,12 @@ exports.addEvent = async (req, res) => {
             </div>
           </div>
         </div>
-      `;
+      `
+      };
 
-      await sendMailAndLog({
-        from: `"IPCS Talentino" <${senderEmail}>`,
-        to: sendTo, // 🚨 Now pushes TPO, BM, and Gifty into the main TO line
-        subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
-        html: html
-      }, { name: tpo, email: sendTo, type: 'Event Notification' });
+      console.log(`[MAIL LOG] Sending Talentino Notification. TO: ${mailOptions.to} | CC: ${mailOptions.cc} | BCC: ${mailOptions.bcc}`);
+
+      await sendMailAndLog(mailOptions, { name: tpo, email: mailOptions.to, type: 'Event Notification' });
     }
 
     refreshCache(); 
