@@ -73,6 +73,22 @@ export default function TechnicalExams() {
       }
       setCourseDict(cDict);
 
+      // 🚨 FIXED: MULTI-DOMAIN RTH LOGIC
+      let allowedDomains = Object.keys(cDict);
+      if (!isSuperAdmin && tpoData?.assignedCourse && !['All Courses', 'All'].includes(tpoData.assignedCourse)) {
+        const assignedArray = tpoData.assignedCourse.split(',').map(c => c.trim().toLowerCase());
+        allowedDomains = Object.keys(cDict).filter(domain => 
+          assignedArray.some(assigned => domain.toLowerCase().includes(assigned) || assigned.includes(domain.toLowerCase()))
+        );
+      }
+
+      if (allowedDomains.length === 1) {
+        setSelectedMainCourse(allowedDomains[0]);
+        setViewLevel('sub_courses'); 
+      } else {
+        setViewLevel('main_courses');
+      }
+
     } catch (err) {
       console.error("Failed to load exam data", err);
     } finally {
@@ -84,7 +100,14 @@ export default function TechnicalExams() {
     fetchData();
   }, []);
 
-  const MAIN_COURSES = Object.keys(courseDict);
+  // 🚨 FIXED: FILTER MAIN COURSES FOR MULTI-DOMAIN RTHs
+  let MAIN_COURSES = Object.keys(courseDict);
+  if (!isSuperAdmin && tpoData?.assignedCourse && !['All Courses', 'All'].includes(tpoData.assignedCourse)) {
+    const assignedArray = tpoData.assignedCourse.split(',').map(c => c.trim().toLowerCase());
+    MAIN_COURSES = MAIN_COURSES.filter(domain => 
+      assignedArray.some(assigned => domain.toLowerCase().includes(assigned) || assigned.includes(domain.toLowerCase()))
+    );
+  }
 
   // 🚨 STRICT FUZZY MATCHER: Guarantees the right sub-course array is pulled
   const getSubCourses = (mainCourse) => {
@@ -186,7 +209,7 @@ export default function TechnicalExams() {
           </button>
         </div>
 
-        {viewLevel === 'main_courses' && isSuperAdmin && (
+        {viewLevel === 'main_courses' && (
           <>
             <div style={{ marginBottom: '30px' }}>
               <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -219,7 +242,7 @@ export default function TechnicalExams() {
         {viewLevel === 'sub_courses' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '15px', flexWrap: 'wrap' }}>
-              {isSuperAdmin && (
+              {(isSuperAdmin || MAIN_COURSES.length > 1) && (
                 <button 
                   onClick={() => { setViewLevel('main_courses'); setSelectedMainCourse(null); }} 
                   style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}
