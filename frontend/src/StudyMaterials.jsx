@@ -10,7 +10,6 @@ import { API_BASE } from './apiConfig';
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6'];
 
-// 🚨 OFFICIAL IPCS COURSES - FALLBACK IF DATABASE IS EMPTY
 const DEFAULT_COURSES = {
   'BMS AND CCTV': ['Diploma In Building Management System', 'Certified BMS Engineer', 'CCTV & Security Systems', 'CCTV Training'],
   'Industrial Automation': ['Automation System Engineer', 'Professional Diploma in Industrial Automation', 'Advanced Automation System Professional', 'Advanced PLC Program Professional', 'DCS Engineering & Maintenance', 'Electrical Control & Panel Designing', 'Industrial Networking', 'Diploma in Marine Automation Systems', 'VFD Installation Professional', 'Customize programming PLC SCADA'],
@@ -59,7 +58,6 @@ export default function StudyMaterials() {
         setMaterials(matRes.data.materials || []);
       }
       
-      // 🚨 MERGE LOGIC: Uses default courses, but updates them if the backend has valid arrays!
       let cDict = { ...DEFAULT_COURSES };
       if (courseRes.data.success && Object.keys(courseRes.data.courses || {}).length > 0) {
         for (const key in courseRes.data.courses) {
@@ -69,16 +67,23 @@ export default function StudyMaterials() {
         }
       }
       setCourseDict(cDict);
-      
-      if (!isSuperAdmin && tpoData?.assignedCourse && tpoData.assignedCourse !== 'All Courses' && tpoData.assignedCourse !== 'All') {
-        const myCourse = tpoData.assignedCourse.toLowerCase().trim();
-        const mainDomain = Object.keys(cDict).find(k => k.toLowerCase().includes(myCourse) || myCourse.includes(k.toLowerCase())) || tpoData.assignedCourse;
-        
-        setSelectedMainCourse(mainDomain);
+
+      // 🚨 FIXED: Handle comma-separated multiple courses for RTHs
+      let allowedDomains = Object.keys(cDict);
+      if (!isSuperAdmin && tpoData?.assignedCourse && !['All Courses', 'All'].includes(tpoData.assignedCourse)) {
+        const assignedArray = tpoData.assignedCourse.split(',').map(c => c.trim().toLowerCase());
+        allowedDomains = Object.keys(cDict).filter(domain => 
+          assignedArray.some(assigned => domain.toLowerCase().includes(assigned) || assigned.includes(domain.toLowerCase()))
+        );
+      }
+
+      if (allowedDomains.length === 1) {
+        setSelectedMainCourse(allowedDomains[0]);
         setViewLevel('sub_courses'); 
       } else {
         setViewLevel('main_courses');
       }
+
     } catch (err) {
       console.error("Failed to load data", err);
     } finally {
@@ -90,9 +95,15 @@ export default function StudyMaterials() {
     fetchData();
   }, []);
 
-  const MAIN_COURSES = Object.keys(courseDict);
+  // 🚨 Filter domains dynamically based on role
+  let MAIN_COURSES = Object.keys(courseDict);
+  if (!isSuperAdmin && tpoData?.assignedCourse && !['All Courses', 'All'].includes(tpoData.assignedCourse)) {
+    const assignedArray = tpoData.assignedCourse.split(',').map(c => c.trim().toLowerCase());
+    MAIN_COURSES = MAIN_COURSES.filter(domain => 
+      assignedArray.some(assigned => domain.toLowerCase().includes(assigned) || assigned.includes(domain.toLowerCase()))
+    );
+  }
 
-  // 🚨 Guaranteed to load an array of subcourses
   const subCoursesList = courseDict[selectedMainCourse] || [selectedMainCourse] || [];
 
   const filteredMaterials = materials.filter(m => {
@@ -179,26 +190,38 @@ export default function StudyMaterials() {
               <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <FolderOpen color="var(--accent-primary)" weight="fill" /> Study Materials Management
               </h1>
-              <p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a domain fetched directly from the Courses sheet.</p>
+              <p style={{ color: 'var(--text-muted)', margin: 0 }}>{isSuperAdmin ? 'Select a domain fetched directly from the Courses sheet.' : 'Select one of your assigned domains to manage.'}</p>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px' }}>
-              {MAIN_COURSES.map((course, index) => {
-                const color = TILE_COLORS[index % TILE_COLORS.length];
-                return (
-                  <div key={course} onClick={() => { setSelectedMainCourse(course); setViewLevel('sub_courses'); }} style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-                    <h2 style={{ color: '#ffffff', fontSize: '1.6rem', margin: '0 0 15px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>{course}</h2>
-                    <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}><BookOpenText size={20} color="#ffffff" weight="bold" /><span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: 'bold' }}>View Programs</span></div>
-                  </div>
-                );
-              })}
-            </div>
+            
+            {MAIN_COURSES.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
+                No domains assigned. Please contact the administrator.
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px' }}>
+                {MAIN_COURSES.map((course, index) => {
+                  const color = TILE_COLORS[index % TILE_COLORS.length];
+                  return (
+                    <div key={course} onClick={() => { setSelectedMainCourse(course); setViewLevel('sub_courses'); }} style={{ backgroundColor: color, borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+                      <h2 style={{ color: '#ffffff', fontSize: '1.6rem', margin: '0 0 15px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>{course}</h2>
+                      <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}><BookOpenText size={20} color="#ffffff" weight="bold" /><span style={{ color: '#ffffff', fontSize: '0.9rem', fontWeight: 'bold' }}>View Programs</span></div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </>
         )}
 
         {viewLevel === 'sub_courses' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '15px', flexWrap: 'wrap' }}>
-              {isSuperAdmin && <button onClick={() => { setViewLevel('main_courses'); setSelectedMainCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}><CaretLeft weight="bold" size={18} /> Back to Domains</button>}
+              {/* 🚨 ALLOW RTH WITH MULTIPLE DOMAINS TO GO BACK */}
+              {MAIN_COURSES.length > 1 && (
+                <button onClick={() => { setViewLevel('main_courses'); setSelectedMainCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <CaretLeft weight="bold" size={18} /> Back to Domains
+                </button>
+              )}
               <div><h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedMainCourse} Programs</h1><p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a specific program to view and manage its materials.</p></div>
             </div>
 
@@ -217,7 +240,9 @@ export default function StudyMaterials() {
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                {isSuperAdmin && <button onClick={() => { setViewLevel('sub_courses'); setSelectedSubCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}><CaretLeft weight="bold" size={18} /> Programs</button>}
+                <button onClick={() => { setViewLevel('sub_courses'); setSelectedSubCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                  <CaretLeft weight="bold" size={18} /> Programs
+                </button>
                 <div><h1 style={{ fontSize: '1.6rem', margin: 0 }}>{selectedSubCourse} Materials</h1><p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>Upload presentations, PDFs, and notes for student access.</p></div>
               </div>
               {canManage && <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}><Plus size={20} weight="bold" /> Upload Material</button>}
