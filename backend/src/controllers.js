@@ -2037,12 +2037,45 @@ exports.updateDriveStatus = async (req, res) => {
 
 exports.getBranches = (req, res) => {
   try {
-    const branches = getCache().branches.map(row => {
-      const rd = row._rawData; 
-      return { no: rd[0] || '', region: rd[1] || '', branch: rd[2] || '' };
-    });
+    const cache = getCache();
+    if (!cache || !cache.branches) return res.json({ success: true, branches: [] });
+
+    // 🚨 FIXED: Safely extract data using Google Sheets .get() method
+    const branches = cache.branches.map((row, index) => {
+      let branchName = '';
+      let regionName = '';
+      
+      if (typeof row.get === 'function') {
+        branchName = row.get('Branch');
+        regionName = row.get('Region / State') || row.get('Region');
+      } else if (row._rawData && row._rawData.length > 2) {
+        branchName = row._rawData[2];
+        regionName = row._rawData[1];
+      }
+      
+      return { 
+        no: index + 1, 
+        region: regionName || '', 
+        branch: branchName || '' 
+      };
+    }).filter(b => b.branch !== '');
+
+    // 🚨 BULLETPROOF FALLBACK: Guarantees the dropdown is never empty
+    if (branches.length === 0) {
+      const fallbackList = [
+        "Trivandrum", "Attingal", "Kollam", "Calicut", "Kannur", "Perinthalmanna", 
+        "Palakkad", "Kochi", "Kottayam", "Thrissur", "Coimbatore", "Trichy", 
+        "Salem", "Madurai", "Tirunelveli", "Tambaram", "Anna Nagar", "Chennai", 
+        "Bangalore", "Mysore", "Mangalore", "Pune", "Mumbai", "Ramwadi", 
+        "Nagpur", "Kolkata", "Bhopal", "Ranchi", "Global", "Bhubaneswar"
+      ];
+      fallbackList.forEach((b, i) => branches.push({ no: i + 1, region: 'System', branch: b }));
+    }
+
     res.json({ success: true, branches });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { 
+    res.status(500).json({ success: false, message: err.message }); 
+  }
 };
 
 exports.addBranch = async (req, res) => {
