@@ -43,7 +43,7 @@ async function refreshCache() {
   try {
     await doc.loadInfo();
     
-    // 🚨 INDESTRUCTIBLE FUZZY MATCHER: Ignores spaces, underscores, hyphens, and casing
+    // 🚨 INDESTRUCTIBLE FUZZY MATCHER
     const getSheetFuzzy = (keyword) => {
       const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
       return doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanKeyword));
@@ -55,8 +55,7 @@ async function refreshCache() {
       getSheetFuzzy("StudyMaterials"), getSheetFuzzy("TechQuestions"), getSheetFuzzy("TechResults"),
       getSheetFuzzy("AptitudeQuestions"), getSheetFuzzy("AptitudeResults"), getSheetFuzzy("TalentinoQuestions"), getSheetFuzzy("TalentinoResults"),
       getSheetFuzzy("Courses"), getSheetFuzzy("DriveRegistration"), getSheetFuzzy("Contact"), getSheetFuzzy("User"), getSheetFuzzy("Branches"), getSheetFuzzy("Mail"),
-      getSheetFuzzy("trainer"), // Matches Trainer/TL_Log
-      getSheetFuzzy("security") // Matches Security_Logs
+      getSheetFuzzy("trainer"), getSheetFuzzy("security")
     ];
 
     const fetchedData = [];
@@ -147,35 +146,82 @@ const getFuzzyHeader = (headers, target) => {
   return headers.find(h => h.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanTarget) || target;
 };
 
+// =========================================================
+// 🚨 BULLETPROOF FUZZY EMAIL LOOKUP FUNCTIONS
+// =========================================================
 const getTpoEmail = (tpoName) => {
-  if (!globalCache) return '';
+  if (!globalCache || !globalCache.contacts) return '';
+  const searchName = (tpoName || '').toLowerCase().trim();
   const row = globalCache.contacts.find(r => {
-    const name = r.get('TPO Name') || r.get('Name') || '';
-    return name.toLowerCase().includes((tpoName || '').toLowerCase());
+    const rd = r.toObject();
+    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const name = (rd[getH('tponame')] || rd[getH('name')] || '').toLowerCase();
+    return name && (name.includes(searchName) || searchName.includes(name));
   });
-  return row ? row.get('Mail ID') : '';
+  if (row) {
+    const rd = row.toObject();
+    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    return rd[getH('mailid')] || rd[getH('email')] || '';
+  }
+  return '';
 };
 
 const getBranchManagerEmail = (branch) => {
-  if (!globalCache) return '';
+  if (!globalCache || !globalCache.users) return '';
+  const searchBranch = (branch || '').toLowerCase().replace('branch', '').trim();
+  
   const row = globalCache.users.find(r => {
-    const role = (r.get('Role') || '').toLowerCase();
-    const br = (r.get('Sitting Branch') || r.get('Assigned Branches') || '').toLowerCase();
-    return role.includes('manager') && br.includes((branch || '').toLowerCase());
+    const rd = r.toObject();
+    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const role = (rd[getH('role')] || '').toLowerCase();
+    const br = (rd[getH('sittingbranch')] || rd[getH('assignedbranches')] || '').toLowerCase();
+    return role.includes('manager') && br.includes(searchBranch);
   });
-  return row ? row.get('Mail ID') : '';
+  
+  if (row) {
+    const rd = row.toObject();
+    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    return rd[getH('mailid')] || rd[getH('email')] || '';
+  }
+  return '';
 };
 
 const getAllTpoEmails = () => {
-  if (!globalCache) return [];
-  return globalCache.contacts.map(r => r.get('Mail ID')).filter(Boolean);
+  if (!globalCache || !globalCache.contacts) return [];
+  return globalCache.contacts.map(r => {
+    const rd = r.toObject();
+    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    return rd[getH('mailid')] || rd[getH('email')] || '';
+  }).filter(Boolean);
 };
 
 const getAllBranchManagerEmails = () => {
-  if (!globalCache) return [];
-  return globalCache.users
-    .filter(r => (r.get('Role') || '').toLowerCase().includes('branch manager'))
-    .map(r => r.get('Mail ID')).filter(Boolean);
+  if (!globalCache || !globalCache.users) return [];
+  return globalCache.users.filter(r => {
+    const rd = r.toObject();
+    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const role = (rd[getH('role')] || '').toLowerCase();
+    return role.includes('manager');
+  }).map(r => {
+    const rd = r.toObject();
+    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    return rd[getH('mailid')] || rd[getH('email')] || '';
+  }).filter(Boolean);
+};
+
+const getSuperAdminEmails = () => {
+  if (!globalCache || !globalCache.users) return [];
+  return globalCache.users.filter(r => {
+    const rd = r.toObject();
+    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const role = (rd[getH('role')] || '').toLowerCase();
+    const access = (rd[getH('access')] || '').toLowerCase();
+    return access.includes('admin') || role.includes('general manager') || role.includes('technical head') || role.includes('zonal');
+  }).map(r => {
+    const rd = r.toObject();
+    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    return rd[getH('mailid')] || rd[getH('email')] || '';
+  }).filter(Boolean);
 };
 
 async function logMailToSheet(receiverName, receiverMail, mailType, subject, status) {
@@ -196,7 +242,6 @@ async function logMailToSheet(receiverName, receiverMail, mailType, subject, sta
 
 const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, family: 4, auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }});
 
-// 🚨 FIXED: Now uses Nodemailer by default which flawlessly supports CC and BCC!
 async function sendIPCSMail(mailOptions, logDetails) {
   try {
     if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
@@ -216,7 +261,6 @@ async function sendIPCSMail(mailOptions, logDetails) {
       const res = await axios.post(emailWebAppUrl, payload);
       if (!res.data.success) throw new Error(res.data.error || "Apps Script returned false");
     } else {
-      // ✅ USES NODE MAILER - Fully supports cc: and bcc: arrays natively
       await transporter.sendMail(mailOptions);
     }
     
@@ -242,5 +286,5 @@ async function uploadToDrive(file, folderId) {
 module.exports = { 
   doc, getCache, refreshCache, hasAccess, getFuzzyHeader, 
   sendIPCSMail, uploadToDrive,
-  getTpoEmail, getBranchManagerEmail, getAllTpoEmails, getAllBranchManagerEmails 
+  getTpoEmail, getBranchManagerEmail, getAllTpoEmails, getAllBranchManagerEmails, getSuperAdminEmails 
 };
