@@ -81,6 +81,7 @@ app.post('/api/tpo/profile/update-photo', upload.single('photo'), controllers.up
 app.post('/api/tpo/profile/update-password', controllers.updatePassword);
 app.get('/api/tpo/drives', controllers.getDrives);
 app.post('/api/tpo/drives/update', controllers.updateDriveStatus);
+app.get('/api/tpo/trigger-resumes', controllers.triggerDailyCron);
 
 // ---------------------------------------------------------
 // ADMIN ROUTES

@@ -34,7 +34,28 @@ const FOLDER_CLIENT_LOGOS = '11M8jGi1ISWP2mOpWRZncHhThHLoc7cDi';
 const FOLDER_MOU_CERTIFICATES = '1Hu1zPs56nFXyJPSl7PVfs-oFW4QrKqiD';
 
 // =========================================================
-// 🚨 EMAIL HELPERS & LOGGING SYSTEM (Indestructible Version)
+// 🚨 BULLETPROOF DATA EXTRACTOR (Ignores Google Sheets Bugs)
+// =========================================================
+const getValByHeader = (row, headerOptions) => {
+  if (!row || !row._worksheet || !row._worksheet.headerValues) return '';
+  const headers = row._worksheet.headerValues.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const targets = Array.isArray(headerOptions) ? headerOptions : [headerOptions];
+  
+  for (let target of targets) {
+    const cleanTarget = target.toLowerCase().replace(/[^a-z0-9]/g, '');
+    let index = headers.indexOf(cleanTarget);
+    if (index === -1) index = headers.findIndex(h => h.includes(cleanTarget));
+    
+    // Reads from the raw array, skipping the broken google-spreadsheet row.get() bug
+    if (index !== -1 && index < row._rawData.length && row._rawData[index] !== undefined && row._rawData[index] !== null) {
+      return row._rawData[index].toString().trim();
+    }
+  }
+  return '';
+};
+
+// =========================================================
+// 🚨 EMAIL HELPERS & LOGGING SYSTEM
 // =========================================================
 const getTpoEmailByBranch = (branch) => {
   const cache = getCache();
@@ -42,20 +63,12 @@ const getTpoEmailByBranch = (branch) => {
   const searchBranch = (branch || '').toLowerCase().trim();
   
   for (let row of cache.contacts) {
-    const h = row._worksheet.headerValues;
-    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    
-    const assignedH = getH('assignedbranches');
-    const sittingH = getH('sittingbranch');
-    const mailH = getH('mailid') || getH('email');
-    
-    const assigned = assignedH && row.get(assignedH) ? row.get(assignedH).toString().toLowerCase() : '';
-    const sitting = sittingH && row.get(sittingH) ? row.get(sittingH).toString().toLowerCase() : '';
+    const assigned = getValByHeader(row, ['assignedbranches']).toLowerCase();
+    const sitting = getValByHeader(row, ['sittingbranch']).toLowerCase();
     
     if (assigned.includes('all') || sitting.includes('all')) continue; 
-    
     if (assigned.includes(searchBranch) || searchBranch.includes(assigned) || sitting.includes(searchBranch)) {
-      return mailH && row.get(mailH) ? row.get(mailH).toString().trim() : '';
+      return getValByHeader(row, ['mailid', 'email']);
     }
   }
   return '';
@@ -67,15 +80,9 @@ const getTpoEmail = (tpoName) => {
   const searchName = (tpoName || '').toLowerCase().trim();
   
   for (let row of cache.contacts) {
-    const h = row._worksheet.headerValues;
-    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    
-    const nameH = getH('tponame') || getH('name');
-    const mailH = getH('mailid') || getH('email');
-    
-    const name = nameH && row.get(nameH) ? row.get(nameH).toString().toLowerCase().trim() : '';
+    const name = getValByHeader(row, ['tponame', 'name']).toLowerCase();
     if (name && (name.includes(searchName) || searchName.includes(name))) {
-      return mailH && row.get(mailH) ? row.get(mailH).toString().trim() : '';
+      return getValByHeader(row, ['mailid', 'email']);
     }
   }
   return '';
@@ -84,25 +91,15 @@ const getTpoEmail = (tpoName) => {
 const getBranchManagerEmail = (branch) => {
   const cache = getCache();
   if (!cache || !cache.users) return '';
-  // Force removal of "branch" and extra spaces so "Calicut Branch" matches "Calicut" perfectly
   const searchBranch = (branch || '').toLowerCase().replace('branch', '').trim();
   
   for (let row of cache.users) {
-    const h = row._worksheet.headerValues;
-    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const role = getValByHeader(row, ['role']).toLowerCase();
+    const br1 = getValByHeader(row, ['sittingbranch']).toLowerCase();
+    const br2 = getValByHeader(row, ['assignedbranches']).toLowerCase();
     
-    const roleH = getH('role');
-    const br1H = getH('sittingbranch');
-    const br2H = getH('assignedbranches');
-    const mailH = getH('mailid') || getH('email');
-    
-    const role = roleH && row.get(roleH) ? row.get(roleH).toString().toLowerCase().trim() : '';
-    const br1 = br1H && row.get(br1H) ? row.get(br1H).toString().toLowerCase().trim() : '';
-    const br2 = br2H && row.get(br2H) ? row.get(br2H).toString().toLowerCase().trim() : '';
-    
-    // Check if role is Manager AND sitting/assigned branch matches
     if (role.includes('manager') && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
-      return mailH && row.get(mailH) ? row.get(mailH).toString().trim() : '';
+      return getValByHeader(row, ['mailid', 'email']);
     }
   }
   return '';
@@ -111,51 +108,25 @@ const getBranchManagerEmail = (branch) => {
 const getAllTpoEmails = () => {
   const cache = getCache();
   if (!cache || !cache.contacts) return [];
-  return cache.contacts.map(row => {
-    const h = row._worksheet.headerValues;
-    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const mailH = getH('mailid') || getH('email');
-    return mailH && row.get(mailH) ? row.get(mailH).toString().trim() : '';
-  }).filter(Boolean);
+  return cache.contacts.map(r => getValByHeader(r, ['mailid', 'email'])).filter(Boolean);
 };
 
 const getAllBranchManagerEmails = () => {
   const cache = getCache();
   if (!cache || !cache.users) return [];
-  return cache.users.filter(row => {
-    const h = row._worksheet.headerValues;
-    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const roleH = getH('role');
-    const role = roleH && row.get(roleH) ? row.get(roleH).toString().toLowerCase().trim() : '';
-    return role.includes('manager');
-  }).map(row => {
-    const h = row._worksheet.headerValues;
-    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const mailH = getH('mailid') || getH('email');
-    return mailH && row.get(mailH) ? row.get(mailH).toString().trim() : '';
-  }).filter(Boolean);
+  return cache.users.filter(r => {
+    return getValByHeader(r, ['role']).toLowerCase().includes('manager');
+  }).map(r => getValByHeader(r, ['mailid', 'email'])).filter(Boolean);
 };
 
 const getSuperAdminEmails = () => {
   const cache = getCache();
   if (!cache || !cache.users) return [];
-  return cache.users.filter(row => {
-    const h = row._worksheet.headerValues;
-    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    
-    const roleH = getH('role');
-    const accessH = getH('access');
-    
-    const role = roleH && row.get(roleH) ? row.get(roleH).toString().toLowerCase().trim() : '';
-    const access = accessH && row.get(accessH) ? row.get(accessH).toString().toLowerCase().trim() : '';
-    
+  return cache.users.filter(r => {
+    const role = getValByHeader(r, ['role']).toLowerCase();
+    const access = getValByHeader(r, ['access']).toLowerCase();
     return access.includes('admin') || role.includes('general manager') || role.includes('technical head') || role.includes('zonal');
-  }).map(row => {
-    const h = row._worksheet.headerValues;
-    const getH = (str) => h.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const mailH = getH('mailid') || getH('email');
-    return mailH && row.get(mailH) ? row.get(mailH).toString().trim() : '';
-  }).filter(Boolean);
+  }).map(r => getValByHeader(r, ['mailid', 'email'])).filter(Boolean);
 };
 
 const logMailToSheet = async (receiverName, receiverMail, mailType, subject, status) => {
@@ -196,16 +167,16 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   
   const cache = getCache();
   const logs = (cache.tpoLogs || []).filter(r => 
-    (r.get('Roll Number') === studentData.roll || r.get('Student Name') === studentData.name)
+    (getValByHeader(r, ['rollnumber', 'roll']) === studentData.roll || getValByHeader(r, ['studentname', 'name']) === studentData.name)
   );
 
   const noAttendJobs = new Set();
   const rejectedJobs = new Set();
 
   logs.forEach(r => {
-    const s = (r.get('Status') || '').toLowerCase();
-    const jId = r.get('Job ID') || 'NO_ID';
-    const cName = r.get('Company Name') || r.get('Company') || 'NO_COMP';
+    const s = getValByHeader(r, ['status']).toLowerCase();
+    const jId = getValByHeader(r, ['jobid']) || 'NO_ID';
+    const cName = getValByHeader(r, ['companyname', 'company']) || 'NO_COMP';
     const uniqueKey = `${jId}_${cName}`;
     
     if (s === 'interview not attended') noAttendJobs.add(uniqueKey);
@@ -391,38 +362,42 @@ exports.login = async (req, res) => {
     let userName = '';
 
     for (let row of cache.contacts) {
-      const rowObj = row.toObject();
-      const cleanKeys = {};
-      for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
-      
-      const sheetMail = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
-      const sheetPass = (cleanKeys['password'] || '').toString().trim();
+      const sheetMail = getValByHeader(row, ['mailid', 'email']).toLowerCase();
+      const sheetPass = getValByHeader(row, ['password']);
       
       if (sheetMail === cleanInput && sheetPass === cleanPass && cleanInput !== '') {
-        foundUser = cleanKeys;
+        foundUser = {
+          sittingbranch: getValByHeader(row, ['sittingbranch']),
+          assignedbranches: getValByHeader(row, ['assignedbranches']),
+          access: getValByHeader(row, ['access']),
+          profilephoto: getValByHeader(row, ['profilephoto', 'photo']),
+          contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno'])
+        };
         role = 'TPO';
         course = 'All Courses';
-        userName = cleanKeys['tponame'] || cleanKeys['name'] || 'TPO User';
+        userName = getValByHeader(row, ['tponame', 'name']) || 'TPO User';
         break;
       }
     }
 
     if (!foundUser) {
       for (let row of cache.users) {
-        const rowObj = row.toObject();
-        const cleanKeys = {};
-        for (let key in rowObj) cleanKeys[key.toLowerCase().replace(/\s/g, '')] = rowObj[key];
-        
-        const sheetUsername = (cleanKeys['username'] || cleanKeys['name'] || '').toString().trim().toLowerCase();
-        const sheetMail = (cleanKeys['mailid'] || cleanKeys['email'] || '').toString().trim().toLowerCase();
-        const sheetLoginId = (cleanKeys['loginid'] || '').toString().trim().toLowerCase();
-        const sheetPass = (cleanKeys['password'] || '').toString().trim();
+        const sheetUsername = getValByHeader(row, ['username', 'name']).toLowerCase();
+        const sheetMail = getValByHeader(row, ['mailid', 'email']).toLowerCase();
+        const sheetLoginId = getValByHeader(row, ['loginid']).toLowerCase();
+        const sheetPass = getValByHeader(row, ['password']);
         
         if ((sheetUsername === cleanInput || sheetMail === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
-          foundUser = cleanKeys;
-          role = (cleanKeys['role'] || 'RTH').toString().trim();
-          course = (cleanKeys['course'] || 'All').toString().trim();
-          userName = cleanKeys['username'] || cleanKeys['name'] || 'User';
+          foundUser = {
+            sittingbranch: getValByHeader(row, ['sittingbranch']),
+            assignedbranches: getValByHeader(row, ['assignedbranches']),
+            access: getValByHeader(row, ['access']),
+            profilephoto: getValByHeader(row, ['profilephoto', 'photo']),
+            contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno'])
+          };
+          role = getValByHeader(row, ['role']) || 'RTH';
+          course = getValByHeader(row, ['course']) || 'All';
+          userName = getValByHeader(row, ['username', 'name']) || 'User';
           break;
         }
       }
@@ -450,11 +425,9 @@ exports.login = async (req, res) => {
       assignedArray = ['all'];
     }
 
-    // 🚨 GENERATE SESSION TOKEN
     const sessionToken = `IPCS_SESS_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     activeSessions.set(cleanInput, sessionToken);
 
-    // 🚨 ASYNCHRONOUS SECURITY LOGGING
     (async () => {
       try {
         const sheet = doc.sheetsByIndex.find(s => s.title.replace(/\s/g, '').toLowerCase().includes('security_logs'));
@@ -466,7 +439,7 @@ exports.login = async (req, res) => {
           await sheet.addRow({
             'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
             'UserName': userName,
-            'Email': foundUser['mailid'] || foundUser['email'] || cleanInput,
+            'Email': cleanInput,
             'Role': role,
             'Branch': foundUser['sittingbranch'] || 'All Branches',
             'IPAddress': cleanIp,
@@ -477,21 +450,19 @@ exports.login = async (req, res) => {
           });
           refreshCache();
         }
-      } catch (logErr) {
-        console.error("Security session logging failed:", logErr.message);
-      }
+      } catch (logErr) {}
     })();
 
     return res.json({ 
       success: true, 
       tpo: { 
         name: userName, 
-        email: foundUser['mailid'] || foundUser['email'] || cleanInput, 
+        email: cleanInput, 
         loginId: cleanInput, 
         sittingBranch: foundUser['sittingbranch'] || 'N/A', 
         assignedBranchesArray: assignedArray, 
-        photo: foundUser['profilephoto'] || foundUser['photo'] || '', 
-        phone: foundUser['contactnumber'] || foundUser['contact'] || foundUser['phoneno'] || 'Not Provided', 
+        photo: foundUser['profilephoto'] || '', 
+        phone: foundUser['contactnumber'] || 'Not Provided', 
         role: role, 
         assignedCourse: course, 
         accessType: accessType,
@@ -509,29 +480,28 @@ exports.getDashboardStats = (req, res) => {
   let studentCount = 0, pendingApps = 0, placedCount = 0, activeVacs = 0;
 
   cache.students.forEach(row => { 
-    const rowData = row.toObject();
-    const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
-    if (hasAccess(rowData[getHeader('branch')], rowData[getHeader('course')], role, assignedBranchesArray, assignedCourse)) studentCount++; 
+    const branch = getValByHeader(row, ['branch']);
+    const course = getValByHeader(row, ['course']);
+    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse)) studentCount++; 
   });
   
   const logsSource = cache.tpoLogs || [];
   const dedupedLogs = {};
   logsSource.forEach(row => {
-    const rowData = row.toObject();
-    const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
-    const roll = rowData[getHeader('roll')] || rowData[getHeader('rollnumber')] || '';
-    const name = rowData[getHeader('name')] || rowData[getHeader('studentname')] || '';
-    const company = rowData[getHeader('company')] || rowData[getHeader('companyname')] || '';
+    const roll = getValByHeader(row, ['roll', 'rollnumber']);
+    const name = getValByHeader(row, ['name', 'studentname']);
+    const company = getValByHeader(row, ['company', 'companyname']);
     const key = `${roll || name}_${company}`.toLowerCase();
-    dedupedLogs[key] = rowData;
+    dedupedLogs[key] = row;
   });
 
-  Object.values(dedupedLogs).forEach(rowData => {
-    const getHeader = (s) => Object.keys(rowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
-    if (hasAccess(rowData[getHeader('branch')], rowData[getHeader('course')], role, assignedBranchesArray, assignedCourse)) {
-      const stat = (rowData[getHeader('status')] || '').toString().toLowerCase();
-      const joinStat = (rowData[getHeader('joiningstatus')] || '').toString().toLowerCase();
-      const placeStat = (rowData[getHeader('placementstatus')] || '').toString().toLowerCase();
+  Object.values(dedupedLogs).forEach(row => {
+    const branch = getValByHeader(row, ['branch']);
+    const course = getValByHeader(row, ['course']);
+    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse)) {
+      const stat = getValByHeader(row, ['status']).toLowerCase();
+      const joinStat = getValByHeader(row, ['joiningstatus']).toLowerCase();
+      const placeStat = getValByHeader(row, ['placementstatus']).toLowerCase();
 
       if (stat === 'applied') pendingApps++;
       if (stat.includes('placed') || stat.includes('got offer') || stat.includes('offer') || joinStat.includes('join') || placeStat.includes('placed')) {
@@ -544,8 +514,8 @@ exports.getDashboardStats = (req, res) => {
   todayStart.setHours(0,0,0,0);
 
   cache.vacancies.forEach(row => {
-    const status = (row.get('Status') || 'Open').toString().toLowerCase();
-    const lastDateStr = row.get('Last Date');
+    const status = getValByHeader(row, ['status']).toLowerCase() || 'open';
+    const lastDateStr = getValByHeader(row, ['lastdate']);
     let isExpired = false;
 
     if (lastDateStr) {
@@ -570,7 +540,7 @@ exports.getDashboardStats = (req, res) => {
     }
   });
 
-  let eventsList = cache.events.slice(-8).map(row => ({ title: row.get('Title') || 'Event', date: row.get('Date') || '', time: row.get('Time') || '', type: row.get('Type') || 'Placement Drive', location: row.get('Location') || '' }));
+  let eventsList = cache.events.slice(-8).map(row => ({ title: getValByHeader(row, ['title']) || 'Event', date: getValByHeader(row, ['date']) || '', time: getValByHeader(row, ['time']) || '', type: getValByHeader(row, ['type', 'event']) || 'Placement Drive', location: getValByHeader(row, ['location', 'eventhappeningin']) || '' }));
   
   res.json({ success: true, stats: { totalStudents: studentCount, pendingApps, placed: placedCount, activeVacancies: activeVacs }, events: eventsList.reverse() });
 };
@@ -581,33 +551,13 @@ exports.getStudents = (req, res) => {
   let students = []; let stats = { total: 0, pending: 0, notResponding: 0, noNeed: 0, branchCounts: {}, courseCounts: {} };
 
   cache.students.forEach(row => {
-    const rowData = row.toObject();
-    const keys = Object.keys(rowData);
-    
-    const getSafeH = (searchStrs) => {
-      for (let s of searchStrs) {
-        const clean = s.toLowerCase().replace(/\s/g, '');
-        const exact = keys.find(k => k.toLowerCase().replace(/\s/g, '') === clean);
-        if (exact) return exact;
-      }
-      for (let s of searchStrs) {
-        const clean = s.toLowerCase().replace(/\s/g, '');
-        const partial = keys.find(k => k.toLowerCase().replace(/\s/g, '').includes(clean));
-        if (partial) return partial;
-      }
-      return null;
-    };
-
-    const branchH = getSafeH(['branch']);
-    const courseH = getSafeH(['course']);
-    const branch = branchH ? rowData[branchH] : 'Unknown';
-    const course = courseH ? rowData[courseH] : 'Unknown';
+    const branch = getValByHeader(row, ['branch']) || 'Unknown';
+    const course = getValByHeader(row, ['course']) || 'Unknown';
 
     if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse)) {
       stats.total++;
       
-      const pStatKey = getSafeH(['placementstat', 'placementstatus']);
-      const pStatus = (pStatKey && rowData[pStatKey] ? rowData[pStatKey] : 'Pending').toString().trim();
+      const pStatus = (getValByHeader(row, ['placementstat', 'placementstatus']) || 'Pending').toString().trim();
       const pLower = pStatus.toLowerCase();
       
       if (pLower.includes('not responding')) stats.notResponding++;
@@ -617,115 +567,70 @@ exports.getStudents = (req, res) => {
       stats.branchCounts[branch] = (stats.branchCounts[branch] || 0) + 1;
       stats.courseCounts[course] = (stats.courseCounts[course] || 0) + 1;
 
-      const phoneH = getSafeH(['phone', 'contact']);
-      const nameH = getSafeH(['name', 'studentname']);
-      const emailH = getSafeH(['mailid', 'email']);
-      const rollH = getSafeH(['ipcsrollnumber', 'rollnumber', 'roll']);
-      const photoH = getSafeH(['profilephoto', 'photo']);
-      const qualH = getSafeH(['qualification', 'qual']);
-      const streamH = getSafeH(['stream']);
-      const resumeH = getSafeH(['resume', 'cv']);
-      const certH = getSafeH(['certificate']);
-      
-      const statusKey = getSafeH(['coursestatus', 'status(currently']);
-      const vacKey = getSafeH(['vacancyopen', 'vaccancyopen']);
-      const studyKey = getSafeH(['studymaterialaccess']);
-      const examKey = getSafeH(['technialexam', 'technicalexam']);
-
       students.push({
         rowIdx: row.rowNumber, 
-        name: nameH ? rowData[nameH] : '', 
-        email: emailH ? rowData[emailH] : '', 
-        phone: phoneH ? rowData[phoneH] : 'N/A', 
-        roll: rollH ? rowData[rollH] : '', 
+        name: getValByHeader(row, ['name', 'studentname']) || '', 
+        email: getValByHeader(row, ['mailid', 'email']) || '', 
+        phone: getValByHeader(row, ['phone', 'contact']) || 'N/A', 
+        roll: getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'roll']) || '', 
         branch: branch, 
         course: course, 
-        photo: photoH ? rowData[photoH] : '', 
-        qual: qualH ? rowData[qualH] : '', 
-        stream: streamH ? rowData[streamH] : '', 
-        status: statusKey && rowData[statusKey] ? rowData[statusKey] : 'N/A', 
-        resume: resumeH ? rowData[resumeH] : '', 
-        certificate: certH ? rowData[certH] : '',
-        vacOpen: vacKey && rowData[vacKey] ? rowData[vacKey] : 'Yes', 
-        studyAccess: studyKey && rowData[studyKey] ? rowData[studyKey] : 'No', 
-        examAccess: examKey && rowData[examKey] ? rowData[examKey] : 'No', 
-        placementStatus: pStatus, 
-        rawData: rowData
+        photo: getValByHeader(row, ['profilephoto', 'photo']) || '', 
+        qual: getValByHeader(row, ['qualification', 'qual']) || '', 
+        stream: getValByHeader(row, ['stream']) || '', 
+        status: getValByHeader(row, ['coursestatus', 'status(currently']) || 'N/A', 
+        resume: getValByHeader(row, ['resume', 'cv']) || '', 
+        certificate: getValByHeader(row, ['certificate']) || '',
+        vacOpen: getValByHeader(row, ['vacancyopen', 'vaccancyopen']) || 'Yes', 
+        studyAccess: getValByHeader(row, ['studymaterialaccess']) || 'No', 
+        examAccess: getValByHeader(row, ['technialexam', 'technicalexam']) || 'No', 
+        placementStatus: pStatus
       });
     }
   });
   res.json({ success: true, students: students.reverse(), stats });
 };
 
+// 🚨 THE FIX: TRIGGER MAIL IF VACANCY CHANGES TO YES
 exports.updateStudent = async (req, res) => {
   const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus, coursePercentage } = req.body;
   try {
     const stuSheet = doc.sheetsByTitle["Data"];
     const rows = await stuSheet.getRows({ offset: rowNumber - 2, limit: 1 });
     if (rows.length > 0) {
-      const headers = stuSheet.headerValues;
+      const headers = stuSheet.headerValues.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
       const updateObj = {};
       
-      const getSafeH = (searchStrs) => {
+      const getRealHeader = (searchStrs) => {
         for (let s of searchStrs) {
           const clean = s.toLowerCase().replace(/\s/g, '');
-          const exact = headers.find(h => h.toLowerCase().replace(/\s/g, '') === clean);
-          if (exact) return exact;
-        }
-        for (let s of searchStrs) {
-          const clean = s.toLowerCase().replace(/\s/g, '');
-          const partial = headers.find(h => h.toLowerCase().replace(/\s/g, '').includes(clean));
-          if (partial) return partial;
+          const index = headers.indexOf(clean);
+          if (index !== -1) return stuSheet.headerValues[index];
         }
         return null;
       };
 
-      const vH = getSafeH(['vacancyopen', 'vaccancyopen']); if(vH) updateObj[vH] = vacOpen;
-      const pH = getSafeH(['placementstatus', 'placementstat', 'placementstatsu']); if(pH) updateObj[pH] = placementStatus;
-      const sH = getSafeH(['studymaterialaccess']); if(sH) updateObj[sH] = studyAccess;
-      const eH = getSafeH(['technicalexam', 'technialexam']); if(eH) updateObj[eH] = examAccess;
-      
-      const cPercH = getSafeH(['coursepercentage']);
-      if (cPercH && coursePercentage !== undefined) {
-        updateObj[cPercH] = coursePercentage;
-      }
+      const getOldVal = (hName) => {
+        const idx = stuSheet.headerValues.indexOf(hName);
+        if (idx === -1) return '';
+        return rows[0]._rawData[idx] ? rows[0]._rawData[idx].toString().trim() : '';
+      };
 
-      const cStatusH = getSafeH(['coursestatus', 'status(currently']); 
+      const vH = getRealHeader(['vacancyopen', 'vaccancyopen']); 
+      let oldVacOpen = vH ? getOldVal(vH).toLowerCase() : '';
+      if(vH && vacOpen !== undefined) updateObj[vH] = vacOpen;
       
+      const pH = getRealHeader(['placementstatus', 'placementstat', 'placementstatsu']); if(pH) updateObj[pH] = placementStatus;
+      const sH = getRealHeader(['studymaterialaccess']); if(sH) updateObj[sH] = studyAccess;
+      const eH = getRealHeader(['technicalexam', 'technialexam']); if(eH) updateObj[eH] = examAccess;
+      
+      const cPercH = getRealHeader(['coursepercentage']);
+      if (cPercH && coursePercentage !== undefined) updateObj[cPercH] = coursePercentage;
+
+      const cStatusH = getRealHeader(['coursestatus', 'status(currently']); 
       if (cStatusH) {
-        let oldStatus = rows[0].get ? (rows[0].get(cStatusH) || '').toString().toLowerCase() : (rows[0][cStatusH] || '').toString().toLowerCase();
-        
         if (coursePercentage === '100% completed' || coursePercentage === '100%') {
           updateObj[cStatusH] = 'Completed Course';
-          
-          if (!oldStatus.includes('completed') && !oldStatus.includes('90%')) {
-             let sName = rows[0].get ? (rows[0].get('Name') || 'Student') : (rows[0]['Name'] || 'Student');
-             let sEmail = rows[0].get ? (rows[0].get('Mail ID') || rows[0].get('Email') || '') : (rows[0]['Mail ID'] || rows[0]['Email'] || '');
-             
-             if (sEmail) {
-                const refId = Math.floor(10000 + Math.random() * 90000); 
-                const html = `
-                  <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-                    <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;">
-                      <h2 style="color: #ffffff; margin: 0;">PORTAL ACCESS GRANTED!</h2>
-                    </div>
-                    <div style="padding: 30px; background-color: #ffffff;">
-                      <p style="font-size: 16px; margin-top: 0;">Dear <b>${sName}</b>,</p>
-                      <p style="font-size: 15px; line-height: 1.6; color: #475569;">Congratulations! Your trainer has confirmed your exceptional performance.</p>
-                      <p style="font-size: 15px; line-height: 1.6; color: #475569;"><b>Your placement portal access is now fully active.</b> You can now browse active vacancies and apply directly for job openings.</p>
-                      <div style="text-align: center; margin: 35px 0;">
-                        <a href="https://placement.ipcsglobal.info" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">Access Placement Portal</a>
-                      </div>
-                      <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
-                        <p style="margin: 0 0 5px 0;">Regards,</p>
-                        <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">IPCS Placement Cell</p>
-                      </div>
-                    </div>
-                  </div>
-                `;
-                sendMailAndLog({ from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`, to: sEmail, subject: `Welcome to IPCS Placements! Your Profile is Active [Ref: ${refId}]`, html: html }, { name: sName, email: sEmail, type: 'Course Completion Welcome' });
-             }
-          }
         } else if (courseStatus !== undefined) {
           updateObj[cStatusH] = courseStatus;
         }
@@ -733,6 +638,40 @@ exports.updateStudent = async (req, res) => {
 
       rows[0].assign(updateObj); 
       await rows[0].save(); 
+
+      // 🚨 THE FIX: TRIGGER EMAIL IF VACANCY IS NOW 'YES' AND WASN'T BEFORE
+      if (vacOpen && vacOpen.toString().toLowerCase() === 'yes' && oldVacOpen !== 'yes') {
+         const nameH = getRealHeader(['name', 'studentname']);
+         const mailH = getRealHeader(['mailid', 'email']);
+
+         let sName = nameH ? getOldVal(nameH) : 'Student';
+         let sEmail = mailH ? getOldVal(mailH) : '';
+
+         if (sEmail) {
+            const refId = Math.floor(10000 + Math.random() * 90000); 
+            const html = `
+              <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+                <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;">
+                  <h2 style="color: #ffffff; margin: 0;">PORTAL ACCESS GRANTED!</h2>
+                </div>
+                <div style="padding: 30px; background-color: #ffffff;">
+                  <p style="font-size: 16px; margin-top: 0;">Dear <b>${sName}</b>,</p>
+                  <p style="font-size: 15px; line-height: 1.6; color: #475569;">Congratulations! Your trainer has confirmed your exceptional performance.</p>
+                  <p style="font-size: 15px; line-height: 1.6; color: #475569;"><b>Your placement portal access is now fully active.</b> You can now browse active vacancies and apply directly for job openings.</p>
+                  <div style="text-align: center; margin: 35px 0;">
+                    <a href="https://placement.ipcsglobal.info" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">Access Placement Portal</a>
+                  </div>
+                  <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
+                    <p style="margin: 0 0 5px 0;">Regards,</p>
+                    <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">IPCS Placement Cell</p>
+                  </div>
+                </div>
+              </div>
+            `;
+            sendMailAndLog({ from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`, to: sEmail, subject: `Welcome to IPCS Placements! Your Profile is Active [Ref: ${refId}]`, html: html }, { name: sName, email: sEmail, type: 'Course Completion Welcome' });
+         }
+      }
+
       refreshCache(); 
       res.json({ success: true, message: "Student record updated!" });
     } else { res.status(404).json({ success: false, message: "Row not found." }); }
@@ -748,46 +687,35 @@ exports.getApplications = (req, res) => {
   const sourceData = cache.applications || [];
 
   sourceData.forEach((row) => {
-    const rowData = row.toObject();
-    const getHeader = (searchString) => {
-      const cleanSearch = searchString.toLowerCase().replace(/\s/g, '');
-      const keys = Object.keys(rowData);
-      const exact = keys.find(k => k.toLowerCase().replace(/\s/g, '') === cleanSearch);
-      return exact || keys.find(k => k.toLowerCase().replace(/\s/g, '').includes(cleanSearch));
-    };
-    const branch = rowData[getHeader('branch')] || 'Unknown';
-    const course = rowData[getHeader('course')] || 'Unknown';
-    const officerKey = getHeader('placementofficer');
-    const officerName = officerKey && rowData[officerKey] ? rowData[officerKey].toString().toLowerCase().trim() : '';
+    const branch = getValByHeader(row, ['branch']) || 'Unknown';
+    const course = getValByHeader(row, ['course']) || 'Unknown';
+    const officerName = (getValByHeader(row, ['placementofficer']) || '').toLowerCase().trim();
 
     const tpoMatch = (!role || role === 'TPO') && (cleanTpoName !== '' && officerName === cleanTpoName);
 
     if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse) || tpoMatch) {
-      const roll = rowData[getHeader('roll')] || ''; 
-      const jobId = rowData[getHeader('jobid')] || '';
-      let phone = rowData[getHeader('contact')] || rowData[getHeader('phone')] || '';
-      let email = rowData[getHeader('mail')] || rowData[getHeader('email')] || '';
-      let resume = rowData[getHeader('resume')] || rowData[getHeader('cv')] || '';
-      let qual = rowData[getHeader('qual')] || '';
+      const roll = getValByHeader(row, ['roll']) || ''; 
+      const jobId = getValByHeader(row, ['jobid']) || '';
+      let phone = getValByHeader(row, ['contact', 'phone']) || '';
+      let email = getValByHeader(row, ['mail', 'email']) || '';
+      let resume = getValByHeader(row, ['resume', 'cv']) || '';
+      let qual = getValByHeader(row, ['qual']) || '';
 
       if (!phone || !email) {
         const studentData = cache.students.find(s => {
-          const sRow = s.toObject();
-          const sRollKey = Object.keys(sRow).find(k => k.toLowerCase().includes('roll'));
-          return sRollKey && sRow[sRollKey] === roll;
+          const sRoll = getValByHeader(s, ['roll', 'rollnumber', 'ipcsrollnumber']);
+          return sRoll && sRoll === roll;
         });
         if (studentData) {
-          const sRow = studentData.toObject();
-          const sGetHeader = (str) => Object.keys(sRow).find(k => k.toLowerCase().includes(str.toLowerCase()));
-          if (!phone) phone = sRow[sGetHeader('phone')] || sRow[sGetHeader('contact')] || '';
-          if (!email) email = sRow[sGetHeader('mail')] || sRow[sGetHeader('email')] || '';
-          if (!resume) resume = sRow[sGetHeader('resume')] || sRow[sGetHeader('cv')] || '';
-          if (!qual) qual = sRow[sGetHeader('qual')] || '';
+          if (!phone) phone = getValByHeader(studentData, ['phone', 'contact']) || '';
+          if (!email) email = getValByHeader(studentData, ['mailid', 'email']) || '';
+          if (!resume) resume = getValByHeader(studentData, ['resume', 'cv']) || '';
+          if (!qual) qual = getValByHeader(studentData, ['qual', 'qualification']) || '';
         }
       }
 
       appsList.push({
-        rowNumber: row.rowNumber, name: rowData[getHeader('name')] || '', roll: roll, branch: branch, course: course, qual: qual || 'Not Specified', jobId: jobId, company: rowData[getHeader('company')] || 'Unknown Company', position: rowData[getHeader('position')] || 'Unknown Position', date: rowData[getHeader('time')] || rowData[getHeader('date')] || '', status: rowData[getHeader('status')] || 'Applied', remarks: rowData[getHeader('remarks')] || '', tpoName: rowData[getHeader('placementofficer')] || '', phone: phone, email: email, resume: resume, datePlaced: rowData[getHeader('dateplaced')] || '', packageLpa: rowData[getHeader('package')] || '', offerLetter: rowData[getHeader('offerletter')] || '', joiningStatus: rowData[getHeader('joiningstatus')] || ''
+        rowNumber: row.rowNumber, name: getValByHeader(row, ['name', 'studentname']) || '', roll: roll, branch: branch, course: course, qual: qual || 'Not Specified', jobId: jobId, company: getValByHeader(row, ['company', 'companyname']) || 'Unknown Company', position: getValByHeader(row, ['position', 'role']) || 'Unknown Position', date: getValByHeader(row, ['time', 'date', 'timestamp']) || '', status: getValByHeader(row, ['status']) || 'Applied', remarks: getValByHeader(row, ['remarks']) || '', tpoName: getValByHeader(row, ['placementofficer']) || '', phone: phone, email: email, resume: resume, datePlaced: getValByHeader(row, ['dateplaced']) || '', packageLpa: getValByHeader(row, ['package']) || '', offerLetter: getValByHeader(row, ['offerletter']) || '', joiningStatus: getValByHeader(row, ['joiningstatus']) || ''
       });
     }
   });
@@ -825,41 +753,48 @@ exports.updateApplication = async (req, res) => {
     }
     
     const headers = appSheet.headerValues;
-    const currentRowData = rows[0].toObject();
-    const getHeader = (s) => Object.keys(currentRowData).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
-    
-    const oldStatus = (currentRowData[getHeader('status')] || '').toString().toLowerCase();
-
-    const sName = currentRowData[getHeader('name')] || currentRowData[getHeader('studentname')] || fullApp.name || '';
-    const sContact = currentRowData[getHeader('contact')] || currentRowData[getHeader('phone')] || fullApp.phone || '';
-    const sMail = currentRowData[getHeader('mail')] || currentRowData[getHeader('email')] || fullApp.email || '';
-    const sRoll = currentRowData[getHeader('roll')] || fullApp.roll || '';
-    const sCourse = currentRowData[getHeader('course')] || fullApp.course || '';
-    const sBranch = currentRowData[getHeader('branch')] || fullApp.branch || '';
-    const sQual = currentRowData[getHeader('qual')] || fullApp.qual || '';
-    const sResume = currentRowData[getHeader('resume')] || currentRowData[getHeader('cv')] || fullApp.resume || '';
-    const sJobId = currentRowData[getHeader('jobid')] || fullApp.jobId || '';
-    const sCompany = currentRowData[getHeader('company')] || fullApp.company || '';
-    const sPosition = currentRowData[getHeader('position')] || fullApp.position || '';
-    const sTpo = currentRowData[getHeader('placementofficer')] || fullApp.tpoName || '';
-
-    const updateObj = { 'Status': status };
-    
-    const getSafeH = (sheetHeaders, searchStr) => {
-      const cleanStr = searchStr.toLowerCase().replace(/\s/g, '');
-      return sheetHeaders.find(h => h.toLowerCase().replace(/\s/g, '') === cleanStr) || 
-             sheetHeaders.find(h => h.toLowerCase().replace(/\s/g, '').includes(cleanStr));
+    const getSafeH = (searchStrs) => {
+      for (let s of searchStrs) {
+        const clean = s.toLowerCase().replace(/\s/g, '');
+        const exact = headers.find(h => h.toLowerCase().replace(/\s/g, '') === clean);
+        if (exact) return exact;
+      }
+      for (let s of searchStrs) {
+        const clean = s.toLowerCase().replace(/\s/g, '');
+        const partial = headers.find(h => h.toLowerCase().replace(/\s/g, '').includes(clean));
+        if (partial) return partial;
+      }
+      return null;
     };
 
-    const hRemarks = getSafeH(headers, 'remarks'); if (hRemarks && remarks !== undefined) updateObj[hRemarks] = remarks;
-    const hDatePlaced = getSafeH(headers, 'dateplaced'); if (hDatePlaced && datePlaced !== undefined) updateObj[hDatePlaced] = datePlaced;
-    const hPackage = getSafeH(headers, 'package'); if (hPackage && packageLpa !== undefined) updateObj[hPackage] = packageLpa;
-    const hOffer = getSafeH(headers, 'offerletter'); if (hOffer && offerLetterLink) updateObj[hOffer] = offerLetterLink;
-    const hJoining = getSafeH(headers, 'joiningstatus'); if (hJoining && joiningStatus !== undefined) updateObj[hJoining] = joiningStatus;
+    const oldStatusH = getSafeH(['status']);
+    const oldStatus = oldStatusH && rows[0]._rawData[headers.indexOf(oldStatusH)] ? rows[0]._rawData[headers.indexOf(oldStatusH)].toString().toLowerCase() : '';
+
+    const sName = fullApp.name || '';
+    const sContact = fullApp.phone || '';
+    const sMail = fullApp.email || '';
+    const sRoll = fullApp.roll || '';
+    const sCourse = fullApp.course || '';
+    const sBranch = fullApp.branch || '';
+    const sQual = fullApp.qual || '';
+    const sResume = fullApp.resume || '';
+    const sJobId = fullApp.jobId || '';
+    const sCompany = fullApp.company || '';
+    const sPosition = fullApp.position || '';
+    const sTpo = fullApp.tpoName || '';
+
+    const updateObj = {};
+    if (oldStatusH) updateObj[oldStatusH] = status;
     
-    const hDate = getSafeH(headers, 'interviewdate');
-    const hTime = getSafeH(headers, 'interviewtime') || getSafeH(headers, 'intervewtime');
-    const hVenue = getSafeH(headers, 'interviewvenue');
+    const hRemarks = getSafeH(['remarks']); if (hRemarks && remarks !== undefined) updateObj[hRemarks] = remarks;
+    const hDatePlaced = getSafeH(['dateplaced']); if (hDatePlaced && datePlaced !== undefined) updateObj[hDatePlaced] = datePlaced;
+    const hPackage = getSafeH(['package']); if (hPackage && packageLpa !== undefined) updateObj[hPackage] = packageLpa;
+    const hOffer = getSafeH(['offerletter']); if (hOffer && offerLetterLink) updateObj[hOffer] = offerLetterLink;
+    const hJoining = getSafeH(['joiningstatus']); if (hJoining && joiningStatus !== undefined) updateObj[hJoining] = joiningStatus;
+    
+    const hDate = getSafeH(['interviewdate']);
+    const hTime = getSafeH(['interviewtime', 'intervewtime']);
+    const hVenue = getSafeH(['interviewvenue']);
     
     if (hDate && interviewDate !== undefined) updateObj[hDate] = interviewDate;
     if (hTime && interviewTime !== undefined) updateObj[hTime] = interviewTime;
@@ -894,11 +829,11 @@ exports.updateApplication = async (req, res) => {
         setLogH('position', sPosition);
         setLogH('placementofficer', sTpo);
         setLogH('status', status || '');
-        setLogH('remarks', remarks !== undefined ? remarks : (currentRowData[getHeader('remarks')] || ''));
-        setLogH('dateplaced', datePlaced !== undefined ? datePlaced : (currentRowData[getHeader('dateplaced')] || ''));
-        setLogH('package', packageLpa !== undefined ? packageLpa : (currentRowData[getHeader('package')] || ''));
-        setLogH('offerletterstatus', offerLetterLink || currentRowData[getHeader('offerletter')] || '');
-        setLogH('joiningstatus', joiningStatus !== undefined ? joiningStatus : (currentRowData[getHeader('joiningstatus')] || ''));
+        setLogH('remarks', remarks !== undefined ? remarks : '');
+        setLogH('dateplaced', datePlaced !== undefined ? datePlaced : '');
+        setLogH('package', packageLpa !== undefined ? packageLpa : '');
+        setLogH('offerletterstatus', offerLetterLink || '');
+        setLogH('joiningstatus', joiningStatus !== undefined ? joiningStatus : '');
         setLogH('interviewdate', interviewDate || '');
         setLogH('interviewtime', interviewTime || '');
         setLogH('intervewtime', interviewTime || ''); 
@@ -906,7 +841,7 @@ exports.updateApplication = async (req, res) => {
 
         await logSheet.addRow(logObj);
       }
-    } catch(e) { console.error("TPO Log skipped due to column mismatch"); }
+    } catch(e) {}
     
     if (oldStatus !== (status || '').toLowerCase()) {
        checkAndSendStudentMails({
@@ -969,10 +904,21 @@ exports.addApplication = async (req, res) => {
 
 exports.getVacancies = (req, res) => {
   let vacs = getCache().vacancies.map((row, i) => {
-    const rowData = row.toObject();
-    const getVal = (possibleKeys) => { for(let key of Object.keys(rowData)) { if (possibleKeys.includes(key.trim())) return rowData[key]; } return ''; };
     return {
-      id: getVal(['JOBID', 'Job ID', 'ID']) || `JOB-${i+1}`, company: getVal(['Company Name', 'Company']), position: getVal(['Position', 'Role']), location: getVal(['Opening AT ( Location )', 'Opening AT( Location )', 'Location']), state: getVal(['State']), mode: getVal(['Work Mode', 'Mode']), lastDate: getVal(['Last Date']), course: getVal(['Course']), qualification: getVal(['Qualification']), description: getVal(['Job Description']), experience: getVal(['Experience']), salary: getVal(['Salary']), gender: getVal(['Gender Preference']), status: getVal(['Status']) || 'Open'
+      id: getValByHeader(row, ['jobid', 'id']) || `JOB-${i+1}`, 
+      company: getValByHeader(row, ['companyname', 'company']), 
+      position: getValByHeader(row, ['position', 'role']), 
+      location: getValByHeader(row, ['openingat(location)', 'location']), 
+      state: getValByHeader(row, ['state']), 
+      mode: getValByHeader(row, ['workmode', 'mode']), 
+      lastDate: getValByHeader(row, ['lastdate']), 
+      course: getValByHeader(row, ['course']), 
+      qualification: getValByHeader(row, ['qualification']), 
+      description: getValByHeader(row, ['jobdescription']), 
+      experience: getValByHeader(row, ['experience']), 
+      salary: getValByHeader(row, ['salary']), 
+      gender: getValByHeader(row, ['genderpreference']), 
+      status: getValByHeader(row, ['status']) || 'Open'
     };
   });
   res.json({ success: true, vacancies: vacs.reverse() });
@@ -981,12 +927,12 @@ exports.getVacancies = (req, res) => {
 exports.getIssues = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
   let issuesList = getCache().issues.filter(row => {
-    const rowBranch = row.get('Branch');
-    const studentName = row.get('Name') || '';
-    const studentData = getCache().students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
-    const sCourse = studentData ? studentData.get('Course') : 'Unknown';
+    const rowBranch = getValByHeader(row, ['branch']);
+    const studentName = getValByHeader(row, ['name']) || '';
+    const studentData = getCache().students.find(s => (getValByHeader(s, ['name']) || '').toLowerCase().trim() === studentName.toLowerCase().trim());
+    const sCourse = studentData ? getValByHeader(studentData, ['course']) : 'Unknown';
     return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
-  }).map(row => ({ rowNumber: row.rowNumber, name: row.get('Name') || 'Student', branch: row.get('Branch'), details: row.get('Issue Details') || '', status: row.get('Status') || 'Pending', remarks: row.get('Remarks') || '' }));
+  }).map(row => ({ rowNumber: row.rowNumber, name: getValByHeader(row, ['name']) || 'Student', branch: getValByHeader(row, ['branch']), details: getValByHeader(row, ['issuedetails']) || '', status: getValByHeader(row, ['status']) || 'Pending', remarks: getValByHeader(row, ['remarks']) || '' }));
   res.json({ success: true, issues: issuesList.reverse() });
 };
 
@@ -1005,28 +951,30 @@ exports.getReports = (req, res) => {
   let students = [], applications = [], issues = [], talentino = [], tpoLogs = [];
   
   getCache().students.forEach(row => {
-    if(!hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) return;
-    students.push({ name: row.get('Name'), roll: row.get('Roll Number'), branch: row.get('Branch'), course: row.get('Course'), status: row.get('Status'), placementStatus: row.get('Placement Stat') || row.get('Placement Status') });
+    if(!hasAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']), role, assignedBranchesArray, assignedCourse)) return;
+    students.push({ name: getValByHeader(row, ['name']), roll: getValByHeader(row, ['rollnumber', 'roll']), branch: getValByHeader(row, ['branch']), course: getValByHeader(row, ['course']), status: getValByHeader(row, ['status']), placementStatus: getValByHeader(row, ['placementstat', 'placementstatus']) });
   });
   
   getCache().applications.forEach(row => {
-    if(!hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) return;
-    applications.push({ name: row.get('Student Name'), roll: row.get('Roll Number'), jobId: row.get('Job ID'), company: row.get('Company Name'), date: row.get('TimeStamp'), status: row.get('Status'), remarks: row.get('Remarks'), tpoName: row.get('Placement Officer'), branch: row.get('Branch'), course: row.get('Course') });
+    if(!hasAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']), role, assignedBranchesArray, assignedCourse)) return;
+    applications.push({ name: getValByHeader(row, ['studentname', 'name']), roll: getValByHeader(row, ['rollnumber', 'roll']), jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']), date: getValByHeader(row, ['timestamp']), status: getValByHeader(row, ['status']), remarks: getValByHeader(row, ['remarks']), tpoName: getValByHeader(row, ['placementofficer']), branch: getValByHeader(row, ['branch']), course: getValByHeader(row, ['course']) });
   });
   
   getCache().issues.forEach(row => { 
-    if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) issues.push({ name: row.get('Name'), branch: row.get('Branch'), details: row.get('Issue Details'), status: row.get('Status'), remarks: row.get('Remarks') }); 
+    if (hasAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']), role, assignedBranchesArray, assignedCourse)) issues.push({ name: getValByHeader(row, ['name']), branch: getValByHeader(row, ['branch']), details: getValByHeader(row, ['issuedetails']), status: getValByHeader(row, ['status']), remarks: getValByHeader(row, ['remarks']) }); 
   });
   
   getCache().tAtt.forEach(row => { 
-    if (hasAccess(row.get('Branch'), row.get('Course'), role, assignedBranchesArray, assignedCourse)) talentino.push({ name: row.get('Name'), branch: row.get('Branch'), date: row.get('Check-in') || row.get('Date'), rating: row.get('Rating'), notes: row.get('Notes') }); 
+    if (hasAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']), role, assignedBranchesArray, assignedCourse)) talentino.push({ name: getValByHeader(row, ['name']), branch: getValByHeader(row, ['branch']), date: getValByHeader(row, ['check-in', 'date']), rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes']) }); 
   });
   
-  let vacancies = getCache().vacancies.map(row => ({ id: row.get('Job ID') || row.get('ID') || '', company: row.get('Company') || '', location: row.get('Location') || '', mode: row.get('Mode') || '', status: row.get('Status') || 'Open', course: row.get('Course') || '', date: row.get('Last Date') || row.get('Date') || '' }));
-  let events = getCache().events.map(row => ({ date: row.get('Date') || '' }));
+  let vacancies = getCache().vacancies.map(row => ({ id: getValByHeader(row, ['jobid', 'id']) || '', company: getValByHeader(row, ['company']) || '', location: getValByHeader(row, ['location']) || '', mode: getValByHeader(row, ['mode']) || '', status: getValByHeader(row, ['status']) || 'Open', course: getValByHeader(row, ['course']) || '', date: getValByHeader(row, ['lastdate', 'date']) || '' }));
+  let events = getCache().events.map(row => ({ date: getValByHeader(row, ['date']) || '' }));
 
   if (getCache().tpoLogs) {
-    getCache().tpoLogs.forEach(row => { tpoLogs.push(row.toObject()); });
+    getCache().tpoLogs.forEach(row => { 
+      try { tpoLogs.push(row.toObject()); } catch(e) {}
+    });
   }
 
   res.json({ success: true, students, applications, issues, talentino, vacancies, events, tpoLogs });
@@ -1035,15 +983,13 @@ exports.getReports = (req, res) => {
 exports.getTalentino = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
   let records = getCache().tAtt.filter(row => {
-    const rowBranch = row.get('Branch');
-    const studentName = row.get('Name') || row.get('Student') || '';
-    const studentData = getCache().students.find(s => (s.get('Name') || '').toLowerCase().trim() === studentName.toLowerCase().trim());
-    const sCourse = studentData ? studentData.get('Course') : 'Unknown';
+    const rowBranch = getValByHeader(row, ['branch']);
+    const studentName = getValByHeader(row, ['name', 'student']) || '';
+    const studentData = getCache().students.find(s => (getValByHeader(s, ['name']) || '').toLowerCase().trim() === studentName.toLowerCase().trim());
+    const sCourse = studentData ? getValByHeader(studentData, ['course']) : 'Unknown';
     return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
   }).map(row => {
-    const rowData = row.toObject();
-    const getVal = (searchStrings) => { for (let key of Object.keys(rowData)) { for (let str of searchStrings) { if (key.toLowerCase().includes(str.toLowerCase())) return rowData[key]; } } return ''; };
-    return { name: getVal(['name', 'student']), branch: getVal(['branch']), date: getVal(['present check-ins date', 'timestamp', 'date', 'time']), rating: getVal(['rating']), notes: getVal(['notes', 'remark']) };
+    return { name: getValByHeader(row, ['name', 'student']), branch: getValByHeader(row, ['branch']), date: getValByHeader(row, ['timestamp', 'date', 'time', 'present check-ins date']), rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes', 'remark']) };
   });
   let dates = new Set();
   records.forEach(r => { const cleanDate = (r.date || '').split(' ')[0].trim(); if (cleanDate && cleanDate !== 'N/A') dates.add(cleanDate); });
@@ -1053,16 +999,24 @@ exports.getTalentino = (req, res) => {
 
 exports.getEvents = (req, res) => {
   let allEvents = getCache().events.map(row => {
-    const rowData = row.toObject();
-    const getVal = (possibleKeys) => { for(let key of Object.keys(rowData)) { if (possibleKeys.includes(key.trim())) return rowData[key]; } return ''; };
     return {
-      date: getVal(['Date of the Event', 'Date']), tpo: getVal(['TPO', 'Placement Officer']), branch: getVal(['Branch']), type: getVal(['Event', 'Type']), title: getVal(['Title']), description: getVal(['Descripation', 'Description']), time: getVal(['Time of the Event', 'Time']), location: getVal(['Event Happening in', 'Location']), poster: getVal(['Poster Link', 'Poster'])
+      date: getValByHeader(row, ['dateoftheevent', 'date']), 
+      tpo: getValByHeader(row, ['tpo', 'placementofficer']), 
+      branch: getValByHeader(row, ['branch']), 
+      type: getValByHeader(row, ['event', 'type']), 
+      title: getValByHeader(row, ['title']), 
+      description: getValByHeader(row, ['descripation', 'description']), 
+      time: getValByHeader(row, ['timeoftheevent', 'time']), 
+      location: getValByHeader(row, ['eventhappeningin', 'location']), 
+      poster: getValByHeader(row, ['posterlink', 'poster'])
     };
   });
   res.json({ success: true, events: allEvents.filter(e => e.date && e.title) });
 };
 
-// 🚨 FINAL FIXED EVENT ROUTER
+// =========================================================
+// 🚨 FINAL FIXED EVENT ROUTER: GUARANTEED CC/BCC AND LINE BREAKS
+// =========================================================
 exports.addEvent = async (req, res) => {
   const { date, tpo, branch, type, title, description, time, location } = req.body;
   try {
@@ -1079,15 +1033,14 @@ exports.addEvent = async (req, res) => {
     const watermark = "https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
     const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
     
-    // 🚨 REGEX FIX: Captures all hidden line breaks (Windows & Mac) and replaces with HTML
+    // 🚨 INDESTRUCTIBLE REGEX: Captures all hidden line breaks (Windows & Mac) and replaces with HTML
     const formattedDesc = String(description || 'N/A').replace(/(?:\r\n|\r|\n)/g, '<br/>');
     
     if (evType.includes('placement drive')) {
       const allTpos = getAllTpoEmails();
       const allBMs = getAllBranchManagerEmails();
-      const superAdmins = getSuperAdminEmails();
       
-      const toEmail = senderEmail; // Primary to sender (broadcast style)
+      const toEmail = senderEmail; 
       const ccList = 'ajith@ipcsglobal.com,rakesh@ipcsglobal.com,gifty@ipcsglobal.com';
       const bccList = [...new Set([...allBMs, ...allTpos])].filter(Boolean).join(',');
 
@@ -1167,7 +1120,9 @@ exports.addEvent = async (req, res) => {
 
       // 🚨 EXACT ROUTING REQUESTED
       const toEmail = bmMail ? bmMail : senderEmail; // Primary TO must be BM
-      const ccString = [tpoMail, 'gifty@ipcsglobal.com'].filter(e => e && e !== toEmail).join(','); 
+      const ccList = [tpoMail, 'gifty@ipcsglobal.com'].filter(e => e && e !== toEmail).join(','); 
+
+      console.log(`[TALENTINO ROUTING LOG] Branch: ${branch} | TO: ${toEmail} | CC: ${ccList}`);
 
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
@@ -1229,8 +1184,8 @@ exports.addEvent = async (req, res) => {
 
       await sendMailAndLog({
         from: `"IPCS Talentino" <${senderEmail}>`,
-        to: toEmail, 
-        cc: ccString,
+        to: toEmail,
+        cc: ccList,
         subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
         html: html
       }, { name: tpo, email: toEmail, type: 'Event Notification' });
@@ -1246,6 +1201,7 @@ exports.addEvent = async (req, res) => {
 
 // --- CRON HELPER (RESUME DELIVERY) ---
 exports.runDailyCron = async () => {
+  console.log("🚨 [CRON] Starting Daily Resume Delivery check...");
   const cache = getCache();
   if (!cache) return;
   
@@ -1254,13 +1210,10 @@ exports.runDailyCron = async () => {
   const yStr = yesterday.toISOString().split('T')[0]; 
   
   const expiredJobs = cache.vacancies.filter(v => {
-    const rowData = v.toObject();
-    const getH = (str) => Object.keys(rowData).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const lastDateKey = getH('lastdate');
-    
-    if (!lastDateKey || !rowData[lastDateKey]) return false;
+    const lastDateKey = getValByHeader(v, ['lastdate']);
+    if (!lastDateKey) return false;
     try { 
-      let pd = rowData[lastDateKey];
+      let pd = lastDateKey;
       if (pd.includes('/')) {
         const parts = pd.split(/[/\s,.-]+/);
         if (parts.length >= 3) pd = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
@@ -1269,43 +1222,37 @@ exports.runDailyCron = async () => {
     } catch(e) { return false; }
   });
 
+  console.log(`🚨 [CRON] Found ${expiredJobs.length} expired jobs from yesterday.`);
+
   for (let job of expiredJobs) {
-    const jobData = job.toObject();
-    const getJobH = (str) => Object.keys(jobData).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    
-    const jobId = jobData[getJobH('jobid')] || jobData[getJobH('id')] || '';
-    const companyEmail = jobData[getJobH('companymailid')] || jobData[getJobH('companyemail')] || ''; 
-    const companyName = jobData[getJobH('companyname')] || jobData[getJobH('company')] || '';
-    const position = jobData[getJobH('position')] || jobData[getJobH('role')] || '';
+    const jobId = getValByHeader(job, ['jobid', 'id']) || '';
+    const companyEmail = getValByHeader(job, ['companymailid', 'companyemail']) || ''; 
+    const companyName = getValByHeader(job, ['companyname', 'company']) || '';
+    const position = getValByHeader(job, ['position', 'role']) || '';
 
     if (!companyEmail) continue;
 
     const cleanTargetJobId = jobId.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
 
     const applicants = cache.applications.filter(app => {
-      const appData = app.toObject();
-      const getAppH = (str) => Object.keys(appData).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-      const appJobId = (appData[getAppH('jobid')] || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+      const appJobId = (getValByHeader(app, ['jobid']) || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
       return appJobId === cleanTargetJobId && cleanTargetJobId !== '';
     });
 
     if (applicants.length === 0) continue;
 
-    const firstApp = applicants[0].toObject();
-    const getFirstAppH = (str) => Object.keys(firstApp).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-    const tpoName = firstApp[getFirstAppH('placementofficer')];
+    const firstApp = applicants[0];
+    const tpoName = getValByHeader(firstApp, ['placementofficer']);
     const tpoEmail = getTpoEmail(tpoName);
 
     let tableRows = ''; let attachments = [];
     applicants.forEach((appRow, index) => {
-      const rd = appRow.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       const info = { 
-        name: rd[getH('name')] || rd[getH('studentname')] || '', 
-        phone: rd[getH('contact')] || rd[getH('phone')] || '', 
-        email: rd[getH('mail')] || rd[getH('email')] || rd[getH('mailid')] || '', 
-        qual: rd[getH('qual')] || rd[getH('qualification')] || '', 
-        resume: rd[getH('resume')] || rd[getH('cv')] || '' 
+        name: getValByHeader(appRow, ['name', 'studentname']) || '', 
+        phone: getValByHeader(appRow, ['contact', 'phone']) || '', 
+        email: getValByHeader(appRow, ['mail', 'email', 'mailid']) || '', 
+        qual: getValByHeader(appRow, ['qual', 'qualification']) || '', 
+        resume: getValByHeader(appRow, ['resume', 'cv']) || '' 
       };
       
       let resumeBtn = 'N/A';
@@ -1367,57 +1314,39 @@ exports.runDailyCron = async () => {
   }
 };
 
+// 🚨 MANUAL TRIGGER FOR THE CRON JOB 
+exports.triggerDailyCron = async (req, res) => {
+  try {
+    await exports.runDailyCron();
+    res.json({ success: true, message: "Manual Resume Delivery process completed!" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // =========================================================
 // 🚨 SAFER STRICT MATCHING FOR CLIENTS SHEET
 // =========================================================
-const getSafeClientHeader = (keys, searchStrs) => {
-  for (let s of searchStrs) {
-    const cleanSearch = s.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const exact = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanSearch);
-    if (exact) return exact;
-  }
-  for (let s of searchStrs) {
-    const cleanSearch = s.toLowerCase().replace(/[^a-z0-9]/g, '');
-    const partial = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanSearch));
-    if (partial) return partial;
-  }
-  return null;
-};
-
 exports.getClients = (req, res) => {
   const cleanTpoName = (req.body.tpoName || '').toString().toLowerCase().trim();
   let clients = [];
   getCache().clients.forEach(row => {
-    const rowData = row.toObject();
-    const keys = Object.keys(rowData);
+    const officer = getValByHeader(row, ['placementofficer', 'tponame']);
+    const officerClean = (officer || '').toLowerCase().trim();
     
-    const hOfficer = getSafeClientHeader(keys, ['placementofficer', 'tponame']);
-    const hComp = getSafeClientHeader(keys, ['companyname', 'company']);
-    const hWeb = getSafeClientHeader(keys, ['companywebsite', 'website']);
-    const hLoc = getSafeClientHeader(keys, ['companylocation', 'location']);
-    const hContact = getSafeClientHeader(keys, ['companycontact', 'contactnumber', 'phone']);
-    const hEmail = getSafeClientHeader(keys, ['companymailid', 'companyemail', 'mailid', 'email']);
-    const hPerson = getSafeClientHeader(keys, ['companycontactperson', 'contactperson', 'person']);
-    const hLogo = getSafeClientHeader(keys, ['companylogo', 'logo']);
-    const hMailStat = getSafeClientHeader(keys, ['mailstatus']);
-    const hDocStat = getSafeClientHeader(keys, ['documentstatus', 'docstatus']);
-    const hMou = getSafeClientHeader(keys, ['mou', 'moulink']);
-
-    const officer = hOfficer && rowData[hOfficer] ? rowData[hOfficer].toString().toLowerCase().trim() : '';
-    
-    if (cleanTpoName === '' || officer === '' || officer.includes(cleanTpoName) || cleanTpoName.includes(officer)) {
+    if (cleanTpoName === '' || officerClean === '' || officerClean.includes(cleanTpoName) || cleanTpoName.includes(officerClean)) {
       clients.push({ 
         rowNumber: row.rowNumber, 
-        companyName: (hComp && rowData[hComp]) || 'Unknown', 
-        website: (hWeb && rowData[hWeb]) || '', 
-        location: (hLoc && rowData[hLoc]) || '', 
-        contact: (hContact && rowData[hContact]) || '', 
-        email: (hEmail && rowData[hEmail]) || '', 
-        contactPerson: (hPerson && rowData[hPerson]) || '', 
-        logo: (hLogo && rowData[hLogo]) || '', 
-        mailStatus: (hMailStat && rowData[hMailStat]) || 'Pending', 
-        documentStatus: (hDocStat && rowData[hDocStat]) || 'Pending', 
-        mouLink: (hMou && rowData[hMou]) || '' 
+        companyName: getValByHeader(row, ['companyname', 'company']) || 'Unknown', 
+        website: getValByHeader(row, ['companywebsite', 'website']) || '', 
+        location: getValByHeader(row, ['companylocation', 'location']) || '', 
+        contact: getValByHeader(row, ['companycontact', 'contactnumber', 'phone']) || '', 
+        email: getValByHeader(row, ['companymailid', 'companyemail', 'mailid', 'email']) || '', 
+        contactPerson: getValByHeader(row, ['companycontactperson', 'contactperson', 'person']) || '', 
+        logo: getValByHeader(row, ['companylogo', 'logo']) || '', 
+        mailStatus: getValByHeader(row, ['mailstatus']) || 'Pending', 
+        documentStatus: getValByHeader(row, ['documentstatus', 'docstatus']) || 'Pending', 
+        mouLink: getValByHeader(row, ['mou', 'moulink']) || '' 
       });
     }
   });
@@ -1428,25 +1357,15 @@ exports.getClientById = (req, res) => {
   const targetRow = parseInt(req.params.id);
   const row = getCache().clients.find(r => r.rowNumber === targetRow);
   if (!row) return res.status(404).json({ success: false, message: "Client not found" });
-  
-  const rowData = row.toObject();
-  const keys = Object.keys(rowData);
-  
-  const hComp = getSafeClientHeader(keys, ['companyname', 'company']);
-  const hEmail = getSafeClientHeader(keys, ['companymailid', 'companyemail', 'mailid', 'email']);
-  const hPerson = getSafeClientHeader(keys, ['companycontactperson', 'contactperson', 'person']);
-  const hContact = getSafeClientHeader(keys, ['companycontact', 'contactnumber', 'phone']);
-  const hLogo = getSafeClientHeader(keys, ['companylogo', 'logo']);
-  const hDocStat = getSafeClientHeader(keys, ['documentstatus', 'docstatus']);
 
   res.json({ success: true, client: { 
     rowNumber: row.rowNumber, 
-    companyName: (hComp && rowData[hComp]) || 'Unknown', 
-    email: (hEmail && rowData[hEmail]) || '', 
-    contactPerson: (hPerson && rowData[hPerson]) || '', 
-    contact: (hContact && rowData[hContact]) || '', 
-    logo: (hLogo && rowData[hLogo]) || '', 
-    documentStatus: (hDocStat && rowData[hDocStat]) || 'Pending' 
+    companyName: getValByHeader(row, ['companyname', 'company']) || 'Unknown', 
+    email: getValByHeader(row, ['companymailid', 'companyemail', 'mailid', 'email']) || '', 
+    contactPerson: getValByHeader(row, ['companycontactperson', 'contactperson', 'person']) || '', 
+    contact: getValByHeader(row, ['companycontact', 'contactnumber', 'phone']) || '', 
+    logo: getValByHeader(row, ['companylogo', 'logo']) || '', 
+    documentStatus: getValByHeader(row, ['documentstatus', 'docstatus']) || 'Pending' 
   }});
 };
 
@@ -1464,20 +1383,25 @@ exports.updateClient = async (req, res) => {
       const headers = sheet.headerValues;
       const updateObj = {};
       
-      const hEmail = getSafeClientHeader(headers, ['companymailid', 'companyemail', 'mailid', 'email']);
-      if(hEmail && email !== undefined) updateObj[hEmail] = email;
+      const getSafeH = (searchStrs) => {
+        for (let s of searchStrs) {
+          const clean = s.toLowerCase().replace(/\s/g, '');
+          const exact = headers.find(h => h.toLowerCase().replace(/\s/g, '') === clean);
+          if (exact) return exact;
+        }
+        for (let s of searchStrs) {
+          const clean = s.toLowerCase().replace(/\s/g, '');
+          const partial = headers.find(h => h.toLowerCase().replace(/\s/g, '').includes(clean));
+          if (partial) return partial;
+        }
+        return null;
+      };
       
-      const hPhone = getSafeClientHeader(headers, ['companycontact', 'contactnumber', 'contact', 'phone']);
-      if(hPhone && phone !== undefined) updateObj[hPhone] = phone;
-      
-      const hLoc = getSafeClientHeader(headers, ['companylocation', 'location']);
-      if(hLoc && location !== undefined) updateObj[hLoc] = location;
-      
-      const hPerson = getSafeClientHeader(headers, ['companycontactperson', 'contactperson', 'person']);
-      if(hPerson && contactPerson !== undefined) updateObj[hPerson] = contactPerson;
-      
-      const hLogo = getSafeClientHeader(headers, ['companylogo', 'logo']);
-      if(hLogo && logoLink) updateObj[hLogo] = logoLink;
+      const hEmail = getSafeH(['companymailid', 'companyemail', 'mailid', 'email']); if(hEmail && email !== undefined) updateObj[hEmail] = email;
+      const hPhone = getSafeH(['companycontact', 'contactnumber', 'contact', 'phone']); if(hPhone && phone !== undefined) updateObj[hPhone] = phone;
+      const hLoc = getSafeH(['companylocation', 'location']); if(hLoc && location !== undefined) updateObj[hLoc] = location;
+      const hPerson = getSafeH(['companycontactperson', 'contactperson', 'person']); if(hPerson && contactPerson !== undefined) updateObj[hPerson] = contactPerson;
+      const hLogo = getSafeH(['companylogo', 'logo']); if(hLogo && logoLink) updateObj[hLogo] = logoLink;
 
       rows[0].assign(updateObj); 
       await rows[0].save(); 
@@ -1505,7 +1429,7 @@ exports.requestMou = async (req, res) => {
     const sheet = doc.sheetsByTitle["Clients"]; 
     const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
     if(rows.length > 0) {
-      const statusCol = getSafeClientHeader(sheet.headerValues, ['mailstatus', 'status']);
+      const statusCol = getFuzzyHeader(sheet.headerValues, 'mailstatus') || getFuzzyHeader(sheet.headerValues, 'status');
       if (statusCol) { rows[0].assign({ [statusCol]: 'Request Sent' }); await rows[0].save(); }
     }
     refreshCache(); res.json({ success: true });
@@ -1529,14 +1453,23 @@ exports.submitMou = async (req, res) => {
       const headers = sheet.headerValues;
       const updateObj = {};
       
-      const hDocStat = getSafeClientHeader(headers, ['documentstatus', 'docstatus']);
-      if(hDocStat) updateObj[hDocStat] = 'Completed';
-      
-      const hMou = getSafeClientHeader(headers, ['mou', 'moulink']);
-      if(hMou) updateObj[hMou] = pdfLink;
-      
-      const hLogo = getSafeClientHeader(headers, ['companylogo', 'logo']);
-      if(hLogo && logoLink) updateObj[hLogo] = logoLink;
+      const getSafeH = (searchStrs) => {
+        for (let s of searchStrs) {
+          const clean = s.toLowerCase().replace(/\s/g, '');
+          const exact = headers.find(h => h.toLowerCase().replace(/\s/g, '') === clean);
+          if (exact) return exact;
+        }
+        for (let s of searchStrs) {
+          const clean = s.toLowerCase().replace(/\s/g, '');
+          const partial = headers.find(h => h.toLowerCase().replace(/\s/g, '').includes(clean));
+          if (partial) return partial;
+        }
+        return null;
+      };
+
+      const hDocStat = getSafeH(['documentstatus', 'docstatus']); if(hDocStat) updateObj[hDocStat] = 'Completed';
+      const hMou = getSafeH(['mou', 'moulink']); if(hMou) updateObj[hMou] = pdfLink;
+      const hLogo = getSafeH(['companylogo', 'logo']); if(hLogo && logoLink) updateObj[hLogo] = logoLink;
 
       rows[0].assign(updateObj); await rows[0].save();
     }
@@ -1693,17 +1626,14 @@ exports.updatePhoto = async (req, res) => {
 exports.getMaterials = (req, res) => {
   try {
     let materials = getCache().materials.map(row => {
-      const rd = row.toObject(); 
-      // Safely strip spaces and slashes for indestructible read
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       return { 
-        id: rd[getH('materialid')] || '', 
-        course: rd[getH('course')] || '', 
-        module: rd[getH('moduletopic')] || rd[getH('module')] || rd[getH('topic')] || '', 
-        title: rd[getH('title')] || '', 
-        fileType: rd[getH('filetype')] || '', 
-        link: rd[getH('onedrivelink')] || rd[getH('link')] || '', 
-        status: rd[getH('status')] || 'Active' 
+        id: getValByHeader(row, ['materialid']) || '', 
+        course: getValByHeader(row, ['course']) || '', 
+        module: getValByHeader(row, ['moduletopic', 'module', 'topic']) || '', 
+        title: getValByHeader(row, ['title']) || '', 
+        fileType: getValByHeader(row, ['filetype']) || '', 
+        link: getValByHeader(row, ['onedrivelink', 'link']) || '', 
+        status: getValByHeader(row, ['status']) || 'Active' 
       };
     });
     res.json({ success: true, materials: materials.reverse() });
@@ -1802,9 +1732,7 @@ exports.deleteMaterial = async (req, res) => {
 exports.getQuestions = (req, res) => {
   try {
     let questions = getCache().techQuestions.map(row => {
-      const rd = row.toObject(); 
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-      return { id: rd[getH('questionid')] || '', course: rd[getH('course')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active' };
+      return { id: getValByHeader(row, ['questionid']) || '', course: getValByHeader(row, ['course']) || '', question: getValByHeader(row, ['question']) || '', optA: getValByHeader(row, ['optiona']) || '', optB: getValByHeader(row, ['optionb']) || '', optC: getValByHeader(row, ['optionc']) || '', optD: getValByHeader(row, ['optiond']) || '', correct: getValByHeader(row, ['correctoption']) || '', explanation: getValByHeader(row, ['explanation']) || '', status: getValByHeader(row, ['status']) || 'Active' };
     });
     res.json({ success: true, questions: questions.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -1881,9 +1809,7 @@ exports.deleteQuestion = async (req, res) => {
 exports.getResults = (req, res) => {
   try {
     let results = getCache().techResults.map(row => {
-      const rd = row.toObject(); 
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-      return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', course: rd[getH('course')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '' };
+      return { timestamp: getValByHeader(row, ['timestamp']) || '', rollNo: getValByHeader(row, ['rollno']) || '', name: getValByHeader(row, ['name']) || '', email: getValByHeader(row, ['mailid']) || '', branch: getValByHeader(row, ['branch']) || '', course: getValByHeader(row, ['course']) || '', score: getValByHeader(row, ['score']) || '', total: getValByHeader(row, ['totalquestions']) || '', percentage: getValByHeader(row, ['percentage']) || '', timeTaken: getValByHeader(row, ['timetaken']) || '' };
     });
     res.json({ success: true, results: results.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -1920,9 +1846,7 @@ exports.deleteCourse = async (req, res) => {
 exports.getAptQuestions = (req, res) => {
   try {
     let questions = getCache().aptQuestions.map(row => {
-      const rd = row.toObject(); 
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-      return { id: rd[getH('qid')] || '', category: rd[getH('category')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active', level: rd[getH('level')] || 'Easy' };
+      return { id: getValByHeader(row, ['qid']) || '', category: getValByHeader(row, ['category']) || '', question: getValByHeader(row, ['question']) || '', optA: getValByHeader(row, ['optiona']) || '', optB: getValByHeader(row, ['optionb']) || '', optC: getValByHeader(row, ['optionc']) || '', optD: getValByHeader(row, ['optiond']) || '', correct: getValByHeader(row, ['correctoption']) || '', explanation: getValByHeader(row, ['explanation']) || '', status: getValByHeader(row, ['status']) || 'Active', level: getValByHeader(row, ['level']) || 'Easy' };
     });
     res.json({ success: true, questions: questions.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -1931,9 +1855,7 @@ exports.getAptQuestions = (req, res) => {
 exports.getAptResults = (req, res) => {
   try {
     let results = getCache().aptResults.map(row => {
-      const rd = row.toObject(); 
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-      return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('email')] || rd[getH('mailid')] || '', branch: rd[getH('branch')] || '', score: rd[getH('score')] || '', total: rd[getH('total')] || rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '', categoryBreakdown: rd[getH('categorybreakdown')] || '' };
+      return { timestamp: getValByHeader(row, ['timestamp']) || '', rollNo: getValByHeader(row, ['rollno']) || '', name: getValByHeader(row, ['name']) || '', email: getValByHeader(row, ['email', 'mailid']) || '', branch: getValByHeader(row, ['branch']) || '', score: getValByHeader(row, ['score']) || '', total: getValByHeader(row, ['total', 'totalquestions']) || '', percentage: getValByHeader(row, ['percentage']) || '', timeTaken: getValByHeader(row, ['timetaken']) || '', categoryBreakdown: getValByHeader(row, ['categorybreakdown']) || '' };
     });
     res.json({ success: true, results: results.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -1985,9 +1907,7 @@ exports.deleteAptQuestion = async (req, res) => {
 exports.getTalExamQuestions = (req, res) => {
   try {
     let questions = getCache().talQuestions.map(row => {
-      const rd = row.toObject(); 
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-      return { id: rd[getH('questionid')] || '', testNumber: rd[getH('textnumber')] || rd[getH('testnumber')] || '', question: rd[getH('question')] || '', optA: rd[getH('optiona')] || '', optB: rd[getH('optionb')] || '', optC: rd[getH('optionc')] || '', optD: rd[getH('optiond')] || '', correct: rd[getH('correctoption')] || '', explanation: rd[getH('explanation')] || '', status: rd[getH('status')] || 'Active' };
+      return { id: getValByHeader(row, ['questionid']) || '', testNumber: getValByHeader(row, ['textnumber', 'testnumber']) || '', question: getValByHeader(row, ['question']) || '', optA: getValByHeader(row, ['optiona']) || '', optB: getValByHeader(row, ['optionb']) || '', optC: getValByHeader(row, ['optionc']) || '', optD: getValByHeader(row, ['optiond']) || '', correct: getValByHeader(row, ['correctoption']) || '', explanation: getValByHeader(row, ['explanation']) || '', status: getValByHeader(row, ['status']) || 'Active' };
     });
     res.json({ success: true, questions: questions.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -1996,9 +1916,7 @@ exports.getTalExamQuestions = (req, res) => {
 exports.getTalExamResults = (req, res) => {
   try {
     let results = getCache().talResults.map(row => {
-      const rd = row.toObject(); 
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-      return { timestamp: rd[getH('timestamp')] || '', rollNo: rd[getH('rollno')] || '', name: rd[getH('name')] || '', email: rd[getH('mailid')] || rd[getH('email')] || '', branch: rd[getH('branch')] || '', testNumber: rd[getH('testnumbercompleted')] || '', score: rd[getH('score')] || '', total: rd[getH('totalquestions')] || '', percentage: rd[getH('percentage')] || '', timeTaken: rd[getH('timetaken')] || '' };
+      return { timestamp: getValByHeader(row, ['timestamp']) || '', rollNo: getValByHeader(row, ['rollno']) || '', name: getValByHeader(row, ['name']) || '', email: getValByHeader(row, ['mailid', 'email']) || '', branch: getValByHeader(row, ['branch']) || '', testNumber: getValByHeader(row, ['testnumbercompleted']) || '', score: getValByHeader(row, ['score']) || '', total: getValByHeader(row, ['totalquestions']) || '', percentage: getValByHeader(row, ['percentage']) || '', timeTaken: getValByHeader(row, ['timetaken']) || '' };
     });
     res.json({ success: true, results: results.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -2052,29 +1970,21 @@ exports.getDrives = (req, res) => {
     const cache = getCache();
     
     const eventsMap = {};
-    (cache.events || []).forEach(r => {
-       const rd = r.toObject();
-       const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-       const dId = rd[getH('driveid')] || '';
-       const tpo = rd[getH('tpo')] || rd[getH('placementofficer')] || '';
+    (cache.events || []).forEach(row => {
+       const dId = getValByHeader(row, ['driveid']) || '';
+       const tpo = getValByHeader(row, ['tpo', 'placementofficer']) || '';
        if (dId) eventsMap[dId.toUpperCase().trim()] = tpo;
     });
 
     const drivesData = (cache.drives || []).map(row => {
-      const rd = row.toObject();
-      const getH = (str) => {
-        const c = str.toLowerCase().replace(/[^a-z0-9]/g, ''); const keys = Object.keys(rd);
-        return keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === c) || keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '').includes(c));
-      };
-      
-      const dId = rd[getH('driveid')] || '';
+      const dId = getValByHeader(row, ['driveid']) || '';
       const driveTpo = eventsMap[dId.toUpperCase().trim()] || '';
 
       return {
-        rowNumber: row.rowNumber, driveId: dId, name: rd[getH('name')] || '', phone: rd[getH('contact')] || '',
-        email: rd[getH('mailid')] || rd[getH('email')] || '', course: rd[getH('course')] || '', branch: rd[getH('branch')] || '',
-        resume: rd[getH('resume')] || '', qual: rd[getH('qualification')] || '', regStatus: rd[getH('status')] || '',
-        regDate: rd[getH('registeddate')] || rd[getH('timestamp')] || '', studentStatus: rd[getH('studentstatus')] || '',
+        rowNumber: row.rowNumber, driveId: dId, name: getValByHeader(row, ['name']) || '', phone: getValByHeader(row, ['contact']) || '',
+        email: getValByHeader(row, ['mailid', 'email']) || '', course: getValByHeader(row, ['course']) || '', branch: getValByHeader(row, ['branch']) || '',
+        resume: getValByHeader(row, ['resume']) || '', qual: getValByHeader(row, ['qualification']) || '', regStatus: getValByHeader(row, ['status']) || '',
+        regDate: getValByHeader(row, ['registeddate', 'timestamp']) || '', studentStatus: getValByHeader(row, ['studentstatus']) || '',
         driveTpo: driveTpo
       };
     });
@@ -2183,22 +2093,20 @@ exports.getTrainerLogs = (req, res) => {
     if (!cache || !cache.trainerLogs) return res.json({ success: true, logs: [] });
     
     let logs = cache.trainerLogs.map(row => {
-      const rd = row.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       return {
         rowNumber: row.rowNumber,
-        timestamp: rd[getH('timestamp')] || '',
-        branch: rd[getH('branch')] || '',
-        trainerName: rd[getH('trainername')] || rd[getH('name')] || '',
-        course: rd[getH('course')] || '',
-        studentCount: rd[getH('studentcount')] || '',
-        present: rd[getH('present')] || rd[getH('currentlypresentinlab')] || '',
-        absentees: rd[getH('absentees')] || rd[getH('absent')] || '',
-        feedbacks: rd[getH('feedbacks')] || rd[getH('anyfeedbacks')] || '',
-        resignations: rd[getH('staffresignations')] || '',
-        vacancy: rd[getH('trainervacancy')] || '',
-        tuv: rd[getH('tuvregistration')] || '',
-        mockTest: rd[getH('mocktestconducted')] || ''
+        timestamp: getValByHeader(row, ['timestamp']) || '',
+        branch: getValByHeader(row, ['branch']) || '',
+        trainerName: getValByHeader(row, ['trainername', 'name']) || '',
+        course: getValByHeader(row, ['course']) || '',
+        studentCount: getValByHeader(row, ['studentcount']) || '',
+        present: getValByHeader(row, ['present', 'currentlypresentinlab']) || '',
+        absentees: getValByHeader(row, ['absentees', 'absent']) || '',
+        feedbacks: getValByHeader(row, ['feedbacks', 'anyfeedbacks']) || '',
+        resignations: getValByHeader(row, ['staffresignations']) || '',
+        vacancy: getValByHeader(row, ['trainervacancy']) || '',
+        tuv: getValByHeader(row, ['tuvregistration']) || '',
+        mockTest: getValByHeader(row, ['mocktestconducted']) || ''
       };
     });
     res.json({ success: true, logs: logs.reverse() });
@@ -2259,20 +2167,18 @@ exports.getSecurityLogs = (req, res) => {
     if (!cache || !cache.securityLogs) return res.json({ success: true, logs: [] });
 
     let logs = cache.securityLogs.map(row => {
-      const rd = row.toObject();
-      const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
       return {
         rowNumber: row.rowNumber,
-        timestamp: rd[getH('timestamp')] || '',
-        userName: rd[getH('username')] || rd[getH('name')] || '',
-        email: rd[getH('email')] || rd[getH('mailid')] || '',
-        role: rd[getH('role')] || '',
-        branch: rd[getH('branch')] || '',
-        ipAddress: rd[getH('ipaddress')] || rd[getH('ip')] || '',
-        device: rd[getH('device')] || 'Desktop',
-        os: rd[getH('os')] || '',
-        browser: rd[getH('browser')] || '',
-        status: rd[getH('status')] || 'Active'
+        timestamp: getValByHeader(row, ['timestamp']) || '',
+        userName: getValByHeader(row, ['username', 'name']) || '',
+        email: getValByHeader(row, ['email', 'mailid']) || '',
+        role: getValByHeader(row, ['role']) || '',
+        branch: getValByHeader(row, ['branch']) || '',
+        ipAddress: getValByHeader(row, ['ipaddress', 'ip']) || '',
+        device: getValByHeader(row, ['device']) || 'Desktop',
+        os: getValByHeader(row, ['os']) || '',
+        browser: getValByHeader(row, ['browser']) || '',
+        status: getValByHeader(row, ['status']) || 'Active'
       };
     });
 
