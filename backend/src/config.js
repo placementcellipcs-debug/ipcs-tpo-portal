@@ -244,38 +244,42 @@ const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 4
 
 async function sendIPCSMail(mailOptions, logDetails) {
   try {
-    // 🚨 X-RAY LOGGING: See exactly what is sending in your Render Logs
-    console.log(`\n📧 [DIRECT SMTP DISPATCH] Subject: ${mailOptions.subject}`);
-    console.log(`➡️  TO:  ${mailOptions.to || 'placementcell.ipcs@gmail.com'}`);
-    console.log(`➡️  CC:  ${mailOptions.cc || 'None'}`);
-    console.log(`➡️  BCC: ${mailOptions.bcc || 'None'}\n`);
+    if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
+      const emailWebAppUrl = process.env.APPS_SCRIPT_EMAIL_URL || "https://script.google.com/macros/s/AKfycbzKAEsc5_OR2YjHeO_8yyS9BoxFeJOXjNUzNMqGby7pIHuoIQVM5f31GxXJHxleGds4dQ/exec";
+      
+      const payload = { 
+        to: mailOptions.to || 'placementcell.ipcs@gmail.com', 
+        cc: mailOptions.cc || '', 
+        bcc: mailOptions.bcc || '', 
+        subject: mailOptions.subject, 
+        html: mailOptions.html, 
+        attachments: [] 
+      };
 
-    // Format attachments for native Nodemailer
-    if (mailOptions.attachments && Array.isArray(mailOptions.attachments)) {
-      mailOptions.attachments = mailOptions.attachments.map(att => {
-        if (att.href) {
-          return { filename: att.filename, path: att.href }; // Nodemailer uses 'path' for URLs
-        } else if (att.contentBytes) {
-          return { filename: att.filename, content: Buffer.from(att.contentBytes, 'base64') };
-        }
-        return att; // Passes through raw buffers (like the MOU PDF)
-      });
+      // 🚨 X-RAY LOGGER: Prints EXACTLY what your backend generated before Google touches it!
+      console.log(`\n📧 [MAIL PAYLOAD X-RAY] Subject: ${payload.subject}`);
+      console.log(`➡️  TO:  ${payload.to}`);
+      console.log(`➡️  CC:  ${payload.cc}`);
+      console.log(`➡️  BCC: ${payload.bcc}\n`);
+
+      if (mailOptions.attachments && Array.isArray(mailOptions.attachments)) {
+        mailOptions.attachments.forEach(att => {
+          if (att.content) { payload.attachments.push({ filename: att.filename, mimeType: 'application/pdf', contentBytes: att.content.toString('base64') }); } 
+          else if (att.href) { payload.attachments.push({ filename: att.filename, href: att.href }); }
+        });
+      }
+
+      const res = await axios.post(emailWebAppUrl, payload);
+      if (!res.data.success) throw new Error(res.data.error || "Apps Script returned false");
+    } else {
+      await transporter.sendMail(mailOptions);
     }
-
-    // 🚨 THE FIX: BYPASS APPS SCRIPT COMPLETELY. SEND DIRECTLY VIA NODE.JS.
-    // If 'to' is empty (like in Placement Drives), set a fallback so it doesn't crash
-    const finalMailOptions = {
-      ...mailOptions,
-      to: mailOptions.to || 'placementcell.ipcs@gmail.com' 
-    };
-
-    await transporter.sendMail(finalMailOptions);
     
     if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, 'Success');
     return true;
   } catch (err) {
-    console.error("❌ Direct SMTP Error:", err);
     if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, `Failed: ${err.message}`);
+    console.error("Mail Dispatch Error:", err);
     throw err;
   }
 }
