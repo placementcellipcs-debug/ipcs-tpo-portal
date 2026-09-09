@@ -54,6 +54,9 @@ const getValByHeader = (row, headerOptions) => {
   return '';
 };
 
+// 🚨 Normalizes branch names automatically to ensure "Calicut Branch" === "Calicut"
+const normalizeBranch = (branch) => (branch || '').toLowerCase().replace(/branch/g, '').trim();
+
 // =========================================================
 // 🚨 EXACT CROSS-SHEET EMAIL LOOKUP FUNCTIONS
 // =========================================================
@@ -65,8 +68,8 @@ const getTpoEmailByName = (tpoName) => {
   
   for (let row of cache.contacts) {
     const name = getValByHeader(row, ['tponame', 'name']).toLowerCase().trim();
-    // Checks for exact match OR "Bincy Bindhuraj" starting with "Bincy"
-    if (name === searchName || name.startsWith(searchName)) {
+    // 🚨 EXACT MATCH ONLY (No Fuzzy Logic)
+    if (name === searchName) {
       return getValByHeader(row, ['mailid', 'email']);
     }
   }
@@ -76,7 +79,7 @@ const getTpoEmailByName = (tpoName) => {
 const getAssignedTpoEmail = (branch) => {
   const cache = getCache();
   if (!cache || !cache.contacts) return '';
-  const searchBranch = (branch || '').toLowerCase().replace(/branch/g, '').trim();
+  const searchBranch = normalizeBranch(branch);
   if (!searchBranch) return '';
 
   for (let row of cache.contacts) {
@@ -93,7 +96,7 @@ const getAssignedTpoEmail = (branch) => {
 const getBranchManagerEmail = (branch) => {
   const cache = getCache();
   if (!cache || !cache.users) return '';
-  const searchBranch = (branch || '').toLowerCase().replace(/branch/g, '').trim();
+  const searchBranch = normalizeBranch(branch);
   if (!searchBranch) return '';
 
   for (let row of cache.users) {
@@ -101,7 +104,7 @@ const getBranchManagerEmail = (branch) => {
     const br1 = getValByHeader(row, ['sittingbranch']).toLowerCase();
     const br2 = getValByHeader(row, ['assignedbranches']).toLowerCase();
     
-    // STRICT check for "Branch Manager" only
+    // 🚨 STRICT check for "Branch Manager" only
     if (role === 'branch manager' && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
       return getValByHeader(row, ['mailid', 'email']);
     }
@@ -197,7 +200,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   const noAttendCount = noAttendJobs.size;
   const rejectCount = rejectedJobs.size;
 
-  // CROSS-SHEET LOOKUPS FOR RULES 4, 5, & 6
+  // 🚨 CROSS-SHEET LOOKUPS FOR RULES 4, 5, & 6
   const assignedTpoEmail = getAssignedTpoEmail(studentData.branch);
   const scheduledTpoEmail = getTpoEmailByName(studentData.tpoName);
   const bmEmail = getBranchManagerEmail(studentData.branch);
@@ -611,7 +614,7 @@ exports.getStudents = (req, res) => {
   res.json({ success: true, students: students.reverse(), stats });
 };
 
-// 🚨 RULE 7: TRIGGER MAIL IF VACANCY CHANGES TO YES
+// 🚨 RULE 7: TRIGGER MAIL IF VACANCY CHANGES TO YES (Independent of Course Percentage)
 exports.updateStudent = async (req, res) => {
   const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus, coursePercentage } = req.body;
   try {
@@ -659,12 +662,10 @@ exports.updateStudent = async (req, res) => {
       rows[0].assign(updateObj); 
       await rows[0].save(); 
 
+      // 🚨 RULE 7: Independent Vacancy Trigger
       if (vacOpen && vacOpen.toString().toLowerCase() === 'yes' && oldVacOpen !== 'yes') {
-         const nameH = getRealHeader(['name', 'studentname']);
-         const mailH = getRealHeader(['mailid', 'email']);
-
-         let sName = nameH ? getOldVal(nameH) : 'Student';
-         let sEmail = mailH ? getOldVal(mailH) : '';
+         let sName = getValByHeader(rows[0], ['name', 'studentname']) || 'Student';
+         let sEmail = getValByHeader(rows[0], ['mailid', 'email']);
 
          if (sEmail) {
             const refId = Math.floor(10000 + Math.random() * 90000); 
@@ -1055,7 +1056,7 @@ exports.addEvent = async (req, res) => {
     const formattedDesc = String(description || 'N/A').replace(/(?:\r\n|\r|\n)/g, '<br/>');
     
     if (evType.includes('placement drive')) {
-      // RULE 2: Placement Drive Broadcast
+      // 🚨 RULE 2: Placement Drive Broadcast
       const allTpos = getAllTpoEmails();
       const allBMs = getAllBranchManagerEmails();
       
@@ -1134,7 +1135,7 @@ exports.addEvent = async (req, res) => {
       }, { name: 'All Branches', email: 'Broadcast', type: 'Event Notification' });
 
     } else if (evType.includes('talentino')) {
-      // RULE 1: Talentino Notification
+      // 🚨 RULE 1: Talentino Notification
       const scheduledTpoEmail = getTpoEmailByName(tpo);
       const bmMail = getBranchManagerEmail(branch);
 
@@ -1261,7 +1262,7 @@ exports.runDailyCron = async () => {
     if (applicants.length === 0) continue;
 
     const tpoName = getValByHeader(job, ['placementofficer']);
-    const tpoEmail = getTpoEmailByName(tpoName);
+    const tpoEmail = getTpoEmailByName(tpoName); // 🚨 Exact Match
 
     let tableRows = ''; let attachments = [];
     applicants.forEach((appRow, index) => {
