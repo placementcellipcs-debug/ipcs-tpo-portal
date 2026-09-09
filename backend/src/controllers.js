@@ -100,12 +100,13 @@ const getBranchManagerEmail = (branch) => {
   if (!searchBranch) return '';
 
   for (let row of cache.users) {
-    const role = getValByHeader(row, ['role']).toLowerCase().trim();
+    // Force lowercase, remove spaces, and check EXACTLY for "branchmanager"
+    const rawRole = getValByHeader(row, ['role']).toLowerCase().replace(/\s/g, '');
     const br1 = getValByHeader(row, ['sittingbranch']).toLowerCase();
     const br2 = getValByHeader(row, ['assignedbranches']).toLowerCase();
     
-    // 🚨 STRICT check for "Branch Manager" only
-    if (role === 'branch manager' && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
+    // 🚨 STRICT: Only matches "Branch Manager". Completely ignores "Territory Manager" or "TPO".
+    if (rawRole === 'branchmanager' && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
       return getValByHeader(row, ['mailid', 'email']);
     }
   }
@@ -122,7 +123,8 @@ const getAllBranchManagerEmails = () => {
   const cache = getCache();
   if (!cache || !cache.users) return [];
   return cache.users.filter(r => {
-    return getValByHeader(r, ['role']).toLowerCase().trim() === 'branch manager';
+    const role = getValByHeader(r, ['role']).toLowerCase().replace(/\s/g, '');
+    return role === 'branchmanager';
   }).map(r => getValByHeader(r, ['mailid', 'email'])).filter(Boolean);
 };
 

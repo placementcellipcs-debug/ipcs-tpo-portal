@@ -245,11 +245,22 @@ const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 4
 async function sendIPCSMail(mailOptions, logDetails) {
   try {
     if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
-      const emailWebAppUrl = process.env.APPS_SCRIPT_EMAIL_URL || "https://script.google.com/macros/s/AKfycbzKAEsc5_OR2YjHeO_8yyS9BoxFeJOXjNUzNMqGby7pIHuoIQVM5f31GxXJHxleGds4dQ/exec";
+      const emailWebAppUrl = process.env.APPS_SCRIPT_EMAIL_URL;
+      
       const payload = { 
-        to: mailOptions.to, cc: mailOptions.cc || '', bcc: mailOptions.bcc || '', 
-        subject: mailOptions.subject, html: mailOptions.html, attachments: [] 
+        to: mailOptions.to || 'placementcell.ipcs@gmail.com', 
+        cc: mailOptions.cc || '', 
+        bcc: mailOptions.bcc || '', 
+        subject: mailOptions.subject, 
+        html: mailOptions.html, 
+        attachments: [] 
       };
+
+      // 🚨 X-RAY LOGGING: This will print EXACTLY who Render is emailing in your Render Logs!
+      console.log(`\n📧 [MAIL DISPATCH] Subject: ${payload.subject}`);
+      console.log(`➡️  TO:  ${payload.to}`);
+      console.log(`➡️  CC:  ${payload.cc}`);
+      console.log(`➡️  BCC: ${payload.bcc}\n`);
 
       if (mailOptions.attachments && Array.isArray(mailOptions.attachments)) {
         mailOptions.attachments.forEach(att => {
