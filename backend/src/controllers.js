@@ -55,33 +55,35 @@ const getValByHeader = (row, headerOptions) => {
 };
 
 // =========================================================
-// 🚨 EMAIL HELPERS & LOGGING SYSTEM
+// 🚨 EXACT CROSS-SHEET EMAIL LOOKUP FUNCTIONS
 // =========================================================
-const getTpoEmailByBranch = (branch) => {
+const getTpoEmailByName = (tpoName) => {
   const cache = getCache();
   if (!cache || !cache.contacts) return '';
-  const searchBranch = (branch || '').toLowerCase().trim();
+  const searchName = (tpoName || '').toLowerCase().trim();
+  if (!searchName) return '';
   
   for (let row of cache.contacts) {
-    const assigned = getValByHeader(row, ['assignedbranches']).toLowerCase();
-    const sitting = getValByHeader(row, ['sittingbranch']).toLowerCase();
-    
-    if (assigned.includes('all') || sitting.includes('all')) continue; 
-    if (assigned.includes(searchBranch) || searchBranch.includes(assigned) || sitting.includes(searchBranch)) {
+    const name = getValByHeader(row, ['tponame', 'name']).toLowerCase().trim();
+    // Checks for exact match OR "Bincy Bindhuraj" starting with "Bincy"
+    if (name === searchName || name.startsWith(searchName)) {
       return getValByHeader(row, ['mailid', 'email']);
     }
   }
   return '';
 };
 
-const getTpoEmail = (tpoName) => {
+const getAssignedTpoEmail = (branch) => {
   const cache = getCache();
   if (!cache || !cache.contacts) return '';
-  const searchName = (tpoName || '').toLowerCase().trim();
-  
+  const searchBranch = (branch || '').toLowerCase().replace(/branch/g, '').trim();
+  if (!searchBranch) return '';
+
   for (let row of cache.contacts) {
-    const name = getValByHeader(row, ['tponame', 'name']).toLowerCase();
-    if (name && (name.includes(searchName) || searchName.includes(name))) {
+    const assigned = getValByHeader(row, ['assignedbranches']).toLowerCase();
+    const sitting = getValByHeader(row, ['sittingbranch']).toLowerCase();
+    
+    if (assigned.includes('all') || assigned.includes(searchBranch) || sitting.includes(searchBranch)) {
       return getValByHeader(row, ['mailid', 'email']);
     }
   }
@@ -91,14 +93,16 @@ const getTpoEmail = (tpoName) => {
 const getBranchManagerEmail = (branch) => {
   const cache = getCache();
   if (!cache || !cache.users) return '';
-  const searchBranch = (branch || '').toLowerCase().replace('branch', '').trim();
-  
+  const searchBranch = (branch || '').toLowerCase().replace(/branch/g, '').trim();
+  if (!searchBranch) return '';
+
   for (let row of cache.users) {
-    const role = getValByHeader(row, ['role']).toLowerCase();
+    const role = getValByHeader(row, ['role']).toLowerCase().trim();
     const br1 = getValByHeader(row, ['sittingbranch']).toLowerCase();
     const br2 = getValByHeader(row, ['assignedbranches']).toLowerCase();
     
-    if (role.includes('manager') && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
+    // STRICT check for "Branch Manager" only
+    if (role === 'branch manager' && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
       return getValByHeader(row, ['mailid', 'email']);
     }
   }
@@ -115,7 +119,7 @@ const getAllBranchManagerEmails = () => {
   const cache = getCache();
   if (!cache || !cache.users) return [];
   return cache.users.filter(r => {
-    return getValByHeader(r, ['role']).toLowerCase().includes('manager');
+    return getValByHeader(r, ['role']).toLowerCase().trim() === 'branch manager';
   }).map(r => getValByHeader(r, ['mailid', 'email'])).filter(Boolean);
 };
 
@@ -159,7 +163,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE
+// 🚨 MASTER STUDENT EMAIL ENGINE (Rules 4, 5, 6)
 // ---------------------------------------------------------
 const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
@@ -193,12 +197,28 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   const noAttendCount = noAttendJobs.size;
   const rejectCount = rejectedJobs.size;
 
-  const assignedTpoEmail = getTpoEmail(studentData.tpoName);
-  let ccArray = [currentUserEmail, assignedTpoEmail];
+  // CROSS-SHEET LOOKUPS FOR RULES 4, 5, & 6
+  const assignedTpoEmail = getAssignedTpoEmail(studentData.branch);
+  const scheduledTpoEmail = getTpoEmailByName(studentData.tpoName);
+  const bmEmail = getBranchManagerEmail(studentData.branch);
 
-  if ((status === 'interview not attended' && noAttendCount >= 3) || 
-      ((status.includes('student rejected') || status.includes('offer rejected')) && rejectCount >= 3)) {
-    ccArray.push('gifty@ipcsglobal.com');
+  let ccArray = [];
+
+  if (status === 'interview scheduled') {
+    // RULE 4: CC -> Scheduled TPO + Assigned TPO
+    ccArray = [scheduledTpoEmail, assignedTpoEmail];
+  } else if (status === 'interview not attended' || status.includes('student rejected') || status.includes('offer rejected')) {
+    if ((status === 'interview not attended' && noAttendCount >= 3) || 
+        ((status.includes('student rejected') || status.includes('offer rejected')) && rejectCount >= 3)) {
+      // RULE 6: HOLD MAIL CC -> Scheduled TPO + Assigned TPO + Gifty + Branch Manager
+      ccArray = [scheduledTpoEmail, assignedTpoEmail, 'gifty@ipcsglobal.com', bmEmail];
+    } else {
+      // RULE 5: WARNING MAIL CC -> Assigned TPO
+      ccArray = [assignedTpoEmail];
+    }
+  } else {
+    // Generic fallback for placed/other statuses
+    ccArray = [currentUserEmail, assignedTpoEmail];
   }
 
   const ccList = [...new Set(ccArray)].filter(Boolean).join(',');
@@ -591,7 +611,7 @@ exports.getStudents = (req, res) => {
   res.json({ success: true, students: students.reverse(), stats });
 };
 
-// 🚨 THE FIX: TRIGGER MAIL IF VACANCY CHANGES TO YES
+// 🚨 RULE 7: TRIGGER MAIL IF VACANCY CHANGES TO YES
 exports.updateStudent = async (req, res) => {
   const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus, coursePercentage } = req.body;
   try {
@@ -639,7 +659,6 @@ exports.updateStudent = async (req, res) => {
       rows[0].assign(updateObj); 
       await rows[0].save(); 
 
-      // 🚨 THE FIX: TRIGGER EMAIL IF VACANCY IS NOW 'YES' AND WASN'T BEFORE
       if (vacOpen && vacOpen.toString().toLowerCase() === 'yes' && oldVacOpen !== 'yes') {
          const nameH = getRealHeader(['name', 'studentname']);
          const mailH = getRealHeader(['mailid', 'email']);
@@ -1015,7 +1034,7 @@ exports.getEvents = (req, res) => {
 };
 
 // =========================================================
-// 🚨 FINAL FIXED EVENT ROUTER: GUARANTEED CC/BCC AND LINE BREAKS
+// 🚨 RULES 1 & 2: TALENTINO & PLACEMENT DRIVE EVENTS
 // =========================================================
 exports.addEvent = async (req, res) => {
   const { date, tpo, branch, type, title, description, time, location } = req.body;
@@ -1033,10 +1052,10 @@ exports.addEvent = async (req, res) => {
     const watermark = "https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
     const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
     
-    // 🚨 INDESTRUCTIBLE REGEX: Captures all hidden line breaks (Windows & Mac) and replaces with HTML
     const formattedDesc = String(description || 'N/A').replace(/(?:\r\n|\r|\n)/g, '<br/>');
     
     if (evType.includes('placement drive')) {
+      // RULE 2: Placement Drive Broadcast
       const allTpos = getAllTpoEmails();
       const allBMs = getAllBranchManagerEmails();
       
@@ -1115,14 +1134,12 @@ exports.addEvent = async (req, res) => {
       }, { name: 'All Branches', email: 'Broadcast', type: 'Event Notification' });
 
     } else if (evType.includes('talentino')) {
-      const tpoMail = getTpoEmail(tpo);
+      // RULE 1: Talentino Notification
+      const scheduledTpoEmail = getTpoEmailByName(tpo);
       const bmMail = getBranchManagerEmail(branch);
 
-      // 🚨 EXACT ROUTING REQUESTED
-      const toEmail = bmMail ? bmMail : senderEmail; // Primary TO must be BM
-      const ccList = [tpoMail, 'gifty@ipcsglobal.com'].filter(e => e && e !== toEmail).join(','); 
-
-      console.log(`[TALENTINO ROUTING LOG] Branch: ${branch} | TO: ${toEmail} | CC: ${ccList}`);
+      const toEmail = bmMail ? bmMail : senderEmail; 
+      const ccList = [scheduledTpoEmail, 'gifty@ipcsglobal.com'].filter(e => e && e !== toEmail).join(','); 
 
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
@@ -1199,7 +1216,9 @@ exports.addEvent = async (req, res) => {
   }
 };
 
-// --- CRON HELPER (RESUME DELIVERY) ---
+// =========================================================
+// 🚨 RULE 3: CRON HELPER (RESUME DELIVERY TO COMPANY)
+// =========================================================
 exports.runDailyCron = async () => {
   console.log("🚨 [CRON] Starting Daily Resume Delivery check...");
   const cache = getCache();
@@ -1241,9 +1260,8 @@ exports.runDailyCron = async () => {
 
     if (applicants.length === 0) continue;
 
-    const firstApp = applicants[0];
-    const tpoName = getValByHeader(firstApp, ['placementofficer']);
-    const tpoEmail = getTpoEmail(tpoName);
+    const tpoName = getValByHeader(job, ['placementofficer']);
+    const tpoEmail = getTpoEmailByName(tpoName);
 
     let tableRows = ''; let attachments = [];
     applicants.forEach((appRow, index) => {
@@ -1314,7 +1332,6 @@ exports.runDailyCron = async () => {
   }
 };
 
-// 🚨 MANUAL TRIGGER FOR THE CRON JOB 
 exports.triggerDailyCron = async (req, res) => {
   try {
     await exports.runDailyCron();
@@ -1644,13 +1661,10 @@ exports.addMaterial = async (req, res) => {
   try {
     const { id, course, module, title, fileType, link, status } = req.body;
     
-    // Fuzzy match the sheet to ignore tab naming errors
     const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('studymaterials'));
     if (!sheet) return res.status(404).json({ success: false, message: "Study Materials sheet not found" });
 
     const h = sheet.headerValues;
-    
-    // Safely write to the exact columns regardless of hidden spaces/slashes
     await sheet.addRow({
       [getFuzzyHeader(h, 'materialid')]: id,
       [getFuzzyHeader(h, 'course')]: course,
@@ -2010,7 +2024,6 @@ exports.getBranches = (req, res) => {
     const cache = getCache();
     if (!cache || !cache.branches) return res.json({ success: true, branches: [] });
 
-    // Safely extract data using Google Sheets .get() method
     const branches = cache.branches.map((row, index) => {
       let branchName = '';
       let regionName = '';
@@ -2030,7 +2043,6 @@ exports.getBranches = (req, res) => {
       };
     }).filter(b => b.branch !== '');
 
-    // BULLETPROOF FALLBACK: Guarantees the dropdown is never empty
     if (branches.length === 0) {
       const fallbackList = [
         "Trivandrum", "Attingal", "Kollam", "Calicut", "Kannur", "Perinthalmanna", 

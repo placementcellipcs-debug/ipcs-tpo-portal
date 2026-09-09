@@ -153,6 +153,6 @@ app.post('/api/v1/assets/maintenance/resolve', assetControllers.resolveMaintenan
 // ---------------------------------------------------------
 // SERVER INITIALIZATION
 // ---------------------------------------------------------
-cron.schedule('0 8 * * *', controllers.runDailyCron);
+cron.schedule('30 3 * * *', controllers.runDailyCron);
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 IPCS Backend is running on http://localhost:${PORT}`));
