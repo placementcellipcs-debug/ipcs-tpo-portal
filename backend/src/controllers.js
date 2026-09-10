@@ -54,7 +54,6 @@ const getValByHeader = (row, headerOptions) => {
   return '';
 };
 
-// 🚨 Normalizes branch names automatically to ensure "Calicut Branch" === "Calicut"
 const normalizeBranch = (branch) => (branch || '').toLowerCase().replace(/branch/g, '').trim();
 
 // =========================================================
@@ -63,12 +62,12 @@ const normalizeBranch = (branch) => (branch || '').toLowerCase().replace(/branch
 const getTpoEmailByName = (tpoName) => {
   const cache = getCache();
   if (!cache || !cache.contacts) return '';
-  const searchName = (tpoName || '').toLowerCase().trim();
+  // 🚨 FIX: Remove all spaces from the search name to prevent "Pranav V S" vs "Pranav VS" failures
+  const searchName = (tpoName || '').toLowerCase().replace(/\s/g, '');
   if (!searchName) return '';
   
   for (let row of cache.contacts) {
-    const name = getValByHeader(row, ['tponame', 'name']).toLowerCase().trim();
-    // 🚨 EXACT MATCH ONLY (No Fuzzy Logic)
+    const name = getValByHeader(row, ['tponame', 'name']).toLowerCase().replace(/\s/g, '');
     if (name === searchName) {
       return getValByHeader(row, ['mailid', 'email']);
     }
@@ -100,12 +99,10 @@ const getBranchManagerEmail = (branch) => {
   if (!searchBranch) return '';
 
   for (let row of cache.users) {
-    // Force lowercase, remove spaces, and check EXACTLY for "branchmanager"
     const rawRole = getValByHeader(row, ['role']).toLowerCase().replace(/\s/g, '');
     const br1 = getValByHeader(row, ['sittingbranch']).toLowerCase();
     const br2 = getValByHeader(row, ['assignedbranches']).toLowerCase();
     
-    // 🚨 STRICT: Only matches "Branch Manager". Completely ignores "Territory Manager" or "TPO".
     if (rawRole === 'branchmanager' && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
       return getValByHeader(row, ['mailid', 'email']);
     }
@@ -168,7 +165,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE (Rules 4, 5, 6)
+// 🚨 MASTER STUDENT EMAIL ENGINE
 // ---------------------------------------------------------
 const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
@@ -202,7 +199,6 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   const noAttendCount = noAttendJobs.size;
   const rejectCount = rejectedJobs.size;
 
-  // 🚨 CROSS-SHEET LOOKUPS FOR RULES 4, 5, & 6
   const assignedTpoEmail = getAssignedTpoEmail(studentData.branch);
   const scheduledTpoEmail = getTpoEmailByName(studentData.tpoName);
   const bmEmail = getBranchManagerEmail(studentData.branch);
@@ -210,19 +206,15 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   let ccArray = [];
 
   if (status === 'interview scheduled') {
-    // RULE 4: CC -> Scheduled TPO + Assigned TPO
     ccArray = [scheduledTpoEmail, assignedTpoEmail];
   } else if (status === 'interview not attended' || status.includes('student rejected') || status.includes('offer rejected')) {
     if ((status === 'interview not attended' && noAttendCount >= 3) || 
         ((status.includes('student rejected') || status.includes('offer rejected')) && rejectCount >= 3)) {
-      // RULE 6: HOLD MAIL CC -> Scheduled TPO + Assigned TPO + Gifty + Branch Manager
       ccArray = [scheduledTpoEmail, assignedTpoEmail, 'gifty@ipcsglobal.com', bmEmail];
     } else {
-      // RULE 5: WARNING MAIL CC -> Assigned TPO
       ccArray = [assignedTpoEmail];
     }
   } else {
-    // Generic fallback for placed/other statuses
     ccArray = [currentUserEmail, assignedTpoEmail];
   }
 
@@ -616,7 +608,7 @@ exports.getStudents = (req, res) => {
   res.json({ success: true, students: students.reverse(), stats });
 };
 
-// 🚨 RULE 7: TRIGGER MAIL IF VACANCY CHANGES TO YES (Independent of Course Percentage)
+// 🚨 RULE 7: TRIGGER MAIL IF VACANCY CHANGES TO YES
 exports.updateStudent = async (req, res) => {
   const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus, coursePercentage } = req.body;
   try {
@@ -1062,8 +1054,9 @@ exports.addEvent = async (req, res) => {
       const allTpos = getAllTpoEmails();
       const allBMs = getAllBranchManagerEmails();
       
-      const toEmail = senderEmail; 
-      const ccList = 'ajith@ipcsglobal.com,rakesh@ipcsglobal.com,gifty@ipcsglobal.com';
+      // 🚨 FIX: Never use senderEmail for 'TO' to avoid Google dropping CCs
+      const toEmail = 'ajith@ipcsglobal.com'; 
+      const ccList = 'rakesh@ipcsglobal.com,gifty@ipcsglobal.com';
       const bccList = [...new Set([...allBMs, ...allTpos])].filter(Boolean).join(',');
 
       const html = `
@@ -1141,8 +1134,19 @@ exports.addEvent = async (req, res) => {
       const scheduledTpoEmail = getTpoEmailByName(tpo);
       const bmMail = getBranchManagerEmail(branch);
 
-      const toEmail = bmMail ? bmMail : senderEmail; 
-      const ccList = [scheduledTpoEmail, 'gifty@ipcsglobal.com'].filter(e => e && e !== toEmail).join(','); 
+      // 🚨 FIX: Never use senderEmail as TO, so Google doesn't drop the CCs
+      let toEmail = bmMail;
+      let ccArray = [scheduledTpoEmail];
+
+      if (!toEmail) {
+        // If no Branch Manager is found, make Gifty the primary TO recipient
+        toEmail = 'gifty@ipcsglobal.com';
+      } else {
+        // If BM is found, BM is TO, and Gifty goes in CC
+        ccArray.push('gifty@ipcsglobal.com');
+      }
+
+      const ccList = ccArray.filter(e => e && e !== toEmail).join(',');
 
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
@@ -1264,7 +1268,7 @@ exports.runDailyCron = async () => {
     if (applicants.length === 0) continue;
 
     const tpoName = getValByHeader(job, ['placementofficer']);
-    const tpoEmail = getTpoEmailByName(tpoName); // 🚨 Exact Match
+    const tpoEmail = getTpoEmailByName(tpoName);
 
     let tableRows = ''; let attachments = [];
     applicants.forEach((appRow, index) => {
