@@ -83,7 +83,6 @@ const getUserEmailById = (userId) => {
 const getTpoEmailByName = (tpoName) => {
   const cache = getCache();
   if (!cache || !cache.contacts) return '';
-  // 🚨 FIX: Remove all spaces from the search name to prevent "Pranav V S" vs "Pranav VS" failures
   const searchName = (tpoName || '').toLowerCase().replace(/\s/g, '');
   if (!searchName) return '';
   
@@ -1824,7 +1823,7 @@ exports.addQuestion = async (req, res) => {
       [getFuzzyHeader(h, 'optiond')]: optD, 
       [getFuzzyHeader(h, 'correctoption')]: correct, 
       [getFuzzyHeader(h, 'explanation')]: explanation, 
-      [getFuzzyHeader(h, 'status')]: status || 'Active'
+      [getFuzzyHeader(h, 'status')]: status || 'Active' 
     });
     
     refreshCache(); res.json({ success: true, message: "Question added successfully!" });
