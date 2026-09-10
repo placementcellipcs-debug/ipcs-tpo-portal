@@ -46,7 +46,6 @@ const getValByHeader = (row, headerOptions) => {
     let index = headers.indexOf(cleanTarget);
     if (index === -1) index = headers.findIndex(h => h.includes(cleanTarget));
     
-    // Reads from the raw array, skipping the broken google-spreadsheet row.get() bug
     if (index !== -1 && index < row._rawData.length && row._rawData[index] !== undefined && row._rawData[index] !== null) {
       return row._rawData[index].toString().trim();
     }
@@ -57,8 +56,30 @@ const getValByHeader = (row, headerOptions) => {
 const normalizeBranch = (branch) => (branch || '').toLowerCase().replace(/branch/g, '').trim();
 
 // =========================================================
-// 🚨 EXACT CROSS-SHEET EMAIL LOOKUP FUNCTIONS
+// 🚨 ENTERPRISE DYNAMIC LOOKUP FUNCTIONS
 // =========================================================
+
+// Dynamically fetch any User by their User_ID (e.g. U001, U002)
+const getUserEmailById = (userId) => {
+  const cache = getCache();
+  if (!cache || !cache.users || !userId) return '';
+  const cleanId = String(userId).trim().toLowerCase();
+  
+  const row = cache.users.find(r => {
+    const rd = r.toObject();
+    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    const uid = (rd[getH('userid')] || rd[getH('empid')] || '').toLowerCase().trim();
+    return uid === cleanId;
+  });
+  
+  if (row) {
+    const rd = row.toObject();
+    const getH = (str) => Object.keys(rd).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+    return rd[getH('email')] || rd[getH('mailid')] || '';
+  }
+  return '';
+};
+
 const getTpoEmailByName = (tpoName) => {
   const cache = getCache();
   if (!cache || !cache.contacts) return '';
@@ -103,7 +124,7 @@ const getBranchManagerEmail = (branch) => {
     const br1 = getValByHeader(row, ['sittingbranch']).toLowerCase();
     const br2 = getValByHeader(row, ['assignedbranches']).toLowerCase();
     
-    if (rawRole === 'branchmanager' && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
+    if (rawRole.includes('branchmanager') && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
       return getValByHeader(row, ['mailid', 'email']);
     }
   }
@@ -121,17 +142,7 @@ const getAllBranchManagerEmails = () => {
   if (!cache || !cache.users) return [];
   return cache.users.filter(r => {
     const role = getValByHeader(r, ['role']).toLowerCase().replace(/\s/g, '');
-    return role === 'branchmanager';
-  }).map(r => getValByHeader(r, ['mailid', 'email'])).filter(Boolean);
-};
-
-const getSuperAdminEmails = () => {
-  const cache = getCache();
-  if (!cache || !cache.users) return [];
-  return cache.users.filter(r => {
-    const role = getValByHeader(r, ['role']).toLowerCase();
-    const access = getValByHeader(r, ['access']).toLowerCase();
-    return access.includes('admin') || role.includes('general manager') || role.includes('technical head') || role.includes('zonal');
+    return role.includes('branchmanager');
   }).map(r => getValByHeader(r, ['mailid', 'email'])).filter(Boolean);
 };
 
@@ -161,6 +172,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
   } catch (err) {
     await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, `Failed: ${err.message}`);
     console.error("Mail Dispatch Error:", err);
+    throw err;
   }
 };
 
@@ -202,6 +214,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   const assignedTpoEmail = getAssignedTpoEmail(studentData.branch);
   const scheduledTpoEmail = getTpoEmailByName(studentData.tpoName);
   const bmEmail = getBranchManagerEmail(studentData.branch);
+  const giftyEmail = getUserEmailById('U003');
 
   let ccArray = [];
 
@@ -210,7 +223,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   } else if (status === 'interview not attended' || status.includes('student rejected') || status.includes('offer rejected')) {
     if ((status === 'interview not attended' && noAttendCount >= 3) || 
         ((status.includes('student rejected') || status.includes('offer rejected')) && rejectCount >= 3)) {
-      ccArray = [scheduledTpoEmail, assignedTpoEmail, 'gifty@ipcsglobal.com', bmEmail];
+      ccArray = [scheduledTpoEmail, assignedTpoEmail, giftyEmail, bmEmail];
     } else {
       ccArray = [assignedTpoEmail];
     }
@@ -386,8 +399,8 @@ exports.login = async (req, res) => {
         foundUser = {
           sittingbranch: getValByHeader(row, ['sittingbranch']),
           assignedbranches: getValByHeader(row, ['assignedbranches']),
-          access: getValByHeader(row, ['access']),
-          profilephoto: getValByHeader(row, ['profilephoto', 'photo']),
+          access: getValByHeader(row, ['access', 'accesstype']),
+          profilephoto: getValByHeader(row, ['profilephoto', 'profilephotourl', 'photo']),
           contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno'])
         };
         role = 'TPO';
@@ -408,12 +421,12 @@ exports.login = async (req, res) => {
           foundUser = {
             sittingbranch: getValByHeader(row, ['sittingbranch']),
             assignedbranches: getValByHeader(row, ['assignedbranches']),
-            access: getValByHeader(row, ['access']),
-            profilephoto: getValByHeader(row, ['profilephoto', 'photo']),
+            access: getValByHeader(row, ['access', 'accesstype']),
+            profilephoto: getValByHeader(row, ['profilephoto', 'profilephotourl', 'photo']),
             contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno'])
           };
           role = getValByHeader(row, ['role']) || 'RTH';
-          course = getValByHeader(row, ['course']) || 'All';
+          course = getValByHeader(row, ['course', 'assignedcourses']) || 'All';
           userName = getValByHeader(row, ['username', 'name']) || 'User';
           break;
         }
@@ -430,11 +443,11 @@ exports.login = async (req, res) => {
     let accessType = 'edit';
     const sheetAccess = (foundUser['access'] || '').toString().toUpperCase();
     
-    if (upperRole.includes('ADMIN') || upperRole === 'GENERAL MANAGER' || upperRole === 'TECHNICAL HEAD' || upperRole === 'ZONAL PLACEMENT HEAD' || sheetAccess.includes('SUPER ADMIN')) {
+    if (upperRole.includes('ADMIN') || upperRole === 'GENERAL MANAGER' || upperRole === 'TECHNICAL HEAD' || upperRole === 'ZONAL PLACEMENT HEAD' || sheetAccess.includes('SUPER_ADMIN')) {
       accessType = 'superadmin';
     } else if (sheetAccess.includes('VIEW ONLY') && !sheetAccess.includes('EDIT')) {
       accessType = 'view';
-    } else if (sheetAccess.includes('VIEW & EDIT') || sheetAccess.includes('EDIT')) {
+    } else if (sheetAccess.includes('VIEW & EDIT') || sheetAccess.includes('EDIT') || sheetAccess.includes('MANAGER') || sheetAccess.includes('TRAINER') || sheetAccess.includes('STAFF')) {
       accessType = 'edit';
     }
 
@@ -608,7 +621,6 @@ exports.getStudents = (req, res) => {
   res.json({ success: true, students: students.reverse(), stats });
 };
 
-// 🚨 RULE 7: TRIGGER MAIL IF VACANCY CHANGES TO YES
 exports.updateStudent = async (req, res) => {
   const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus, coursePercentage } = req.body;
   try {
@@ -656,7 +668,6 @@ exports.updateStudent = async (req, res) => {
       rows[0].assign(updateObj); 
       await rows[0].save(); 
 
-      // 🚨 RULE 7: Independent Vacancy Trigger
       if (vacOpen && vacOpen.toString().toLowerCase() === 'yes' && oldVacOpen !== 'yes') {
          let sName = getValByHeader(rows[0], ['name', 'studentname']) || 'Student';
          let sEmail = getValByHeader(rows[0], ['mailid', 'email']);
@@ -1029,34 +1040,76 @@ exports.getEvents = (req, res) => {
 };
 
 // =========================================================
-// 🚨 RULES 1 & 2: TALENTINO & PLACEMENT DRIVE EVENTS
+// 🚨 RULES 1 & 2: TALENTINO & PLACEMENT DRIVE EVENTS (NEW ARCHITECTURE)
 // =========================================================
 exports.addEvent = async (req, res) => {
-  const { date, tpo, branch, type, title, description, time, location } = req.body;
+  const { date, tpo, branch, type, title, description, time, location, userName } = req.body;
   try {
     const eventSheet = doc.sheetsByTitle["Event"];
     let posterLink = '';
     if (req.file) posterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS); 
-    await eventSheet.addRow({ 'Date of the Event': date, 'TPO': tpo, 'Branch': branch, 'Event': type, 'Title': title, 'Descripation': description || '', 'Time of the Event': time || '', 'Event Happening in': location || '', 'Poster Link': posterLink });
     
     const evType = (type || '').toLowerCase();
-    const refId = Math.floor(10000 + Math.random() * 90000); 
+    const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
+    const formattedDesc = String(description || 'N/A').replace(/(?:\r\n|\r|\n)/g, '<br/>');
+
+    // 🚨 Check Branch Manager for Talentino BEFORE saving the event
+    if (evType.includes('talentino')) {
+      const bmCheck = getBranchManagerEmail(branch);
+      if (!bmCheck) {
+        return res.status(400).json({ 
+          success: false, 
+          message: `Mail cannot be sent: No Branch Manager is available for the ${branch} branch.` 
+        });
+      }
+    }
+
+    // 🚨 Generate Enterprise Event ID
+    const dateObj = new Date();
+    const dateStr = dateObj.toISOString().split('T')[0].replace(/-/g, '');
+    const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
+    const eventId = `EVT-${dateStr}-${randomStr}`;
+    const timestamp = dateObj.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+
+    // Prepare row data including new system columns
+    const rowData = { 
+      'Date of the Event': date, 
+      'TPO': tpo, 
+      'Branch': branch, 
+      'Event': type, 
+      'Title': title, 
+      'Descripation': description || '', 
+      'Time of the Event': time || '', 
+      'Event Happening in': location || '', 
+      'Poster Link': posterLink,
+      'Event_ID': eventId,
+      'Created_At': timestamp,
+      'Created_By': userName || tpo,
+      'Mail_Status': 'PENDING'
+    };
+
+    // Add to sheet
+    const newRow = await eventSheet.addRow(rowData);
+
+    // 🚨 FETCH DYNAMIC EMAILS VIA USER IDs
+    const giftyEmail = getUserEmailById('U003');
+    const ajithEmail = getUserEmailById('U001');
+    const rakeshEmail = getUserEmailById('U002');
 
     const logo1 = "https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
     const logo2 = "https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
     const watermark = "https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB";
-    const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
-    
-    const formattedDesc = String(description || 'N/A').replace(/(?:\r\n|\r|\n)/g, '<br/>');
-    
+
+    let mailOptions = null;
+
     if (evType.includes('placement drive')) {
-      // 🚨 RULE 2: Placement Drive Broadcast
       const allTpos = getAllTpoEmails();
       const allBMs = getAllBranchManagerEmails();
       
-      // 🚨 FIX: Never use senderEmail for 'TO' to avoid Google dropping CCs
-      const toEmail = 'ajith@ipcsglobal.com'; 
-      const ccList = 'rakesh@ipcsglobal.com,gifty@ipcsglobal.com';
+      const toEmail = giftyEmail || senderEmail;
+      const ccList = [ajithEmail, rakeshEmail].filter(Boolean).join(',');
+      
+      // 🚨 FIX: BCC gets ALL TPOs and ALL Branch Managers (No Super Admins)
       const bccList = [...new Set([...allBMs, ...allTpos])].filter(Boolean).join(',');
 
       const html = `
@@ -1086,30 +1139,13 @@ exports.addEvent = async (req, res) => {
                   <tr><td style="padding: 6px 0; color: #64748b; vertical-align: top;">Description:</td><td style="padding: 6px 0; color: #334155; white-space: pre-line;">${formattedDesc}</td></tr>
                 </table>
               </div>
-
               <h3 style="color: #ef4444; margin: 20px 0 10px 0; font-size: 16px;">&#9888;&#65039; Action Required</h3>
               <p>All concerned branches are requested to immediately inform all eligible students about this placement opportunity and encourage maximum participation.</p>
-              <p>Please ensure that the interested and eligible students strictly register for the drive through the IPCS Global Student Portal:</p>
-              
               <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0;">
                 <p style="margin: 0; font-size: 15px; color: #1e3a8a;">
                   &#127760; <b>Student Portal:</b> <a href="https://placement.ipcsglobal.info" target="_blank" style="color: #0284c7; font-weight: bold; text-decoration: underline;">placement.ipcsglobal.info</a>
                 </p>
               </div>
-
-              <p style="color: #b91c1c; font-weight: bold;">Portal registration is mandatory for participation in the placement drive.</p>
-              <p>Students must complete their registration through the portal within the given registration period. Branch-level confirmation, WhatsApp confirmation, or verbal confirmation will not be considered as a substitute for portal registration.</p>
-              <p style="font-weight: bold; margin-bottom: 5px;">We request all branches to ensure that:</p>
-              <ul style="padding-left: 20px; margin-top: 5px;">
-                <li style="margin-bottom: 6px;">All eligible students are informed about the drive.</li>
-                <li style="margin-bottom: 6px;">Interested students complete their registration through the Student Portal.</li>
-                <li style="margin-bottom: 6px;">Students are reminded to register strictly through the portal before the registration deadline.</li>
-                <li style="margin-bottom: 6px;">Registered students are properly informed about the drive and instructed to attend on time.</li>
-              </ul>
-              <p>Your support and coordination are essential to ensure smooth execution of the placement drive and maximum student participation.</p>
-              <p>For any clarification, please coordinate with the Placement Team.</p>
-              <p>Thank you for your cooperation.</p>
-
               <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
                 <p style="margin: 0 0 3px 0;">Regards,</p>
                 <p style="margin: 0 0 2px 0; font-weight: bold;">Placement Team</p>
@@ -1120,33 +1156,27 @@ exports.addEvent = async (req, res) => {
         </div>
       `;
 
-      await sendMailAndLog({
+      mailOptions = {
         from: `"IPCS Placements" <${senderEmail}>`,
         to: toEmail, 
         cc: ccList,
         bcc: bccList,
-        subject: `Placement Drive Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
+        subject: `Placement Drive Notification – ${date} | ${time || 'TBD'} [Ref: ${eventId}]`,
         html: html
-      }, { name: 'All Branches', email: 'Broadcast', type: 'Event Notification' });
+      };
 
     } else if (evType.includes('talentino')) {
-  const scheduledTpoEmail = getTpoEmailByName(tpo);
-  const bmMail = getBranchManagerEmail(branch);
-  const superAdminEmails = getSuperAdminEmails();
+      const scheduledTpoEmail = getTpoEmailByName(tpo);
+      const bmMail = getBranchManagerEmail(branch);
+      
+      // 🚨 We already proved bmMail exists at the top of the function
+      let toEmail = bmMail;
 
-  // Primary recipient determination
-  let toEmail = bmMail || scheduledTpoEmail || 'gifty@ipcsglobal.com';
-
-  // Construct CC array and filter out duplicates and empty strings
-  let rawCc = [scheduledTpoEmail, 'gifty@ipcsglobal.com'];
-  let ccList = [...new Set(rawCc)]
-    .filter(email => email && email.toLowerCase() !== toEmail.toLowerCase())
-    .join(',');
-
-  // Construct BCC array (Super Admins)
-  let bccList = [...new Set(superAdminEmails)]
-    .filter(email => email && email.toLowerCase() !== toEmail.toLowerCase())
-    .join(',');
+      // 🚨 CC is the TPO and Gifty
+      const ccArray = [giftyEmail, scheduledTpoEmail];
+      const ccList = [...new Set(ccArray)]
+        .filter(email => email && email.toLowerCase() !== toEmail.toLowerCase())
+        .join(',');
 
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
@@ -1174,28 +1204,13 @@ exports.addEvent = async (req, res) => {
                   <tr><td style="padding: 6px 0; color: #64748b; vertical-align: top;">Description:</td><td style="padding: 6px 0; color: #334155; white-space: pre-line;">${formattedDesc}</td></tr>
                 </table>
               </div>
-
               <h3 style="color: #ef4444; margin: 20px 0 10px 0; font-size: 16px;">&#9888;&#65039; Action Required</h3>
               <p>The concerned branch is requested to inform the students about the scheduled Talentino session and ensure maximum participation.</p>
-              <p style="font-weight: bold; margin-bottom: 5px;">Please ensure that:</p>
-              <ul style="padding-left: 20px; margin-top: 5px;">
-                <li style="margin-bottom: 6px;">All concerned students are informed about the session in advance.</li>
-                <li style="margin-bottom: 6px;">Students are instructed to be present at the branch on time.</li>
-                <li style="margin-bottom: 6px;">The required arrangements are made at the branch for conducting the session smoothly.</li>
-                <li style="margin-bottom: 6px;">Students are encouraged to actively participate in all the activities conducted during Talentino.</li>
-                <li style="margin-bottom: 6px;">The concerned TPO coordinates with the branch team and students throughout the session.</li>
-              </ul>
-
               <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; margin: 20px 0;">
                 <p style="margin: 0; font-size: 14px; color: #1e3a8a;">
                   <b>Note:</b> No separate registration is required for the Talentino session. Students can participate directly as instructed by the concerned TPO.
                 </p>
               </div>
-
-              <p>The Talentino session is designed to engage students through interactive activities, challenges, and placement-oriented exercises, helping them improve their confidence, communication, aptitude, problem-solving, and overall placement readiness.</p>
-              <p>Your support and coordination are essential to ensure the smooth execution of the Talentino session and active student participation.</p>
-              <p>For any clarification or coordination, please connect with the Placement Team.<br/>Thank you for your cooperation.</p>
-
               <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
                 <p style="margin: 0 0 3px 0;">Regards,</p>
                 <p style="margin: 0 0 2px 0; font-weight: bold;">Placement Team</p>
@@ -1206,18 +1221,50 @@ exports.addEvent = async (req, res) => {
         </div>
       `;
 
-      await sendMailAndLog({
-    from: `"IPCS Talentino" <${senderEmail}>`,
-    to: toEmail,
-    cc: ccList,
-    bcc: bccList, // Added BCC support
-    subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
-    html: html
-  }, { name: tpo, email: toEmail, type: 'Event Notification' });
-}
+      mailOptions = {
+        from: `"IPCS Talentino" <${senderEmail}>`,
+        to: toEmail,
+        cc: ccList,
+        bcc: '', // 🚨 Empty BCC for Talentino
+        subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${eventId}]`,
+        html: html
+      };
+    }
 
+    if (mailOptions) {
+      try {
+        await sendMailAndLog(mailOptions, { name: branch, email: mailOptions.to, type: 'Event Notification' });
+        
+        const getH = (str) => newRow._worksheet.headerValues.find(h => (h||'').toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+        const updateData = {};
+        const mailStatusH = getH('mailstatus');
+        const mailSentAtH = getH('mailsentat');
+        
+        if (mailStatusH) updateData[mailStatusH] = 'SENT';
+        if (mailSentAtH) updateData[mailSentAtH] = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+        
+        if (Object.keys(updateData).length > 0) {
+           newRow.assign(updateData);
+           await newRow.save();
+        }
+        
+      } catch (mailErr) {
+        const getH = (str) => newRow._worksheet.headerValues.find(h => (h||'').toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
+        const updateData = {};
+        const mailStatusH = getH('mailstatus');
+        const mailErrorH = getH('mailerror');
+        
+        if (mailStatusH) updateData[mailStatusH] = 'FAILED';
+        if (mailErrorH) updateData[mailErrorH] = mailErr.message;
+        
+        if (Object.keys(updateData).length > 0) {
+           newRow.assign(updateData);
+           await newRow.save();
+        }
+      }
+    }
     refreshCache(); 
-    res.json({ success: true, message: "Event added successfully" });
+    res.json({ success: true, message: "Event added successfully", eventId: eventId });
   } catch (error) { 
     console.error("Event add error:", error);
     res.status(500).json({ success: false, message: error.message }); 
@@ -1777,7 +1824,7 @@ exports.addQuestion = async (req, res) => {
       [getFuzzyHeader(h, 'optiond')]: optD, 
       [getFuzzyHeader(h, 'correctoption')]: correct, 
       [getFuzzyHeader(h, 'explanation')]: explanation, 
-      [getFuzzyHeader(h, 'status')]: status || 'Active' 
+      [getFuzzyHeader(h, 'status')]: status || 'Active'
     });
     
     refreshCache(); res.json({ success: true, message: "Question added successfully!" });
