@@ -1130,23 +1130,23 @@ exports.addEvent = async (req, res) => {
       }, { name: 'All Branches', email: 'Broadcast', type: 'Event Notification' });
 
     } else if (evType.includes('talentino')) {
-      // 🚨 RULE 1: Talentino Notification
-      const scheduledTpoEmail = getTpoEmailByName(tpo);
-      const bmMail = getBranchManagerEmail(branch);
+  const scheduledTpoEmail = getTpoEmailByName(tpo);
+  const bmMail = getBranchManagerEmail(branch);
+  const superAdminEmails = getSuperAdminEmails();
 
-      // 🚨 FIX: Never use senderEmail as TO, so Google doesn't drop the CCs
-      let toEmail = bmMail;
-      let ccArray = [scheduledTpoEmail];
+  // Primary recipient determination
+  let toEmail = bmMail || scheduledTpoEmail || 'gifty@ipcsglobal.com';
 
-      if (!toEmail) {
-        // If no Branch Manager is found, make Gifty the primary TO recipient
-        toEmail = 'gifty@ipcsglobal.com';
-      } else {
-        // If BM is found, BM is TO, and Gifty goes in CC
-        ccArray.push('gifty@ipcsglobal.com');
-      }
+  // Construct CC array and filter out duplicates and empty strings
+  let rawCc = [scheduledTpoEmail, 'gifty@ipcsglobal.com'];
+  let ccList = [...new Set(rawCc)]
+    .filter(email => email && email.toLowerCase() !== toEmail.toLowerCase())
+    .join(',');
 
-      const ccList = ccArray.filter(e => e && e !== toEmail).join(',');
+  // Construct BCC array (Super Admins)
+  let bccList = [...new Set(superAdminEmails)]
+    .filter(email => email && email.toLowerCase() !== toEmail.toLowerCase())
+    .join(',');
 
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
@@ -1207,13 +1207,14 @@ exports.addEvent = async (req, res) => {
       `;
 
       await sendMailAndLog({
-        from: `"IPCS Talentino" <${senderEmail}>`,
-        to: toEmail,
-        cc: ccList,
-        subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
-        html: html
-      }, { name: tpo, email: toEmail, type: 'Event Notification' });
-    }
+    from: `"IPCS Talentino" <${senderEmail}>`,
+    to: toEmail,
+    cc: ccList,
+    bcc: bccList, // Added BCC support
+    subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${refId}]`,
+    html: html
+  }, { name: tpo, email: toEmail, type: 'Event Notification' });
+}
 
     refreshCache(); 
     res.json({ success: true, message: "Event added successfully" });

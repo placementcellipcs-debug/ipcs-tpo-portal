@@ -247,18 +247,32 @@ const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 4
 // =========================================================
 async function sendIPCSMail(mailOptions, logDetails) {
   try {
+    // Helper to clean and validate email lists
+    const cleanEmails = (val) => {
+      if (!val) return '';
+      if (Array.isArray(val)) val = val.join(',');
+      return val.split(',')
+        .map(e => e.trim())
+        .filter(e => e.length > 0 && e.includes('@'))
+        .join(',');
+    };
+
+    const formattedTo = cleanEmails(mailOptions.to) || 'placementcell.ipcs@gmail.com';
+    const formattedCc = cleanEmails(mailOptions.cc);
+    const formattedBcc = cleanEmails(mailOptions.bcc);
+
     console.log(`\n📧 [MAIL DISPATCH] Subject: ${mailOptions.subject}`);
-    console.log(`➡️  TO:  ${mailOptions.to || 'placementcell.ipcs@gmail.com'}`);
-    console.log(`➡️  CC:  ${mailOptions.cc || 'None'}`);
-    console.log(`➡️  BCC: ${mailOptions.bcc || 'None'}\n`);
+    console.log(`➡️  TO:  ${formattedTo}`);
+    console.log(`➡️  CC:  ${formattedCc || 'None'}`);
+    console.log(`➡️  BCC: ${formattedBcc || 'None'}\n`);
 
     if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
-      const emailWebAppUrl = process.env.APPS_SCRIPT_EMAIL_URL;
+      const emailWebAppUrl = process.env.APPS_SCRIPT_EMAIL_URL || APPS_SCRIPT_WEB_APP_URL;
       
       const payload = { 
-        to: mailOptions.to || 'placementcell.ipcs@gmail.com', 
-        cc: mailOptions.cc || '', 
-        bcc: mailOptions.bcc || '', 
+        to: formattedTo, 
+        cc: formattedCc, 
+        bcc: formattedBcc, 
         subject: mailOptions.subject, 
         html: mailOptions.html, 
         attachments: [] 
@@ -279,13 +293,16 @@ async function sendIPCSMail(mailOptions, logDetails) {
         });
       }
 
-      // Sends via HTTPS to your new Google Apps Script
       const res = await axios.post(emailWebAppUrl, payload);
-      if (!res.data.success) throw new Error(res.data.error || "Apps Script returned false");
+      if (!res.data && !res.data.success) throw new Error(res.data.error || "Apps Script returned false");
       
     } else {
-      // Fallback Native SMTP (Blocked by Render Free Tier)
-      await transporter.sendMail(mailOptions);
+      await transporter.sendMail({
+        ...mailOptions,
+        to: formattedTo,
+        cc: formattedCc,
+        bcc: formattedBcc
+      });
     }
     
     if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, 'Success');
