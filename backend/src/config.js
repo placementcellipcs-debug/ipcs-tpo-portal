@@ -243,40 +243,55 @@ async function logMailToSheet(receiverName, receiverMail, mailType, subject, sta
 const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, family: 4, auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }});
 
 // =========================================================
-// 🚨 DIRECT SMTP EMAIL ENGINE (BYPASSES APPS SCRIPT COMPLETELY)
+// 🚨 RESTORED APPS SCRIPT INTEGRATION (SEPARATE CC/BCC)
 // =========================================================
 async function sendIPCSMail(mailOptions, logDetails) {
   try {
-    // 🚨 X-RAY LOGGING: Prints exactly what the backend generated before it leaves the server
-    console.log(`\n📧 [DIRECT SMTP DISPATCH] Subject: ${mailOptions.subject}`);
+    console.log(`\n📧 [MAIL DISPATCH] Subject: ${mailOptions.subject}`);
     console.log(`➡️  TO:  ${mailOptions.to || 'placementcell.ipcs@gmail.com'}`);
     console.log(`➡️  CC:  ${mailOptions.cc || 'None'}`);
     console.log(`➡️  BCC: ${mailOptions.bcc || 'None'}\n`);
 
-    // Format attachments so native Nodemailer can process them securely
-    if (mailOptions.attachments && Array.isArray(mailOptions.attachments)) {
-      mailOptions.attachments = mailOptions.attachments.map(att => {
-        if (att.href) {
-          return { filename: att.filename, path: att.href }; // Nodemailer uses 'path' for URLs
-        } else if (att.contentBytes) {
-          return { filename: att.filename, content: Buffer.from(att.contentBytes, 'base64') };
-        }
-        return att; // Passes through raw buffers (like the MOU PDF)
-      });
+    if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
+      const emailWebAppUrl = process.env.APPS_SCRIPT_EMAIL_URL;
+      
+      const payload = { 
+        to: mailOptions.to || 'placementcell.ipcs@gmail.com', 
+        cc: mailOptions.cc || '', 
+        bcc: mailOptions.bcc || '', 
+        subject: mailOptions.subject, 
+        html: mailOptions.html, 
+        attachments: [] 
+      };
+
+      if (mailOptions.attachments && Array.isArray(mailOptions.attachments)) {
+        mailOptions.attachments.forEach(att => {
+          if (att.content || att.contentBytes) { 
+            const bufferToUse = att.content || Buffer.from(att.contentBytes, 'base64');
+            payload.attachments.push({ 
+              filename: att.filename, 
+              mimeType: 'application/pdf', 
+              contentBytes: bufferToUse.toString('base64') 
+            }); 
+          } else if (att.href) { 
+            payload.attachments.push({ filename: att.filename, href: att.href }); 
+          }
+        });
+      }
+
+      // Sends via HTTPS to your new Google Apps Script
+      const res = await axios.post(emailWebAppUrl, payload);
+      if (!res.data.success) throw new Error(res.data.error || "Apps Script returned false");
+      
+    } else {
+      // Fallback Native SMTP (Blocked by Render Free Tier)
+      await transporter.sendMail(mailOptions);
     }
-
-    const finalMailOptions = {
-      ...mailOptions,
-      to: mailOptions.to || 'placementcell.ipcs@gmail.com' 
-    };
-
-    // Forces Native Nodemailer execution
-    await transporter.sendMail(finalMailOptions);
     
     if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, 'Success');
     return true;
   } catch (err) {
-    console.error("❌ Direct SMTP Error:", err);
+    console.error("❌ Mail Dispatch Error:", err);
     if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, `Failed: ${err.message}`);
     throw err;
   }
