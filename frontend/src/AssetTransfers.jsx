@@ -1,65 +1,45 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, PaperPlaneRight, ArrowsLeftRight, CheckCircle, WarningCircle } from '@phosphor-icons/react';
+import { CircleNotch, ArrowsLeftRight, CheckCircle } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
 
 export default function AssetTransfers() {
-  const tpoData = JSON.parse(localStorage.getItem('tpoData') || '{}');
-  const isSuperAdmin = tpoData?.accessType === 'superadmin';
-
   const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  const fetchTransfers = async () => {
-    try {
-      const res = await axios.get(`${API_BASE}/api/v1/assets/transfers`);
-      if (res.data.success) setTransfers(res.data.transfers);
-    } catch (err) { console.error("Error loading transfers", err); } finally { setLoading(false); }
-  };
-
-  useEffect(() => { fetchTransfers(); }, []);
-
-  const handleApprove = async (transfer) => {
-    if (!window.confirm("Approve transfer and move asset?")) return;
-    try {
-      await axios.post(`${API_BASE}/api/v1/assets/transfers/approve`, { transferId: transfer.transferId, assetId: transfer.assetId, toBranch: transfer.toBranch, userName: tpoData.name });
-      fetchTransfers();
-    } catch (err) { alert("Failed to approve."); }
-  };
+  useEffect(() => {
+    axios.get(`${API_BASE}/api/v1/assets/transfers`).then(res => setTransfers(res.data.transfers || [])).finally(() => setLoading(false));
+  }, []);
 
   return (
     <Layout>
-      <div className="page-container" style={{ padding: 0 }}>
-        <div style={{ marginBottom: '2rem' }}>
-          <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}><ArrowsLeftRight color="#a855f7" weight="bold" /> Inter-Branch Transfers</h1>
-          <p style={{ color: 'var(--text-muted)', margin: 0 }}>Approve and monitor assets moving between branches.</p>
+      <div className="premium-dashboard-wrapper page-container" style={{ maxWidth: '1600px', margin: '0 auto', paddingBottom: '50px' }}>
+        <div className="top-hero-section">
+          <div className="hero-text">
+            <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><ArrowsLeftRight color="#a855f7" weight="bold" /> Transfer Logistics</h1>
+            <p>Approve and monitor assets moving between branches.</p>
+          </div>
         </div>
 
-        <div className="table-container">
-          <table className="modern-table">
-            <thead><tr><th>Transfer ID</th><th>Asset ID</th><th>Origin Branch</th><th>Destination Branch</th><th>Status</th>{isSuperAdmin && <th style={{ textAlign: 'center' }}>Action</th>}</tr></thead>
-            <tbody>
-              {loading ? (<tr><td colSpan="6" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="#a855f7"/></td></tr>) 
-              : transfers.length === 0 ? (<tr><td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No transfers found.</td></tr>) 
-              : transfers.map(t => (
-                <tr key={t.transferId}>
-                  <td><span className="primary-text" style={{ color: '#a855f7' }}>{t.transferId}</span><span className="sub-text">{t.date}</span></td>
-                  <td><span className="primary-text" style={{ fontFamily: 'monospace' }}>{t.assetId}</span></td>
-                  <td><span style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>{t.fromBranch}</span></td>
-                  <td><span style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', padding: '4px 8px', borderRadius: '4px', fontSize: '0.8rem', fontWeight: 'bold' }}>{t.toBranch}</span></td>
-                  <td><span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: t.status === 'PENDING' ? '#f59e0b' : '#38bdf8' }}>{t.status}</span></td>
-                  {isSuperAdmin && (
-                    <td style={{ textAlign: 'center' }}>
-                      {t.status === 'PENDING' ? (
-                        <button onClick={() => handleApprove(t)} style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', border: '1px solid #10b981', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>Approve</button>
-                      ) : <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>Completed</span>}
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="clean-list">
+          {loading ? <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /></div> : transfers.length === 0 ? <div className="empty-state-card">No transfers found.</div> : 
+            transfers.map(t => (
+            <div key={t.transferId} className="clean-row glass-panel hover-lift" style={{ padding: '20px', borderLeft: t.status === 'PENDING' ? '4px solid #f59e0b' : '4px solid #10b981' }}>
+              <div className="cl-left" style={{ flex: 2 }}>
+                <div className="cl-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><ArrowsLeftRight size={24} weight="fill"/></div>
+                <div>
+                  <div className="cl-title" style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <span style={{ color: '#ef4444' }}>{t.fromBranch}</span> ➔ <span style={{ color: '#10b981' }}>{t.toBranch}</span>
+                  </div>
+                  <div className="cl-sub">Asset: <strong style={{ color: '#fff', fontFamily: 'monospace' }}>{t.assetId}</strong></div>
+                </div>
+              </div>
+              <div className="cl-middle">
+                <span className={`status-pill ${t.status === 'PENDING' ? 'orange' : 'green'}`}>{t.status}</span>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </Layout>
