@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, Users, Eye, X, Prohibit, EnvelopeSimple, Phone, Plus, Funnel, Clock } from '@phosphor-icons/react';
+import { CircleNotch, Users, Eye, X, Prohibit, EnvelopeSimple, Phone, Plus, Briefcase, Buildings, Clock } from '@phosphor-icons/react';
 import Layout from './Layout';
-
 import { API_BASE } from './apiConfig';
 
 const DetailBox = ({ label, value }) => (
@@ -17,8 +16,8 @@ export default function Vacancies() {
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   
   // 🚨 RESTRICT ACCESS: ONLY TPO CAN ADD VACANCIES
-  const upperRole = (tpoData?.role || '').toUpperCase();
-  const accessType = (tpoData?.accessType || '').toLowerCase();
+  const upperRole = String(tpoData?.role || '').toUpperCase();
+  const accessType = String(tpoData?.accessType || '').toLowerCase();
   
   const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole.includes('MANAGER');
   const isTpo = upperRole.includes('TPO');
@@ -35,7 +34,7 @@ export default function Vacancies() {
   const [courseFilter, setCourseFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   
-  // 🚨 NEW SUPER ADMIN FILTERS
+  // 🚨 SUPER ADMIN FILTERS
   const [tpoFilter, setTpoFilter] = useState('All');
   const [monthYearFilter, setMonthYearFilter] = useState('All');
 
@@ -71,7 +70,7 @@ export default function Vacancies() {
 
   const appsByJobId = {};
   applications.forEach(app => {
-    const jobId = (app.jobId || '').toString().trim();
+    const jobId = String(app.jobId || '').trim();
     if (!appsByJobId[jobId]) appsByJobId[jobId] = [];
     appsByJobId[jobId].push(app);
   });
@@ -94,16 +93,16 @@ export default function Vacancies() {
   const today = new Date();
   today.setHours(0,0,0,0);
 
-  // Extract unique TPOs and Month/Years for Dropdowns
-  const uniqueTPOs = [...new Set(vacancies.map(v => v.tpoName || 'Unknown').filter(n => n !== 'Unknown'))].sort();
+  // Extract unique TPOs and Month/Years for Dropdowns (Robust Fallbacks)
+  const uniqueTPOs = [...new Set(vacancies.map(v => v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown').filter(n => n !== 'Unknown'))].sort();
   
   const uniqueMonths = [...new Set(vacancies.map(v => {
-    const d = parseDate(v.datePosted);
-    if (d && d.getFullYear() < 2050) {
-      return d.toLocaleString('en-us', { month: 'short', year: 'numeric' });
+    const d = parseDate(v.datePosted || v.timestamp || v.date);
+    if (d && d.getFullYear() < 2050 && d.getFullYear() > 2000) {
+      return d.toLocaleString('en-us', { month: 'long', year: 'numeric' }); // e.g., "September 2026"
     }
-    return 'Unknown';
-  }).filter(m => m !== 'Unknown'))].sort((a, b) => new Date(b) - new Date(a));
+    return null;
+  }).filter(Boolean))].sort((a, b) => new Date(b) - new Date(a));
 
   const filteredVacs = vacancies.filter(v => {
     const matchQuery = (v.id || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -119,7 +118,6 @@ export default function Vacancies() {
        matchTrainerScope = vCourse.includes(myCourse) || myCourse.includes(vCourse);
     }
 
-    // Status Filter
     const deadline = parseDate(v.lastDate);
     const isExpired = deadline < today || (v.status || '').toLowerCase().includes('expire');
     const isClosed = (v.status || '').toLowerCase().includes('close') || (v.status || '').toLowerCase().includes('no');
@@ -129,13 +127,14 @@ export default function Vacancies() {
                       (statusFilter === 'Expired' && (isExpired || isClosed));
 
     // Super Admin Filters
-    const tpoMatch = tpoFilter === 'All' || (v.tpoName || 'Unknown') === tpoFilter;
+    const rowTpo = v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown';
+    const tpoMatch = tpoFilter === 'All' || rowTpo === tpoFilter;
     
     let monthMatch = true;
     if (monthYearFilter !== 'All') {
-      const d = parseDate(v.datePosted);
+      const d = parseDate(v.datePosted || v.timestamp || v.date);
       if (d && d.getFullYear() < 2050) {
-        const dStr = d.toLocaleString('en-us', { month: 'short', year: 'numeric' });
+        const dStr = d.toLocaleString('en-us', { month: 'long', year: 'numeric' });
         monthMatch = dStr === monthYearFilter;
       } else {
         monthMatch = false;
@@ -152,6 +151,32 @@ export default function Vacancies() {
     groupedVacs[loc].push(v);
   });
 
+  // ---------------------------------------------------------
+  // 📊 MINI DASHBOARD CALCULATIONS (Super Admin Only)
+  // ---------------------------------------------------------
+  let totalActiveOpenings = 0;
+  let totalExpiredOpenings = 0;
+  let totalApplicationsCount = 0;
+  let uniqueCompaniesSet = new Set();
+
+  filteredVacs.forEach(v => {
+    const deadline = parseDate(v.lastDate);
+    const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire') || String(v.status || '').toLowerCase().includes('close');
+    
+    if (isExpired) {
+      totalExpiredOpenings++;
+    } else {
+      totalActiveOpenings++;
+    }
+
+    if (v.company && String(v.company).toLowerCase() !== 'unknown company') {
+      uniqueCompaniesSet.add(v.company);
+    }
+
+    const myApps = appsByJobId[v.id] || [];
+    totalApplicationsCount += myApps.length;
+  });
+
   return (
     <Layout>
       <div className="page-container" style={{ maxWidth: '1600px', margin: '0 auto' }}>
@@ -164,7 +189,7 @@ export default function Vacancies() {
           
           {canAddOpening && (
             <button 
-              className="btn-action" 
+              className="btn-action hover-lift" 
               style={{ background: '#38bdf8', color: '#0f1523', display: 'flex', alignItems: 'center', gap: '8px', width: 'auto', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold' }} 
               onClick={() => window.open('https://forms.gle/9Gxbwx1S2uqeXHne9', '_blank')}
             >
@@ -173,9 +198,43 @@ export default function Vacancies() {
           )}
         </div>
 
+        {/* 🚨 ADMIN MINI-DASHBOARD (Visible only to Super Admins) */}
+        {isSuperAdmin && (
+          <div className="mini-dash-grid">
+            <div className="mini-dash-card">
+              <div className="mdc-icon blue"><Briefcase weight="fill" size={24}/></div>
+              <div className="mdc-data">
+                <p>Total Active</p>
+                <h3>{totalActiveOpenings}</h3>
+              </div>
+            </div>
+            <div className="mini-dash-card">
+              <div className="mdc-icon green"><Users weight="fill" size={24}/></div>
+              <div className="mdc-data">
+                <p>Total Applicants</p>
+                <h3>{totalApplicationsCount}</h3>
+              </div>
+            </div>
+            <div className="mini-dash-card">
+              <div className="mdc-icon purple"><Buildings weight="fill" size={24}/></div>
+              <div className="mdc-data">
+                <p>Hiring Companies</p>
+                <h3>{uniqueCompaniesSet.size}</h3>
+              </div>
+            </div>
+            <div className="mini-dash-card">
+              <div className="mdc-icon red"><Prohibit weight="fill" size={24}/></div>
+              <div className="mdc-data">
+                <p>Expired Openings</p>
+                <h3>{totalExpiredOpenings}</h3>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 🚨 UPDATED FILTER CONTROLS */}
-        <div className="header-controls" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>
-          <input type="text" className="sleek-input" placeholder="Search ID or Company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+        <div className="header-controls" style={{ justifyContent: 'flex-start', flexWrap: 'wrap', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '12px', border: '1px solid #1e293b', marginBottom: '20px' }}>
+          <input type="text" className="sleek-input" placeholder="Search ID or Company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ minWidth: '200px' }} />
           <select className="sleek-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
             <option value="All">All Courses</option>
             <option value="Industrial Automation">Industrial Automation</option>
@@ -192,11 +251,11 @@ export default function Vacancies() {
           {/* SUPER ADMIN ONLY FILTERS */}
           {isSuperAdmin && (
             <>
-              <select className="sleek-select" value={tpoFilter} onChange={(e) => setTpoFilter(e.target.value)} style={{ border: '1px solid #a855f7' }}>
+              <select className="sleek-select" value={tpoFilter} onChange={(e) => setTpoFilter(e.target.value)} style={{ border: '1px solid #8b5cf6', background: 'rgba(139, 92, 246, 0.05)' }}>
                 <option value="All">All TPOs</option>
                 {uniqueTPOs.map((tpo, i) => <option key={i} value={tpo}>{tpo}</option>)}
               </select>
-              <select className="sleek-select" value={monthYearFilter} onChange={(e) => setMonthYearFilter(e.target.value)} style={{ border: '1px solid #10b981' }}>
+              <select className="sleek-select" value={monthYearFilter} onChange={(e) => setMonthYearFilter(e.target.value)} style={{ border: '1px solid #10b981', background: 'rgba(16, 185, 129, 0.05)' }}>
                 <option value="All">All Time</option>
                 {uniqueMonths.map((m, i) => <option key={i} value={m}>{m}</option>)}
               </select>
@@ -207,11 +266,11 @@ export default function Vacancies() {
         {loading ? (
           <div style={{ textAlign: 'center', marginTop: '3rem', color: '#38bdf8' }}><CircleNotch size={40} className="ph-spin" /><p>Fetching vacancies...</p></div>
         ) : Object.keys(groupedVacs).length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '2rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>No active vacancies match your filters.</div>
+          <div style={{ textAlign: 'center', padding: '3rem', background: '#111827', borderRadius: '16px', border: '1px dashed #334155', color: '#64748b' }}>No active vacancies match your filters.</div>
         ) : (
           Object.keys(groupedVacs).map((state, idx) => (
-            <div key={idx} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '1.5rem', marginBottom: '2rem' }}>
-              <div style={{ textAlign: 'center', fontSize: '1.2rem', fontWeight: 800, color: '#fff', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '1.5rem', borderBottom: '1px solid var(--card-border)', paddingBottom: '1rem' }}>
+            <div key={idx} style={{ background: '#111827', border: '1px solid #1e293b', borderRadius: '16px', padding: '1.5rem', marginBottom: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
+              <div style={{ textAlign: 'center', fontSize: '1.1rem', fontWeight: 800, color: '#f8fafc', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '1.5rem', borderBottom: '1px solid #1e293b', paddingBottom: '1rem' }}>
                 {state}
               </div>
               
@@ -219,62 +278,67 @@ export default function Vacancies() {
                 <table className="modern-table">
                   <thead>
                     <tr>
-                      <th>Job ID</th>
-                      <th>Position & Company</th>
-                      <th>Location & Mode</th>
-                      {/* Add Posted By column if Super Admin */}
-                      {isSuperAdmin && <th>Posted By & Date</th>}
-                      <th>Status & Deadline</th>
-                      <th style={{ textAlign: 'center' }}>Applicants</th>
-                      <th style={{ textAlign: 'right' }}>Actions</th>
+                      <th style={{ paddingBottom: '15px' }}>Job ID</th>
+                      <th style={{ paddingBottom: '15px' }}>Position & Company</th>
+                      <th style={{ paddingBottom: '15px' }}>Location & Mode</th>
+                      
+                      {/* 🚨 CONDITIONAL HEADER FOR SUPER ADMIN */}
+                      {isSuperAdmin && <th style={{ paddingBottom: '15px' }}>Posted By & Date</th>}
+                      
+                      <th style={{ paddingBottom: '15px' }}>Status & Deadline</th>
+                      <th style={{ textAlign: 'center', paddingBottom: '15px' }}>Applicants</th>
+                      <th style={{ textAlign: 'right', paddingBottom: '15px' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {groupedVacs[state].map((v, i) => {
                       const deadline = parseDate(v.lastDate);
-                      const isExpired = deadline < today || (v.status || '').toLowerCase().includes('expire');
+                      const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire');
+                      const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
                       
-                      let statBadge = <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Open</span>;
-                      if((v.status || '').toLowerCase().includes('close') || (v.status || '').toLowerCase().includes('no')) statBadge = <span style={{ background: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Closed</span>;
-                      if(isExpired) statBadge = <span style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '4px 10px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 'bold' }}>Expired</span>;
+                      let statBadge = <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 10px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold', border: '1px solid rgba(16, 185, 129, 0.3)' }}>Open</span>;
+                      if(isClosed) statBadge = <span style={{ background: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8', padding: '4px 10px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold', border: '1px solid rgba(148, 163, 184, 0.3)' }}>Closed</span>;
+                      if(isExpired) statBadge = <span style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '4px 10px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold', border: '1px solid rgba(239, 68, 68, 0.3)' }}>Expired</span>;
 
                       const myApplicants = appsByJobId[v.id] || [];
                       const applicantCount = myApplicants.length;
 
-                      const datePostedObj = parseDate(v.datePosted);
-                      const datePostedStr = (datePostedObj && datePostedObj.getFullYear() < 2050) ? datePostedObj.toLocaleDateString() : 'N/A';
+                      // Robust date and TPO fallback
+                      const rowTpo = v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown';
+                      const datePostedObj = parseDate(v.datePosted || v.timestamp || v.date);
+                      const datePostedStr = (datePostedObj && datePostedObj.getFullYear() < 2050 && datePostedObj.getFullYear() > 2000) ? datePostedObj.toLocaleDateString('en-GB') : 'N/A';
 
                       return (
-                        <tr key={i}>
+                        <tr key={i} className="hover-row">
                           <td style={{ color: '#38bdf8', fontWeight: 700, verticalAlign: 'middle' }}>{v.id}</td>
                           <td style={{ verticalAlign: 'middle' }}>
-                            <div className="primary-text" style={{ fontWeight: 'bold', color: '#fff' }}>{v.position}</div>
-                            <div className="sub-text" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{v.company}</div>
+                            <div className="primary-text" style={{ fontWeight: 'bold', color: '#fff', fontSize: '0.95rem' }}>{v.position}</div>
+                            <div className="sub-text" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{v.company}</div>
                           </td>
                           <td style={{ verticalAlign: 'middle' }}>
-                            <div style={{ color: '#cbd5e1' }}>{v.location}</div>
-                            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{v.mode}</div>
+                            <div style={{ color: '#cbd5e1', fontSize: '0.9rem' }}>{v.location}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{v.mode}</div>
                           </td>
                           
-                          {/* 🚨 NEW SUPER ADMIN COLUMN */}
+                          {/* 🚨 CONDITIONAL COLUMN FOR SUPER ADMIN */}
                           {isSuperAdmin && (
                             <td style={{ verticalAlign: 'middle' }}>
-                              <div style={{ color: '#a855f7', fontWeight: 'bold', fontSize: '0.85rem' }}>{v.tpoName || 'Unknown'}</div>
-                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
-                                <Clock size={12} /> {datePostedStr}
+                              <div style={{ color: '#a855f7', fontWeight: 'bold', fontSize: '0.85rem' }}>{rowTpo}</div>
+                              <div style={{ fontSize: '0.7rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                                <Clock size={12} weight="bold" /> {datePostedStr}
                               </div>
                             </td>
                           )}
 
                           <td style={{ verticalAlign: 'middle' }}>
-                            {statBadge}<br/>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px', display: 'inline-block' }}>
-                              Ends: <strong style={{ color: isExpired ? '#ef4444' : '#f59e0b' }}>{v.lastDate}</strong>
+                            <div style={{ marginBottom: '6px' }}>{statBadge}</div>
+                            <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'inline-block' }}>
+                              Ends: <strong style={{ color: isExpired || isClosed ? '#ef4444' : '#f59e0b' }}>{v.lastDate}</strong>
                             </span>
                           </td>
                           
                           <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
-                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: applicantCount > 0 ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.05)', color: applicantCount > 0 ? '#38bdf8' : 'var(--text-muted)', padding: '6px 12px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold' }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: applicantCount > 0 ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.03)', color: applicantCount > 0 ? '#38bdf8' : '#64748b', padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', border: applicantCount > 0 ? '1px solid rgba(56, 189, 248, 0.2)' : '1px solid transparent' }}>
                               <Users size={16} weight={applicantCount > 0 ? "fill" : "regular"} />
                               {applicantCount} Applied
                             </div>
@@ -283,8 +347,8 @@ export default function Vacancies() {
                           <td style={{ textAlign: 'right', verticalAlign: 'middle' }}>
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                               <button 
-                                className="btn-secondary" 
-                                style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '5px', opacity: isExpired ? 0.5 : 1, cursor: isExpired ? 'not-allowed' : 'pointer' }} 
+                                className="btn-secondary hover-lift" 
+                                style={{ padding: '8px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', opacity: isExpired ? 0.5 : 1, cursor: isExpired ? 'not-allowed' : 'pointer' }} 
                                 onClick={() => !isExpired && setSelectedJob(v) || !isExpired && setIsJobDetailsModalOpen(true)}
                                 disabled={isExpired}
                                 title={isExpired ? "Job Details unavailable for expired openings" : "View Job Details"}
@@ -292,8 +356,8 @@ export default function Vacancies() {
                                 {isExpired ? <Prohibit weight="bold" size={14}/> : <Eye weight="bold" size={14} />} Details
                               </button>
                               <button 
-                                className="btn-action" 
-                                style={{ background: applicantCount > 0 ? '#3b82f6' : '#1e293b', color: '#fff', padding: '6px 12px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '5px' }} 
+                                className="btn-action hover-lift" 
+                                style={{ background: applicantCount > 0 ? '#3b82f6' : '#1e293b', color: '#fff', padding: '8px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }} 
                                 onClick={() => { setSelectedJob(v); setIsApplicantsModalOpen(true); }}
                               >
                                 <Users weight="bold" size={14} /> View List
@@ -311,15 +375,34 @@ export default function Vacancies() {
         )}
       </div>
 
+      {/* STYLES FOR MINI DASHBOARD AND HOVER EFFECTS */}
+      <style>{`
+        .hover-lift { transition: transform 0.2s ease; }
+        .hover-lift:hover { transform: translateY(-2px); }
+        .hover-row { transition: background 0.2s ease; }
+        .hover-row:hover { background: rgba(255,255,255,0.02); }
+        
+        .mini-dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
+        .mini-dash-card { background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; display: flex; align-items: center; gap: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .mdc-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .mdc-icon.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
+        .mdc-icon.green { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+        .mdc-icon.purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
+        .mdc-icon.red { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .mdc-data p { margin: 0 0 4px 0; font-size: 0.75rem; color: #94a3b8; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
+        .mdc-data h3 { margin: 0; font-size: 1.8rem; color: #fff; font-weight: 800; line-height: 1; }
+      `}</style>
+
+      {/* JOB DETAILS MODAL */}
       {isJobDetailsModalOpen && selectedJob && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsJobDetailsModalOpen(false); }}>
-          <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={(e) => { if(e.target === e.currentTarget) setIsJobDetailsModalOpen(false); }}>
+          <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '16px', padding: '2rem', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', borderBottom: '1px solid #1e293b', paddingBottom: '1rem' }}>
               <div>
-                <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', color: '#fff' }}>{selectedJob.position}</h2>
+                <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', color: '#fff', fontWeight: 800 }}>{selectedJob.position}</h2>
                 <div style={{ color: '#38bdf8', fontWeight: 'bold', fontSize: '1.1rem' }}>{selectedJob.company}</div>
               </div>
-              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsJobDetailsModalOpen(false)} />
+              <X size={24} style={{ cursor: 'pointer', color: '#94a3b8' }} onClick={() => setIsJobDetailsModalOpen(false)} />
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '1.5rem' }}>
@@ -335,67 +418,68 @@ export default function Vacancies() {
 
             {selectedJob.description && (
               <div style={{ background: '#161e2e', padding: '15px', borderRadius: '8px', border: '1px solid #1e293b', marginBottom: '1.5rem' }}>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>Job Description</div>
-                <div style={{ color: '#fff', fontSize: '0.9rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{selectedJob.description}</div>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 'bold' }}>Job Description</div>
+                <div style={{ color: '#e2e8f0', fontSize: '0.9rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{selectedJob.description}</div>
               </div>
             )}
 
             <div style={{ textAlign: 'right' }}>
-              <button className="btn-secondary" onClick={() => setIsJobDetailsModalOpen(false)}>Close</button>
+              <button className="btn-secondary hover-lift" style={{ padding: '10px 20px', fontWeight: 'bold' }} onClick={() => setIsJobDetailsModalOpen(false)}>Close Window</button>
             </div>
           </div>
         </div>
       )}
 
+      {/* APPLICANTS MODAL */}
       {isApplicantsModalOpen && selectedJob && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsApplicantsModalOpen(false); }}>
-          <div className="modal-card" style={{ maxWidth: '900px', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={(e) => { if(e.target === e.currentTarget) setIsApplicantsModalOpen(false); }}>
+          <div className="modal-card" style={{ maxWidth: '900px', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
             
             <div style={{ padding: '1.5rem 2rem', background: '#161e2e', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
-                <h2 style={{ margin: '0 0 5px 0', fontSize: '1.3rem', color: '#fff' }}>Applicants</h2>
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>{selectedJob.id} | {selectedJob.company}</div>
+                <h2 style={{ margin: '0 0 5px 0', fontSize: '1.3rem', color: '#fff', fontWeight: 800 }}>Applicants List</h2>
+                <div style={{ color: '#94a3b8', fontSize: '0.9rem', fontWeight: 'bold' }}>{selectedJob.id} | {selectedJob.company}</div>
               </div>
-              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsApplicantsModalOpen(false)} />
+              <X size={24} style={{ cursor: 'pointer', color: '#94a3b8' }} onClick={() => setIsApplicantsModalOpen(false)} />
             </div>
 
-            <div style={{ overflowY: 'auto', padding: '0' }}>
-              <table className="modern-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <div style={{ overflowY: 'auto', padding: '0', flex: 1 }}>
+              <table className="modern-table" style={{ width: '100%', borderCollapse: 'collapse', margin: 0 }}>
                 <thead style={{ position: 'sticky', top: 0, background: '#0f1523', zIndex: 10 }}>
                   <tr>
-                    <th style={{ padding: '15px 20px', color: 'var(--text-muted)' }}>Student Name</th>
-                    <th style={{ padding: '15px 20px', color: 'var(--text-muted)' }}>Branch</th>
-                    <th style={{ padding: '15px 20px', color: 'var(--text-muted)' }}>App Status</th>
-                    <th style={{ padding: '15px 20px', color: 'var(--text-muted)', textAlign: 'right' }}>Contact Info</th>
+                    <th style={{ padding: '15px 20px', color: '#94a3b8', borderBottom: '1px solid #1e293b' }}>Student Name</th>
+                    <th style={{ padding: '15px 20px', color: '#94a3b8', borderBottom: '1px solid #1e293b' }}>Branch</th>
+                    <th style={{ padding: '15px 20px', color: '#94a3b8', borderBottom: '1px solid #1e293b' }}>App Status</th>
+                    <th style={{ padding: '15px 20px', color: '#94a3b8', textAlign: 'right', borderBottom: '1px solid #1e293b' }}>Contact Info</th>
                   </tr>
                 </thead>
                 <tbody>
                   {appsByJobId[selectedJob.id] ? (
                     appsByJobId[selectedJob.id].map((app, i) => {
                       let statClass = 'badge-blue';
-                      let s = (app.status || '').toLowerCase();
+                      let s = String(app.status || '').toLowerCase();
                       if(s.includes('interview')) statClass = 'badge-purple';
                       if(s.includes('offer') || s.includes('placed') || s.includes('joined')) statClass = 'badge-green';
                       if(s.includes('reject') || s.includes('not attended')) statClass = 'badge-gray';
 
                       return (
-                        <tr key={i} style={{ borderBottom: '1px solid #1e293b' }}>
+                        <tr key={i} className="hover-row" style={{ borderBottom: '1px solid #1e293b' }}>
                           <td style={{ padding: '15px 20px' }}>
-                            <div style={{ fontWeight: 'bold', color: '#fff' }}>{app.name}</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{app.roll}</div>
+                            <div style={{ fontWeight: 'bold', color: '#fff', fontSize: '0.95rem' }}>{app.name}</div>
+                            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{app.roll}</div>
                           </td>
-                          <td style={{ padding: '15px 20px', color: '#cbd5e1' }}>{app.branch}</td>
+                          <td style={{ padding: '15px 20px', color: '#cbd5e1', fontSize: '0.9rem' }}>{app.branch}</td>
                           <td style={{ padding: '15px 20px' }}><span className={`badge ${statClass}`}>{app.status || 'Applied'}</span></td>
                           <td style={{ padding: '15px 20px', textAlign: 'right' }}>
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                               {app.phone && (
-                                <a href={`tel:${app.phone}`} title="Call Student" style={{ background: 'rgba(14, 165, 233, 0.15)', color: '#0ea5e9', padding: '6px', borderRadius: '50%', display: 'flex' }}>
-                                  <Phone size={16} weight="fill" />
+                                <a href={`tel:${app.phone}`} title="Call Student" className="hover-lift" style={{ background: 'rgba(14, 165, 233, 0.15)', color: '#0ea5e9', padding: '8px', borderRadius: '50%', display: 'flex' }}>
+                                  <Phone size={18} weight="fill" />
                                 </a>
                               )}
                               {app.email && (
-                                <a href={`mailto:${app.email}`} title="Email Student" style={{ background: 'rgba(234, 67, 53, 0.15)', color: '#ea4335', padding: '6px', borderRadius: '50%', display: 'flex' }}>
-                                  <EnvelopeSimple size={16} weight="fill" />
+                                <a href={`mailto:${app.email}`} title="Email Student" className="hover-lift" style={{ background: 'rgba(234, 67, 53, 0.15)', color: '#ea4335', padding: '8px', borderRadius: '50%', display: 'flex' }}>
+                                  <EnvelopeSimple size={18} weight="fill" />
                                 </a>
                               )}
                             </div>
@@ -405,9 +489,9 @@ export default function Vacancies() {
                     })
                   ) : (
                     <tr>
-                      <td colSpan="4" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
-                        <Users size={32} style={{ opacity: 0.5, marginBottom: '10px' }} /><br/>
-                        No students have applied to this opening yet.
+                      <td colSpan="4" style={{ textAlign: 'center', padding: '4rem', color: '#64748b' }}>
+                        <Users size={48} style={{ opacity: 0.3, marginBottom: '15px' }} /><br/>
+                        <span style={{ fontSize: '1.1rem' }}>No students have applied yet.</span>
                       </td>
                     </tr>
                   )}
