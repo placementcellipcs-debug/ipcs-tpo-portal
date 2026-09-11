@@ -4,11 +4,11 @@ import axios from 'axios';
 import { 
   Users, Briefcase, Trophy, CalendarCheck, CircleNotch, 
   BookOpen, NotePencil, Desktop, FolderOpen, ListChecks, 
-  ArrowRight, ChartBar, MapPinLine, Clock, Student, ChalkboardTeacher
+  ChartBar, MapPinLine, Clock, Student, ChalkboardTeacher
 } from '@phosphor-icons/react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend 
+  PieChart, Pie, Cell 
 } from 'recharts';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
@@ -43,7 +43,7 @@ export default function Dashboard() {
   const [recentPlacements, setRecentPlacements] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [trendData, setTrendData] = useState(Array(12).fill({ m: '', apps: 0, off: 0, pl: 0 }));
+  const [trendData, setTrendData] = useState(Array(12).fill({ m: '', Applications: 0, Offers: 0, Placed: 0 }));
   const [domainData, setDomainData] = useState([]);
   const [pipeline, setPipeline] = useState({ applied: 0, interview: 0, offers: 0, placed: 0 });
   const [totalAppsCount, setTotalAppsCount] = useState(0);
@@ -51,7 +51,6 @@ export default function Dashboard() {
   const [allPlaced, setAllPlaced] = useState([]);
   const [trainerLogs, setTrainerLogs] = useState([]);
 
-  // Colors for Domain Donut Chart
   const DOMAIN_COLORS = ['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#ec4899', '#0ea5e9'];
 
   // ---------------------------------------------------------
@@ -241,11 +240,11 @@ export default function Dashboard() {
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       return (
-        <div className="custom-tooltip" style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #334155', padding: '15px', borderRadius: '12px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)' }}>
-          <p style={{ color: '#fff', fontWeight: 'bold', margin: '0 0 10px 0', borderBottom: '1px solid #334155', paddingBottom: '8px' }}>{label} {new Date().getFullYear()}</p>
+        <div style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #334155', padding: '12px', borderRadius: '8px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', backdropFilter: 'blur(10px)' }}>
+          <p style={{ color: '#fff', fontWeight: 'bold', margin: '0 0 8px 0', borderBottom: '1px solid #334155', paddingBottom: '6px', fontSize: '0.9rem' }}>{label} {new Date().getFullYear()}</p>
           {payload.map((entry, index) => (
-            <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', fontSize: '0.85rem' }}>
-              <div style={{ width: '10px', height: '10px', borderRadius: '50%', backgroundColor: entry.color }}></div>
+            <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', fontSize: '0.8rem' }}>
+              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: entry.color }}></div>
               <span style={{ color: '#cbd5e1' }}>{entry.name}:</span>
               <span style={{ color: '#fff', fontWeight: 'bold' }}>{entry.value}</span>
             </div>
@@ -256,40 +255,21 @@ export default function Dashboard() {
     return null;
   };
 
-  const renderCalendar = () => {
-    const days = [27,28,29,30,1,2,3, 4,5,6,7,8,9,10, 11,12,13,14,15,16,17, 18,19,20,21,22,23,24, 25,26,27,28,29,30,31];
-    return (
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '8px', textAlign: 'center', fontSize: '0.75rem', marginTop: '15px' }}>
-        {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => <div key={d} style={{ color: 'var(--text-muted)', fontWeight: 'bold' }}>{d}</div>)}
-        {days.map((d, i) => (
-          <div key={i} style={{ 
-            padding: '6px', 
-            color: (i<4 || i>34) ? '#334155' : '#fff', 
-            background: d===today.getDate() && i>3 && i<34 ? '#3b82f6' : 'transparent', 
-            borderRadius: '8px', 
-            fontWeight: d===today.getDate() ? 'bold' : 'normal',
-            boxShadow: d===today.getDate() ? '0 0 15px rgba(59, 130, 246, 0.5)' : 'none'
-          }}>{d}</div>
-        ))}
-      </div>
-    );
-  };
-
   return (
     <Layout>
-      <div className="db-wrapper" style={{ paddingBottom: '40px', maxWidth: '1600px', margin: '0 auto' }}>
+      <div className="db-wrapper" style={{ paddingBottom: '30px', maxWidth: '1400px', margin: '0 auto' }}>
         
         {/* WELCOME HEADER */}
         <div className="welcome-header">
           <div>
-            <h1 style={{ fontSize: '2.2rem', margin: '0 0 8px 0', color: '#fff', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <h1 style={{ fontSize: '1.8rem', margin: '0 0 6px 0', color: '#fff', display: 'flex', alignItems: 'center', gap: '10px' }}>
               Welcome back, {tpoData?.name?.split(' ')[0] || 'Officer'} 👋
               <span className="role-badge">{userRole || 'STAFF'}</span>
             </h1>
-            <p style={{ color: '#94a3b8', margin: 0, fontSize: '1rem' }}>Here's your real-time ecosystem overview for today.</p>
+            <p style={{ color: '#94a3b8', margin: 0, fontSize: '0.9rem' }}>Real-time ecosystem overview for today.</p>
           </div>
           <div className="date-pill">
-            <Clock size={18} weight="bold" /> 
+            <Clock size={16} weight="bold" /> 
             {today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
           </div>
         </div>
@@ -299,33 +279,33 @@ export default function Dashboard() {
           <div className="kpi-card hover-lift">
             <div className="kpi-top">
               <div><div className="kpi-title">Total Students</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.totalStudents}</div></div>
-              <div className="kpi-icon blue"><Student weight="fill" size={24}/></div>
+              <div className="kpi-icon blue"><Student weight="fill" size={20}/></div>
             </div>
-            <div className="kpi-bottom"><span className="trend-up">↑ Live Sync</span> across {tpoData?.assignedBranchesArray?.includes('all') ? 'all' : tpoData?.assignedBranchesArray?.length || 1} branches</div>
+            <div className="kpi-bottom"><span className="trend-up">↑ Live</span> sync across branches</div>
           </div>
           
           <div className="kpi-card hover-lift">
             <div className="kpi-top">
               <div><div className="kpi-title">Active Vacancies</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.activeVacancies}</div></div>
-              <div className="kpi-icon green"><Briefcase weight="fill" size={24}/></div>
+              <div className="kpi-icon green"><Briefcase weight="fill" size={20}/></div>
             </div>
-            <div className="kpi-bottom"><span className="trend-up">↑ Hiring Now</span> in portal</div>
+            <div className="kpi-bottom"><span className="trend-up">↑ Hiring</span> now in portal</div>
           </div>
 
           <div className="kpi-card hover-lift">
             <div className="kpi-top">
               <div><div className="kpi-title">Students Placed</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div></div>
-              <div className="kpi-icon purple"><Trophy weight="fill" size={24}/></div>
+              <div className="kpi-icon purple"><Trophy weight="fill" size={20}/></div>
             </div>
-            <div className="kpi-bottom"><span className="trend-up">↑ Growing</span> placement pipeline</div>
+            <div className="kpi-bottom"><span className="trend-up">↑ Growing</span> pipeline</div>
           </div>
 
           <div className="kpi-card hover-lift">
             <div className="kpi-top">
               <div><div className="kpi-title">Conversion Rate</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : `${placementRate}%`}</div></div>
-              <div className="kpi-icon orange"><ChartBar weight="fill" size={24}/></div>
+              <div className="kpi-icon orange"><ChartBar weight="fill" size={20}/></div>
             </div>
-            <div className="kpi-bottom"><span className="trend-up">↑ Performance</span> global average</div>
+            <div className="kpi-bottom"><span className="trend-up">↑ Performance</span> global avg</div>
           </div>
         </div>
 
@@ -342,7 +322,7 @@ export default function Dashboard() {
               <select className="premium-select"><option>This Year</option></select>
             </div>
             
-            <div style={{ width: '100%', height: '300px', marginTop: '20px' }}>
+            <div style={{ width: '100%', height: '260px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
@@ -360,12 +340,12 @@ export default function Dashboard() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                  <XAxis dataKey="m" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
-                  <YAxis stroke="#64748b" tick={{ fill: '#64748b', fontSize: 12 }} axisLine={false} tickLine={false} />
+                  <XAxis dataKey="m" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <Tooltip content={<CustomTooltip />} />
-                  <Area type="monotone" dataKey="Applications" stroke="#a855f7" strokeWidth={3} fillOpacity={1} fill="url(#colorApps)" activeDot={{ r: 6, strokeWidth: 0, fill: '#a855f7' }} />
-                  <Area type="monotone" dataKey="Offers" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorOff)" activeDot={{ r: 6, strokeWidth: 0, fill: '#10b981' }} />
-                  <Area type="monotone" dataKey="Placed" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorPl)" activeDot={{ r: 6, strokeWidth: 0, fill: '#3b82f6' }} />
+                  <Area type="monotone" dataKey="Applications" stroke="#a855f7" strokeWidth={2} fillOpacity={1} fill="url(#colorApps)" activeDot={{ r: 5, fill: '#a855f7' }} />
+                  <Area type="monotone" dataKey="Offers" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorOff)" activeDot={{ r: 5, fill: '#10b981' }} />
+                  <Area type="monotone" dataKey="Placed" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorPl)" activeDot={{ r: 5, fill: '#3b82f6' }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -373,27 +353,27 @@ export default function Dashboard() {
 
           {/* INTERACTIVE DONUT CHART */}
           <div className="dash-card premium-shadow">
-            <div className="card-header">
+            <div className="card-header" style={{ marginBottom: '10px' }}>
               <div>
                 <h3 className="card-title">Placements by Domain</h3>
                 <p className="card-subtitle">Distribution of successful offers</p>
               </div>
             </div>
             
-            <div style={{ width: '100%', height: '220px', position: 'relative' }}>
+            <div style={{ width: '100%', height: '180px', position: 'relative' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Tooltip 
-                    contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.95)', borderColor: '#334155', borderRadius: '8px', color: '#fff' }}
+                    contentStyle={{ backgroundColor: 'rgba(15, 23, 42, 0.95)', borderColor: '#334155', borderRadius: '8px', color: '#fff', padding: '8px', fontSize: '0.8rem' }}
                     itemStyle={{ color: '#fff', fontWeight: 'bold' }}
                   />
                   <Pie
                     data={domainData}
                     cx="50%"
                     cy="50%"
-                    innerRadius={60}
-                    outerRadius={85}
-                    paddingAngle={5}
+                    innerRadius={50}
+                    outerRadius={75}
+                    paddingAngle={3}
                     dataKey="value"
                     stroke="none"
                   >
@@ -403,21 +383,21 @@ export default function Dashboard() {
                   </Pie>
                 </PieChart>
               </ResponsiveContainer>
-              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center' }}>
-                <div style={{ fontSize: '1.8rem', fontWeight: 'bold', color: '#fff' }}>{stats.placed}</div>
-                <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>Total</div>
+              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
+                <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{stats.placed}</div>
+                <div style={{ fontSize: '0.65rem', color: '#94a3b8' }}>Total</div>
               </div>
             </div>
 
             <div className="domain-legend">
-              {domainData.length === 0 ? <div style={{textAlign:'center', color:'#64748b'}}>No data yet</div> : 
+              {domainData.length === 0 ? <div style={{textAlign:'center', color:'#64748b', fontSize: '0.8rem'}}>No data yet</div> : 
                 domainData.map((d, i) => (
                 <div key={d.name} className="legend-item">
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ width: '10px', height: '10px', borderRadius: '3px', background: DOMAIN_COLORS[i % DOMAIN_COLORS.length] }}></span>
-                    <span style={{ color: '#cbd5e1', fontSize: '0.8rem' }}>{d.name}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <span style={{ width: '8px', height: '8px', borderRadius: '2px', background: DOMAIN_COLORS[i % DOMAIN_COLORS.length] }}></span>
+                    <span style={{ color: '#cbd5e1', fontSize: '0.75rem' }}>{d.name}</span>
                   </div>
-                  <strong style={{ color: '#fff', fontSize: '0.85rem' }}>{d.value}</strong>
+                  <strong style={{ color: '#fff', fontSize: '0.8rem' }}>{d.value}</strong>
                 </div>
               ))}
             </div>
@@ -428,11 +408,13 @@ export default function Dashboard() {
         <div className="grid-main-charts" style={{ marginTop: '20px' }}>
           
           <div className="dash-card premium-shadow">
-            <h3 className="card-title" style={{ marginBottom: '20px' }}>Application Funnel</h3>
+            <div className="card-header">
+              <h3 className="card-title">Application Funnel</h3>
+            </div>
             
             <div className="pipeline-container">
               <div className="pipe-stage">
-                <div className="pipe-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7', borderColor: 'rgba(168, 85, 247, 0.3)' }}><NotePencil size={20} weight="fill"/></div>
+                <div className="pipe-icon" style={{ color: '#a855f7' }}><NotePencil size={20} weight="fill"/></div>
                 <div className="pipe-data">
                   <div className="pipe-val">{pipeline.applied}</div>
                   <div className="pipe-lbl">Applied</div>
@@ -441,7 +423,7 @@ export default function Dashboard() {
               <div className="pipe-arrow">➔</div>
               
               <div className="pipe-stage">
-                <div className="pipe-icon" style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', borderColor: 'rgba(59, 130, 246, 0.3)' }}><Users size={20} weight="fill"/></div>
+                <div className="pipe-icon" style={{ color: '#3b82f6' }}><Users size={20} weight="fill"/></div>
                 <div className="pipe-data">
                   <div className="pipe-val">{pipeline.interview}</div>
                   <div className="pipe-lbl">Interviews</div>
@@ -450,7 +432,7 @@ export default function Dashboard() {
               <div className="pipe-arrow">➔</div>
 
               <div className="pipe-stage">
-                <div className="pipe-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', borderColor: 'rgba(245, 158, 11, 0.3)' }}><Briefcase size={20} weight="fill"/></div>
+                <div className="pipe-icon" style={{ color: '#f59e0b' }}><Briefcase size={20} weight="fill"/></div>
                 <div className="pipe-data">
                   <div className="pipe-val">{pipeline.offers}</div>
                   <div className="pipe-lbl">Offers</div>
@@ -459,7 +441,7 @@ export default function Dashboard() {
               <div className="pipe-arrow">➔</div>
 
               <div className="pipe-stage">
-                <div className="pipe-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', borderColor: 'rgba(16, 185, 129, 0.3)' }}><Trophy size={20} weight="fill"/></div>
+                <div className="pipe-icon" style={{ color: '#10b981' }}><Trophy size={20} weight="fill"/></div>
                 <div className="pipe-data">
                   <div className="pipe-val">{pipeline.placed}</div>
                   <div className="pipe-lbl">Placed</div>
@@ -470,77 +452,61 @@ export default function Dashboard() {
             <div className="conversion-metrics">
               <div className="metric-box">
                 <span>App to Interview</span>
-                <strong>{pipeline.applied ? ((pipeline.interview/pipeline.applied)*100).toFixed(1) : 0}%</strong>
+                <strong style={{ color: '#3b82f6' }}>{pipeline.applied ? ((pipeline.interview/pipeline.applied)*100).toFixed(1) : 0}%</strong>
               </div>
               <div className="metric-box">
                 <span>Interview to Offer</span>
-                <strong>{pipeline.interview ? ((pipeline.offers/pipeline.interview)*100).toFixed(1) : 0}%</strong>
+                <strong style={{ color: '#a855f7' }}>{pipeline.interview ? ((pipeline.offers/pipeline.interview)*100).toFixed(1) : 0}%</strong>
               </div>
               <div className="metric-box">
                 <span>Offer to Placed</span>
-                <strong>{pipeline.offers ? ((pipeline.placed/pipeline.offers)*100).toFixed(1) : 0}%</strong>
+                <strong style={{ color: '#10b981' }}>{pipeline.offers ? ((pipeline.placed/pipeline.offers)*100).toFixed(1) : 0}%</strong>
               </div>
             </div>
           </div>
 
           <div className="dash-card premium-shadow">
-            <h3 className="card-title" style={{ marginBottom: '20px' }}>Role-Based Quick Actions</h3>
+            <h3 className="card-title" style={{ marginBottom: '15px' }}>Role-Based Actions</h3>
             <div className="quick-access-grid">
               
-              {/* EVERYONE SEES THESE */}
               <div className="qa-btn hover-lift" onClick={()=>navigate('/students')}>
-                <div className="qa-icon blue"><Student weight="fill"/></div>
-                <span>Students</span>
+                <div className="qa-icon blue"><Student weight="fill"/></div><span>Students</span>
               </div>
               <div className="qa-btn hover-lift" onClick={()=>navigate('/exams')}>
-                <div className="qa-icon orange"><NotePencil weight="fill"/></div>
-                <span>Exams</span>
+                <div className="qa-icon orange"><NotePencil weight="fill"/></div><span>Exams</span>
               </div>
               <div className="qa-btn hover-lift" onClick={()=>navigate('/study-materials')}>
-                <div className="qa-icon pink"><BookOpen weight="fill"/></div>
-                <span>Materials</span>
+                <div className="qa-icon pink"><BookOpen weight="fill"/></div><span>Materials</span>
               </div>
               <div className="qa-btn hover-lift" onClick={()=>navigate('/clients')}>
-                <div className="qa-icon teal"><FolderOpen weight="fill"/></div>
-                <span>Documents</span>
+                <div className="qa-icon teal"><FolderOpen weight="fill"/></div><span>Documents</span>
               </div>
 
-              {/* ONLY TPOS AND ADMINS SEE THESE */}
               {isTpo && (
                 <>
                   <div className="qa-btn hover-lift" onClick={()=>navigate('/placement-drives')}>
-                    <div className="qa-icon purple"><CalendarCheck weight="fill"/></div>
-                    <span>Drives</span>
+                    <div className="qa-icon purple"><CalendarCheck weight="fill"/></div><span>Drives</span>
                   </div>
                   <div className="qa-btn hover-lift" onClick={()=>navigate('/tracker')}>
-                    <div className="qa-icon green"><ListChecks weight="fill"/></div>
-                    <span>Tracker</span>
+                    <div className="qa-icon green"><ListChecks weight="fill"/></div><span>Tracker</span>
                   </div>
                   <div className="qa-btn hover-lift" onClick={()=>navigate('/talentino')}>
-                    <div className="qa-icon yellow"><Users weight="fill"/></div>
-                    <span>Talentino</span>
+                    <div className="qa-icon yellow"><Users weight="fill"/></div><span>Talentino</span>
                   </div>
                 </>
               )}
 
-              {/* ONLY ADMINS SEE THESE */}
               {isSuperAdmin && (
-                <>
-                  <div className="qa-btn hover-lift" onClick={()=>navigate('/reports')}>
-                    <div className="qa-icon blue"><ChartBar weight="fill"/></div>
-                    <span>Reports</span>
-                  </div>
-                </>
-              )}
-
-              {/* TRAINERS / TTH SEE THIS */}
-              {isTrainer && !isSuperAdmin && (
-                <div className="qa-btn hover-lift" onClick={()=>navigate('/trainer-logs')}>
-                  <div className="qa-icon green"><ChalkboardTeacher weight="fill"/></div>
-                  <span>My Logs</span>
+                <div className="qa-btn hover-lift" onClick={()=>navigate('/reports')}>
+                  <div className="qa-icon blue"><ChartBar weight="fill"/></div><span>Reports</span>
                 </div>
               )}
 
+              {isTrainer && !isSuperAdmin && (
+                <div className="qa-btn hover-lift" onClick={()=>navigate('/trainer-logs')}>
+                  <div className="qa-icon green"><ChalkboardTeacher weight="fill"/></div><span>My Logs</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -548,7 +514,6 @@ export default function Dashboard() {
         {/* BOTTOM SECTION: LISTS */}
         <div className="grid-main-charts" style={{ marginTop: '20px' }}>
           
-          {/* RECENT PLACEMENTS */}
           <div className="dash-card premium-shadow">
             <div className="card-header">
               <h3 className="card-title">Live Placement Feed</h3>
@@ -560,23 +525,20 @@ export default function Dashboard() {
                 <div key={i} className="list-row hover-bg">
                   <div className="row-left">
                     <div className="avatar-circle">{p.name.charAt(0)}</div>
-                    <div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
                       <div className="row-title">{p.name}</div>
                       <div className="row-sub">{p.course}</div>
                     </div>
                   </div>
-                  <div className="row-right">
-                    <div style={{ textAlign: 'right' }}>
-                      <div className="row-title text-blue">{p.company}</div>
-                      <div className="row-sub">{p.packageLpa ? `${String(p.packageLpa).toUpperCase().replace('LPA', '').trim()} LPA` : 'Offer Received'}</div>
-                    </div>
+                  <div className="row-right" style={{ textAlign: 'right', minWidth: '100px' }}>
+                    <div className="row-title text-blue" style={{ fontSize: '0.85rem' }}>{p.company}</div>
+                    <div className="row-sub" style={{ fontSize: '0.75rem' }}>{p.packageLpa ? `${String(p.packageLpa).toUpperCase().replace('LPA', '').trim()} LPA` : 'Offer Received'}</div>
                   </div>
                 </div>
               )) : <div className="empty-state">No recent placements found.</div>}
             </div>
           </div>
 
-          {/* UPCOMING EVENTS / TRAINER LOGS BASED ON ROLE */}
           {isTrainer && !isSuperAdmin ? (
             <div className="dash-card premium-shadow">
               <div className="card-header">
@@ -588,14 +550,14 @@ export default function Dashboard() {
                   <div key={i} className="list-row hover-bg">
                     <div className="row-left">
                       <div className="icon-circle green"><ChalkboardTeacher weight="fill"/></div>
-                      <div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
                         <div className="row-title">{l.course}</div>
                         <div className="row-sub">{l.timestamp.split(' ')[0]}</div>
                       </div>
                     </div>
-                    <div className="row-right">
-                      <div className="status-pill green">{l.present} Present</div>
-                      <div className="status-pill red">{l.absentees} Absent</div>
+                    <div className="row-right" style={{ display: 'flex', gap: '5px' }}>
+                      <span className="status-pill green">{l.present} Present</span>
+                      <span className="status-pill red">{l.absentees} Absent</span>
                     </div>
                   </div>
                 )) : <div className="empty-state">No logs submitted recently.</div>}
@@ -616,20 +578,20 @@ export default function Dashboard() {
                   upcomingEvents.map((evt, i) => {
                     const dateObj = parseDateRobust(evt.date);
                     return (
-                    <div key={i} className="list-row hover-bg">
+                    <div key={i} className="list-row hover-bg" style={{ alignItems: 'flex-start' }}>
                       <div className="row-left">
                         <div className="calendar-box">
                           <span className="cal-month">{dateObj ? dateObj.toLocaleString('en-us', { month: 'short' }) : 'TBD'}</span>
                           <span className="cal-day">{dateObj ? dateObj.getDate() : '-'}</span>
                         </div>
-                        <div>
-                          <div className="row-title">{evt.title}</div>
-                          <div className="row-sub" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                            <MapPinLine size={12} /> {evt.location || 'Online'}
+                        <div style={{ flex: 1, minWidth: 0, paddingRight: '10px' }}>
+                          <div className="row-title" style={{ whiteSpace: 'normal', lineHeight: '1.3' }}>{evt.title}</div>
+                          <div className="row-sub" style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
+                            <MapPinLine size={12} /> <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{evt.location || 'Online'}</span>
                           </div>
                         </div>
                       </div>
-                      <div className="row-right">
+                      <div className="row-right" style={{ paddingTop: '2px' }}>
                         <span className={`status-pill ${evt.type.toLowerCase().includes('drive') ? 'blue' : 'purple'}`}>
                           {evt.type}
                         </span>
@@ -648,88 +610,88 @@ export default function Dashboard() {
         <style>{`
           .db-wrapper { font-family: 'Inter', sans-serif; }
           
-          .welcome-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 30px; flex-wrap: wrap; gap: 15px; }
-          .role-badge { background: rgba(56, 189, 248, 0.1); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 4px 10px; border-radius: 20px; font-size: 0.8rem; font-weight: bold; letter-spacing: 1px; }
-          .date-pill { background: #1e293b; border: 1px solid #334155; padding: 10px 20px; border-radius: 30px; color: #cbd5e1; font-size: 0.9rem; display: flex; align-items: center; gap: 8px; font-weight: 500; }
+          .welcome-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 25px; flex-wrap: wrap; gap: 15px; }
+          .role-badge { background: rgba(56, 189, 248, 0.1); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: bold; letter-spacing: 1px; }
+          .date-pill { background: #1e293b; border: 1px solid #334155; padding: 8px 16px; border-radius: 20px; color: #cbd5e1; font-size: 0.8rem; display: flex; align-items: center; gap: 6px; font-weight: 500; }
           
-          .dash-card { background: #111827; border: 1px solid #1e293b; border-radius: 16px; padding: 25px; display: flex; flex-direction: column; position: relative; overflow: hidden; }
-          .premium-shadow { box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5); }
+          .dash-card { background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+          .premium-shadow { box-shadow: 0 10px 20px -10px rgba(0,0,0,0.4); }
           .hover-lift { transition: transform 0.2s ease, box-shadow 0.2s ease; cursor: default; }
-          .hover-lift:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7); border-color: #334155; }
+          .hover-lift:hover { transform: translateY(-3px); box-shadow: 0 15px 30px -10px rgba(0,0,0,0.6); border-color: #334155; }
           
-          .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 20px; }
-          .kpi-card { background: linear-gradient(145deg, #111827 0%, #0f1523 100%); border: 1px solid #1e293b; border-radius: 16px; padding: 25px; position: relative; overflow: hidden; }
-          .kpi-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; }
-          .kpi-title { font-size: 0.85rem; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-          .kpi-val { font-size: 2.2rem; font-weight: 800; color: #fff; line-height: 1.2; margin-top: 5px; }
-          .kpi-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+          .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 15px; }
+          .kpi-card { background: linear-gradient(145deg, #111827 0%, #0f1523 100%); border: 1px solid #1e293b; border-radius: 12px; padding: 20px; }
+          .kpi-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
+          .kpi-title { font-size: 0.75rem; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px; }
+          .kpi-val { font-size: 1.8rem; font-weight: 800; color: #fff; line-height: 1; }
+          .kpi-icon { width: 38px; height: 38px; border-radius: 10px; display: flex; align-items: center; justify-content: center; }
           .kpi-icon.blue { background: rgba(59, 130, 246, 0.1); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.2); }
           .kpi-icon.green { background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.2); }
           .kpi-icon.purple { background: rgba(168, 85, 247, 0.1); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.2); }
           .kpi-icon.orange { background: rgba(245, 158, 11, 0.1); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.2); }
-          .kpi-bottom { border-top: 1px solid rgba(255,255,255,0.05); padding-top: 12px; font-size: 0.8rem; color: #64748b; display: flex; align-items: center; gap: 6px; }
+          .kpi-bottom { border-top: 1px solid rgba(255,255,255,0.05); padding-top: 10px; font-size: 0.75rem; color: #64748b; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .trend-up { color: #10b981; font-weight: bold; background: rgba(16, 185, 129, 0.1); padding: 2px 6px; border-radius: 4px; }
           
-          .grid-main-charts { display: grid; grid-template-columns: 2fr 1fr; gap: 20px; }
-          @media (max-width: 1100px) { .grid-main-charts { grid-template-columns: 1fr; } }
+          .grid-main-charts { display: grid; grid-template-columns: 2fr 1fr; gap: 15px; }
+          @media (max-width: 1000px) { .grid-main-charts { grid-template-columns: 1fr; } }
           
-          .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 20px; }
-          .card-title { margin: 0; font-size: 1.1rem; color: #fff; font-weight: 700; }
-          .card-subtitle { margin: 4px 0 0 0; font-size: 0.8rem; color: #64748b; }
-          .premium-select { background: #1e293b; color: #fff; border: 1px solid #334155; border-radius: 8px; padding: 6px 12px; font-size: 0.85rem; outline: none; cursor: pointer; font-weight: 500; }
-          .premium-text-btn { background: transparent; border: none; color: #3b82f6; font-size: 0.9rem; cursor: pointer; font-weight: bold; transition: 0.2s; }
-          .premium-text-btn:hover { color: #60a5fa; transform: translateX(3px); }
+          .card-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; }
+          .card-title { margin: 0; font-size: 1rem; color: #fff; font-weight: 700; }
+          .card-subtitle { margin: 4px 0 0 0; font-size: 0.75rem; color: #64748b; }
+          .premium-select { background: #1e293b; color: #fff; border: 1px solid #334155; border-radius: 6px; padding: 4px 10px; font-size: 0.8rem; outline: none; cursor: pointer; font-weight: 500; }
+          .premium-text-btn { background: transparent; border: none; color: #3b82f6; font-size: 0.85rem; cursor: pointer; font-weight: bold; transition: 0.2s; }
+          .premium-text-btn:hover { color: #60a5fa; transform: translateX(2px); }
           
-          .domain-legend { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
-          .legend-item { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 8px 12px; border-radius: 8px; border: 1px solid transparent; transition: 0.2s; }
+          .domain-legend { display: flex; flex-direction: column; gap: 6px; margin-top: 5px; }
+          .legend-item { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.02); padding: 6px 10px; border-radius: 6px; border: 1px solid transparent; transition: 0.2s; }
           .legend-item:hover { background: #1e293b; border-color: #334155; }
           
           /* PIPELINE */
-          .pipeline-container { display: flex; align-items: center; justify-content: space-between; margin-bottom: 25px; padding: 20px; background: rgba(15, 23, 42, 0.5); border-radius: 12px; border: 1px solid #1e293b; }
-          .pipe-stage { display: flex; flex-direction: column; align-items: center; gap: 10px; flex: 1; }
-          .pipe-icon { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 1px solid; }
+          .pipeline-container { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; padding: 15px; background: rgba(15, 23, 42, 0.5); border-radius: 10px; border: 1px solid #1e293b; }
+          .pipe-stage { display: flex; align-items: center; gap: 10px; }
+          .pipe-icon { display: none; } /* Simplified for space */
           .pipe-data { text-align: center; }
-          .pipe-val { font-size: 1.4rem; font-weight: 800; color: #fff; line-height: 1; margin-bottom: 4px; }
-          .pipe-lbl { font-size: 0.75rem; color: #94a3b8; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
-          .pipe-arrow { color: #334155; font-size: 1.2rem; }
-          @media (max-width: 600px) { .pipeline-container { flex-direction: column; gap: 20px; } .pipe-arrow { transform: rotate(90deg); } }
+          .pipe-val { font-size: 1.2rem; font-weight: 800; color: #fff; line-height: 1; margin-bottom: 2px; }
+          .pipe-lbl { font-size: 0.7rem; color: #94a3b8; text-transform: uppercase; font-weight: 600; letter-spacing: 0.5px; }
+          .pipe-arrow { color: #334155; font-size: 1rem; }
+          @media (max-width: 600px) { .pipeline-container { flex-direction: column; gap: 15px; } .pipe-arrow { transform: rotate(90deg); } }
           
-          .conversion-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-          .metric-box { background: linear-gradient(to bottom right, rgba(30, 41, 59, 0.5), rgba(15, 23, 42, 0.8)); padding: 15px; border-radius: 10px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 5px; }
-          .metric-box span { color: #94a3b8; font-size: 0.75rem; text-transform: uppercase; font-weight: 600; }
-          .metric-box strong { color: #fff; font-size: 1.2rem; font-weight: 800; }
+          .conversion-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+          .metric-box { background: linear-gradient(to bottom right, rgba(30, 41, 59, 0.5), rgba(15, 23, 42, 0.8)); padding: 12px; border-radius: 8px; border: 1px solid #1e293b; display: flex; flex-direction: column; gap: 4px; }
+          .metric-box span { color: #94a3b8; font-size: 0.7rem; text-transform: uppercase; font-weight: 600; }
+          .metric-box strong { font-size: 1.1rem; font-weight: 800; }
           
           /* QUICK ACCESS GRID */
-          .quick-access-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
-          .qa-btn { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 15px 10px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; cursor: pointer; color: #cbd5e1; font-weight: 600; font-size: 0.8rem; text-align: center; }
-          .qa-btn:hover { background: #2dd4bf; color: #000; border-color: #2dd4bf; }
-          .qa-btn:hover .qa-icon { background: rgba(0,0,0,0.1); color: #000; border-color: transparent; }
-          .qa-icon { width: 40px; height: 40px; border-radius: 10px; border: 1px solid #334155; background: #0f1523; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; transition: 0.2s; }
+          .quick-access-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(90px, 1fr)); gap: 10px; }
+          .qa-btn { background: #1e293b; border: 1px solid #334155; border-radius: 10px; padding: 12px 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; cursor: pointer; color: #cbd5e1; font-weight: 600; font-size: 0.75rem; text-align: center; }
+          .qa-btn:hover { background: #2dd4bf; color: #0f1523; border-color: #2dd4bf; }
+          .qa-btn:hover .qa-icon { background: rgba(0,0,0,0.1); color: #0f1523; border-color: transparent; }
+          .qa-icon { width: 32px; height: 32px; border-radius: 8px; border: 1px solid #334155; background: #0f1523; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; transition: 0.2s; }
           .qa-icon.blue { color: #3b82f6; } .qa-icon.orange { color: #f59e0b; } .qa-icon.pink { color: #ec4899; } .qa-icon.teal { color: #0ea5e9; } .qa-icon.purple { color: #a855f7; } .qa-icon.green { color: #10b981; } .qa-icon.yellow { color: #eab308; }
           
           /* LIST STYLES */
-          .list-container { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-          .list-row { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(255,255,255,0.02); border: 1px solid transparent; border-radius: 10px; transition: 0.2s; }
+          .list-container { display: flex; flex-direction: column; gap: 6px; }
+          .list-row { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(255,255,255,0.02); border: 1px solid transparent; border-radius: 8px; transition: 0.2s; }
           .hover-bg:hover { background: #1e293b; border-color: #334155; }
-          .row-left { display: flex; align-items: center; gap: 15px; }
-          .avatar-circle { width: 38px; height: 38px; border-radius: 50%; background: #3b82f6; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.1rem; }
-          .icon-circle { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+          .row-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+          .avatar-circle { width: 34px; height: 34px; border-radius: 50%; background: #3b82f6; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1rem; flex-shrink: 0; }
+          .icon-circle { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0; }
           .icon-circle.green { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-          .row-title { color: #fff; font-weight: 600; font-size: 0.95rem; margin-bottom: 3px; }
-          .row-sub { color: #64748b; font-size: 0.8rem; }
-          .text-blue { color: #3b82f6; }
+          .row-title { color: #fff; font-weight: 600; font-size: 0.85rem; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .row-sub { color: #64748b; font-size: 0.75rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .text-blue { color: #3b82f6; font-weight: bold; }
           
-          .calendar-box { background: #0f1523; border: 1px solid #1e293b; border-radius: 8px; width: 45px; height: 45px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; }
-          .cal-month { background: #3b82f6; color: #fff; width: 100%; text-align: center; font-size: 0.6rem; font-weight: bold; text-transform: uppercase; padding: 2px 0; }
-          .cal-day { font-size: 1.1rem; font-weight: 800; color: #fff; padding: 2px 0; }
+          .calendar-box { background: #0f1523; border: 1px solid #1e293b; border-radius: 6px; width: 40px; height: 40px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; }
+          .cal-month { background: #3b82f6; color: #fff; width: 100%; text-align: center; font-size: 0.55rem; font-weight: bold; text-transform: uppercase; padding: 2px 0; }
+          .cal-day { font-size: 0.95rem; font-weight: 800; color: #fff; padding: 2px 0; }
           
-          .status-pill { padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; }
-          .status-pill.green { background: rgba(16, 185, 129, 0.1); color: #10b981; }
-          .status-pill.blue { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-          .status-pill.purple { background: rgba(168, 85, 247, 0.1); color: #a855f7; }
-          .status-pill.red { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
+          .status-pill { padding: 4px 8px; border-radius: 12px; font-size: 0.65rem; font-weight: bold; white-space: nowrap; }
+          .status-pill.green { background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16,185,129,0.2); }
+          .status-pill.blue { background: rgba(59, 130, 246, 0.1); color: #3b82f6; border: 1px solid rgba(59,130,246,0.2); }
+          .status-pill.purple { background: rgba(168, 85, 247, 0.1); color: #a855f7; border: 1px solid rgba(168,85,247,0.2); }
+          .status-pill.red { background: rgba(239, 68, 68, 0.1); color: #ef4444; border: 1px solid rgba(239,68,68,0.2); }
           
-          .empty-state { text-align: center; padding: 30px; color: #64748b; font-size: 0.9rem; border: 1px dashed #334155; border-radius: 10px; margin-top: 10px; }
+          .empty-state { text-align: center; padding: 20px; color: #64748b; font-size: 0.8rem; border: 1px dashed #334155; border-radius: 8px; }
         `}</style>
       </div>
     </Layout>
