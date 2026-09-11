@@ -60,7 +60,7 @@ async function refreshCache() {
     const fetchedData = [];
     for (let i = 0; i < sheetsToFetch.length; i++) {
       fetchedData.push(await fetchSheetWithRetry(sheetsToFetch[i]));
-      await delay(200); 
+      await delay(1500); // 🚨 Increased to 1.5 seconds to respect Google API limits
     }
 
     const [

@@ -64,7 +64,7 @@ async function refreshAssetCache() {
       } else {
         fetchedData[key] = [];
       }
-      await delay(250); 
+      await delay(1500); // 🚨 Increased to 1.5 seconds 
     }
 
     assetCache = fetchedData;
@@ -73,11 +73,13 @@ async function refreshAssetCache() {
   } catch (err) { 
     console.error("❌ Asset Management Cache sync failed:", err.message); 
     isFetching = false;
-    setTimeout(refreshAssetCache, 10000);
+    setTimeout(refreshAssetCache, 15000);
   }
 }
 
-refreshAssetCache();
-setInterval(refreshAssetCache, 300000); 
+// 🚨 Stagger the startup by 30 seconds so it doesn't run at the exact same time as config.js
+setTimeout(refreshAssetCache, 30000);
+// 🚨 Run every 6 minutes instead of 5 to further reduce overlap
+setInterval(refreshAssetCache, 360000); 
 
 module.exports = { assetDoc, getAssetCache, refreshAssetCache };
