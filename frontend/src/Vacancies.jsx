@@ -15,13 +15,14 @@ export default function Vacancies() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   
-  // 🚨 RESTRICT ACCESS: ONLY TPO CAN ADD VACANCIES
   const upperRole = String(tpoData?.role || '').toUpperCase();
   const accessType = String(tpoData?.accessType || '').toLowerCase();
   
   const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole.includes('MANAGER');
   const isTpo = upperRole.includes('TPO');
-  const canAddOpening = isTpo || isSuperAdmin;
+  
+  // 🚨 RESTRICT ACCESS: ONLY TPO CAN ADD VACANCIES (Not Super Admins)
+  const canAddOpening = isTpo && !isSuperAdmin;
 
   const isCourseSpecific = upperRole.includes('TRAINER') || upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
@@ -30,11 +31,11 @@ export default function Vacancies() {
   const [applications, setApplications] = useState([]); 
   const [loading, setLoading] = useState(true);
   
+  // 🚨 NEW TABS STATE
+  const [activeTab, setActiveTab] = useState('Open'); // 'Open' or 'Expired'
+
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState('All');
-  
-  // 🚨 SUPER ADMIN FILTERS
   const [tpoFilter, setTpoFilter] = useState('All');
   const [monthYearFilter, setMonthYearFilter] = useState('All');
 
@@ -75,7 +76,6 @@ export default function Vacancies() {
     appsByJobId[jobId].push(app);
   });
 
-  // 🚨 ROBUST DATE PARSER
   const parseDate = (dateStr) => {
     if (!dateStr) return new Date(8640000000000000); 
     let cleanStr = typeof dateStr === 'string' ? dateStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dateStr;
@@ -93,13 +93,11 @@ export default function Vacancies() {
   const today = new Date();
   today.setHours(0,0,0,0);
 
-  // Extract unique TPOs and Month/Years for Dropdowns (Robust Fallbacks)
   const uniqueTPOs = [...new Set(vacancies.map(v => v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown').filter(n => n !== 'Unknown'))].sort();
-  
   const uniqueMonths = [...new Set(vacancies.map(v => {
     const d = parseDate(v.datePosted || v.timestamp || v.date);
     if (d && d.getFullYear() < 2050 && d.getFullYear() > 2000) {
-      return d.toLocaleString('en-us', { month: 'long', year: 'numeric' }); // e.g., "September 2026"
+      return d.toLocaleString('en-us', { month: 'long', year: 'numeric' });
     }
     return null;
   }).filter(Boolean))].sort((a, b) => new Date(b) - new Date(a));
@@ -119,14 +117,12 @@ export default function Vacancies() {
     }
 
     const deadline = parseDate(v.lastDate);
-    const isExpired = deadline < today || (v.status || '').toLowerCase().includes('expire');
-    const isClosed = (v.status || '').toLowerCase().includes('close') || (v.status || '').toLowerCase().includes('no');
+    const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire');
+    const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
     
-    const statMatch = statusFilter === 'All' ||
-                      (statusFilter === 'Open' && !isExpired && !isClosed) ||
-                      (statusFilter === 'Expired' && (isExpired || isClosed));
+    // 🚨 TABS LOGIC
+    const tabMatch = activeTab === 'Open' ? (!isExpired && !isClosed) : (isExpired || isClosed);
 
-    // Super Admin Filters
     const rowTpo = v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown';
     const tpoMatch = tpoFilter === 'All' || rowTpo === tpoFilter;
     
@@ -141,7 +137,7 @@ export default function Vacancies() {
       }
     }
 
-    return matchQuery && matchCourse && matchTrainerScope && statMatch && tpoMatch && monthMatch;
+    return matchQuery && matchCourse && matchTrainerScope && tabMatch && tpoMatch && monthMatch;
   });
 
   const groupedVacs = {};
@@ -151,28 +147,20 @@ export default function Vacancies() {
     groupedVacs[loc].push(v);
   });
 
-  // ---------------------------------------------------------
-  // 📊 MINI DASHBOARD CALCULATIONS (Super Admin Only)
-  // ---------------------------------------------------------
   let totalActiveOpenings = 0;
   let totalExpiredOpenings = 0;
   let totalApplicationsCount = 0;
   let uniqueCompaniesSet = new Set();
 
-  filteredVacs.forEach(v => {
+  vacancies.forEach(v => {
     const deadline = parseDate(v.lastDate);
     const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire') || String(v.status || '').toLowerCase().includes('close');
     
-    if (isExpired) {
-      totalExpiredOpenings++;
-    } else {
-      totalActiveOpenings++;
-    }
+    if (isExpired) totalExpiredOpenings++; else totalActiveOpenings++;
 
     if (v.company && String(v.company).toLowerCase() !== 'unknown company') {
       uniqueCompaniesSet.add(v.company);
     }
-
     const myApps = appsByJobId[v.id] || [];
     totalApplicationsCount += myApps.length;
   });
@@ -198,7 +186,6 @@ export default function Vacancies() {
           )}
         </div>
 
-        {/* 🚨 ADMIN MINI-DASHBOARD (Visible only to Super Admins) */}
         {isSuperAdmin && (
           <div className="mini-dash-grid">
             <div className="mini-dash-card">
@@ -232,30 +219,49 @@ export default function Vacancies() {
           </div>
         )}
 
-        {/* 🚨 UPDATED FILTER CONTROLS */}
+        {/* 🚨 CUSTOM TABS */}
+        <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', borderBottom: '2px solid #1e293b' }}>
+          <button 
+            onClick={() => setActiveTab('Open')}
+            style={{ 
+              background: 'none', border: 'none', padding: '10px 20px', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer',
+              color: activeTab === 'Open' ? '#38bdf8' : '#64748b',
+              borderBottom: activeTab === 'Open' ? '3px solid #38bdf8' : '3px solid transparent',
+              transition: '0.2s'
+            }}
+          >
+            Active Openings
+          </button>
+          <button 
+            onClick={() => setActiveTab('Expired')}
+            style={{ 
+              background: 'none', border: 'none', padding: '10px 20px', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer',
+              color: activeTab === 'Expired' ? '#ef4444' : '#64748b',
+              borderBottom: activeTab === 'Expired' ? '3px solid #ef4444' : '3px solid transparent',
+              transition: '0.2s'
+            }}
+          >
+            Expired Vacancies
+          </button>
+        </div>
+
         <div className="header-controls" style={{ justifyContent: 'flex-start', flexWrap: 'wrap', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '12px', border: '1px solid #1e293b', marginBottom: '20px' }}>
           <input type="text" className="sleek-input" placeholder="Search ID or Company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ minWidth: '200px' }} />
-          <select className="sleek-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
+          <select className="sleek-select fixed-options" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
             <option value="All">All Courses</option>
             <option value="Industrial Automation">Industrial Automation</option>
             <option value="BMS & CCTV">BMS & CCTV</option>
             <option value="Python and Data Science">Python</option>
             <option value="Digital Marketing">Digital Marketing</option>
           </select>
-          <select className="sleek-select" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-            <option value="All">All Statuses</option>
-            <option value="Open">Open Now</option>
-            <option value="Expired">Expired & Closed</option>
-          </select>
 
-          {/* SUPER ADMIN ONLY FILTERS */}
           {isSuperAdmin && (
             <>
-              <select className="sleek-select" value={tpoFilter} onChange={(e) => setTpoFilter(e.target.value)} style={{ border: '1px solid #8b5cf6', background: 'rgba(139, 92, 246, 0.05)' }}>
+              <select className="sleek-select fixed-options" value={tpoFilter} onChange={(e) => setTpoFilter(e.target.value)} style={{ border: '1px solid #8b5cf6', background: 'rgba(139, 92, 246, 0.05)' }}>
                 <option value="All">All TPOs</option>
                 {uniqueTPOs.map((tpo, i) => <option key={i} value={tpo}>{tpo}</option>)}
               </select>
-              <select className="sleek-select" value={monthYearFilter} onChange={(e) => setMonthYearFilter(e.target.value)} style={{ border: '1px solid #10b981', background: 'rgba(16, 185, 129, 0.05)' }}>
+              <select className="sleek-select fixed-options" value={monthYearFilter} onChange={(e) => setMonthYearFilter(e.target.value)} style={{ border: '1px solid #10b981', background: 'rgba(16, 185, 129, 0.05)' }}>
                 <option value="All">All Time</option>
                 {uniqueMonths.map((m, i) => <option key={i} value={m}>{m}</option>)}
               </select>
@@ -266,7 +272,7 @@ export default function Vacancies() {
         {loading ? (
           <div style={{ textAlign: 'center', marginTop: '3rem', color: '#38bdf8' }}><CircleNotch size={40} className="ph-spin" /><p>Fetching vacancies...</p></div>
         ) : Object.keys(groupedVacs).length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '3rem', background: '#111827', borderRadius: '16px', border: '1px dashed #334155', color: '#64748b' }}>No active vacancies match your filters.</div>
+          <div style={{ textAlign: 'center', padding: '3rem', background: '#111827', borderRadius: '16px', border: '1px dashed #334155', color: '#64748b' }}>No {activeTab.toLowerCase()} vacancies match your filters.</div>
         ) : (
           Object.keys(groupedVacs).map((state, idx) => (
             <div key={idx} style={{ background: '#111827', border: '1px solid #1e293b', borderRadius: '16px', padding: '1.5rem', marginBottom: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
@@ -282,7 +288,6 @@ export default function Vacancies() {
                       <th style={{ paddingBottom: '15px' }}>Position & Company</th>
                       <th style={{ paddingBottom: '15px' }}>Location & Mode</th>
                       
-                      {/* 🚨 CONDITIONAL HEADER FOR SUPER ADMIN */}
                       {isSuperAdmin && <th style={{ paddingBottom: '15px' }}>Posted By & Date</th>}
                       
                       <th style={{ paddingBottom: '15px' }}>Status & Deadline</th>
@@ -303,7 +308,6 @@ export default function Vacancies() {
                       const myApplicants = appsByJobId[v.id] || [];
                       const applicantCount = myApplicants.length;
 
-                      // Robust date and TPO fallback
                       const rowTpo = v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown';
                       const datePostedObj = parseDate(v.datePosted || v.timestamp || v.date);
                       const datePostedStr = (datePostedObj && datePostedObj.getFullYear() < 2050 && datePostedObj.getFullYear() > 2000) ? datePostedObj.toLocaleDateString('en-GB') : 'N/A';
@@ -320,7 +324,6 @@ export default function Vacancies() {
                             <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{v.mode}</div>
                           </td>
                           
-                          {/* 🚨 CONDITIONAL COLUMN FOR SUPER ADMIN */}
                           {isSuperAdmin && (
                             <td style={{ verticalAlign: 'middle' }}>
                               <div style={{ color: '#a855f7', fontWeight: 'bold', fontSize: '0.85rem' }}>{rowTpo}</div>
@@ -375,8 +378,11 @@ export default function Vacancies() {
         )}
       </div>
 
-      {/* STYLES FOR MINI DASHBOARD AND HOVER EFFECTS */}
       <style>{`
+        /* Fix for invisible dropdown options */
+        .fixed-options option { background: #0f1523; color: #fff; padding: 10px; font-weight: bold; }
+        .fixed-options:focus { background: #0f1523; color: #fff; }
+
         .hover-lift { transition: transform 0.2s ease; }
         .hover-lift:hover { transform: translateY(-2px); }
         .hover-row { transition: background 0.2s ease; }
@@ -393,7 +399,6 @@ export default function Vacancies() {
         .mdc-data h3 { margin: 0; font-size: 1.8rem; color: #fff; font-weight: 800; line-height: 1; }
       `}</style>
 
-      {/* JOB DETAILS MODAL */}
       {isJobDetailsModalOpen && selectedJob && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={(e) => { if(e.target === e.currentTarget) setIsJobDetailsModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '16px', padding: '2rem', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
@@ -430,7 +435,6 @@ export default function Vacancies() {
         </div>
       )}
 
-      {/* APPLICANTS MODAL */}
       {isApplicantsModalOpen && selectedJob && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={(e) => { if(e.target === e.currentTarget) setIsApplicantsModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '900px', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
