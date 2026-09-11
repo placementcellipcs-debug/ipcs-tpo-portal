@@ -1,13 +1,18 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, Users, Eye, X, Prohibit, EnvelopeSimple, Phone, Plus, Briefcase, Buildings, Clock } from '@phosphor-icons/react';
+import { CircleNotch, Users, Eye, X, Prohibit, EnvelopeSimple, Phone, Plus, Briefcase, Buildings, Clock, MapPinLine, GraduationCap, Money, GenderIntersex } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
 
-const DetailBox = ({ label, value }) => (
-  <div style={{ background: '#161e2e', padding: '12px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '4px' }}>{label}</div>
-    <div style={{ fontWeight: 'bold', color: '#fff' }}>{value || 'Not Specified'}</div>
+const DetailBox = ({ label, value, icon }) => (
+  <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+    <div style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', padding: '8px', borderRadius: '8px' }}>
+      {icon}
+    </div>
+    <div>
+      <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 'bold', letterSpacing: '0.5px' }}>{label}</div>
+      <div style={{ fontWeight: '600', color: '#fff', fontSize: '0.95rem' }}>{value || 'Not Specified'}</div>
+    </div>
   </div>
 );
 
@@ -20,10 +25,7 @@ export default function Vacancies() {
   
   const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole.includes('MANAGER');
   const isTpo = upperRole.includes('TPO');
-  
-  // 🚨 RESTRICT ACCESS: ONLY TPO CAN ADD VACANCIES (Not Super Admins)
   const canAddOpening = isTpo && !isSuperAdmin;
-
   const isCourseSpecific = upperRole.includes('TRAINER') || upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
 
@@ -31,11 +33,11 @@ export default function Vacancies() {
   const [applications, setApplications] = useState([]); 
   const [loading, setLoading] = useState(true);
   
-  // 🚨 NEW TABS STATE
-  const [activeTab, setActiveTab] = useState('Open'); // 'Open' or 'Expired'
-
+  const [activeTab, setActiveTab] = useState('Open'); 
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
+  
   const [tpoFilter, setTpoFilter] = useState('All');
   const [monthYearFilter, setMonthYearFilter] = useState('All');
 
@@ -62,10 +64,8 @@ export default function Vacancies() {
         
         if (vacRes.data.success) setVacancies(vacRes.data.vacancies);
         if (appRes.data.success) setApplications(appRes.data.applications);
-
       } catch (error) { console.error("Failed to fetch data", error); } finally { setLoading(false); }
     };
-    
     fetchAllData();
   }, []);
 
@@ -96,9 +96,7 @@ export default function Vacancies() {
   const uniqueTPOs = [...new Set(vacancies.map(v => v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown').filter(n => n !== 'Unknown'))].sort();
   const uniqueMonths = [...new Set(vacancies.map(v => {
     const d = parseDate(v.datePosted || v.timestamp || v.date);
-    if (d && d.getFullYear() < 2050 && d.getFullYear() > 2000) {
-      return d.toLocaleString('en-us', { month: 'long', year: 'numeric' });
-    }
+    if (d && d.getFullYear() < 2050 && d.getFullYear() > 2000) return d.toLocaleString('en-us', { month: 'long', year: 'numeric' });
     return null;
   }).filter(Boolean))].sort((a, b) => new Date(b) - new Date(a));
 
@@ -108,7 +106,6 @@ export default function Vacancies() {
                        (v.position || '').toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchCourse = courseFilter === 'All' || (v.course || '').toLowerCase().includes(courseFilter.toLowerCase());
-    
     let matchTrainerScope = true;
     if (isCourseSpecific && displayCourse !== 'All Courses') {
        const vCourse = (v.course || '').toLowerCase();
@@ -120,8 +117,11 @@ export default function Vacancies() {
     const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire');
     const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
     
-    // 🚨 TABS LOGIC
     const tabMatch = activeTab === 'Open' ? (!isExpired && !isClosed) : (isExpired || isClosed);
+    
+    const statMatch = statusFilter === 'All' ||
+                      (statusFilter === 'Open' && !isExpired && !isClosed) ||
+                      (statusFilter === 'Expired' && (isExpired || isClosed));
 
     const rowTpo = v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown';
     const tpoMatch = tpoFilter === 'All' || rowTpo === tpoFilter;
@@ -130,14 +130,11 @@ export default function Vacancies() {
     if (monthYearFilter !== 'All') {
       const d = parseDate(v.datePosted || v.timestamp || v.date);
       if (d && d.getFullYear() < 2050) {
-        const dStr = d.toLocaleString('en-us', { month: 'long', year: 'numeric' });
-        monthMatch = dStr === monthYearFilter;
-      } else {
-        monthMatch = false;
-      }
+        monthMatch = d.toLocaleString('en-us', { month: 'long', year: 'numeric' }) === monthYearFilter;
+      } else { monthMatch = false; }
     }
 
-    return matchQuery && matchCourse && matchTrainerScope && tabMatch && tpoMatch && monthMatch;
+    return matchQuery && matchCourse && matchTrainerScope && tabMatch && statMatch && tpoMatch && monthMatch;
   });
 
   const groupedVacs = {};
@@ -147,364 +144,392 @@ export default function Vacancies() {
     groupedVacs[loc].push(v);
   });
 
-  let totalActiveOpenings = 0;
-  let totalExpiredOpenings = 0;
-  let totalApplicationsCount = 0;
+  let totalActiveOpenings = 0; let totalExpiredOpenings = 0; let totalApplicationsCount = 0;
   let uniqueCompaniesSet = new Set();
 
   vacancies.forEach(v => {
     const deadline = parseDate(v.lastDate);
     const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire') || String(v.status || '').toLowerCase().includes('close');
-    
     if (isExpired) totalExpiredOpenings++; else totalActiveOpenings++;
-
-    if (v.company && String(v.company).toLowerCase() !== 'unknown company') {
-      uniqueCompaniesSet.add(v.company);
-    }
-    const myApps = appsByJobId[v.id] || [];
-    totalApplicationsCount += myApps.length;
+    if (v.company && String(v.company).toLowerCase() !== 'unknown company') uniqueCompaniesSet.add(v.company);
+    totalApplicationsCount += (appsByJobId[v.id] || []).length;
   });
 
   return (
     <Layout>
-      <div className="page-container" style={{ maxWidth: '1600px', margin: '0 auto' }}>
+      <div className="premium-dashboard-wrapper page-container" style={{ maxWidth: '1600px', margin: '0 auto', paddingBottom: '50px' }}>
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '15px' }}>
-          <div>
-            <h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>Active Job Vacancies</h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Current openings and applicant tracking for your branches.</p>
+        {/* HEADER SECTION */}
+        <div className="top-hero-section">
+          <div className="hero-text">
+            <h1>Active Job Ecosystem</h1>
+            <p>Real-time applicant tracking and opening management</p>
           </div>
-          
           {canAddOpening && (
-            <button 
-              className="btn-action hover-lift" 
-              style={{ background: '#38bdf8', color: '#0f1523', display: 'flex', alignItems: 'center', gap: '8px', width: 'auto', padding: '10px 20px', borderRadius: '8px', fontWeight: 'bold' }} 
-              onClick={() => window.open('https://forms.gle/9Gxbwx1S2uqeXHne9', '_blank')}
-            >
+            <button className="premium-btn primary hover-lift" onClick={() => window.open('https://forms.gle/9Gxbwx1S2uqeXHne9', '_blank')}>
               <Plus weight="bold" size={20} /> Add Opening
             </button>
           )}
         </div>
 
+        {/* ADMIN MINI DASHBOARD */}
         {isSuperAdmin && (
-          <div className="mini-dash-grid">
-            <div className="mini-dash-card">
-              <div className="mdc-icon blue"><Briefcase weight="fill" size={24}/></div>
-              <div className="mdc-data">
-                <p>Total Active</p>
-                <h3>{totalActiveOpenings}</h3>
+          <div className="bento-grid mini-dash-wrapper">
+            <div className="kpi-card glass-panel hover-lift">
+              <div className="kpi-top">
+                <div><div className="kpi-title">Total Active</div><div className="kpi-val">{totalActiveOpenings}</div></div>
+                <div className="kpi-icon blue"><Briefcase weight="fill" size={26}/></div>
               </div>
             </div>
-            <div className="mini-dash-card">
-              <div className="mdc-icon green"><Users weight="fill" size={24}/></div>
-              <div className="mdc-data">
-                <p>Total Applicants</p>
-                <h3>{totalApplicationsCount}</h3>
+            <div className="kpi-card glass-panel hover-lift">
+              <div className="kpi-top">
+                <div><div className="kpi-title">Total Applicants</div><div className="kpi-val">{totalApplicationsCount}</div></div>
+                <div className="kpi-icon green"><Users weight="fill" size={26}/></div>
               </div>
             </div>
-            <div className="mini-dash-card">
-              <div className="mdc-icon purple"><Buildings weight="fill" size={24}/></div>
-              <div className="mdc-data">
-                <p>Hiring Companies</p>
-                <h3>{uniqueCompaniesSet.size}</h3>
+            <div className="kpi-card glass-panel hover-lift">
+              <div className="kpi-top">
+                <div><div className="kpi-title">Hiring Companies</div><div className="kpi-val">{uniqueCompaniesSet.size}</div></div>
+                <div className="kpi-icon purple"><Buildings weight="fill" size={26}/></div>
               </div>
             </div>
-            <div className="mini-dash-card">
-              <div className="mdc-icon red"><Prohibit weight="fill" size={24}/></div>
-              <div className="mdc-data">
-                <p>Expired Openings</p>
-                <h3>{totalExpiredOpenings}</h3>
+            <div className="kpi-card glass-panel hover-lift">
+              <div className="kpi-top">
+                <div><div className="kpi-title">Expired Openings</div><div className="kpi-val">{totalExpiredOpenings}</div></div>
+                <div className="kpi-icon red"><Prohibit weight="fill" size={26}/></div>
               </div>
             </div>
           </div>
         )}
 
-        {/* 🚨 CUSTOM TABS */}
-        <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', borderBottom: '2px solid #1e293b' }}>
-          <button 
-            onClick={() => setActiveTab('Open')}
-            style={{ 
-              background: 'none', border: 'none', padding: '10px 20px', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer',
-              color: activeTab === 'Open' ? '#38bdf8' : '#64748b',
-              borderBottom: activeTab === 'Open' ? '3px solid #38bdf8' : '3px solid transparent',
-              transition: '0.2s'
-            }}
-          >
-            Active Openings
-          </button>
-          <button 
-            onClick={() => setActiveTab('Expired')}
-            style={{ 
-              background: 'none', border: 'none', padding: '10px 20px', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer',
-              color: activeTab === 'Expired' ? '#ef4444' : '#64748b',
-              borderBottom: activeTab === 'Expired' ? '3px solid #ef4444' : '3px solid transparent',
-              transition: '0.2s'
-            }}
-          >
-            Expired Vacancies
-          </button>
+        {/* PREMIUM FILTER & TAB ACTION BAR */}
+        <div className="glass-panel control-action-bar">
+          
+          <div className="segmented-tabs">
+            <button className={`seg-tab ${activeTab === 'Open' ? 'active' : ''}`} onClick={() => setActiveTab('Open')}>
+              Active Openings
+            </button>
+            <button className={`seg-tab ${activeTab === 'Expired' ? 'active-expired' : ''}`} onClick={() => setActiveTab('Expired')}>
+              Expired / Closed
+            </button>
+          </div>
+
+          <div className="filter-group">
+            <input type="text" className="premium-input" placeholder="Search ID, Role, Company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            <select className="premium-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
+              <option value="All">All Courses</option>
+              <option value="Industrial Automation">Industrial Automation</option>
+              <option value="BMS & CCTV">BMS & CCTV</option>
+              <option value="Python and Data Science">Python & Data</option>
+              <option value="Digital Marketing">Digital Marketing</option>
+            </select>
+
+            {isSuperAdmin && (
+              <>
+                <select className="premium-select border-purple" value={tpoFilter} onChange={(e) => setTpoFilter(e.target.value)}>
+                  <option value="All">All TPOs</option>
+                  {uniqueTPOs.map((tpo, i) => <option key={i} value={tpo}>{tpo}</option>)}
+                </select>
+                <select className="premium-select border-green" value={monthYearFilter} onChange={(e) => setMonthYearFilter(e.target.value)}>
+                  <option value="All">All Time</option>
+                  {uniqueMonths.map((m, i) => <option key={i} value={m}>{m}</option>)}
+                </select>
+              </>
+            )}
+          </div>
         </div>
 
-        <div className="header-controls" style={{ justifyContent: 'flex-start', flexWrap: 'wrap', background: 'rgba(255,255,255,0.02)', padding: '15px', borderRadius: '12px', border: '1px solid #1e293b', marginBottom: '20px' }}>
-          <input type="text" className="sleek-input" placeholder="Search ID or Company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ minWidth: '200px' }} />
-          <select className="sleek-select fixed-options" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
-            <option value="All">All Courses</option>
-            <option value="Industrial Automation">Industrial Automation</option>
-            <option value="BMS & CCTV">BMS & CCTV</option>
-            <option value="Python and Data Science">Python</option>
-            <option value="Digital Marketing">Digital Marketing</option>
-          </select>
-
-          {isSuperAdmin && (
-            <>
-              <select className="sleek-select fixed-options" value={tpoFilter} onChange={(e) => setTpoFilter(e.target.value)} style={{ border: '1px solid #8b5cf6', background: 'rgba(139, 92, 246, 0.05)' }}>
-                <option value="All">All TPOs</option>
-                {uniqueTPOs.map((tpo, i) => <option key={i} value={tpo}>{tpo}</option>)}
-              </select>
-              <select className="sleek-select fixed-options" value={monthYearFilter} onChange={(e) => setMonthYearFilter(e.target.value)} style={{ border: '1px solid #10b981', background: 'rgba(16, 185, 129, 0.05)' }}>
-                <option value="All">All Time</option>
-                {uniqueMonths.map((m, i) => <option key={i} value={m}>{m}</option>)}
-              </select>
-            </>
-          )}
-        </div>
-
+        {/* JOB CARDS GRID (Replaces Table) */}
         {loading ? (
-          <div style={{ textAlign: 'center', marginTop: '3rem', color: '#38bdf8' }}><CircleNotch size={40} className="ph-spin" /><p>Fetching vacancies...</p></div>
+          <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Fetching vacancies...</p></div>
         ) : Object.keys(groupedVacs).length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '3rem', background: '#111827', borderRadius: '16px', border: '1px dashed #334155', color: '#64748b' }}>No {activeTab.toLowerCase()} vacancies match your filters.</div>
+          <div className="empty-state-card">
+            <span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🔍</span>
+            No {activeTab.toLowerCase()} vacancies match your current filters.
+          </div>
         ) : (
           Object.keys(groupedVacs).map((state, idx) => (
-            <div key={idx} style={{ background: '#111827', border: '1px solid #1e293b', borderRadius: '16px', padding: '1.5rem', marginBottom: '2rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)' }}>
-              <div style={{ textAlign: 'center', fontSize: '1.1rem', fontWeight: 800, color: '#f8fafc', textTransform: 'uppercase', letterSpacing: '2px', marginBottom: '1.5rem', borderBottom: '1px solid #1e293b', paddingBottom: '1rem' }}>
-                {state}
+            <div key={idx} className="state-group-section">
+              <div className="state-header">
+                <span className="state-line"></span>
+                <h2 className="state-title">{state}</h2>
+                <span className="state-line"></span>
               </div>
               
-              <div className="table-container" style={{ marginTop: 0 }}>
-                <table className="modern-table">
-                  <thead>
-                    <tr>
-                      <th style={{ paddingBottom: '15px' }}>Job ID</th>
-                      <th style={{ paddingBottom: '15px' }}>Position & Company</th>
-                      <th style={{ paddingBottom: '15px' }}>Location & Mode</th>
+              <div className="job-card-grid">
+                {groupedVacs[state].map((v, i) => {
+                  const deadline = parseDate(v.lastDate);
+                  const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire');
+                  const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
+                  
+                  let statClass = 'green'; let statText = 'Open Now';
+                  if(isClosed) { statClass = 'gray'; statText = 'Closed'; }
+                  else if(isExpired) { statClass = 'red'; statText = 'Expired'; }
+
+                  const myApplicants = appsByJobId[v.id] || [];
+                  const applicantCount = myApplicants.length;
+
+                  const rowTpo = v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown';
+                  const datePostedObj = parseDate(v.datePosted || v.timestamp || v.date);
+                  const datePostedStr = (datePostedObj && datePostedObj.getFullYear() < 2050 && datePostedObj.getFullYear() > 2000) ? datePostedObj.toLocaleDateString('en-GB') : 'N/A';
+
+                  return (
+                    <div key={i} className="job-card glass-panel hover-lift">
                       
-                      {isSuperAdmin && <th style={{ paddingBottom: '15px' }}>Posted By & Date</th>}
-                      
-                      <th style={{ paddingBottom: '15px' }}>Status & Deadline</th>
-                      <th style={{ textAlign: 'center', paddingBottom: '15px' }}>Applicants</th>
-                      <th style={{ textAlign: 'right', paddingBottom: '15px' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {groupedVacs[state].map((v, i) => {
-                      const deadline = parseDate(v.lastDate);
-                      const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire');
-                      const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
-                      
-                      let statBadge = <span style={{ background: 'rgba(16, 185, 129, 0.15)', color: '#10b981', padding: '4px 10px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold', border: '1px solid rgba(16, 185, 129, 0.3)' }}>Open</span>;
-                      if(isClosed) statBadge = <span style={{ background: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8', padding: '4px 10px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold', border: '1px solid rgba(148, 163, 184, 0.3)' }}>Closed</span>;
-                      if(isExpired) statBadge = <span style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '4px 10px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold', border: '1px solid rgba(239, 68, 68, 0.3)' }}>Expired</span>;
+                      <div className="jc-header">
+                        <div className="jc-company-logo">{String(v.company || 'U').charAt(0).toUpperCase()}</div>
+                        <div className="jc-company-info">
+                          <h3 className="text-truncate">{v.position}</h3>
+                          <p className="text-truncate">{v.company}</p>
+                        </div>
+                        <div className="jc-id">{v.id}</div>
+                      </div>
 
-                      const myApplicants = appsByJobId[v.id] || [];
-                      const applicantCount = myApplicants.length;
+                      <div className="jc-body">
+                        <div className="jc-detail"><MapPinLine size={16} /> <span>{v.location} ({v.mode})</span></div>
+                        <div className="jc-detail"><GraduationCap size={16} /> <span>{v.course}</span></div>
+                        {isSuperAdmin && <div className="jc-detail text-purple"><Clock size={16} /> <span>{rowTpo} • {datePostedStr}</span></div>}
+                      </div>
 
-                      const rowTpo = v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown';
-                      const datePostedObj = parseDate(v.datePosted || v.timestamp || v.date);
-                      const datePostedStr = (datePostedObj && datePostedObj.getFullYear() < 2050 && datePostedObj.getFullYear() > 2000) ? datePostedObj.toLocaleDateString('en-GB') : 'N/A';
+                      <div className="jc-divider"></div>
 
-                      return (
-                        <tr key={i} className="hover-row">
-                          <td style={{ color: '#38bdf8', fontWeight: 700, verticalAlign: 'middle' }}>{v.id}</td>
-                          <td style={{ verticalAlign: 'middle' }}>
-                            <div className="primary-text" style={{ fontWeight: 'bold', color: '#fff', fontSize: '0.95rem' }}>{v.position}</div>
-                            <div className="sub-text" style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{v.company}</div>
-                          </td>
-                          <td style={{ verticalAlign: 'middle' }}>
-                            <div style={{ color: '#cbd5e1', fontSize: '0.9rem' }}>{v.location}</div>
-                            <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{v.mode}</div>
-                          </td>
-                          
-                          {isSuperAdmin && (
-                            <td style={{ verticalAlign: 'middle' }}>
-                              <div style={{ color: '#a855f7', fontWeight: 'bold', fontSize: '0.85rem' }}>{rowTpo}</div>
-                              <div style={{ fontSize: '0.7rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '4px' }}>
-                                <Clock size={12} weight="bold" /> {datePostedStr}
-                              </div>
-                            </td>
-                          )}
+                      <div className="jc-footer">
+                        <div>
+                          <div className={`status-pill ${statClass}`}>{statText}</div>
+                          <div className="jc-deadline">Ends: <span style={{color: isExpired || isClosed ? '#ef4444' : '#fff'}}>{v.lastDate}</span></div>
+                        </div>
+                        <div className="jc-applicants" onClick={() => { setSelectedJob(v); setIsApplicantsModalOpen(true); }}>
+                          <Users size={16} weight={applicantCount > 0 ? "fill" : "regular"} color={applicantCount > 0 ? '#3b82f6' : '#94a3b8'}/>
+                          <span style={{ color: applicantCount > 0 ? '#3b82f6' : '#94a3b8' }}>{applicantCount} Applied</span>
+                        </div>
+                      </div>
 
-                          <td style={{ verticalAlign: 'middle' }}>
-                            <div style={{ marginBottom: '6px' }}>{statBadge}</div>
-                            <span style={{ fontSize: '0.7rem', color: '#64748b', display: 'inline-block' }}>
-                              Ends: <strong style={{ color: isExpired || isClosed ? '#ef4444' : '#f59e0b' }}>{v.lastDate}</strong>
-                            </span>
-                          </td>
-                          
-                          <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
-                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: applicantCount > 0 ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.03)', color: applicantCount > 0 ? '#38bdf8' : '#64748b', padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', border: applicantCount > 0 ? '1px solid rgba(56, 189, 248, 0.2)' : '1px solid transparent' }}>
-                              <Users size={16} weight={applicantCount > 0 ? "fill" : "regular"} />
-                              {applicantCount} Applied
-                            </div>
-                          </td>
+                      {/* Floating Action Overlay on Hover */}
+                      <div className="jc-hover-actions">
+                        <button className="premium-btn secondary" onClick={() => !isExpired && setSelectedJob(v) || !isExpired && setIsJobDetailsModalOpen(true)} disabled={isExpired}>
+                          {isExpired ? <Prohibit size={18}/> : <Eye size={18} />} Details
+                        </button>
+                        <button className="premium-btn primary" onClick={() => { setSelectedJob(v); setIsApplicantsModalOpen(true); }}>
+                          <Users size={18} /> View List
+                        </button>
+                      </div>
 
-                          <td style={{ textAlign: 'right', verticalAlign: 'middle' }}>
-                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                              <button 
-                                className="btn-secondary hover-lift" 
-                                style={{ padding: '8px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', opacity: isExpired ? 0.5 : 1, cursor: isExpired ? 'not-allowed' : 'pointer' }} 
-                                onClick={() => !isExpired && setSelectedJob(v) || !isExpired && setIsJobDetailsModalOpen(true)}
-                                disabled={isExpired}
-                                title={isExpired ? "Job Details unavailable for expired openings" : "View Job Details"}
-                              >
-                                {isExpired ? <Prohibit weight="bold" size={14}/> : <Eye weight="bold" size={14} />} Details
-                              </button>
-                              <button 
-                                className="btn-action hover-lift" 
-                                style={{ background: applicantCount > 0 ? '#3b82f6' : '#1e293b', color: '#fff', padding: '8px 14px', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px' }} 
-                                onClick={() => { setSelectedJob(v); setIsApplicantsModalOpen(true); }}
-                              >
-                                <Users weight="bold" size={14} /> View List
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           ))
         )}
       </div>
 
-      <style>{`
-        /* Fix for invisible dropdown options */
-        .fixed-options option { background: #0f1523; color: #fff; padding: 10px; font-weight: bold; }
-        .fixed-options:focus { background: #0f1523; color: #fff; }
-
-        .hover-lift { transition: transform 0.2s ease; }
-        .hover-lift:hover { transform: translateY(-2px); }
-        .hover-row { transition: background 0.2s ease; }
-        .hover-row:hover { background: rgba(255,255,255,0.02); }
-        
-        .mini-dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
-        .mini-dash-card { background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; display: flex; align-items: center; gap: 15px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
-        .mdc-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .mdc-icon.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
-        .mdc-icon.green { background: rgba(16, 185, 129, 0.15); color: #10b981; }
-        .mdc-icon.purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
-        .mdc-icon.red { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
-        .mdc-data p { margin: 0 0 4px 0; font-size: 0.75rem; color: #94a3b8; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px; }
-        .mdc-data h3 { margin: 0; font-size: 1.8rem; color: #fff; font-weight: 800; line-height: 1; }
-      `}</style>
-
+      {/* JOB DETAILS MODAL */}
       {isJobDetailsModalOpen && selectedJob && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={(e) => { if(e.target === e.currentTarget) setIsJobDetailsModalOpen(false); }}>
-          <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '16px', padding: '2rem', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.5)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '1.5rem', borderBottom: '1px solid #1e293b', paddingBottom: '1rem' }}>
+        <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsJobDetailsModalOpen(false); }}>
+          <div className="premium-modal glass-panel">
+            <div className="modal-header">
               <div>
-                <h2 style={{ margin: '0 0 5px 0', fontSize: '1.5rem', color: '#fff', fontWeight: 800 }}>{selectedJob.position}</h2>
-                <div style={{ color: '#38bdf8', fontWeight: 'bold', fontSize: '1.1rem' }}>{selectedJob.company}</div>
+                <h2>{selectedJob.position}</h2>
+                <div className="modal-subtitle">{selectedJob.company}</div>
               </div>
-              <X size={24} style={{ cursor: 'pointer', color: '#94a3b8' }} onClick={() => setIsJobDetailsModalOpen(false)} />
+              <button className="close-btn" onClick={() => setIsJobDetailsModalOpen(false)}><X size={24} /></button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '1.5rem' }}>
-              <DetailBox label="Job ID" value={selectedJob.id} />
-              <DetailBox label="Location" value={selectedJob.location} />
-              <DetailBox label="Mode" value={selectedJob.mode} />
-              <DetailBox label="Eligible Course" value={selectedJob.course} />
-              <DetailBox label="Salary" value={selectedJob.salary} />
-              <DetailBox label="Experience" value={selectedJob.experience} />
-              <DetailBox label="Qualification" value={selectedJob.qualification} />
-              <DetailBox label="Gender Pref." value={selectedJob.gender} />
+            <div className="modal-grid">
+              <DetailBox label="Job ID" value={selectedJob.id} icon={<Briefcase size={20} weight="fill"/>} />
+              <DetailBox label="Location & Mode" value={`${selectedJob.location} (${selectedJob.mode})`} icon={<MapPinLine size={20} weight="fill"/>} />
+              <DetailBox label="Eligible Course" value={selectedJob.course} icon={<GraduationCap size={20} weight="fill"/>} />
+              <DetailBox label="Salary" value={selectedJob.salary} icon={<Money size={20} weight="fill"/>} />
+              <DetailBox label="Experience" value={selectedJob.experience} icon={<Clock size={20} weight="fill"/>} />
+              <DetailBox label="Qualification" value={selectedJob.qualification} icon={<BookOpen size={20} weight="fill"/>} />
+              <DetailBox label="Gender Pref." value={selectedJob.gender} icon={<GenderIntersex size={20} weight="fill"/>} />
             </div>
 
             {selectedJob.description && (
-              <div style={{ background: '#161e2e', padding: '15px', borderRadius: '8px', border: '1px solid #1e293b', marginBottom: '1.5rem' }}>
-                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '8px', fontWeight: 'bold' }}>Job Description</div>
-                <div style={{ color: '#e2e8f0', fontSize: '0.9rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>{selectedJob.description}</div>
+              <div className="modal-desc-box">
+                <div className="desc-title">Job Description</div>
+                <div className="desc-content">{selectedJob.description}</div>
               </div>
             )}
-
-            <div style={{ textAlign: 'right' }}>
-              <button className="btn-secondary hover-lift" style={{ padding: '10px 20px', fontWeight: 'bold' }} onClick={() => setIsJobDetailsModalOpen(false)}>Close Window</button>
-            </div>
           </div>
         </div>
       )}
 
+      {/* APPLICANTS MODAL */}
       {isApplicantsModalOpen && selectedJob && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={(e) => { if(e.target === e.currentTarget) setIsApplicantsModalOpen(false); }}>
-          <div className="modal-card" style={{ maxWidth: '900px', width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
+        <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsApplicantsModalOpen(false); }}>
+          <div className="premium-modal glass-panel" style={{ maxWidth: '900px', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '85vh' }}>
             
-            <div style={{ padding: '1.5rem 2rem', background: '#161e2e', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="modal-header" style={{ padding: '25px', background: 'rgba(15, 23, 42, 0.95)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
               <div>
-                <h2 style={{ margin: '0 0 5px 0', fontSize: '1.3rem', color: '#fff', fontWeight: 800 }}>Applicants List</h2>
-                <div style={{ color: '#94a3b8', fontSize: '0.9rem', fontWeight: 'bold' }}>{selectedJob.id} | {selectedJob.company}</div>
+                <h2>Applicants List</h2>
+                <div className="modal-subtitle">{selectedJob.id} | {selectedJob.company}</div>
               </div>
-              <X size={24} style={{ cursor: 'pointer', color: '#94a3b8' }} onClick={() => setIsApplicantsModalOpen(false)} />
+              <button className="close-btn" onClick={() => setIsApplicantsModalOpen(false)}><X size={24} /></button>
             </div>
 
-            <div style={{ overflowY: 'auto', padding: '0', flex: 1 }}>
-              <table className="modern-table" style={{ width: '100%', borderCollapse: 'collapse', margin: 0 }}>
-                <thead style={{ position: 'sticky', top: 0, background: '#0f1523', zIndex: 10 }}>
-                  <tr>
-                    <th style={{ padding: '15px 20px', color: '#94a3b8', borderBottom: '1px solid #1e293b' }}>Student Name</th>
-                    <th style={{ padding: '15px 20px', color: '#94a3b8', borderBottom: '1px solid #1e293b' }}>Branch</th>
-                    <th style={{ padding: '15px 20px', color: '#94a3b8', borderBottom: '1px solid #1e293b' }}>App Status</th>
-                    <th style={{ padding: '15px 20px', color: '#94a3b8', textAlign: 'right', borderBottom: '1px solid #1e293b' }}>Contact Info</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {appsByJobId[selectedJob.id] ? (
-                    appsByJobId[selectedJob.id].map((app, i) => {
-                      let statClass = 'badge-blue';
-                      let s = String(app.status || '').toLowerCase();
-                      if(s.includes('interview')) statClass = 'badge-purple';
-                      if(s.includes('offer') || s.includes('placed') || s.includes('joined')) statClass = 'badge-green';
-                      if(s.includes('reject') || s.includes('not attended')) statClass = 'badge-gray';
+            <div style={{ overflowY: 'auto', padding: '20px' }}>
+              <div className="clean-list">
+                {appsByJobId[selectedJob.id] ? (
+                  appsByJobId[selectedJob.id].map((app, i) => {
+                    let statClass = 'blue';
+                    let s = String(app.status || '').toLowerCase();
+                    if(s.includes('interview')) statClass = 'purple';
+                    if(s.includes('offer') || s.includes('placed') || s.includes('joined')) statClass = 'green';
+                    if(s.includes('reject') || s.includes('not attended')) statClass = 'red';
 
-                      return (
-                        <tr key={i} className="hover-row" style={{ borderBottom: '1px solid #1e293b' }}>
-                          <td style={{ padding: '15px 20px' }}>
-                            <div style={{ fontWeight: 'bold', color: '#fff', fontSize: '0.95rem' }}>{app.name}</div>
-                            <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{app.roll}</div>
-                          </td>
-                          <td style={{ padding: '15px 20px', color: '#cbd5e1', fontSize: '0.9rem' }}>{app.branch}</td>
-                          <td style={{ padding: '15px 20px' }}><span className={`badge ${statClass}`}>{app.status || 'Applied'}</span></td>
-                          <td style={{ padding: '15px 20px', textAlign: 'right' }}>
-                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-                              {app.phone && (
-                                <a href={`tel:${app.phone}`} title="Call Student" className="hover-lift" style={{ background: 'rgba(14, 165, 233, 0.15)', color: '#0ea5e9', padding: '8px', borderRadius: '50%', display: 'flex' }}>
-                                  <Phone size={18} weight="fill" />
-                                </a>
-                              )}
-                              {app.email && (
-                                <a href={`mailto:${app.email}`} title="Email Student" className="hover-lift" style={{ background: 'rgba(234, 67, 53, 0.15)', color: '#ea4335', padding: '8px', borderRadius: '50%', display: 'flex' }}>
-                                  <EnvelopeSimple size={18} weight="fill" />
-                                </a>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  ) : (
-                    <tr>
-                      <td colSpan="4" style={{ textAlign: 'center', padding: '4rem', color: '#64748b' }}>
-                        <Users size={48} style={{ opacity: 0.3, marginBottom: '15px' }} /><br/>
-                        <span style={{ fontSize: '1.1rem' }}>No students have applied yet.</span>
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+                    return (
+                      <div key={i} className="clean-row hover-bg">
+                        <div className="cl-left">
+                          <div className="cl-avatar">{app.name.charAt(0).toUpperCase()}</div>
+                          <div><div className="cl-title">{app.name}</div><div className="cl-sub">{app.roll} • {app.branch}</div></div>
+                        </div>
+                        <div className="cl-middle">
+                           <span className={`status-pill ${statClass}`}>{app.status || 'Applied'}</span>
+                        </div>
+                        <div className="cl-right" style={{ display: 'flex', gap: '10px' }}>
+                          {app.phone && (
+                            <a href={`tel:${app.phone}`} className="action-circle blue" title="Call">
+                              <Phone size={18} weight="fill" />
+                            </a>
+                          )}
+                          {app.email && (
+                            <a href={`mailto:${app.email}`} className="action-circle red" title="Email">
+                              <EnvelopeSimple size={18} weight="fill" />
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="empty-state-card" style={{ background: 'transparent', border: 'none' }}>
+                    <Users size={48} style={{ opacity: 0.3, marginBottom: '15px' }} />
+                    <span style={{ fontSize: '1.1rem' }}>No students have applied yet.</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* ---------------------------------------------------------
+          🎨 PREMIUM CSS FOR VACANCIES PAGE
+      --------------------------------------------------------- */}
+      <style>{`
+        .premium-dashboard-wrapper { font-family: 'Inter', sans-serif; color: #f8fafc; }
+        
+        /* Glass Panels */
+        .glass-panel { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .hover-lift { transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); cursor: pointer; }
+        .hover-lift:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7); border-color: rgba(255, 255, 255, 0.1); background: rgba(30, 41, 59, 0.8); }
+
+        /* Hero */
+        .top-hero-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 20px; }
+        .hero-text h1 { font-size: 2.2rem; font-weight: 800; margin: 0 0 5px 0; color: #fff; }
+        .hero-text p { color: #94a3b8; margin: 0; font-size: 1rem; }
+        .premium-btn { border: none; padding: 10px 20px; border-radius: 12px; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; }
+        .premium-btn.primary { background: #3b82f6; color: #fff; }
+        .premium-btn.secondary { background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1); }
+        .premium-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+        /* Admin Mini Dash */
+        .mini-dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
+        .kpi-card { border-radius: 16px; padding: 20px; }
+        .kpi-top { display: flex; justify-content: space-between; align-items: flex-start; }
+        .kpi-title { font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+        .kpi-val { font-size: 2rem; font-weight: 900; color: #fff; line-height: 1; }
+        .kpi-icon { width: 45px; height: 45px; border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 2px 10px rgba(255,255,255,0.05); }
+        .kpi-icon.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3); }
+        .kpi-icon.green { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .kpi-icon.purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.3); }
+        .kpi-icon.red { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+
+        /* Control Action Bar */
+        .control-action-bar { border-radius: 16px; padding: 15px; margin-bottom: 30px; display: flex; flex-direction: column; gap: 15px; }
+        .segmented-tabs { display: flex; background: rgba(0,0,0,0.3); padding: 5px; border-radius: 12px; width: fit-content; border: 1px solid rgba(255,255,255,0.05); }
+        .seg-tab { background: transparent; border: none; padding: 8px 24px; color: #94a3b8; font-weight: bold; font-size: 0.9rem; border-radius: 8px; cursor: pointer; transition: 0.3s; }
+        .seg-tab.active { background: #3b82f6; color: #fff; box-shadow: 0 4px 10px rgba(59,130,246,0.3); }
+        .seg-tab.active-expired { background: #ef4444; color: #fff; box-shadow: 0 4px 10px rgba(239,68,68,0.3); }
+        
+        .filter-group { display: flex; gap: 12px; flex-wrap: wrap; }
+        .premium-input, .premium-select { background: rgba(0,0,0,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 10px 15px; font-size: 0.85rem; outline: none; transition: 0.2s; }
+        .premium-input { min-width: 250px; flex: 1; }
+        .premium-input:focus, .premium-select:focus { border-color: #3b82f6; background: rgba(0,0,0,0.4); }
+        .premium-select option { background: #0f1523; color: #fff; padding: 10px; font-weight: bold; }
+        .border-purple { border-color: rgba(168, 85, 247, 0.3); } .border-purple:focus { border-color: #a855f7; }
+        .border-green { border-color: rgba(16, 185, 129, 0.3); } .border-green:focus { border-color: #10b981; }
+
+        /* Empty State */
+        .empty-state-card { background: rgba(15, 23, 42, 0.5); border: 1px dashed rgba(255,255,255,0.1); border-radius: 16px; padding: 50px 20px; text-align: center; color: #94a3b8; font-size: 1.1rem; font-weight: bold; }
+        .text-blue { color: #3b82f6; }
+
+        /* State Grouping */
+        .state-group-section { margin-bottom: 40px; }
+        .state-header { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; opacity: 0.8; }
+        .state-title { margin: 0; font-size: 1.2rem; font-weight: 900; letter-spacing: 2px; color: #cbd5e1; text-transform: uppercase; }
+        .state-line { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0) 100%); }
+
+        /* Job Cards Grid */
+        .job-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; }
+        .job-card { border-radius: 20px; padding: 20px; display: flex; flex-direction: column; position: relative; overflow: hidden; }
+        .jc-hover-actions { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; opacity: 0; transition: 0.3s ease; border-radius: 20px; }
+        .job-card:hover .jc-hover-actions { opacity: 1; }
+        
+        .jc-header { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
+        .jc-company-logo { width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 900; color: #fff; flex-shrink: 0; box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3); }
+        .jc-company-info { flex: 1; min-width: 0; }
+        .jc-company-info h3 { margin: 0 0 2px 0; font-size: 1.05rem; font-weight: 800; color: #fff; }
+        .jc-company-info p { margin: 0; font-size: 0.8rem; color: #94a3b8; font-weight: 500; }
+        .jc-id { background: rgba(255,255,255,0.05); padding: 4px 8px; border-radius: 8px; font-size: 0.7rem; font-weight: bold; color: #cbd5e1; border: 1px solid rgba(255,255,255,0.1); }
+        .text-truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        
+        .jc-body { display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; }
+        .jc-detail { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #cbd5e1; }
+        .text-purple { color: #a855f7; font-weight: bold; }
+        
+        .jc-divider { height: 1px; background: rgba(255,255,255,0.05); margin-bottom: 15px; }
+        
+        .jc-footer { display: flex; justify-content: space-between; align-items: flex-end; }
+        .status-pill { padding: 4px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: 800; display: inline-block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .status-pill.green { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .status-pill.red { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
+        .status-pill.gray { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); }
+        .status-pill.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3); }
+        .status-pill.purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.3); }
+        
+        .jc-deadline { font-size: 0.75rem; color: #64748b; font-weight: 500; }
+        .jc-applicants { display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; border: 1px solid rgba(255,255,255,0.05); }
+
+        /* Modals */
+        .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); z-index: 99999; display: flex; justify-content: center; align-items: center; padding: 20px; }
+        .premium-modal { width: 100%; max-width: 800px; max-height: 90vh; overflow-y: auto; border-radius: 24px; padding: 30px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
+        .modal-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px; margin-bottom: 20px; }
+        .modal-header h2 { margin: 0 0 5px 0; font-size: 1.6rem; color: #fff; font-weight: 800; }
+        .modal-subtitle { color: #38bdf8; font-weight: bold; font-size: 1.1rem; }
+        .close-btn { background: none; border: none; color: #64748b; cursor: pointer; transition: 0.2s; display: flex; }
+        .close-btn:hover { color: #ef4444; transform: scale(1.1); }
+        
+        .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
+        @media (max-width: 600px) { .modal-grid { grid-template-columns: 1fr; } }
+        
+        .modal-desc-box { background: rgba(255,255,255,0.02); padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 20px; }
+        .desc-title { font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 10px; font-weight: bold; letter-spacing: 0.5px; }
+        .desc-content { color: #e2e8f0; font-size: 0.95rem; line-height: 1.6; white-space: pre-wrap; }
+
+        /* Clean List (Applicants Modal) */
+        .clean-list { display: flex; flex-direction: column; gap: 10px; }
+        .clean-row { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: rgba(0, 0, 0, 0.2); border-radius: 12px; border: 1px solid rgba(255,255,255,0.02); transition: 0.2s; }
+        .hover-bg:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); }
+        .cl-left { display: flex; align-items: center; gap: 15px; flex: 1; min-width: 0; }
+        .cl-avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.1rem; flex-shrink: 0; box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3); }
+        .cl-title { font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 3px; }
+        .cl-sub { font-size: 0.8rem; color: #94a3b8; }
+        .action-circle { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+        .action-circle.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; } .action-circle.blue:hover { background: #3b82f6; color: #fff; }
+        .action-circle.red { background: rgba(239, 68, 68, 0.15); color: #ef4444; } .action-circle.red:hover { background: #ef4444; color: #fff; }
+      `}</style>
     </Layout>
   );
 }
