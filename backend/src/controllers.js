@@ -2320,3 +2320,42 @@ exports.verifySession = (req, res) => {
 
   return res.json({ valid: true });
 };
+
+// =========================================================
+// 🚨 ADD NEW CLIENT / HIRING PARTNER
+// =========================================================
+exports.addClient = async (req, res) => {
+  try {
+    const { tpoName, companyName, website, location, phone, email, contactPerson } = req.body;
+    const clientSheet = doc.sheetsByTitle["Clients"]; 
+    
+    let logoUrl = '';
+    if (req.file) {
+      // Re-using your existing Google Drive upload function
+      logoUrl = await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || ''); 
+    }
+
+    const h = clientSheet.headerValues;
+    const safeH = (target) => getFuzzyHeader(h, target);
+
+    await clientSheet.addRow({
+      [safeH('placementofficer')]: tpoName || '',
+      [safeH('companyname')]: companyName || '',
+      [safeH('companywebsite')]: website || '',
+      [safeH('companylocation')]: location || '',
+      [safeH('companycontact')]: phone || '',
+      [safeH('companymailid')]: email || '',
+      [safeH('companycontactperson')]: contactPerson || '',
+      [safeH('companylogo')]: logoUrl || '',
+      [safeH('mailstatus')]: 'Pending',
+      [safeH('documentstatus')]: 'Pending',
+      [safeH('mou')]: ''
+    });
+
+    refreshCache();
+    res.json({ success: true, message: "Client added successfully" });
+  } catch (error) {
+    console.error("Add Client Error:", error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

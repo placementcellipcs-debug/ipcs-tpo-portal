@@ -77,6 +77,7 @@ app.get('/api/tpo/clients/:id', controllers.getClientById);
 app.post('/api/tpo/clients/update', upload.single('logoFile'), controllers.updateClient);
 app.post('/api/tpo/clients/request-mou', controllers.requestMou);
 app.post('/api/tpo/clients/submit-mou', upload.any(), controllers.submitMou);
+app.post('/api/tpo/clients/add', upload.single('logoFile'), controllers.addClient);
 app.post('/api/tpo/profile/update-photo', upload.single('photo'), controllers.updatePhoto);
 app.post('/api/tpo/profile/update-password', controllers.updatePassword);
 app.get('/api/tpo/drives', controllers.getDrives);

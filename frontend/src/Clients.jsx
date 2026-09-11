@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   CircleNotch, PencilSimple, PaperPlaneRight, FilePdf, X, FloppyDisk, 
-  CheckCircle, WarningCircle, Handshake, Clock, FileText, ArrowSquareOut, 
-  MapPinLine, UserCircle, EnvelopeSimple, Phone, Buildings, IdentificationCard
+  CheckCircle, WarningCircle, Handshake, Clock, ArrowSquareOut, 
+  MapPinLine, UserCircle, EnvelopeSimple, Phone, Buildings, IdentificationCard, Plus
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
@@ -38,18 +38,25 @@ export default function Clients() {
   const accessType = String(tpoData?.accessType || '').toLowerCase();
   
   const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole.includes('MANAGER');
-  const isTpo = upperRole.includes('TPO') || isSuperAdmin;
+  
+  // 🚨 RESTRICT ACCESS: TPO ONLY (NO ADMINS)
+  const isTpo = upperRole.includes('TPO');
+  const canManageClients = isTpo && !isSuperAdmin;
 
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // 🚨 Premium Tabs State
-  const [activeTab, setActiveTab] = useState('Signed'); // 'Signed' or 'Pending'
+  const [activeTab, setActiveTab] = useState('Signed'); 
 
+  // Modal States
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
   const [editForm, setEditForm] = useState({});
+  
+  // New Add Client Modal State
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [addForm, setAddForm] = useState({ companyName: '', website: '', location: '', phone: '', email: '', contactPerson: '', logoFile: null });
+
   const [savingStatus, setSavingStatus] = useState(false);
   const [sendingRequest, setSendingRequest] = useState(null);
   const [notification, setNotification] = useState(null);
@@ -91,6 +98,32 @@ export default function Clients() {
         localStorage.setItem('dash_clients', JSON.stringify(res.data.clients || [])); 
       }
     } catch (err) { console.error(err); }
+  };
+
+  // 🚨 ADD NEW CLIENT HANDLER
+  const submitAddClient = async () => {
+    if (!addForm.companyName) return showToast("Company Name is required", "error");
+    setSavingStatus(true);
+    try {
+      const formData = new FormData();
+      formData.append('tpoName', tpoData.name);
+      formData.append('companyName', addForm.companyName);
+      formData.append('website', addForm.website);
+      formData.append('location', addForm.location);
+      formData.append('phone', addForm.phone);
+      formData.append('email', addForm.email);
+      formData.append('contactPerson', addForm.contactPerson);
+      if (addForm.logoFile) formData.append('logoFile', addForm.logoFile);
+
+      const res = await axios.post(`${API_BASE}/api/tpo/clients/add`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      if(res.data.success) {
+        setIsAddModalOpen(false);
+        setAddForm({ companyName: '', website: '', location: '', phone: '', email: '', contactPerson: '', logoFile: null });
+        showToast("New Hiring Partner added successfully!");
+        fetchClientsManual();
+      }
+    } catch (error) { showToast(`Failed to add: ${error.response?.data?.message || error.message}`, 'error'); } 
+    finally { setSavingStatus(false); }
   };
 
   const openEditModal = (client) => {
@@ -136,7 +169,6 @@ export default function Clients() {
     finally { setSendingRequest(null); }
   };
 
-  // Filtering Logic
   const filteredClients = clients.filter(c => {
     const matchSearch = String(c.companyName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                         String(c.location || '').toLowerCase().includes(searchQuery.toLowerCase());
@@ -147,7 +179,6 @@ export default function Clients() {
     return matchSearch && tabMatch;
   });
 
-  // Admin Dashboard Calculations
   const totalPartners = clients.length;
   const totalSigned = clients.filter(c => String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink)).length;
   const totalPending = totalPartners - totalSigned;
@@ -163,6 +194,12 @@ export default function Clients() {
             <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Handshake color="#38bdf8" weight="fill" /> Hiring Partners & MOUs</h1>
             <p>Directory of corporate partners and countersigned institutional agreements.</p>
           </div>
+          {/* 🚨 TPO ONLY: ADD PARTNER BUTTON */}
+          {canManageClients && (
+            <button className="premium-btn primary hover-lift" onClick={() => setIsAddModalOpen(true)}>
+              <Plus weight="bold" size={20} /> Add Partner
+            </button>
+          )}
         </div>
 
         {/* 🚨 ADMIN MINI-DASHBOARD */}
@@ -186,12 +223,8 @@ export default function Clients() {
         {/* CONTROLS (TABS & SEARCH) */}
         <div className="glass-panel control-action-bar" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
           <div className="segmented-tabs">
-            <button className={`seg-tab ${activeTab === 'Signed' ? 'active-green' : ''}`} onClick={() => setActiveTab('Signed')}>
-              Signed MOUs
-            </button>
-            <button className={`seg-tab ${activeTab === 'Pending' ? 'active-orange' : ''}`} onClick={() => setActiveTab('Pending')}>
-              Pending Signatures
-            </button>
+            <button className={`seg-tab ${activeTab === 'Signed' ? 'active-green' : ''}`} onClick={() => setActiveTab('Signed')}>Signed MOUs</button>
+            <button className={`seg-tab ${activeTab === 'Pending' ? 'active-orange' : ''}`} onClick={() => setActiveTab('Pending')}>Pending Signatures</button>
           </div>
           
           <div className="filter-group">
@@ -206,10 +239,7 @@ export default function Clients() {
         {loading ? (
           <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Fetching corporate partners...</p></div>
         ) : filteredClients.length === 0 ? (
-          <div className="empty-state-card">
-            <span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🏢</span>
-            No companies found in this category.
-          </div>
+          <div className="empty-state-card"><span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🏢</span>No companies found in this category.</div>
         ) : (
           <div className="client-grid">
             {filteredClients.map((c, i) => {
@@ -223,7 +253,7 @@ export default function Clients() {
                     <div className="client-loc"><MapPinLine size={14} /> {c.location || 'Location Not Specified'}</div>
                   </div>
 
-                  {/* 🚨 ADMIN ONLY: HIDDEN DETAILS */}
+                  {/* ADMIN ONLY: HIDDEN DETAILS */}
                   {isSuperAdmin && (
                     <div className="admin-client-details">
                       <div className="acd-item"><UserCircle size={16} /> <span>{c.contactPerson || 'No Name'}</span></div>
@@ -240,7 +270,8 @@ export default function Clients() {
                       </button>
                     ) : (
                       <div className="pending-footer">
-                        {isTpo && (
+                        {/* 🚨 TPO ONLY: BUTTONS */}
+                        {canManageClients ? (
                           <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
                             <button className="mou-btn edit-btn" onClick={() => openEditModal(c)}>
                               <PencilSimple size={18} weight="bold" /> Edit
@@ -249,8 +280,8 @@ export default function Clients() {
                               {sendingRequest === c.rowNumber ? <CircleNotch className="ph-spin" size={18} /> : <><PaperPlaneRight size={18} weight="fill" /> {c.mailStatus === 'Request Sent' ? 'Resend' : 'Send MOU'}</>}
                             </button>
                           </div>
-                        )}
-                        {!isTpo && (
+                        ) : (
+                          /* ADMINS / TRAINERS ONLY SEE STATUS PENDANT */
                           <div className="mou-btn pending-btn"><Clock size={18} weight="bold"/> Signature Pending</div>
                         )}
                       </div>
@@ -263,6 +294,40 @@ export default function Clients() {
           </div>
         )}
       </div>
+
+      {/* 🚨 ADD CLIENT MODAL */}
+      {isAddModalOpen && (
+        <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
+          <div className="premium-modal glass-panel" style={{ maxWidth: '550px', padding: '30px' }}>
+            <div className="modal-header">
+              <div>
+                <h2 style={{ fontSize: '1.5rem', color: '#fff' }}>Add New Partner</h2>
+                <div className="modal-subtitle">Add a new company to the directory</div>
+              </div>
+              <button className="close-btn" onClick={() => setIsAddModalOpen(false)}><X size={24} /></button>
+            </div>
+            
+            <div style={{ display: 'grid', gap: '15px', marginBottom: '20px' }}>
+              <div><label className="data-label">Company Name *</label><input type="text" className="premium-input" style={{width:'100%'}} placeholder="e.g. Google India" value={addForm.companyName} onChange={e=>setAddForm({...addForm, companyName: e.target.value})} /></div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                <div><label className="data-label">Contact Person</label><input type="text" className="premium-input" style={{width:'100%'}} placeholder="HR Manager Name" value={addForm.contactPerson} onChange={e=>setAddForm({...addForm, contactPerson: e.target.value})} /></div>
+                <div><label className="data-label">Contact Number</label><input type="text" className="premium-input" style={{width:'100%'}} placeholder="+91 XXXXX XXXXX" value={addForm.phone} onChange={e=>setAddForm({...addForm, phone: e.target.value})} /></div>
+              </div>
+              <div><label className="data-label">Company Email</label><input type="email" className="premium-input" style={{width:'100%'}} placeholder="hr@company.com" value={addForm.email} onChange={e=>setAddForm({...addForm, email: e.target.value})} /></div>
+              <div><label className="data-label">Location / State</label><input type="text" className="premium-input" style={{width:'100%'}} placeholder="e.g. Bangalore, Karnataka" value={addForm.location} onChange={e=>setAddForm({...addForm, location: e.target.value})} /></div>
+              <div><label className="data-label">Company Website</label><input type="url" className="premium-input" style={{width:'100%'}} placeholder="https://..." value={addForm.website} onChange={e=>setAddForm({...addForm, website: e.target.value})} /></div>
+              <div>
+                <label className="data-label">Upload Company Logo</label>
+                <input type="file" accept="image/*" className="premium-input" style={{width:'100%', padding: '8px'}} onChange={e=>setAddForm({...addForm, logoFile: e.target.files[0]})} />
+              </div>
+            </div>
+
+            <button className="premium-btn primary" style={{ width: '100%', padding: '14px', fontSize: '1rem' }} onClick={submitAddClient} disabled={savingStatus || !addForm.companyName}>
+              {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><Buildings size={20} weight="bold"/> Register Partner</>}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* EDIT MODAL */}
       {isEditModalOpen && selectedClient && (
@@ -277,12 +342,12 @@ export default function Clients() {
             </div>
             
             <div style={{ display: 'grid', gap: '15px', marginBottom: '20px' }}>
-              <div><label className="data-label" style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold' }}>Company Email</label><input type="email" className="premium-input" style={{width:'100%'}} value={editForm.email} onChange={e=>setEditForm({...editForm, email: e.target.value})} /></div>
-              <div><label className="data-label" style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold' }}>Contact Number</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.phone} onChange={e=>setEditForm({...editForm, phone: e.target.value})} /></div>
-              <div><label className="data-label" style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold' }}>Location</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.location} onChange={e=>setEditForm({...editForm, location: e.target.value})} /></div>
-              <div><label className="data-label" style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold' }}>Contact Person</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.contactPerson} onChange={e=>setEditForm({...editForm, contactPerson: e.target.value})} /></div>
+              <div><label className="data-label">Company Email</label><input type="email" className="premium-input" style={{width:'100%'}} value={editForm.email} onChange={e=>setEditForm({...editForm, email: e.target.value})} /></div>
+              <div><label className="data-label">Contact Number</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.phone} onChange={e=>setEditForm({...editForm, phone: e.target.value})} /></div>
+              <div><label className="data-label">Location</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.location} onChange={e=>setEditForm({...editForm, location: e.target.value})} /></div>
+              <div><label className="data-label">Contact Person</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.contactPerson} onChange={e=>setEditForm({...editForm, contactPerson: e.target.value})} /></div>
               <div>
-                <label className="data-label" style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold' }}>Company Logo</label>
+                <label className="data-label">Upload Company Logo</label>
                 <input type="file" accept="image/*" className="premium-input" style={{width:'100%', padding: '8px'}} onChange={e=>setEditForm({...editForm, logoFile: e.target.files[0]})} />
               </div>
             </div>
@@ -311,9 +376,13 @@ export default function Clients() {
         .hover-lift { transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); cursor: pointer; }
         .hover-lift:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7); border-color: rgba(255, 255, 255, 0.1); background: rgba(30, 41, 59, 0.8); }
 
-        .top-hero-section { margin-bottom: 25px; }
+        .top-hero-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 20px;}
         .hero-text h1 { font-size: 2.2rem; font-weight: 800; margin: 0 0 5px 0; color: #fff; }
         .hero-text p { color: #94a3b8; margin: 0; font-size: 1rem; }
+        
+        .premium-btn { border: none; padding: 10px 20px; border-radius: 12px; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; cursor: pointer; }
+        .premium-btn.primary { background: #3b82f6; color: #fff; }
+        .premium-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         .mini-dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
         .kpi-card { border-radius: 16px; padding: 20px; }
@@ -332,14 +401,14 @@ export default function Clients() {
         .seg-tab.active-green { background: #10b981; color: #fff; box-shadow: 0 4px 10px rgba(16,185,129,0.3); }
         .seg-tab.active-orange { background: #f59e0b; color: #fff; box-shadow: 0 4px 10px rgba(245,158,11,0.3); }
         
-        .premium-input { background: rgba(0,0,0,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 15px; font-size: 0.9rem; outline: none; transition: 0.2s; box-sizing: border-box; }
+        .premium-input { background: rgba(0,0,0,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 15px; font-size: 0.9rem; outline: none; transition: 0.2s; width: 100%; box-sizing: border-box; }
         .premium-input:focus { border-color: #3b82f6; background: rgba(0,0,0,0.4); }
 
         .client-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
         .client-card { border-radius: 20px; padding: 25px; display: flex; flex-direction: column; justify-content: space-between; }
         
         .client-header { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 20px; }
-        .client-logo-box { width: 80px; height: 80px; border-radius: 20px; background: #0f1523; border: 2px solid #1e293b; display: flex; align-items: center; justify-content: center; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .client-logo-box { width: 80px; height: 80px; border-radius: 20px; background: #0f1523; border: 2px solid #1e293b; margin-bottom: 15px; display: flex; align-items: center; justify-content: center; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .client-logo-box img { width: 100%; height: 100%; object-fit: contain; }
         .client-fallback { font-size: 2.2rem; font-weight: 900; color: #fff; background: linear-gradient(135deg, #3b82f6, #8b5cf6); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
         .client-name { margin: 0 0 5px 0; font-size: 1.15rem; color: #fff; font-weight: 800; line-height: 1.3; }
@@ -356,7 +425,7 @@ export default function Clients() {
         .signed-btn { background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
         .signed-btn:hover { background: #10b981; color: #fff; }
         
-        .pending-footer { display: flex; flex-direction: column; gap: 10px; }
+        .pending-footer { display: flex; flex-direction: column; gap: 10px; width: 100%; }
         .edit-btn { background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1); flex: 1; }
         .edit-btn:hover { background: rgba(255,255,255,0.1); }
         .request-btn { background: #3b82f6; color: #fff; flex: 2; }
@@ -364,8 +433,7 @@ export default function Clients() {
         .request-btn.sent { background: #f59e0b; color: #000; }
         .pending-btn { background: rgba(245, 158, 11, 0.1); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); cursor: default; }
 
-        .premium-btn { border: none; padding: 10px 20px; border-radius: 12px; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; cursor: pointer; }
-        .premium-btn.primary { background: #3b82f6; color: #fff; }
+        .data-label { color: #94a3b8; font-size: 0.8rem; font-weight: bold; margin-bottom: 5px; display: block; }
         
         .empty-state-card { background: rgba(15, 23, 42, 0.5); border: 1px dashed rgba(255,255,255,0.1); border-radius: 16px; padding: 50px 20px; text-align: center; color: #94a3b8; font-size: 1.1rem; font-weight: bold; }
 
