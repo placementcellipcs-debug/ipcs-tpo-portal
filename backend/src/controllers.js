@@ -1624,115 +1624,254 @@ exports.submitMou = async (req, res) => {
 // =========================================================
 // 🚨 ADMIN USERS & LMS MANAGEMENT
 // =========================================================
-exports.getAdminUsers = async (req, res) => {
+exports.getAdminUsers = (req, res) => {
   try {
-    await doc.loadInfo();
+    const cache = getCache();
     let allUsers = [];
 
-    const contactSheet = doc.sheetsByTitle["Contact"];
-    if (contactSheet) {
-      const cRows = await contactSheet.getRows(); const headers = contactSheet.headerValues;
-      const hName = getFuzzyHeader(headers, 'tponame'); const hMail = getFuzzyHeader(headers, 'mailid'); 
-      const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); 
-      const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); 
-      const hPhoto = getFuzzyHeader(headers, 'profilephoto'); const hTarget = getFuzzyHeader(headers, 'target') || getFuzzyHeader(headers, 'targetofthemonth'); const hEmpId = getFuzzyHeader(headers, 'empid');
-
-      cRows.forEach(r => {
-        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
-        if (email.trim() !== '' || name.trim() !== '') {
-          allUsers.push({ sheet: 'Contact', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: 'TPO', course: 'All Courses', access: 'View & Edit', profilePhoto: r.get(hPhoto) || '', target: r.get(hTarget) || '20', empId: r.get(hEmpId) || `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}` });
+    // 1. Process Contact Sheet (TPOs)
+    if (cache.contacts) {
+      cache.contacts.forEach(row => {
+        const email = getValByHeader(row, ['email', 'mailid']) || '';
+        const name = getValByHeader(row, ['name', 'tponame', 'placementofficer']) || '';
+        
+        if (email || name) {
+          allUsers.push({
+            sheet: 'Contact', 
+            rowNumber: row.rowNumber, 
+            userName: name,
+            contact: getValByHeader(row, ['contactnumber', 'phone', 'contact']) || '',
+            email: email, 
+            sittingBranch: getValByHeader(row, ['sittingbranch', 'branch']) || '',
+            assignedBranches: getValByHeader(row, ['assignedbranches']) || '',
+            password: getValByHeader(row, ['password']) || '',
+            role: getValByHeader(row, ['role']) || 'TPO',
+            course: 'All Courses', 
+            access: 'View & Edit',
+            profilePhoto: getValByHeader(row, ['profilephoto', 'photo']) || '',
+            empId: getValByHeader(row, ['empid']) || `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}`
+          });
         }
       });
     }
 
-    const userSheet = doc.sheetsByTitle["User"];
-    if (userSheet) {
-      const uRows = await userSheet.getRows(); const headers = userSheet.headerValues;
-      const hName = getFuzzyHeader(headers, 'username'); const hMail = getFuzzyHeader(headers, 'mailid'); 
-      const hContact = getFuzzyHeader(headers, 'contactnumber'); const hBranch = getFuzzyHeader(headers, 'sittingbranch'); 
-      const hAssign = getFuzzyHeader(headers, 'assignedbranches'); const hPass = getFuzzyHeader(headers, 'password'); 
-      const hRole = getFuzzyHeader(headers, 'role'); const hCourse = getFuzzyHeader(headers, 'course'); 
-      const hAccess = getFuzzyHeader(headers, 'access'); const hPhoto = getFuzzyHeader(headers, 'profilephoto');
-
-      uRows.forEach(r => {
-        const email = r.get(hMail) || ''; const name = r.get(hName) || '';
-        if (email.trim() !== '' || name.trim() !== '') {
-          allUsers.push({ sheet: 'User', rowNumber: r.rowNumber, userName: name, contact: r.get(hContact) || '', email: email, sittingBranch: r.get(hBranch) || '', assignedBranches: r.get(hAssign) || '', password: r.get(hPass) || '', role: r.get(hRole) || 'Unassigned', course: r.get(hCourse) || 'All Courses', access: r.get(hAccess) || 'View Only', profilePhoto: r.get(hPhoto) || '', target: 'N/A', empId: `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}` });
+    // 2. Process User Sheet (GMs, Tech Heads, Branch Managers)
+    if (cache.users) {
+      cache.users.forEach(row => {
+        // 🚨 This now safely matches the exact columns in your screenshot
+        const email = getValByHeader(row, ['email', 'mailid', 'mail']) || '';
+        const name = getValByHeader(row, ['name', 'username']) || '';
+        
+        if (email || name) {
+          allUsers.push({
+            sheet: 'User', 
+            rowNumber: row.rowNumber, 
+            userName: name,
+            contact: getValByHeader(row, ['contact_number', 'contactnumber', 'phone']) || '',
+            email: email, 
+            sittingBranch: getValByHeader(row, ['sitting_branch', 'sittingbranch', 'branch']) || '',
+            assignedBranches: getValByHeader(row, ['assigned_branches', 'assignedbranches']) || '',
+            password: getValByHeader(row, ['password']) || '',
+            role: getValByHeader(row, ['role']) || 'Unassigned',
+            course: getValByHeader(row, ['assigned_courses', 'assignedcourses', 'course']) || 'All Courses',
+            access: getValByHeader(row, ['access_type', 'accesstype', 'access']) || 'View Only',
+            profilePhoto: getValByHeader(row, ['profile_photo_url', 'profilephoto']) || '',
+            empId: getValByHeader(row, ['employee_id', 'employeeid']) || `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}`
+          });
         }
       });
     }
+
     res.json({ success: true, users: allUsers.reverse() });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
 exports.addAdminUser = async (req, res) => {
   try {
     const { userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
+    
     if (role === 'TPO') {
-      const s = doc.sheetsByTitle["Contact"]; const h = s.headerValues;
-      await s.addRow({ [getFuzzyHeader(h, 'tponame')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password });
+      const s = doc.sheetsByTitle["Contact"]; 
+      const h = s.headerValues;
+      await s.addRow({ 
+        [getFuzzyHeader(h, 'tponame')]: userName, 
+        [getFuzzyHeader(h, 'contactnumber')]: contact, 
+        [getFuzzyHeader(h, 'mailid')]: email, 
+        [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, 
+        [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, 
+        [getFuzzyHeader(h, 'password')]: password 
+      });
     } else {
-      const s = doc.sheetsByTitle["User"]; const h = s.headerValues;
-      await s.addRow({ [getFuzzyHeader(h, 'username')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password, [getFuzzyHeader(h, 'role')]: role, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'access')]: access });
+      const s = doc.sheetsByTitle["User"]; 
+      const h = s.headerValues;
+      // 🚨 Safely writes using exact header names
+      await s.addRow({ 
+        [getFuzzyHeader(h, 'Name')]: userName, 
+        [getFuzzyHeader(h, 'Contact_Number')]: contact, 
+        [getFuzzyHeader(h, 'Email')]: email, 
+        [getFuzzyHeader(h, 'Sitting_Branch')]: sittingBranch, 
+        [getFuzzyHeader(h, 'Assigned_Branches')]: assignedBranches, 
+        [getFuzzyHeader(h, 'Password')]: password, 
+        [getFuzzyHeader(h, 'Role')]: role, 
+        [getFuzzyHeader(h, 'Assigned_Courses')]: course, 
+        [getFuzzyHeader(h, 'Access_Type')]: access,
+        [getFuzzyHeader(h, 'Status')]: 'Active',
+        [getFuzzyHeader(h, 'Created_At')]: new Date().toLocaleString('en-GB')
+      });
     }
-    refreshCache(); res.json({ success: true, message: "User added" });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    refreshCache(); 
+    res.json({ success: true, message: "User added" });
+  } catch (err) { 
+    res.status(500).json({ success: false, message: err.message }); 
+  }
 };
 
 exports.updateAdminUser = async (req, res) => {
   try {
     const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
-    const s = doc.sheetsByTitle[sheet]; const rows = await s.getRows({ offset: rowNumber - 2, limit: 1 });
+    const s = doc.sheetsByTitle[sheet]; 
+    const rows = await s.getRows({ offset: rowNumber - 2, limit: 1 });
+    
     if (rows.length > 0) {
       const h = s.headerValues;
-      if (sheet === 'Contact') { rows[0].assign({ [getFuzzyHeader(h, 'tponame')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password }); } 
-      else { rows[0].assign({ [getFuzzyHeader(h, 'username')]: userName, [getFuzzyHeader(h, 'contactnumber')]: contact, [getFuzzyHeader(h, 'mailid')]: email, [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, [getFuzzyHeader(h, 'password')]: password, [getFuzzyHeader(h, 'role')]: role, [getFuzzyHeader(h, 'course')]: course, [getFuzzyHeader(h, 'access')]: access }); }
-      await rows[0].save(); refreshCache(); res.json({ success: true, message: "User updated" });
-    } else { res.status(404).json({ success: false, message: "User row not found" }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+      if (sheet === 'Contact') { 
+        rows[0].assign({ 
+          [getFuzzyHeader(h, 'tponame')]: userName, 
+          [getFuzzyHeader(h, 'contactnumber')]: contact, 
+          [getFuzzyHeader(h, 'mailid')]: email, 
+          [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, 
+          [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, 
+          [getFuzzyHeader(h, 'password')]: password 
+        }); 
+      } else { 
+        rows[0].assign({ 
+          [getFuzzyHeader(h, 'Name')]: userName, 
+          [getFuzzyHeader(h, 'Contact_Number')]: contact, 
+          [getFuzzyHeader(h, 'Email')]: email, 
+          [getFuzzyHeader(h, 'Sitting_Branch')]: sittingBranch, 
+          [getFuzzyHeader(h, 'Assigned_Branches')]: assignedBranches, 
+          [getFuzzyHeader(h, 'Password')]: password, 
+          [getFuzzyHeader(h, 'Role')]: role, 
+          [getFuzzyHeader(h, 'Assigned_Courses')]: course, 
+          [getFuzzyHeader(h, 'Access_Type')]: access,
+          [getFuzzyHeader(h, 'Updated_At')]: new Date().toLocaleString('en-GB')
+        }); 
+      }
+      await rows[0].save(); 
+      refreshCache(); 
+      res.json({ success: true, message: "User updated" });
+    } else { 
+      res.status(404).json({ success: false, message: "User row not found" }); 
+    }
+  } catch (err) { 
+    res.status(500).json({ success: false, message: err.message }); 
+  }
 };
 
 exports.deleteAdminUser = async (req, res) => {
   try {
-    const { sheet, rowNumber } = req.body; const targetSheet = doc.sheetsByTitle[sheet];
-    if (!targetSheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    const { sheet, rowNumber } = req.body; 
+    const targetSheet = doc.sheetsByTitle[sheet];
+    
+    if (!targetSheet) {
+      return res.status(404).json({ success: false, message: "Sheet not found" });
+    }
+    
     const rows = await targetSheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    if (rows.length > 0) { await rows[0].delete(); refreshCache(); res.json({ success: true, message: "User deleted" }); } 
-    else { res.status(404).json({ success: false, message: "User not found" }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+    
+    if (rows.length > 0) { 
+      await rows[0].delete(); 
+      refreshCache(); 
+      res.json({ success: true, message: "User deleted" }); 
+    } else { 
+      res.status(404).json({ success: false, message: "User not found" }); 
+    }
+  } catch (err) { 
+    res.status(500).json({ success: false, message: err.message }); 
+  }
 };
 
 exports.updatePassword = async (req, res) => {
   const { email, loginId, newPassword } = req.body;
   try {
-    const cache = getCache(); let targetRow = null;
-    const identifiers = [(email || '').toString().trim().toLowerCase(), (loginId || '').toString().trim().toLowerCase()].filter(Boolean);
-    if (cache.contacts) targetRow = cache.contacts.find(row => identifiers.some(id => row._rawData.map(v => (v || '').toString().trim().toLowerCase()).includes(id)));
-    if (!targetRow && cache.users) targetRow = cache.users.find(row => identifiers.some(id => row._rawData.map(v => (v || '').toString().trim().toLowerCase()).includes(id)));
+    const cache = getCache(); 
+    let targetRow = null;
+    
+    const targetEmail = (email || '').toString().trim().toLowerCase();
+    const targetLogin = (loginId || '').toString().trim().toLowerCase();
+
+    // 🚨 Safe lookup function that only checks specific columns
+    const findUserRow = (rows) => {
+      if (!rows) return null;
+      return rows.find(row => {
+        const rEmail = getValByHeader(row, ['email', 'mailid', 'mail']).toLowerCase();
+        const rLogin = getValByHeader(row, ['userid', 'user_id', 'employeeid', 'loginid']).toLowerCase();
+        return (targetEmail && rEmail === targetEmail) || (targetLogin && rLogin === targetLogin);
+      });
+    };
+
+    // Check Contacts (TPOs) first, then Users (Admins/Managers)
+    targetRow = findUserRow(cache.contacts) || findUserRow(cache.users);
 
     if (targetRow) {
-      targetRow.assign({ [getFuzzyHeader(targetRow._worksheet.headerValues, 'password')]: newPassword });
-      await targetRow.save(); refreshCache(); res.json({ success: true, message: "Password updated successfully" });
-    } else { res.status(404).json({ success: false, message: "User account not found in database." }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+      const h = targetRow._worksheet.headerValues;
+      const passHeader = getFuzzyHeader(h, 'password') || getFuzzyHeader(h, 'pass');
+      
+      targetRow.assign({ [passHeader]: newPassword });
+      await targetRow.save(); 
+      
+      refreshCache(); 
+      res.json({ success: true, message: "Password updated successfully" });
+    } else { 
+      res.status(404).json({ success: false, message: "User account not found in database." }); 
+    }
+  } catch (err) { 
+    res.status(500).json({ success: false, message: err.message }); 
+  }
 };
 
 exports.updatePhoto = async (req, res) => {
   const { email, loginId } = req.body;
   try {
     if (!req.file) return res.status(400).json({ success: false, message: "No file provided." });
+    
     const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
-    const cache = getCache(); let targetRow = null;
-    const identifiers = [(email || '').toString().trim().toLowerCase(), (loginId || '').toString().trim().toLowerCase()].filter(Boolean);
+    const cache = getCache(); 
+    let targetRow = null;
+    
+    const targetEmail = (email || '').toString().trim().toLowerCase();
+    const targetLogin = (loginId || '').toString().trim().toLowerCase();
 
-    if (cache.contacts) targetRow = cache.contacts.find(row => identifiers.some(id => row._rawData.map(v => (v || '').toString().trim().toLowerCase()).includes(id)));
-    if (!targetRow && cache.users) targetRow = cache.users.find(row => identifiers.some(id => row._rawData.map(v => (v || '').toString().trim().toLowerCase()).includes(id)));
+    // 🚨 Safe lookup function
+    const findUserRow = (rows) => {
+      if (!rows) return null;
+      return rows.find(row => {
+        const rEmail = getValByHeader(row, ['email', 'mailid', 'mail']).toLowerCase();
+        const rLogin = getValByHeader(row, ['userid', 'user_id', 'employeeid', 'loginid']).toLowerCase();
+        return (targetEmail && rEmail === targetEmail) || (targetLogin && rLogin === targetLogin);
+      });
+    };
+
+    targetRow = findUserRow(cache.contacts) || findUserRow(cache.users);
 
     if (targetRow) {
-      const headers = targetRow._worksheet.headerValues; const photoHeader = headers.find(h => h.toLowerCase().includes('photo') || h.toLowerCase().includes('profile')) || 'Profile Photo';
-      targetRow.assign({ [photoHeader]: photoLink }); await targetRow.save(); refreshCache(); res.json({ success: true, photoUrl: photoLink });
-    } else { res.status(404).json({ success: false, message: "User not found." }); }
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+      const h = targetRow._worksheet.headerValues; 
+      let photoHeader = h.find(hd => hd.toLowerCase().includes('photo') || hd.toLowerCase().includes('profile'));
+      if (!photoHeader) photoHeader = 'Profile_Photo_URL'; // Fallback
+
+      targetRow.assign({ [photoHeader]: photoLink }); 
+      await targetRow.save(); 
+      
+      refreshCache(); 
+      res.json({ success: true, photoUrl: photoLink });
+    } else { 
+      res.status(404).json({ success: false, message: "User not found." }); 
+    }
+  } catch (error) { 
+    res.status(500).json({ success: false, message: error.message }); 
+  }
 };
 
 // ---------------------------------------------------------
