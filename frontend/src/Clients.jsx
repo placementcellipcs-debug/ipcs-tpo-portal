@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   CircleNotch, PencilSimple, PaperPlaneRight, FilePdf, X, FloppyDisk, 
-  CheckCircle, WarningCircle, Handshake, Clock, FileText, ArrowSquareOut, MapPin,
-  User, EnvelopeSimple, Phone // 🚨 IMPORTED NEW SAFE ICONS
+  CheckCircle, WarningCircle, Handshake, Clock, FileText, ArrowSquareOut, 
+  MapPinLine, UserCircle, EnvelopeSimple, Phone, Buildings, IdentificationCard
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
@@ -18,18 +18,14 @@ const ClientLogo = ({ client, size = 70, noMargin = false }) => {
   };
 
   const logoUrl = getDriveImage(client.logo);
-  const initial = (client.companyName || 'C').charAt(0).toUpperCase();
+  const initial = String(client.companyName || 'C').charAt(0).toUpperCase();
 
   return (
-    <div style={{ 
-      width: `${size}px`, height: `${size}px`, borderRadius: '12px', background: '#fff', 
-      overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', 
-      marginBottom: noMargin ? '0' : '12px', padding: '6px', border: '1px solid var(--card-border)', flexShrink: 0
-    }}>
+    <div className="client-logo-box" style={{ width: `${size}px`, height: `${size}px`, marginBottom: noMargin ? '0' : '15px' }}>
       {(!logoUrl || imgErr) ? (
-        <span style={{ color: '#0f172a', fontWeight: 'bold', fontSize: size > 55 ? '1.8rem' : '1.3rem' }}>{initial}</span>
+        <div className="client-fallback">{initial}</div>
       ) : (
-        <img src={logoUrl} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} alt="Logo" onError={() => setImgErr(true)} />
+        <img src={logoUrl} alt="Logo" onError={() => setImgErr(true)} />
       )}
     </div>
   );
@@ -38,13 +34,18 @@ const ClientLogo = ({ client, size = 70, noMargin = false }) => {
 export default function Clients() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
-  const isSuperAdmin = tpoData?.accessType === 'superadmin';
-  const isTpo = (tpoData?.role || '').toUpperCase().includes('TPO');
+  const upperRole = String(tpoData?.role || '').toUpperCase();
+  const accessType = String(tpoData?.accessType || '').toLowerCase();
+  
+  const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole.includes('MANAGER');
+  const isTpo = upperRole.includes('TPO') || isSuperAdmin;
 
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [tpoTab, setTpoTab] = useState('pending');
+  
+  // 🚨 Premium Tabs State
+  const [activeTab, setActiveTab] = useState('Signed'); // 'Signed' or 'Pending'
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
@@ -63,14 +64,13 @@ export default function Clients() {
       const localStr = localStorage.getItem('tpoData');
       if (!localStr) return;
       const localTpo = JSON.parse(localStr);
-      const isSA = localTpo.accessType === 'superadmin';
-      const isT = (localTpo.role || '').toUpperCase().includes('TPO');
+      const isSA = localTpo.accessType === 'superadmin' || String(localTpo.role||'').toUpperCase().includes('ADMIN');
 
       const cached = localStorage.getItem('dash_clients');
       if (cached) { setClients(JSON.parse(cached)); setLoading(false); }
 
       try {
-        const payload = { tpoName: isSA || !isT ? '' : localTpo.name };
+        const payload = { tpoName: isSA ? '' : localTpo.name };
         const res = await axios.post(`${API_BASE}/api/tpo/clients`, payload);
         if (res.data.success) {
           setClients(res.data.clients || []);
@@ -84,7 +84,7 @@ export default function Clients() {
 
   const fetchClientsManual = async () => {
     try {
-      const payload = { tpoName: isSuperAdmin || !isTpo ? '' : tpoData.name };
+      const payload = { tpoName: isSuperAdmin ? '' : tpoData.name };
       const res = await axios.post(`${API_BASE}/api/tpo/clients`, payload);
       if (res.data.success) {
         setClients(res.data.clients || []);
@@ -136,182 +136,247 @@ export default function Clients() {
     finally { setSendingRequest(null); }
   };
 
-  const filteredClients = clients.filter(c => 
-    (c.companyName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (c.location || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Filtering Logic
+  const filteredClients = clients.filter(c => {
+    const matchSearch = String(c.companyName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                        String(c.location || '').toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const isSigned = String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink);
+    const tabMatch = activeTab === 'Signed' ? isSigned : !isSigned;
 
-  const pendingClients = filteredClients.filter(c => c.documentStatus !== 'Completed');
-  const signedClients = filteredClients.filter(c => c.documentStatus === 'Completed' || Boolean(c.mouLink));
+    return matchSearch && tabMatch;
+  });
+
+  // Admin Dashboard Calculations
+  const totalPartners = clients.length;
+  const totalSigned = clients.filter(c => String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink)).length;
+  const totalPending = totalPartners - totalSigned;
+  const uniqueTPOs = new Set(clients.map(c => c.tpoName || 'Unknown').filter(n => n !== 'Unknown')).size;
 
   return (
     <Layout>
-      <div className="page-container" style={{ padding: 0 }}>
+      <div className="premium-dashboard-wrapper page-container" style={{ maxWidth: '1600px', margin: '0 auto', paddingBottom: '50px' }}>
         
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '15px' }}>
-          <div>
-            <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Handshake color="var(--accent-primary)" weight="fill" /> Hiring Partners & MOUs
-            </h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>
-              {isTpo 
-                ? "Track partnership requests, update company profiles, and manage signed MOUs." 
-                : "Directory of corporate partners and countersigned institutional agreements."}
-            </p>
+        {/* HERO SECTION */}
+        <div className="top-hero-section">
+          <div className="hero-text">
+            <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Handshake color="#38bdf8" weight="fill" /> Hiring Partners & MOUs</h1>
+            <p>Directory of corporate partners and countersigned institutional agreements.</p>
           </div>
         </div>
 
-        {isTpo && (
-          <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '1px solid var(--card-border)', paddingBottom: '10px' }}>
-            <button 
-              onClick={() => setTpoTab('pending')}
-              style={{ background: tpoTab === 'pending' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: tpoTab === 'pending' ? 'var(--accent-primary)' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', transition: '0.2s' }}
-            >
-              <Clock size={20} weight={tpoTab === 'pending' ? "fill" : "regular"} /> Pending Requests & Outreach ({pendingClients.length})
-            </button>
-            <button 
-              onClick={() => setTpoTab('signed')}
-              style={{ background: tpoTab === 'signed' ? 'rgba(16, 185, 129, 0.1)' : 'transparent', color: tpoTab === 'signed' ? '#10b981' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', transition: '0.2s' }}
-            >
-              <FileText size={20} weight={tpoTab === 'signed' ? "fill" : "regular"} /> Signed MOUs ({signedClients.length})
-            </button>
+        {/* 🚨 ADMIN MINI-DASHBOARD */}
+        {isSuperAdmin && (
+          <div className="mini-dash-grid">
+            <div className="kpi-card glass-panel hover-lift">
+              <div className="kpi-top"><div><div className="kpi-title">Total Partners</div><div className="kpi-val">{totalPartners}</div></div><div className="kpi-icon blue"><Buildings weight="fill" size={26}/></div></div>
+            </div>
+            <div className="kpi-card glass-panel hover-lift">
+              <div className="kpi-top"><div><div className="kpi-title">Signed MOUs</div><div className="kpi-val">{totalSigned}</div></div><div className="kpi-icon green"><CheckCircle weight="fill" size={26}/></div></div>
+            </div>
+            <div className="kpi-card glass-panel hover-lift">
+              <div className="kpi-top"><div><div className="kpi-title">Pending MOUs</div><div className="kpi-val">{totalPending}</div></div><div className="kpi-icon orange"><Clock weight="fill" size={26}/></div></div>
+            </div>
+            <div className="kpi-card glass-panel hover-lift">
+              <div className="kpi-top"><div><div className="kpi-title">Active TPOs</div><div className="kpi-val">{uniqueTPOs}</div></div><div className="kpi-icon purple"><IdentificationCard weight="fill" size={26}/></div></div>
+            </div>
           </div>
         )}
 
-        <div style={{ marginBottom: '20px', maxWidth: '400px' }}>
-          <input type="text" className="sleek-input" placeholder="Search company name or location..." style={{ width: '100%' }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+        {/* CONTROLS (TABS & SEARCH) */}
+        <div className="glass-panel control-action-bar" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div className="segmented-tabs">
+            <button className={`seg-tab ${activeTab === 'Signed' ? 'active-green' : ''}`} onClick={() => setActiveTab('Signed')}>
+              Signed MOUs
+            </button>
+            <button className={`seg-tab ${activeTab === 'Pending' ? 'active-orange' : ''}`} onClick={() => setActiveTab('Pending')}>
+              Pending Signatures
+            </button>
+          </div>
+          
+          <div className="filter-group">
+            <div style={{ position: 'relative', flex: 1, minWidth: '300px' }}>
+              <input type="text" className="premium-input" placeholder="Search company name or location..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ width: '100%', paddingLeft: '40px' }} />
+              <Buildings size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+            </div>
+          </div>
         </div>
 
+        {/* CLIENT CARDS GRID */}
         {loading ? (
-          <div style={{ textAlign: 'center', marginTop: '3rem', color: '#38bdf8' }}><CircleNotch size={40} className="ph-spin" /></div>
+          <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Fetching corporate partners...</p></div>
+        ) : filteredClients.length === 0 ? (
+          <div className="empty-state-card">
+            <span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🏢</span>
+            No companies found in this category.
+          </div>
         ) : (
-          <>
-            {!isTpo && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-                {filteredClients.length === 0 ? (
-                  <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No hiring partners registered.</div>
-                ) : (
-                  filteredClients.map(client => (
-                    <div 
-                      key={client.rowNumber} onClick={() => client.mouLink && window.open(client.mouLink, '_blank')}
-                      style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', cursor: client.mouLink ? 'pointer' : 'default', transition: '0.2s', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}
-                      onMouseEnter={(e) => { if(client.mouLink) { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.borderColor = 'var(--accent-primary)'; } }}
-                      onMouseLeave={(e) => { if(client.mouLink) { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.borderColor = 'var(--card-border)'; } }}
-                    >
-                      <ClientLogo client={client} />
-                      <h3 style={{ margin: '0 0 4px 0', fontSize: '1.15rem', color: '#fff' }}>{client.companyName}</h3>
-                      <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginBottom: '15px' }}><MapPin size={14} /> {client.location || 'Location N/A'}</span>
-                      <div style={{ marginTop: 'auto', width: '100%' }}>
-                        {client.mouLink ? (
-                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', border: '1px solid #10b981', padding: '8px 16px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', width: '100%', justifyContent: 'center' }}>
-                            <FilePdf size={18} weight="fill" /> Open Signed MOU <ArrowSquareOut size={16} />
+          <div className="client-grid">
+            {filteredClients.map((c, i) => {
+              const isSigned = String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink);
+              return (
+                <div key={i} className="client-card glass-panel hover-lift">
+                  
+                  <div className="client-header">
+                    <ClientLogo client={c} size={80} />
+                    <h3 className="client-name">{c.companyName || 'Unknown Company'}</h3>
+                    <div className="client-loc"><MapPinLine size={14} /> {c.location || 'Location Not Specified'}</div>
+                  </div>
+
+                  {/* 🚨 ADMIN ONLY: HIDDEN DETAILS */}
+                  {isSuperAdmin && (
+                    <div className="admin-client-details">
+                      <div className="acd-item"><UserCircle size={16} /> <span>{c.contactPerson || 'No Name'}</span></div>
+                      <div className="acd-item"><Phone size={16} /> <span>{c.contact || 'No Phone'}</span></div>
+                      <div className="acd-item"><EnvelopeSimple size={16} /> <span style={{ wordBreak: 'break-all' }}>{c.email || 'No Email'}</span></div>
+                      <div className="acd-tpo">Managed by: <strong>{c.tpoName || 'Unknown'}</strong></div>
+                    </div>
+                  )}
+
+                  <div className="client-footer">
+                    {isSigned ? (
+                      <button className="mou-btn signed-btn" onClick={() => c.mouLink && window.open(c.mouLink, '_blank')}>
+                        <FilePdf size={18} weight="fill" /> Open Signed MOU <ArrowSquareOut size={14} />
+                      </button>
+                    ) : (
+                      <div className="pending-footer">
+                        {isTpo && (
+                          <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
+                            <button className="mou-btn edit-btn" onClick={() => openEditModal(c)}>
+                              <PencilSimple size={18} weight="bold" /> Edit
+                            </button>
+                            <button className={`mou-btn request-btn ${c.mailStatus === 'Request Sent' ? 'sent' : ''}`} onClick={() => sendRequest(c)} disabled={sendingRequest === c.rowNumber}>
+                              {sendingRequest === c.rowNumber ? <CircleNotch className="ph-spin" size={18} /> : <><PaperPlaneRight size={18} weight="fill" /> {c.mailStatus === 'Request Sent' ? 'Resend' : 'Send MOU'}</>}
+                            </button>
                           </div>
-                        ) : (
-                          <div style={{ display: 'inline-block', background: 'var(--bg-dark)', color: 'var(--text-muted)', border: '1px solid var(--card-border)', padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', width: '100%' }}>MOU In Progress</div>
+                        )}
+                        {!isTpo && (
+                          <div className="mou-btn pending-btn"><Clock size={18} weight="bold"/> Signature Pending</div>
                         )}
                       </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
+                    )}
+                  </div>
 
-            {isTpo && tpoTab === 'pending' && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px' }}>
-                {pendingClients.length === 0 ? (
-                  <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No pending MOU requests.</div>
-                ) : (
-                  pendingClients.map(client => (
-                    <div key={client.rowNumber} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                        <ClientLogo client={client} size={60} noMargin={true} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <strong style={{ fontSize: '1.1rem', color: '#fff', display: 'block', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{client.companyName}</strong>
-                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{client.location || 'Location N/A'}</span>
-                        </div>
-                      </div>
-
-                      {/* 🚨 FIXED: Used standard React icons instead of corrupted system emojis */}
-                      <div style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>
-                        <div style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}><User size={16} weight="fill" color="var(--text-muted)" /> {client.contactPerson || 'No Contact Person'}</div>
-                        <div style={{ marginBottom: '6px', display: 'flex', alignItems: 'center', gap: '8px' }}><EnvelopeSimple size={16} weight="fill" color="var(--text-muted)" /> {client.email || 'No Email'}</div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}><Phone size={16} weight="fill" color="var(--text-muted)" /> {client.contact || 'No Phone'}</div>
-                      </div>
-
-                      <div style={{ marginTop: 'auto', paddingTop: '15px', borderTop: '1px solid var(--card-border)', display: 'flex', gap: '10px' }}>
-                        <button className="btn-secondary" style={{ flex: 1, display: 'flex', justifyContent: 'center', gap: '5px' }} onClick={() => openEditModal(client)}>
-                          <PencilSimple weight="bold" size={16} /> Edit
-                        </button>
-                        <button className="btn-action" style={{ flex: 1.5, display: 'flex', justifyContent: 'center', gap: '5px', background: client.mailStatus === 'Request Sent' ? '#f59e0b' : '#10b981', color: client.mailStatus === 'Request Sent' ? '#000' : '#fff' }} onClick={() => sendRequest(client)} disabled={sendingRequest === client.rowNumber}>
-                          {sendingRequest === client.rowNumber ? <CircleNotch className="ph-spin" size={16} /> : <><PaperPlaneRight weight="fill" size={16} /> {client.mailStatus === 'Request Sent' ? 'Resend' : 'Send MOU'}</>}
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-
-            {isTpo && tpoTab === 'signed' && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' }}>
-                {signedClients.length === 0 ? (
-                  <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No completed MOUs logged yet.</div>
-                ) : (
-                  signedClients.map(client => (
-                    <div key={client.rowNumber} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
-                      <ClientLogo client={client} />
-                      <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', color: '#fff' }}>{client.companyName}</h3>
-                      <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '15px' }}>{client.location || 'Location N/A'}</span>
-                      <button className="btn-secondary" style={{ width: '100%', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', border: '1px solid #10b981', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }} onClick={() => window.open(client.mouLink, '_blank')}>
-                        <FilePdf weight="fill" size={18} /> View Agreement
-                      </button>
-                    </div>
-                  ))
-                )}
-              </div>
-            )}
-          </>
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 
+      {/* EDIT MODAL */}
       {isEditModalOpen && selectedClient && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
-          <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: '0 0 5px 0', fontSize: '1.4rem' }}>Edit {selectedClient.companyName}</h2>
-              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsEditModalOpen(false)} />
+        <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
+          <div className="premium-modal glass-panel" style={{ maxWidth: '500px', padding: '30px' }}>
+            <div className="modal-header">
+              <div>
+                <h2 style={{ fontSize: '1.4rem' }}>Edit Details</h2>
+                <div className="modal-subtitle">{selectedClient.companyName}</div>
+              </div>
+              <button className="close-btn" onClick={() => setIsEditModalOpen(false)}><X size={24} /></button>
             </div>
             
-            <div style={{ display: 'grid', gap: '15px', marginBottom: '15px' }}>
-              <div><label className="data-label">Company Mail ID</label><input type="email" className="sleek-input" style={{width:'100%'}} value={editForm.email} onChange={e=>setEditForm({...editForm, email: e.target.value})} /></div>
-              <div><label className="data-label">Company Contact Number</label><input type="text" className="sleek-input" style={{width:'100%'}} value={editForm.phone} onChange={e=>setEditForm({...editForm, phone: e.target.value})} /></div>
-              <div><label className="data-label">Company Location</label><input type="text" className="sleek-input" style={{width:'100%'}} value={editForm.location} onChange={e=>setEditForm({...editForm, location: e.target.value})} /></div>
-              <div><label className="data-label">Contact Person</label><input type="text" className="sleek-input" style={{width:'100%'}} value={editForm.contactPerson} onChange={e=>setEditForm({...editForm, contactPerson: e.target.value})} /></div>
+            <div style={{ display: 'grid', gap: '15px', marginBottom: '20px' }}>
+              <div><label className="data-label" style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold' }}>Company Email</label><input type="email" className="premium-input" style={{width:'100%'}} value={editForm.email} onChange={e=>setEditForm({...editForm, email: e.target.value})} /></div>
+              <div><label className="data-label" style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold' }}>Contact Number</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.phone} onChange={e=>setEditForm({...editForm, phone: e.target.value})} /></div>
+              <div><label className="data-label" style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold' }}>Location</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.location} onChange={e=>setEditForm({...editForm, location: e.target.value})} /></div>
+              <div><label className="data-label" style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold' }}>Contact Person</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.contactPerson} onChange={e=>setEditForm({...editForm, contactPerson: e.target.value})} /></div>
               <div>
-                <label className="data-label">Upload Company Logo</label>
-                <input type="file" accept="image/*" className="sleek-input" style={{width:'100%', padding: '6px'}} onChange={e=>setEditForm({...editForm, logoFile: e.target.files[0]})} />
+                <label className="data-label" style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold' }}>Company Logo</label>
+                <input type="file" accept="image/*" className="premium-input" style={{width:'100%', padding: '8px'}} onChange={e=>setEditForm({...editForm, logoFile: e.target.files[0]})} />
               </div>
             </div>
 
-            <button className="btn-action" style={{ background: '#38bdf8', color: '#0f172a', width: '100%', marginTop: '1rem' }} onClick={submitEdit} disabled={savingStatus}>
+            <button className="premium-btn primary" style={{ width: '100%', padding: '12px' }} onClick={submitEdit} disabled={savingStatus}>
               {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> Save Updates</>}
             </button>
           </div>
         </div>
       )}
 
+      {/* TOAST NOTIFICATION */}
       {notification && (
-        <div style={{
-          position: 'fixed', bottom: '30px', right: '30px', zIndex: 999999,
-          backgroundColor: notification.type === 'success' ? '#10b981' : '#ef4444',
-          color: '#ffffff', padding: '16px 24px', borderRadius: '10px',
-          boxShadow: '0 10px 25px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', gap: '12px',
-          fontSize: '1rem', fontWeight: 'bold'
-        }}>
+        <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 999999, backgroundColor: notification.type === 'success' ? '#10b981' : '#ef4444', color: '#ffffff', padding: '16px 24px', borderRadius: '10px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1rem', fontWeight: 'bold' }}>
           {notification.type === 'success' ? <CheckCircle size={24} weight="fill" /> : <WarningCircle size={24} weight="fill" />}
           {notification.message}
         </div>
       )}
+
+      {/* ---------------------------------------------------------
+          🎨 PREMIUM CSS FOR CLIENTS PAGE
+      --------------------------------------------------------- */}
+      <style>{`
+        .premium-dashboard-wrapper { font-family: 'Inter', sans-serif; color: #f8fafc; }
+        .glass-panel { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); }
+        .hover-lift { transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); cursor: pointer; }
+        .hover-lift:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7); border-color: rgba(255, 255, 255, 0.1); background: rgba(30, 41, 59, 0.8); }
+
+        .top-hero-section { margin-bottom: 25px; }
+        .hero-text h1 { font-size: 2.2rem; font-weight: 800; margin: 0 0 5px 0; color: #fff; }
+        .hero-text p { color: #94a3b8; margin: 0; font-size: 1rem; }
+
+        .mini-dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
+        .kpi-card { border-radius: 16px; padding: 20px; }
+        .kpi-top { display: flex; justify-content: space-between; align-items: flex-start; }
+        .kpi-title { font-size: 0.75rem; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 5px; }
+        .kpi-val { font-size: 2rem; font-weight: 900; color: #fff; line-height: 1; }
+        .kpi-icon { width: 45px; height: 45px; border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: inset 0 2px 10px rgba(255,255,255,0.05); }
+        .kpi-icon.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3); }
+        .kpi-icon.green { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .kpi-icon.orange { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .kpi-icon.purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.3); }
+
+        .control-action-bar { border-radius: 16px; padding: 15px; margin-bottom: 30px; display: flex; gap: 15px; }
+        .segmented-tabs { display: flex; background: rgba(0,0,0,0.3); padding: 5px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
+        .seg-tab { background: transparent; border: none; padding: 10px 24px; color: #94a3b8; font-weight: bold; font-size: 0.95rem; border-radius: 8px; cursor: pointer; transition: 0.3s; }
+        .seg-tab.active-green { background: #10b981; color: #fff; box-shadow: 0 4px 10px rgba(16,185,129,0.3); }
+        .seg-tab.active-orange { background: #f59e0b; color: #fff; box-shadow: 0 4px 10px rgba(245,158,11,0.3); }
+        
+        .premium-input { background: rgba(0,0,0,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 15px; font-size: 0.9rem; outline: none; transition: 0.2s; box-sizing: border-box; }
+        .premium-input:focus { border-color: #3b82f6; background: rgba(0,0,0,0.4); }
+
+        .client-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .client-card { border-radius: 20px; padding: 25px; display: flex; flex-direction: column; justify-content: space-between; }
+        
+        .client-header { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 20px; }
+        .client-logo-box { width: 80px; height: 80px; border-radius: 20px; background: #0f1523; border: 2px solid #1e293b; display: flex; align-items: center; justify-content: center; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
+        .client-logo-box img { width: 100%; height: 100%; object-fit: contain; }
+        .client-fallback { font-size: 2.2rem; font-weight: 900; color: #fff; background: linear-gradient(135deg, #3b82f6, #8b5cf6); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+        .client-name { margin: 0 0 5px 0; font-size: 1.15rem; color: #fff; font-weight: 800; line-height: 1.3; }
+        .client-loc { color: #94a3b8; font-size: 0.85rem; display: flex; align-items: center; justify-content: center; gap: 5px; }
+
+        .admin-client-details { background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.02); border-radius: 12px; padding: 12px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 8px; }
+        .acd-item { display: flex; align-items: center; gap: 8px; color: #cbd5e1; font-size: 0.8rem; }
+        .acd-item svg { color: #64748b; flex-shrink: 0; }
+        .acd-tpo { margin-top: 5px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); font-size: 0.75rem; color: #94a3b8; text-align: center; }
+        .acd-tpo strong { color: #a855f7; font-weight: 800; letter-spacing: 0.5px; text-transform: uppercase; }
+
+        .client-footer { margin-top: auto; }
+        .mou-btn { width: 100%; padding: 10px; border-radius: 10px; font-weight: bold; font-size: 0.85rem; display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; text-decoration: none; transition: 0.2s; border: none; }
+        .signed-btn { background: rgba(16, 185, 129, 0.1); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .signed-btn:hover { background: #10b981; color: #fff; }
+        
+        .pending-footer { display: flex; flex-direction: column; gap: 10px; }
+        .edit-btn { background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1); flex: 1; }
+        .edit-btn:hover { background: rgba(255,255,255,0.1); }
+        .request-btn { background: #3b82f6; color: #fff; flex: 2; }
+        .request-btn:hover { background: #2563eb; transform: translateY(-2px); }
+        .request-btn.sent { background: #f59e0b; color: #000; }
+        .pending-btn { background: rgba(245, 158, 11, 0.1); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); cursor: default; }
+
+        .premium-btn { border: none; padding: 10px 20px; border-radius: 12px; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; cursor: pointer; }
+        .premium-btn.primary { background: #3b82f6; color: #fff; }
+        
+        .empty-state-card { background: rgba(15, 23, 42, 0.5); border: 1px dashed rgba(255,255,255,0.1); border-radius: 16px; padding: 50px 20px; text-align: center; color: #94a3b8; font-size: 1.1rem; font-weight: bold; }
+
+        .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); z-index: 99999; display: flex; justify-content: center; align-items: center; padding: 20px; }
+        .premium-modal { width: 100%; max-height: 90vh; overflow-y: auto; border-radius: 24px; padding: 30px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
+        .modal-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px; margin-bottom: 20px; }
+        .modal-header h2 { margin: 0 0 5px 0; font-size: 1.6rem; color: #fff; font-weight: 800; }
+        .modal-subtitle { color: #38bdf8; font-weight: bold; font-size: 1.1rem; }
+        .close-btn { background: none; border: none; color: #64748b; cursor: pointer; transition: 0.2s; display: flex; }
+        .close-btn:hover { color: #ef4444; transform: scale(1.1); }
+      `}</style>
     </Layout>
   );
 }
