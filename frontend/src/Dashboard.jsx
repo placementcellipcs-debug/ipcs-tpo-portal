@@ -7,10 +7,6 @@ import {
   ChartBar, MapPinLine, Clock, Student, ChalkboardTeacher,
   WarningCircle, Buildings, CheckCircle, ArrowUpRight
 } from '@phosphor-icons/react';
-import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell 
-} from 'recharts';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
 
@@ -32,6 +28,7 @@ export default function Dashboard() {
   const isSuperAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
   const isTpo = userRole.includes('TPO') || isSuperAdmin; 
   const isTrainer = userRole.includes('TRAINER') || userRole.includes('TTH') || isSuperAdmin;
+  const showReports = isSuperAdmin || userRole === 'TPO';
 
   // ---------------------------------------------------------
   // 📊 STATE MANAGEMENT
@@ -42,7 +39,7 @@ export default function Dashboard() {
   const [activeIssues, setActiveIssues] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [trendData, setTrendData] = useState(Array(12).fill({ m: '', Applications: 0, Offers: 0, Placed: 0 }));
+  const [trendData, setTrendData] = useState(Array(12).fill({ m: '', apps: 0, off: 0, pl: 0 }));
   const [domainData, setDomainData] = useState([]);
   const [topCompanies, setTopCompanies] = useState([]);
   const [pipeline, setPipeline] = useState({ applied: 0, interview: 0, offers: 0, placed: 0 });
@@ -111,7 +108,9 @@ export default function Dashboard() {
     
     const currentYear = new Date().getFullYear();
     const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    let newTrend = months.map(m => ({ m, Applications: 0, Offers: 0, Placed: 0 }));
+    
+    // Create fresh object references for the trend map
+    let newTrend = months.map(m => ({ m, apps: 0, off: 0, pl: 0 }));
     let domCount = {};
     let compCount = {};
     let pApp = 0, pInt = 0, pOff = 0, pPl = 0;
@@ -140,14 +139,14 @@ export default function Dashboard() {
       const d = parseDateRobust(app.date);
       if (d && d.getFullYear() === currentYear) {
         const mIdx = d.getMonth();
-        newTrend[mIdx].Applications++;
-        if (isOffer) newTrend[mIdx].Offers++;
-        if (isPlaced) newTrend[mIdx].Placed++;
+        newTrend[mIdx].apps++;
+        if (isOffer) newTrend[mIdx].off++;
+        if (isPlaced) newTrend[mIdx].pl++;
       }
     });
 
     setTrendData(newTrend);
-    setDomainData(Object.keys(domCount).map((k) => ({ name: k, value: domCount[k] })).sort((a,b) => b.value - a.value).slice(0, 5));
+    setDomainData(Object.keys(domCount).map((k) => ({ name: k, v: domCount[k] })).sort((a,b) => b.v - a.v).slice(0, 5));
     setTopCompanies(Object.keys(compCount).map(k => ({ name: k, count: compCount[k] })).sort((a,b) => b.count - a.count).slice(0, 3));
     setPipeline({ applied: pApp, interview: pInt, offers: pOff, placed: pPl });
     setRecentPlacements(placedRecent.sort((a, b) => (parseDateRobust(b.date)?.getTime()||0) - (parseDateRobust(a.date)?.getTime()||0)).slice(0, 4));
@@ -208,23 +207,23 @@ export default function Dashboard() {
   const pPlc = ((pipeline.placed / totalPipe) * 100).toFixed(0);
   const placementRate = stats.totalStudents > 0 ? ((stats.placed / stats.totalStudents) * 100).toFixed(1) : '0.0';
 
-  const CustomTooltip = ({ active, payload, label }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #334155', padding: '12px', borderRadius: '8px', color: '#fff' }}>
-          {label && <p style={{ margin: '0 0 8px 0', borderBottom: '1px solid #334155', paddingBottom: '6px', fontSize: '0.9rem', fontWeight: 'bold' }}>{label}</p>}
-          {payload.map((entry, index) => (
-            <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', fontSize: '0.8rem' }}>
-              <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: entry.color }}></div>
-              <span style={{ color: '#cbd5e1' }}>{entry.name}:</span>
-              <span style={{ fontWeight: 'bold' }}>{entry.value}</span>
-            </div>
-          ))}
-        </div>
-      );
-    }
-    return null;
+  // ---------------------------------------------------------
+  // NATIVE SVG CHARTS (CRASH-PROOF)
+  // ---------------------------------------------------------
+  const cHeight = 220; const cWidth = 600; const xStep = cWidth / 11;
+  const maxV = Math.max(...trendData.map(d => Math.max(d.apps, d.off, d.pl)), 10); 
+  
+  const makeSmoothPath = (key) => {
+    if(!trendData || !trendData.length) return '';
+    let path = `M 0,${cHeight - (trendData[0][key]/maxV*cHeight)}`;
+    for(let i=0; i<11; i++) {
+      const cx = (i * xStep + (i+1) * xStep)/2;
+      path += ` C ${cx},${cHeight - (trendData[i][key]/maxV*cHeight)} ${cx},${cHeight - (trendData[i+1][key]/maxV*cHeight)} ${(i+1)*xStep},${cHeight - (trendData[i+1][key]/maxV*cHeight)}`;
+    } return path;
   };
+
+  const totalDomain = domainData.reduce((acc, curr) => acc + curr.v, 0) || 1;
+  let cumPct = 0; const circ = 2 * Math.PI * 40;
 
   return (
     <Layout>
@@ -309,7 +308,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* TRENDS CHART */}
+          {/* TRENDS CHART (Native SVG) */}
           <div className="bento-card charts-bento">
             <div className="card-header">
               <h3>Progress Trends <ArrowUpRight size={16} color="#64748b"/></h3>
@@ -319,41 +318,37 @@ export default function Dashboard() {
                 <span style={{color: '#a855f7'}}>● Apps</span>
               </div>
             </div>
-            <div style={{ height: '220px', width: '100%' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorApps" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/><stop offset="95%" stopColor="#a855f7" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="colorOff" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="colorPl" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
-                  </defs>
-                  <XAxis dataKey="m" stroke="#475569" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <YAxis stroke="#475569" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Area type="monotone" dataKey="Applications" stroke="#a855f7" strokeWidth={3} fillOpacity={1} fill="url(#colorApps)" />
-                  <Area type="monotone" dataKey="Offers" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorOff)" />
-                  <Area type="monotone" dataKey="Placed" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorPl)" />
-                </AreaChart>
-              </ResponsiveContainer>
+            <div style={{ height: `${cHeight}px`, width: '100%', position: 'relative', marginTop: '10px' }}>
+              <svg viewBox={`0 0 ${cWidth} ${cHeight}`} preserveAspectRatio="none" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
+                {[0, 1, 2, 3, 4].map(i => <line key={i} x1="0" y1={cHeight * (i/4)} x2={cWidth} y2={cHeight * (i/4)} stroke="#1e293b" />)}
+                <path d={makeSmoothPath('apps')} fill="none" stroke="#a855f7" strokeWidth="3" />
+                <path d={makeSmoothPath('off')} fill="none" stroke="#10b981" strokeWidth="3" />
+                <path d={makeSmoothPath('pl')} fill="none" stroke="#3b82f6" strokeWidth="3" />
+              </svg>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', color: '#64748b', fontSize: '0.7rem' }}>
+                {trendData.map(d => <span key={d.m}>{d.m}</span>)}
+              </div>
             </div>
           </div>
 
-          {/* DONUT CHART */}
+          {/* DONUT CHART (Native SVG) */}
           <div className="bento-card circular-bento">
-            <div className="card-header">
+            <div className="card-header" style={{marginBottom:'0'}}>
               <h3>Domain Spread <ArrowUpRight size={16} color="#64748b"/></h3>
             </div>
-            <div className="donut-wrapper">
-              <ResponsiveContainer width="100%" height={180}>
-                <PieChart>
-                  <Tooltip content={<CustomTooltip />} />
-                  <Pie data={domainData.length > 0 ? domainData : [{name: 'No Data', value: 1}]} cx="50%" cy="50%" innerRadius={55} outerRadius={75} paddingAngle={4} dataKey="value" stroke="none">
-                    {(domainData.length > 0 ? domainData : [{name: 'No Data'}]).map((e, i) => <Cell key={`c-${i}`} fill={DOMAIN_COLORS[i % DOMAIN_COLORS.length]} /> )}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="donut-center">
-                <h3>{stats.placed}</h3><p>Total</p>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', margin: '20px 0' }}>
+              <div style={{ width: '150px', height: '150px', position: 'relative' }}>
+                <svg viewBox="0 0 100 100" style={{ transform: 'rotate(-90deg)', width: '100%', height: '100%' }}>
+                  {domainData.map((slice, i) => {
+                    const pct = slice.v / totalDomain; const dash = `${pct * circ} ${circ}`; const off = cumPct * circ * -1; cumPct += pct;
+                    return <circle key={slice.name} r={40} cx="50" cy="50" fill="transparent" stroke={DOMAIN_COLORS[i % DOMAIN_COLORS.length]} strokeWidth="16" strokeDasharray={dash} strokeDashoffset={off} />
+                  })}
+                  {domainData.length === 0 && <circle r={40} cx="50" cy="50" fill="transparent" stroke="#1e293b" strokeWidth="16" />}
+                </svg>
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                  <div style={{ fontSize: '1.6rem', fontWeight: 'bold', color: '#fff' }}>{stats.placed}</div>
+                  <div style={{ fontSize: '0.65rem', color: '#94a3b8' }}>Total</div>
+                </div>
               </div>
             </div>
             <div className="mini-legend">
@@ -365,7 +360,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* UPCOMING EVENTS */}
+          {/* DARK TASK LIST (Upcoming Schedule) */}
           <div className="bento-card dark-task-list">
             <div className="dark-task-header">
               <h3>Upcoming Schedule</h3>
@@ -388,9 +383,9 @@ export default function Dashboard() {
         </div>
 
         {/* =========================================================
-            BOTTOM GRID: QUICK ACCESS & RECENT ACTIVITY
+            BOTTOM: QUICK ACCESS & PLACEMENTS
         ========================================================= */}
-        <div className="bottom-bento-grid">
+        <div className="bottom-bento-grid" style={{ marginBottom: '30px' }}>
           
           <div className="bento-card" style={{ gridColumn: 'span 2' }}>
             <div className="card-header">
@@ -494,7 +489,7 @@ export default function Dashboard() {
           .top-hero-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; flex-wrap: wrap; gap: 20px; }
           .hero-text h1 { font-size: 2.2rem; font-weight: 800; margin: 0 0 5px 0; color: #fff; }
           .hero-text p { color: #94a3b8; margin: 0; font-size: 1rem; }
-          
+
           /* Floating KPIs */
           .floating-kpis { display: flex; gap: 40px; align-items: center; }
           .f-kpi { display: flex; align-items: center; gap: 15px; }
@@ -540,10 +535,6 @@ export default function Dashboard() {
           .card-header h3 { margin: 0; font-size: 1.1rem; color: #fff; display: flex; align-items: center; gap: 8px; }
           .chart-legend-mini { display: flex; gap: 12px; font-size: 0.75rem; font-weight: bold; }
           
-          .donut-wrapper { position: relative; width: 100%; height: 180px; }
-          .donut-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
-          .donut-center h3 { margin: 0; font-size: 1.8rem; color: #fff; }
-          .donut-center p { margin: 0; font-size: 0.75rem; color: #64748b; }
           .mini-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px; justify-content: center; }
           .ml-item { font-size: 0.75rem; color: #94a3b8; display: flex; align-items: center; gap: 6px; }
           .ml-item span { width: 8px; height: 8px; border-radius: 2px; }
@@ -555,12 +546,11 @@ export default function Dashboard() {
           .task-count { font-size: 1.2rem; color: #fff; font-weight: 300; }
           .dark-tasks { display: flex; flex-direction: column; gap: 15px; }
           .dark-task-item { display: flex; align-items: center; gap: 15px; }
-          .dt-icon { width: 32px; height: 32px; border-radius: 10px; background: rgba(255,255,255,0.05); color: #94a3b8; display: flex; align-items: center; justify-content: center; }
-          .dt-info { flex: 1; overflow: hidden; }
+          .dt-icon { width: 32px; height: 32px; border-radius: 10px; background: rgba(255,255,255,0.05); color: #94a3b8; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+          .dt-info { flex: 1; min-width: 0; }
           .dt-info h4 { margin: 0 0 4px 0; font-size: 0.85rem; color: #e2e8f0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
           .dt-info p { margin: 0; font-size: 0.7rem; color: #64748b; }
-          .dt-check { color: #f59e0b; }
-          .empty-tasks { color: #64748b; font-size: 0.85rem; font-style: italic; }
+          .dt-check { color: #f59e0b; flex-shrink: 0; }
 
           /* Bottom Grid */
           .bottom-bento-grid { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 20px; }
@@ -577,7 +567,7 @@ export default function Dashboard() {
           .cl-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; background: rgba(255,255,255,0.05); }
           .cl-icon.red { color: #ef4444; }
           .cl-icon.green { color: #10b981; }
-          .cl-title { font-size: 0.9rem; font-weight: 600; color: #fff; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .cl-title { font-size: 0.9rem; font-weight: 600; color: #fff; margin-bottom: 2px; }
           .cl-sub { font-size: 0.75rem; color: #94a3b8; }
           .cl-right { text-align: right; flex-shrink: 0; }
           .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
@@ -591,7 +581,7 @@ export default function Dashboard() {
           .qa-btn:hover { background: #1e293b; border-color: #334155; transform: translateY(-2px); }
           .qa-btn span { color: #cbd5e1; font-weight: 600; font-size: 0.85rem; }
           
-          .empty-state { text-align: center; padding: 30px; color: #64748b; font-size: 0.85rem; border: 1px dashed #334155; border-radius: 12px; height: 100%; display: flex; flex-direction: column; justify-content: center; }
+          .empty-state { text-align: center; padding: 30px; color: #64748b; font-size: 0.85rem; border: 1px dashed #334155; border-radius: 12px; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; }
         `}</style>
       </div>
     </Layout>
