@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { CircleNotch, Users, Eye, X, Prohibit, EnvelopeSimple, Phone, Plus, Briefcase, Buildings, Clock, MapPinLine, GraduationCap, Money, GenderIntersex } from '@phosphor-icons/react';
+import { 
+  Users, Briefcase, Trophy, CalendarCheck, CircleNotch, 
+  BookOpen, NotePencil, Desktop, FolderOpen, ListChecks, 
+  ChartBar, MapPinLine, Clock, Student, ChalkboardTeacher,
+  WarningCircle, Buildings, CheckCircle, ArrowUpRight, Plus, Eye, X, Prohibit, EnvelopeSimple, Phone, GraduationCap, Money
+} from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
 
@@ -17,16 +23,23 @@ const DetailBox = ({ label, value, icon }) => (
 );
 
 export default function Vacancies() {
-  const tpoDataStr = localStorage.getItem('tpoData');
-  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  const navigate = useNavigate();
   
-  const upperRole = String(tpoData?.role || '').toUpperCase();
+  let tpoData = null;
+  try {
+    const rawData = localStorage.getItem('tpoData');
+    if (rawData) tpoData = JSON.parse(rawData);
+  } catch(e) {
+    console.error("Error reading tpoData");
+  }
+  
+  const userRole = String(tpoData?.role || '').toUpperCase();
   const accessType = String(tpoData?.accessType || '').toLowerCase();
   
-  const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole.includes('MANAGER');
-  const isTpo = upperRole.includes('TPO');
+  const isSuperAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
+  const isTpo = userRole.includes('TPO');
   const canAddOpening = isTpo && !isSuperAdmin;
-  const isCourseSpecific = upperRole.includes('TRAINER') || upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TECHNICAL LEAD');
+  const isCourseSpecific = userRole.includes('TRAINER') || userRole.includes('RTH') || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
 
   const [vacancies, setVacancies] = useState([]);
@@ -239,7 +252,7 @@ export default function Vacancies() {
           </div>
         </div>
 
-        {/* JOB CARDS GRID (Replaces Table) */}
+        {/* JOB CARDS GRID */}
         {loading ? (
           <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Fetching vacancies...</p></div>
         ) : Object.keys(groupedVacs).length === 0 ? (
@@ -304,9 +317,9 @@ export default function Vacancies() {
                         </div>
                       </div>
 
-                      {/* Floating Action Overlay on Hover */}
                       <div className="jc-hover-actions">
-                        <button className="premium-btn secondary" onClick={() => !isExpired && setSelectedJob(v) || !isExpired && setIsJobDetailsModalOpen(true)} disabled={isExpired}>
+                        {/* 🚨 SAFELY ATTACHED ONCLICK EVENT TO PREVENT CRASH */}
+                        <button className="premium-btn secondary" onClick={() => { if(!isExpired) { setSelectedJob(v); setIsJobDetailsModalOpen(true); } }} disabled={isExpired}>
                           {isExpired ? <Prohibit size={18}/> : <Eye size={18} />} Details
                         </button>
                         <button className="premium-btn primary" onClick={() => { setSelectedJob(v); setIsApplicantsModalOpen(true); }}>
@@ -339,10 +352,12 @@ export default function Vacancies() {
               <DetailBox label="Job ID" value={selectedJob.id} icon={<Briefcase size={20} weight="fill"/>} />
               <DetailBox label="Location & Mode" value={`${selectedJob.location} (${selectedJob.mode})`} icon={<MapPinLine size={20} weight="fill"/>} />
               <DetailBox label="Eligible Course" value={selectedJob.course} icon={<GraduationCap size={20} weight="fill"/>} />
+              {/* 🚨 REPLACED BROKEN ICON WITH MONEY ICON */}
               <DetailBox label="Salary" value={selectedJob.salary} icon={<Money size={20} weight="fill"/>} />
               <DetailBox label="Experience" value={selectedJob.experience} icon={<Clock size={20} weight="fill"/>} />
               <DetailBox label="Qualification" value={selectedJob.qualification} icon={<BookOpen size={20} weight="fill"/>} />
-              <DetailBox label="Gender Pref." value={selectedJob.gender} icon={<GenderIntersex size={20} weight="fill"/>} />
+              {/* 🚨 REPLACED BROKEN ICON WITH USERS ICON */}
+              <DetailBox label="Gender Pref." value={selectedJob.gender} icon={<Users size={20} weight="fill"/>} />
             </div>
 
             {selectedJob.description && (
@@ -360,7 +375,7 @@ export default function Vacancies() {
         <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsApplicantsModalOpen(false); }}>
           <div className="premium-modal glass-panel" style={{ maxWidth: '900px', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '85vh' }}>
             
-            <div className="modal-header" style={{ padding: '25px', background: 'rgba(15, 23, 42, 0.95)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+            <div className="modal-header" style={{ padding: '25px', background: 'rgba(15, 23, 42, 0.95)', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: 0 }}>
               <div>
                 <h2>Applicants List</h2>
                 <div className="modal-subtitle">{selectedJob.id} | {selectedJob.company}</div>
@@ -420,12 +435,10 @@ export default function Vacancies() {
       <style>{`
         .premium-dashboard-wrapper { font-family: 'Inter', sans-serif; color: #f8fafc; }
         
-        /* Glass Panels */
         .glass-panel { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); }
         .hover-lift { transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); cursor: pointer; }
         .hover-lift:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7); border-color: rgba(255, 255, 255, 0.1); background: rgba(30, 41, 59, 0.8); }
 
-        /* Hero */
         .top-hero-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 20px; }
         .hero-text h1 { font-size: 2.2rem; font-weight: 800; margin: 0 0 5px 0; color: #fff; }
         .hero-text p { color: #94a3b8; margin: 0; font-size: 1rem; }
@@ -434,7 +447,6 @@ export default function Vacancies() {
         .premium-btn.secondary { background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1); }
         .premium-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
-        /* Admin Mini Dash */
         .mini-dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
         .kpi-card { border-radius: 16px; padding: 20px; }
         .kpi-top { display: flex; justify-content: space-between; align-items: flex-start; }
@@ -446,7 +458,6 @@ export default function Vacancies() {
         .kpi-icon.purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.3); }
         .kpi-icon.red { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
 
-        /* Control Action Bar */
         .control-action-bar { border-radius: 16px; padding: 15px; margin-bottom: 30px; display: flex; flex-direction: column; gap: 15px; }
         .segmented-tabs { display: flex; background: rgba(0,0,0,0.3); padding: 5px; border-radius: 12px; width: fit-content; border: 1px solid rgba(255,255,255,0.05); }
         .seg-tab { background: transparent; border: none; padding: 8px 24px; color: #94a3b8; font-weight: bold; font-size: 0.9rem; border-radius: 8px; cursor: pointer; transition: 0.3s; }
@@ -461,17 +472,14 @@ export default function Vacancies() {
         .border-purple { border-color: rgba(168, 85, 247, 0.3); } .border-purple:focus { border-color: #a855f7; }
         .border-green { border-color: rgba(16, 185, 129, 0.3); } .border-green:focus { border-color: #10b981; }
 
-        /* Empty State */
         .empty-state-card { background: rgba(15, 23, 42, 0.5); border: 1px dashed rgba(255,255,255,0.1); border-radius: 16px; padding: 50px 20px; text-align: center; color: #94a3b8; font-size: 1.1rem; font-weight: bold; }
         .text-blue { color: #3b82f6; }
 
-        /* State Grouping */
         .state-group-section { margin-bottom: 40px; }
         .state-header { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; opacity: 0.8; }
         .state-title { margin: 0; font-size: 1.2rem; font-weight: 900; letter-spacing: 2px; color: #cbd5e1; text-transform: uppercase; }
         .state-line { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0) 100%); }
 
-        /* Job Cards Grid */
         .job-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; }
         .job-card { border-radius: 20px; padding: 20px; display: flex; flex-direction: column; position: relative; overflow: hidden; }
         .jc-hover-actions { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; opacity: 0; transition: 0.3s ease; border-radius: 20px; }
@@ -502,7 +510,6 @@ export default function Vacancies() {
         .jc-deadline { font-size: 0.75rem; color: #64748b; font-weight: 500; }
         .jc-applicants { display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; border: 1px solid rgba(255,255,255,0.05); }
 
-        /* Modals */
         .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); z-index: 99999; display: flex; justify-content: center; align-items: center; padding: 20px; }
         .premium-modal { width: 100%; max-width: 800px; max-height: 90vh; overflow-y: auto; border-radius: 24px; padding: 30px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
         .modal-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px; margin-bottom: 20px; }
@@ -518,7 +525,6 @@ export default function Vacancies() {
         .desc-title { font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 10px; font-weight: bold; letter-spacing: 0.5px; }
         .desc-content { color: #e2e8f0; font-size: 0.95rem; line-height: 1.6; white-space: pre-wrap; }
 
-        /* Clean List (Applicants Modal) */
         .clean-list { display: flex; flex-direction: column; gap: 10px; }
         .clean-row { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: rgba(0, 0, 0, 0.2); border-radius: 12px; border: 1px solid rgba(255,255,255,0.02); transition: 0.2s; }
         .hover-bg:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); }

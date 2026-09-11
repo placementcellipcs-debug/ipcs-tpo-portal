@@ -1460,7 +1460,8 @@ exports.getClients = (req, res) => {
         logo: getValByHeader(row, ['companylogo', 'logo']) || '', 
         mailStatus: getValByHeader(row, ['mailstatus']) || 'Pending', 
         documentStatus: getValByHeader(row, ['documentstatus', 'docstatus']) || 'Pending', 
-        mouLink: getValByHeader(row, ['mou', 'moulink']) || '' 
+        mouLink: getValByHeader(row, ['mou', 'moulink']) || '',
+        tpoName: officer || 'Unknown' // 🚨 ADDED TPO NAME FOR ADMINS
       });
     }
   });
