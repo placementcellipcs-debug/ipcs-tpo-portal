@@ -50,7 +50,7 @@ export default function Dashboard() {
   const DOMAIN_COLORS = ['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#ec4899', '#0ea5e9'];
 
   // ---------------------------------------------------------
-  // ⚙️ DATA PROCESSING
+  // ⚙️ DATA PROCESSING (CRASH-PROOF)
   // ---------------------------------------------------------
   const parseDateRobust = (dStr) => {
     if (!dStr) return null;
@@ -78,8 +78,10 @@ export default function Dashboard() {
   };
 
   const processApps = (tpoLogs) => {
+    if (!Array.isArray(tpoLogs)) return;
     const deduped = {};
     tpoLogs.forEach(row => {
+      if (!row) return;
       const getVal = (s) => row[Object.keys(row).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase()))] || '';
       const log = {
         name: getVal('studentname') || getVal('name'), roll: getVal('roll'), company: getVal('company'),
@@ -126,8 +128,7 @@ export default function Dashboard() {
     setTrendData(newTrend);
     setDomainData(Object.keys(domCount).map((k) => ({ name: k, value: domCount[k] })).sort((a,b) => b.value - a.value).slice(0, 5));
     setPipeline({ applied: pApp, interview: pInt, offers: pOff, placed: pPl });
-    setAllPlaced(placedRecent);
-    setRecentPlacements(placedRecent.sort((a, b) => new Date(parseDateRobust(b.date)||0) - new Date(parseDateRobust(a.date)||0)).slice(0, 4));
+    setRecentPlacements(placedRecent.sort((a, b) => (parseDateRobust(b.date)?.getTime()||0) - (parseDateRobust(a.date)?.getTime()||0)).slice(0, 4));
   };
 
   useEffect(() => {
@@ -151,9 +152,9 @@ export default function Dashboard() {
 
   const today = new Date();
   today.setHours(0,0,0,0);
-  const upcomingEvents = events.filter(e => {
-    const pd = parseDateRobust(e.date); return pd && pd >= today && !e.title?.toLowerCase().includes('dummy');
-  }).sort((a,b) => parseDateRobust(a.date) - parseDateRobust(b.date)).slice(0, 4);
+  const upcomingEvents = (events || []).filter(e => {
+    const pd = parseDateRobust(e?.date); return pd && pd >= today && !e?.title?.toLowerCase().includes('dummy');
+  }).sort((a,b) => (parseDateRobust(a.date)?.getTime()||0) - (parseDateRobust(b.date)?.getTime()||0)).slice(0, 4);
 
   // Pipeline Math
   const totalPipe = pipeline.applied + pipeline.interview + pipeline.offers + pipeline.placed || 1;
@@ -161,12 +162,13 @@ export default function Dashboard() {
   const pInt = ((pipeline.interview / totalPipe) * 100).toFixed(0);
   const pOff = ((pipeline.offers / totalPipe) * 100).toFixed(0);
   const pPlc = ((pipeline.placed / totalPipe) * 100).toFixed(0);
+  const placementRate = stats.totalStudents > 0 ? ((stats.placed / stats.totalStudents) * 100).toFixed(1) : '0.0';
 
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       return (
         <div style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #334155', padding: '12px', borderRadius: '8px', color: '#fff' }}>
-          <p style={{ margin: '0 0 8px 0', borderBottom: '1px solid #334155', paddingBottom: '6px', fontSize: '0.9rem', fontWeight: 'bold' }}>{label}</p>
+          {label && <p style={{ margin: '0 0 8px 0', borderBottom: '1px solid #334155', paddingBottom: '6px', fontSize: '0.9rem', fontWeight: 'bold' }}>{label}</p>}
           {payload.map((entry, index) => (
             <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', fontSize: '0.8rem' }}>
               <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: entry.color }}></div>
@@ -184,9 +186,7 @@ export default function Dashboard() {
     <Layout>
       <div className="premium-dashboard-wrapper">
         
-        {/* =========================================================
-            HEADER & FLOATING KPIS (Matches Top of Image)
-        ========================================================= */}
+        {/* HEADER & FLOATING KPIS */}
         <div className="top-hero-section">
           <div className="hero-text">
             <h1>Welcome in, {tpoData?.name?.split(' ')[0] || 'Officer'}</h1>
@@ -218,9 +218,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* =========================================================
-            SEGMENTED PROGRESS BAR (Matches Top Left of Image)
-        ========================================================= */}
+        {/* SEGMENTED PROGRESS BAR */}
         <div className="segmented-pipeline-container">
           <div className="seg-labels">
             <span style={{ width: `${pApp}%` }}>Applications ({pipeline.applied})</span>
@@ -236,12 +234,10 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* =========================================================
-            MAIN BENTO GRID (Matches Center of Image)
-        ========================================================= */}
-        <div className="bento-master-grid">
+        {/* MAIN BENTO GRID */}
+        <div className="bento-master-grid" style={{ marginBottom: '20px' }}>
           
-          {/* LEFT: PROFILE CARD */}
+          {/* PROFILE CARD */}
           <div className="bento-card profile-bento">
             <div className="profile-img-container">
               {tpoData?.photo ? (
@@ -263,7 +259,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* MIDDLE: TRENDS & DONUT */}
+          {/* AREA CHART */}
           <div className="bento-card charts-bento">
             <div className="card-header">
               <h3>Progress Trends <ArrowUpRight size={16} color="#64748b"/></h3>
@@ -273,13 +269,13 @@ export default function Dashboard() {
                 <span style={{color: '#a855f7'}}>● Apps</span>
               </div>
             </div>
-            <div style={{ height: '220px', width: '100%' }}>
+            <div style={{ height: '210px', width: '100%' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={trendData} margin={{ top: 10, right: 0, left: -20, bottom: 0 }}>
                   <defs>
-                    <linearGradient id="colorApps" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/><stop offset="95%" stopColor="#a855f7" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="colorOff" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="colorPl" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="colorApps" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#a855f7" stopOpacity={0.4}/><stop offset="95%" stopColor="#a855f7" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="colorOff" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.4}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="colorPl" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
                   </defs>
                   <XAxis dataKey="m" stroke="#475569" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
                   <YAxis stroke="#475569" tick={{ fill: '#64748b', fontSize: 10 }} axisLine={false} tickLine={false} />
@@ -292,15 +288,16 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* DONUT CHART */}
           <div className="bento-card circular-bento">
-            <div className="card-header">
-              <h3>Domain Spread <ArrowUpRight size={16} color="#64748b"/></h3>
+            <div className="card-header" style={{marginBottom:'0'}}>
+              <h3>Domain Spread</h3>
             </div>
             <div className="donut-wrapper">
-              <ResponsiveContainer width="100%" height={180}>
+              <ResponsiveContainer width="100%" height={160}>
                 <PieChart>
                   <Tooltip content={<CustomTooltip />} />
-                  <Pie data={domainData} cx="50%" cy="50%" innerRadius={55} outerRadius={75} paddingAngle={4} dataKey="value" stroke="none">
+                  <Pie data={domainData} cx="50%" cy="50%" innerRadius={45} outerRadius={65} paddingAngle={4} dataKey="value" stroke="none">
                     {domainData.map((e, i) => <Cell key={`c-${i}`} fill={DOMAIN_COLORS[i % DOMAIN_COLORS.length]} /> )}
                   </Pie>
                 </PieChart>
@@ -318,11 +315,11 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* RIGHT: DARK TASK LIST (Matches "Onboarding Task" from Image) */}
+          {/* DARK TASK LIST (Upcoming Schedule) */}
           <div className="bento-card dark-task-list">
             <div className="dark-task-header">
               <h3>Upcoming Schedule</h3>
-              <span className="task-count">{upcomingEvents.length}/{events.length}</span>
+              <span className="task-count">{upcomingEvents.length}</span>
             </div>
             <div className="dark-tasks">
               {upcomingEvents.length === 0 ? <p className="empty-tasks">No events scheduled.</p> :
@@ -331,24 +328,23 @@ export default function Dashboard() {
                     <div className="dt-icon"><CalendarCheck size={18} weight="fill"/></div>
                     <div className="dt-info">
                       <h4>{evt.title}</h4>
-                      <p>{evt.date.substring(0,10)} | {evt.location || 'Online'}</p>
+                      <p>{evt.date?.substring(0,10)} | {evt.location || 'Online'}</p>
                     </div>
-                    <div className="dt-check"><CheckCircle size={20} weight="fill"/></div>
+                    <div className="dt-check"><CheckCircle size={18} weight="fill"/></div>
                   </div>
               ))}
             </div>
           </div>
+
         </div>
 
-        {/* =========================================================
-            BOTTOM: QUICK ACCESS & PLACEMENTS (Tight Layout)
-        ========================================================= */}
-        <div className="bottom-bento-grid">
+        {/* BOTTOM: PLACEMENTS, ACTIONS, QUICK ACCESS */}
+        <div className="bottom-bento-grid" style={{ marginBottom: '30px' }}>
           
           <div className="bento-card" style={{ gridColumn: 'span 2' }}>
             <div className="card-header">
               <h3>Recent Placements</h3>
-              <button className="text-link" onClick={()=>navigate('/placed')}>View All</button>
+              <button className="text-link" onClick={()=>navigate('/placed')}>View All →</button>
             </div>
             <div className="clean-list">
               {recentPlacements.length > 0 ? recentPlacements.map((p, i) => (
@@ -384,7 +380,7 @@ export default function Dashboard() {
                 </div>
               )) : (
                 <div className="empty-state">
-                  <span style={{ fontSize: '2rem' }}>🎉</span>
+                  <span style={{ fontSize: '1.8rem' }}>🎉</span>
                   <p>All clear! No active student issues.</p>
                 </div>
               )}
@@ -394,96 +390,92 @@ export default function Dashboard() {
           <div className="bento-card">
             <h3>Quick Access</h3>
             <div className="quick-access-grid">
-              <div className="qa-btn" onClick={()=>navigate('/students')}><Student size={24} color="#3b82f6" weight="fill"/><span>Students</span></div>
-              <div className="qa-btn" onClick={()=>navigate('/exams')}><NotePencil size={24} color="#f59e0b" weight="fill"/><span>Exams</span></div>
-              <div className="qa-btn" onClick={()=>navigate('/study-materials')}><BookOpen size={24} color="#ec4899" weight="fill"/><span>Material</span></div>
-              <div className="qa-btn" onClick={()=>navigate('/clients')}><FolderOpen size={24} color="#0ea5e9" weight="fill"/><span>Docs</span></div>
+              <div className="qa-btn" onClick={()=>navigate('/students')}><Student size={22} color="#3b82f6" weight="fill"/><span>Students</span></div>
+              <div className="qa-btn" onClick={()=>navigate('/exams')}><NotePencil size={22} color="#f59e0b" weight="fill"/><span>Exams</span></div>
+              <div className="qa-btn" onClick={()=>navigate('/study-materials')}><BookOpen size={22} color="#ec4899" weight="fill"/><span>Material</span></div>
+              <div className="qa-btn" onClick={()=>navigate('/clients')}><FolderOpen size={22} color="#0ea5e9" weight="fill"/><span>Docs</span></div>
               
-              {isTpo && <div className="qa-btn" onClick={()=>navigate('/placement-drives')}><CalendarCheck size={24} color="#a855f7" weight="fill"/><span>Drives</span></div>}
-              {isTpo && <div className="qa-btn" onClick={()=>navigate('/tracker')}><ListChecks size={24} color="#10b981" weight="fill"/><span>Tracker</span></div>}
-              {isTpo && <div className="qa-btn" onClick={()=>navigate('/talentino')}><Users size={24} color="#eab308" weight="fill"/><span>Talentino</span></div>}
-              {showReports && <div className="qa-btn" onClick={()=>navigate('/reports')}><ChartBar size={24} color="#3b82f6" weight="fill"/><span>Reports</span></div>}
+              {isTpo && <div className="qa-btn" onClick={()=>navigate('/placement-drives')}><CalendarCheck size={22} color="#a855f7" weight="fill"/><span>Drives</span></div>}
+              {isTpo && <div className="qa-btn" onClick={()=>navigate('/tracker')}><ListChecks size={22} color="#10b981" weight="fill"/><span>Tracker</span></div>}
+              {isTpo && <div className="qa-btn" onClick={()=>navigate('/talentino')}><Users size={22} color="#eab308" weight="fill"/><span>Talentino</span></div>}
+              {showReports && <div className="qa-btn" onClick={()=>navigate('/reports')}><ChartBar size={22} color="#3b82f6" weight="fill"/><span>Reports</span></div>}
             </div>
           </div>
 
         </div>
 
         {/* ---------------------------------------------------------
-            🎨 CSS FOR "BENTO BOX" PREMIUM LAYOUT
+            🎨 STYLESHEET
         --------------------------------------------------------- */}
         <style>{`
-          .db-wrapper { font-family: 'Inter', sans-serif; color: #f8fafc; }
+          .premium-dashboard-wrapper { font-family: 'Inter', sans-serif; color: #f8fafc; }
           
           /* Hero Section */
-          .top-hero-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; flex-wrap: wrap; gap: 20px; }
-          .hero-text h1 { font-size: 2.2rem; font-weight: 800; margin: 0 0 5px 0; color: #fff; }
-          .hero-text p { color: #94a3b8; margin: 0; font-size: 1rem; }
-          
+          .top-hero-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 20px; }
+          .hero-text h1 { font-size: 2rem; font-weight: 800; margin: 0 0 5px 0; color: #fff; }
+          .hero-text p { color: #94a3b8; margin: 0; font-size: 0.95rem; }
+          .wave-emoji { display: inline-block; animation: waveAnim 2s infinite; transform-origin: 70% 70%; }
+          @keyframes waveAnim { 0% { transform: rotate(0deg); } 10% { transform: rotate(14deg); } 20% { transform: rotate(-8deg); } 30% { transform: rotate(14deg); } 40% { transform: rotate(-4deg); } 50% { transform: rotate(10deg); } 60% { transform: rotate(0deg); } 100% { transform: rotate(0deg); } }
+
           /* Floating KPIs */
-          .floating-kpis { display: flex; gap: 40px; align-items: center; }
-          .f-kpi { display: flex; align-items: center; gap: 15px; }
-          .f-icon { width: 45px; height: 45px; border-radius: 12px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; }
-          .f-data h2 { font-size: 2.2rem; font-weight: 300; margin: 0; color: #fff; line-height: 1; font-family: monospace; }
-          .f-data p { font-size: 0.75rem; font-weight: bold; color: #64748b; margin: 4px 0 0 0; text-transform: uppercase; letter-spacing: 0.5px; }
-          
-          @media (max-width: 900px) {
-            .top-hero-section { flex-direction: column; align-items: flex-start; }
-            .floating-kpis { width: 100%; justify-content: space-between; gap: 10px; }
-            .f-data h2 { font-size: 1.5rem; }
-          }
+          .floating-kpis { display: flex; gap: 30px; align-items: center; }
+          .f-kpi { display: flex; align-items: center; gap: 12px; }
+          .f-icon { width: 40px; height: 40px; border-radius: 10px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.05); display: flex; align-items: center; justify-content: center; }
+          .f-data h2 { font-size: 1.8rem; font-weight: 300; margin: 0; color: #fff; line-height: 1; font-family: monospace; }
+          .f-data p { font-size: 0.7rem; font-weight: bold; color: #64748b; margin: 2px 0 0 0; text-transform: uppercase; letter-spacing: 0.5px; }
 
           /* Segmented Bar */
-          .segmented-pipeline-container { background: #111827; border-radius: 16px; padding: 25px; margin-bottom: 25px; border: 1px solid #1e293b; }
-          .seg-labels { display: flex; width: 100%; margin-bottom: 12px; }
-          .seg-labels span { font-size: 0.75rem; color: #cbd5e1; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
-          .seg-bar-wrapper { width: 100%; height: 16px; background: #0f1523; border-radius: 20px; display: flex; overflow: hidden; box-shadow: inset 0 2px 5px rgba(0,0,0,0.5); }
+          .segmented-pipeline-container { background: #111827; border-radius: 14px; padding: 20px; margin-bottom: 20px; border: 1px solid #1e293b; }
+          .seg-labels { display: flex; width: 100%; margin-bottom: 10px; }
+          .seg-labels span { font-size: 0.7rem; color: #cbd5e1; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+          .seg-bar-wrapper { width: 100%; height: 12px; background: #0f1523; border-radius: 20px; display: flex; overflow: hidden; box-shadow: inset 0 2px 5px rgba(0,0,0,0.5); }
           .seg-fill { height: 100%; transition: width 1s ease-in-out; }
 
           /* Bento Master Grid */
-          .bento-master-grid { display: grid; grid-template-columns: 1fr 2fr 1fr 1.2fr; gap: 20px; margin-bottom: 20px; }
-          .bento-card { background: #111827; border: 1px solid #1e293b; border-radius: 24px; padding: 25px; position: relative; overflow: hidden; }
+          .bento-master-grid { display: grid; grid-template-columns: 1fr 2fr 1fr 1.2fr; gap: 20px; }
+          .bento-card { background: #111827; border: 1px solid #1e293b; border-radius: 20px; padding: 20px; position: relative; overflow: hidden; display: flex; flex-direction: column; }
           
           @media (max-width: 1300px) { .bento-master-grid { grid-template-columns: 1fr 1fr; } }
           @media (max-width: 768px) { .bento-master-grid { grid-template-columns: 1fr; } }
 
           /* Left: Profile Card */
           .profile-bento { display: flex; flex-direction: column; align-items: center; text-align: center; justify-content: center; background: linear-gradient(180deg, #1e293b 0%, #0f1523 100%); }
-          .profile-img-container { width: 100px; height: 100px; border-radius: 30px; margin-bottom: 15px; overflow: hidden; border: 3px solid #334155; box-shadow: 0 10px 20px rgba(0,0,0,0.5); }
+          .profile-img-container { width: 80px; height: 80px; border-radius: 24px; margin-bottom: 12px; overflow: hidden; border: 2px solid #334155; }
           .profile-img { width: 100%; height: 100%; object-fit: cover; }
-          .profile-fallback { width: 100%; height: 100%; background: #3b82f6; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 2.5rem; font-weight: bold; }
-          .profile-info h2 { font-size: 1.2rem; margin: 0 0 5px 0; color: #fff; }
-          .profile-info p { font-size: 0.85rem; color: #94a3b8; margin: 0; }
-          .profile-badge { background: rgba(255,255,255,0.05); padding: 6px 16px; border-radius: 20px; font-size: 0.75rem; font-weight: bold; margin: 15px 0; border: 1px solid rgba(255,255,255,0.1); }
-          .profile-stats { display: flex; gap: 20px; width: 100%; border-top: 1px solid #1e293b; padding-top: 15px; justify-content: center; }
-          .p-stat { display: flex; flex-direction: column; align-items: center; gap: 4px; }
-          .p-stat span { font-size: 0.7rem; color: #64748b; text-transform: uppercase; }
-          .p-stat strong { font-size: 0.85rem; color: #fff; }
+          .profile-fallback { width: 100%; height: 100%; background: #3b82f6; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: bold; }
+          .profile-info h2 { font-size: 1.1rem; margin: 0 0 3px 0; color: #fff; }
+          .profile-info p { font-size: 0.8rem; color: #94a3b8; margin: 0; }
+          .profile-badge { background: rgba(255,255,255,0.05); padding: 4px 12px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; margin: 12px 0; border: 1px solid rgba(255,255,255,0.1); }
+          .profile-stats { display: flex; gap: 15px; width: 100%; border-top: 1px solid #1e293b; padding-top: 12px; justify-content: center; }
+          .p-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+          .p-stat span { font-size: 0.65rem; color: #64748b; text-transform: uppercase; }
+          .p-stat strong { font-size: 0.8rem; color: #fff; }
 
           /* Charts Details */
-          .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-          .card-header h3 { margin: 0; font-size: 1.1rem; color: #fff; display: flex; align-items: center; gap: 8px; }
-          .chart-legend-mini { display: flex; gap: 12px; font-size: 0.75rem; font-weight: bold; }
+          .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
+          .card-header h3 { margin: 0; font-size: 1rem; color: #fff; display: flex; align-items: center; gap: 6px; }
+          .chart-legend-mini { display: flex; gap: 10px; font-size: 0.7rem; font-weight: bold; }
           
-          .donut-wrapper { position: relative; width: 100%; height: 180px; }
+          .donut-wrapper { position: relative; width: 100%; height: 160px; }
           .donut-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; }
-          .donut-center h3 { margin: 0; font-size: 1.8rem; color: #fff; }
-          .donut-center p { margin: 0; font-size: 0.75rem; color: #64748b; }
-          .mini-legend { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px; justify-content: center; }
-          .ml-item { font-size: 0.75rem; color: #94a3b8; display: flex; align-items: center; gap: 6px; }
-          .ml-item span { width: 8px; height: 8px; border-radius: 2px; }
+          .donut-center h3 { margin: 0; font-size: 1.4rem; color: #fff; }
+          .donut-center p { margin: 0; font-size: 0.65rem; color: #64748b; }
+          .mini-legend { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; justify-content: center; }
+          .ml-item { font-size: 0.7rem; color: #94a3b8; display: flex; align-items: center; gap: 5px; }
+          .ml-item span { width: 6px; height: 6px; border-radius: 2px; }
 
           /* Right: Dark Task List (Matches Onboarding Tasks) */
-          .dark-task-list { background: #1a1a1a; border: none; box-shadow: inset 0 2px 10px rgba(0,0,0,0.5); }
-          .dark-task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #333; }
-          .dark-task-header h3 { margin: 0; font-size: 1rem; color: #fff; }
-          .task-count { font-size: 1.2rem; color: #fff; font-weight: 300; }
-          .dark-tasks { display: flex; flex-direction: column; gap: 15px; }
-          .dark-task-item { display: flex; align-items: center; gap: 15px; }
-          .dt-icon { width: 32px; height: 32px; border-radius: 10px; background: rgba(255,255,255,0.05); color: #94a3b8; display: flex; align-items: center; justify-content: center; }
-          .dt-info { flex: 1; }
-          .dt-info h4 { margin: 0 0 4px 0; font-size: 0.85rem; color: #e2e8f0; font-weight: 600; }
-          .dt-info p { margin: 0; font-size: 0.7rem; color: #64748b; }
-          .dt-check { color: #f59e0b; }
+          .dark-task-list { background: #151b26; border: none; box-shadow: inset 0 2px 10px rgba(0,0,0,0.3); }
+          .dark-task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #222e3f; }
+          .dark-task-header h3 { margin: 0; font-size: 0.95rem; color: #fff; }
+          .task-count { font-size: 1rem; color: #fff; font-weight: 300; }
+          .dark-tasks { display: flex; flex-direction: column; gap: 12px; }
+          .dark-task-item { display: flex; align-items: center; gap: 12px; }
+          .dt-icon { width: 28px; height: 28px; border-radius: 8px; background: rgba(255,255,255,0.05); color: #94a3b8; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+          .dt-info { flex: 1; min-width: 0; }
+          .dt-info h4 { margin: 0 0 2px 0; font-size: 0.8rem; color: #e2e8f0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+          .dt-info p { margin: 0; font-size: 0.65rem; color: #64748b; }
+          .dt-check { color: #f59e0b; flex-shrink: 0; }
 
           /* Bottom Grid */
           .bottom-bento-grid { display: grid; grid-template-columns: 1.5fr 1fr 1fr; gap: 20px; }
@@ -491,28 +483,28 @@ export default function Dashboard() {
           @media (max-width: 768px) { .bottom-bento-grid { grid-template-columns: 1fr; } }
 
           /* Clean Lists */
-          .text-link { background: none; border: none; color: #3b82f6; cursor: pointer; font-size: 0.8rem; font-weight: bold; }
-          .clean-list { display: flex; flex-direction: column; gap: 10px; }
-          .clean-row { display: flex; justify-content: space-between; align-items: center; padding: 12px; background: rgba(255,255,255,0.02); border-radius: 12px; transition: 0.2s; }
+          .text-link { background: none; border: none; color: #3b82f6; cursor: pointer; font-size: 0.75rem; font-weight: bold; }
+          .clean-list { display: flex; flex-direction: column; gap: 8px; }
+          .clean-row { display: flex; justify-content: space-between; align-items: center; padding: 10px; background: rgba(255,255,255,0.02); border-radius: 10px; transition: 0.2s; }
           .clean-row:hover { background: #1e293b; }
-          .cl-left { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
-          .cl-avatar { width: 36px; height: 36px; border-radius: 50%; background: #3b82f6; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1rem; flex-shrink: 0; }
-          .cl-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; flex-shrink: 0; background: rgba(255,255,255,0.05); }
+          .cl-left { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+          .cl-avatar { width: 32px; height: 32px; border-radius: 50%; background: #3b82f6; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 0.85rem; flex-shrink: 0; }
+          .cl-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 1.1rem; flex-shrink: 0; background: rgba(255,255,255,0.05); }
           .cl-icon.red { color: #ef4444; }
-          .cl-title { font-size: 0.9rem; font-weight: 600; color: #fff; margin-bottom: 2px; }
-          .cl-sub { font-size: 0.75rem; color: #94a3b8; }
+          .cl-title { font-size: 0.85rem; font-weight: 600; color: #fff; margin-bottom: 2px; }
+          .cl-sub { font-size: 0.7rem; color: #94a3b8; }
           .cl-right { text-align: right; flex-shrink: 0; }
-          .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 200px; }
-          .status-pill { padding: 4px 10px; border-radius: 20px; font-size: 0.7rem; font-weight: bold; display: inline-block; }
+          .truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px; }
+          .status-pill { padding: 3px 8px; border-radius: 12px; font-size: 0.65rem; font-weight: bold; display: inline-block; }
           .status-pill.green { background: rgba(16, 185, 129, 0.1); color: #10b981; }
 
           /* Quick Access */
-          .quick-access-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 10px; }
-          .qa-btn { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 16px; padding: 15px; display: flex; align-items: center; gap: 12px; cursor: pointer; transition: 0.2s; }
+          .quick-access-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 5px; }
+          .qa-btn { background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 12px 10px; display: flex; align-items: center; gap: 10px; cursor: pointer; transition: 0.2s; }
           .qa-btn:hover { background: #1e293b; border-color: #334155; transform: translateY(-2px); }
-          .qa-btn span { color: #cbd5e1; font-weight: 600; font-size: 0.85rem; }
+          .qa-btn span { color: #cbd5e1; font-weight: 600; font-size: 0.8rem; }
           
-          .empty-state { text-align: center; padding: 30px; color: #64748b; font-size: 0.85rem; border: 1px dashed #334155; border-radius: 12px; height: 100%; display: flex; flex-direction: column; justify-content: center; }
+          .empty-state { text-align: center; padding: 25px; color: #64748b; font-size: 0.8rem; border: 1px dashed #334155; border-radius: 10px; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; }
         `}</style>
       </div>
     </Layout>
