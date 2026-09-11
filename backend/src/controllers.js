@@ -1140,11 +1140,27 @@ exports.addEvent = async (req, res) => {
               </div>
               <h3 style="color: #ef4444; margin: 20px 0 10px 0; font-size: 16px;">&#9888;&#65039; Action Required</h3>
               <p>All concerned branches are requested to immediately inform all eligible students about this placement opportunity and encourage maximum participation.</p>
+              <p>Please ensure that the interested and eligible students strictly register for the drive through the IPCS Global Student Portal:</p>
+              
               <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0;">
                 <p style="margin: 0; font-size: 15px; color: #1e3a8a;">
                   &#127760; <b>Student Portal:</b> <a href="https://placement.ipcsglobal.info" target="_blank" style="color: #0284c7; font-weight: bold; text-decoration: underline;">placement.ipcsglobal.info</a>
                 </p>
               </div>
+
+              <p style="color: #b91c1c; font-weight: bold;">Portal registration is mandatory for participation in the placement drive.</p>
+              <p>Students must complete their registration through the portal within the given registration period. Branch-level confirmation, WhatsApp confirmation, or verbal confirmation will not be considered as a substitute for portal registration.</p>
+              <p style="font-weight: bold; margin-bottom: 5px;">We request all branches to ensure that:</p>
+              <ul style="padding-left: 20px; margin-top: 5px;">
+                <li style="margin-bottom: 6px;">All eligible students are informed about the drive.</li>
+                <li style="margin-bottom: 6px;">Interested students complete their registration through the Student Portal.</li>
+                <li style="margin-bottom: 6px;">Students are reminded to register strictly through the portal before the registration deadline.</li>
+                <li style="margin-bottom: 6px;">Registered students are properly informed about the drive and instructed to attend on time.</li>
+              </ul>
+              <p>Your support and coordination are essential to ensure smooth execution of the placement drive and maximum student participation.</p>
+              <p>For any clarification, please coordinate with the Placement Team.</p>
+              <p>Thank you for your cooperation.</p>
+
               <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
                 <p style="margin: 0 0 3px 0;">Regards,</p>
                 <p style="margin: 0 0 2px 0; font-weight: bold;">Placement Team</p>
@@ -1179,6 +1195,8 @@ exports.addEvent = async (req, res) => {
 
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
+          
+          <!-- HEADER SECTION -->
           <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #a855f7;">
             <div style="margin-bottom: 12px;">
               <img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
@@ -1187,12 +1205,16 @@ exports.addEvent = async (req, res) => {
             <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px;">Talentino Session Notification</h2>
             <p style="color: #94a3b8; margin: 5px 0 0 0; font-size: 13px;">IPCS Global Placement Cell</p>
           </div>
+
+          <!-- BODY SECTION -->
           <div style="background-image: url('${watermark}'); background-repeat: no-repeat; background-position: center center; background-size: cover; background-color: #ffffff;">
             <div style="padding: 35px 30px; background-color: rgba(255, 255, 255, 0.94); color: #334155; font-size: 15px; line-height: 1.65;">
+              
               <p style="font-size: 16px; font-weight: bold; color: #0f1523; margin-top: 0;">Dear Team,</p>
               <p>Greetings from the Placement Department, IPCS Global.</p>
               <p>This is to inform you that a Talentino Session has been scheduled at your branch. Kindly find the details below:</p>
               
+              <!-- DETAILS BOX -->
               <div style="background-color: rgba(248, 250, 252, 0.95); border: 1px solid #cbd5e1; border-left: 5px solid #a855f7; border-radius: 8px; padding: 20px; margin: 25px 0;">
                 <h3 style="margin: 0 0 12px 0; color: #0f1523; font-size: 15px; text-transform: uppercase;">&#128204; Talentino Session Details</h3>
                 <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
@@ -1203,13 +1225,32 @@ exports.addEvent = async (req, res) => {
                   <tr><td style="padding: 6px 0; color: #64748b; vertical-align: top;">Description:</td><td style="padding: 6px 0; color: #334155; white-space: pre-line;">${formattedDesc}</td></tr>
                 </table>
               </div>
+
+              <!-- ACTION REQUIRED SECTION -->
               <h3 style="color: #ef4444; margin: 20px 0 10px 0; font-size: 16px;">&#9888;&#65039; Action Required</h3>
               <p>The concerned branch is requested to inform the students about the scheduled Talentino session and ensure maximum participation.</p>
+              <p style="font-weight: bold; margin-bottom: 5px;">Please ensure that:</p>
+              <ul style="padding-left: 20px; margin-top: 5px;">
+                <li style="margin-bottom: 6px;">All concerned students are informed about the session in advance.</li>
+                <li style="margin-bottom: 6px;">Students are instructed to be present at the branch on time.</li>
+                <li style="margin-bottom: 6px;">The required arrangements are made at the branch for conducting the session smoothly.</li>
+                <li style="margin-bottom: 6px;">Students are encouraged to actively participate in all the activities conducted during Talentino.</li>
+                <li style="margin-bottom: 6px;">The concerned TPO coordinates with the branch team and students throughout the session.</li>
+              </ul>
+
+              <!-- BLUE NOTE BOX -->
               <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; margin: 20px 0;">
                 <p style="margin: 0; font-size: 14px; color: #1e3a8a;">
                   <b>Note:</b> No separate registration is required for the Talentino session. Students can participate directly as instructed by the concerned TPO.
                 </p>
               </div>
+
+              <!-- FOOTER TEXT -->
+              <p>The Talentino session is designed to engage students through interactive activities, challenges, and placement-oriented exercises, helping them improve their confidence, communication, aptitude, problem-solving, and overall placement readiness.</p>
+              <p>Your support and coordination are essential to ensure the smooth execution of the Talentino session and active student participation.</p>
+              <p>For any clarification or coordination, please connect with the Placement Team.<br/>Thank you for your cooperation.</p>
+
+              <!-- SIGN-OFF -->
               <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
                 <p style="margin: 0 0 3px 0;">Regards,</p>
                 <p style="margin: 0 0 2px 0; font-weight: bold;">Placement Team</p>
