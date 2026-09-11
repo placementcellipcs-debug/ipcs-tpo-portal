@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, Users, Eye, X, Prohibit, EnvelopeSimple, Phone, Plus, Funnel } from '@phosphor-icons/react';
+import { CircleNotch, Users, Eye, X, Prohibit, EnvelopeSimple, Phone, Plus, Funnel, Clock } from '@phosphor-icons/react';
 import Layout from './Layout';
 
 import { API_BASE } from './apiConfig';
@@ -18,8 +18,11 @@ export default function Vacancies() {
   
   // 🚨 RESTRICT ACCESS: ONLY TPO CAN ADD VACANCIES
   const upperRole = (tpoData?.role || '').toUpperCase();
+  const accessType = (tpoData?.accessType || '').toLowerCase();
+  
+  const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole.includes('MANAGER');
   const isTpo = upperRole.includes('TPO');
-  const canAddOpening = isTpo;
+  const canAddOpening = isTpo || isSuperAdmin;
 
   const isCourseSpecific = upperRole.includes('TRAINER') || upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
@@ -30,9 +33,11 @@ export default function Vacancies() {
   
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
-  
-  // 🚨 NEW STATUS FILTER
   const [statusFilter, setStatusFilter] = useState('All');
+  
+  // 🚨 NEW SUPER ADMIN FILTERS
+  const [tpoFilter, setTpoFilter] = useState('All');
+  const [monthYearFilter, setMonthYearFilter] = useState('All');
 
   const [selectedJob, setSelectedJob] = useState(null);
   const [isJobDetailsModalOpen, setIsJobDetailsModalOpen] = useState(false);
@@ -71,15 +76,34 @@ export default function Vacancies() {
     appsByJobId[jobId].push(app);
   });
 
-  // 🚨 ROBUST DATE PARSER (Fixes Expiry Bug)
+  // 🚨 ROBUST DATE PARSER
   const parseDate = (dateStr) => {
     if (!dateStr) return new Date(8640000000000000); 
-    const d = new Date(dateStr);
+    let cleanStr = typeof dateStr === 'string' ? dateStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dateStr;
+    if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
+      const parts = cleanStr.split(/[/-]/);
+      if (parts.length === 3) {
+        if (parts[2].length === 4) return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+        if (parts[0].length === 4) return new Date(`${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`);
+      }
+    }
+    const d = new Date(cleanStr);
     return isNaN(d) ? new Date(8640000000000000) : d;
   };
   
   const today = new Date();
   today.setHours(0,0,0,0);
+
+  // Extract unique TPOs and Month/Years for Dropdowns
+  const uniqueTPOs = [...new Set(vacancies.map(v => v.tpoName || 'Unknown').filter(n => n !== 'Unknown'))].sort();
+  
+  const uniqueMonths = [...new Set(vacancies.map(v => {
+    const d = parseDate(v.datePosted);
+    if (d && d.getFullYear() < 2050) {
+      return d.toLocaleString('en-us', { month: 'short', year: 'numeric' });
+    }
+    return 'Unknown';
+  }).filter(m => m !== 'Unknown'))].sort((a, b) => new Date(b) - new Date(a));
 
   const filteredVacs = vacancies.filter(v => {
     const matchQuery = (v.id || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -95,7 +119,7 @@ export default function Vacancies() {
        matchTrainerScope = vCourse.includes(myCourse) || myCourse.includes(vCourse);
     }
 
-    // 🚨 APPLY STATUS FILTER
+    // Status Filter
     const deadline = parseDate(v.lastDate);
     const isExpired = deadline < today || (v.status || '').toLowerCase().includes('expire');
     const isClosed = (v.status || '').toLowerCase().includes('close') || (v.status || '').toLowerCase().includes('no');
@@ -104,7 +128,21 @@ export default function Vacancies() {
                       (statusFilter === 'Open' && !isExpired && !isClosed) ||
                       (statusFilter === 'Expired' && (isExpired || isClosed));
 
-    return matchQuery && matchCourse && matchTrainerScope && statMatch;
+    // Super Admin Filters
+    const tpoMatch = tpoFilter === 'All' || (v.tpoName || 'Unknown') === tpoFilter;
+    
+    let monthMatch = true;
+    if (monthYearFilter !== 'All') {
+      const d = parseDate(v.datePosted);
+      if (d && d.getFullYear() < 2050) {
+        const dStr = d.toLocaleString('en-us', { month: 'short', year: 'numeric' });
+        monthMatch = dStr === monthYearFilter;
+      } else {
+        monthMatch = false;
+      }
+    }
+
+    return matchQuery && matchCourse && matchTrainerScope && statMatch && tpoMatch && monthMatch;
   });
 
   const groupedVacs = {};
@@ -116,7 +154,7 @@ export default function Vacancies() {
 
   return (
     <Layout>
-      <div className="page-container">
+      <div className="page-container" style={{ maxWidth: '1600px', margin: '0 auto' }}>
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '15px' }}>
           <div>
@@ -135,8 +173,8 @@ export default function Vacancies() {
           )}
         </div>
 
-        {/* 🚨 ADDED STATUS FILTER */}
-        <div className="header-controls" style={{ justifyContent: 'flex-start' }}>
+        {/* 🚨 UPDATED FILTER CONTROLS */}
+        <div className="header-controls" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>
           <input type="text" className="sleek-input" placeholder="Search ID or Company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           <select className="sleek-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
             <option value="All">All Courses</option>
@@ -150,6 +188,20 @@ export default function Vacancies() {
             <option value="Open">Open Now</option>
             <option value="Expired">Expired & Closed</option>
           </select>
+
+          {/* SUPER ADMIN ONLY FILTERS */}
+          {isSuperAdmin && (
+            <>
+              <select className="sleek-select" value={tpoFilter} onChange={(e) => setTpoFilter(e.target.value)} style={{ border: '1px solid #a855f7' }}>
+                <option value="All">All TPOs</option>
+                {uniqueTPOs.map((tpo, i) => <option key={i} value={tpo}>{tpo}</option>)}
+              </select>
+              <select className="sleek-select" value={monthYearFilter} onChange={(e) => setMonthYearFilter(e.target.value)} style={{ border: '1px solid #10b981' }}>
+                <option value="All">All Time</option>
+                {uniqueMonths.map((m, i) => <option key={i} value={m}>{m}</option>)}
+              </select>
+            </>
+          )}
         </div>
 
         {loading ? (
@@ -170,6 +222,8 @@ export default function Vacancies() {
                       <th>Job ID</th>
                       <th>Position & Company</th>
                       <th>Location & Mode</th>
+                      {/* Add Posted By column if Super Admin */}
+                      {isSuperAdmin && <th>Posted By & Date</th>}
                       <th>Status & Deadline</th>
                       <th style={{ textAlign: 'center' }}>Applicants</th>
                       <th style={{ textAlign: 'right' }}>Actions</th>
@@ -187,32 +241,46 @@ export default function Vacancies() {
                       const myApplicants = appsByJobId[v.id] || [];
                       const applicantCount = myApplicants.length;
 
+                      const datePostedObj = parseDate(v.datePosted);
+                      const datePostedStr = (datePostedObj && datePostedObj.getFullYear() < 2050) ? datePostedObj.toLocaleDateString() : 'N/A';
+
                       return (
                         <tr key={i}>
-                          <td style={{ color: '#38bdf8', fontWeight: 700 }}>{v.id}</td>
-                          <td>
+                          <td style={{ color: '#38bdf8', fontWeight: 700, verticalAlign: 'middle' }}>{v.id}</td>
+                          <td style={{ verticalAlign: 'middle' }}>
                             <div className="primary-text" style={{ fontWeight: 'bold', color: '#fff' }}>{v.position}</div>
                             <div className="sub-text" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{v.company}</div>
                           </td>
-                          <td>
+                          <td style={{ verticalAlign: 'middle' }}>
                             <div style={{ color: '#cbd5e1' }}>{v.location}</div>
                             <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{v.mode}</div>
                           </td>
-                          <td>
+                          
+                          {/* 🚨 NEW SUPER ADMIN COLUMN */}
+                          {isSuperAdmin && (
+                            <td style={{ verticalAlign: 'middle' }}>
+                              <div style={{ color: '#a855f7', fontWeight: 'bold', fontSize: '0.85rem' }}>{v.tpoName || 'Unknown'}</div>
+                              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '2px' }}>
+                                <Clock size={12} /> {datePostedStr}
+                              </div>
+                            </td>
+                          )}
+
+                          <td style={{ verticalAlign: 'middle' }}>
                             {statBadge}<br/>
-                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px', display: 'inline-block' }}>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '6px', display: 'inline-block' }}>
                               Ends: <strong style={{ color: isExpired ? '#ef4444' : '#f59e0b' }}>{v.lastDate}</strong>
                             </span>
                           </td>
                           
-                          <td style={{ textAlign: 'center' }}>
+                          <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: applicantCount > 0 ? 'rgba(56, 189, 248, 0.1)' : 'rgba(255,255,255,0.05)', color: applicantCount > 0 ? '#38bdf8' : 'var(--text-muted)', padding: '6px 12px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold' }}>
                               <Users size={16} weight={applicantCount > 0 ? "fill" : "regular"} />
                               {applicantCount} Applied
                             </div>
                           </td>
 
-                          <td style={{ textAlign: 'right' }}>
+                          <td style={{ textAlign: 'right', verticalAlign: 'middle' }}>
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
                               <button 
                                 className="btn-secondary" 

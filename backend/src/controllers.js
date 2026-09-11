@@ -942,7 +942,9 @@ exports.getVacancies = (req, res) => {
       experience: getValByHeader(row, ['experience']), 
       salary: getValByHeader(row, ['salary']), 
       gender: getValByHeader(row, ['genderpreference']), 
-      status: getValByHeader(row, ['status']) || 'Open'
+      status: getValByHeader(row, ['status']) || 'Open',
+      tpoName: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || 'Unknown',
+      datePosted: getValByHeader(row, ['timestamp', 'date', 'posteddate']) || ''
     };
   });
   res.json({ success: true, vacancies: vacs.reverse() });
