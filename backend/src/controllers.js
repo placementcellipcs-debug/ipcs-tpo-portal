@@ -1426,7 +1426,12 @@ exports.runDailyCron = async () => {
       html: html,
       attachments: attachments
     }, { name: companyName, email: companyEmail, type: 'Resume Delivery' }); 
+    
+    // 🚨 PAUSE FOR 5 SECONDS: Prevents Google from throwing "Connection Timeout"
+    console.log(`✅ Sent to ${companyName}. Pausing 5 seconds...`);
+    await new Promise(resolve => setTimeout(resolve, 5000));
   }
+  console.log("🎉 All daily resumes dispatched successfully!");
 };
 
 exports.triggerDailyCron = async (req, res) => {
