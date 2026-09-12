@@ -549,19 +549,23 @@ exports.getDashboardStats = (req, res) => {
 
     if (lastDateStr) {
       try {
-        let parsedDate;
-        if (lastDateStr.includes('/')) {
-          const parts = lastDateStr.split(/[/\s,.-]+/);
-          if (parts.length >= 3 && parts[2].length === 4) {
-            parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+        // 🚨 UNIVERSAL DATE EXTRACTOR: Chops off time (22:52:00 or 10:52 PM)
+        let cleanStr = lastDateStr.toString().trim().split(/[\s,]+/)[0];
+        let parsedDate = new Date(cleanStr); 
+
+        // Strictly parse MM/DD/YYYY to guarantee JS reads it correctly
+        if (cleanStr.includes('/')) {
+          const parts = cleanStr.split('/');
+          if (parts.length === 3 && parts[2].length === 4) {
+            // Converts MM/DD/YYYY to standard YYYY-MM-DD
+            parsedDate = new Date(`${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}T00:00:00`);
           }
-        } else {
-          parsedDate = new Date(lastDateStr);
         }
+
         if (parsedDate && !isNaN(parsedDate)) {
           if (parsedDate < todayStart) isExpired = true;
         }
-      } catch(e) {}
+      } catch(e) { console.error("Date Parse Error:", e); }
     }
 
     if ((status.includes('open') || status.includes('yes')) && !isExpired) {
@@ -1329,12 +1333,20 @@ exports.runDailyCron = async () => {
     const lastDateKey = getValByHeader(v, ['lastdate']);
     if (!lastDateKey) return false;
     try { 
-      let pd = lastDateKey;
-      if (pd.includes('/')) {
-        const parts = pd.split(/[/\s,.-]+/);
-        if (parts.length >= 3) pd = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      // 🚨 UNIVERSAL DATE EXTRACTOR: Chops off time (22:52:00 or 10:52 PM)
+      let cleanStr = lastDateKey.toString().trim().split(/[\s,]+/)[0];
+      let formattedDate = cleanStr;
+      
+      // Strictly map MM/DD/YYYY to YYYY-MM-DD
+      if (cleanStr.includes('/')) {
+        const parts = cleanStr.split('/');
+        if (parts.length === 3 && parts[2].length === 4) {
+           formattedDate = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
+        }
       }
-      return new Date(pd).toISOString().split('T')[0] === yStr; 
+      
+      // Compare perfectly formatted strings (e.g. "2026-09-11" === "2026-09-11")
+      return formattedDate === yStr; 
     } catch(e) { return false; }
   });
 
