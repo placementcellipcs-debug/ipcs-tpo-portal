@@ -549,23 +549,19 @@ exports.getDashboardStats = (req, res) => {
 
     if (lastDateStr) {
       try {
-        // 🚨 UNIVERSAL DATE EXTRACTOR: Chops off time (22:52:00 or 10:52 PM)
-        let cleanStr = lastDateStr.toString().trim().split(/[\s,]+/)[0];
-        let parsedDate = new Date(cleanStr); 
-
-        // Strictly parse MM/DD/YYYY to guarantee JS reads it correctly
-        if (cleanStr.includes('/')) {
-          const parts = cleanStr.split('/');
-          if (parts.length === 3 && parts[2].length === 4) {
-            // Converts MM/DD/YYYY to standard YYYY-MM-DD
-            parsedDate = new Date(`${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}T00:00:00`);
+        let parsedDate;
+        if (lastDateStr.includes('/')) {
+          const parts = lastDateStr.split(/[/\s,.-]+/);
+          if (parts.length >= 3 && parts[2].length === 4) {
+            parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
           }
+        } else {
+          parsedDate = new Date(lastDateStr);
         }
-
         if (parsedDate && !isNaN(parsedDate)) {
           if (parsedDate < todayStart) isExpired = true;
         }
-      } catch(e) { console.error("Date Parse Error:", e); }
+      } catch(e) {}
     }
 
     if ((status.includes('open') || status.includes('yes')) && !isExpired) {
@@ -1333,20 +1329,12 @@ exports.runDailyCron = async () => {
     const lastDateKey = getValByHeader(v, ['lastdate']);
     if (!lastDateKey) return false;
     try { 
-      // 🚨 UNIVERSAL DATE EXTRACTOR: Chops off time (22:52:00 or 10:52 PM)
-      let cleanStr = lastDateKey.toString().trim().split(/[\s,]+/)[0];
-      let formattedDate = cleanStr;
-      
-      // Strictly map MM/DD/YYYY to YYYY-MM-DD
-      if (cleanStr.includes('/')) {
-        const parts = cleanStr.split('/');
-        if (parts.length === 3 && parts[2].length === 4) {
-           formattedDate = `${parts[2]}-${parts[0].padStart(2, '0')}-${parts[1].padStart(2, '0')}`;
-        }
+      let pd = lastDateKey;
+      if (pd.includes('/')) {
+        const parts = pd.split(/[/\s,.-]+/);
+        if (parts.length >= 3) pd = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
       }
-      
-      // Compare perfectly formatted strings (e.g. "2026-09-11" === "2026-09-11")
-      return formattedDate === yStr; 
+      return new Date(pd).toISOString().split('T')[0] === yStr; 
     } catch(e) { return false; }
   });
 
@@ -1438,13 +1426,7 @@ exports.runDailyCron = async () => {
       html: html,
       attachments: attachments
     }, { name: companyName, email: companyEmail, type: 'Resume Delivery' }); 
-    
-    // 🚨 ADDED: Pause for 5 seconds before sending the next email to prevent Gmail from blocking us
-    console.log(`✅ Sent to ${companyName}. Pausing 5 seconds to prevent rate limits...`);
-    await new Promise(resolve => setTimeout(resolve, 5000));
   }
-  
-  console.log("🎉 All daily resumes dispatched successfully!");
 };
 
 exports.triggerDailyCron = async (req, res) => {
