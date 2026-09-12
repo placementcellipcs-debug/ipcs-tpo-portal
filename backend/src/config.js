@@ -327,7 +327,8 @@ async function sendIPCSMail(mailOptions, logDetails) {
     // 🟢 ATTEMPT 1: Google Apps Script
     try {
       console.log(`➡️  [1/3] Attempting Google Apps Script...`);
-      const res = await axios.post(process.env.APPS_SCRIPT_EMAIL_URL, appsPayload, { timeout: 12000 });
+      // 🚨 Increased timeout to 30 seconds to give Google plenty of time to reply "Success"
+      const res = await axios.post(process.env.APPS_SCRIPT_EMAIL_URL, appsPayload, { timeout: 30000 });
       if (!res.data || !res.data.success) throw new Error(res.data?.error || "Apps Script rejected payload (401/404)");
       success = true;
       console.log(`✅ Apps Script Success!`);
