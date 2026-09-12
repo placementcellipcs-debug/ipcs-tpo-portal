@@ -279,12 +279,13 @@ async function logMailToSheet(receiverName, receiverMail, mailType, subject, sta
 }
 
 const transporter = nodemailer.createTransport({ 
-  pool: true, // 🚨 Tells Gmail to keep the connection open for bulk sending
-  maxConnections: 1, // 🚨 Forces it to send one at a time
+  pool: true, 
+  maxConnections: 1, 
   maxMessages: 100,
   host: 'smtp.gmail.com', 
   port: 465, 
   secure: true, 
+  family: 4, // 🚨 PUTTING THIS BACK: Forces IPv4 to bypass Render's IPv6 network crash
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
 });
 
