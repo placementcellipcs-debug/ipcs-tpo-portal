@@ -154,6 +154,13 @@ app.post('/api/v1/assets/maintenance/resolve', assetControllers.resolveMaintenan
 // ---------------------------------------------------------
 // SERVER INITIALIZATION
 // ---------------------------------------------------------
-cron.schedule('00 10 * * *', controllers.runDailyCron);
+cron.schedule('00 10 * * *', async () => {
+  console.log("⏰ Executing Scheduled Resume Delivery...");
+  await controllers.runDailyCron();
+}, {
+  scheduled: true,
+  timezone: "Asia/Kolkata"
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`🚀 IPCS Backend is running on http://localhost:${PORT}`));
