@@ -278,30 +278,30 @@ async function logMailToSheet(receiverName, receiverMail, mailType, subject, sta
   } catch (e) { console.error("Failed to log mail to sheet:", e); }
 }
 
-const transporter = nodemailer.createTransport({ 
-  pool: true,         // 🚨 Keeps connection open for bulk emails
-  maxConnections: 1,  // 🚨 Forces sending one at a time to prevent spam blocks
-  maxMessages: 100,
-  host: 'smtp.gmail.com', 
-  port: 465, 
-  secure: true, 
-  family: 4,          // 🚨 CRITICAL: Forces IPv4 to bypass Render's IPv6 network crashes
+// =========================================================
+// 🚨 WATERFALL EMAIL ENGINE (Apps Script -> IPv4 -> IPv6)
+// =========================================================
+
+// Backup 1: SMTP over standard IPv4
+const transporterIPv4 = nodemailer.createTransport({ 
+  pool: true, maxConnections: 1, maxMessages: 100,
+  host: 'smtp.gmail.com', port: 465, secure: true, family: 4, 
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
 });
 
-// =========================================================
-// 🚨 APPS SCRIPT DISPATCH (Clean Separation)
-// =========================================================
+// Backup 2: SMTP over newer IPv6
+const transporterIPv6 = nodemailer.createTransport({ 
+  pool: true, maxConnections: 1, maxMessages: 100,
+  host: 'smtp.gmail.com', port: 465, secure: true, family: 6, 
+  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+});
+
 async function sendIPCSMail(mailOptions, logDetails) {
   try {
-    // Helper to strictly clean email strings
     const cleanEmails = (val) => {
       if (!val) return '';
       if (Array.isArray(val)) val = val.join(',');
-      return val.split(',')
-        .map(e => e.trim())
-        .filter(e => e.length > 5 && e.includes('@'))
-        .join(',');
+      return val.split(',').map(e => e.trim()).filter(e => e.length > 5 && e.includes('@')).join(',');
     };
 
     const formattedTo = cleanEmails(mailOptions.to) || 'placementcell.ipcs@gmail.com';
@@ -309,50 +309,66 @@ async function sendIPCSMail(mailOptions, logDetails) {
     const formattedBcc = cleanEmails(mailOptions.bcc);
 
     console.log(`\n📧 [MAIL DISPATCH] Subject: ${mailOptions.subject}`);
-    console.log(`➡️  TO:  ${formattedTo}`);
-    console.log(`➡️  CC:  ${formattedCc || 'None'}`);
-    console.log(`➡️  BCC: ${formattedBcc || 'None'}\n`);
-
-    if (process.env.EMAIL_MODE === 'APPS_SCRIPT') {
-      const emailWebAppUrl = process.env.APPS_SCRIPT_EMAIL_URL;
-      
-      const payload = { 
-        to: formattedTo, 
-        cc: formattedCc, 
-        bcc: formattedBcc, 
-        subject: mailOptions.subject, 
-        html: mailOptions.html, 
-        attachments: [] 
-      };
-
-      if (mailOptions.attachments && Array.isArray(mailOptions.attachments)) {
-        mailOptions.attachments.forEach(att => {
-          if (att.content || att.contentBytes) { 
-            const bufferToUse = att.content || Buffer.from(att.contentBytes, 'base64');
-            payload.attachments.push({ 
-              filename: att.filename, 
-              mimeType: 'application/pdf', 
-              contentBytes: bufferToUse.toString('base64') 
-            }); 
-          } else if (att.href) { 
-            payload.attachments.push({ filename: att.filename, href: att.href }); 
-          }
-        });
-      }
-
-      const res = await axios.post(emailWebAppUrl, payload);
-      if (!res.data && !res.data.success) throw new Error(res.data.error || "Apps Script returned false");
-      
-    } else {
-      await transporter.sendMail({ ...mailOptions, to: formattedTo, cc: formattedCc, bcc: formattedBcc });
-    }
     
+    // Package attachments for Apps Script
+    const appsPayload = { to: formattedTo, cc: formattedCc, bcc: formattedBcc, subject: mailOptions.subject, html: mailOptions.html, attachments: [] };
+    if (mailOptions.attachments && Array.isArray(mailOptions.attachments)) {
+      mailOptions.attachments.forEach(att => {
+        if (att.content || att.contentBytes) { 
+          const bufferToUse = att.content || Buffer.from(att.contentBytes, 'base64');
+          appsPayload.attachments.push({ filename: att.filename, mimeType: 'application/pdf', contentBytes: bufferToUse.toString('base64') }); 
+        } else if (att.href) { appsPayload.attachments.push({ filename: att.filename, href: att.href }); }
+      });
+    }
+
+    let success = false;
+    let finalErrorMessage = '';
+
+    // 🟢 ATTEMPT 1: Google Apps Script
+    try {
+      console.log(`➡️  [1/3] Attempting Google Apps Script...`);
+      const res = await axios.post(process.env.APPS_SCRIPT_EMAIL_URL, appsPayload, { timeout: 12000 });
+      if (!res.data || !res.data.success) throw new Error(res.data?.error || "Apps Script rejected payload (401/404)");
+      success = true;
+      console.log(`✅ Apps Script Success!`);
+    } catch (err1) {
+      finalErrorMessage = `Apps Script Failed: ${err1.message}`;
+      console.log(`❌ ${finalErrorMessage}`);
+      
+      // 🟡 ATTEMPT 2: SMTP IPv4
+      try {
+        console.log(`➡️  [2/3] Attempting SMTP (IPv4)...`);
+        await transporterIPv4.sendMail({ ...mailOptions, to: formattedTo, cc: formattedCc, bcc: formattedBcc });
+        success = true;
+        console.log(`✅ SMTP IPv4 Success!`);
+      } catch (err2) {
+        finalErrorMessage = `SMTP IPv4 Failed: ${err2.message}`;
+        console.log(`❌ ${finalErrorMessage}`);
+        
+        // 🔴 ATTEMPT 3: SMTP IPv6
+        try {
+          console.log(`➡️  [3/3] Attempting SMTP (IPv6)...`);
+          await transporterIPv6.sendMail({ ...mailOptions, to: formattedTo, cc: formattedCc, bcc: formattedBcc });
+          success = true;
+          console.log(`✅ SMTP IPv6 Success!`);
+        } catch (err3) {
+          finalErrorMessage = `SMTP IPv6 Failed: ${err3.message}`;
+          console.log(`❌ ${finalErrorMessage}`);
+        }
+      }
+    }
+
+    if (!success) {
+      throw new Error(`All 3 email servers blocked the request. Last Error: ${finalErrorMessage}`);
+    }
+
     if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, 'Success');
     return true;
+
   } catch (err) {
-    console.error("❌ Mail Dispatch Error:", err);
+    console.error("🚨 WATERFALL EXHAUSTED: Mail Dispatch Completely Failed.");
     if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, `Failed: ${err.message}`);
-    throw err;
+    throw err; // Throws error back to the controller to show the popup
   }
 }
 

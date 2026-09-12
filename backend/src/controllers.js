@@ -1306,7 +1306,15 @@ exports.addEvent = async (req, res) => {
       }
     }
     refreshCache(); 
-    res.json({ success: true, message: "Event added successfully", eventId: eventId });
+    
+    // 🚨 Check if the mail Options existed but failed to send
+    if (mailOptions && newRow.get(newRow._worksheet.headerValues.find(h => (h||'').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mailstatus')) === 'FAILED') {
+      const errorReason = newRow.get(newRow._worksheet.headerValues.find(h => (h||'').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mailerror')) || 'Unknown timeout';
+      // Returns success: true so the event saves and the modal closes, but triggers a warning popup text
+      return res.json({ success: true, message: `⚠️ EVENT SAVED, BUT EMAILS FAILED TO SEND! Reason: ${errorReason}`, eventId: eventId });
+    }
+
+    res.json({ success: true, message: "Event added and emails sent successfully!", eventId: eventId });
   } catch (error) { 
     console.error("Event add error:", error);
     res.status(500).json({ success: false, message: error.message }); 
