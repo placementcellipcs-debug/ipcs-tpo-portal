@@ -266,5 +266,34 @@
     width: 100% !important;
     min-width: 0 !important;
   }
-}
 
+  /* 7. LOGIN PAGE FIX: Forces the split-screen to stack vertically */
+  div[style*="height: 100vh"][style*="display: flex"],
+  .login-container,
+  .login-page {
+    flex-direction: column !important;
+    height: auto !important;
+    min-height: 100vh !important;
+    overflow-y: auto !important;
+  }
+
+  /* Forces both halves of the login page to take 100% width and wrap text nicely */
+  div[style*="height: 100vh"][style*="display: flex"] > div,
+  .login-container > div,
+  .login-page > div {
+    width: 100% !important;
+    min-width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    padding: 40px 20px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+  }
+
+  /* Shrinks the massive login text slightly so it fits beautifully on mobile */
+  div[style*="height: 100vh"] h1 {
+    font-size: 3rem !important;
+    line-height: 1.1 !important;
+  }
+}
