@@ -278,7 +278,15 @@ async function logMailToSheet(receiverName, receiverMail, mailType, subject, sta
   } catch (e) { console.error("Failed to log mail to sheet:", e); }
 }
 
-const transporter = nodemailer.createTransport({ host: 'smtp.gmail.com', port: 465, secure: true, family: 4, auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }});
+const transporter = nodemailer.createTransport({ 
+  pool: true, // 🚨 Tells Gmail to keep the connection open for bulk sending
+  maxConnections: 1, // 🚨 Forces it to send one at a time
+  maxMessages: 100,
+  host: 'smtp.gmail.com', 
+  port: 465, 
+  secure: true, 
+  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+});
 
 // =========================================================
 // 🚨 APPS SCRIPT DISPATCH (Clean Separation)

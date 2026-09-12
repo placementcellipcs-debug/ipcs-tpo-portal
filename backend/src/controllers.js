@@ -1438,7 +1438,13 @@ exports.runDailyCron = async () => {
       html: html,
       attachments: attachments
     }, { name: companyName, email: companyEmail, type: 'Resume Delivery' }); 
+    
+    // 🚨 ADDED: Pause for 5 seconds before sending the next email to prevent Gmail from blocking us
+    console.log(`✅ Sent to ${companyName}. Pausing 5 seconds to prevent rate limits...`);
+    await new Promise(resolve => setTimeout(resolve, 5000));
   }
+  
+  console.log("🎉 All daily resumes dispatched successfully!");
 };
 
 exports.triggerDailyCron = async (req, res) => {
