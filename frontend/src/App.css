@@ -202,3 +202,69 @@
     width: 280px;
   }
 }
+
+/* =========================================================
+   📱 GLOBAL MOBILE RESPONSIVENESS FIXES
+   ========================================================= */
+
+@media (max-width: 768px) {
+  /* 1. OVERRIDE INLINE GRIDS: Forces all your 2, 3, and 4 column inline grids to stack into 1 column */
+  [style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  /* 2. STACK HEADER & FLEX ROWS: Forces side-by-side flex items to stack vertically */
+  .top-hero-section, 
+  .control-action-bar,
+  [style*="display: flex; justify-content: space-between"] {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 15px !important;
+  }
+
+  /* 3. HORIZONTAL SCROLL FOR TABLES: Stops tables from squishing text */
+  .table-container {
+    display: block !important;
+    width: 100% !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  .modern-table {
+    white-space: nowrap !important; /* Forces columns to stay wide so you can swipe right */
+  }
+
+  /* 4. FIX MODALS: Stops modals from bleeding off the screen */
+  .modal-card, 
+  .premium-modal {
+    width: 95% !important;
+    padding: 1.5rem !important;
+    margin: 10px auto;
+  }
+
+  /* 5. FIX ASSET LIST CARDS: Stacks the left, middle, and right sections of your asset rows */
+  .clean-row {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 15px !important;
+  }
+  
+  .cl-left, .cl-middle, .cl-right {
+    width: 100% !important;
+    min-width: 0 !important;
+    justify-content: flex-start !important;
+  }
+
+  /* 6. FULL WIDTH BUTTONS & INPUTS */
+  .premium-btn, .btn-action {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  .filter-group .premium-input, 
+  .filter-group .premium-select {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+}
+
