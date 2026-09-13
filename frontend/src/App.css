@@ -183,37 +183,118 @@
   }
 }
 
-/* Responsive Fixes */
-.table-container {
+/* =========================================================
+   🔐 LOGIN PAGE NATIVE CSS (NO MORE INLINE OVERLAPS)
+   ========================================================= */
+.login-wrapper {
+  width: 100vw;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #020617;
+  font-family: 'Inter', sans-serif;
+  padding: 80px 20px 20px 20px;
+  box-sizing: border-box;
+}
+
+.login-header {
+  position: absolute;
+  top: 0;
+  left: 0;
   width: 100%;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
+  padding: 30px 40px;
+  box-sizing: border-box;
 }
 
-.top-header {
-  flex-wrap: wrap;
+.login-header img {
+  height: 35px;
 }
 
-@media (max-width: 768px) {
-  .universal-kpi-bar {
-    grid-template-columns: 1fr;
-  }
-  .drawer-card {
-    width: 280px;
-  }
+.login-grid {
+  width: 100%;
+  max-width: 1200px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 60px;
+  align-items: center;
+}
+
+.login-main-heading {
+  font-size: 3.5rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.1;
+  margin: 0 0 25px 0;
+}
+
+.login-sub-heading {
+  color: #94a3b8;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  max-width: 90%;
+}
+
+.login-form-section {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 24px;
+  padding: 40px;
+  box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+  box-sizing: border-box;
 }
 
 /* =========================================================
-   📱 GLOBAL MOBILE RESPONSIVENESS FIXES (TUNED)
+   📱 GLOBAL MOBILE RESPONSIVENESS (PHONES)
    ========================================================= */
-
 @media (max-width: 768px) {
-  /* 1. OVERRIDE INLINE GRIDS: Forces dashboard cards to stack */
+  
+  /* --- LOGIN PAGE MOBILE FIXES --- */
+  .login-wrapper {
+    padding-top: 100px;
+    padding-bottom: 50px;
+    height: auto;
+  }
+  .login-header {
+    padding: 20px;
+    text-align: center;
+  }
+  .login-grid {
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  .login-text-section {
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .login-main-heading {
+    font-size: 2.2rem;
+  }
+  .login-sub-heading {
+    font-size: 0.95rem;
+    max-width: 100%;
+  }
+  .login-form-section {
+    justify-content: center;
+  }
+  .login-card {
+    padding: 30px 20px;
+  }
+
+  /* --- DASHBOARD & INSIDE PAGES FIXES --- */
   [style*="grid-template-columns"] {
     grid-template-columns: 1fr !important;
   }
 
-  /* 2. HEADER RESIZING: Prevents the logo and profile pic from squishing */
   .top-header {
     padding: 15px 15px !important; 
   }
@@ -221,21 +302,14 @@
     height: 25px !important; 
   }
 
-  /* 3. STACK HERO SECTIONS: Forces action buttons below the title */
   .top-hero-section, 
-  .control-action-bar {
+  .control-action-bar,
+  [style*="display: flex; justify-content: space-between"]:not(.top-header):not(.drawer-header):not(.modal-header) {
     flex-direction: column !important;
     align-items: flex-start !important;
     gap: 15px !important;
   }
 
-  /* Also catch standard flex rows that are spaced between */
-  [style*="justify-content: space-between"]:not(.top-header):not(.drawer-header):not(.modal-header) {
-    flex-direction: column !important;
-    align-items: flex-start !important;
-  }
-
-  /* 4. HORIZONTAL SCROLL FOR TABLES: Swipe left/right for data */
   .table-container {
     display: block !important;
     width: 100% !important;
@@ -246,7 +320,6 @@
     white-space: nowrap !important;
   }
 
-  /* 5. FIX MODALS: Stops popups from bleeding off the screen */
   .modal-card, 
   .premium-modal {
     width: 95% !important;
@@ -254,7 +327,6 @@
     margin: 10px auto;
   }
 
-  /* 6. FIX ASSET LIST CARDS: Stacks the row details */
   .clean-row {
     flex-direction: column !important;
     align-items: flex-start !important;
@@ -266,7 +338,6 @@
     justify-content: flex-start !important;
   }
 
-  /* 7. FULL WIDTH BUTTONS & INPUTS */
   .premium-btn, .btn-action {
     width: 100% !important;
     justify-content: center !important;
@@ -275,45 +346,5 @@
   .filter-group .premium-select {
     width: 100% !important;
     min-width: 0 !important;
-  }
-
-  /* 8. 🚨 THE BULLETPROOF LOGIN PAGE SPLIT-SCREEN FIX 🚨 */
-  
-  /* Forces the main container to column */
-  #root > div:not(.app-layout),
-  #root > div > div[style*="height: 100vh"] {
-    display: flex !important;
-    flex-direction: column !important;
-    height: auto !important;
-    min-height: 100vh !important;
-    overflow-x: hidden !important;
-    overflow-y: auto !important;
-  }
-  
-  /* Makes both halves (Text and Login Box) take full width */
-  #root > div:not(.app-layout) > div,
-  #root > div > div[style*="height: 100vh"] > div {
-    width: 100% !important;
-    max-width: 100% !important;
-    min-width: 100% !important;
-    height: auto !important;
-    min-height: 50vh !important;
-    padding: 40px 20px !important;
-    border-radius: 0 !important; 
-    box-sizing: border-box !important;
-  }
-
-  /* Shrinks the massive "Unlock Global Tech Careers" text */
-  #root > div:not(.app-layout) h1,
-  #root > div > div[style*="height: 100vh"] h1 {
-    font-size: 2.5rem !important;
-    line-height: 1.1 !important;
-    margin-top: 10px !important;
-  }
-  
-  /* Adjusts the paragraph text size */
-  #root > div:not(.app-layout) p,
-  #root > div > div[style*="height: 100vh"] p {
-    font-size: 0.95rem !important;
   }
 }
