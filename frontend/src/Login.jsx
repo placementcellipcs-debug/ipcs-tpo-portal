@@ -42,11 +42,10 @@ export default function Login() {
   if (showIntro) {
     return (
       <div style={{ 
-        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
+        position: 'fixed', inset: 0, width: '100vw', height: '100dvh', // 🚨 Use dvh
         zIndex: 99999, backgroundColor: '#000000', display: 'flex', 
         alignItems: 'center', justifyContent: 'center',
-        opacity: videoOpacity, 
-        transition: 'opacity 1s ease-in-out' 
+        opacity: videoOpacity, transition: 'opacity 1s ease-in-out' 
       }}>
         <video 
           src="/Intro.mp4" 

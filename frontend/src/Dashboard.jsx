@@ -265,22 +265,22 @@ export default function Dashboard() {
       <div className="db-wrapper" style={{ paddingBottom: '40px', maxWidth: '1600px', margin: '0 auto' }}>
         
         {/* ==============================================
-            ORIGINAL HEADER
+            HEADER SECTION (FLUID)
         ============================================== */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
+        <div className="dashboard-header">
           <div>
-            <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', color: '#fff' }}>Good Morning, {String(tpoData?.name || 'Officer').split(' ')[0]} 👋</h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>Here's what's happening across your branches today.</p>
+            <h1 className="dash-title">Good Morning, {String(tpoData?.name || 'Officer').split(' ')[0]} 👋</h1>
+            <p className="dash-subtitle">Here's what's happening across your branches today.</p>
           </div>
-          <div style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', padding: '10px 20px', borderRadius: '30px', color: 'var(--text-muted)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <div className="date-badge">
             <Clock size={16} /> {today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
           </div>
         </div>
 
         {/* ==============================================
-            ORIGINAL 6 KPI CARDS
+            KPI CARDS (FLUID GRID)
         ============================================== */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '20px' }}>
+        <div className="kpi-grid">
           <div className="dash-card">
             <div className="kpi-header"><div className="icon-c blue"><Users weight="fill" size={20}/></div><div><div className="kpi-title">Total Students</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.totalStudents}</div></div></div>
             <div className="kpi-trend green">↑ Live Database</div>{makeSparkline('#3b82f6')}
@@ -308,13 +308,13 @@ export default function Dashboard() {
         </div>
 
         {/* ==============================================
-            ORIGINAL GRID-3-COL WITH RECHARTS UPGRADE
+            MAIN CHARTS (FLUID 3-COL GRID)
         ============================================== */}
-        <div className="grid-3-col" style={{ marginBottom: '20px' }}>
+        <div className="grid-3-col">
           
           {/* AREA CHART */}
-          <div className="dash-card" style={{ gridColumn: 'span 2', display: 'flex', flexDirection: 'column' }}>
-            <div className="card-top" style={{ marginBottom: '10px' }}>
+          <div className="dash-card span-2-col" style={{ display: 'flex', flexDirection: 'column' }}>
+            <div className="card-top">
               <h3>Placement Trends ({new Date().getFullYear()})</h3>
               <select className="mini-select"><option>This Year</option></select>
             </div>
@@ -338,18 +338,17 @@ export default function Dashboard() {
               </ResponsiveContainer>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #1e293b', paddingTop: '15px', marginTop: '15px' }}>
-              <div><div className="stat-lbl">Total Applications</div><div className="stat-val">{totalAppsCount}</div></div>
-              <div><div className="stat-lbl">Active Interviews</div><div className="stat-val">{pipeline.interview}</div></div>
+            <div className="pipeline-stats-row">
+              <div><div className="stat-lbl">Applications</div><div className="stat-val">{totalAppsCount}</div></div>
+              <div><div className="stat-lbl">Interviews</div><div className="stat-val">{pipeline.interview}</div></div>
               <div><div className="stat-lbl">Total Offers</div><div className="stat-val">{pipeline.offers}</div></div>
-              <div><div className="stat-lbl">Total Placements</div><div className="stat-val">{stats.placed}</div></div>
+              <div><div className="stat-lbl">Total Placed</div><div className="stat-val">{stats.placed}</div></div>
             </div>
           </div>
 
           {/* DONUT CHART */}
           <div className="dash-card">
             <h3>Placements by Domain</h3>
-            
             <div style={{ width: '100%', height: '170px', position: 'relative', marginTop: '10px' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -359,9 +358,9 @@ export default function Dashboard() {
                   </Pie>
                 </PieChart>
               </ResponsiveContainer>
-              <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', textAlign: 'center', pointerEvents: 'none' }}>
-                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#fff' }}>{stats.placed}</div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Total</div>
+              <div className="donut-center">
+                <div className="donut-val">{stats.placed}</div>
+                <div className="donut-lbl">Total</div>
               </div>
             </div>
             
@@ -378,7 +377,7 @@ export default function Dashboard() {
         </div>
 
         {/* ==============================================
-            ORIGINAL TRAINER LOGS (If applicable)
+            TRAINER LOGS (FLUID WRAPPER)
         ============================================== */}
         {(isTrainer || isSuperAdmin) && (
           <div className="dash-card" style={{ marginBottom: '20px' }}>
@@ -386,57 +385,59 @@ export default function Dashboard() {
               <h3>{isSuperAdmin ? "Global Trainer Reports" : "My Daily Reports"}</h3>
               <button className="text-link" onClick={() => navigate('/trainer-logs')}>View All</button>
             </div>
-            <table className="mini-table">
-              <thead><tr><th>Date</th><th>Present</th><th>Absent</th><th>Remarks</th></tr></thead>
-              <tbody>
-                {trainerLogs.length > 0 ? trainerLogs.map((l, i) => (
-                  <tr key={i}>
-                    <td><span className="primary-text">{String(l.timestamp||'').split(' ')[0]}</span></td>
-                    <td style={{ color: '#10b981', fontWeight: 'bold' }}>{l.present}</td>
-                    <td style={{ color: '#ef4444', fontWeight: 'bold' }}>{l.absentees}</td>
-                    <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.feedbacks || '-'}</td>
-                  </tr>
-                )) : <tr><td colSpan="4" style={{textAlign:'center', padding:'20px'}}>No logs submitted yet.</td></tr>}
-              </tbody>
-            </table>
+            <div className="table-responsive-wrapper">
+              <table className="mini-table">
+                <thead><tr><th>Date</th><th>Present</th><th>Absent</th><th>Remarks</th></tr></thead>
+                <tbody>
+                  {trainerLogs.length > 0 ? trainerLogs.map((l, i) => (
+                    <tr key={i}>
+                      <td><span className="primary-text">{String(l.timestamp||'').split(' ')[0]}</span></td>
+                      <td style={{ color: '#10b981', fontWeight: 'bold' }}>{l.present}</td>
+                      <td style={{ color: '#ef4444', fontWeight: 'bold' }}>{l.absentees}</td>
+                      <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.feedbacks || '-'}</td>
+                    </tr>
+                  )) : <tr><td colSpan="4" style={{textAlign:'center', padding:'20px'}}>No logs submitted yet.</td></tr>}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
         {/* ==============================================
-            ORIGINAL GRID-3-COL (Recent Placements & Schedule)
+            RECENT PLACEMENTS & EVENTS (FLUID 3-COL GRID)
         ============================================== */}
-        <div className="grid-3-col" style={{ marginBottom: '20px' }}>
+        <div className="grid-3-col">
           
-          {/* RECENT PLACEMENTS (Original Table) */}
-          <div className="dash-card" style={{ gridColumn: 'span 2' }}>
+          <div className="dash-card span-2-col">
             <div className="card-top">
               <h3>Recent Placement Activity</h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.7rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '4px 8px', borderRadius: '12px' }}><CircleNotch size={12} className="ph-spin" /> Live Updates</span>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.7rem', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '4px 8px', borderRadius: '12px' }}><CircleNotch size={12} className="ph-spin" /> Live</span>
                 <button className="text-link" onClick={()=>navigate('/placed')}>View All</button>
               </div>
             </div>
-            <table className="mini-table">
-              <thead>
-                <tr><th>Student</th><th>Company</th><th>Role</th><th style={{textAlign:'right'}}>Package</th><th style={{textAlign:'right'}}>Status</th></tr>
-              </thead>
-              <tbody>
-                {recentPlacements.length > 0 ? recentPlacements.map((p, i) => (
-                  <tr key={i} style={{ animation: 'fadeInReveal 0.5s ease' }}>
-                    <td><div style={{display:'flex', alignItems:'center', gap:'8px'}}><div className="tiny-avatar">{String(p.name||'U').charAt(0).toUpperCase()}</div> <span style={{color:'#fff'}}>{p.name}</span></div></td>
-                    <td><span style={{color:'#3b82f6', fontWeight:'bold'}}>{p.company}</span></td>
-                    <td>{p.course}</td>
-                    <td style={{textAlign:'right', fontWeight:'bold', color:'#fff'}}>
-                      {p.packageLpa ? `${String(p.packageLpa).toUpperCase().replace('LPA', '').trim()} LPA` : '-'}
-                    </td>
-                    <td style={{textAlign:'right'}}><span className="status-badge green">{String(p.status||'Placed').toUpperCase()}</span></td>
-                  </tr>
-                )) : <tr><td colSpan="5" style={{textAlign:'center', padding:'20px'}}>No records found</td></tr>}
-              </tbody>
-            </table>
+            <div className="table-responsive-wrapper">
+              <table className="mini-table">
+                <thead>
+                  <tr><th>Student</th><th>Company</th><th>Role</th><th style={{textAlign:'right'}}>Package</th><th style={{textAlign:'right'}}>Status</th></tr>
+                </thead>
+                <tbody>
+                  {recentPlacements.length > 0 ? recentPlacements.map((p, i) => (
+                    <tr key={i} style={{ animation: 'fadeInReveal 0.5s ease' }}>
+                      <td><div style={{display:'flex', alignItems:'center', gap:'8px'}}><div className="tiny-avatar">{String(p.name||'U').charAt(0).toUpperCase()}</div> <span style={{color:'#fff'}}>{p.name}</span></div></td>
+                      <td><span style={{color:'#3b82f6', fontWeight:'bold'}}>{p.company}</span></td>
+                      <td>{p.course}</td>
+                      <td style={{textAlign:'right', fontWeight:'bold', color:'#fff'}}>
+                        {p.packageLpa ? `${String(p.packageLpa).toUpperCase().replace('LPA', '').trim()} LPA` : '-'}
+                      </td>
+                      <td style={{textAlign:'right'}}><span className="status-badge green">{String(p.status||'Placed').toUpperCase()}</span></td>
+                    </tr>
+                  )) : <tr><td colSpan="5" style={{textAlign:'center', padding:'20px'}}>No records found</td></tr>}
+                </tbody>
+              </table>
+            </div>
           </div>
 
-          {/* NEW UPCOMING SCHEDULE INJECTED IN ORIGINAL SPOT */}
           <div className="dash-card dark-task-list" style={{ padding: '20px' }}>
             <div className="dark-task-header">
               <h3>Upcoming Schedule</h3>
@@ -459,13 +460,13 @@ export default function Dashboard() {
         </div>
 
         {/* ==============================================
-            ORIGINAL GRID-2-COL (Quick Access & Pipeline)
+            QUICK ACCESS & PIPELINE (FLUID 2-COL GRID)
         ============================================== */}
-        <div className="grid-2-col" style={{ marginBottom: '30px' }}>
+        <div className="grid-2-col">
           
           <div className="dash-card">
             <h3>Quick Access</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginTop: '15px' }}>
+            <div className="qa-grid">
               <div className="qa-box" onClick={()=>navigate('/students')}><div className="qa-icon blue"><Users weight="fill"/></div>Students</div>
               <div className="qa-box" onClick={()=>navigate('/exams')}><div className="qa-icon orange"><NotePencil weight="fill"/></div>Exams</div>
               <div className="qa-box" onClick={()=>navigate('/study-materials')}><div className="qa-icon pink"><BookOpen weight="fill"/></div>Material</div>
@@ -484,41 +485,39 @@ export default function Dashboard() {
               <button className="text-link" onClick={()=>navigate('/applications')}>View Apps →</button>
             </div>
             
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', textAlign: 'center' }}>
-              <div><div style={{ fontSize: '0.7rem', color: '#f59e0b', marginBottom: '5px' }}>● Applied</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{pipeline.applied}</div></div>
-              <div style={{ color: '#334155' }}>→</div>
-              <div><div style={{ fontSize: '0.7rem', color: '#3b82f6', marginBottom: '5px' }}>● Interview</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{pipeline.interview}</div></div>
-              <div style={{ color: '#334155' }}>→</div>
-              <div><div style={{ fontSize: '0.7rem', color: '#a855f7', marginBottom: '5px' }}>● Offers</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{pipeline.offers}</div></div>
-              <div style={{ color: '#334155' }}>→</div>
-              <div><div style={{ fontSize: '0.7rem', color: '#10b981', marginBottom: '5px' }}>● Placed</div><div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#fff' }}>{pipeline.placed}</div></div>
+            <div className="pipeline-visual">
+              <div><div className="pl-dot orange">● Applied</div><div className="pl-val">{pipeline.applied}</div></div>
+              <div className="pl-arrow">→</div>
+              <div><div className="pl-dot blue">● Interview</div><div className="pl-val">{pipeline.interview}</div></div>
+              <div className="pl-arrow">→</div>
+              <div><div className="pl-dot purple">● Offers</div><div className="pl-val">{pipeline.offers}</div></div>
+              <div className="pl-arrow">→</div>
+              <div><div className="pl-dot green">● Placed</div><div className="pl-val">{pipeline.placed}</div></div>
             </div>
 
-            <div style={{ marginTop: '25px', padding: '15px', background: 'rgba(255,255,255,0.03)', borderRadius: '12px', border: '1px dashed #1e293b' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', fontSize: '0.75rem' }}>
-                <div style={{ background: '#0f1523', padding: '10px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                  <span style={{ color: '#94a3b8', display: 'block', marginBottom: '4px' }}>App ➔ Interview</span> 
-                  <strong style={{ color: '#3b82f6', fontSize: '1rem' }}>{pipeline.applied ? ((pipeline.interview/pipeline.applied)*100).toFixed(1) : 0}%</strong>
-                </div>
-                <div style={{ background: '#0f1523', padding: '10px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                  <span style={{ color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Interview ➔ Offer</span> 
-                  <strong style={{ color: '#a855f7', fontSize: '1rem' }}>{pipeline.interview ? ((pipeline.offers/pipeline.interview)*100).toFixed(1) : 0}%</strong>
-                </div>
-                <div style={{ background: '#0f1523', padding: '10px', borderRadius: '8px', border: '1px solid #1e293b' }}>
-                  <span style={{ color: '#94a3b8', display: 'block', marginBottom: '4px' }}>Offer ➔ Joined</span> 
-                  <strong style={{ color: '#10b981', fontSize: '1rem' }}>{pipeline.offers ? ((pipeline.placed/pipeline.offers)*100).toFixed(1) : 0}%</strong>
-                </div>
+            <div className="pipeline-conversion">
+              <div className="conv-box">
+                <span className="conv-lbl">App ➔ Interview</span> 
+                <strong className="conv-val blue">{pipeline.applied ? ((pipeline.interview/pipeline.applied)*100).toFixed(1) : 0}%</strong>
+              </div>
+              <div className="conv-box">
+                <span className="conv-lbl">Interview ➔ Offer</span> 
+                <strong className="conv-val purple">{pipeline.interview ? ((pipeline.offers/pipeline.interview)*100).toFixed(1) : 0}%</strong>
+              </div>
+              <div className="conv-box">
+                <span className="conv-lbl">Offer ➔ Joined</span> 
+                <strong className="conv-val green">{pipeline.offers ? ((pipeline.placed/pipeline.offers)*100).toFixed(1) : 0}%</strong>
               </div>
             </div>
           </div>
         </div>
 
         {/* ==============================================
-            ORIGINAL BOTTOM MODULE CARDS
+            BOTTOM MODULE CARDS (FLUID GRID)
         ============================================== */}
         <h3 style={{ margin: '0 0 20px 0', fontSize: '1.2rem', color: '#fff' }}>Access Important Modules</h3>
         
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px', marginBottom: '40px' }}>
+        <div className="modules-grid">
           <div onClick={() => navigate('/students')} className="module-card blue">
             <h4 style={{ color: '#3b82f6' }}>Student Directory</h4><p>View and manage student information</p><div className="link">View Students <ArrowRight size={14} weight="bold"/></div>
           </div>
@@ -549,54 +548,83 @@ export default function Dashboard() {
         </div>
 
         {/* ---------------------------------------------------------
-            🎨 ORIGINAL CSS WITH NEW UPCOMING SCHEDULE STYLES
+            🎨 PREMIUM RESPONSIVE CSS INJECTED GLOBALLY
         --------------------------------------------------------- */}
         <style>{`
           .db-wrapper { font-family: 'Inter', sans-serif; }
           .dash-card { background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; }
           .dash-card h3 { margin: 0; font-size: 1rem; color: #fff; }
           
-          @keyframes fadeInReveal {
-            from { opacity: 0; transform: translateY(5px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
+          /* Core Grids */
+          .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 20px; }
+          .grid-3-col { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+          .grid-2-col { display: grid; grid-template-columns: 1fr 1.5fr; gap: 20px; margin-bottom: 30px; }
+          .qa-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-top: 15px; }
+          .modules-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 40px; }
+          .span-2-col { grid-column: span 2; }
           
+          .dashboard-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 15px; }
+          .dash-title { font-size: 2rem; margin: 0 0 5px 0; color: #fff; }
+          .dash-subtitle { color: var(--text-muted); margin: 0; }
+          .date-badge { background: var(--card-bg); border: 1px solid var(--card-border); padding: 10px 20px; border-radius: 30px; color: var(--text-muted); font-size: 0.85rem; display: flex; align-items: center; gap: 10px; }
+
+          /* KPI Styling */
           .kpi-header { display: flex; align-items: center; gap: 15px; }
-          .icon-c { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+          .icon-c { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
           .icon-c.blue { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
           .icon-c.green { background: rgba(16, 185, 129, 0.1); color: #10b981; }
           .icon-c.purple { background: rgba(168, 85, 247, 0.1); color: #a855f7; }
           .icon-c.orange { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
           .icon-c.pink { background: rgba(236, 72, 153, 0.1); color: #ec4899; }
           .icon-c.teal { background: rgba(14, 165, 233, 0.1); color: #0ea5e9; }
-          
           .kpi-title { font-size: 0.75rem; color: #94a3b8; margin-bottom: 2px; }
           .kpi-val { font-size: 1.5rem; font-weight: bold; color: #fff; }
           .kpi-trend { font-size: 0.7rem; margin-top: 10px; font-weight: bold; }
           .kpi-trend.green { color: #10b981; }
 
-          .grid-3-col { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 20px; }
-          .grid-2-col { display: grid; grid-template-columns: 1fr 1.5fr; gap: 20px; }
-          @media (max-width: 1100px) { .grid-3-col, .grid-2-col { grid-template-columns: 1fr; } }
-
-          .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+          .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
           .mini-select { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; border-radius: 6px; padding: 4px 8px; font-size: 0.75rem; outline: none; }
+          
+          /* Area Chart Stats Row */
+          .pipeline-stats-row { display: flex; justify-content: space-between; border-top: 1px solid #1e293b; padding-top: 15px; margin-top: 15px; flex-wrap: wrap; gap: 15px; }
           .stat-lbl { font-size: 0.7rem; color: #64748b; margin-bottom: 4px; }
           .stat-val { font-size: 1.1rem; font-weight: bold; color: #fff; }
 
-          .mini-table th { border-bottom: 1px solid #1e293b; color: #64748b; font-size: 0.75rem; padding-bottom: 10px; font-weight: normal; text-align: left; }
-          .mini-table td { padding: 12px 0; border-bottom: 1px solid #1e293b; font-size: 0.85rem; color: #cbd5e1; }
-          .tiny-avatar { width: 24px; height: 24px; border-radius: 50%; background: #3b82f6; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; }
-          .status-badge.green { background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 4px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: bold; }
+          /* Donut Chart Center Text */
+          .donut-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; }
+          .donut-val { font-size: 1.5rem; font-weight: bold; color: #fff; }
+          .donut-lbl { font-size: 0.65rem; color: var(--text-muted); }
 
+          /* Responsive Table Wrapper */
+          .table-responsive-wrapper { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+          .mini-table { width: 100%; min-width: 500px; border-collapse: collapse; }
+          .mini-table th { border-bottom: 1px solid #1e293b; color: #64748b; font-size: 0.75rem; padding-bottom: 10px; font-weight: normal; text-align: left; white-space: nowrap; }
+          .mini-table td { padding: 12px 0; border-bottom: 1px solid #1e293b; font-size: 0.85rem; color: #cbd5e1; white-space: nowrap; }
+          
+          .tiny-avatar { width: 24px; height: 24px; border-radius: 50%; background: #3b82f6; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; flex-shrink: 0; }
+          .status-badge.green { background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 4px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: bold; }
           .text-link { background: transparent; border: none; color: #3b82f6; font-size: 0.8rem; cursor: pointer; font-weight: bold; }
           .text-link:hover { text-decoration: underline; }
 
+          /* Quick Access Boxes */
           .qa-box { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; font-size: 0.7rem; color: #cbd5e1; font-weight: bold; }
           .qa-icon { width: 36px; height: 36px; border-radius: 10px; border: 1px solid #1e293b; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; transition: 0.2s; }
           .qa-box:hover .qa-icon { border-color: #3b82f6; transform: translateY(-2px); }
           .qa-icon.blue { color: #3b82f6; } .qa-icon.green { color: #10b981; } .qa-icon.orange { color: #f59e0b; } .qa-icon.pink { color: #ec4899; } .qa-icon.teal { color: #0ea5e9; } .qa-icon.purple { color: #a855f7; } .qa-icon.yellow { color: #eab308; }
 
+          /* Live Pipeline Section */
+          .pipeline-visual { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; text-align: center; flex-wrap: wrap; gap: 10px; }
+          .pl-dot { font-size: 0.7rem; margin-bottom: 5px; }
+          .pl-dot.orange { color: #f59e0b; } .pl-dot.blue { color: #3b82f6; } .pl-dot.purple { color: #a855f7; } .pl-dot.green { color: #10b981; }
+          .pl-val { font-size: 1.4rem; font-weight: bold; color: #fff; }
+          .pl-arrow { color: #334155; display: flex; align-items: center; }
+          
+          .pipeline-conversion { margin-top: 25px; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px dashed #1e293b; display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; }
+          .conv-box { background: #0f1523; padding: 10px; border-radius: 8px; border: 1px solid #1e293b; }
+          .conv-lbl { color: #94a3b8; display: block; margin-bottom: 4px; font-size: 0.75rem; }
+          .conv-val { font-size: 1rem; } .conv-val.blue { color: #3b82f6; } .conv-val.purple { color: #a855f7; } .conv-val.green { color: #10b981; }
+
+          /* Module Cards */
           .module-card { background: rgba(255,255,255,0.02); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; cursor: pointer; transition: 0.2s; }
           .module-card:hover { transform: translateY(-4px); }
           .module-card h4 { margin: 0 0 8px 0; font-size: 1.05rem; }
@@ -611,7 +639,7 @@ export default function Dashboard() {
           .module-card.teal { background: rgba(14, 165, 233, 0.05); border-color: rgba(14, 165, 233, 0.2); } .module-card.teal .link { color: #0ea5e9; }
           .module-card.orange { background: rgba(249, 115, 22, 0.05); border-color: rgba(249, 115, 22, 0.2); } .module-card.orange .link { color: #f97316; }
 
-          /* NEW UPCOMING SCHEDULE (DARK TASK LIST) */
+          /* Upcoming Schedule */
           .dark-task-list { background: #1a1a1a; border: none; box-shadow: inset 0 2px 10px rgba(0,0,0,0.5); }
           .dark-task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #333; }
           .dark-task-header h3 { margin: 0; font-size: 1rem; color: #fff; }
@@ -624,6 +652,50 @@ export default function Dashboard() {
           .dt-info p { margin: 0; font-size: 0.7rem; color: #64748b; display: flex; align-items: center; gap: 4px; }
           .dt-check { color: #f59e0b; flex-shrink: 0; }
           .empty-tasks { color: #64748b; font-size: 0.85rem; font-style: italic; }
+
+          /* ==============================================
+             📱 RESPONSIVE BREAKPOINTS (FLUID CALIBRATION)
+          ============================================== */
+          
+          /* 💻 TABLET / SMALL LAPTOP */
+          @media (max-width: 1100px) {
+            .grid-3-col { grid-template-columns: 1fr 1fr; }
+            .span-2-col { grid-column: span 2; }
+            .grid-2-col { grid-template-columns: 1fr; }
+            .qa-grid { grid-template-columns: repeat(4, 1fr); }
+          }
+          
+          /* 📱 MOBILE */
+          @media (max-width: 768px) {
+            .dashboard-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+            .dash-title { font-size: 1.5rem; }
+            
+            .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+            .kpi-header { gap: 10px; }
+            .icon-c { width: 35px; height: 35px; }
+            .kpi-val { font-size: 1.2rem; }
+            
+            .grid-3-col, .grid-2-col { grid-template-columns: 1fr; gap: 15px; }
+            .span-2-col { grid-column: span 1; }
+            
+            .qa-grid { grid-template-columns: repeat(2, 1fr); }
+            .pipeline-visual { flex-direction: column; gap: 15px; align-items: flex-start; }
+            .pl-arrow { display: none; }
+            
+            .modules-grid { grid-template-columns: 1fr; gap: 10px; }
+          }
+          
+          /* 📱 TINY MOBILE */
+          @media (max-width: 480px) {
+            .kpi-grid { grid-template-columns: 1fr; }
+          }
+
+          /* 📺 4K TV / LARGE DISPLAYS */
+          @media (min-width: 1800px) {
+            .kpi-grid { grid-template-columns: repeat(6, 1fr); }
+            .qa-grid { grid-template-columns: repeat(8, 1fr); }
+            .modules-grid { grid-template-columns: repeat(4, 1fr); }
+          }
         `}</style>
       </div>
     </Layout>
