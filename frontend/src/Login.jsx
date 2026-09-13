@@ -11,7 +11,6 @@ export default function Login() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  // Video Intro State
   const [showIntro, setShowIntro] = useState(false);
   const [videoOpacity, setVideoOpacity] = useState(1);
 
@@ -52,36 +51,30 @@ export default function Login() {
         <video 
           src="/Intro.mp4" 
           autoPlay 
-          playsInline
-          muted 
+          muted
+          playsInline 
           onTimeUpdate={(e) => {
             if (e.target.duration - e.target.currentTime <= 1) {
               setVideoOpacity(0);
             }
           }}
           onEnded={() => navigate('/dashboard')} 
-          onError={(e) => {
-            console.error("Video failed to load. Skipping to dashboard.", e);
-            navigate('/dashboard'); 
-          }}
+          onError={(e) => navigate('/dashboard')}
           style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scale(1.08)' }}
         />
       </div>
     );
   }
 
-  // 🚨 UI NOW USES RESPONSIVE CSS CLASSES INSTEAD OF INLINE GRIDS
   return (
-    <div className="login-wrapper">
-      
+    <div className="login-page-bg">
       <header className="login-header">
-        <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" />
+        <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" className="login-header-logo" />
       </header>
 
-      <div className="login-grid">
+      <div className="login-split-container">
         
-        {/* Left Side: Hero Text */}
-        <div className="login-text-section">
+        <div className="login-left-side">
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
             <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#00d8ff', boxShadow: '0 0 10px #00d8ff' }}></div>
             <h2 style={{ fontStyle: 'italic', fontWeight: 900, letterSpacing: '2px', fontSize: '1.8rem', margin: 0, color: '#fff' }}>
@@ -92,18 +85,17 @@ export default function Login() {
             Connecting talent with opportunity
           </div>
 
-          <h1 className="login-main-heading">
+          <h1 className="login-hero-title">
             Unlock Global Tech<br/>
             <span style={{ color: '#00d8ff' }}>Careers with IPCS</span>
           </h1>
 
-          <p className="login-sub-heading">
+          <p className="login-hero-text">
             IPCS Global connects future-ready talent in Industrial Automation, Embedded Systems, IoT, and Digital Tech with leading blue-chip global firms. Experience zero-barrier career transitions.
           </p>
         </div>
 
-        {/* Right Side: Login Box */}
-        <div className="login-form-section">
+        <div className="login-right-side">
           <div className="login-card">
             
             <div style={{ textAlign: 'center', marginBottom: '30px' }}>
@@ -121,7 +113,7 @@ export default function Login() {
                   onChange={(e) => setLoginId(e.target.value)} 
                   required 
                   placeholder="name@ipcsglobal.com"
-                  style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', color: '#fff', padding: '14px', borderRadius: '10px', outline: 'none', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                  className="login-input"
                 />
               </div>
 
@@ -133,17 +125,13 @@ export default function Login() {
                   onChange={(e) => setPassword(e.target.value)} 
                   required 
                   placeholder="••••••••"
-                  style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', color: '#fff', padding: '14px', borderRadius: '10px', outline: 'none', fontSize: '0.9rem', boxSizing: 'border-box' }}
+                  className="login-input"
                 />
               </div>
 
-              {error && <div style={{ color: '#ef4444', fontSize: '0.85rem', textAlign: 'center', background: 'rgba(239, 68, 68, 0.1)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)' }}>{error}</div>}
+              {error && <div className="login-error">{error}</div>}
 
-              <button 
-                type="submit" 
-                disabled={loading}
-                style={{ width: '100%', background: '#3b82f6', color: '#fff', border: 'none', padding: '14px', borderRadius: '10px', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '10px', boxSizing: 'border-box' }}
-              >
+              <button type="submit" disabled={loading} className="login-btn">
                 {loading ? <><CircleNotch size={20} className="ph-spin" /> Authenticating...</> : 'Sign In'}
               </button>
             </form>
@@ -151,6 +139,7 @@ export default function Login() {
             <div style={{ textAlign: 'center', marginTop: '25px', color: '#64748b', fontSize: '0.75rem' }}>
               Secured by IPCS IT Infrastructure
             </div>
+
           </div>
         </div>
 

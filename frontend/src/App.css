@@ -348,3 +348,162 @@
     min-width: 0 !important;
   }
 }
+
+/* =========================================================
+   🚨 LOGIN PAGE CSS (STRICT MOBILE SUPPORT)
+   ========================================================= */
+
+.login-page-bg {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #020617;
+  font-family: 'Inter', sans-serif;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.login-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  padding: 30px 40px;
+}
+
+.login-header-logo {
+  height: 35px;
+}
+
+.login-split-container {
+  width: 100%;
+  max-width: 1200px;
+  display: flex;
+  flex-direction: row;
+  gap: 60px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.login-left-side {
+  flex: 1;
+}
+
+.login-right-side {
+  flex: 1;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.login-hero-title {
+  font-size: 3.5rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.1;
+  margin: 0 0 25px 0;
+}
+
+.login-hero-text {
+  color: #94a3b8;
+  font-size: 1.05rem;
+  line-height: 1.6;
+  max-width: 90%;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 420px;
+  background: #0f172a;
+  border: 1px solid #1e293b;
+  border-radius: 24px;
+  padding: 40px;
+  box-shadow: 0 25px 50px rgba(0,0,0,0.5);
+  box-sizing: border-box;
+}
+
+.login-input {
+  width: 100%;
+  background: #1e293b;
+  border: 1px solid #334155;
+  color: #fff;
+  padding: 14px;
+  border-radius: 10px;
+  outline: none;
+  font-size: 0.9rem;
+  box-sizing: border-box;
+}
+
+.login-input:focus {
+  border-color: #38bdf8;
+}
+
+.login-btn {
+  width: 100%;
+  background: #3b82f6;
+  color: #fff;
+  border: none;
+  padding: 14px;
+  border-radius: 10px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  transition: 0.2s;
+}
+
+.login-btn:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.login-error {
+  color: #ef4444;
+  font-size: 0.85rem;
+  text-align: center;
+  background: rgba(239, 68, 68, 0.1);
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(239,68,68,0.3);
+}
+
+/* 📱 MOBILE RESPONSIVENESS OVERRIDE */
+@media (max-width: 768px) {
+  .login-page-bg {
+    padding: 100px 20px 40px 20px;
+    align-items: flex-start;
+  }
+  
+  .login-header {
+    padding: 20px;
+  }
+  
+  .login-header-logo {
+    height: 28px;
+  }
+  
+  .login-split-container {
+    flex-direction: column;
+    gap: 40px;
+  }
+  
+  .login-right-side {
+    justify-content: center;
+  }
+  
+  .login-hero-title {
+    font-size: 2.2rem;
+  }
+  
+  .login-hero-text {
+    font-size: 0.95rem;
+    max-width: 100%;
+  }
+  
+  .login-card {
+    padding: 30px 20px;
+  }
+}
