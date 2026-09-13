@@ -2233,27 +2233,47 @@ exports.getDrives = (req, res) => {
   try {
     const cache = getCache();
     
+    // 1. Create a map of all Events to pull the TPO, Date, and Location
     const eventsMap = {};
     (cache.events || []).forEach(row => {
-       const dId = getValByHeader(row, ['driveid']) || '';
-       const tpo = getValByHeader(row, ['tpo', 'placementofficer']) || '';
-       if (dId) eventsMap[dId.toUpperCase().trim()] = tpo;
+       const dId = getValByHeader(row, ['event_id', 'eventid', 'driveid', 'id']) || '';
+       const tpo = getValByHeader(row, ['tpo', 'placementofficer', 'created_by', 'createdby']) || '';
+       const date = getValByHeader(row, ['dateoftheevent', 'date']) || '';
+       const location = getValByHeader(row, ['eventhappeningin', 'location', 'branch']) || '';
+       
+       if (dId) {
+         eventsMap[dId.toUpperCase().trim()] = { tpo, date, location };
+       }
     });
 
+    // 2. Map the registrations and inject the Event details
     const drivesData = (cache.drives || []).map(row => {
       const dId = getValByHeader(row, ['driveid']) || '';
-      const driveTpo = eventsMap[dId.toUpperCase().trim()] || '';
+      const eventInfo = eventsMap[dId.toUpperCase().trim()] || {};
 
       return {
-        rowNumber: row.rowNumber, driveId: dId, name: getValByHeader(row, ['name']) || '', phone: getValByHeader(row, ['contact']) || '',
-        email: getValByHeader(row, ['mailid', 'email']) || '', course: getValByHeader(row, ['course']) || '', branch: getValByHeader(row, ['branch']) || '',
-        resume: getValByHeader(row, ['resume']) || '', qual: getValByHeader(row, ['qualification']) || '', regStatus: getValByHeader(row, ['status']) || '',
-        regDate: getValByHeader(row, ['registeddate', 'timestamp']) || '', studentStatus: getValByHeader(row, ['studentstatus']) || '',
-        driveTpo: driveTpo
+        rowNumber: row.rowNumber, 
+        driveId: dId, 
+        name: getValByHeader(row, ['name']) || '', 
+        phone: getValByHeader(row, ['contact', 'phone']) || '',
+        email: getValByHeader(row, ['mailid', 'email']) || '', 
+        course: getValByHeader(row, ['course']) || '', 
+        branch: getValByHeader(row, ['branch']) || '',
+        resume: getValByHeader(row, ['resume']) || '', 
+        qual: getValByHeader(row, ['qualification']) || '', 
+        regStatus: getValByHeader(row, ['status']) || '',
+        regDate: getValByHeader(row, ['registeddate', 'timestamp', 'date']) || '', 
+        studentStatus: getValByHeader(row, ['studentstatus']) || '',
+        driveTpo: eventInfo.tpo || '',
+        driveDate: eventInfo.date || '',
+        driveLocation: eventInfo.location || ''
       };
     });
+    
     res.json({ success: true, drives: drivesData.reverse() });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { 
+    res.status(500).json({ success: false, message: err.message }); 
+  }
 };
 
 exports.updateDriveStatus = async (req, res) => {

@@ -3,7 +3,7 @@ import axios from 'axios';
 import { 
   CircleNotch, CalendarCheck, Users, 
   CaretLeft, IdentificationCard, Phone, EnvelopeSimple,
-  Trophy, UserList, Clock, CheckCircle
+  Trophy, UserList, Clock, CheckCircle, MapPin, CalendarBlank
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
@@ -78,7 +78,13 @@ export default function PlacementDrives() {
   drives.forEach(d => {
     if (!d.driveId) return;
     if (!groupedDrives[d.driveId]) {
-      groupedDrives[d.driveId] = { driveId: d.driveId, driveTpo: d.driveTpo, applicants: [] };
+      groupedDrives[d.driveId] = { 
+        driveId: d.driveId, 
+        driveTpo: d.driveTpo, 
+        driveDate: d.driveDate,
+        driveLocation: d.driveLocation,
+        applicants: [] 
+      };
     }
     groupedDrives[d.driveId].applicants.push(d);
   });
@@ -147,8 +153,17 @@ export default function PlacementDrives() {
                         </div>
                       </div>
 
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '20px', color: '#cbd5e1', fontSize: '0.85rem' }}>
-                        <IdentificationCard size={18} color="#94a3b8" /> <span>Managed by <strong>{String(drive.driveTpo || 'Admin')}</strong></span>
+                      {/* 🚨 PREMIUM DATA STACK */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', color: '#cbd5e1', fontSize: '0.85rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <IdentificationCard size={18} color="#94a3b8" /> <span>Managed by <strong style={{ color: '#fff' }}>{String(drive.driveTpo || 'Admin')}</strong></span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <CalendarBlank size={18} color="#94a3b8" /> <span>{String(drive.driveDate || 'Date Not Specified')}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <MapPin size={18} color="#94a3b8" /> <span>{String(drive.driveLocation || 'Location Not Specified')}</span>
+                        </div>
                       </div>
 
                       <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
