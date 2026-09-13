@@ -4,7 +4,8 @@ import axios from 'axios';
 import { 
   Users, Briefcase, Trophy, CalendarCheck, CircleNotch, 
   BookOpen, NotePencil, Desktop, FolderOpen, ListChecks, 
-  ChartBar, Clock, Student, ChalkboardTeacher, CheckCircle, MapPinLine, ArrowRight
+  ChartBar, Clock, Student, ChalkboardTeacher, CheckCircle, MapPinLine, ArrowRight,
+  CaretLeft, CaretRight // 🚨 Added arrows for Calendar Navigation
 } from '@phosphor-icons/react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -46,6 +47,9 @@ export default function Dashboard() {
 
   const [allPlaced, setAllPlaced] = useState([]);
   const [trainerLogs, setTrainerLogs] = useState([]);
+
+  // 🚨 CALENDAR STATE
+  const [calendarDate, setCalendarDate] = useState(new Date());
 
   const DOMAIN_COLORS = ['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#ec4899', '#0ea5e9'];
 
@@ -260,13 +264,26 @@ export default function Dashboard() {
     return null;
   };
 
+  // 🚨 CALENDAR GENERATION LOGIC
+  const prevMonth = () => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1));
+  const nextMonth = () => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1));
+
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const daysInMonth = new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 0).getDate();
+  const firstDay = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), 1).getDay();
+  const blanks = Array(firstDay).fill(null);
+  const days = Array.from({length: daysInMonth}, (_, i) => i + 1);
+
+  const eventDates = new Set(events.map(e => {
+    const d = parseDateRobust(e.date);
+    return d ? d.toDateString() : null;
+  }).filter(Boolean));
+
   return (
     <Layout>
       <div className="db-wrapper" style={{ paddingBottom: '40px', maxWidth: '1600px', margin: '0 auto' }}>
         
-        {/* ==============================================
-            HEADER SECTION (FLUID)
-        ============================================== */}
+        {/* HEADER SECTION */}
         <div className="dashboard-header">
           <div>
             <h1 className="dash-title">Good Morning, {String(tpoData?.name || 'Officer').split(' ')[0]} 👋</h1>
@@ -277,9 +294,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ==============================================
-            KPI CARDS (FLUID GRID)
-        ============================================== */}
+        {/* KPI CARDS */}
         <div className="kpi-grid">
           <div className="dash-card">
             <div className="kpi-header"><div className="icon-c blue"><Users weight="fill" size={20}/></div><div><div className="kpi-title">Total Students</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.totalStudents}</div></div></div>
@@ -307,12 +322,9 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ==============================================
-            MAIN CHARTS (FLUID 3-COL GRID)
-        ============================================== */}
+        {/* MAIN CHARTS */}
         <div className="grid-3-col">
           
-          {/* AREA CHART */}
           <div className="dash-card span-2-col" style={{ display: 'flex', flexDirection: 'column' }}>
             <div className="card-top">
               <h3>Placement Trends ({new Date().getFullYear()})</h3>
@@ -346,7 +358,6 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* DONUT CHART */}
           <div className="dash-card">
             <h3>Placements by Domain</h3>
             <div style={{ width: '100%', height: '170px', position: 'relative', marginTop: '10px' }}>
@@ -376,9 +387,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ==============================================
-            TRAINER LOGS (FLUID WRAPPER)
-        ============================================== */}
+        {/* TRAINER LOGS */}
         {(isTrainer || isSuperAdmin) && (
           <div className="dash-card" style={{ marginBottom: '20px' }}>
             <div className="card-top">
@@ -403,9 +412,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* ==============================================
-            RECENT PLACEMENTS & EVENTS (FLUID 3-COL GRID)
-        ============================================== */}
+        {/* RECENT PLACEMENTS & CALENDAR EVENTS GRID */}
         <div className="grid-3-col">
           
           <div className="dash-card span-2-col">
@@ -438,8 +445,37 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* 🚨 NEW: CALENDAR & EVENT SCHEDULE MODULE */}
           <div className="dash-card dark-task-list" style={{ padding: '20px' }}>
             <div className="dark-task-header">
+              <h3>Event Calendar</h3>
+            </div>
+            
+            {/* Visual Calendar Widget */}
+            <div className="calendar-widget">
+              <div className="cal-header">
+                <button onClick={prevMonth}><CaretLeft size={16} weight="bold"/></button>
+                <span>{monthNames[calendarDate.getMonth()]} {calendarDate.getFullYear()}</span>
+                <button onClick={nextMonth}><CaretRight size={16} weight="bold"/></button>
+              </div>
+              <div className="cal-days">
+                {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => <div key={d} className="cal-day-name">{d}</div>)}
+                {blanks.map((_, i) => <div key={`blank-${i}`} className="cal-day blank"></div>)}
+                {days.map(day => {
+                  const currentIterationDate = new Date(calendarDate.getFullYear(), calendarDate.getMonth(), day);
+                  const isToday = currentIterationDate.toDateString() === new Date().toDateString();
+                  const hasEvent = eventDates.has(currentIterationDate.toDateString());
+                  return (
+                    <div key={day} className={`cal-day ${isToday ? 'today' : ''} ${hasEvent ? 'has-event' : ''}`}>
+                      {day}
+                      {hasEvent && <span className="event-dot"></span>}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            <div className="dark-task-header" style={{ marginTop: '20px', borderTop: '1px solid #334155', paddingTop: '15px' }}>
               <h3>Upcoming Schedule</h3>
               <span className="task-count">{upcomingEvents.length}</span>
             </div>
@@ -459,9 +495,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ==============================================
-            QUICK ACCESS & PIPELINE (FLUID 2-COL GRID)
-        ============================================== */}
+        {/* QUICK ACCESS & PIPELINE */}
         <div className="grid-2-col">
           
           <div className="dash-card">
@@ -512,9 +546,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ==============================================
-            BOTTOM MODULE CARDS (FLUID GRID)
-        ============================================== */}
+        {/* BOTTOM MODULE CARDS */}
         <h3 style={{ margin: '0 0 20px 0', fontSize: '1.2rem', color: '#fff' }}>Access Important Modules</h3>
         
         <div className="modules-grid">
@@ -639,11 +671,26 @@ export default function Dashboard() {
           .module-card.teal { background: rgba(14, 165, 233, 0.05); border-color: rgba(14, 165, 233, 0.2); } .module-card.teal .link { color: #0ea5e9; }
           .module-card.orange { background: rgba(249, 115, 22, 0.05); border-color: rgba(249, 115, 22, 0.2); } .module-card.orange .link { color: #f97316; }
 
-          /* Upcoming Schedule */
+          /* 🚨 NEW: CALENDAR & UPCOMING SCHEDULE */
           .dark-task-list { background: #1a1a1a; border: none; box-shadow: inset 0 2px 10px rgba(0,0,0,0.5); }
           .dark-task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #333; }
           .dark-task-header h3 { margin: 0; font-size: 1rem; color: #fff; }
           .task-count { font-size: 1.2rem; color: #fff; font-weight: bold; }
+          
+          /* Calendar Styles */
+          .calendar-widget { background: #0f1523; border-radius: 12px; padding: 15px; border: 1px solid #1e293b; }
+          .cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; color: #fff; font-weight: bold; font-size: 0.9rem; }
+          .cal-header button { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #94a3b8; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 6px; }
+          .cal-header button:hover { background: rgba(255,255,255,0.1); color: #fff; border-color: #38bdf8; }
+          .cal-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; text-align: center; }
+          .cal-day-name { font-size: 0.7rem; color: #64748b; font-weight: bold; margin-bottom: 5px; }
+          .cal-day { position: relative; font-size: 0.85rem; color: #cbd5e1; padding: 8px 0; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-direction: column; transition: 0.2s; }
+          .cal-day.blank { background: transparent; }
+          .cal-day:not(.blank):hover { background: rgba(255,255,255,0.05); cursor: pointer; color: #fff; }
+          .cal-day.today { background: rgba(56, 189, 248, 0.15); color: #38bdf8; font-weight: bold; border: 1px solid rgba(56, 189, 248, 0.3); }
+          .cal-day.has-event { color: #fff; font-weight: bold; }
+          .event-dot { width: 4px; height: 4px; background: #f59e0b; border-radius: 50%; margin-top: 2px; }
+
           .dark-tasks { display: flex; flex-direction: column; gap: 15px; }
           .dark-task-item { display: flex; align-items: flex-start; gap: 15px; }
           .dt-icon { width: 32px; height: 32px; border-radius: 10px; background: rgba(255,255,255,0.05); color: #94a3b8; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
