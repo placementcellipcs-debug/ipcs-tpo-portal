@@ -17,7 +17,17 @@ export default function JobTracker() {
     venue: ''
   });
 
-  const tpoData = JSON.parse(localStorage.getItem('tpoData'));
+  const tpoDataStr = localStorage.getItem('tpoData');
+  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  
+  // 🚨 STRICT ROLE CHECK VARIABLES
+  const userRole = String(tpoData?.role || '').toUpperCase();
+  const accessType = String(tpoData?.accessType || '').toLowerCase();
+  const isSuperAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
+  
+  // A Strict TPO is someone who has "TPO" in their role, but is NOT an admin or manager
+  const isStrictTpo = userRole.includes('TPO') && !isSuperAdmin;
+
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   
@@ -33,14 +43,37 @@ export default function JobTracker() {
 
   useEffect(() => {
     if (!tpoData) return;
+
+    // 🚨 PAGE SECURITY: Instantly redirect non-TPOs back to the dashboard
+    if (!isStrictTpo) {
+      window.location.href = '/dashboard';
+      return;
+    }
+
     const fetchData = async () => {
       try {
         const response = await axios.post(`${API_BASE}/api/tpo/applications`, { 
           assignedBranchesArray: tpoData.assignedBranchesArray,
           tpoName: tpoData.name 
         });
-        if (response.data.success) setApplications(response.data.applications);
-      } catch (error) { console.error("Failed to load data", error); } finally { setLoading(false); }
+        
+        if (response.data.success) {
+          const myName = (tpoData.name || '').toLowerCase().trim();
+          
+          // 🚨 STRICT DATA FILTER: Only keep applications where the TPO Name on the job
+          // exactly matches the logged-in user's name. Destroys all other branch data.
+          const strictlyMyJobs = response.data.applications.filter(app => {
+            const jobOwner = (app.tpoName || '').toLowerCase().trim();
+            return jobOwner === myName;
+          });
+
+          setApplications(strictlyMyJobs);
+        }
+      } catch (error) { 
+        console.error("Failed to load data", error); 
+      } finally { 
+        setLoading(false); 
+      }
     };
     fetchData();
   }, []);
@@ -71,8 +104,7 @@ export default function JobTracker() {
         status: newStatus, 
         remarks: newRemarks,
         fullApp: app,
-        // 🚨 Explicitly pass the logged-in TPO's email here
-        currentUserEmail: tpoData?.email || JSON.parse(localStorage.getItem('tpoData') || '{}').email || '',
+        currentUserEmail: tpoData?.email || '',
         interviewDate: interviewModal.appRowNumber === rowNum ? interviewModal.date : '',
         interviewTime: interviewModal.appRowNumber === rowNum ? interviewModal.time : '',
         interviewVenue: interviewModal.appRowNumber === rowNum ? interviewModal.venue : ''
@@ -136,7 +168,6 @@ export default function JobTracker() {
     return 0;
   });
 
-  // 🚨 UPDATED: Exact status options requested
   const statusOptions = [
     "Applied", 
     "Interview Scheduled", 
@@ -155,6 +186,9 @@ export default function JobTracker() {
     pdf: { color: '#f59e0b', background: 'rgba(245, 158, 11, 0.15)' },
     disabled: { color: '#64748b', background: 'rgba(100, 116, 139, 0.1)', cursor: 'not-allowed' }
   };
+
+  // If the user isn't a strict TPO, we return an empty fragment while the redirect happens
+  if (!isStrictTpo) return <></>;
 
   return (
     <Layout>
@@ -190,9 +224,9 @@ export default function JobTracker() {
 
         <div style={{ marginTop: '1.5rem' }}>
           {loading ? (
-            <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--accent-primary)' }}><CircleNotch size={40} className="ph-spin" /><p>Loading tracker...</p></div>
+            <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--accent-primary)' }}><CircleNotch size={40} className="ph-spin" /><p>Loading your assigned openings...</p></div>
           ) : groupsArray.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2rem' }}>No applications found matching your search.</div>
+            <div style={{ textAlign: 'center', padding: '2rem' }}>No applications found for your job openings.</div>
           ) : (
             groupsArray.map(group => {
               const isOpen = openGroups[group.groupKey];
@@ -282,7 +316,6 @@ export default function JobTracker() {
                                         const newStat = e.target.value;
                                         handleEditChange(app.rowNumber, 'status', newStat);
                                         
-                                        // 🚨 Trigger Popup if it's Interview Scheduled
                                         if (newStat === 'Interview Scheduled') {
                                           setInterviewModal({
                                             isOpen: true,
@@ -391,7 +424,6 @@ export default function JobTracker() {
                   if (!interviewModal.date || !interviewModal.time || !interviewModal.venue) {
                     return alert("Please fill in all interview details to proceed.");
                   }
-                  // 🚨 Find the correct app and trigger saveApplication
                   const appToSave = applications.find(a => a.rowNumber === interviewModal.appRowNumber);
                   if (appToSave) {
                     saveApplication(appToSave);
