@@ -43,8 +43,13 @@ export default function StudentApps() {
   const [courseFilter, setCourseFilter] = useState('All');
 
   const upperRole = (tpoData?.role || '').toUpperCase();
+  const accessType = String(tpoData?.accessType || '').toLowerCase();
+  
+  // 🚨 SECURITY CHECKS
+  const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole.includes('MANAGER');
   const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
+  const allowedBranches = tpoData?.assignedBranchesArray || [];
 
   useEffect(() => {
     const fetchApps = async () => {
@@ -54,7 +59,6 @@ export default function StudentApps() {
       
       try {
         setLoading(true);
-        // 🚨 FIXED: Removed the stray single quote before the template literal
         const response = await axios.post(`${API_BASE}/api/tpo/applications`, { 
           assignedBranchesArray: localTpo.assignedBranchesArray,
           tpoName: localTpo.name,
@@ -80,6 +84,14 @@ export default function StudentApps() {
   };
 
   const globallyFiltered = applications.filter(a => {
+    // 🚨 STRICT BRANCH FIREWALL
+    // If the user is NOT a Super Admin, instantly block applications from unassigned branches.
+    if (!isSuperAdmin) {
+      const appBranch = (a.branch || '').toLowerCase();
+      const hasBranchAccess = allowedBranches.includes('all') || allowedBranches.some(b => appBranch.includes(b));
+      if (!hasBranchAccess) return false;
+    }
+
     if (isCourseSpecific && getStandardCourse(a.course) !== getStandardCourse(displayCourse)) return false;
 
     let dateObj = parseDate(a.date);
@@ -126,7 +138,7 @@ export default function StudentApps() {
             ) : (
               <div>
                 <h1 style={{ fontSize: '2.2rem', marginBottom: '5px' }}>Student Applications View</h1>
-                <p style={{ color: 'var(--text-muted)', margin: 0 }}>Filter and explore job drive submissions across all branches.</p>
+                <p style={{ color: 'var(--text-muted)', margin: 0 }}>Filter and explore job drive submissions across your assigned branches.</p>
               </div>
             )}
           </div>
