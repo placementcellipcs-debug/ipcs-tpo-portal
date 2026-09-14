@@ -3,7 +3,7 @@ import axios from 'axios';
 import { 
   CircleNotch, CalendarCheck, Users, 
   CaretLeft, IdentificationCard, Phone, EnvelopeSimple,
-  Trophy, UserList, Clock, CheckCircle, MapPin, CalendarBlank
+  Trophy, UserList, Clock, CheckCircle, MapPin, CalendarBlank, WarningCircle
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
@@ -51,8 +51,11 @@ export default function PlacementDrives() {
   const canEditDrive = (drive) => {
     if (isSuperAdmin) return true;
     if (!tpoData || !tpoData.name) return false;
+    // If the drive is orphaned (no TPO mapped), allow Super Admin to edit, block others
+    if (!drive.driveTpo) return false;
+    
     const myName = String(tpoData.name).toLowerCase().trim();
-    const driveOwner = String(drive.driveTpo || '').toLowerCase().trim();
+    const driveOwner = String(drive.driveTpo).toLowerCase().trim();
     return myName !== '' && myName === driveOwner;
   };
 
@@ -95,14 +98,12 @@ export default function PlacementDrives() {
     return d2 - d1;
   });
 
-  // Selected Drive Search Filter
   const filteredApplicants = selectedDrive ? selectedDrive.applicants.filter(a => 
     String(a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
     String(a.branch || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
     String(a.email || '').toLowerCase().includes(searchQuery.toLowerCase())
   ) : [];
 
-  // 🚨 DYNAMIC KPI CALCULATIONS FOR SELECTED DRIVE
   let kpiTotal = 0, kpiAttended = 0, kpiPlaced = 0, kpiPending = 0;
   if (selectedDrive) {
     kpiTotal = selectedDrive.applicants.length;
@@ -138,31 +139,41 @@ export default function PlacementDrives() {
                 {driveList.map((drive, idx) => {
                   const placedCount = drive.applicants.filter(a => String(a.studentStatus || '').toLowerCase().includes('placed') || String(a.studentStatus || '').toLowerCase().includes('offer')).length;
                   const progressPct = drive.applicants.length > 0 ? (placedCount / drive.applicants.length) * 100 : 0;
+                  
+                  // 🚨 Check if data is missing from the sheet
+                  const isOrphaned = !drive.driveTpo;
 
                   return (
-                    <div key={idx} onClick={() => setSelectedDrive(drive)} className="dash-card hover-lift" style={{ cursor: 'pointer', padding: '25px', position: 'relative', overflow: 'hidden' }}>
-                      <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', background: '#38bdf8' }}></div>
+                    <div key={idx} onClick={() => setSelectedDrive(drive)} className="dash-card hover-lift" style={{ cursor: 'pointer', padding: '25px', position: 'relative', overflow: 'hidden', border: isOrphaned ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid #1e293b' }}>
+                      <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', background: isOrphaned ? '#f59e0b' : '#38bdf8' }}></div>
                       
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
                         <div>
                           <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Drive Reference</div>
                           <h3 style={{ margin: 0, fontSize: '1.4rem', color: '#fff', fontWeight: 900 }}>{String(drive.driveId || 'N/A')}</h3>
                         </div>
-                        <div style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', padding: '10px', borderRadius: '12px' }}>
+                        <div style={{ background: isOrphaned ? 'rgba(245, 158, 11, 0.15)' : 'rgba(56, 189, 248, 0.15)', color: isOrphaned ? '#f59e0b' : '#38bdf8', padding: '10px', borderRadius: '12px' }}>
                           <CalendarCheck size={24} weight="fill" />
                         </div>
                       </div>
 
-                      {/* 🚨 PREMIUM DATA STACK */}
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '20px', color: '#cbd5e1', fontSize: '0.85rem' }}>
+                      {/* 🚨 PREMIUM DATA STACK WITH FALLBACKS */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px', color: '#cbd5e1', fontSize: '0.85rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <IdentificationCard size={18} color="#94a3b8" /> <span>Managed by <strong style={{ color: '#fff' }}>{String(drive.driveTpo || 'Admin')}</strong></span>
+                          <IdentificationCard size={18} color="#94a3b8" /> 
+                          {drive.driveTpo ? (
+                            <span>Managed by <strong style={{ color: '#fff' }}>{drive.driveTpo}</strong></span>
+                          ) : (
+                            <span style={{ color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '5px' }}><WarningCircle size={16}/> TPO Missing in Sheet</span>
+                          )}
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <CalendarBlank size={18} color="#94a3b8" /> <span>{String(drive.driveDate || 'Date Not Specified')}</span>
+                          <CalendarBlank size={18} color="#94a3b8" /> 
+                          <span>{drive.driveDate || <span style={{ color: '#f59e0b' }}>Date Missing in Sheet</span>}</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                          <MapPin size={18} color="#94a3b8" /> <span>{String(drive.driveLocation || 'Location Not Specified')}</span>
+                          <MapPin size={18} color="#94a3b8" /> 
+                          <span>{drive.driveLocation || <span style={{ color: '#f59e0b' }}>Location Missing in Sheet</span>}</span>
                         </div>
                       </div>
 
@@ -177,9 +188,8 @@ export default function PlacementDrives() {
                         </div>
                       </div>
 
-                      {/* Mini Progress Bar */}
                       <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', marginTop: '15px', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${progressPct}%`, background: '#38bdf8', transition: 'width 0.5s ease' }}></div>
+                        <div style={{ height: '100%', width: `${progressPct}%`, background: isOrphaned ? '#f59e0b' : '#38bdf8', transition: 'width 0.5s ease' }}></div>
                       </div>
                     </div>
                   );
@@ -189,7 +199,6 @@ export default function PlacementDrives() {
           </>
         ) : (
           <>
-            {/* 🚨 SELECTED DRIVE DASHBOARD VIEW */}
             <div className="dashboard-header" style={{ marginBottom: '20px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
                 <button onClick={() => { setSelectedDrive(null); setSearchQuery(''); }} className="premium-btn secondary" style={{ padding: '10px 15px', fontSize: '0.9rem', width: 'auto' }}>
@@ -203,7 +212,6 @@ export default function PlacementDrives() {
               </div>
             </div>
 
-            {/* 🚨 KPI STATS GRID FOR THIS SPECIFIC DRIVE */}
             <div className="kpi-grid" style={{ marginBottom: '30px' }}>
               <div className="dash-card" style={{ padding: '20px' }}>
                 <div className="kpi-header"><div className="icon-c blue"><Users weight="fill" size={24}/></div><div><div className="kpi-title">Total Registered</div><div className="kpi-val">{kpiTotal}</div></div></div>
@@ -219,7 +227,6 @@ export default function PlacementDrives() {
               </div>
             </div>
 
-            {/* 🚨 ACTION BAR */}
             <div className="glass-panel control-action-bar" style={{ padding: '15px', borderRadius: '16px', marginBottom: '25px' }}>
               <div className="filter-group" style={{ width: '100%', maxWidth: '500px' }}>
                 <input 
@@ -232,14 +239,11 @@ export default function PlacementDrives() {
               </div>
             </div>
 
-            {/* 🚨 STUDENT LIST (PREMIUM CLEAN-ROW LAYOUT) */}
             <div className="clean-list">
               {filteredApplicants.length === 0 ? (
                 <div className="empty-state-card"><span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🔍</span>No students match your search.</div>
               ) : (
                 filteredApplicants.map((app, i) => {
-                  
-                  // Dynamic Status Styling
                   const currStat = String(app.studentStatus || 'Pending / Unknown');
                   let statColor = '#f59e0b'; let bgAlpha = 'rgba(245, 158, 11, 0.1)';
                   if (currStat.includes('Placed') || currStat.includes('Offer')) { statColor = '#10b981'; bgAlpha = 'rgba(16, 185, 129, 0.1)'; }
@@ -249,7 +253,6 @@ export default function PlacementDrives() {
                   return (
                     <div key={i} className="clean-row glass-panel hover-lift" style={{ padding: '20px', borderLeft: `4px solid ${statColor}` }}>
                       
-                      {/* Left: Student Identity */}
                       <div className="cl-left" style={{ flex: 2, minWidth: '250px' }}>
                         <div className="cl-icon" style={{ background: 'rgba(255,255,255,0.05)', color: '#fff', fontSize: '1.2rem', fontWeight: 'bold' }}>
                           {String(app.name || 'U').charAt(0).toUpperCase()}
@@ -263,7 +266,6 @@ export default function PlacementDrives() {
                         </div>
                       </div>
                       
-                      {/* Middle: Academics & Date */}
                       <div className="cl-middle" style={{ flex: 1.5, minWidth: '200px' }}>
                         <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.95rem', marginBottom: '4px' }}>{String(app.branch || 'Unknown Branch')}</div>
                         <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '8px' }}>{String(app.course || 'Unknown Course')}</div>
@@ -272,7 +274,6 @@ export default function PlacementDrives() {
                         </span>
                       </div>
                       
-                      {/* Right: Interactive Status Updater */}
                       <div className="cl-right" style={{ flex: 1, minWidth: '200px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
                         {savingRow === app.rowNumber ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8', fontWeight: 'bold' }}>
@@ -313,53 +314,30 @@ export default function PlacementDrives() {
         )}
       </div>
 
-      {/* ---------------------------------------------------------
-          🎨 PREMIUM CSS FOR PLACEMENT DRIVES
-      --------------------------------------------------------- */}
       <style>{`
         .pd-wrapper { font-family: 'Inter', sans-serif; color: #f8fafc; }
-        
-        /* Glass Panels */
         .glass-panel { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); }
         .hover-lift { transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); }
         .hover-lift:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7); border-color: rgba(255, 255, 255, 0.1); background: rgba(30, 41, 59, 0.8); }
-
-        /* Hero */
         .top-hero-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 20px; }
         .hero-text h1 { font-size: 2.2rem; font-weight: 800; margin: 0 0 5px 0; color: #fff; }
         .hero-text p { color: #94a3b8; margin: 0; font-size: 1rem; }
-        
         .premium-btn { border: none; padding: 10px 20px; border-radius: 12px; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; cursor: pointer; }
-        .premium-btn.primary { background: #3b82f6; color: #fff; }
         .premium-btn.secondary { background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1); }
-        .premium-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        /* Action Bar */
         .control-action-bar { border-radius: 16px; padding: 15px; margin-bottom: 30px; display: flex; align-items: center; }
         .filter-group { display: flex; gap: 12px; flex-wrap: wrap; width: 100%; }
         .premium-input, .premium-select { background: rgba(0,0,0,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 15px; font-size: 0.9rem; outline: none; transition: 0.2s; box-sizing: border-box; }
         .premium-input { flex: 1; }
         .premium-input:focus, .premium-select:focus { border-color: #3b82f6; background: rgba(0,0,0,0.4); }
-        .premium-select option { background: #0f1523; color: #fff; padding: 10px; font-weight: bold; }
-
-        /* Empty State */
         .empty-state-card { background: rgba(15, 23, 42, 0.5); border: 1px dashed rgba(255,255,255,0.1); border-radius: 16px; padding: 50px 20px; text-align: center; color: #94a3b8; font-size: 1.1rem; font-weight: bold; display: flex; flex-direction: column; align-items: center; }
-        .text-blue { color: #3b82f6; }
-
-        /* Clean List (Student Rows) */
         .clean-list { display: flex; flex-direction: column; gap: 15px; }
         .clean-row { display: flex; justify-content: space-between; align-items: center; padding: 20px; border-radius: 16px; flex-wrap: wrap; gap: 15px; }
-        
         .cl-left { display: flex; align-items: center; gap: 20px; flex: 2; min-width: 250px; }
         .cl-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
         .cl-title { font-size: 1.15rem; font-weight: 800; color: #fff; margin-bottom: 4px; display: flex; align-items: center; }
         .cl-sub { font-size: 0.85rem; color: #94a3b8; font-weight: 500; }
-        
         .cl-middle { display: flex; flex-direction: column; justify-content: center; flex: 1.5; min-width: 200px; }
-        
         .cl-right { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; justify-content: flex-end; flex: 1; min-width: 200px; }
-
-        /* KPI Dashboard Elements */
         .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px; margin-bottom: 20px; }
         .dash-card { background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; }
         .kpi-header { display: flex; align-items: center; gap: 15px; }
@@ -371,10 +349,8 @@ export default function PlacementDrives() {
         .kpi-title { font-size: 0.8rem; color: #94a3b8; margin-bottom: 2px; text-transform: uppercase; font-weight: bold; letter-spacing: 0.5px; }
         .kpi-val { font-size: 1.8rem; font-weight: 900; color: #fff; line-height: 1; }
         .grid-3-col { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
-
         .dashboard-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
         .dash-title { font-size: 2rem; margin: 0; color: #fff; }
-
       `}</style>
     </Layout>
   );
