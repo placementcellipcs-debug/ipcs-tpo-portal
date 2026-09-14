@@ -35,9 +35,8 @@ export default function PlacementDrives() {
   const [selectedDrive, setSelectedDrive] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // 🚨 TABS
   const [activeMasterTab, setActiveMasterTab] = useState('upcoming'); 
-  const [activeInterestTab, setActiveInterestTab] = useState('interested'); 
+  const [activeInterestTab, setActiveInterestTab] = useState('interested'); // 'interested' or 'not_interested'
   
   const [savingRow, setSavingRow] = useState(null);
 
@@ -108,26 +107,33 @@ export default function PlacementDrives() {
   const expiredDrives = driveList.filter(d => parseDate(d.driveDate) > 0 && parseDate(d.driveDate) < todayStart);
   const displayDrives = activeMasterTab === 'upcoming' ? upcomingDrives : expiredDrives;
 
-  // 🚨 FILTER BY INTERESTED / NOT INTERESTED
-  const splitApplicants = selectedDrive ? selectedDrive.applicants.filter(a => {
-    const isSearchMatch = String(a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          String(a.branch || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          String(a.email || '').toLowerCase().includes(searchQuery.toLowerCase());
-    
-    // Check if the student marked "Not Interested" in the initial Google Form (regStatus)
-    const isNotInterested = String(a.regStatus || '').toLowerCase().includes('not interested');
-    
-    if (activeInterestTab === 'not_interested') {
-      return isSearchMatch && isNotInterested;
-    } else {
-      return isSearchMatch && !isNotInterested;
-    }
-  }) : [];
+  // 🚨 SEPARATE INTERESTED VS NOT INTERESTED APPLICANTS
+  const allApplicants = selectedDrive ? selectedDrive.applicants : [];
+  
+  const interestedApplicants = allApplicants.filter(a => {
+    const regStat = String(a.regStatus || '').toLowerCase();
+    const stuStat = String(a.studentStatus || '').toLowerCase();
+    return !regStat.includes('not interested') && !stuStat.includes('not interested');
+  });
+
+  const notInterestedApplicants = allApplicants.filter(a => {
+    const regStat = String(a.regStatus || '').toLowerCase();
+    const stuStat = String(a.studentStatus || '').toLowerCase();
+    return regStat.includes('not interested') || stuStat.includes('not interested');
+  });
+
+  const activeListSource = activeInterestTab === 'interested' ? interestedApplicants : notInterestedApplicants;
+
+  const filteredApplicants = activeListSource.filter(a => 
+    String(a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+    String(a.branch || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+    String(a.email || '').toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   let kpiTotal = 0, kpiAttended = 0, kpiPlaced = 0, kpiPending = 0;
   if (selectedDrive) {
-    kpiTotal = selectedDrive.applicants.length;
-    selectedDrive.applicants.forEach(a => {
+    kpiTotal = interestedApplicants.length; // KPIs focus on interested candidates
+    interestedApplicants.forEach(a => {
       const stat = String(a.studentStatus || '').toLowerCase();
       if (stat.includes('placed') || stat.includes('offer')) kpiPlaced++;
       if (stat.includes('attended') || stat.includes('placed') || stat.includes('offer')) kpiAttended++;
@@ -230,7 +236,7 @@ export default function PlacementDrives() {
                       <div style={{ background: 'rgba(0,0,0,0.2)', borderRadius: '12px', padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div>
                           <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#10b981' }}>{drive.applicants.length}</div>
-                          <div style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 'bold' }}>Registered</div>
+                          <div style={{ fontSize: '0.75rem', color: '#64748b', textTransform: 'uppercase', fontWeight: 'bold' }}>Total Reg.</div>
                         </div>
                         <div style={{ textAlign: 'right' }}>
                           <div style={{ fontSize: '1.5rem', fontWeight: 900, color: '#f59e0b' }}>{placedCount}</div>
@@ -264,7 +270,7 @@ export default function PlacementDrives() {
 
             <div className="kpi-grid" style={{ marginBottom: '30px' }}>
               <div className="dash-card" style={{ padding: '20px' }}>
-                <div className="kpi-header"><div className="icon-c blue"><Users weight="fill" size={24}/></div><div><div className="kpi-title">Total Registered</div><div className="kpi-val">{kpiTotal}</div></div></div>
+                <div className="kpi-header"><div className="icon-c blue"><Users weight="fill" size={24}/></div><div><div className="kpi-title">Interested Registered</div><div className="kpi-val">{kpiTotal}</div></div></div>
               </div>
               <div className="dash-card" style={{ padding: '20px' }}>
                 <div className="kpi-header"><div className="icon-c purple"><UserList weight="fill" size={24}/></div><div><div className="kpi-title">Interview Attended</div><div className="kpi-val">{kpiAttended}</div></div></div>
@@ -277,25 +283,25 @@ export default function PlacementDrives() {
               </div>
             </div>
 
-            <div className="glass-panel control-action-bar" style={{ padding: '15px', borderRadius: '16px', marginBottom: '25px', display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+            {/* 🚨 INTERESTED VS NOT INTERESTED TABS & SEARCH BAR */}
+            <div className="glass-panel control-action-bar" style={{ padding: '15px', borderRadius: '16px', marginBottom: '25px', display: 'flex', gap: '15px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
               
-              {/* 🚨 THE NEW INTERESTED / NOT INTERESTED TAB TOGGLE */}
-              <div className="segmented-tabs" style={{ background: 'rgba(0,0,0,0.3)', padding: '5px', borderRadius: '12px', display: 'flex' }}>
+              <div className="segmented-tabs" style={{ background: 'rgba(0,0,0,0.3)', padding: '5px', borderRadius: '12px', display: 'flex', gap: '5px' }}>
                 <button 
                   onClick={() => setActiveInterestTab('interested')} 
-                  style={{ background: activeInterestTab === 'interested' ? '#38bdf8' : 'transparent', color: activeInterestTab === 'interested' ? '#fff' : '#94a3b8', border: 'none', padding: '8px 24px', fontWeight: 'bold', borderRadius: '8px', cursor: 'pointer', transition: '0.3s' }}
+                  style={{ background: activeInterestTab === 'interested' ? '#38bdf8' : 'transparent', color: activeInterestTab === 'interested' ? '#0f172a' : '#94a3b8', border: 'none', padding: '10px 20px', fontWeight: 'bold', borderRadius: '8px', cursor: 'pointer', transition: '0.3s' }}
                 >
-                  Interested Students
+                  Interested ({interestedApplicants.length})
                 </button>
                 <button 
                   onClick={() => setActiveInterestTab('not_interested')} 
-                  style={{ background: activeInterestTab === 'not_interested' ? '#ef4444' : 'transparent', color: activeInterestTab === 'not_interested' ? '#fff' : '#94a3b8', border: 'none', padding: '8px 24px', fontWeight: 'bold', borderRadius: '8px', cursor: 'pointer', transition: '0.3s' }}
+                  style={{ background: activeInterestTab === 'not_interested' ? '#ef4444' : 'transparent', color: activeInterestTab === 'not_interested' ? '#fff' : '#94a3b8', border: 'none', padding: '10px 20px', fontWeight: 'bold', borderRadius: '8px', cursor: 'pointer', transition: '0.3s' }}
                 >
-                  Not Interested / Opt-Outs
+                  Not Interested ({not_interested_count = notInterestedApplicants.length})
                 </button>
               </div>
 
-              <div className="filter-group" style={{ flex: 1, minWidth: '300px' }}>
+              <div className="filter-group" style={{ flex: 1, maxWidth: '400px' }}>
                 <input 
                   type="text" 
                   className="premium-input" 
@@ -307,24 +313,29 @@ export default function PlacementDrives() {
               </div>
             </div>
 
+            {/* APPLICANT ROWS */}
             <div className="clean-list">
-              {splitApplicants.length === 0 ? (
+              {filteredApplicants.length === 0 ? (
                 <div className="empty-state-card">
                   <span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🔍</span>
                   {activeInterestTab === 'not_interested' ? 'No students have opted out of this drive.' : 'No interested students found matching your search.'}
                 </div>
               ) : (
-                splitApplicants.map((app, i) => {
+                filteredApplicants.map((app, i) => {
                   const currStat = String(app.studentStatus || 'Pending / Unknown');
-                  let statColor = '#f59e0b'; let bgAlpha = 'rgba(245, 158, 11, 0.1)';
+                  let statColor = '#38bdf8'; let bgAlpha = 'rgba(56, 189, 248, 0.1)';
                   
-                  // If they are in the Not Interested tab, color them red by default
-                  if (activeInterestTab === 'not_interested') { statColor = '#ef4444'; bgAlpha = 'rgba(239, 68, 68, 0.1)'; }
-                  else if (currStat.includes('Placed') || currStat.includes('Offer')) { statColor = '#10b981'; bgAlpha = 'rgba(16, 185, 129, 0.1)'; }
-                  else if (currStat.includes('Attended')) { statColor = '#38bdf8'; bgAlpha = 'rgba(56, 189, 248, 0.1)'; }
-                  else if (currStat.includes('Not') || currStat.includes('Rejected')) { statColor = '#ef4444'; bgAlpha = 'rgba(239, 68, 68, 0.1)'; }
+                  if (activeInterestTab === 'not_interested') { 
+                    statColor = '#ef4444'; 
+                    bgAlpha = 'rgba(239, 68, 68, 0.1)'; 
+                  } else if (currStat.includes('Placed') || currStat.includes('Offer')) { 
+                    statColor = '#10b981'; 
+                    bgAlpha = 'rgba(16, 185, 129, 0.1)'; 
+                  } else if (currStat.includes('Attended')) { 
+                    statColor = '#38bdf8'; 
+                    bgAlpha = 'rgba(56, 189, 248, 0.1)'; 
+                  }
 
-                  // 🚨 PREPARE WHATSAPP MESSAGE
                   const waMessage = `Hi ${app.name}, this is regarding the ${selectedDrive.driveId} Placement Drive.`;
                   const waLink = `https://wa.me/91${app.phone.replace(/\D/g, '')}?text=${encodeURIComponent(waMessage)}`;
 
@@ -352,7 +363,7 @@ export default function PlacementDrives() {
                         </span>
                       </div>
                       
-                      {/* 🚨 RIGHT COLUMN: STATUS UPDATER & COMMUNICATION BUTTONS */}
+                      {/* RIGHT COLUMN: QUICK COMM & STATUS SELECTOR */}
                       <div className="cl-right" style={{ flex: 1.5, minWidth: '250px', display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
                         
                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -450,7 +461,7 @@ export default function PlacementDrives() {
         .kpi-val { font-size: 1.8rem; font-weight: 900; color: #fff; line-height: 1; }
         .grid-3-col { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
         .dashboard-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
-        .dash-title { font-size: 2rem; margin: 0; color: #fff; }
+        .dash-title { font-size: 2.0rem; margin: 0; color: #fff; }
       `}</style>
     </Layout>
   );
