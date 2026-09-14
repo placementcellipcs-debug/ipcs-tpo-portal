@@ -1197,10 +1197,8 @@ exports.addEvent = async (req, res) => {
       const scheduledTpoEmail = getTpoEmailByName(tpo);
       const bmMail = getBranchManagerEmail(branch);
       
-      // 🚨 We already proved bmMail exists at the top of the function
       let toEmail = bmMail;
 
-      // 🚨 CC is the TPO and Gifty
       const ccArray = [giftyEmail, scheduledTpoEmail];
       const ccList = [...new Set(ccArray)]
         .filter(email => email && email.toLowerCase() !== toEmail.toLowerCase())
@@ -1208,8 +1206,6 @@ exports.addEvent = async (req, res) => {
 
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
-          
-          <!-- HEADER SECTION -->
           <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #a855f7;">
             <div style="margin-bottom: 12px;">
               <img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
@@ -1218,16 +1214,11 @@ exports.addEvent = async (req, res) => {
             <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px;">Talentino Session Notification</h2>
             <p style="color: #94a3b8; margin: 5px 0 0 0; font-size: 13px;">IPCS Global Placement Cell</p>
           </div>
-
-          <!-- BODY SECTION -->
           <div style="background-image: url('${watermark}'); background-repeat: no-repeat; background-position: center center; background-size: cover; background-color: #ffffff;">
             <div style="padding: 35px 30px; background-color: rgba(255, 255, 255, 0.94); color: #334155; font-size: 15px; line-height: 1.65;">
-              
               <p style="font-size: 16px; font-weight: bold; color: #0f1523; margin-top: 0;">Dear Team,</p>
               <p>Greetings from the Placement Department, IPCS Global.</p>
               <p>This is to inform you that a Talentino Session has been scheduled at your branch. Kindly find the details below:</p>
-              
-              <!-- DETAILS BOX -->
               <div style="background-color: rgba(248, 250, 252, 0.95); border: 1px solid #cbd5e1; border-left: 5px solid #a855f7; border-radius: 8px; padding: 20px; margin: 25px 0;">
                 <h3 style="margin: 0 0 12px 0; color: #0f1523; font-size: 15px; text-transform: uppercase;">&#128204; Talentino Session Details</h3>
                 <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
@@ -1238,32 +1229,13 @@ exports.addEvent = async (req, res) => {
                   <tr><td style="padding: 6px 0; color: #64748b; vertical-align: top;">Description:</td><td style="padding: 6px 0; color: #334155; white-space: pre-line;">${formattedDesc}</td></tr>
                 </table>
               </div>
-
-              <!-- ACTION REQUIRED SECTION -->
               <h3 style="color: #ef4444; margin: 20px 0 10px 0; font-size: 16px;">&#9888;&#65039; Action Required</h3>
               <p>The concerned branch is requested to inform the students about the scheduled Talentino session and ensure maximum participation.</p>
-              <p style="font-weight: bold; margin-bottom: 5px;">Please ensure that:</p>
               <ul style="padding-left: 20px; margin-top: 5px;">
                 <li style="margin-bottom: 6px;">All concerned students are informed about the session in advance.</li>
                 <li style="margin-bottom: 6px;">Students are instructed to be present at the branch on time.</li>
                 <li style="margin-bottom: 6px;">The required arrangements are made at the branch for conducting the session smoothly.</li>
-                <li style="margin-bottom: 6px;">Students are encouraged to actively participate in all the activities conducted during Talentino.</li>
-                <li style="margin-bottom: 6px;">The concerned TPO coordinates with the branch team and students throughout the session.</li>
               </ul>
-
-              <!-- BLUE NOTE BOX -->
-              <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; margin: 20px 0;">
-                <p style="margin: 0; font-size: 14px; color: #1e3a8a;">
-                  <b>Note:</b> No separate registration is required for the Talentino session. Students can participate directly as instructed by the concerned TPO.
-                </p>
-              </div>
-
-              <!-- FOOTER TEXT -->
-              <p>The Talentino session is designed to engage students through interactive activities, challenges, and placement-oriented exercises, helping them improve their confidence, communication, aptitude, problem-solving, and overall placement readiness.</p>
-              <p>Your support and coordination are essential to ensure the smooth execution of the Talentino session and active student participation.</p>
-              <p>For any clarification or coordination, please connect with the Placement Team.<br/>Thank you for your cooperation.</p>
-
-              <!-- SIGN-OFF -->
               <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
                 <p style="margin: 0 0 3px 0;">Regards,</p>
                 <p style="margin: 0 0 2px 0; font-weight: bold;">Placement Team</p>
@@ -1278,7 +1250,7 @@ exports.addEvent = async (req, res) => {
         from: `"IPCS Talentino" <${senderEmail}>`,
         to: toEmail,
         cc: ccList,
-        bcc: '', // 🚨 Empty BCC for Talentino
+        bcc: '',
         subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${eventId}]`,
         html: html
       };
@@ -1318,10 +1290,8 @@ exports.addEvent = async (req, res) => {
     }
     refreshCache(); 
     
-    // 🚨 Check if the mail Options existed but failed to send
     if (mailOptions && newRow.get(newRow._worksheet.headerValues.find(h => (h||'').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mailstatus')) === 'FAILED') {
       const errorReason = newRow.get(newRow._worksheet.headerValues.find(h => (h||'').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mailerror')) || 'Unknown timeout';
-      // Returns success: true so the event saves and the modal closes, but triggers a warning popup text
       return res.json({ success: true, message: `⚠️ EVENT SAVED, BUT EMAILS FAILED TO SEND! Reason: ${errorReason}`, eventId: eventId });
     }
 
@@ -1492,52 +1462,67 @@ exports.runDailyCron = async () => {
     const tpoName = getValByHeader(drive, ['tpo', 'placementofficer']) || 'Placement Team';
     const title = getValByHeader(drive, ['title']) || 'Placement Drive';
 
-    // 2. Get students registered for this specific drive
-    const registeredStudents = (cache.drives || []).filter(row => {
+    // 2. Get ALL students registered for this specific drive
+    const allDriveStudents = (cache.drives || []).filter(row => {
       const rowDId = (getValByHeader(row, ['driveid', 'drive id']) || '').toUpperCase().trim();
-      const studentStatus = (getValByHeader(row, ['status']) || '').toLowerCase();
-      // Ignore "Not Interested" students for the final TPO attendance sheet
-      return rowDId === dId && dId !== '' && !studentStatus.includes('not interested');
+      return rowDId === dId && dId !== '';
     });
 
-    if (registeredStudents.length === 0) {
-      console.log(`⚠️ Skipped Drive ${dId} - Zero interested students registered.`);
+    if (allDriveStudents.length === 0) {
+      console.log(`⚠️ Skipped Drive ${dId} - Zero students registered.`);
       continue;
     }
 
-    // 3. Build Mailing List
+    // 3. Split into Interested and Not Interested
+    const interestedStudents = allDriveStudents.filter(row => {
+        const studentStatus = (getValByHeader(row, ['status']) || '').toLowerCase();
+        return !studentStatus.includes('not interested');
+    });
+
+    const notInterestedStudents = allDriveStudents.filter(row => {
+        const studentStatus = (getValByHeader(row, ['status']) || '').toLowerCase();
+        return studentStatus.includes('not interested');
+    });
+
+    // 4. Build Mailing List
     const tpoEmail = getTpoEmailByName(tpoName);
-    const giftyEmail = 'giftyipcsglobal@gmail.com'; // Hardcoded explicitly as requested
+    const giftyEmail = 'giftyipcsglobal@gmail.com'; 
     const allTpos = getAllTpoEmails();
 
-    // CC includes Gifty and all TPOs (Ensuring we don't CC the person we are directly emailing)
     const ccSet = new Set([giftyEmail, ...allTpos]);
     if (tpoEmail) ccSet.delete(tpoEmail);
     const ccList = Array.from(ccSet).filter(Boolean).join(',');
 
-    const toEmail = tpoEmail || giftyEmail; // Fallback to Gifty if TPO email not found
+    const toEmail = tpoEmail || giftyEmail; 
 
-    // 4. Build Table
-    let tableRows = '';
-    registeredStudents.forEach((appRow, index) => {
-      const name = getValByHeader(appRow, ['name', 'studentname']) || 'Unknown';
-      const branch = getValByHeader(appRow, ['branch']) || 'N/A';
-      const course = getValByHeader(appRow, ['course']) || 'N/A';
-      const phone = getValByHeader(appRow, ['contact', 'phone']) || 'N/A';
-      const resume = getValByHeader(appRow, ['resume']) || '';
+    // 5. Build HTML Row Helper Function
+    const buildRows = (studentsArray) => {
+      let rows = '';
+      studentsArray.forEach((appRow, index) => {
+        const name = getValByHeader(appRow, ['name', 'studentname']) || 'Unknown';
+        const branch = getValByHeader(appRow, ['branch']) || 'N/A';
+        const course = getValByHeader(appRow, ['course']) || 'N/A';
+        const phone = getValByHeader(appRow, ['contact', 'phone']) || 'N/A';
+        const resume = getValByHeader(appRow, ['resume']) || '';
 
-      let resumeBtn = 'N/A';
-      if (resume && resume !== 'N/A') {
-        const driveMatch = resume.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
-        if (driveMatch) {
-            const driveId = driveMatch[1];
-            resumeBtn = `<a href="https://drive.google.com/file/d/${driveId}/view" style="background: #0f172a; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; display: inline-block; white-space: nowrap;">View CV</a>`;
-        } else { resumeBtn = `<a href="${resume}">Link</a>`; }
-      }
+        let resumeBtn = 'N/A';
+        if (resume && resume !== 'N/A') {
+          const driveMatch = resume.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+          if (driveMatch) {
+              const driveId = driveMatch[1];
+              resumeBtn = `<a href="https://drive.google.com/file/d/${driveId}/view" style="background: #0f172a; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; display: inline-block; white-space: nowrap;">View CV</a>`;
+          } else { resumeBtn = `<a href="${resume}">Link</a>`; }
+        }
 
-      tableRows += `<tr><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${index+1}</td><td style="padding:10px;border:1px solid #cbd5e1;"><b>${name}</b></td><td style="padding:10px;border:1px solid #cbd5e1;">${branch}</td><td style="padding:10px;border:1px solid #cbd5e1;">${course}</td><td style="padding:10px;border:1px solid #cbd5e1;">${phone}</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${resumeBtn}</td></tr>`;
-    });
+        rows += `<tr><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${index+1}</td><td style="padding:10px;border:1px solid #cbd5e1;"><b>${name}</b></td><td style="padding:10px;border:1px solid #cbd5e1;">${branch}</td><td style="padding:10px;border:1px solid #cbd5e1;">${course}</td><td style="padding:10px;border:1px solid #cbd5e1;">${phone}</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${resumeBtn}</td></tr>`;
+      });
+      return rows;
+    };
 
+    const tableRowsInterested = buildRows(interestedStudents);
+    const tableRowsNotInterested = buildRows(notInterestedStudents);
+
+    // 6. Build the Final HTML Template with Two Tables
     const html = `
       <div style="font-family: Arial, sans-serif; color: #333; max-width: 800px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
         <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;">
@@ -1546,11 +1531,13 @@ exports.runDailyCron = async () => {
         <div style="padding: 30px; background-color: #ffffff;">
           <p style="font-size: 16px; margin-top: 0;">Dear <b>${tpoName}</b>,</p>
           <p style="font-size: 15px; line-height: 1.6; color: #475569;">Greetings from IPCS Global Placement Cell.</p>
-          <p style="font-size: 15px; line-height: 1.6; color: #475569;">This is the consolidated list of <b>${registeredStudents.length} students</b> registered for the Placement Drive scheduled for today: <b>${title}</b> (Ref: ${dId}).</p>
+          <p style="font-size: 15px; line-height: 1.6; color: #475569;">This is the consolidated list of <b>${allDriveStudents.length} students</b> registered for the Placement Drive scheduled for today: <b>${title}</b> (Ref: ${dId}).</p>
           
-          <table style="width: 100%; border-collapse: collapse; margin-top: 25px;">
+          <!-- ✅ INTERESTED STUDENTS TABLE -->
+          <h3 style="color: #0f1523; margin-top: 30px; margin-bottom: 10px; font-size: 16px; text-transform: uppercase;">✅ Interested Candidates (${interestedStudents.length})</h3>
+          <table style="width: 100%; border-collapse: collapse;">
             <thead>
-              <tr style="background-color: #f1f5f9; text-align: left; font-size: 13px;">
+              <tr style="background-color: #f0fdf4; color: #166534; text-align: left; font-size: 13px;">
                 <th style="padding: 10px; border: 1px solid #cbd5e1; text-align:center;">#</th>
                 <th style="padding: 10px; border: 1px solid #cbd5e1;">Applicant Name</th>
                 <th style="padding: 10px; border: 1px solid #cbd5e1;">Branch</th>
@@ -1560,9 +1547,29 @@ exports.runDailyCron = async () => {
               </tr>
             </thead>
             <tbody style="font-size: 13px;">
-              ${tableRows}
+              ${tableRowsInterested || '<tr><td colspan="6" style="padding:10px;text-align:center;border:1px solid #cbd5e1; color: #64748b;">No interested candidates</td></tr>'}
             </tbody>
           </table>
+
+          <!-- ❌ NOT INTERESTED STUDENTS TABLE (Only shows if there are any) -->
+          ${notInterestedStudents.length > 0 ? `
+          <h3 style="color: #ef4444; margin-top: 40px; margin-bottom: 10px; font-size: 16px; text-transform: uppercase;">❌ Not Interested / Opt-Outs (${notInterestedStudents.length})</h3>
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="background-color: #fef2f2; color: #991b1b; text-align: left; font-size: 13px;">
+                <th style="padding: 10px; border: 1px solid #cbd5e1; text-align:center;">#</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Applicant Name</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Branch</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Course</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Phone</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Resume Link</th>
+              </tr>
+            </thead>
+            <tbody style="font-size: 13px;">
+              ${tableRowsNotInterested}
+            </tbody>
+          </table>
+          ` : ''}
           
           <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
             <p style="margin: 0 0 5px 0;">Please ensure that all registered students are assisted appropriately during the drive today.</p>
