@@ -39,7 +39,7 @@ export default function UserManagement() {
     sheet: 'User', rowNumber: null, userName: '', email: '', contact: '', password: '', 
     role: 'Regional Technical Head', course: '', sittingBranch: '', 
     assignedBranches: [], access: 'View Only',
-    empId: '', target: '' // 🚨 NEW FIELDS
+    empId: '', target: '' 
   };
   const [formData, setFormData] = useState(initialFormState);
 
@@ -96,7 +96,7 @@ export default function UserManagement() {
       sittingBranch: user.sittingBranch,
       assignedBranches: user.assignedBranches ? user.assignedBranches.split(',').map(b => b.trim()) : [],
       access: user.access,
-      empId: user.empId || '', // 🚨 MAP NEW FIELDS
+      empId: user.empId || '', 
       target: user.target || ''
     });
     setIsEditMode(true);
@@ -283,7 +283,6 @@ export default function UserManagement() {
                         <div className="sc-detail-row"><span>Course</span><strong style={{ color: 'var(--text-main)' }}>{user.course === 'All Courses' ? 'Global Scope' : user.course}</strong></div>
                         <div className="sc-detail-row"><span>Branches</span><strong style={{ color: 'var(--text-main)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.assignedBranches}>{user.assignedBranches || 'Global'}</strong></div>
                         
-                        {/* 🚨 VISIBLE IN GRID */}
                         {(user.empId || user.target) && (
                           <div className="sc-detail-row"><span>EMP ID / Tgt</span><strong style={{ color: '#a855f7' }}>{user.empId || 'N/A'} / {user.target || '0'}</strong></div>
                         )}
@@ -348,13 +347,10 @@ export default function UserManagement() {
                             <span className="primary-text">{user.course || 'Global Scope'}</span>
                             <span className="sub-text" style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.assignedBranches || user.sittingBranch}>{user.assignedBranches || user.sittingBranch || 'Global Scope'}</span>
                           </td>
-                          
-                          {/* 🚨 VISIBLE IN LIST */}
                           <td>
                             <span className="primary-text" style={{ color: '#a855f7', fontWeight: 'bold', fontSize: '0.85rem' }}>ID: {user.empId || 'N/A'} | Tgt: {user.target || '0'}</span>
                             <span className="sub-text" style={{ fontFamily: 'monospace' }}>Pass: {user.password}</span>
                           </td>
-
                           <td style={{ textAlign: 'center' }}>
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                               <button 
@@ -404,7 +400,6 @@ export default function UserManagement() {
 
             <form onSubmit={handleSubmit}>
               
-              {/* 🚨 GIFTY ONLY: SECRET KPI FIELDS */}
               {isGifty && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px', padding: '15px', background: 'rgba(168, 85, 247, 0.05)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '12px' }}>
                   <div className="form-group">
@@ -445,6 +440,8 @@ export default function UserManagement() {
                   <label>Account Role</label>
                   <select name="role" value={formData.role} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }} disabled={formData.sheet === 'Contact'}>
                     <option value="TPO">Placement Officer (TPO)</option>
+                    {/* 🚨 ADDED BRANCH ASSET MANAGER ROLE HERE */}
+                    <option value="Branch Asset Manager">Branch Asset Manager (BAM)</option>
                     <option value="Regional Technical Head">Regional Technical Head (RTH)</option>
                     <option value="Territory Technical Head">Territory Technical Head (TTH)</option>
                     <option value="Regional Manager">Regional Manager (RM)</option>

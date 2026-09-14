@@ -20,6 +20,12 @@ const DYNAMIC_TEMPLATES = {
 const DEFAULT_CATEGORIES = [{ categoryid: 'CAT01', categoryname: 'IT Equipment' }, { categoryid: 'CAT02', categoryname: 'Networking' }, { categoryid: 'CAT03', categoryname: 'Mobile & SIM' }, { categoryid: 'CAT04', categoryname: 'Furniture' }];
 const DEFAULT_SUBCATEGORIES = [{ categoryid: 'CAT01', name: 'Laptop' }, { categoryid: 'CAT01', name: 'Desktop' }, { categoryid: 'CAT01', name: 'Monitor' }, { categoryid: 'CAT02', name: 'Network Switch' }, { categoryid: 'CAT02', name: 'Router' }, { categoryid: 'CAT02', name: 'CCTV Camera' }, { categoryid: 'CAT03', name: 'Mobile Phone' }, { categoryid: 'CAT03', name: 'SIM Card' }];
 
+// 🚨 ADDED HARDCODED LOCATIONS
+const HARDCODED_LOCATIONS = [
+  'Automation Lab', 'BMS Lab', 'IT Lab', 'DM Lab', 'Embedded Lab', 
+  'Front Office', 'TPO Room', 'BM Cabin'
+];
+
 export default function AddAsset() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData') || '{}');
   
@@ -35,6 +41,9 @@ export default function AddAsset() {
   });
 
   const [customFields, setCustomFields] = useState([]);
+  
+  // 🚨 NEW: State for "Other" Custom Location
+  const [customLocation, setCustomLocation] = useState('');
 
   useEffect(() => {
     axios.get(`${API_BASE}/api/v1/assets/form-data`).then(res => {
@@ -79,16 +88,30 @@ export default function AddAsset() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsSubmitting(true);
+    
+    // 🚨 Safely resolve the final location string
+    let finalLocation = asset.location;
+    if (asset.location === 'Other') {
+      if (!customLocation.trim()) {
+        setNotification({ type: 'error', text: 'Please specify the custom location.' });
+        setIsSubmitting(false);
+        return;
+      }
+      finalLocation = customLocation;
+    }
+
     try {
       const res = await axios.post(`${API_BASE}/api/v1/assets/add`, {
-        asset,
+        asset: { ...asset, location: finalLocation },
         customFields: customFields.filter(f => f.name && f.value),
         userName: tpoData.name,
         userEmail: tpoData.email
       });
       if(res.data.success) {
         setNotification({ type: 'success', text: `Asset ${res.data.assetId} successfully registered!` });
+        // Reset form
         setAsset({ name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', location: '', condition: 'NEW', brand: '', model: '', purchaseDate: '', purchaseCost: '', vendor: '', invoice: '', warrantyEnd: '' });
+        setCustomLocation('');
         setCustomFields([]);
       }
     } catch (err) {
@@ -201,10 +224,38 @@ export default function AddAsset() {
                     {dbData.branches.map((b, i) => <option key={i} value={b}>{b}</option>)}
                   </select>
                 </div>
+
+                {/* 🚨 DYNAMIC LOCATION DROPDOWN */}
                 <div>
-                  <label className="data-label">Physical Location</label>
-                  <input type="text" className="premium-input" style={{ width: '100%' }} value={asset.location} onChange={e => setAsset({...asset, location: e.target.value})} placeholder="e.g. Training Lab 2" />
+                  <label className="data-label">Physical Location *</label>
+                  <select 
+                    className="premium-select" 
+                    style={{ width: '100%' }} 
+                    value={asset.location === 'Other' || HARDCODED_LOCATIONS.includes(asset.location) ? asset.location : (asset.location ? 'Other' : '')} 
+                    onChange={(e) => setAsset({...asset, location: e.target.value})} 
+                    required
+                  >
+                    <option value="">Select Location</option>
+                    {HARDCODED_LOCATIONS.map(loc => (
+                      <option key={loc} value={loc}>{loc}</option>
+                    ))}
+                    <option value="Other">Other (Specify manually)</option>
+                  </select>
+
+                  {/* 🚨 CONDITIONAL "OTHER" TEXTBOX */}
+                  {(asset.location === 'Other' || (!HARDCODED_LOCATIONS.includes(asset.location) && asset.location !== '')) && (
+                    <input 
+                      type="text" 
+                      className="premium-input" 
+                      style={{ width: '100%', marginTop: '10px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid #38bdf8' }} 
+                      value={customLocation} 
+                      onChange={e => setCustomLocation(e.target.value)} 
+                      placeholder="e.g. Server Room, 2nd Floor" 
+                      required 
+                    />
+                  )}
                 </div>
+
                 <div>
                   <label className="data-label">Initial Condition</label>
                   <select className="premium-select" style={{ width: '100%' }} value={asset.condition} onChange={e => setAsset({...asset, condition: e.target.value})}>
