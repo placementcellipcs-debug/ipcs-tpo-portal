@@ -863,3 +863,106 @@ exports.resolveMaintenance = async (req, res) => {
     res.status(500).json({ success: false, message: err.message }); 
   }
 };
+
+// =========================================================
+// 11. ERP SYSTEM CONFIGURATION (UI-DRIVEN DB MANAGEMENT)
+// =========================================================
+
+exports.addCategory = async (req, res) => {
+  try {
+    const { categoryName, type } = req.body;
+    const sheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('categories'));
+    if (!sheet) return res.status(404).json({ success: false, message: "Categories sheet missing." });
+
+    const h = sheet.headerValues;
+    const catId = `CAT-${Math.floor(1000 + Math.random() * 9000)}`;
+    const catCode = categoryName.substring(0, 3).toUpperCase();
+
+    await sheet.addRow({
+      [getH(h, 'Category_ID')]: catId,
+      [getH(h, 'Category_Code')]: catCode,
+      [getH(h, 'Category_Name')]: categoryName,
+      [getH(h, 'Type')]: type || 'ASSET',
+      [getH(h, 'Status')]: 'ACTIVE'
+    });
+
+    refreshAssetCache();
+    res.json({ success: true, message: `Category '${categoryName}' added successfully!` });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addSubcategory = async (req, res) => {
+  try {
+    const { categoryId, subcategoryName } = req.body;
+    const sheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('subcategories'));
+    if (!sheet) return res.status(404).json({ success: false, message: "Subcategories sheet missing." });
+
+    const h = sheet.headerValues;
+    const subId = `SUB-${Math.floor(1000 + Math.random() * 9000)}`;
+    const subCode = subcategoryName.substring(0, 3).toUpperCase();
+
+    await sheet.addRow({
+      [getH(h, 'Subcategory_ID')]: subId,
+      [getH(h, 'Category_ID')]: categoryId,
+      [getH(h, 'Code')]: subCode,
+      [getH(h, 'Name')]: subcategoryName,
+      [getH(h, 'Status')]: 'ACTIVE'
+    });
+
+    refreshAssetCache();
+    res.json({ success: true, message: `Subcategory '${subcategoryName}' added successfully!` });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addLocation = async (req, res) => {
+  try {
+    const { branchName, room, area } = req.body;
+    const sheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('locations'));
+    if (!sheet) return res.status(404).json({ success: false, message: "Locations sheet missing." });
+
+    const h = sheet.headerValues;
+    const locId = `LOC-${Math.floor(1000 + Math.random() * 9000)}`;
+    const locationName = `${room} (${area})`;
+
+    await sheet.addRow({
+      [getH(h, 'Location_ID')]: locId,
+      [getH(h, 'Branch_ID')]: branchName, // Mapping name directly for simplicity in dropdowns
+      [getH(h, 'Building')]: 'Main',
+      [getH(h, 'Floor')]: '1',
+      [getH(h, 'Room')]: room,
+      [getH(h, 'Area')]: area,
+      [getH(h, 'Location_Name')]: locationName,
+      [getH(h, 'Status')]: 'ACTIVE',
+      [getH(h, 'Created_At')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+    });
+
+    refreshAssetCache();
+    res.json({ success: true, message: `Location '${locationName}' added successfully to ${branchName}!` });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addVendor = async (req, res) => {
+  try {
+    const { vendorName, contactPerson, phone, email } = req.body;
+    const sheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('vendors'));
+    if (!sheet) return res.status(404).json({ success: false, message: "Vendors sheet missing." });
+
+    const h = sheet.headerValues;
+    const vendorId = `VND-${Math.floor(1000 + Math.random() * 9000)}`;
+
+    await sheet.addRow({
+      [getH(h, 'Vendor_ID')]: vendorId,
+      [getH(h, 'Vendor_Name')]: vendorName,
+      [getH(h, 'Contact_Person')]: contactPerson || '',
+      [getH(h, 'Phone')]: phone || '',
+      [getH(h, 'Email')]: email || '',
+      [getH(h, 'Address')]: '',
+      [getH(h, 'GST_Number')]: '',
+      [getH(h, 'Status')]: 'ACTIVE',
+      [getH(h, 'Created_At')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+    });
+
+    refreshAssetCache();
+    res.json({ success: true, message: `Vendor '${vendorName}' added successfully!` });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};

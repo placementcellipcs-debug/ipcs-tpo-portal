@@ -161,6 +161,12 @@ app.get('/api/v1/assets/maintenance', assetControllers.getMaintenance);
 app.post('/api/v1/assets/maintenance/report', assetControllers.reportMaintenance);
 app.post('/api/v1/assets/maintenance/resolve', assetControllers.resolveMaintenance);
 
+// 🚨 SYSTEM CONFIGURATION ROUTES (CATEGORIES, LOCATIONS, VENDORS)
+app.post('/api/v1/assets/config/category', assetControllers.addCategory);
+app.post('/api/v1/assets/config/subcategory', assetControllers.addSubcategory);
+app.post('/api/v1/assets/config/location', assetControllers.addLocation);
+app.post('/api/v1/assets/config/vendor', assetControllers.addVendor);
+
 // ---------------------------------------------------------
 // SERVER INITIALIZATION & SCHEDULED AUTOMATIONS
 // ---------------------------------------------------------
