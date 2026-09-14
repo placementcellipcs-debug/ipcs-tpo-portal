@@ -84,6 +84,17 @@ app.get('/api/tpo/drives', controllers.getDrives);
 app.post('/api/tpo/drives/update', controllers.updateDriveStatus);
 app.get('/api/tpo/trigger-resumes', controllers.triggerDailyCron);
 
+// 🚨 INSTANT TEST ROUTE: Trigger both daily tasks manually anytime
+app.get('/api/tpo/test-daily-mail', async (req, res) => {
+  try {
+    console.log("⚡ Manual trigger requested via browser...");
+    await controllers.runDailyCron();
+    res.json({ success: true, message: "Daily Cron execution triggered! Check your terminal and inbox." });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // ---------------------------------------------------------
 // ADMIN ROUTES
 // ---------------------------------------------------------
@@ -136,9 +147,8 @@ app.get('/api/v1/assets/:assetId/details', assetControllers.getAssetDetails);
 app.post('/api/v1/assets/assign', assetControllers.assignAsset);
 app.post('/api/v1/assets/return', assetControllers.returnAsset);
 app.get('/api/v1/assets/dashboard', assetControllers.getAssetDashboardStats);
-app.get('/api/v1/assets/form-data', assetControllers.getRegistrationData);
 
-// 🚨 NEW ROUTES:
+// 🚨 INVENTORY, TRANSFERS, AND MAINTENANCE ROUTES
 app.get('/api/v1/assets/inventory', assetControllers.getInventory);
 app.post('/api/v1/assets/inventory/add', assetControllers.addInventory);
 app.post('/api/v1/assets/inventory/stock', assetControllers.updateStock);
@@ -152,10 +162,12 @@ app.post('/api/v1/assets/maintenance/report', assetControllers.reportMaintenance
 app.post('/api/v1/assets/maintenance/resolve', assetControllers.resolveMaintenance);
 
 // ---------------------------------------------------------
-// SERVER INITIALIZATION
+// SERVER INITIALIZATION & SCHEDULED AUTOMATIONS
 // ---------------------------------------------------------
-cron.schedule('00 10 * * *', async () => {
-  console.log("⏰ Executing Scheduled Resume Delivery...");
+
+// ⏰ AUTOMATED CRON: Triggers every day at 8:00 AM IST
+cron.schedule('00 08 * * *', async () => {
+  console.log("⏰ [08:00 AM IST] Executing Daily Automated Tasks...");
   await controllers.runDailyCron();
 }, {
   scheduled: true,
