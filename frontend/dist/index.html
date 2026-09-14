@@ -5,12 +5,18 @@
     <link rel="icon" type="image/png" href="https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB" />
     <title>IPCS Global Portal</title>
     
-    <!-- 🚨 UPDATED: Strict Mobile Viewport to prevent zooming/shrinking -->
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <!-- 🚨 STRICT MOBILE VIEWPORT: Prevents the screen from zooming out and shrinking text -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     
+    <!-- 🚨 PWA CAPABILITIES: Allows users to install the portal to their phone's home screen -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#020617" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <script type="module" crossorigin src="/assets/index-CITEgUh9.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-BFJ-KGIw.css">
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
