@@ -167,6 +167,10 @@ app.post('/api/v1/assets/config/subcategory', assetControllers.addSubcategory);
 app.post('/api/v1/assets/config/location', assetControllers.addLocation);
 app.post('/api/v1/assets/config/vendor', assetControllers.addVendor);
 
+// 🚨 ASSET DOCUMENTS & DISPOSAL
+app.post('/api/v1/assets/documents/upload', upload.single('file'), assetControllers.uploadAssetDocument);
+app.post('/api/v1/assets/dispose', assetControllers.disposeAsset);
+
 // ---------------------------------------------------------
 // SERVER INITIALIZATION & SCHEDULED AUTOMATIONS
 // ---------------------------------------------------------

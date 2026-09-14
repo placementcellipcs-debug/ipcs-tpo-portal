@@ -265,7 +265,7 @@ exports.getAssets = async (req, res) => {
 };
 
 // =========================================================
-// 5. GET ASSET DETAILS (CUSTOM SPECS, ASSIGNMENT & AUDIT HISTORY)
+// 5. GET ASSET DETAILS (SPECS, HISTORY, & DOCUMENTS)
 // =========================================================
 exports.getAssetDetails = async (req, res) => {
   try {
@@ -282,76 +282,52 @@ exports.getAssetDetails = async (req, res) => {
 
     if (!rawAsset) return res.status(404).json({ success: false, message: "Asset not found." });
 
-    // 2. Custom Specifications (from 08_Asset_Custom_Data)
+    // 2. Custom Specs
     const customSpecs = (cache.assetcustomdata || []).filter(r => {
       const rd = r.toObject();
       const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'assetid');
       return (rd[k] || '').toString().trim().toLowerCase() === cleanId;
     }).map(r => {
       const rd = r.toObject();
-      const getVal = (str) => {
-        const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-        return k ? rd[k] : '';
-      };
+      const getVal = (str) => { const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, '')); return k ? rd[k] : ''; };
       return { name: getVal('fieldname'), value: getVal('fieldvalue') };
     });
 
-    // 3. Assignment History (from 09_Assignments)
+    // 3. Assignments
     const assignments = (cache.assignments || []).filter(r => {
       const rd = r.toObject();
       const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'assetid');
       return (rd[k] || '').toString().trim().toLowerCase() === cleanId;
     }).map(r => {
       const rd = r.toObject();
-      const getVal = (str) => {
-        const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-        return k ? rd[k] : '';
-      };
-      return {
-        assignmentId: getVal('assignmentid'),
-        employeeName: getVal('employeename'),
-        assignedBy: getVal('assignedby'),
-        assignedDate: getVal('assigneddate'),
-        returnedDate: getVal('returneddate'),
-        conditionOnIssue: getVal('conditiononissue'),
-        conditionOnReturn: getVal('conditiononreturn'),
-        accessories: getVal('accessories'),
-        remarks: getVal('remarks'),
-        status: getVal('status')
-      };
+      const getVal = (str) => { const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, '')); return k ? rd[k] : ''; };
+      return { assignmentId: getVal('assignmentid'), employeeName: getVal('employeename'), assignedBy: getVal('assignedby'), assignedDate: getVal('assigneddate'), returnedDate: getVal('returneddate'), status: getVal('status') };
     }).reverse();
 
-    // 4. Audit Trail (from 17_History)
+    // 4. Audit Trail
     const history = (cache.history || []).filter(r => {
       const rd = r.toObject();
       const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'assetid');
       return (rd[k] || '').toString().trim().toLowerCase() === cleanId;
     }).map(r => {
       const rd = r.toObject();
-      const getVal = (str) => {
-        const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-        return k ? rd[k] : '';
-      };
-      return {
-        action: getVal('action'),
-        oldValue: getVal('oldvalue'),
-        newValue: getVal('newvalue'),
-        performedBy: getVal('performedby'),
-        branch: getVal('branch'),
-        timestamp: getVal('timestamp'),
-        remarks: getVal('remarks')
-      };
+      const getVal = (str) => { const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, '')); return k ? rd[k] : ''; };
+      return { action: getVal('action'), performedBy: getVal('performedby'), timestamp: getVal('timestamp'), remarks: getVal('remarks') };
     }).reverse();
 
-    res.json({
-      success: true,
-      customSpecs,
-      assignments,
-      history
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
+    // 5. 🚨 NEW: DOCUMENTS & PHOTOS
+    const documents = (cache.documents || []).filter(r => {
+      const rd = r.toObject();
+      const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'assetid');
+      return (rd[k] || '').toString().trim().toLowerCase() === cleanId;
+    }).map(r => {
+      const rd = r.toObject();
+      const getVal = (str) => { const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, '')); return k ? rd[k] : ''; };
+      return { documentId: getVal('documentid'), type: getVal('documenttype'), fileName: getVal('filename'), url: getVal('driveurl'), uploadedBy: getVal('uploadedby'), date: getVal('uploadedat') };
+    }).reverse();
+
+    res.json({ success: true, customSpecs, assignments, history, documents });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 // =========================================================
@@ -964,5 +940,96 @@ exports.addVendor = async (req, res) => {
 
     refreshAssetCache();
     res.json({ success: true, message: `Vendor '${vendorName}' added successfully!` });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+// =========================================================
+// 12. DOCUMENTS & PHOTOS UPLOAD
+// =========================================================
+exports.uploadAssetDocument = async (req, res) => {
+  try {
+    const { assetId, documentType, userName } = req.body;
+    if (!req.file) return res.status(400).json({ success: false, message: "No file provided." });
+
+    // Upload to Google Drive using existing helper
+    const fileUrl = await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || '');
+    
+    const docSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('documents'));
+    if (!docSheet) return res.status(404).json({ success: false, message: "Documents sheet missing." });
+
+    const h = docSheet.headerValues;
+    await docSheet.addRow({
+      [getH(h, 'Document_ID')]: `DOC-${Date.now()}`,
+      [getH(h, 'Asset_ID')]: assetId,
+      [getH(h, 'Document_Type')]: documentType || 'PHOTO',
+      [getH(h, 'File_Name')]: req.file.originalname,
+      [getH(h, 'Drive_URL')]: fileUrl,
+      [getH(h, 'Uploaded_By')]: userName,
+      [getH(h, 'Uploaded_At')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+    });
+
+    refreshAssetCache();
+    res.json({ success: true, message: "File uploaded successfully!", url: fileUrl });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+// =========================================================
+// 13. ASSET DISPOSAL
+// =========================================================
+exports.disposeAsset = async (req, res) => {
+  try {
+    const { assetId, reason, method, value, userName } = req.body;
+
+    const assetSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'));
+    const dispSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('disposals'));
+    const histSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('history'));
+
+    const rows = await assetSheet.getRows();
+    const assetRow = rows.find(r => { 
+      const rd = r.toObject(); 
+      const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'assetid'); 
+      return (rd[k] || '').toString().trim().toLowerCase() === assetId.trim().toLowerCase(); 
+    });
+
+    if(!assetRow) return res.status(404).json({ success: false, message: "Asset not found." });
+
+    // 1. Change Status to DISPOSED
+    const aH = assetSheet.headerValues;
+    assetRow.assign({ [getH(aH, 'Status')]: 'DISPOSED' });
+    await assetRow.save();
+
+    // 2. Log in Disposals Sheet
+    if (dispSheet) {
+      const dH = dispSheet.headerValues;
+      await dispSheet.addRow({
+        [getH(dH, 'Disposal_ID')]: `DSP-${Date.now()}`,
+        [getH(dH, 'Asset_ID')]: assetId,
+        [getH(dH, 'Reason')]: reason,
+        [getH(dH, 'Disposal_Method')]: method,
+        [getH(dH, 'Disposal_Value')]: value || '0',
+        [getH(dH, 'Requested_By')]: userName,
+        [getH(dH, 'Approved_By')]: userName, // Assuming self-approval for BAM/Admin for now
+        [getH(dH, 'Disposed_Date')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+        [getH(dH, 'Remarks')]: 'Asset permanently retired.'
+      });
+    }
+
+    // 3. Log in History
+    if (histSheet) {
+      const hH = histSheet.headerValues;
+      await histSheet.addRow({
+         [getH(hH, 'History_ID')]: `HIS-${Date.now()}`,
+         [getH(hH, 'Asset_ID')]: assetId,
+         [getH(hH, 'Action')]: 'ASSET_DISPOSED',
+         [getH(hH, 'Old_Value')]: 'VARIOUS',
+         [getH(hH, 'New_Value')]: 'DISPOSED',
+         [getH(hH, 'Performed_By')]: userName,
+         [getH(hH, 'Timestamp')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+         [getH(hH, 'Remarks')]: `Method: ${method} | Reason: ${reason}`
+      });
+    }
+
+    refreshAssetCache();
+    res.json({ success: true, message: "Asset has been permanently disposed." });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
