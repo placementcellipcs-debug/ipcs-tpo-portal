@@ -425,7 +425,7 @@ exports.login = async (req, res) => {
           access: getValByHeader(row, ['access', 'accesstype']),
           profilephoto: getValByHeader(row, ['profilephoto', 'profilephotourl', 'photo']),
           contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno']),
-          empId: getValByHeader(row, ['empid']),
+          empId: getValByHeader(row, ['empid', 'employeeid']),
           target: getValByHeader(row, ['target', 'targetofthemonth'])
         };
         role = 'TPO';
@@ -1387,22 +1387,15 @@ exports.runDailyCron = async () => {
     const companyName = getValByHeader(job, ['companyname', 'company']) || '';
     const position = getValByHeader(job, ['position', 'role']) || '';
 
-    if (!companyEmail) {
-      console.log(`⚠️ Skipped ${companyName} (${jobId}) - No Company Email provided.`);
-      continue;
-    }
+    if (!companyEmail) continue;
 
     const cleanTargetJobId = jobId.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
-
     const applicants = cache.applications.filter(app => {
       const appJobId = (getValByHeader(app, ['jobid']) || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
       return appJobId === cleanTargetJobId && cleanTargetJobId !== '';
     });
 
-    if (applicants.length === 0) {
-      console.log(`⚠️ Skipped ${companyName} (${jobId}) - Zero students applied for this job.`);
-      continue;
-    }
+    if (applicants.length === 0) continue;
 
     const tpoName = getValByHeader(job, ['placementofficer']);
     const tpoEmail = getTpoEmailByName(tpoName);
@@ -1454,13 +1447,6 @@ exports.runDailyCron = async () => {
               ${tableRows}
             </tbody>
           </table>
-          
-          <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
-            <p style="margin: 0 0 5px 0;">If you require further shortlisting or have interview dates finalized, please reply directly to this email.</p>
-            <p style="margin: 15px 0 2px 0;">Regards,</p>
-            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName}</p>
-            <p style="margin: 0;">Placement Officer, IPCS Global</p>
-          </div>
         </div>
       </div>
     `;
@@ -1474,7 +1460,6 @@ exports.runDailyCron = async () => {
       attachments: attachments
     }, { name: companyName, email: companyEmail, type: 'Resume Delivery' }); 
     
-    // 🚨 PAUSE FOR 5 SECONDS: Prevents Google from throwing "Connection Timeout"
     console.log(`✅ Sent to ${companyName}. Pausing 5 seconds...`);
     await new Promise(resolve => setTimeout(resolve, 5000));
   }
@@ -1866,7 +1851,9 @@ exports.getAdminUsers = (req, res) => {
             course: 'All Courses', 
             access: 'View & Edit',
             profilePhoto: getValByHeader(row, ['profilephoto', 'photo']) || '',
-            empId: getValByHeader(row, ['empid']) || `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}`
+            // 🚨 READ THE NEW FIELDS
+            empId: getValByHeader(row, ['empid', 'employeeid']) || '',
+            target: getValByHeader(row, ['targetofthemonth', 'target']) || ''
           });
         }
       });
@@ -1892,7 +1879,9 @@ exports.getAdminUsers = (req, res) => {
             course: getValByHeader(row, ['assigned_courses', 'assignedcourses', 'course']) || 'All Courses',
             access: getValByHeader(row, ['access_type', 'accesstype', 'access']) || 'View Only',
             profilePhoto: getValByHeader(row, ['profile_photo_url', 'profilephoto']) || '',
-            empId: getValByHeader(row, ['employee_id', 'employeeid']) || `IPCS-EMP-${Math.floor(1000 + Math.random() * 9000)}`
+            // 🚨 READ THE NEW FIELDS
+            empId: getValByHeader(row, ['empid', 'employeeid']) || '',
+            target: getValByHeader(row, ['targetofthemonth', 'target']) || ''
           });
         }
       });
@@ -1906,36 +1895,58 @@ exports.getAdminUsers = (req, res) => {
 
 exports.addAdminUser = async (req, res) => {
   try {
-    const { userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
+    const { userName, contact, email, sittingBranch, assignedBranches, password, role, course, access, empId, target } = req.body;
     
+    const sheetName = role === 'TPO' ? "Contact" : "User";
+    const s = doc.sheetsByTitle[sheetName]; 
+    const h = s.headerValues;
+
+    // Bulletproof Header Finder
+    const getSafeH = (searchStrs) => {
+      for (let str of searchStrs) {
+        const clean = str.toLowerCase().replace(/\s/g, '');
+        const exact = h.find(hd => hd.toLowerCase().replace(/\s/g, '') === clean);
+        if (exact) return exact;
+      }
+      for (let str of searchStrs) {
+        const clean = str.toLowerCase().replace(/\s/g, '');
+        const partial = h.find(hd => hd.toLowerCase().replace(/\s/g, '').includes(clean));
+        if (partial) return partial;
+      }
+      return null;
+    };
+
+    const newRow = {};
+
     if (role === 'TPO') {
-      const s = doc.sheetsByTitle["Contact"]; 
-      const h = s.headerValues;
-      await s.addRow({ 
-        [getFuzzyHeader(h, 'tponame')]: userName, 
-        [getFuzzyHeader(h, 'contactnumber')]: contact, 
-        [getFuzzyHeader(h, 'mailid')]: email, 
-        [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, 
-        [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, 
-        [getFuzzyHeader(h, 'password')]: password 
-      });
+      const hName = getSafeH(['tponame', 'name']); if(hName) newRow[hName] = userName;
+      const hPhone = getSafeH(['contactnumber', 'phone']); if(hPhone) newRow[hPhone] = contact;
+      const hEmail = getSafeH(['mailid', 'email']); if(hEmail) newRow[hEmail] = email;
+      const hSit = getSafeH(['sittingbranch']); if(hSit) newRow[hSit] = sittingBranch;
+      const hAss = getSafeH(['assignedbranches']); if(hAss) newRow[hAss] = assignedBranches;
+      const hPass = getSafeH(['password']); if(hPass) newRow[hPass] = password;
     } else {
-      const s = doc.sheetsByTitle["User"]; 
-      const h = s.headerValues;
-      await s.addRow({ 
-        [getFuzzyHeader(h, 'Name')]: userName, 
-        [getFuzzyHeader(h, 'Contact_Number')]: contact, 
-        [getFuzzyHeader(h, 'Email')]: email, 
-        [getFuzzyHeader(h, 'Sitting_Branch')]: sittingBranch, 
-        [getFuzzyHeader(h, 'Assigned_Branches')]: assignedBranches, 
-        [getFuzzyHeader(h, 'Password')]: password, 
-        [getFuzzyHeader(h, 'Role')]: role, 
-        [getFuzzyHeader(h, 'Assigned_Courses')]: course, 
-        [getFuzzyHeader(h, 'Access_Type')]: access,
-        [getFuzzyHeader(h, 'Status')]: 'Active',
-        [getFuzzyHeader(h, 'Created_At')]: new Date().toLocaleString('en-GB')
-      });
+      const hName = getSafeH(['name', 'username']); if(hName) newRow[hName] = userName;
+      const hPhone = getSafeH(['contactnumber', 'phone']); if(hPhone) newRow[hPhone] = contact;
+      const hEmail = getSafeH(['email', 'mailid']); if(hEmail) newRow[hEmail] = email;
+      const hSit = getSafeH(['sittingbranch']); if(hSit) newRow[hSit] = sittingBranch;
+      const hAss = getSafeH(['assignedbranches']); if(hAss) newRow[hAss] = assignedBranches;
+      const hPass = getSafeH(['password']); if(hPass) newRow[hPass] = password;
+      const hRole = getSafeH(['role']); if(hRole) newRow[hRole] = role;
+      const hCourse = getSafeH(['assignedcourses', 'course']); if(hCourse) newRow[hCourse] = course;
+      const hAccess = getSafeH(['accesstype', 'access']); if(hAccess) newRow[hAccess] = access;
+      const hStatus = getSafeH(['status']); if(hStatus) newRow[hStatus] = 'Active';
+      const hCreated = getSafeH(['createdat']); if(hCreated) newRow[hCreated] = new Date().toLocaleString('en-GB');
     }
+
+    // 🚨 SAVE THE NEW FIELDS SAFELY
+    const hEmp = getSafeH(['empid', 'employeeid']); 
+    if(hEmp && empId !== undefined) newRow[hEmp] = empId;
+    
+    const hTgt = getSafeH(['targetofthemonth', 'target']); 
+    if(hTgt && target !== undefined) newRow[hTgt] = target;
+
+    await s.addRow(newRow);
     refreshCache(); 
     res.json({ success: true, message: "User added" });
   } catch (err) { 
@@ -1945,35 +1956,58 @@ exports.addAdminUser = async (req, res) => {
 
 exports.updateAdminUser = async (req, res) => {
   try {
-    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, password, role, course, access } = req.body;
+    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, password, role, course, access, empId, target } = req.body;
     const s = doc.sheetsByTitle[sheet]; 
     const rows = await s.getRows({ offset: rowNumber - 2, limit: 1 });
     
     if (rows.length > 0) {
       const h = s.headerValues;
+
+      // Bulletproof Header Finder
+      const getSafeH = (searchStrs) => {
+        for (let str of searchStrs) {
+          const clean = str.toLowerCase().replace(/\s/g, '');
+          const exact = h.find(hd => hd.toLowerCase().replace(/\s/g, '') === clean);
+          if (exact) return exact;
+        }
+        for (let str of searchStrs) {
+          const clean = str.toLowerCase().replace(/\s/g, '');
+          const partial = h.find(hd => hd.toLowerCase().replace(/\s/g, '').includes(clean));
+          if (partial) return partial;
+        }
+        return null;
+      };
+
+      const updateObj = {};
+      
       if (sheet === 'Contact') { 
-        rows[0].assign({ 
-          [getFuzzyHeader(h, 'tponame')]: userName, 
-          [getFuzzyHeader(h, 'contactnumber')]: contact, 
-          [getFuzzyHeader(h, 'mailid')]: email, 
-          [getFuzzyHeader(h, 'sittingbranch')]: sittingBranch, 
-          [getFuzzyHeader(h, 'assignedbranches')]: assignedBranches, 
-          [getFuzzyHeader(h, 'password')]: password 
-        }); 
+        const hName = getSafeH(['tponame', 'name']); if(hName) updateObj[hName] = userName;
+        const hPhone = getSafeH(['contactnumber', 'phone']); if(hPhone) updateObj[hPhone] = contact;
+        const hEmail = getSafeH(['mailid', 'email']); if(hEmail) updateObj[hEmail] = email;
+        const hSit = getSafeH(['sittingbranch']); if(hSit) updateObj[hSit] = sittingBranch;
+        const hAss = getSafeH(['assignedbranches']); if(hAss) updateObj[hAss] = assignedBranches;
+        const hPass = getSafeH(['password']); if(hPass) updateObj[hPass] = password;
       } else { 
-        rows[0].assign({ 
-          [getFuzzyHeader(h, 'Name')]: userName, 
-          [getFuzzyHeader(h, 'Contact_Number')]: contact, 
-          [getFuzzyHeader(h, 'Email')]: email, 
-          [getFuzzyHeader(h, 'Sitting_Branch')]: sittingBranch, 
-          [getFuzzyHeader(h, 'Assigned_Branches')]: assignedBranches, 
-          [getFuzzyHeader(h, 'Password')]: password, 
-          [getFuzzyHeader(h, 'Role')]: role, 
-          [getFuzzyHeader(h, 'Assigned_Courses')]: course, 
-          [getFuzzyHeader(h, 'Access_Type')]: access,
-          [getFuzzyHeader(h, 'Updated_At')]: new Date().toLocaleString('en-GB')
-        }); 
+        const hName = getSafeH(['name', 'username']); if(hName) updateObj[hName] = userName;
+        const hPhone = getSafeH(['contactnumber', 'phone']); if(hPhone) updateObj[hPhone] = contact;
+        const hEmail = getSafeH(['email', 'mailid']); if(hEmail) updateObj[hEmail] = email;
+        const hSit = getSafeH(['sittingbranch']); if(hSit) updateObj[hSit] = sittingBranch;
+        const hAss = getSafeH(['assignedbranches']); if(hAss) updateObj[hAss] = assignedBranches;
+        const hPass = getSafeH(['password']); if(hPass) updateObj[hPass] = password;
+        const hRole = getSafeH(['role']); if(hRole) updateObj[hRole] = role;
+        const hCourse = getSafeH(['assignedcourses', 'course']); if(hCourse) updateObj[hCourse] = course;
+        const hAccess = getSafeH(['accesstype', 'access']); if(hAccess) updateObj[hAccess] = access;
+        const hUpdated = getSafeH(['updatedat']); if(hUpdated) updateObj[hUpdated] = new Date().toLocaleString('en-GB');
       }
+
+      // 🚨 UPDATE THE NEW FIELDS SAFELY
+      const hEmp = getSafeH(['empid', 'employeeid']); 
+      if(hEmp && empId !== undefined) updateObj[hEmp] = empId;
+      
+      const hTgt = getSafeH(['targetofthemonth', 'target']); 
+      if(hTgt && target !== undefined) updateObj[hTgt] = target;
+
+      rows[0].assign(updateObj); 
       await rows[0].save(); 
       refreshCache(); 
       res.json({ success: true, message: "User updated" });
