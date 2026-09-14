@@ -1333,53 +1333,49 @@ exports.addEvent = async (req, res) => {
 };
 
 // =========================================================
-// 🚨 RULE 3: CRON HELPER (RESUME DELIVERY TO COMPANY)
+// 🚨 RULE 3: CRON HELPER (RESUME DELIVERY & DRIVE SUMMARY)
 // =========================================================
 exports.runDailyCron = async () => {
-  console.log("🚨 [CRON] Starting Daily Resume Delivery check...");
+  console.log("🚨 [CRON] Starting Daily Automated Tasks...");
   const cache = getCache();
   if (!cache || !cache.vacancies || cache.vacancies.length === 0) {
       console.warn("⚠️ [CRON] Cache is empty or currently syncing. Aborting cron job.");
       return;
   }
 
-  // Generate yesterday's date securely in IST format YYYY-MM-DD
+  // ------------------------------------------------------------------
+  // 🕒 TIME SETUP (IST)
+  // ------------------------------------------------------------------
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
+  
+  const today = new Date();
+  const todayStr = formatter.format(today); // e.g. "2026-09-14"
+
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
   const yStr = formatter.format(yesterday); // e.g. "2026-09-13"
 
-  console.log(`🚨 [CRON] Target Date (Yesterday IST): ${yStr}`);
+  // ==================================================================
+  // 📌 TASK 1: YESTERDAY'S EXPIRED JOB RESUMES TO COMPANIES
+  // ==================================================================
+  console.log(`🚨 [CRON-TASK 1] Target Date for Expired Jobs: ${yStr}`);
 
   const expiredJobs = cache.vacancies.filter(v => {
-    // 🚨 Aggressively search multiple columns for the date
     const lastDateKey = getValByHeader(v, ['lastdate', 'last date', 'column17', 'interviewdate', 'interview date']);
-    
     if (!lastDateKey) return false;
 
     try {
-      // Smart Date Parsing for US (MM/DD) and EU (DD/MM) formats
       let parsedDate = new Date(lastDateKey);
       if (isNaN(parsedDate.getTime()) && lastDateKey.includes('/')) {
          const parts = lastDateKey.split(/[/\s,.-]+/);
-         if (parts.length >= 3) {
-           parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-         }
+         if (parts.length >= 3) { parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`); }
       }
-
-      if (!isNaN(parsedDate.getTime())) {
-         const rowDateStr = formatter.format(parsedDate);
-         
-         // 🚨 DEBUG LOG: Print every date it finds to the Render console
-         console.log(`[DEBUG] Found Job ID: ${getValByHeader(v, ['jobid'])} | Sheet Date: ${lastDateKey} -> Parsed: ${rowDateStr}`);
-         
-         return rowDateStr === yStr;
-      }
+      if (!isNaN(parsedDate.getTime())) { return formatter.format(parsedDate) === yStr; }
       return false;
     } catch(e) { return false; }
   });
 
-  console.log(`🚨 [CRON] Found ${expiredJobs.length} expired jobs matching ${yStr}.`);
+  console.log(`🚨 [CRON-TASK 1] Found ${expiredJobs.length} expired jobs matching ${yStr}.`);
 
   for (let job of expiredJobs) {
     const jobId = getValByHeader(job, ['jobid', 'id']) || '';
@@ -1387,22 +1383,15 @@ exports.runDailyCron = async () => {
     const companyName = getValByHeader(job, ['companyname', 'company']) || '';
     const position = getValByHeader(job, ['position', 'role']) || '';
 
-    if (!companyEmail) {
-      console.log(`⚠️ Skipped ${companyName} (${jobId}) - No Company Email provided.`);
-      continue;
-    }
+    if (!companyEmail) continue;
 
     const cleanTargetJobId = jobId.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
-
     const applicants = cache.applications.filter(app => {
       const appJobId = (getValByHeader(app, ['jobid']) || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
       return appJobId === cleanTargetJobId && cleanTargetJobId !== '';
     });
 
-    if (applicants.length === 0) {
-      console.log(`⚠️ Skipped ${companyName} (${jobId}) - Zero students applied for this job.`);
-      continue;
-    }
+    if (applicants.length === 0) continue;
 
     const tpoName = getValByHeader(job, ['placementofficer']);
     const tpoEmail = getTpoEmailByName(tpoName);
@@ -1454,13 +1443,6 @@ exports.runDailyCron = async () => {
               ${tableRows}
             </tbody>
           </table>
-          
-          <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
-            <p style="margin: 0 0 5px 0;">If you require further shortlisting or have interview dates finalized, please reply directly to this email.</p>
-            <p style="margin: 15px 0 2px 0;">Regards,</p>
-            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName}</p>
-            <p style="margin: 0;">Placement Officer, IPCS Global</p>
-          </div>
         </div>
       </div>
     `;
@@ -1474,11 +1456,136 @@ exports.runDailyCron = async () => {
       attachments: attachments
     }, { name: companyName, email: companyEmail, type: 'Resume Delivery' }); 
     
-    // 🚨 PAUSE FOR 5 SECONDS: Prevents Google from throwing "Connection Timeout"
     console.log(`✅ Sent to ${companyName}. Pausing 5 seconds...`);
     await new Promise(resolve => setTimeout(resolve, 5000));
   }
-  console.log("🎉 All daily resumes dispatched successfully!");
+
+
+  // ==================================================================
+  // 📌 TASK 2: TODAY'S PLACEMENT DRIVE REGISTRATIONS TO TPO
+  // ==================================================================
+  console.log(`🚨 [CRON-TASK 2] Target Date for Placement Drives: ${todayStr}`);
+
+  // 1. Find Drives happening Today
+  const drivesToday = (cache.events || []).filter(e => {
+    const evType = getValByHeader(e, ['event', 'type', 'event_type']).toLowerCase();
+    if (!evType.includes('drive')) return false;
+    
+    const evDateStr = getValByHeader(e, ['dateoftheevent', 'date']);
+    if (!evDateStr) return false;
+    
+    try {
+      let parsedDate = new Date(evDateStr);
+      if (isNaN(parsedDate.getTime()) && evDateStr.includes('/')) {
+         const parts = evDateStr.split(/[/\s,.-]+/);
+         if (parts.length >= 3) { parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`); }
+      }
+      if (!isNaN(parsedDate.getTime())) { return formatter.format(parsedDate) === todayStr; }
+      return false;
+    } catch(err) { return false; }
+  });
+
+  console.log(`🚨 [CRON-TASK 2] Found ${drivesToday.length} Placement Drives scheduled for today.`);
+
+  for (let drive of drivesToday) {
+    const dId = (getValByHeader(drive, ['driveid', 'drive id', 'drive_id']) || getValByHeader(drive, ['event_id', 'eventid', 'id'])).toUpperCase().trim();
+    const tpoName = getValByHeader(drive, ['tpo', 'placementofficer']) || 'Placement Team';
+    const title = getValByHeader(drive, ['title']) || 'Placement Drive';
+
+    // 2. Get students registered for this specific drive
+    const registeredStudents = (cache.drives || []).filter(row => {
+      const rowDId = (getValByHeader(row, ['driveid', 'drive id']) || '').toUpperCase().trim();
+      const studentStatus = (getValByHeader(row, ['status']) || '').toLowerCase();
+      // Ignore "Not Interested" students for the final TPO attendance sheet
+      return rowDId === dId && dId !== '' && !studentStatus.includes('not interested');
+    });
+
+    if (registeredStudents.length === 0) {
+      console.log(`⚠️ Skipped Drive ${dId} - Zero interested students registered.`);
+      continue;
+    }
+
+    // 3. Build Mailing List
+    const tpoEmail = getTpoEmailByName(tpoName);
+    const giftyEmail = 'giftyipcsglobal@gmail.com'; // Hardcoded explicitly as requested
+    const allTpos = getAllTpoEmails();
+
+    // CC includes Gifty and all TPOs (Ensuring we don't CC the person we are directly emailing)
+    const ccSet = new Set([giftyEmail, ...allTpos]);
+    if (tpoEmail) ccSet.delete(tpoEmail);
+    const ccList = Array.from(ccSet).filter(Boolean).join(',');
+
+    const toEmail = tpoEmail || giftyEmail; // Fallback to Gifty if TPO email not found
+
+    // 4. Build Table
+    let tableRows = '';
+    registeredStudents.forEach((appRow, index) => {
+      const name = getValByHeader(appRow, ['name', 'studentname']) || 'Unknown';
+      const branch = getValByHeader(appRow, ['branch']) || 'N/A';
+      const course = getValByHeader(appRow, ['course']) || 'N/A';
+      const phone = getValByHeader(appRow, ['contact', 'phone']) || 'N/A';
+      const resume = getValByHeader(appRow, ['resume']) || '';
+
+      let resumeBtn = 'N/A';
+      if (resume && resume !== 'N/A') {
+        const driveMatch = resume.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+        if (driveMatch) {
+            const driveId = driveMatch[1];
+            resumeBtn = `<a href="https://drive.google.com/file/d/${driveId}/view" style="background: #0f172a; color: white; padding: 6px 12px; text-decoration: none; border-radius: 4px; font-size: 12px; display: inline-block; white-space: nowrap;">View CV</a>`;
+        } else { resumeBtn = `<a href="${resume}">Link</a>`; }
+      }
+
+      tableRows += `<tr><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${index+1}</td><td style="padding:10px;border:1px solid #cbd5e1;"><b>${name}</b></td><td style="padding:10px;border:1px solid #cbd5e1;">${branch}</td><td style="padding:10px;border:1px solid #cbd5e1;">${course}</td><td style="padding:10px;border:1px solid #cbd5e1;">${phone}</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${resumeBtn}</td></tr>`;
+    });
+
+    const html = `
+      <div style="font-family: Arial, sans-serif; color: #333; max-width: 800px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
+        <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;">
+          <h2 style="color: #ffffff; margin: 0; letter-spacing: 1px;">PLACEMENT DRIVE REGISTRATIONS</h2>
+        </div>
+        <div style="padding: 30px; background-color: #ffffff;">
+          <p style="font-size: 16px; margin-top: 0;">Dear <b>${tpoName}</b>,</p>
+          <p style="font-size: 15px; line-height: 1.6; color: #475569;">Greetings from IPCS Global Placement Cell.</p>
+          <p style="font-size: 15px; line-height: 1.6; color: #475569;">This is the consolidated list of <b>${registeredStudents.length} students</b> registered for the Placement Drive scheduled for today: <b>${title}</b> (Ref: ${dId}).</p>
+          
+          <table style="width: 100%; border-collapse: collapse; margin-top: 25px;">
+            <thead>
+              <tr style="background-color: #f1f5f9; text-align: left; font-size: 13px;">
+                <th style="padding: 10px; border: 1px solid #cbd5e1; text-align:center;">#</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Applicant Name</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Branch</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Course</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Phone</th>
+                <th style="padding: 10px; border: 1px solid #cbd5e1;">Resume Link</th>
+              </tr>
+            </thead>
+            <tbody style="font-size: 13px;">
+              ${tableRows}
+            </tbody>
+          </table>
+          
+          <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
+            <p style="margin: 0 0 5px 0;">Please ensure that all registered students are assisted appropriately during the drive today.</p>
+            <p style="margin: 15px 0 2px 0;">Regards,</p>
+            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">IPCS Placement Portal</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+    await sendMailAndLog({
+      from: `"IPCS Placement Desk" <${process.env.EMAIL_USER}>`, 
+      to: toEmail,
+      cc: ccList,
+      subject: `Today's Drive Registrations: ${title} [Ref: ${dId}]`,
+      html: html
+    }, { name: tpoName, email: toEmail, type: 'Drive Registrations Summary' }); 
+    
+    console.log(`✅ Sent Drive Summary to ${tpoName}. Pausing 5 seconds...`);
+    await new Promise(resolve => setTimeout(resolve, 5000));
+  }
+
+  console.log("🎉 All Cron automated tasks completed successfully!");
 };
 
 exports.triggerDailyCron = async (req, res) => {
