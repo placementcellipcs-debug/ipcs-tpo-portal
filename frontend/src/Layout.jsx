@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import { motion, AnimatePresence } from 'framer-motion'; // 🚨 PREMIUM UX: Framer Motion added
 import { 
   Bell, X, SquaresFour, Trophy, ListChecks, ShieldCheck,
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
   Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin,
-  WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench ,  Plus // 🚨 Added Barcode and Plus imports here
+  WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench, Plus,
+  MagnifyingGlass // 🚨 PREMIUM UX: Search icon added
 } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
 
@@ -35,6 +37,52 @@ export default function Layout({ children }) {
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
   const [notifications, setNotifications] = useState([]);
+
+  // 🚨 PREMIUM UX: COMMAND PALETTE STATE
+  const [isCmdOpen, setIsCmdOpen] = useState(false);
+  const [cmdSearch, setCmdSearch] = useState('');
+  const searchInputRef = useRef(null);
+
+  // 🚨 PREMIUM UX: THEME ENGINE STATE
+  const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark');
+  const [accent, setAccent] = useState(() => localStorage.getItem('app_accent') || 'cyan');
+
+  // Apply Theme & Accent to Document Body
+  useEffect(() => {
+    document.body.setAttribute('data-theme', theme);
+    localStorage.setItem('app_theme', theme);
+  }, [theme]);
+
+  useEffect(() => {
+    document.body.setAttribute('data-accent', accent);
+    localStorage.setItem('app_accent', accent);
+  }, [accent]);
+
+  const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
+
+  // 🚨 PREMIUM UX: COMMAND PALETTE KEYBOARD LISTENER (Ctrl+K / Cmd+K)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault();
+        setIsCmdOpen(prev => !prev);
+      }
+      if (e.key === 'Escape' && isCmdOpen) {
+        setIsCmdOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isCmdOpen]);
+
+  // Auto-focus the search bar when the palette opens
+  useEffect(() => {
+    if (isCmdOpen && searchInputRef.current) {
+      searchInputRef.current.focus();
+    } else {
+      setCmdSearch('');
+    }
+  }, [isCmdOpen]);
 
   useEffect(() => {
     if (!tpoData) {
@@ -85,7 +133,6 @@ export default function Layout({ children }) {
 
   useEffect(() => {
     if (!tpoData) return;
-    document.body.setAttribute('data-theme', 'dark');
     
     const userRole = (tpoData?.role || '').toUpperCase();
     const isSuperAdmin = tpoData?.accessType === 'superadmin' || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
@@ -153,6 +200,47 @@ export default function Layout({ children }) {
   const showTrainerLogs = isTrainer || isTL;
   const showStudentApps = isTpo && !isSuperAdmin;
 
+  // 🚨 PREMIUM UX: DYNAMIC ROLE-BASED ROUTES FOR COMMAND PALETTE
+  const getAccessibleRoutes = () => {
+    const routes = [
+      { name: 'Dashboard', path: '/dashboard', icon: <SquaresFour size={20} /> },
+      { name: 'Students Directory', path: '/students', icon: <Users size={20} /> },
+      { name: 'Placed Students', path: '/placed', icon: <Trophy size={20} /> },
+      { name: 'Vacancies', path: '/vacancies', icon: <Briefcase size={20} /> },
+      { name: 'Events', path: '/events', icon: <CalendarStar size={20} /> },
+      { name: 'Talentino', path: '/talentino', icon: <UserCheck size={20} /> },
+      { name: 'Settings', path: '/settings', icon: <Gear size={20} /> }
+    ];
+    if (showTracker) routes.push({ name: 'Job Tracker', path: '/tracker', icon: <Files size={20} /> });
+    if (showReports) routes.push({ name: 'Reports', path: '/reports', icon: <ChartBar size={20} /> });
+    if (showStudentApps) routes.push({ name: 'Student Apps', path: '/applications', icon: <ListChecks size={20} /> });
+    if (!isTrainer) routes.push({ name: 'Placement Drives', path: '/placement-drives', icon: <IdentificationCard size={20} /> });
+    if (!isTrainer) routes.push({ name: 'Clients & Partners', path: '/clients', icon: <Handshake size={20} /> });
+    if (showStudyMaterials) routes.push({ name: 'Study Materials', path: '/study-materials', icon: <Book size={20} /> });
+    if (showTrainerLogs) routes.push({ name: 'Daily Log Report', path: '/trainer-logs', icon: <Notebook size={20} /> });
+    if (!userRole.includes('MANAGER') && !isTpo) routes.push({ name: 'Exams Hub', path: '/exams', icon: <FileText size={20} /> });
+    
+    if (isSuperAdmin || userRole.includes('MANAGER')) {
+       routes.push({ name: 'Asset Dashboard', path: '/assets/dashboard', icon: <ChartBar size={20} /> });
+       routes.push({ name: 'Asset Master Registry', path: '/assets', icon: <Barcode size={20} /> });
+       routes.push({ name: 'Register Asset', path: '/assets/add', icon: <Plus size={20} /> });
+       routes.push({ name: 'Asset Consumables', path: '/assets/inventory', icon: <Package size={20} /> });
+       routes.push({ name: 'Asset Transfers', path: '/assets/transfers', icon: <ArrowsLeftRight size={20} /> });
+       routes.push({ name: 'Asset Maintenance', path: '/assets/maintenance', icon: <Wrench size={20} /> });
+    }
+    if (showManageAdmin) {
+       routes.push({ name: 'Manage Branches', path: '/branches', icon: <MapPin size={20} /> });
+       routes.push({ name: 'Manage Courses', path: '/courses', icon: <Bookmarks size={20} /> });
+       routes.push({ name: 'User Management', path: '/users', icon: <ShieldCheck size={20} /> });
+       routes.push({ name: 'Security Logs', path: '/security-logs', icon: <ShieldCheck size={20} /> });
+    }
+    return routes;
+  };
+
+  const filteredRoutes = getAccessibleRoutes().filter(route => 
+    route.name.toLowerCase().includes(cmdSearch.toLowerCase())
+  );
+
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
     const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
@@ -163,7 +251,12 @@ export default function Layout({ children }) {
   const isActive = (path) => location.pathname.startsWith(path) ? '#38bdf8' : '#94a3b8';
 
   const handleLogout = () => { localStorage.removeItem('tpoData'); navigate('/'); };
-  const handleNav = (path) => { setIsDrawerOpen(false); navigate(path); };
+  
+  const handleNav = (path) => { 
+    setIsDrawerOpen(false); 
+    setIsCmdOpen(false); 
+    navigate(path); 
+  };
 
   const renderAvatar = () => {
     const initial = tpoData.name ? String(tpoData.name).charAt(0).toUpperCase() : '?';
@@ -173,45 +266,124 @@ export default function Layout({ children }) {
 
   return (
     <div className="app-layout">
+      
+      {/* 🚨 PREMIUM UX: GLOBAL COMMAND PALETTE (CTRL+K) */}
+      <AnimatePresence>
+        {isCmdOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }} 
+            animate={{ opacity: 1 }} 
+            exit={{ opacity: 0 }} 
+            className="cmd-palette-overlay" 
+            onClick={() => setIsCmdOpen(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: -20 }} 
+              animate={{ scale: 1, y: 0 }} 
+              exit={{ scale: 0.95, y: -20 }}
+              transition={{ duration: 0.15 }}
+              className="cmd-palette-box" 
+              onClick={e => e.stopPropagation()}
+            >
+              <div className="cmd-input-row">
+                <MagnifyingGlass size={24} color="#38bdf8" weight="bold" />
+                <input 
+                  ref={searchInputRef} 
+                  type="text" 
+                  className="cmd-input" 
+                  placeholder="What do you need?" 
+                  value={cmdSearch} 
+                  onChange={(e) => setCmdSearch(e.target.value)} 
+                />
+                <div className="cmd-shortcut">ESC</div>
+              </div>
+              <div className="cmd-results">
+                {filteredRoutes.length > 0 ? filteredRoutes.map((route, i) => (
+                  <div key={i} className="cmd-item" onClick={() => handleNav(route.path)}>
+                    {route.icon} <span>{route.name}</span>
+                  </div>
+                )) : (
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>No modules found.</div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <main className="main-content">
         <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px' }}>
           <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" style={{ height: '35px', objectFit: 'contain' }} />
             <div style={{ width: '1px', height: '25px', backgroundColor: 'rgba(255, 255, 255, 0.15)' }}></div>
             <img src="https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J" alt="Talenzo Logo" style={{ height: '30px', objectFit: 'contain' }} />
+            
+            {/* 🚨 PREMIUM UX: Quick Search Trigger for Desktop */}
+            <div 
+              onClick={() => setIsCmdOpen(true)} 
+              className="d-md-flex hover-bg"
+              style={{ display: 'none', marginLeft: '20px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '8px', color: '#64748b', fontSize: '0.8rem', cursor: 'text', alignItems: 'center', gap: '8px' }} 
+            >
+              <MagnifyingGlass size={16} /> Quick Search... 
+              <span style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem' }}>Ctrl K</span>
+            </div>
           </div>
 
           <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            
+            {/* 🚨 PREMIUM UX: THEME SWITCHER */}
+            <div className="theme-picker" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <button 
+                onClick={toggleTheme} 
+                title="Toggle Light / Dark Mode"
+                style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
+              >
+                {theme === 'dark' ? '🌙' : '☀️'}
+              </button>
+              <div style={{ width: '1px', height: '14px', background: 'var(--card-border)' }} />
+              <span className={`color-dot ${accent === 'cyan' ? 'active' : ''}`} style={{ background: '#38bdf8' }} onClick={() => setAccent('cyan')} />
+              <span className={`color-dot ${accent === 'emerald' ? 'active' : ''}`} style={{ background: '#10b981' }} onClick={() => setAccent('emerald')} />
+              <span className={`color-dot ${accent === 'purple' ? 'active' : ''}`} style={{ background: '#a855f7' }} onClick={() => setAccent('purple')} />
+              <span className={`color-dot ${accent === 'amber' ? 'active' : ''}`} style={{ background: '#f59e0b' }} onClick={() => setAccent('amber')} />
+            </div>
+
             <div style={{ position: 'relative' }}>
               <button className="icon-btn" onClick={() => setIsNotifOpen(!isNotifOpen)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', display: 'flex' }}>
                 <Bell size={24} weight="fill" />
                 {notifications.length > 0 && <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '10px', height: '10px', background: '#ef4444', borderRadius: '50%', border: '2px solid var(--bg-dark)' }}></span>}
               </button>
 
-              {isNotifOpen && (
-                <div style={{ position: 'absolute', top: '40px', right: '0', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '12px', width: '350px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', zIndex: 9999, overflow: 'hidden' }}>
-                  <div style={{ padding: '15px', borderBottom: '1px solid #1e293b', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff' }}>
-                    Activity Notifications
-                    <span style={{ fontSize: '0.7rem', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', padding: '3px 8px', borderRadius: '10px' }}>Live Updates</span>
-                  </div>
-                  <div style={{ padding: '0', maxHeight: '350px', overflowY: 'auto' }}>
-                    {notifications.length === 0 ? (
-                      <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No recent activity for your domain.</div>
-                    ) : (
-                      notifications.map((notif, idx) => (
-                        <div key={idx} style={{ padding: '15px', display: 'flex', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                          <div style={{ background: notif.bg, color: notif.color, width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{notif.icon}</div>
-                          <div>
-                            <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginBottom: '3px' }}>{notif.title}</div>
-                            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>{notif.desc}</div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '5px' }}>{notif.time.split(' ')[0]}</div>
+              <AnimatePresence>
+                {isNotifOpen && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 10 }}
+                    style={{ position: 'absolute', top: '40px', right: '0', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '12px', width: '350px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', zIndex: 9999, overflow: 'hidden' }}
+                  >
+                    <div style={{ padding: '15px', borderBottom: '1px solid #1e293b', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff' }}>
+                      Activity Notifications
+                      <span style={{ fontSize: '0.7rem', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', padding: '3px 8px', borderRadius: '10px' }}>Live Updates</span>
+                    </div>
+                    <div style={{ padding: '0', maxHeight: '350px', overflowY: 'auto' }}>
+                      {notifications.length === 0 ? (
+                        <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No recent activity for your domain.</div>
+                      ) : (
+                        notifications.map((notif, idx) => (
+                          <div key={idx} style={{ padding: '15px', display: 'flex', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                            <div style={{ background: notif.bg, color: notif.color, width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{notif.icon}</div>
+                            <div>
+                              <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginBottom: '3px' }}>{notif.title}</div>
+                              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>{notif.desc}</div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '5px' }}>{notif.time.split(' ')[0]}</div>
+                            </div>
                           </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
+                        ))
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
 
             <div className="header-profile" onClick={() => setIsDrawerOpen(true)} style={{ cursor: 'pointer' }}>
@@ -220,16 +392,28 @@ export default function Layout({ children }) {
           </div>
         </header>
 
-        <div className="page-container" style={{ padding: '20px 30px', position: 'relative' }} onClick={() => setIsNotifOpen(false)}>
-          {location.pathname !== '/dashboard' && (
-            <div style={{ marginBottom: '25px' }}>
-              <button onClick={() => navigate('/dashboard')} style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-muted)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 'bold', transition: '0.2s' }}>
-                <CaretLeft weight="bold" size={16} /> Back to Dashboard
-              </button>
-            </div>
-          )}
-          {children}
-        </div>
+        {/* 🚨 PREMIUM UX: FRAMER MOTION WRAPPER FOR PAGE TRANSITIONS */}
+        <AnimatePresence mode="wait">
+          <motion.div 
+            key={location.pathname}
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -15 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="page-container" 
+            style={{ padding: '20px 30px', position: 'relative' }} 
+            onClick={() => setIsNotifOpen(false)}
+          >
+            {location.pathname !== '/dashboard' && (
+              <div style={{ marginBottom: '25px' }}>
+                <button onClick={() => navigate('/dashboard')} style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-muted)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 'bold', transition: '0.2s' }}>
+                  <CaretLeft weight="bold" size={16} /> Back to Dashboard
+                </button>
+              </div>
+            )}
+            {children}
+          </motion.div>
+        </AnimatePresence>
       </main>
 
       <div className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} onClick={(e) => { if(e.target.classList.contains('drawer-overlay')) setIsDrawerOpen(false); }}>
@@ -293,7 +477,6 @@ export default function Layout({ children }) {
               <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
                 <span style={{ display: 'block', padding: '0 1.5rem', fontSize: '0.75rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>Asset Management</span>
                 
-                {/* 🚨 NEW DASHBOARD LINK */}
                 <div className="drawer-item" onClick={() => handleNav('/assets/dashboard')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/assets/dashboard') === '#38bdf8' ? '#38bdf8' : '#94a3b8'} /> <span style={{ color: isActive('/assets/dashboard') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Dashboard</span></div><span style={{ color: '#64748b' }}>›</span></div>
                 
                 <div className="drawer-item" onClick={() => handleNav('/assets')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Barcode size={22} color={isActive('/assets') === '#38bdf8' ? '#38bdf8' : '#94a3b8'} /> <span style={{ color: isActive('/assets') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Master Registry</span></div><span style={{ color: '#64748b' }}>›</span></div>
@@ -323,6 +506,14 @@ export default function Layout({ children }) {
           </div>
         </div>
       </div>
+
+      {/* Inline styles for Command Palette UI overrides */}
+      <style>{`
+        @media (min-width: 768px) {
+          .d-md-flex { display: flex !important; }
+        }
+        .hover-bg:hover { background: rgba(255,255,255,0.05) !important; cursor: pointer; }
+      `}</style>
     </div>
   );
 }

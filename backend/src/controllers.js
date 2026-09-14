@@ -2232,30 +2232,33 @@ exports.deleteTalExamQuestion = async (req, res) => {
 exports.getDrives = (req, res) => {
   try {
     const cache = getCache();
-    
-    // 1. SMART EVENT MAPPING: Index both DRK and EVT columns
     const eventsMap = {};
+    
+    // 1. SMART EVENT MAPPING: Grab ALL Placement Drives so even empty ones exist
     (cache.events || []).forEach(row => {
-       const tpo = getValByHeader(row, ['tpo', 'placementofficer', 'created_by', 'createdby']) || '';
-       const date = getValByHeader(row, ['dateoftheevent', 'date']) || '';
-       const location = getValByHeader(row, ['eventhappeningin', 'location', 'branch']) || '';
+       const type = getValByHeader(row, ['event', 'type', 'event_type']) || '';
+       const dId = getValByHeader(row, ['driveid', 'drive id', 'drive_id']) || getValByHeader(row, ['event_id', 'eventid', 'id']) || '';
        
-       const driveId = getValByHeader(row, ['driveid', 'drive id', 'drive_id']) || '';
-       const eventId = getValByHeader(row, ['event_id', 'eventid', 'id']) || '';
-       
-       // Store the event data under BOTH IDs if they exist
-       if (driveId) eventsMap[driveId.toUpperCase().trim()] = { tpo, date, location };
-       if (eventId) eventsMap[eventId.toUpperCase().trim()] = { tpo, date, location };
+       if (dId && type.toLowerCase().includes('drive')) {
+         eventsMap[dId.toUpperCase().trim()] = { 
+           tpo: getValByHeader(row, ['tpo', 'placementofficer']) || '', 
+           date: getValByHeader(row, ['dateoftheevent', 'date']) || '', 
+           location: getValByHeader(row, ['eventhappeningin', 'location', 'branch']) || '',
+           hasApplicants: false
+         };
+       }
     });
 
-    // 2. Map registrations and inject Event details
-    const drivesData = (cache.drives || []).map(row => {
-      const dId = getValByHeader(row, ['driveid', 'drive id']) || '';
+    // 2. Map actual registrations
+    const drivesData = [];
+    (cache.drives || []).forEach(row => {
+      const dId = (getValByHeader(row, ['driveid', 'drive id']) || '').toUpperCase().trim();
+      const eventInfo = eventsMap[dId] || {};
       
-      // Look up the ID in our smart map
-      const eventInfo = eventsMap[dId.toUpperCase().trim()] || {};
+      // Mark that this drive has at least one student
+      if (eventsMap[dId]) eventsMap[dId].hasApplicants = true;
 
-      return {
+      drivesData.push({
         rowNumber: row.rowNumber, 
         driveId: dId, 
         name: getValByHeader(row, ['name', 'studentname']) || '', 
@@ -2268,12 +2271,24 @@ exports.getDrives = (req, res) => {
         regStatus: getValByHeader(row, ['status']) || '',
         regDate: getValByHeader(row, ['registeddate', 'timestamp', 'date']) || '', 
         studentStatus: getValByHeader(row, ['studentstatus']) || '',
-        
-        // Inject the mapped data
         driveTpo: eventInfo.tpo || '',
         driveDate: eventInfo.date || '',
         driveLocation: eventInfo.location || ''
-      };
+      });
+    });
+
+    // 3. 🚨 INJECT EMPTY DRIVES: If a drive has 0 students, send a "Dummy" row so it still shows up!
+    Object.keys(eventsMap).forEach(dId => {
+      if (!eventsMap[dId].hasApplicants) {
+        drivesData.push({
+          rowNumber: `empty-${dId}`,
+          driveId: dId,
+          name: 'NO_APPLICANTS',
+          driveTpo: eventsMap[dId].tpo,
+          driveDate: eventsMap[dId].date,
+          driveLocation: eventsMap[dId].location
+        });
+      }
     });
     
     res.json({ success: true, drives: drivesData.reverse() });

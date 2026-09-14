@@ -10,6 +10,9 @@ import { API_BASE } from './apiConfig';
 
 const parseDate = (dStr) => {
   if (!dStr) return 0;
+  const d = new Date(dStr);
+  if (!isNaN(d.getTime())) return d.getTime();
+  
   try {
       let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0] : dStr;
       if (typeof cleanStr === 'string' && cleanStr.includes('/')) {
@@ -18,8 +21,7 @@ const parseDate = (dStr) => {
           return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`).getTime();
         }
       }
-      const d = new Date(cleanStr).getTime();
-      return isNaN(d) ? 0 : d;
+      return 0;
   } catch(e) { return 0; }
 };
 
@@ -32,6 +34,7 @@ export default function PlacementDrives() {
   const [loading, setLoading] = useState(true);
   const [selectedDrive, setSelectedDrive] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTab, setActiveTab] = useState('upcoming'); // 🚨 NEW TAB STATE
   
   const [savingRow, setSavingRow] = useState(null);
 
@@ -51,7 +54,6 @@ export default function PlacementDrives() {
   const canEditDrive = (drive) => {
     if (isSuperAdmin) return true;
     if (!tpoData || !tpoData.name) return false;
-    // If the drive is orphaned (no TPO mapped), allow Super Admin to edit, block others
     if (!drive.driveTpo) return false;
     
     const myName = String(tpoData.name).toLowerCase().trim();
@@ -89,14 +91,23 @@ export default function PlacementDrives() {
         applicants: [] 
       };
     }
-    groupedDrives[d.driveId].applicants.push(d);
+    // 🚨 Filter out the dummy "NO_APPLICANTS" marker from the backend
+    if (d.name !== 'NO_APPLICANTS') {
+      groupedDrives[d.driveId].applicants.push(d);
+    }
   });
   
   const driveList = Object.values(groupedDrives).sort((a, b) => {
-    const d1 = a.applicants.length > 0 ? Math.max(...a.applicants.map(ap => parseDate(ap.regDate))) : 0;
-    const d2 = b.applicants.length > 0 ? Math.max(...b.applicants.map(ap => parseDate(ap.regDate))) : 0;
-    return d2 - d1;
+    return parseDate(b.driveDate) - parseDate(a.driveDate);
   });
+
+  // 🚨 TAB FILTERING LOGIC
+  const todayStart = new Date().setHours(0,0,0,0);
+  
+  const upcomingDrives = driveList.filter(d => parseDate(d.driveDate) >= todayStart || parseDate(d.driveDate) === 0);
+  const expiredDrives = driveList.filter(d => parseDate(d.driveDate) > 0 && parseDate(d.driveDate) < todayStart);
+  
+  const displayDrives = activeTab === 'upcoming' ? upcomingDrives : expiredDrives;
 
   const filteredApplicants = selectedDrive ? selectedDrive.applicants.filter(a => 
     String(a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -130,34 +141,58 @@ export default function PlacementDrives() {
               </div>
             </div>
 
+            {/* 🚨 THE NEW TAB SELECTOR */}
+            <div style={{ display: 'flex', gap: '15px', marginBottom: '25px', borderBottom: '1px solid #1e293b', paddingBottom: '15px' }}>
+              <button 
+                onClick={() => setActiveTab('upcoming')}
+                style={{ 
+                  background: activeTab === 'upcoming' ? 'rgba(56, 189, 248, 0.1)' : 'transparent',
+                  color: activeTab === 'upcoming' ? '#38bdf8' : '#94a3b8',
+                  border: activeTab === 'upcoming' ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid transparent',
+                  padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s'
+                }}>
+                Upcoming & Active Drives
+              </button>
+              <button 
+                onClick={() => setActiveTab('expired')}
+                style={{ 
+                  background: activeTab === 'expired' ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
+                  color: activeTab === 'expired' ? '#ef4444' : '#94a3b8',
+                  border: activeTab === 'expired' ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid transparent',
+                  padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s'
+                }}>
+                Expired / Past Drives
+              </button>
+            </div>
+
             {loading ? (
               <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Fetching active drives...</p></div>
-            ) : driveList.length === 0 ? (
-              <div className="empty-state-card"><span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>📭</span>No drive registrations recorded yet.</div>
+            ) : displayDrives.length === 0 ? (
+              <div className="empty-state-card">
+                <span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>📭</span>
+                No {activeTab} drive records found.
+              </div>
             ) : (
               <div className="grid-3-col">
-                {driveList.map((drive, idx) => {
+                {displayDrives.map((drive, idx) => {
                   const placedCount = drive.applicants.filter(a => String(a.studentStatus || '').toLowerCase().includes('placed') || String(a.studentStatus || '').toLowerCase().includes('offer')).length;
                   const progressPct = drive.applicants.length > 0 ? (placedCount / drive.applicants.length) * 100 : 0;
-                  
-                  // 🚨 Check if data is missing from the sheet
                   const isOrphaned = !drive.driveTpo;
 
                   return (
                     <div key={idx} onClick={() => setSelectedDrive(drive)} className="dash-card hover-lift" style={{ cursor: 'pointer', padding: '25px', position: 'relative', overflow: 'hidden', border: isOrphaned ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid #1e293b' }}>
-                      <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', background: isOrphaned ? '#f59e0b' : '#38bdf8' }}></div>
+                      <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', background: isOrphaned ? '#f59e0b' : (activeTab === 'upcoming' ? '#38bdf8' : '#ef4444') }}></div>
                       
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
                         <div>
                           <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Drive Reference</div>
                           <h3 style={{ margin: 0, fontSize: '1.4rem', color: '#fff', fontWeight: 900 }}>{String(drive.driveId || 'N/A')}</h3>
                         </div>
-                        <div style={{ background: isOrphaned ? 'rgba(245, 158, 11, 0.15)' : 'rgba(56, 189, 248, 0.15)', color: isOrphaned ? '#f59e0b' : '#38bdf8', padding: '10px', borderRadius: '12px' }}>
+                        <div style={{ background: isOrphaned ? 'rgba(245, 158, 11, 0.15)' : (activeTab === 'upcoming' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(239, 68, 68, 0.15)'), color: isOrphaned ? '#f59e0b' : (activeTab === 'upcoming' ? '#38bdf8' : '#ef4444'), padding: '10px', borderRadius: '12px' }}>
                           <CalendarCheck size={24} weight="fill" />
                         </div>
                       </div>
 
-                      {/* 🚨 PREMIUM DATA STACK WITH FALLBACKS */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px', color: '#cbd5e1', fontSize: '0.85rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <IdentificationCard size={18} color="#94a3b8" /> 
@@ -241,7 +276,7 @@ export default function PlacementDrives() {
 
             <div className="clean-list">
               {filteredApplicants.length === 0 ? (
-                <div className="empty-state-card"><span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🔍</span>No students match your search.</div>
+                <div className="empty-state-card"><span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🔍</span>No students registered or matching search.</div>
               ) : (
                 filteredApplicants.map((app, i) => {
                   const currStat = String(app.studentStatus || 'Pending / Unknown');
@@ -329,6 +364,7 @@ export default function PlacementDrives() {
         .premium-input, .premium-select { background: rgba(0,0,0,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 15px; font-size: 0.9rem; outline: none; transition: 0.2s; box-sizing: border-box; }
         .premium-input { flex: 1; }
         .premium-input:focus, .premium-select:focus { border-color: #3b82f6; background: rgba(0,0,0,0.4); }
+        .premium-select option { background: #0f1523; color: #fff; padding: 10px; font-weight: bold; }
         .empty-state-card { background: rgba(15, 23, 42, 0.5); border: 1px dashed rgba(255,255,255,0.1); border-radius: 16px; padding: 50px 20px; text-align: center; color: #94a3b8; font-size: 1.1rem; font-weight: bold; display: flex; flex-direction: column; align-items: center; }
         .clean-list { display: flex; flex-direction: column; gap: 15px; }
         .clean-row { display: flex; justify-content: space-between; align-items: center; padding: 20px; border-radius: 16px; flex-wrap: wrap; gap: 15px; }
