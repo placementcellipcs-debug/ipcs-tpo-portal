@@ -1,3 +1,5 @@
+const { sendStatusUpdateEmail } = require('./utils/email.js');
+
 // 🚨 IN-MEMORY MULTI-DEVICE SESSION REGISTRY
 const activeSessions = new Map();
 
@@ -875,6 +877,8 @@ exports.updateApplication = async (req, res) => {
        .catch(e => console.error("Background Mail Error")); 
     }
 
+    sendStatusUpdateEmail(req.body);
+
     refreshCache(); 
     res.json({ success: true, message: "Updated!" });
   } catch (error) { 
@@ -1327,8 +1331,11 @@ exports.addEvent = async (req, res) => {
 exports.runDailyCron = async () => {
   console.log("🚨 [CRON] Starting Daily Resume Delivery check...");
   const cache = getCache();
-  if (!cache) return;
-  
+  if (!cache || !cache.vacancies || cache.vacancies.length === 0) {
+      console.warn("⚠️ [CRON] Cache is empty or currently syncing. Aborting cron job to prevent false zero results.");
+      return;
+  }
+
   const yesterday = new Date(); 
   yesterday.setDate(yesterday.getDate() - 1);
   const yStr = yesterday.toISOString().split('T')[0]; 

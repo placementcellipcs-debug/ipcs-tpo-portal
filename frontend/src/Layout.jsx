@@ -1,13 +1,12 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { motion, AnimatePresence } from 'framer-motion'; // 🚨 PREMIUM UX: Framer Motion added
+import { motion, AnimatePresence } from 'framer-motion'; 
 import { 
   Bell, X, SquaresFour, Trophy, ListChecks, ShieldCheck,
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
   Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin,
-  WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench, Plus,
-  MagnifyingGlass // 🚨 PREMIUM UX: Search icon added
+  WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench, Plus
 } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
 
@@ -38,11 +37,6 @@ export default function Layout({ children }) {
   const [imgError, setImgError] = useState(false);
   const [notifications, setNotifications] = useState([]);
 
-  // 🚨 PREMIUM UX: COMMAND PALETTE STATE
-  const [isCmdOpen, setIsCmdOpen] = useState(false);
-  const [cmdSearch, setCmdSearch] = useState('');
-  const searchInputRef = useRef(null);
-
   // 🚨 PREMIUM UX: THEME ENGINE STATE
   const [theme, setTheme] = useState(() => localStorage.getItem('app_theme') || 'dark');
   const [accent, setAccent] = useState(() => localStorage.getItem('app_accent') || 'cyan');
@@ -59,30 +53,6 @@ export default function Layout({ children }) {
   }, [accent]);
 
   const toggleTheme = () => setTheme(prev => prev === 'dark' ? 'light' : 'dark');
-
-  // 🚨 PREMIUM UX: COMMAND PALETTE KEYBOARD LISTENER (Ctrl+K / Cmd+K)
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setIsCmdOpen(prev => !prev);
-      }
-      if (e.key === 'Escape' && isCmdOpen) {
-        setIsCmdOpen(false);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [isCmdOpen]);
-
-  // Auto-focus the search bar when the palette opens
-  useEffect(() => {
-    if (isCmdOpen && searchInputRef.current) {
-      searchInputRef.current.focus();
-    } else {
-      setCmdSearch('');
-    }
-  }, [isCmdOpen]);
 
   useEffect(() => {
     if (!tpoData) {
@@ -200,47 +170,6 @@ export default function Layout({ children }) {
   const showTrainerLogs = isTrainer || isTL;
   const showStudentApps = isTpo && !isSuperAdmin;
 
-  // 🚨 PREMIUM UX: DYNAMIC ROLE-BASED ROUTES FOR COMMAND PALETTE
-  const getAccessibleRoutes = () => {
-    const routes = [
-      { name: 'Dashboard', path: '/dashboard', icon: <SquaresFour size={20} /> },
-      { name: 'Students Directory', path: '/students', icon: <Users size={20} /> },
-      { name: 'Placed Students', path: '/placed', icon: <Trophy size={20} /> },
-      { name: 'Vacancies', path: '/vacancies', icon: <Briefcase size={20} /> },
-      { name: 'Events', path: '/events', icon: <CalendarStar size={20} /> },
-      { name: 'Talentino', path: '/talentino', icon: <UserCheck size={20} /> },
-      { name: 'Settings', path: '/settings', icon: <Gear size={20} /> }
-    ];
-    if (showTracker) routes.push({ name: 'Job Tracker', path: '/tracker', icon: <Files size={20} /> });
-    if (showReports) routes.push({ name: 'Reports', path: '/reports', icon: <ChartBar size={20} /> });
-    if (showStudentApps) routes.push({ name: 'Student Apps', path: '/applications', icon: <ListChecks size={20} /> });
-    if (!isTrainer) routes.push({ name: 'Placement Drives', path: '/placement-drives', icon: <IdentificationCard size={20} /> });
-    if (!isTrainer) routes.push({ name: 'Clients & Partners', path: '/clients', icon: <Handshake size={20} /> });
-    if (showStudyMaterials) routes.push({ name: 'Study Materials', path: '/study-materials', icon: <Book size={20} /> });
-    if (showTrainerLogs) routes.push({ name: 'Daily Log Report', path: '/trainer-logs', icon: <Notebook size={20} /> });
-    if (!userRole.includes('MANAGER') && !isTpo) routes.push({ name: 'Exams Hub', path: '/exams', icon: <FileText size={20} /> });
-    
-    if (isSuperAdmin || userRole.includes('MANAGER')) {
-       routes.push({ name: 'Asset Dashboard', path: '/assets/dashboard', icon: <ChartBar size={20} /> });
-       routes.push({ name: 'Asset Master Registry', path: '/assets', icon: <Barcode size={20} /> });
-       routes.push({ name: 'Register Asset', path: '/assets/add', icon: <Plus size={20} /> });
-       routes.push({ name: 'Asset Consumables', path: '/assets/inventory', icon: <Package size={20} /> });
-       routes.push({ name: 'Asset Transfers', path: '/assets/transfers', icon: <ArrowsLeftRight size={20} /> });
-       routes.push({ name: 'Asset Maintenance', path: '/assets/maintenance', icon: <Wrench size={20} /> });
-    }
-    if (showManageAdmin) {
-       routes.push({ name: 'Manage Branches', path: '/branches', icon: <MapPin size={20} /> });
-       routes.push({ name: 'Manage Courses', path: '/courses', icon: <Bookmarks size={20} /> });
-       routes.push({ name: 'User Management', path: '/users', icon: <ShieldCheck size={20} /> });
-       routes.push({ name: 'Security Logs', path: '/security-logs', icon: <ShieldCheck size={20} /> });
-    }
-    return routes;
-  };
-
-  const filteredRoutes = getAccessibleRoutes().filter(route => 
-    route.name.toLowerCase().includes(cmdSearch.toLowerCase())
-  );
-
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
     const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
@@ -254,7 +183,6 @@ export default function Layout({ children }) {
   
   const handleNav = (path) => { 
     setIsDrawerOpen(false); 
-    setIsCmdOpen(false); 
     navigate(path); 
   };
 
@@ -266,67 +194,12 @@ export default function Layout({ children }) {
 
   return (
     <div className="app-layout">
-      
-      {/* 🚨 PREMIUM UX: GLOBAL COMMAND PALETTE (CTRL+K) */}
-      <AnimatePresence>
-        {isCmdOpen && (
-          <motion.div 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            exit={{ opacity: 0 }} 
-            className="cmd-palette-overlay" 
-            onClick={() => setIsCmdOpen(false)}
-          >
-            <motion.div 
-              initial={{ scale: 0.95, y: -20 }} 
-              animate={{ scale: 1, y: 0 }} 
-              exit={{ scale: 0.95, y: -20 }}
-              transition={{ duration: 0.15 }}
-              className="cmd-palette-box" 
-              onClick={e => e.stopPropagation()}
-            >
-              <div className="cmd-input-row">
-                <MagnifyingGlass size={24} color="#38bdf8" weight="bold" />
-                <input 
-                  ref={searchInputRef} 
-                  type="text" 
-                  className="cmd-input" 
-                  placeholder="What do you need?" 
-                  value={cmdSearch} 
-                  onChange={(e) => setCmdSearch(e.target.value)} 
-                />
-                <div className="cmd-shortcut">ESC</div>
-              </div>
-              <div className="cmd-results">
-                {filteredRoutes.length > 0 ? filteredRoutes.map((route, i) => (
-                  <div key={i} className="cmd-item" onClick={() => handleNav(route.path)}>
-                    {route.icon} <span>{route.name}</span>
-                  </div>
-                )) : (
-                  <div style={{ padding: '20px', textAlign: 'center', color: '#64748b' }}>No modules found.</div>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       <main className="main-content">
         <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px' }}>
           <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" style={{ height: '35px', objectFit: 'contain' }} />
             <div style={{ width: '1px', height: '25px', backgroundColor: 'rgba(255, 255, 255, 0.15)' }}></div>
             <img src="https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J" alt="Talenzo Logo" style={{ height: '30px', objectFit: 'contain' }} />
-            
-            {/* 🚨 PREMIUM UX: Quick Search Trigger for Desktop */}
-            <div 
-              onClick={() => setIsCmdOpen(true)} 
-              className="d-md-flex hover-bg"
-              style={{ display: 'none', marginLeft: '20px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', padding: '6px 12px', borderRadius: '8px', color: '#64748b', fontSize: '0.8rem', cursor: 'text', alignItems: 'center', gap: '8px' }} 
-            >
-              <MagnifyingGlass size={16} /> Quick Search... 
-              <span style={{ background: '#1e293b', padding: '2px 6px', borderRadius: '4px', fontSize: '0.7rem' }}>Ctrl K</span>
-            </div>
           </div>
 
           <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
@@ -506,14 +379,6 @@ export default function Layout({ children }) {
           </div>
         </div>
       </div>
-
-      {/* Inline styles for Command Palette UI overrides */}
-      <style>{`
-        @media (min-width: 768px) {
-          .d-md-flex { display: flex !important; }
-        }
-        .hover-bg:hover { background: rgba(255,255,255,0.05) !important; cursor: pointer; }
-      `}</style>
     </div>
   );
 }

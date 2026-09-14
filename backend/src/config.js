@@ -27,14 +27,15 @@ async function fetchSheetWithRetry(sheet, retries = 3) {
       return await sheet.getRows();
     } catch (error) {
       if (error.response && error.response.status === 429) {
-        console.warn(`⚠️ Google API Rate Limit Hit (429). Retrying in ${1500 * (i + 1)}ms...`);
-        await delay(1500 * (i + 1));
+        console.warn(`⚠️ Google API Rate Limit Hit (429). Retrying in ${2000 * (i + 1)}ms...`);
+        await delay(2000 * (i + 1)); // Increased delay for better backoff
       } else {
         throw error;
       }
     }
   }
-  return [];
+  // 🚨 THROW instead of returning [] so the cache doesn't get wiped
+  throw new Error(`Failed to fetch sheet "${sheet.title}" after ${retries} retries due to rate limits.`);
 }
 
 async function refreshCache() {
