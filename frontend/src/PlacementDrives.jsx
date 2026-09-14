@@ -3,7 +3,7 @@ import axios from 'axios';
 import { 
   CircleNotch, CalendarCheck, Users, 
   CaretLeft, IdentificationCard, Phone, EnvelopeSimple,
-  Trophy, UserList, Clock, CheckCircle, MapPin, CalendarBlank, WarningCircle
+  Trophy, UserList, Clock, CheckCircle, MapPin, CalendarBlank, WarningCircle, WhatsappLogo, FilePdf
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
@@ -34,7 +34,10 @@ export default function PlacementDrives() {
   const [loading, setLoading] = useState(true);
   const [selectedDrive, setSelectedDrive] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('upcoming'); // 🚨 NEW TAB STATE
+  
+  // 🚨 TABS
+  const [activeMasterTab, setActiveMasterTab] = useState('upcoming'); 
+  const [activeInterestTab, setActiveInterestTab] = useState('interested'); 
   
   const [savingRow, setSavingRow] = useState(null);
 
@@ -91,7 +94,6 @@ export default function PlacementDrives() {
         applicants: [] 
       };
     }
-    // 🚨 Filter out the dummy "NO_APPLICANTS" marker from the backend
     if (d.name !== 'NO_APPLICANTS') {
       groupedDrives[d.driveId].applicants.push(d);
     }
@@ -101,19 +103,26 @@ export default function PlacementDrives() {
     return parseDate(b.driveDate) - parseDate(a.driveDate);
   });
 
-  // 🚨 TAB FILTERING LOGIC
   const todayStart = new Date().setHours(0,0,0,0);
-  
   const upcomingDrives = driveList.filter(d => parseDate(d.driveDate) >= todayStart || parseDate(d.driveDate) === 0);
   const expiredDrives = driveList.filter(d => parseDate(d.driveDate) > 0 && parseDate(d.driveDate) < todayStart);
-  
-  const displayDrives = activeTab === 'upcoming' ? upcomingDrives : expiredDrives;
+  const displayDrives = activeMasterTab === 'upcoming' ? upcomingDrives : expiredDrives;
 
-  const filteredApplicants = selectedDrive ? selectedDrive.applicants.filter(a => 
-    String(a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-    String(a.branch || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-    String(a.email || '').toLowerCase().includes(searchQuery.toLowerCase())
-  ) : [];
+  // 🚨 FILTER BY INTERESTED / NOT INTERESTED
+  const splitApplicants = selectedDrive ? selectedDrive.applicants.filter(a => {
+    const isSearchMatch = String(a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          String(a.branch || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          String(a.email || '').toLowerCase().includes(searchQuery.toLowerCase());
+    
+    // Check if the student marked "Not Interested" in the initial Google Form (regStatus)
+    const isNotInterested = String(a.regStatus || '').toLowerCase().includes('not interested');
+    
+    if (activeInterestTab === 'not_interested') {
+      return isSearchMatch && isNotInterested;
+    } else {
+      return isSearchMatch && !isNotInterested;
+    }
+  }) : [];
 
   let kpiTotal = 0, kpiAttended = 0, kpiPlaced = 0, kpiPending = 0;
   if (selectedDrive) {
@@ -125,6 +134,13 @@ export default function PlacementDrives() {
       if (stat.includes('pending') || stat === '') kpiPending++;
     });
   }
+
+  const handleResumeClick = (url) => {
+    if (!url || url === 'N/A') return alert('No resume uploaded by this student.');
+    const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+    if (match) window.open(`https://drive.google.com/file/d/${match[1]}/view`, '_blank');
+    else window.open(url, '_blank');
+  };
 
   return (
     <Layout>
@@ -141,24 +157,23 @@ export default function PlacementDrives() {
               </div>
             </div>
 
-            {/* 🚨 THE NEW TAB SELECTOR */}
             <div style={{ display: 'flex', gap: '15px', marginBottom: '25px', borderBottom: '1px solid #1e293b', paddingBottom: '15px' }}>
               <button 
-                onClick={() => setActiveTab('upcoming')}
+                onClick={() => setActiveMasterTab('upcoming')}
                 style={{ 
-                  background: activeTab === 'upcoming' ? 'rgba(56, 189, 248, 0.1)' : 'transparent',
-                  color: activeTab === 'upcoming' ? '#38bdf8' : '#94a3b8',
-                  border: activeTab === 'upcoming' ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid transparent',
+                  background: activeMasterTab === 'upcoming' ? 'rgba(56, 189, 248, 0.1)' : 'transparent',
+                  color: activeMasterTab === 'upcoming' ? '#38bdf8' : '#94a3b8',
+                  border: activeMasterTab === 'upcoming' ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid transparent',
                   padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s'
                 }}>
                 Upcoming & Active Drives
               </button>
               <button 
-                onClick={() => setActiveTab('expired')}
+                onClick={() => setActiveMasterTab('expired')}
                 style={{ 
-                  background: activeTab === 'expired' ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
-                  color: activeTab === 'expired' ? '#ef4444' : '#94a3b8',
-                  border: activeTab === 'expired' ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid transparent',
+                  background: activeMasterTab === 'expired' ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
+                  color: activeMasterTab === 'expired' ? '#ef4444' : '#94a3b8',
+                  border: activeMasterTab === 'expired' ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid transparent',
                   padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s'
                 }}>
                 Expired / Past Drives
@@ -166,11 +181,11 @@ export default function PlacementDrives() {
             </div>
 
             {loading ? (
-              <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Fetching active drives...</p></div>
+              <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Fetching drives...</p></div>
             ) : displayDrives.length === 0 ? (
               <div className="empty-state-card">
                 <span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>📭</span>
-                No {activeTab} drive records found.
+                No {activeMasterTab} drive records found.
               </div>
             ) : (
               <div className="grid-3-col">
@@ -180,15 +195,15 @@ export default function PlacementDrives() {
                   const isOrphaned = !drive.driveTpo;
 
                   return (
-                    <div key={idx} onClick={() => setSelectedDrive(drive)} className="dash-card hover-lift" style={{ cursor: 'pointer', padding: '25px', position: 'relative', overflow: 'hidden', border: isOrphaned ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid #1e293b' }}>
-                      <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', background: isOrphaned ? '#f59e0b' : (activeTab === 'upcoming' ? '#38bdf8' : '#ef4444') }}></div>
+                    <div key={idx} onClick={() => { setSelectedDrive(drive); setActiveInterestTab('interested'); }} className="dash-card hover-lift" style={{ cursor: 'pointer', padding: '25px', position: 'relative', overflow: 'hidden', border: isOrphaned ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid #1e293b' }}>
+                      <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', background: isOrphaned ? '#f59e0b' : (activeMasterTab === 'upcoming' ? '#38bdf8' : '#ef4444') }}></div>
                       
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
                         <div>
                           <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Drive Reference</div>
                           <h3 style={{ margin: 0, fontSize: '1.4rem', color: '#fff', fontWeight: 900 }}>{String(drive.driveId || 'N/A')}</h3>
                         </div>
-                        <div style={{ background: isOrphaned ? 'rgba(245, 158, 11, 0.15)' : (activeTab === 'upcoming' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(239, 68, 68, 0.15)'), color: isOrphaned ? '#f59e0b' : (activeTab === 'upcoming' ? '#38bdf8' : '#ef4444'), padding: '10px', borderRadius: '12px' }}>
+                        <div style={{ background: isOrphaned ? 'rgba(245, 158, 11, 0.15)' : (activeMasterTab === 'upcoming' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(239, 68, 68, 0.15)'), color: isOrphaned ? '#f59e0b' : (activeMasterTab === 'upcoming' ? '#38bdf8' : '#ef4444'), padding: '10px', borderRadius: '12px' }}>
                           <CalendarCheck size={24} weight="fill" />
                         </div>
                       </div>
@@ -262,28 +277,56 @@ export default function PlacementDrives() {
               </div>
             </div>
 
-            <div className="glass-panel control-action-bar" style={{ padding: '15px', borderRadius: '16px', marginBottom: '25px' }}>
-              <div className="filter-group" style={{ width: '100%', maxWidth: '500px' }}>
+            <div className="glass-panel control-action-bar" style={{ padding: '15px', borderRadius: '16px', marginBottom: '25px', display: 'flex', gap: '15px', flexWrap: 'wrap' }}>
+              
+              {/* 🚨 THE NEW INTERESTED / NOT INTERESTED TAB TOGGLE */}
+              <div className="segmented-tabs" style={{ background: 'rgba(0,0,0,0.3)', padding: '5px', borderRadius: '12px', display: 'flex' }}>
+                <button 
+                  onClick={() => setActiveInterestTab('interested')} 
+                  style={{ background: activeInterestTab === 'interested' ? '#38bdf8' : 'transparent', color: activeInterestTab === 'interested' ? '#fff' : '#94a3b8', border: 'none', padding: '8px 24px', fontWeight: 'bold', borderRadius: '8px', cursor: 'pointer', transition: '0.3s' }}
+                >
+                  Interested Students
+                </button>
+                <button 
+                  onClick={() => setActiveInterestTab('not_interested')} 
+                  style={{ background: activeInterestTab === 'not_interested' ? '#ef4444' : 'transparent', color: activeInterestTab === 'not_interested' ? '#fff' : '#94a3b8', border: 'none', padding: '8px 24px', fontWeight: 'bold', borderRadius: '8px', cursor: 'pointer', transition: '0.3s' }}
+                >
+                  Not Interested / Opt-Outs
+                </button>
+              </div>
+
+              <div className="filter-group" style={{ flex: 1, minWidth: '300px' }}>
                 <input 
                   type="text" 
                   className="premium-input" 
                   placeholder="Search student, branch, or email..." 
                   value={searchQuery} 
                   onChange={(e) => setSearchQuery(e.target.value)} 
+                  style={{ width: '100%' }}
                 />
               </div>
             </div>
 
             <div className="clean-list">
-              {filteredApplicants.length === 0 ? (
-                <div className="empty-state-card"><span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🔍</span>No students registered or matching search.</div>
+              {splitApplicants.length === 0 ? (
+                <div className="empty-state-card">
+                  <span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🔍</span>
+                  {activeInterestTab === 'not_interested' ? 'No students have opted out of this drive.' : 'No interested students found matching your search.'}
+                </div>
               ) : (
-                filteredApplicants.map((app, i) => {
+                splitApplicants.map((app, i) => {
                   const currStat = String(app.studentStatus || 'Pending / Unknown');
                   let statColor = '#f59e0b'; let bgAlpha = 'rgba(245, 158, 11, 0.1)';
-                  if (currStat.includes('Placed') || currStat.includes('Offer')) { statColor = '#10b981'; bgAlpha = 'rgba(16, 185, 129, 0.1)'; }
+                  
+                  // If they are in the Not Interested tab, color them red by default
+                  if (activeInterestTab === 'not_interested') { statColor = '#ef4444'; bgAlpha = 'rgba(239, 68, 68, 0.1)'; }
+                  else if (currStat.includes('Placed') || currStat.includes('Offer')) { statColor = '#10b981'; bgAlpha = 'rgba(16, 185, 129, 0.1)'; }
                   else if (currStat.includes('Attended')) { statColor = '#38bdf8'; bgAlpha = 'rgba(56, 189, 248, 0.1)'; }
                   else if (currStat.includes('Not') || currStat.includes('Rejected')) { statColor = '#ef4444'; bgAlpha = 'rgba(239, 68, 68, 0.1)'; }
+
+                  // 🚨 PREPARE WHATSAPP MESSAGE
+                  const waMessage = `Hi ${app.name}, this is regarding the ${selectedDrive.driveId} Placement Drive.`;
+                  const waLink = `https://wa.me/91${app.phone.replace(/\D/g, '')}?text=${encodeURIComponent(waMessage)}`;
 
                   return (
                     <div key={i} className="clean-row glass-panel hover-lift" style={{ padding: '20px', borderLeft: `4px solid ${statColor}` }}>
@@ -309,7 +352,27 @@ export default function PlacementDrives() {
                         </span>
                       </div>
                       
-                      <div className="cl-right" style={{ flex: 1, minWidth: '200px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center' }}>
+                      {/* 🚨 RIGHT COLUMN: STATUS UPDATER & COMMUNICATION BUTTONS */}
+                      <div className="cl-right" style={{ flex: 1.5, minWidth: '250px', display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
+                        
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          {app.phone && (
+                            <a href={waLink} target="_blank" rel="noreferrer" style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', padding: '8px', borderRadius: '8px', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="WhatsApp Student">
+                              <WhatsappLogo size={20} weight="fill" />
+                            </a>
+                          )}
+                          {app.email && (
+                            <a href={`mailto:${app.email}`} style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', padding: '8px', borderRadius: '8px', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Email Student">
+                              <EnvelopeSimple size={20} weight="fill" />
+                            </a>
+                          )}
+                          {app.resume && app.resume !== 'N/A' && (
+                            <button onClick={() => handleResumeClick(app.resume)} style={{ background: 'rgba(56, 189, 248, 0.15)', border: 'none', cursor: 'pointer', color: '#38bdf8', padding: '8px', borderRadius: '8px', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="View Resume">
+                              <FilePdf size={20} weight="fill" />
+                            </button>
+                          )}
+                        </div>
+
                         {savingRow === app.rowNumber ? (
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8', fontWeight: 'bold' }}>
                             <CircleNotch size={24} className="ph-spin" /> Updating...
@@ -340,6 +403,7 @@ export default function PlacementDrives() {
                           </select>
                         )}
                       </div>
+
                     </div>
                   );
                 })
