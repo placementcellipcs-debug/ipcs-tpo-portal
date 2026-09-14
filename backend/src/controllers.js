@@ -1,5 +1,3 @@
-const { sendStatusUpdateEmail } = require('./utils/email.js');
-
 // 🚨 IN-MEMORY MULTI-DEVICE SESSION REGISTRY
 const activeSessions = new Map();
 
@@ -1341,33 +1339,47 @@ exports.runDailyCron = async () => {
   console.log("🚨 [CRON] Starting Daily Resume Delivery check...");
   const cache = getCache();
   if (!cache || !cache.vacancies || cache.vacancies.length === 0) {
-      console.warn("⚠️ [CRON] Cache is empty or currently syncing. Aborting cron job to prevent false zero results.");
+      console.warn("⚠️ [CRON] Cache is empty or currently syncing. Aborting cron job.");
       return;
   }
 
-  // 🚨 FIX: Generate yesterday's date securely in IST format YYYY-MM-DD
+  // Generate yesterday's date securely in IST format YYYY-MM-DD
   const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
   const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
   const yStr = formatter.format(yesterday); // e.g. "2026-09-13"
 
+  console.log(`🚨 [CRON] Target Date (Yesterday IST): ${yStr}`);
+
   const expiredJobs = cache.vacancies.filter(v => {
-    // Look for Last Date, or even Column 17 if the sheet header got messed up
-    const lastDateKey = getValByHeader(v, ['lastdate', 'last date', 'column17']);
+    // 🚨 Aggressively search multiple columns for the date
+    const lastDateKey = getValByHeader(v, ['lastdate', 'last date', 'column17', 'interviewdate', 'interview date']);
+    
     if (!lastDateKey) return false;
 
     try {
-      const parsedDate = safeParseDate(lastDateKey);
-      if (parsedDate) {
+      // Smart Date Parsing for US (MM/DD) and EU (DD/MM) formats
+      let parsedDate = new Date(lastDateKey);
+      if (isNaN(parsedDate.getTime()) && lastDateKey.includes('/')) {
+         const parts = lastDateKey.split(/[/\s,.-]+/);
+         if (parts.length >= 3) {
+           parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+         }
+      }
+
+      if (!isNaN(parsedDate.getTime())) {
          const rowDateStr = formatter.format(parsedDate);
+         
+         // 🚨 DEBUG LOG: Print every date it finds to the Render console
+         console.log(`[DEBUG] Found Job ID: ${getValByHeader(v, ['jobid'])} | Sheet Date: ${lastDateKey} -> Parsed: ${rowDateStr}`);
+         
          return rowDateStr === yStr;
       }
       return false;
     } catch(e) { return false; }
   });
 
-  console.log(`🚨 [CRON] Target Date (Yesterday IST): ${yStr}`);
-  console.log(`🚨 [CRON] Found ${expiredJobs.length} expired jobs from yesterday.`);
+  console.log(`🚨 [CRON] Found ${expiredJobs.length} expired jobs matching ${yStr}.`);
 
   for (let job of expiredJobs) {
     const jobId = getValByHeader(job, ['jobid', 'id']) || '';
@@ -1375,7 +1387,10 @@ exports.runDailyCron = async () => {
     const companyName = getValByHeader(job, ['companyname', 'company']) || '';
     const position = getValByHeader(job, ['position', 'role']) || '';
 
-    if (!companyEmail) continue;
+    if (!companyEmail) {
+      console.log(`⚠️ Skipped ${companyName} (${jobId}) - No Company Email provided.`);
+      continue;
+    }
 
     const cleanTargetJobId = jobId.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -1384,7 +1399,10 @@ exports.runDailyCron = async () => {
       return appJobId === cleanTargetJobId && cleanTargetJobId !== '';
     });
 
-    if (applicants.length === 0) continue;
+    if (applicants.length === 0) {
+      console.log(`⚠️ Skipped ${companyName} (${jobId}) - Zero students applied for this job.`);
+      continue;
+    }
 
     const tpoName = getValByHeader(job, ['placementofficer']);
     const tpoEmail = getTpoEmailByName(tpoName);
@@ -1461,15 +1479,6 @@ exports.runDailyCron = async () => {
     await new Promise(resolve => setTimeout(resolve, 5000));
   }
   console.log("🎉 All daily resumes dispatched successfully!");
-};
-
-exports.triggerDailyCron = async (req, res) => {
-  try {
-    await exports.runDailyCron();
-    res.json({ success: true, message: "Manual Resume Delivery process completed!" });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
 };
 
 // =========================================================
