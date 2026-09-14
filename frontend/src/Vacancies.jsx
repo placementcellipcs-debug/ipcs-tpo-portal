@@ -89,18 +89,25 @@ export default function Vacancies() {
     appsByJobId[jobId].push(app);
   });
 
+  // 🚨 FIXED: SMART DATE PARSER FOR FRONTEND
   const parseDate = (dateStr) => {
     if (!dateStr) return new Date(8640000000000000); 
     let cleanStr = typeof dateStr === 'string' ? dateStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dateStr;
-    if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
-      const parts = cleanStr.split(/[/-]/);
-      if (parts.length === 3) {
-        if (parts[2].length === 4) return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-        if (parts[0].length === 4) return new Date(`${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`);
+    
+    // 1. Try native parsing first (Handles MM/DD/YYYY like "9/13/2026" perfectly)
+    let d = new Date(cleanStr);
+    
+    // 2. If native parsing fails, it's likely DD/MM/YYYY (like "13/09/2026")
+    if (isNaN(d.getTime()) && (cleanStr.includes('/') || cleanStr.includes('-'))) {
+      const parts = cleanStr.split(/[/\-]/);
+      if (parts.length >= 3) {
+        // Assume parts are DD-MM-YYYY, so rewrite it as YYYY-MM-DD
+        d = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
       }
     }
-    const d = new Date(cleanStr);
-    return isNaN(d) ? new Date(8640000000000000) : d;
+    
+    // 3. If it still failed, default to future date
+    return isNaN(d.getTime()) ? new Date(8640000000000000) : d;
   };
   
   const today = new Date();
@@ -352,11 +359,9 @@ export default function Vacancies() {
               <DetailBox label="Job ID" value={selectedJob.id} icon={<Briefcase size={20} weight="fill"/>} />
               <DetailBox label="Location & Mode" value={`${selectedJob.location} (${selectedJob.mode})`} icon={<MapPinLine size={20} weight="fill"/>} />
               <DetailBox label="Eligible Course" value={selectedJob.course} icon={<GraduationCap size={20} weight="fill"/>} />
-              {/* 🚨 REPLACED BROKEN ICON WITH MONEY ICON */}
               <DetailBox label="Salary" value={selectedJob.salary} icon={<Money size={20} weight="fill"/>} />
               <DetailBox label="Experience" value={selectedJob.experience} icon={<Clock size={20} weight="fill"/>} />
               <DetailBox label="Qualification" value={selectedJob.qualification} icon={<BookOpen size={20} weight="fill"/>} />
-              {/* 🚨 REPLACED BROKEN ICON WITH USERS ICON */}
               <DetailBox label="Gender Pref." value={selectedJob.gender} icon={<Users size={20} weight="fill"/>} />
             </div>
 
