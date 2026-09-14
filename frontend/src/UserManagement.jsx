@@ -31,17 +31,20 @@ export default function UserManagement() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
+
+  // 🚨 SECURITY CHECK: IS THIS GIFTY?
+  const isGifty = String(tpoData?.email || '').toLowerCase().includes('gifty');
   
   const initialFormState = {
     sheet: 'User', rowNumber: null, userName: '', email: '', contact: '', password: '', 
     role: 'Regional Technical Head', course: '', sittingBranch: '', 
-    assignedBranches: [], access: 'View Only'
+    assignedBranches: [], access: 'View Only',
+    empId: '', target: '' // 🚨 NEW FIELDS
   };
   const [formData, setFormData] = useState(initialFormState);
 
   const fetchUsers = async () => {
     try {
-      // 🚨 FIXED: Removed the stray single quote before the backtick
       const res = await axios.get(`${API_BASE}/api/admin/users`);
       if (res.data && res.data.success) {
         setUsers(res.data.users || []);
@@ -92,7 +95,9 @@ export default function UserManagement() {
       course: user.course,
       sittingBranch: user.sittingBranch,
       assignedBranches: user.assignedBranches ? user.assignedBranches.split(',').map(b => b.trim()) : [],
-      access: user.access
+      access: user.access,
+      empId: user.empId || '', // 🚨 MAP NEW FIELDS
+      target: user.target || ''
     });
     setIsEditMode(true);
     setError('');
@@ -110,7 +115,6 @@ export default function UserManagement() {
     };
 
     try {
-      // 🚨 FIXED: Removed the stray single quotes before the backticks
       const endpoint = isEditMode 
         ? `${API_BASE}/api/admin/users/update` 
         : `${API_BASE}/api/admin/users/add`;
@@ -131,7 +135,6 @@ export default function UserManagement() {
   const handleDeleteUser = async (sheet, rowNumber, userName) => {
     if (!window.confirm(`Are you sure you want to permanently delete user: ${userName}?`)) return;
     try {
-      // 🚨 FIXED: Removed the stray single quote before the backtick
       const res = await axios.post(`${API_BASE}/api/admin/users/delete`, { sheet, rowNumber });
       if (res.data.success) {
         setUsers(users.filter(u => u.rowNumber !== rowNumber || u.sheet !== sheet));
@@ -279,6 +282,12 @@ export default function UserManagement() {
                         <div className="sc-detail-row"><span>Access</span><strong style={{ color: accessLvl.includes('super') ? '#38bdf8' : accessLvl.includes('edit') ? '#10b981' : '#f59e0b' }}>{user.access || 'View Only'}</strong></div>
                         <div className="sc-detail-row"><span>Course</span><strong style={{ color: 'var(--text-main)' }}>{user.course === 'All Courses' ? 'Global Scope' : user.course}</strong></div>
                         <div className="sc-detail-row"><span>Branches</span><strong style={{ color: 'var(--text-main)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.assignedBranches}>{user.assignedBranches || 'Global'}</strong></div>
+                        
+                        {/* 🚨 VISIBLE IN GRID */}
+                        {(user.empId || user.target) && (
+                          <div className="sc-detail-row"><span>EMP ID / Tgt</span><strong style={{ color: '#a855f7' }}>{user.empId || 'N/A'} / {user.target || '0'}</strong></div>
+                        )}
+                        
                         <div className="sc-detail-row"><span>Password</span><strong style={{ color: 'var(--text-main)' }}>{user.password}</strong></div>
                       </div>
                       
@@ -302,7 +311,7 @@ export default function UserManagement() {
                       <th>User Details</th>
                       <th>Access Level</th>
                       <th>Scope (Course/Branch)</th>
-                      <th>Credentials</th>
+                      <th>KPIs & Credentials</th>
                       <th style={{ textAlign: 'center' }}>Actions</th>
                     </tr>
                   </thead>
@@ -339,10 +348,13 @@ export default function UserManagement() {
                             <span className="primary-text">{user.course || 'Global Scope'}</span>
                             <span className="sub-text" style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.assignedBranches || user.sittingBranch}>{user.assignedBranches || user.sittingBranch || 'Global Scope'}</span>
                           </td>
+                          
+                          {/* 🚨 VISIBLE IN LIST */}
                           <td>
-                            <span className="primary-text" style={{ fontFamily: 'monospace', fontSize: '0.85rem' }}>ID: {user.email || user.userName}</span>
+                            <span className="primary-text" style={{ color: '#a855f7', fontWeight: 'bold', fontSize: '0.85rem' }}>ID: {user.empId || 'N/A'} | Tgt: {user.target || '0'}</span>
                             <span className="sub-text" style={{ fontFamily: 'monospace' }}>Pass: {user.password}</span>
                           </td>
+
                           <td style={{ textAlign: 'center' }}>
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                               <button 
@@ -374,7 +386,7 @@ export default function UserManagement() {
 
       {isModalOpen && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-          <div className="modal-card" style={{ maxWidth: '650px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
+          <div className="modal-card" style={{ maxWidth: '650px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem', maxHeight: '90vh', overflowY: 'auto' }}>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
               <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -391,25 +403,40 @@ export default function UserManagement() {
             )}
 
             <form onSubmit={handleSubmit}>
+              
+              {/* 🚨 GIFTY ONLY: SECRET KPI FIELDS */}
+              {isGifty && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px', padding: '15px', background: 'rgba(168, 85, 247, 0.05)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '12px' }}>
+                  <div className="form-group">
+                    <label style={{ color: '#a855f7', fontWeight: 'bold' }}>Employee ID (Gifty Access)</label>
+                    <input type="text" name="empId" value={formData.empId} onChange={handleInputChange} className="sleek-input" placeholder="e.g. IPCS-EMP-1024" />
+                  </div>
+                  <div className="form-group">
+                    <label style={{ color: '#a855f7', fontWeight: 'bold' }}>Target of the Month</label>
+                    <input type="number" name="target" value={formData.target} onChange={handleInputChange} className="sleek-input" placeholder="e.g. 15" />
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
                 <div className="form-group">
                   <label>Full Name</label>
-                  <input type="text" name="userName" value={formData.userName} onChange={handleInputChange} required />
+                  <input type="text" name="userName" value={formData.userName} onChange={handleInputChange} className="sleek-input" required />
                 </div>
                 <div className="form-group">
                   <label>Login Mail ID</label>
-                  <input type="text" name="email" value={formData.email} onChange={handleInputChange} required />
+                  <input type="email" name="email" value={formData.email} onChange={handleInputChange} className="sleek-input" required />
                 </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
                 <div className="form-group">
                   <label>Contact Number</label>
-                  <input type="text" name="contact" value={formData.contact} onChange={handleInputChange} />
+                  <input type="text" name="contact" value={formData.contact} onChange={handleInputChange} className="sleek-input" />
                 </div>
                 <div className="form-group">
                   <label>Password</label>
-                  <input type="text" name="password" value={formData.password} onChange={handleInputChange} required />
+                  <input type="text" name="password" value={formData.password} onChange={handleInputChange} className="sleek-input" required />
                 </div>
               </div>
 

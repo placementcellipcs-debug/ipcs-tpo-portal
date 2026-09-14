@@ -424,7 +424,9 @@ exports.login = async (req, res) => {
           assignedbranches: getValByHeader(row, ['assignedbranches']),
           access: getValByHeader(row, ['access', 'accesstype']),
           profilephoto: getValByHeader(row, ['profilephoto', 'profilephotourl', 'photo']),
-          contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno'])
+          contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno']),
+          empId: getValByHeader(row, ['empid']),
+          target: getValByHeader(row, ['target', 'targetofthemonth'])
         };
         role = 'TPO';
         course = 'All Courses';
@@ -446,7 +448,9 @@ exports.login = async (req, res) => {
             assignedbranches: getValByHeader(row, ['assignedbranches']),
             access: getValByHeader(row, ['access', 'accesstype']),
             profilephoto: getValByHeader(row, ['profilephoto', 'profilephotourl', 'photo']),
-            contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno'])
+            contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno']),
+            empId: getValByHeader(row, ['empid', 'employeeid']),
+            target: getValByHeader(row, ['target', 'targetofthemonth'])
           };
           role = getValByHeader(row, ['role']) || 'RTH';
           course = getValByHeader(row, ['course', 'assignedcourses']) || 'All';
@@ -519,6 +523,8 @@ exports.login = async (req, res) => {
         role: role, 
         assignedCourse: course, 
         accessType: accessType,
+        empId: foundUser.empId || '',
+        target: foundUser.target || '0',
         sessionToken: sessionToken
       } 
     });
@@ -1206,6 +1212,8 @@ exports.addEvent = async (req, res) => {
 
       const html = `
         <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); background-color: #ffffff;">
+          
+          <!-- HEADER SECTION -->
           <div style="background-color: #0f1523; padding: 25px 20px; text-align: center; border-bottom: 5px solid #a855f7;">
             <div style="margin-bottom: 12px;">
               <img src="${logo1}" alt="IPCS Logo" style="max-height: 38px; margin: 0 8px; display: inline-block; vertical-align: middle;" />
@@ -1214,11 +1222,16 @@ exports.addEvent = async (req, res) => {
             <h2 style="color: #ffffff; margin: 0; font-size: 20px; text-transform: uppercase; letter-spacing: 1px;">Talentino Session Notification</h2>
             <p style="color: #94a3b8; margin: 5px 0 0 0; font-size: 13px;">IPCS Global Placement Cell</p>
           </div>
+
+          <!-- BODY SECTION -->
           <div style="background-image: url('${watermark}'); background-repeat: no-repeat; background-position: center center; background-size: cover; background-color: #ffffff;">
             <div style="padding: 35px 30px; background-color: rgba(255, 255, 255, 0.94); color: #334155; font-size: 15px; line-height: 1.65;">
+              
               <p style="font-size: 16px; font-weight: bold; color: #0f1523; margin-top: 0;">Dear Team,</p>
               <p>Greetings from the Placement Department, IPCS Global.</p>
               <p>This is to inform you that a Talentino Session has been scheduled at your branch. Kindly find the details below:</p>
+              
+              <!-- DETAILS BOX -->
               <div style="background-color: rgba(248, 250, 252, 0.95); border: 1px solid #cbd5e1; border-left: 5px solid #a855f7; border-radius: 8px; padding: 20px; margin: 25px 0;">
                 <h3 style="margin: 0 0 12px 0; color: #0f1523; font-size: 15px; text-transform: uppercase;">&#128204; Talentino Session Details</h3>
                 <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
@@ -1229,13 +1242,32 @@ exports.addEvent = async (req, res) => {
                   <tr><td style="padding: 6px 0; color: #64748b; vertical-align: top;">Description:</td><td style="padding: 6px 0; color: #334155; white-space: pre-line;">${formattedDesc}</td></tr>
                 </table>
               </div>
+
+              <!-- ACTION REQUIRED SECTION -->
               <h3 style="color: #ef4444; margin: 20px 0 10px 0; font-size: 16px;">&#9888;&#65039; Action Required</h3>
               <p>The concerned branch is requested to inform the students about the scheduled Talentino session and ensure maximum participation.</p>
+              <p style="font-weight: bold; margin-bottom: 5px;">Please ensure that:</p>
               <ul style="padding-left: 20px; margin-top: 5px;">
                 <li style="margin-bottom: 6px;">All concerned students are informed about the session in advance.</li>
                 <li style="margin-bottom: 6px;">Students are instructed to be present at the branch on time.</li>
                 <li style="margin-bottom: 6px;">The required arrangements are made at the branch for conducting the session smoothly.</li>
+                <li style="margin-bottom: 6px;">Students are encouraged to actively participate in all the activities conducted during Talentino.</li>
+                <li style="margin-bottom: 6px;">The concerned TPO coordinates with the branch team and students throughout the session.</li>
               </ul>
+
+              <!-- BLUE NOTE BOX -->
+              <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; margin: 20px 0;">
+                <p style="margin: 0; font-size: 14px; color: #1e3a8a;">
+                  <b>Note:</b> No separate registration is required for the Talentino session. Students can participate directly as instructed by the concerned TPO.
+                </p>
+              </div>
+
+              <!-- FOOTER TEXT -->
+              <p>The Talentino session is designed to engage students through interactive activities, challenges, and placement-oriented exercises, helping them improve their confidence, communication, aptitude, problem-solving, and overall placement readiness.</p>
+              <p>Your support and coordination are essential to ensure the smooth execution of the Talentino session and active student participation.</p>
+              <p>For any clarification or coordination, please connect with the Placement Team.<br/>Thank you for your cooperation.</p>
+
+              <!-- SIGN-OFF -->
               <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
                 <p style="margin: 0 0 3px 0;">Regards,</p>
                 <p style="margin: 0 0 2px 0; font-weight: bold;">Placement Team</p>
@@ -1250,7 +1282,7 @@ exports.addEvent = async (req, res) => {
         from: `"IPCS Talentino" <${senderEmail}>`,
         to: toEmail,
         cc: ccList,
-        bcc: '',
+        bcc: '', // 🚨 Empty BCC for Talentino
         subject: `Talentino Session Notification – ${date} | ${time || 'TBD'} [Ref: ${eventId}]`,
         html: html
       };
@@ -1290,8 +1322,10 @@ exports.addEvent = async (req, res) => {
     }
     refreshCache(); 
     
+    // 🚨 Check if the mail Options existed but failed to send
     if (mailOptions && newRow.get(newRow._worksheet.headerValues.find(h => (h||'').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mailstatus')) === 'FAILED') {
       const errorReason = newRow.get(newRow._worksheet.headerValues.find(h => (h||'').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mailerror')) || 'Unknown timeout';
+      // Returns success: true so the event saves and the modal closes, but triggers a warning popup text
       return res.json({ success: true, message: `⚠️ EVENT SAVED, BUT EMAILS FAILED TO SEND! Reason: ${errorReason}`, eventId: eventId });
     }
 
@@ -1353,15 +1387,22 @@ exports.runDailyCron = async () => {
     const companyName = getValByHeader(job, ['companyname', 'company']) || '';
     const position = getValByHeader(job, ['position', 'role']) || '';
 
-    if (!companyEmail) continue;
+    if (!companyEmail) {
+      console.log(`⚠️ Skipped ${companyName} (${jobId}) - No Company Email provided.`);
+      continue;
+    }
 
     const cleanTargetJobId = jobId.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
+
     const applicants = cache.applications.filter(app => {
       const appJobId = (getValByHeader(app, ['jobid']) || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
       return appJobId === cleanTargetJobId && cleanTargetJobId !== '';
     });
 
-    if (applicants.length === 0) continue;
+    if (applicants.length === 0) {
+      console.log(`⚠️ Skipped ${companyName} (${jobId}) - Zero students applied for this job.`);
+      continue;
+    }
 
     const tpoName = getValByHeader(job, ['placementofficer']);
     const tpoEmail = getTpoEmailByName(tpoName);
@@ -1413,6 +1454,13 @@ exports.runDailyCron = async () => {
               ${tableRows}
             </tbody>
           </table>
+          
+          <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
+            <p style="margin: 0 0 5px 0;">If you require further shortlisting or have interview dates finalized, please reply directly to this email.</p>
+            <p style="margin: 15px 0 2px 0;">Regards,</p>
+            <p style="margin: 0 0 2px 0; font-weight: bold; color: #0f1523; font-size: 14px;">${tpoName}</p>
+            <p style="margin: 0;">Placement Officer, IPCS Global</p>
+          </div>
         </div>
       </div>
     `;
@@ -1426,6 +1474,7 @@ exports.runDailyCron = async () => {
       attachments: attachments
     }, { name: companyName, email: companyEmail, type: 'Resume Delivery' }); 
     
+    // 🚨 PAUSE FOR 5 SECONDS: Prevents Google from throwing "Connection Timeout"
     console.log(`✅ Sent to ${companyName}. Pausing 5 seconds...`);
     await new Promise(resolve => setTimeout(resolve, 5000));
   }
@@ -1475,13 +1524,15 @@ exports.runDailyCron = async () => {
 
     // 3. Split into Interested and Not Interested
     const interestedStudents = allDriveStudents.filter(row => {
-        const studentStatus = (getValByHeader(row, ['status']) || '').toLowerCase();
-        return !studentStatus.includes('not interested');
+        const regStatus = (getValByHeader(row, ['status']) || '').toLowerCase();
+        const tpoStatus = (getValByHeader(row, ['studentstatus']) || '').toLowerCase();
+        return !regStatus.includes('not interested') && !tpoStatus.includes('not interested');
     });
 
     const notInterestedStudents = allDriveStudents.filter(row => {
-        const studentStatus = (getValByHeader(row, ['status']) || '').toLowerCase();
-        return studentStatus.includes('not interested');
+        const regStatus = (getValByHeader(row, ['status']) || '').toLowerCase();
+        const tpoStatus = (getValByHeader(row, ['studentstatus']) || '').toLowerCase();
+        return regStatus.includes('not interested') || tpoStatus.includes('not interested');
     });
 
     // 4. Build Mailing List
