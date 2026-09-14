@@ -309,6 +309,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
       </div>
     `;
 
+    // 🚨 CALENDAR .ICS ATTACHMENT GENERATOR 🚨
     if (interviewDetails.date && interviewDetails.time) {
       try {
         const formattedDate = interviewDetails.date.replace(/-/g, '');
@@ -833,7 +834,7 @@ exports.updateApplication = async (req, res) => {
     
     if (hDate && interviewDate !== undefined) updateObj[hDate] = interviewDate;
     if (hTime && interviewTime !== undefined) updateObj[hTime] = interviewTime;
-    if (hVenue && interviewVenue !== undefined) updateObj[hVenue] = interviewVenue;
+    if (hVenue && interviewVenue !== undefined) updateObj[hVenue] = updateObj[hVenue] = interviewVenue;
 
     rows[0].assign(updateObj); 
     await rows[0].save(); 
@@ -1032,7 +1033,6 @@ exports.getTalentino = (req, res) => {
   records.forEach(r => { const cleanDate = (r.date || '').split(' ')[0].trim(); if (cleanDate && cleanDate !== 'N/A') dates.add(cleanDate); });
   res.json({ success: true, dates: Array.from(dates).sort().reverse(), records: records.reverse() });
 };
-
 
 exports.getEvents = (req, res) => {
   let allEvents = getCache().events.map(row => {
@@ -1481,6 +1481,15 @@ exports.runDailyCron = async () => {
   console.log("🎉 All daily resumes dispatched successfully!");
 };
 
+exports.triggerDailyCron = async (req, res) => {
+  try {
+    await exports.runDailyCron();
+    res.json({ success: true, message: "Manual Resume Delivery process completed!" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 // =========================================================
 // 🚨 SAFER STRICT MATCHING FOR CLIENTS SHEET
 // =========================================================
@@ -1701,7 +1710,6 @@ exports.getAdminUsers = (req, res) => {
     // 2. Process User Sheet (GMs, Tech Heads, Branch Managers)
     if (cache.users) {
       cache.users.forEach(row => {
-        // 🚨 This now safely matches the exact columns in your screenshot
         const email = getValByHeader(row, ['email', 'mailid', 'mail']) || '';
         const name = getValByHeader(row, ['name', 'username']) || '';
         
@@ -1749,7 +1757,6 @@ exports.addAdminUser = async (req, res) => {
     } else {
       const s = doc.sheetsByTitle["User"]; 
       const h = s.headerValues;
-      // 🚨 Safely writes using exact header names
       await s.addRow({ 
         [getFuzzyHeader(h, 'Name')]: userName, 
         [getFuzzyHeader(h, 'Contact_Number')]: contact, 
