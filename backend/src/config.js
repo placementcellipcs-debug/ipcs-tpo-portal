@@ -28,13 +28,12 @@ async function fetchSheetWithRetry(sheet, retries = 3) {
     } catch (error) {
       if (error.response && error.response.status === 429) {
         console.warn(`⚠️ Google API Rate Limit Hit (429). Retrying in ${2000 * (i + 1)}ms...`);
-        await delay(2000 * (i + 1)); // Increased delay for better backoff
+        await delay(2000 * (i + 1));
       } else {
         throw error;
       }
     }
   }
-  // 🚨 THROW instead of returning [] so the cache doesn't get wiped
   throw new Error(`Failed to fetch sheet "${sheet.title}" after ${retries} retries due to rate limits.`);
 }
 
@@ -61,7 +60,7 @@ async function refreshCache() {
     const fetchedData = [];
     for (let i = 0; i < sheetsToFetch.length; i++) {
       fetchedData.push(await fetchSheetWithRetry(sheetsToFetch[i]));
-      await delay(1500); // 🚨 Increased to 1.5 seconds to respect Google API limits
+      await delay(1500); 
     }
 
     const [
@@ -146,11 +145,6 @@ const getFuzzyHeader = (headers, target) => {
   return headers.find(h => h.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanTarget) || target;
 };
 
-// =========================================================
-// 🚨 ENTERPRISE DYNAMIC LOOKUP FUNCTIONS
-// =========================================================
-
-// Dynamically fetch any User by their User_ID (e.g. U001, U002)
 const getUserEmailById = (userId) => {
   if (!globalCache || !globalCache.users || !userId) return '';
   const cleanId = String(userId).trim().toLowerCase();
@@ -170,7 +164,6 @@ const getUserEmailById = (userId) => {
   return '';
 };
 
-// Fetch TPO from Contact Sheet (Ignores spaces for exact matches)
 const getTpoEmail = (tpoName) => {
   if (!globalCache || !globalCache.contacts) return '';
   const searchName = (tpoName || '').toLowerCase().replace(/\s/g, '');
@@ -188,7 +181,6 @@ const getTpoEmail = (tpoName) => {
   return '';
 };
 
-// Fetch Branch Manager from Users Sheet
 const getBranchManagerEmail = (branch) => {
   if (!globalCache || !globalCache.users) return '';
   const searchBranch = (branch || '').toLowerCase().replace(/branch/g, '').trim();
@@ -202,7 +194,6 @@ const getBranchManagerEmail = (branch) => {
     const status = (rd[getH('status')] || '').toLowerCase();
     const mailEligible = (rd[getH('maileligible')] || '').toLowerCase();
     
-    // Check if they are a BM, Active, Mail Eligible, and assigned to this branch
     const isBM = role.includes('branchmanager');
     const isActive = status === 'active' || status === ''; 
     const isEligible = mailEligible === 'yes' || mailEligible === '';
@@ -219,7 +210,6 @@ const getBranchManagerEmail = (branch) => {
   return '';
 };
 
-// Gets ALL active TPOs
 const getAllTpoEmails = () => {
   if (!globalCache || !globalCache.contacts) return [];
   return globalCache.contacts.map(r => {
@@ -229,7 +219,6 @@ const getAllTpoEmails = () => {
   }).filter(Boolean);
 };
 
-// Gets ALL active Branch Managers
 const getAllBranchManagerEmails = () => {
   if (!globalCache || !globalCache.users) return [];
   return globalCache.users.filter(r => {
@@ -247,7 +236,6 @@ const getAllBranchManagerEmails = () => {
   }).filter(Boolean);
 };
 
-// Gets Admin level emails
 const getSuperAdminEmails = () => {
   if (!globalCache || !globalCache.users) return [];
   return globalCache.users.filter(r => {
@@ -279,18 +267,12 @@ async function logMailToSheet(receiverName, receiverMail, mailType, subject, sta
   } catch (e) { console.error("Failed to log mail to sheet:", e); }
 }
 
-// =========================================================
-// 🚨 WATERFALL EMAIL ENGINE (Apps Script -> IPv4 -> IPv6)
-// =========================================================
-
-// Backup 1: SMTP over standard IPv4
 const transporterIPv4 = nodemailer.createTransport({ 
   pool: true, maxConnections: 1, maxMessages: 100,
   host: 'smtp.gmail.com', port: 465, secure: true, family: 4, 
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
 });
 
-// Backup 2: SMTP over newer IPv6
 const transporterIPv6 = nodemailer.createTransport({ 
   pool: true, maxConnections: 1, maxMessages: 100,
   host: 'smtp.gmail.com', port: 465, secure: true, family: 6, 
@@ -311,13 +293,13 @@ async function sendIPCSMail(mailOptions, logDetails) {
 
     console.log(`\n📧 [MAIL DISPATCH] Subject: ${mailOptions.subject}`);
     
-    // Package attachments for Apps Script
+    // 🚨 THIS IS THE FIX: ALLOW ICS AND PDF MIME TYPES TO PASS SAFELY
     const appsPayload = { to: formattedTo, cc: formattedCc, bcc: formattedBcc, subject: mailOptions.subject, html: mailOptions.html, attachments: [] };
     if (mailOptions.attachments && Array.isArray(mailOptions.attachments)) {
       mailOptions.attachments.forEach(att => {
         if (att.content || att.contentBytes) { 
           const bufferToUse = att.content || Buffer.from(att.contentBytes, 'base64');
-          appsPayload.attachments.push({ filename: att.filename, mimeType: 'application/pdf', contentBytes: bufferToUse.toString('base64') }); 
+          appsPayload.attachments.push({ filename: att.filename, mimeType: att.contentType || 'application/pdf', contentBytes: bufferToUse.toString('base64') }); 
         } else if (att.href) { appsPayload.attachments.push({ filename: att.filename, href: att.href }); }
       });
     }
@@ -325,19 +307,16 @@ async function sendIPCSMail(mailOptions, logDetails) {
     let success = false;
     let finalErrorMessage = '';
 
-    // 🟢 ATTEMPT 1: Google Apps Script
     try {
       console.log(`➡️  [1/3] Attempting Google Apps Script...`);
-      // 🚨 Increased timeout to 30 seconds to give Google plenty of time to reply "Success"
       const res = await axios.post(process.env.APPS_SCRIPT_EMAIL_URL, appsPayload, { timeout: 30000 });
-      if (!res.data || !res.data.success) throw new Error(res.data?.error || "Apps Script rejected payload (401/404)");
+      if (!res.data || !res.data.success) throw new Error(res.data?.error || "Apps Script rejected payload");
       success = true;
       console.log(`✅ Apps Script Success!`);
     } catch (err1) {
       finalErrorMessage = `Apps Script Failed: ${err1.message}`;
       console.log(`❌ ${finalErrorMessage}`);
       
-      // 🟡 ATTEMPT 2: SMTP IPv4
       try {
         console.log(`➡️  [2/3] Attempting SMTP (IPv4)...`);
         await transporterIPv4.sendMail({ ...mailOptions, to: formattedTo, cc: formattedCc, bcc: formattedBcc });
@@ -347,7 +326,6 @@ async function sendIPCSMail(mailOptions, logDetails) {
         finalErrorMessage = `SMTP IPv4 Failed: ${err2.message}`;
         console.log(`❌ ${finalErrorMessage}`);
         
-        // 🔴 ATTEMPT 3: SMTP IPv6
         try {
           console.log(`➡️  [3/3] Attempting SMTP (IPv6)...`);
           await transporterIPv6.sendMail({ ...mailOptions, to: formattedTo, cc: formattedCc, bcc: formattedBcc });
@@ -370,7 +348,7 @@ async function sendIPCSMail(mailOptions, logDetails) {
   } catch (err) {
     console.error("🚨 WATERFALL EXHAUSTED: Mail Dispatch Completely Failed.");
     if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, `Failed: ${err.message}`);
-    throw err; // Throws error back to the controller to show the popup
+    throw err; 
   }
 }
 
@@ -389,5 +367,5 @@ module.exports = {
   doc, getCache, refreshCache, hasAccess, getFuzzyHeader, 
   sendIPCSMail, uploadToDrive,
   getTpoEmail, getBranchManagerEmail, getAllTpoEmails, getAllBranchManagerEmails, getSuperAdminEmails,
-  getUserEmailById // Exported for Event usage
+  getUserEmailById
 };

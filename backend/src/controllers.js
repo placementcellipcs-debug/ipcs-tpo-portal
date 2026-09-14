@@ -1,5 +1,3 @@
-const { sendStatusUpdateEmail } = require('./utils/email.js');
-
 // 🚨 IN-MEMORY MULTI-DEVICE SESSION REGISTRY
 const activeSessions = new Map();
 
@@ -60,8 +58,6 @@ const normalizeBranch = (branch) => (branch || '').toLowerCase().replace(/branch
 // =========================================================
 // 🚨 ENTERPRISE DYNAMIC LOOKUP FUNCTIONS
 // =========================================================
-
-// Dynamically fetch any User by their User_ID (e.g. U001, U002)
 const getUserEmailById = (userId) => {
   const cache = getCache();
   if (!cache || !cache.users || !userId) return '';
@@ -178,7 +174,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
 };
 
 // ---------------------------------------------------------
-// 🚨 MASTER STUDENT EMAIL ENGINE
+// 🚨 MASTER STUDENT EMAIL ENGINE (NOW WITH .ICS INVITES)
 // ---------------------------------------------------------
 const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails = {}, currentUserEmail = '') => {
   if (!studentData.email || !newStatus) return;
@@ -234,7 +230,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
 
   const ccList = [...new Set(ccArray)].filter(Boolean).join(',');
 
-  let subject = ''; let html = ''; let mailType = '';
+  let subject = ''; let html = ''; let mailType = ''; let attachments = []; 
   const refId = Math.floor(10000 + Math.random() * 90000); 
 
   const logo1 = "https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
@@ -283,19 +279,12 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
                 <tr><td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Date:</td><td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${interviewDetails.date || 'TBD'}</td></tr>
                 <tr><td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Time:</td><td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${interviewDetails.time || 'TBD'}</td></tr>
                 <tr><td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Venue / Link:</td><td style="padding: 10px 0; color: #38bdf8; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${interviewDetails.venue || 'TBD'}</td></tr>
-                <tr><td style="padding: 10px 0; color: #64748b; font-size: 13px; font-weight: 600;">Newsletter ID:</td><td style="padding: 10px 0; color: #64748b; font-size: 13px;">${studentData.jobId || 'N/A'}</td></tr>
               </tbody>
             </table>
           </div>
-          <h3 style="margin: 0 0 10px 0; color: #1e293b; font-size: 16px;">Agenda & Expectations</h3>
-          <p style="font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 25px 0; padding: 18px; background-color: rgba(56, 189, 248, 0.05); border-radius: 8px; font-style: italic; border: 1px solid rgba(56, 189, 248, 0.2);">
-            "The interview may consist of multiple rounds, including technical assessments, behavioral interviews, or HR rounds."
+          <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 25px 0; padding: 15px; background-color: #f0fdf4; border-left: 4px solid #10b981; border-radius: 4px;">
+            Please find the <b>Calendar Invite</b> attached to this email. You can click it to add this interview directly to your phone's calendar so you do not miss it.
           </p>
-          <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; border-radius: 4px; margin-bottom: 30px;">
-            <p style="font-size: 13px; line-height: 1.5; color: #991b1b; margin: 0;">
-              <strong>Important Note:</strong> Please make sure to arrive on time for the interview or log in to the online meeting platform a few minutes before the scheduled time.
-            </p>
-          </div>
           <div style="border-top: 1px solid #e2e8f0; padding-top: 25px;">
             <p style="font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 15px 0;">We wish you the very best of luck!</p>
             <p style="font-size: 15px; color: #0f1523; font-weight: bold; margin: 0;">Regards,<br><span style="color: #38bdf8;">IPCS Placement Cell</span></p>
@@ -303,6 +292,22 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
         </div>
       </div>
     `;
+
+    // 🚨 CALENDAR .ICS ATTACHMENT GENERATOR 🚨
+    if (interviewDetails.date && interviewDetails.time) {
+      try {
+        const formattedDate = interviewDetails.date.replace(/-/g, '');
+        const formattedTime = interviewDetails.time.replace(/:/g, '') + '00';
+        const dtStart = `${formattedDate}T${formattedTime}`;
+        const icsContent = `BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//Talenzo//IPCS//EN\r\nCALSCALE:GREGORIAN\r\nMETHOD:REQUEST\r\nBEGIN:VEVENT\r\nSUMMARY:Interview at ${studentData.company}\r\nDTSTART;TZID=Asia/Kolkata:${dtStart}\r\nLOCATION:${interviewDetails.venue || 'TBD'}\r\nDESCRIPTION:You have an interview scheduled for the ${studentData.position || 'Professional'} role. Please be on time.\r\nSTATUS:CONFIRMED\r\nEND:VEVENT\r\nEND:VCALENDAR`;
+
+        attachments.push({
+          filename: 'interview-invite.ics',
+          content: icsContent,
+          contentType: 'text/calendar'
+        });
+      } catch(e) { console.error("Failed to generate ICS file", e); }
+    }
   }
   else if (status === 'interview not attended') {
     if (noAttendCount === 2) {
@@ -368,7 +373,8 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
       to: studentData.email,
       cc: ccList,
       subject: subject,
-      html: html
+      html: html,
+      attachments: attachments 
     }, { name: studentData.name, email: studentData.email, type: mailType });
   }
 };
@@ -876,8 +882,6 @@ exports.updateApplication = async (req, res) => {
        }, status, { date: interviewDate, time: interviewTime, venue: interviewVenue }, currentUserEmail)
        .catch(e => console.error("Background Mail Error")); 
     }
-
-    sendStatusUpdateEmail(req.body);
 
     refreshCache(); 
     res.json({ success: true, message: "Updated!" });
