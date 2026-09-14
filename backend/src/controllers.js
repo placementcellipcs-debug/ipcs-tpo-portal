@@ -1,3 +1,5 @@
+const { sendStatusUpdateEmail } = require('./utils/email.js');
+
 // 🚨 IN-MEMORY MULTI-DEVICE SESSION REGISTRY
 const activeSessions = new Map();
 
@@ -54,6 +56,22 @@ const getValByHeader = (row, headerOptions) => {
 };
 
 const normalizeBranch = (branch) => (branch || '').toLowerCase().replace(/branch/g, '').trim();
+
+// 🚨 NEW: SMART DATE PARSER FOR GOOGLE SHEETS
+const safeParseDate = (dateStr) => {
+  if (!dateStr) return null;
+  // Try native parsing first (handles MM/DD/YYYY naturally)
+  let parsedDate = new Date(dateStr);
+  
+  // If native parsing fails, it's likely DD/MM/YYYY (e.g. 13/09/2026)
+  if (isNaN(parsedDate.getTime()) && dateStr.includes('/')) {
+     const parts = dateStr.split(/[/\s,.-]+/);
+     if (parts.length >= 3) {
+       parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+     }
+  }
+  return isNaN(parsedDate.getTime()) ? null : parsedDate;
+};
 
 // =========================================================
 // 🚨 ENTERPRISE DYNAMIC LOOKUP FUNCTIONS
@@ -293,7 +311,6 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
       </div>
     `;
 
-    // 🚨 CALENDAR .ICS ATTACHMENT GENERATOR 🚨
     if (interviewDetails.date && interviewDetails.time) {
       try {
         const formattedDate = interviewDetails.date.replace(/-/g, '');
@@ -556,20 +573,8 @@ exports.getDashboardStats = (req, res) => {
     let isExpired = false;
 
     if (lastDateStr) {
-      try {
-        let parsedDate;
-        if (lastDateStr.includes('/')) {
-          const parts = lastDateStr.split(/[/\s,.-]+/);
-          if (parts.length >= 3 && parts[2].length === 4) {
-            parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-          }
-        } else {
-          parsedDate = new Date(lastDateStr);
-        }
-        if (parsedDate && !isNaN(parsedDate)) {
-          if (parsedDate < todayStart) isExpired = true;
-        }
-      } catch(e) {}
+      const parsedDate = safeParseDate(lastDateStr);
+      if (parsedDate && parsedDate < todayStart) isExpired = true;
     }
 
     if ((status.includes('open') || status.includes('yes')) && !isExpired) {
@@ -1340,23 +1345,28 @@ exports.runDailyCron = async () => {
       return;
   }
 
-  const yesterday = new Date(); 
+  // 🚨 FIX: Generate yesterday's date securely in IST format YYYY-MM-DD
+  const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  const yStr = yesterday.toISOString().split('T')[0]; 
-  
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const yStr = formatter.format(yesterday); // e.g. "2026-09-13"
+
   const expiredJobs = cache.vacancies.filter(v => {
-    const lastDateKey = getValByHeader(v, ['lastdate']);
+    // Look for Last Date, or even Column 17 if the sheet header got messed up
+    const lastDateKey = getValByHeader(v, ['lastdate', 'last date', 'column17']);
     if (!lastDateKey) return false;
-    try { 
-      let pd = lastDateKey;
-      if (pd.includes('/')) {
-        const parts = pd.split(/[/\s,.-]+/);
-        if (parts.length >= 3) pd = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+
+    try {
+      const parsedDate = safeParseDate(lastDateKey);
+      if (parsedDate) {
+         const rowDateStr = formatter.format(parsedDate);
+         return rowDateStr === yStr;
       }
-      return new Date(pd).toISOString().split('T')[0] === yStr; 
+      return false;
     } catch(e) { return false; }
   });
 
+  console.log(`🚨 [CRON] Target Date (Yesterday IST): ${yStr}`);
   console.log(`🚨 [CRON] Found ${expiredJobs.length} expired jobs from yesterday.`);
 
   for (let job of expiredJobs) {
