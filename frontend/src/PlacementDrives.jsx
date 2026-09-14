@@ -36,7 +36,7 @@ export default function PlacementDrives() {
   const [searchQuery, setSearchQuery] = useState('');
   
   const [activeMasterTab, setActiveMasterTab] = useState('upcoming'); 
-  const [activeInterestTab, setActiveInterestTab] = useState('interested'); // 'interested' or 'not_interested'
+  const [activeInterestTab, setActiveInterestTab] = useState('interested'); 
   
   const [savingRow, setSavingRow] = useState(null);
 
@@ -107,7 +107,6 @@ export default function PlacementDrives() {
   const expiredDrives = driveList.filter(d => parseDate(d.driveDate) > 0 && parseDate(d.driveDate) < todayStart);
   const displayDrives = activeMasterTab === 'upcoming' ? upcomingDrives : expiredDrives;
 
-  // 🚨 SEPARATE INTERESTED VS NOT INTERESTED APPLICANTS
   const allApplicants = selectedDrive ? selectedDrive.applicants : [];
   
   const interestedApplicants = allApplicants.filter(a => {
@@ -132,7 +131,7 @@ export default function PlacementDrives() {
 
   let kpiTotal = 0, kpiAttended = 0, kpiPlaced = 0, kpiPending = 0;
   if (selectedDrive) {
-    kpiTotal = interestedApplicants.length; // KPIs focus on interested candidates
+    kpiTotal = interestedApplicants.length; 
     interestedApplicants.forEach(a => {
       const stat = String(a.studentStatus || '').toLowerCase();
       if (stat.includes('placed') || stat.includes('offer')) kpiPlaced++;
@@ -283,7 +282,6 @@ export default function PlacementDrives() {
               </div>
             </div>
 
-            {/* 🚨 INTERESTED VS NOT INTERESTED TABS & SEARCH BAR */}
             <div className="glass-panel control-action-bar" style={{ padding: '15px', borderRadius: '16px', marginBottom: '25px', display: 'flex', gap: '15px', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center' }}>
               
               <div className="segmented-tabs" style={{ background: 'rgba(0,0,0,0.3)', padding: '5px', borderRadius: '12px', display: 'flex', gap: '5px' }}>
@@ -297,7 +295,7 @@ export default function PlacementDrives() {
                   onClick={() => setActiveInterestTab('not_interested')} 
                   style={{ background: activeInterestTab === 'not_interested' ? '#ef4444' : 'transparent', color: activeInterestTab === 'not_interested' ? '#fff' : '#94a3b8', border: 'none', padding: '10px 20px', fontWeight: 'bold', borderRadius: '8px', cursor: 'pointer', transition: '0.3s' }}
                 >
-                  Not Interested ({not_interested_count = notInterestedApplicants.length})
+                  Not Interested / Opt-Outs ({notInterestedApplicants.length})
                 </button>
               </div>
 
@@ -313,7 +311,6 @@ export default function PlacementDrives() {
               </div>
             </div>
 
-            {/* APPLICANT ROWS */}
             <div className="clean-list">
               {filteredApplicants.length === 0 ? (
                 <div className="empty-state-card">
@@ -336,8 +333,10 @@ export default function PlacementDrives() {
                     bgAlpha = 'rgba(56, 189, 248, 0.1)'; 
                   }
 
+                  // 🚨 BUG FIX: SAFELY PARSE PHONE NUMBER
+                  const phoneStr = String(app.phone || '').replace(/\D/g, '');
                   const waMessage = `Hi ${app.name}, this is regarding the ${selectedDrive.driveId} Placement Drive.`;
-                  const waLink = `https://wa.me/91${app.phone.replace(/\D/g, '')}?text=${encodeURIComponent(waMessage)}`;
+                  const waLink = phoneStr ? `https://wa.me/91${phoneStr}?text=${encodeURIComponent(waMessage)}` : '#';
 
                   return (
                     <div key={i} className="clean-row glass-panel hover-lift" style={{ padding: '20px', borderLeft: `4px solid ${statColor}` }}>
@@ -363,11 +362,10 @@ export default function PlacementDrives() {
                         </span>
                       </div>
                       
-                      {/* RIGHT COLUMN: QUICK COMM & STATUS SELECTOR */}
                       <div className="cl-right" style={{ flex: 1.5, minWidth: '250px', display: 'flex', flexDirection: 'column', gap: '10px', alignItems: 'flex-end' }}>
                         
                         <div style={{ display: 'flex', gap: '8px' }}>
-                          {app.phone && (
+                          {phoneStr && (
                             <a href={waLink} target="_blank" rel="noreferrer" style={{ background: 'rgba(34, 197, 94, 0.15)', color: '#22c55e', padding: '8px', borderRadius: '8px', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="WhatsApp Student">
                               <WhatsappLogo size={20} weight="fill" />
                             </a>
@@ -461,7 +459,7 @@ export default function PlacementDrives() {
         .kpi-val { font-size: 1.8rem; font-weight: 900; color: #fff; line-height: 1; }
         .grid-3-col { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 20px; }
         .dashboard-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px; }
-        .dash-title { font-size: 2.0rem; margin: 0; color: #fff; }
+        .dash-title { font-size: 2rem; margin: 0; color: #fff; }
       `}</style>
     </Layout>
   );
