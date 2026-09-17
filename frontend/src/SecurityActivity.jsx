@@ -89,7 +89,7 @@ export default function SecurityActivity() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
           <div>
             <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <ShieldCheck color="#38bdf8" weight="fill" /> User Login & Security Activity
+              <ShieldCheck color="#8b5cf6" weight="fill" /> User Login & Security Activity
             </h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>
               Live audit logging of internal staff authentications, hardware profiles, and IP networks.
@@ -100,7 +100,7 @@ export default function SecurityActivity() {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '25px' }}>
           <div style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '20px', borderRadius: '14px' }}>
             <div style={{ color: '#94a3b8', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '5px' }}>Total Recorded Logins</div>
-            <div style={{ fontSize: '2rem', color: '#38bdf8', fontWeight: 'bold' }}>{logs.length}</div>
+            <div style={{ fontSize: '2rem', color: '#8b5cf6', fontWeight: 'bold' }}>{logs.length}</div>
           </div>
           <div style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '20px', borderRadius: '14px' }}>
             <div style={{ color: '#94a3b8', fontSize: '0.8rem', textTransform: 'uppercase', marginBottom: '5px' }}>Unique Staff Accounts</div>
@@ -142,7 +142,7 @@ export default function SecurityActivity() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="#38bdf8" /></td></tr>
+                <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="#8b5cf6" /></td></tr>
               ) : filteredUsers.length === 0 ? (
                 <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No login activity matches the criteria.</td></tr>
               ) : (
@@ -159,7 +159,7 @@ export default function SecurityActivity() {
                         <span className="sub-text">{user.branch}</span>
                       </td>
                       <td>
-                        <span style={{ color: '#38bdf8', fontFamily: 'monospace', fontSize: '0.9rem' }}>{user.ipAddress}</span>
+                        <span style={{ color: '#8b5cf6', fontFamily: 'monospace', fontSize: '0.9rem' }}>{user.ipAddress}</span>
                       </td>
                       <td>
                         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '4px 10px', borderRadius: '20px', background: isActive ? 'rgba(16, 185, 129, 0.1)' : 'rgba(148, 163, 184, 0.1)', color: isActive ? '#10b981' : '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold' }}>
@@ -170,7 +170,7 @@ export default function SecurityActivity() {
                       <td style={{ textAlign: 'center' }}>
                         <button 
                           onClick={() => setSelectedUser(user)}
-                          style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}
+                          style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', border: '1px solid #0284c7', padding: '6px 12px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '0.8rem', fontWeight: 'bold' }}
                         >
                           <Eye size={16} /> Audit User
                         </button>
@@ -185,7 +185,7 @@ export default function SecurityActivity() {
 
         {selectedUser && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
-            <div className="modal-card" style={{ maxWidth: '650px', width: '100%', maxHeight: '85vh', background: '#0f1523', border: '1px solid #38bdf8', borderRadius: '16px', padding: '2rem', overflowY: 'auto' }}>
+            <div className="modal-card" style={{ maxWidth: '650px', width: '100%', maxHeight: '85vh', background: '#0f1523', border: '1px solid #8b5cf6', borderRadius: '16px', padding: '2rem', overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '12px', marginBottom: '20px' }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.3rem', color: '#fff' }}>Login History: {selectedUser.userName}</h3>
@@ -199,7 +199,7 @@ export default function SecurityActivity() {
                   <div key={idx} style={{ background: '#161e2e', border: '1px solid #1e293b', borderRadius: '10px', padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div>
                       <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.95rem' }}>{item.os} • {item.browser} ({item.device})</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '4px' }}>IP Network: <span style={{ fontFamily: 'monospace', color: '#38bdf8' }}>{item.ipAddress}</span></div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '4px' }}>IP Network: <span style={{ fontFamily: 'monospace', color: '#8b5cf6' }}>{item.ipAddress}</span></div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold' }}>Session Recorded</div>

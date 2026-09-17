@@ -222,7 +222,7 @@ export default function Clients() {
         <div className="top-hero-section">
           <div className="hero-text">
             <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Handshake color="#38bdf8" weight="fill" /> 
+              <Handshake color="#8b5cf6" weight="fill" /> 
               {isRestrictedManager ? 'Corporate MOUs & Agreements' : 'Hiring Partners & MOUs'}
             </h1>
             <p>
@@ -492,7 +492,7 @@ export default function Clients() {
         .premium-modal { width: 100%; max-height: 90vh; overflow-y: auto; border-radius: 24px; padding: 30px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
         .modal-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px; margin-bottom: 20px; }
         .modal-header h2 { margin: 0 0 5px 0; font-size: 1.6rem; color: #fff; font-weight: 800; }
-        .modal-subtitle { color: #38bdf8; font-weight: bold; font-size: 1.1rem; }
+        .modal-subtitle { color: #8b5cf6; font-weight: bold; font-size: 1.1rem; }
         .close-btn { background: none; border: none; color: #64748b; cursor: pointer; transition: 0.2s; display: flex; }
         .close-btn:hover { color: #ef4444; transform: scale(1.1); }
       `}</style>

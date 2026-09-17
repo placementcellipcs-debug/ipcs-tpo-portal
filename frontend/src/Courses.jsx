@@ -204,7 +204,7 @@ export default function Courses() {
                       <tr key={i}>
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                            <div style={{ width: '35px', height: '35px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <div style={{ width: '35px', height: '35px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                               <BookBookmark size={20} weight="fill" />
                             </div>
                             <span className="primary-text" style={{ fontSize: '1.05rem' }}>{sub}</span>

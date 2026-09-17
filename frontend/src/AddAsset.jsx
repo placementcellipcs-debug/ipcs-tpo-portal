@@ -142,7 +142,7 @@ export default function AddAsset() {
         <div className="top-hero-section">
           <div className="hero-text">
             <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Barcode color="#38bdf8" weight="fill" /> Register New Asset
+              <Barcode color="#8b5cf6" weight="fill" /> Register New Asset
             </h1>
             <p>Add trackable hardware, equipment, and furniture to the branch registry.</p>
           </div>
@@ -155,7 +155,7 @@ export default function AddAsset() {
             
             {/* SECTION 1: BASIC INFO */}
             <div className="glass-panel" style={{ padding: '30px', borderRadius: '20px', borderLeft: '4px solid #3b82f6' }}>
-              <h2 style={{ fontSize: '1.2rem', color: '#38bdf8', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}><Laptop weight="fill"/> Basic Identification</h2>
+              <h2 style={{ fontSize: '1.2rem', color: '#8b5cf6', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}><Laptop weight="fill"/> Basic Identification</h2>
               
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
                 <div>
@@ -247,7 +247,7 @@ export default function AddAsset() {
                     <input 
                       type="text" 
                       className="premium-input" 
-                      style={{ width: '100%', marginTop: '10px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid #38bdf8' }} 
+                      style={{ width: '100%', marginTop: '10px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid #8b5cf6' }} 
                       value={customLocation} 
                       onChange={e => setCustomLocation(e.target.value)} 
                       placeholder="e.g. Server Room, 2nd Floor" 

@@ -31,7 +31,7 @@ import Inventory from './Inventory';
 import AssetTransfers from './AssetTransfers';
 import AssetMaintenance from './AssetMaintenance';
 import AssetDashboard from './AssetDashboard';
-import AssetSettings from './AssetSettings'; // 👈 THIS WAS MISSING!
+import AssetSettings from './AssetSettings';
 
 function App() {
   return (

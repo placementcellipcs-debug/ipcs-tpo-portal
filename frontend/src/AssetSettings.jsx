@@ -102,7 +102,7 @@ export default function AssetSettings() {
 
         <div className="top-hero-section">
           <div className="hero-text">
-            <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><DesktopTower color="#38bdf8" weight="fill" /> System Configuration</h1>
+            <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><DesktopTower color="#8b5cf6" weight="fill" /> System Configuration</h1>
             <p>Manage organizational categories, physical locations, and vendors for the Asset ERP.</p>
           </div>
         </div>
@@ -136,7 +136,7 @@ export default function AssetSettings() {
                     return (
                       <div key={i} className="config-card glass-panel hover-lift">
                         <div className="cc-header">
-                          <div className="cc-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}><Tag weight="fill"/></div>
+                          <div className="cc-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6' }}><Tag weight="fill"/></div>
                           <span className="badge-blue">{cat.type}</span>
                         </div>
                         <h3 className="cc-title">{cat.categoryname}</h3>
@@ -288,7 +288,7 @@ export default function AssetSettings() {
         .cc-tags { display: flex; flex-wrap: wrap; gap: 6px; }
         .small-tag { background: rgba(255,255,255,0.05); color: #cbd5e1; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; border: 1px solid rgba(255,255,255,0.1); }
         
-        .badge-blue { background: rgba(56, 189, 248, 0.15); color: #38bdf8; padding: 4px 10px; border-radius: 8px; font-size: 0.75rem; font-weight: bold; border: 1px solid rgba(56, 189, 248, 0.3); }
+        .badge-blue { background: rgba(56, 189, 248, 0.15); color: #8b5cf6; padding: 4px 10px; border-radius: 8px; font-size: 0.75rem; font-weight: bold; border: 1px solid rgba(56, 189, 248, 0.3); }
         .badge-green { background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 4px 10px; border-radius: 8px; font-size: 0.75rem; font-weight: bold; border: 1px solid rgba(16, 185, 129, 0.3); }
         .badge-purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; padding: 4px 10px; border-radius: 8px; font-size: 0.75rem; font-weight: bold; border: 1px solid rgba(168, 85, 247, 0.3); }
 

@@ -97,11 +97,11 @@ export default function TrainerLog() {
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '15px' }}>
           <div>
-            <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}><Notebook color="#38bdf8" weight="fill"/> Trainer Daily Report</h1>
+            <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}><Notebook color="#8b5cf6" weight="fill"/> Trainer Daily Report</h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>{isSuperAdmin ? 'Global overview of academic logs and trainer analytics.' : 'Daily academic logs and Technical Lead reviews.'}</p>
           </div>
           {isTrainer && (
-            <button className="btn-action" style={{ width: 'auto', background: '#38bdf8', color: '#0f172a' }} onClick={() => setIsAddModalOpen(true)}>
+            <button className="btn-action" style={{ width: 'auto', background: '#8b5cf6', color: '#0f172a' }} onClick={() => setIsAddModalOpen(true)}>
               <Plus weight="bold" /> Submit Daily Log
             </button>
           )}
@@ -122,7 +122,7 @@ export default function TrainerLog() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
               <div style={{ background: '#0f1523', padding: '20px', borderRadius: '12px', border: '1px solid #1e293b' }}>
                 <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '5px' }}>Total Enrolled Students</div>
-                <div style={{ fontSize: '2rem', color: '#38bdf8', fontWeight: 'bold' }}>{totalStudents}</div>
+                <div style={{ fontSize: '2rem', color: '#8b5cf6', fontWeight: 'bold' }}>{totalStudents}</div>
               </div>
               <div style={{ background: '#0f1523', padding: '20px', borderRadius: '12px', border: '1px solid #1e293b' }}>
                 <div style={{ color: '#94a3b8', fontSize: '0.85rem', marginBottom: '5px' }}>Total Present</div>
@@ -159,7 +159,7 @@ export default function TrainerLog() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="#38bdf8" /></td></tr>
+                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="#8b5cf6" /></td></tr>
               ) : filteredLogs.length === 0 ? (
                 <tr><td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No logs submitted yet.</td></tr>
               ) : (
@@ -173,10 +173,10 @@ export default function TrainerLog() {
                       </span>
                     </td>
                     <td style={{ textAlign: 'center' }}>
-                      <span style={{ fontWeight: 'bold', color: '#38bdf8' }}>{log.studentCount}</span> / <span style={{ fontWeight: 'bold', color: '#10b981' }}>{log.present}</span> / <span style={{ fontWeight: 'bold', color: '#ef4444' }}>{log.absentees}</span>
+                      <span style={{ fontWeight: 'bold', color: '#8b5cf6' }}>{log.studentCount}</span> / <span style={{ fontWeight: 'bold', color: '#10b981' }}>{log.present}</span> / <span style={{ fontWeight: 'bold', color: '#ef4444' }}>{log.absentees}</span>
                     </td>
                     <td style={{ color: '#cbd5e1', whiteSpace: 'normal', minWidth: '200px' }}>
-                      <div style={{ fontSize: '0.8rem', color: '#38bdf8', marginBottom: '4px', fontWeight: 'bold' }}>{log.course}</div>
+                      <div style={{ fontSize: '0.8rem', color: '#8b5cf6', marginBottom: '4px', fontWeight: 'bold' }}>{log.course}</div>
                       {log.feedbacks || '-'}
                     </td>
                     
@@ -231,7 +231,7 @@ export default function TrainerLog() {
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '1.5rem' }}>
                   <button type="button" className="btn-secondary" onClick={() => setIsAddModalOpen(false)}>Cancel</button>
-                  <button type="submit" className="btn-action" style={{ width: 'auto', background: '#38bdf8', color: '#0f172a' }} disabled={isSubmitting}>{isSubmitting ? <CircleNotch className="ph-spin"/> : 'Submit Log'}</button>
+                  <button type="submit" className="btn-action" style={{ width: 'auto', background: '#8b5cf6', color: '#0f172a' }} disabled={isSubmitting}>{isSubmitting ? <CircleNotch className="ph-spin"/> : 'Submit Log'}</button>
                 </div>
               </form>
             </div>

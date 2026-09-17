@@ -682,13 +682,13 @@ export default function Dashboard() {
           .calendar-widget { background: #0f1523; border-radius: 12px; padding: 15px; border: 1px solid #1e293b; }
           .cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; color: #fff; font-weight: bold; font-size: 0.9rem; }
           .cal-header button { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #94a3b8; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 6px; }
-          .cal-header button:hover { background: rgba(255,255,255,0.1); color: #fff; border-color: #38bdf8; }
+          .cal-header button:hover { background: rgba(255,255,255,0.1); color: #fff; border-color: #8b5cf6; }
           .cal-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; text-align: center; }
           .cal-day-name { font-size: 0.7rem; color: #64748b; font-weight: bold; margin-bottom: 5px; }
           .cal-day { position: relative; font-size: 0.85rem; color: #cbd5e1; padding: 8px 0; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-direction: column; transition: 0.2s; }
           .cal-day.blank { background: transparent; }
           .cal-day:not(.blank):hover { background: rgba(255,255,255,0.05); cursor: pointer; color: #fff; }
-          .cal-day.today { background: rgba(56, 189, 248, 0.15); color: #38bdf8; font-weight: bold; border: 1px solid rgba(56, 189, 248, 0.3); }
+          .cal-day.today { background: rgba(56, 189, 248, 0.15); color: #8b5cf6; font-weight: bold; border: 1px solid rgba(56, 189, 248, 0.3); }
           .cal-day.has-event { color: #fff; font-weight: bold; }
           .event-dot { width: 4px; height: 4px; background: #f59e0b; border-radius: 50%; margin-top: 2px; }
 

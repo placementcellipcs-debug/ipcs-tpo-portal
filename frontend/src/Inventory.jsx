@@ -45,10 +45,10 @@ export default function Inventory() {
       <div className="page-container" style={{ padding: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
           <div>
-            <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}><Package color="#38bdf8" weight="fill" /> Consumable Inventory</h1>
+            <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}><Package color="#8b5cf6" weight="fill" /> Consumable Inventory</h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>Track items like paper, cables, and stationary that don't need serial numbers.</p>
           </div>
-          <button className="btn-action" style={{ width: 'auto', background: '#38bdf8', color: '#0f172a' }} onClick={() => setIsAddModalOpen(true)}>
+          <button className="btn-action" style={{ width: 'auto', background: '#8b5cf6', color: '#0f172a' }} onClick={() => setIsAddModalOpen(true)}>
             <Plus weight="bold" /> Add Inventory Item
           </button>
         </div>
@@ -57,10 +57,10 @@ export default function Inventory() {
           <table className="modern-table">
             <thead><tr><th>Item ID & Name</th><th>Category</th><th>Branch</th><th>Quantity</th><th>Status</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead>
             <tbody>
-              {loading ? (<tr><td colSpan="6" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="#38bdf8"/></td></tr>) 
+              {loading ? (<tr><td colSpan="6" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="#8b5cf6"/></td></tr>) 
               : inventory.map(item => (
                 <tr key={item.itemId}>
-                  <td><span className="primary-text" style={{ color: '#38bdf8' }}>{item.itemId}</span><span className="sub-text">{item.name}</span></td>
+                  <td><span className="primary-text" style={{ color: '#8b5cf6' }}>{item.itemId}</span><span className="sub-text">{item.name}</span></td>
                   <td>{item.category}</td>
                   <td>{item.branch}</td>
                   <td><span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: item.quantity <= item.minQuantity ? '#ef4444' : '#10b981' }}>{item.quantity}</span></td>
@@ -81,14 +81,14 @@ export default function Inventory() {
         {isAddModalOpen && (
           <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
             <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 style={{ margin: 0, color: '#38bdf8' }}>New Inventory Item</h2><X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsAddModalOpen(false)} /></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 style={{ margin: 0, color: '#8b5cf6' }}>New Inventory Item</h2><X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsAddModalOpen(false)} /></div>
               <form onSubmit={handleAddSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                 <div><label className="data-label">Item Name</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required /></div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
                   <div><label className="data-label">Initial Quantity</label><input type="number" className="sleek-input" style={{ width: '100%' }} value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} required /></div>
                   <div><label className="data-label">Minimum Alert Level</label><input type="number" className="sleek-input" style={{ width: '100%' }} value={formData.minQuantity} onChange={e => setFormData({...formData, minQuantity: e.target.value})} required /></div>
                 </div>
-                <button type="submit" className="btn-action" style={{ background: '#38bdf8', color: '#0f172a', marginTop: '10px' }}>Add to Inventory</button>
+                <button type="submit" className="btn-action" style={{ background: '#8b5cf6', color: '#0f172a', marginTop: '10px' }}>Add to Inventory</button>
               </form>
             </div>
           </div>

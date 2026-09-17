@@ -184,7 +184,7 @@
 }
 
 /* =========================================================
-   🔐 LOGIN PAGE NATIVE CSS (NO MORE INLINE OVERLAPS)
+   🚨 LOGIN PAGE NATIVE CSS (NO MORE INLINE OVERLAPS)
    ========================================================= */
 .login-wrapper {
   width: 100vw;
@@ -192,7 +192,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #020617;
+  background: #09090e;
   font-family: 'Inter', sans-serif;
   padding: 80px 20px 20px 20px;
   box-sizing: border-box;
@@ -229,7 +229,7 @@
 }
 
 .login-sub-heading {
-  color: #94a3b8;
+  color: #8b949e;
   font-size: 1.05rem;
   line-height: 1.6;
   max-width: 90%;
@@ -243,8 +243,8 @@
 .login-card {
   width: 100%;
   max-width: 420px;
-  background: #0f172a;
-  border: 1px solid #1e293b;
+  background: rgba(18, 18, 31, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 24px;
   padding: 40px;
   box-shadow: 0 25px 50px rgba(0,0,0,0.5);
@@ -350,7 +350,7 @@
 }
 
 /* =========================================================
-   🚨 LOGIN PAGE CSS (STRICT MOBILE SUPPORT)
+   🎨 LOGIN PAGE CSS (STRICT MOBILE SUPPORT)
    ========================================================= */
 
 .login-page-bg {
@@ -358,7 +358,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #020617;
+  background: #09090e;
   font-family: 'Inter', sans-serif;
   padding: 20px;
   box-sizing: border-box;
@@ -405,7 +405,7 @@
 }
 
 .login-hero-text {
-  color: #94a3b8;
+  color: #8b949e;
   font-size: 1.05rem;
   line-height: 1.6;
   max-width: 90%;
@@ -414,8 +414,8 @@
 .login-card {
   width: 100%;
   max-width: 420px;
-  background: #0f172a;
-  border: 1px solid #1e293b;
+  background: rgba(18, 18, 31, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 24px;
   padding: 40px;
   box-shadow: 0 25px 50px rgba(0,0,0,0.5);
@@ -424,7 +424,7 @@
 
 .login-input {
   width: 100%;
-  background: #1e293b;
+  background: #1e1e2f;
   border: 1px solid #334155;
   color: #fff;
   padding: 14px;
@@ -435,12 +435,12 @@
 }
 
 .login-input:focus {
-  border-color: #38bdf8;
+  border-color: #8b5cf6;
 }
 
 .login-btn {
   width: 100%;
-  background: #3b82f6;
+  background: linear-gradient(135deg, #6366f1, #a855f7);
   color: #fff;
   border: none;
   padding: 14px;
@@ -457,7 +457,7 @@
 }
 
 .login-btn:hover:not(:disabled) {
-  background: #2563eb;
+  opacity: 0.9;
 }
 
 .login-error {
@@ -589,7 +589,7 @@
 
 .cmd-item.active, .cmd-item:hover {
   background: #1e293b;
-  color: #38bdf8;
+  color: #8b5cf6;
 }
 
 .cmd-shortcut {
@@ -607,14 +607,14 @@
 
 /* Default Dark Theme Variables */
 :root {
-  --bg-dark: #020617;
-  --bg-surface: #0f172a;
-  --card-bg: #111827;
-  --card-border: #1e293b;
+  --bg-dark: #09090e;
+  --bg-surface: #12121f;
+  --card-bg: #12121f;
+  --card-border: #1e1e2f;
   --text-main: #ffffff;
-  --text-muted: #94a3b8;
-  --accent-primary: #38bdf8;
-  --accent-glow: rgba(56, 189, 248, 0.15);
+  --text-muted: #8b949e;
+  --accent-primary: #8b5cf6;
+  --accent-glow: rgba(139, 92, 246, 0.15);
 }
 
 /* Light Mode Overrides */

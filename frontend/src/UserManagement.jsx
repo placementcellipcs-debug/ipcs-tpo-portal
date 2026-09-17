@@ -279,7 +279,7 @@ export default function UserManagement() {
                       <div className="sc-roll" style={{ textTransform: 'none', color: 'var(--text-muted)' }}>{user.email || 'No Email'}</div>
                       
                       <div className="sc-details" style={{ marginTop: '10px' }}>
-                        <div className="sc-detail-row"><span>Access</span><strong style={{ color: accessLvl.includes('super') ? '#38bdf8' : accessLvl.includes('edit') ? '#10b981' : '#f59e0b' }}>{user.access || 'View Only'}</strong></div>
+                        <div className="sc-detail-row"><span>Access</span><strong style={{ color: accessLvl.includes('super') ? '#8b5cf6' : accessLvl.includes('edit') ? '#10b981' : '#f59e0b' }}>{user.access || 'View Only'}</strong></div>
                         <div className="sc-detail-row"><span>Course</span><strong style={{ color: 'var(--text-main)' }}>{user.course === 'All Courses' ? 'Global Scope' : user.course}</strong></div>
                         <div className="sc-detail-row"><span>Branches</span><strong style={{ color: 'var(--text-main)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.assignedBranches}>{user.assignedBranches || 'Global'}</strong></div>
                         
@@ -324,7 +324,7 @@ export default function UserManagement() {
                         <tr key={i}>
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(56, 189, 248, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#38bdf8', fontWeight: 'bold', border: '1px solid #0284c7', overflow: 'hidden', flexShrink: 0 }}>
+                              <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(56, 189, 248, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8b5cf6', fontWeight: 'bold', border: '1px solid #0284c7', overflow: 'hidden', flexShrink: 0 }}>
                                 {photoUrl ? (
                                   <img 
                                     src={photoUrl} alt={user.userName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
@@ -355,7 +355,7 @@ export default function UserManagement() {
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                               <button 
                                 onClick={() => openEditModal(user)}
-                                style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
+                                style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
                                 title="Edit User"
                               >
                                 <PencilSimple size={18} weight="bold" />
@@ -493,7 +493,7 @@ export default function UserManagement() {
                   onClick={() => setIsBranchDropdownOpen(!isBranchDropdownOpen)}
                 >
                   {formData.assignedBranches.length === 0 ? <span style={{ color: 'var(--text-muted)' }}>Select branches...</span> : formData.assignedBranches.map(b => (
-                    <span key={b} style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', border: '1px solid #0284c7' }}>{b}</span>
+                    <span key={b} style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#8b5cf6', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', border: '1px solid #0284c7' }}>{b}</span>
                   ))}
                 </div>
 

@@ -112,7 +112,7 @@ export default function Layout({ children }) {
           let title = "Application Updated";
           let desc = `${name}'s status updated to ${getVal('status') || 'Applied'} at ${company}.`;
           let icon = <ListChecks size={18} weight="bold" />;
-          let color = "#38bdf8"; let bg = "rgba(56, 189, 248, 0.1)";
+          let color = "#8b5cf6"; let bg = "rgba(56, 189, 248, 0.1)";
 
           if (status.includes('placed') || status.includes('offer')) {
              title = "Placement Confirmed! 🎉"; desc = `${name} has been successfully placed at ${company}!`;
@@ -163,7 +163,7 @@ export default function Layout({ children }) {
   };
   
   const profilePhotoUrl = getDriveImage(tpoData.photo);
-  const isActive = (path) => location.pathname.startsWith(path) ? '#38bdf8' : '#94a3b8';
+  const isActive = (path) => location.pathname.startsWith(path) ? '#8b5cf6' : '#94a3b8';
 
   const handleLogout = () => { localStorage.removeItem('tpoData'); navigate('/'); };
   const handleNav = (path) => { setIsDrawerOpen(false); navigate(path); };
@@ -195,7 +195,7 @@ export default function Layout({ children }) {
                 <div style={{ position: 'absolute', top: '40px', right: '0', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '12px', width: '350px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', zIndex: 9999, overflow: 'hidden' }}>
                   <div style={{ padding: '15px', borderBottom: '1px solid #1e293b', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff' }}>
                     Activity Notifications
-                    <span style={{ fontSize: '0.7rem', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', padding: '3px 8px', borderRadius: '10px' }}>Live Updates</span>
+                    <span style={{ fontSize: '0.7rem', background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', padding: '3px 8px', borderRadius: '10px' }}>Live Updates</span>
                   </div>
                   <div style={{ padding: '0', maxHeight: '350px', overflowY: 'auto' }}>
                     {notifications.length === 0 ? (
@@ -255,84 +255,84 @@ export default function Layout({ children }) {
           <div className="pd-nav-list">
             <span className="pd-divider-label">Main Menu</span>
             
-            <div className={`pd-nav-item ${isActive('/dashboard') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/dashboard')}>
-              <SquaresFour size={22} weight={isActive('/dashboard') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Dashboard</span>
+            <div className={`pd-nav-item ${isActive('/dashboard') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/dashboard')}>
+              <SquaresFour size={22} weight={isActive('/dashboard') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Dashboard</span>
             </div>
             
-            <div className={`pd-nav-item ${isActive('/students') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/students')}>
-              <Users size={22} weight={isActive('/students') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Students Directory</span>
+            <div className={`pd-nav-item ${isActive('/students') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/students')}>
+              <Users size={22} weight={isActive('/students') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Students Directory</span>
             </div>
             
             {/* 🚨 ADDED THE ISSUES TAB HERE */}
             {showIssues && (
-              <div className={`pd-nav-item ${isActive('/issues') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/issues')}>
-                <Headset size={22} weight={isActive('/issues') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Issue Resolution</span>
+              <div className={`pd-nav-item ${isActive('/issues') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/issues')}>
+                <Headset size={22} weight={isActive('/issues') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Issue Resolution</span>
               </div>
             )}
 
             {showTracker && (
-              <div className={`pd-nav-item ${isActive('/tracker') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/tracker')}>
-                <Files size={22} weight={isActive('/tracker') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Job Tracker</span>
+              <div className={`pd-nav-item ${isActive('/tracker') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/tracker')}>
+                <Files size={22} weight={isActive('/tracker') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Job Tracker</span>
               </div>
             )}
 
             {showReports && (
-              <div className={`pd-nav-item ${isActive('/reports') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/reports')}>
-                <ChartBar size={22} weight={isActive('/reports') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Reports</span>
+              <div className={`pd-nav-item ${isActive('/reports') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/reports')}>
+                <ChartBar size={22} weight={isActive('/reports') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Reports</span>
               </div>
             )}
 
-            <div className={`pd-nav-item ${isActive('/placed') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/placed')}>
-              <Trophy size={22} weight={isActive('/placed') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Placed Students</span>
+            <div className={`pd-nav-item ${isActive('/placed') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/placed')}>
+              <Trophy size={22} weight={isActive('/placed') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Placed Students</span>
             </div>
 
             {showStudentApps && (
-              <div className={`pd-nav-item ${isActive('/applications') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/applications')}>
-                <ListChecks size={22} weight={isActive('/applications') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Student Apps</span>
+              <div className={`pd-nav-item ${isActive('/applications') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/applications')}>
+                <ListChecks size={22} weight={isActive('/applications') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Student Apps</span>
               </div>
             )}
 
-            <div className={`pd-nav-item ${isActive('/vacancies') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/vacancies')}>
-              <Briefcase size={22} weight={isActive('/vacancies') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Vacancies</span>
+            <div className={`pd-nav-item ${isActive('/vacancies') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/vacancies')}>
+              <Briefcase size={22} weight={isActive('/vacancies') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Vacancies</span>
             </div>
 
             {!isTrainer && (
-              <div className={`pd-nav-item ${isActive('/placement-drives') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}>
-                <IdentificationCard size={22} weight={isActive('/placement-drives') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Placement Drives</span>
+              <div className={`pd-nav-item ${isActive('/placement-drives') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}>
+                <IdentificationCard size={22} weight={isActive('/placement-drives') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Placement Drives</span>
               </div>
             )}
             
             {!isTrainer && (
-              <div className={`pd-nav-item ${isActive('/clients') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/clients')}>
-                <Handshake size={22} weight={isActive('/clients') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Clients & Partners</span>
+              <div className={`pd-nav-item ${isActive('/clients') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/clients')}>
+                <Handshake size={22} weight={isActive('/clients') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Clients & Partners</span>
               </div>
             )}
 
             <span className="pd-divider-label" style={{ marginTop: '15px' }}>Academic & Ops</span>
 
-            <div className={`pd-nav-item ${isActive('/events') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/events')}>
-              <CalendarStar size={22} weight={isActive('/events') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Events</span>
+            <div className={`pd-nav-item ${isActive('/events') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/events')}>
+              <CalendarStar size={22} weight={isActive('/events') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Events</span>
             </div>
 
-            <div className={`pd-nav-item ${isActive('/talentino') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/talentino')}>
-              <UserCheck size={22} weight={isActive('/talentino') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Talentino</span>
+            <div className={`pd-nav-item ${isActive('/talentino') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/talentino')}>
+              <UserCheck size={22} weight={isActive('/talentino') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Talentino</span>
             </div>
 
             {showStudyMaterials && (
-              <div className={`pd-nav-item ${isActive('/study-materials') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/study-materials')}>
-                <Book size={22} weight={isActive('/study-materials') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Study Materials</span>
+              <div className={`pd-nav-item ${isActive('/study-materials') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/study-materials')}>
+                <Book size={22} weight={isActive('/study-materials') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Study Materials</span>
               </div>
             )}
 
             {showTrainerLogs && (
-              <div className={`pd-nav-item ${isActive('/trainer-logs') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/trainer-logs')}>
-                <Notebook size={22} weight={isActive('/trainer-logs') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Daily Log Report</span>
+              <div className={`pd-nav-item ${isActive('/trainer-logs') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/trainer-logs')}>
+                <Notebook size={22} weight={isActive('/trainer-logs') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Daily Log Report</span>
               </div>
             )}
 
             {!userRole.includes('MANAGER') && !isTpo && (
-              <div className={`pd-nav-item ${isActive('/exams') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/exams')}>
-                <FileText size={22} weight={isActive('/exams') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Exams Hub</span>
+              <div className={`pd-nav-item ${isActive('/exams') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/exams')}>
+                <FileText size={22} weight={isActive('/exams') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Exams Hub</span>
               </div>
             )}
 
@@ -340,23 +340,23 @@ export default function Layout({ children }) {
             {(isSuperAdmin || userRole.includes('MANAGER')) && (
               <>
                 <span className="pd-divider-label" style={{ marginTop: '15px' }}>Asset Management</span>
-                <div className={`pd-nav-item ${isActive('/assets/dashboard') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/assets/dashboard')}>
-                  <ChartBar size={22} weight={isActive('/assets/dashboard') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Asset Dashboard</span>
+                <div className={`pd-nav-item ${isActive('/assets/dashboard') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets/dashboard')}>
+                  <ChartBar size={22} weight={isActive('/assets/dashboard') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Asset Dashboard</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/assets') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/assets')}>
-                  <Barcode size={22} weight={isActive('/assets') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Master Registry</span>
+                <div className={`pd-nav-item ${isActive('/assets') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets')}>
+                  <Barcode size={22} weight={isActive('/assets') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Master Registry</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/assets/add') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/assets/add')}>
-                  <Plus size={22} weight={isActive('/assets/add') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Register Asset</span>
+                <div className={`pd-nav-item ${isActive('/assets/add') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets/add')}>
+                  <Plus size={22} weight={isActive('/assets/add') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Register Asset</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/assets/inventory') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/assets/inventory')}>
-                  <Package size={22} weight={isActive('/assets/inventory') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Consumables</span>
+                <div className={`pd-nav-item ${isActive('/assets/inventory') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets/inventory')}>
+                  <Package size={22} weight={isActive('/assets/inventory') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Consumables</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/assets/transfers') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/assets/transfers')}>
-                  <ArrowsLeftRight size={22} weight={isActive('/assets/transfers') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Transfers</span>
+                <div className={`pd-nav-item ${isActive('/assets/transfers') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets/transfers')}>
+                  <ArrowsLeftRight size={22} weight={isActive('/assets/transfers') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Transfers</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/assets/maintenance') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/assets/maintenance')}>
-                  <Wrench size={22} weight={isActive('/assets/maintenance') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Maintenance</span>
+                <div className={`pd-nav-item ${isActive('/assets/maintenance') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets/maintenance')}>
+                  <Wrench size={22} weight={isActive('/assets/maintenance') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Maintenance</span>
                 </div>
               </>
             )}
@@ -364,24 +364,24 @@ export default function Layout({ children }) {
             {showManageAdmin && (
               <>
                 <span className="pd-divider-label" style={{ marginTop: '15px' }}>System Admin</span>
-                <div className={`pd-nav-item ${isActive('/branches') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/branches')}>
-                  <MapPin size={22} weight={isActive('/branches') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Manage Branches</span>
+                <div className={`pd-nav-item ${isActive('/branches') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/branches')}>
+                  <MapPin size={22} weight={isActive('/branches') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Manage Branches</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/courses') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/courses')}>
-                  <Bookmarks size={22} weight={isActive('/courses') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Manage Courses</span>
+                <div className={`pd-nav-item ${isActive('/courses') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/courses')}>
+                  <Bookmarks size={22} weight={isActive('/courses') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Manage Courses</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/users') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/users')}>
-                  <ShieldCheck size={22} weight={isActive('/users') === '#38bdf8' ? 'fill' : 'regular'} /> <span>User Management</span>
+                <div className={`pd-nav-item ${isActive('/users') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/users')}>
+                  <ShieldCheck size={22} weight={isActive('/users') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>User Management</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/security-logs') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/security-logs')}>
-                  <ShieldCheck size={22} weight={isActive('/security-logs') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Security Logs</span>
+                <div className={`pd-nav-item ${isActive('/security-logs') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/security-logs')}>
+                  <ShieldCheck size={22} weight={isActive('/security-logs') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Security Logs</span>
                 </div>
               </>
             )}
 
             <span className="pd-divider-label" style={{ marginTop: '15px' }}>Preferences</span>
-            <div className={`pd-nav-item ${isActive('/settings') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/settings')}>
-              <Gear size={22} weight={isActive('/settings') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Settings</span>
+            <div className={`pd-nav-item ${isActive('/settings') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/settings')}>
+              <Gear size={22} weight={isActive('/settings') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Settings</span>
             </div>
           </div>
 
@@ -479,7 +479,7 @@ export default function Layout({ children }) {
           width: 76px;
           height: 76px;
           border-radius: 50%;
-          background: linear-gradient(135deg, #8b5cf6, #38bdf8);
+          background: linear-gradient(135deg, #8b5cf6, #8b5cf6);
           padding: 3px;
           margin-bottom: 12px;
           box-shadow: 0 4px 15px rgba(56, 189, 248, 0.3);

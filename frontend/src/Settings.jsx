@@ -100,7 +100,7 @@ export default function Settings() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             <button 
               onClick={() => { setActiveTab('profile'); setMessage({text:'', type:''}); }}
-              style={{ padding: '15px 20px', borderRadius: '12px', border: 'none', background: activeTab === 'profile' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'profile' ? '#38bdf8' : 'var(--text-muted)', textAlign: 'left', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', transition: '0.2s', borderLeft: activeTab === 'profile' ? '3px solid #38bdf8' : '3px solid transparent' }}
+              style={{ padding: '15px 20px', borderRadius: '12px', border: 'none', background: activeTab === 'profile' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'profile' ? '#8b5cf6' : 'var(--text-muted)', textAlign: 'left', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', transition: '0.2s', borderLeft: activeTab === 'profile' ? '3px solid #8b5cf6' : '3px solid transparent' }}
             >
               <User size={20} weight={activeTab === 'profile' ? "fill" : "regular"} /> Account Profile
             </button>
@@ -109,7 +109,7 @@ export default function Settings() {
             {isSuperAdmin && (
               <button 
                 onClick={() => { setActiveTab('security'); setMessage({text:'', type:''}); }}
-                style={{ padding: '15px 20px', borderRadius: '12px', border: 'none', background: activeTab === 'security' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'security' ? '#38bdf8' : 'var(--text-muted)', textAlign: 'left', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', transition: '0.2s', borderLeft: activeTab === 'security' ? '3px solid #38bdf8' : '3px solid transparent' }}
+                style={{ padding: '15px 20px', borderRadius: '12px', border: 'none', background: activeTab === 'security' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'security' ? '#8b5cf6' : 'var(--text-muted)', textAlign: 'left', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', transition: '0.2s', borderLeft: activeTab === 'security' ? '3px solid #8b5cf6' : '3px solid transparent' }}
               >
                 <LockKey size={20} weight={activeTab === 'security' ? "fill" : "regular"} /> Security
               </button>
@@ -131,7 +131,7 @@ export default function Settings() {
                 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '25px', marginBottom: '30px' }}>
                   <div style={{ position: 'relative' }}>
-                    <div style={{ width: '100px', height: '100px', borderRadius: '50%', background: 'var(--bg-dark)', border: '3px solid #38bdf8', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ width: '100px', height: '100px', borderRadius: '50%', background: 'var(--bg-dark)', border: '3px solid #8b5cf6', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {tpoData.photo ? (
                          <img src={getDriveImage(tpoData.photo) || tpoData.photo} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                       ) : (
@@ -144,7 +144,7 @@ export default function Settings() {
                     <button 
                       onClick={() => fileInputRef.current.click()}
                       disabled={isUploading}
-                      style={{ position: 'absolute', bottom: '-5px', right: '-5px', background: '#38bdf8', color: '#0f172a', border: 'none', width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}
+                      style={{ position: 'absolute', bottom: '-5px', right: '-5px', background: '#8b5cf6', color: '#0f172a', border: 'none', width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', boxShadow: '0 4px 10px rgba(0,0,0,0.5)' }}
                     >
                       {isUploading ? <CircleNotch size={18} className="ph-spin" /> : <Camera size={18} weight="fill" />}
                     </button>
@@ -169,7 +169,7 @@ export default function Settings() {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
                     <div>
                       <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>System Role</label>
-                      <input type="text" className="sleek-input" style={{ width: '100%', background: 'var(--bg-dark)', color: '#38bdf8', fontWeight: 'bold' }} value={(tpoData.role || 'Placement Officer').toUpperCase()} readOnly />
+                      <input type="text" className="sleek-input" style={{ width: '100%', background: 'var(--bg-dark)', color: '#8b5cf6', fontWeight: 'bold' }} value={(tpoData.role || 'Placement Officer').toUpperCase()} readOnly />
                     </div>
                     <div>
                       <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>Assigned Domain</label>
@@ -223,13 +223,13 @@ export default function Settings() {
                   </div>
 
                   <div style={{ background: 'rgba(56, 189, 248, 0.05)', padding: '15px', borderRadius: '8px', display: 'flex', gap: '15px', alignItems: 'center', border: '1px solid rgba(56, 189, 248, 0.2)', marginBottom: '25px' }}>
-                    <ShieldCheck size={32} color="#38bdf8" weight="fill" style={{ flexShrink: 0 }} />
+                    <ShieldCheck size={32} color="#8b5cf6" weight="fill" style={{ flexShrink: 0 }} />
                     <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
                       Updating your password will sync immediately to the secure Google Sheets backend. Make sure to use a strong password with at least 6 characters.
                     </div>
                   </div>
 
-                  <button type="submit" className="btn-action" style={{ width: 'auto', background: '#38bdf8', color: '#0f172a', padding: '0.8rem 2rem', fontWeight: 'bold' }} disabled={isUpdating}>
+                  <button type="submit" className="btn-action" style={{ width: 'auto', background: '#8b5cf6', color: '#0f172a', padding: '0.8rem 2rem', fontWeight: 'bold' }} disabled={isUpdating}>
                     {isUpdating ? <CircleNotch size={20} className="ph-spin" /> : 'Update Password'}
                   </button>
                 </form>

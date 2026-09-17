@@ -156,7 +156,7 @@ export default function PlacementDrives() {
             <div className="top-hero-section">
               <div className="hero-text">
                 <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                  <IdentificationCard color="#38bdf8" weight="fill" /> Placement Drives Master
+                  <IdentificationCard color="#8b5cf6" weight="fill" /> Placement Drives Master
                 </h1>
                 <p>Select an active drive below to track applicant attendance, update outcomes, and view analytics.</p>
               </div>
@@ -167,7 +167,7 @@ export default function PlacementDrives() {
                 onClick={() => setActiveMasterTab('upcoming')}
                 style={{ 
                   background: activeMasterTab === 'upcoming' ? 'rgba(56, 189, 248, 0.1)' : 'transparent',
-                  color: activeMasterTab === 'upcoming' ? '#38bdf8' : '#94a3b8',
+                  color: activeMasterTab === 'upcoming' ? '#8b5cf6' : '#94a3b8',
                   border: activeMasterTab === 'upcoming' ? '1px solid rgba(56, 189, 248, 0.3)' : '1px solid transparent',
                   padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s'
                 }}>
@@ -201,14 +201,14 @@ export default function PlacementDrives() {
 
                   return (
                     <div key={idx} onClick={() => { setSelectedDrive(drive); setActiveInterestTab('interested'); }} className="dash-card hover-lift" style={{ cursor: 'pointer', padding: '25px', position: 'relative', overflow: 'hidden', border: isOrphaned ? '1px solid rgba(245, 158, 11, 0.4)' : '1px solid #1e293b' }}>
-                      <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', background: isOrphaned ? '#f59e0b' : (activeMasterTab === 'upcoming' ? '#38bdf8' : '#ef4444') }}></div>
+                      <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', background: isOrphaned ? '#f59e0b' : (activeMasterTab === 'upcoming' ? '#8b5cf6' : '#ef4444') }}></div>
                       
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px' }}>
                         <div>
                           <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Drive Reference</div>
                           <h3 style={{ margin: 0, fontSize: '1.4rem', color: '#fff', fontWeight: 900 }}>{String(drive.driveId || 'N/A')}</h3>
                         </div>
-                        <div style={{ background: isOrphaned ? 'rgba(245, 158, 11, 0.15)' : (activeMasterTab === 'upcoming' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(239, 68, 68, 0.15)'), color: isOrphaned ? '#f59e0b' : (activeMasterTab === 'upcoming' ? '#38bdf8' : '#ef4444'), padding: '10px', borderRadius: '12px' }}>
+                        <div style={{ background: isOrphaned ? 'rgba(245, 158, 11, 0.15)' : (activeMasterTab === 'upcoming' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(239, 68, 68, 0.15)'), color: isOrphaned ? '#f59e0b' : (activeMasterTab === 'upcoming' ? '#8b5cf6' : '#ef4444'), padding: '10px', borderRadius: '12px' }}>
                           <CalendarCheck size={24} weight="fill" />
                         </div>
                       </div>
@@ -244,7 +244,7 @@ export default function PlacementDrives() {
                       </div>
 
                       <div style={{ width: '100%', height: '4px', background: 'rgba(255,255,255,0.05)', borderRadius: '2px', marginTop: '15px', overflow: 'hidden' }}>
-                        <div style={{ height: '100%', width: `${progressPct}%`, background: isOrphaned ? '#f59e0b' : '#38bdf8', transition: 'width 0.5s ease' }}></div>
+                        <div style={{ height: '100%', width: `${progressPct}%`, background: isOrphaned ? '#f59e0b' : '#8b5cf6', transition: 'width 0.5s ease' }}></div>
                       </div>
                     </div>
                   );
@@ -287,7 +287,7 @@ export default function PlacementDrives() {
               <div className="segmented-tabs" style={{ background: 'rgba(0,0,0,0.3)', padding: '5px', borderRadius: '12px', display: 'flex', gap: '5px' }}>
                 <button 
                   onClick={() => setActiveInterestTab('interested')} 
-                  style={{ background: activeInterestTab === 'interested' ? '#38bdf8' : 'transparent', color: activeInterestTab === 'interested' ? '#0f172a' : '#94a3b8', border: 'none', padding: '10px 20px', fontWeight: 'bold', borderRadius: '8px', cursor: 'pointer', transition: '0.3s' }}
+                  style={{ background: activeInterestTab === 'interested' ? '#8b5cf6' : 'transparent', color: activeInterestTab === 'interested' ? '#0f172a' : '#94a3b8', border: 'none', padding: '10px 20px', fontWeight: 'bold', borderRadius: '8px', cursor: 'pointer', transition: '0.3s' }}
                 >
                   Interested ({interestedApplicants.length})
                 </button>
@@ -320,7 +320,7 @@ export default function PlacementDrives() {
               ) : (
                 filteredApplicants.map((app, i) => {
                   const currStat = String(app.studentStatus || 'Pending / Unknown');
-                  let statColor = '#38bdf8'; let bgAlpha = 'rgba(56, 189, 248, 0.1)';
+                  let statColor = '#8b5cf6'; let bgAlpha = 'rgba(56, 189, 248, 0.1)';
                   
                   if (activeInterestTab === 'not_interested') { 
                     statColor = '#ef4444'; 
@@ -329,7 +329,7 @@ export default function PlacementDrives() {
                     statColor = '#10b981'; 
                     bgAlpha = 'rgba(16, 185, 129, 0.1)'; 
                   } else if (currStat.includes('Attended')) { 
-                    statColor = '#38bdf8'; 
+                    statColor = '#8b5cf6'; 
                     bgAlpha = 'rgba(56, 189, 248, 0.1)'; 
                   }
 
@@ -376,14 +376,14 @@ export default function PlacementDrives() {
                             </a>
                           )}
                           {app.resume && app.resume !== 'N/A' && (
-                            <button onClick={() => handleResumeClick(app.resume)} style={{ background: 'rgba(56, 189, 248, 0.15)', border: 'none', cursor: 'pointer', color: '#38bdf8', padding: '8px', borderRadius: '8px', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="View Resume">
+                            <button onClick={() => handleResumeClick(app.resume)} style={{ background: 'rgba(56, 189, 248, 0.15)', border: 'none', cursor: 'pointer', color: '#8b5cf6', padding: '8px', borderRadius: '8px', transition: '0.2s', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="View Resume">
                               <FilePdf size={20} weight="fill" />
                             </button>
                           )}
                         </div>
 
                         {savingRow === app.rowNumber ? (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#38bdf8', fontWeight: 'bold' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#8b5cf6', fontWeight: 'bold' }}>
                             <CircleNotch size={24} className="ph-spin" /> Updating...
                           </div>
                         ) : (

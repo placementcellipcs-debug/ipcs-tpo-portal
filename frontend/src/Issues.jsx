@@ -227,7 +227,7 @@ export default function Issues() {
                       <td style={{ textAlign: 'center' }}>
                         <button 
                           className="btn-action" 
-                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', background: btnStatus === 'success' ? '#10b981' : '#38bdf8' }}
+                          style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem', background: btnStatus === 'success' ? '#10b981' : '#8b5cf6' }}
                           onClick={() => saveIssue(issue)}
                           disabled={btnStatus === 'saving'}
                         >

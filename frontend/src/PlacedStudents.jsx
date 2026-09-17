@@ -408,7 +408,7 @@ export default function PlacedStudents() {
                         </button>
                       ) : (
                         (app.offerLetter && app.offerLetter !== 'N/A') ? (
-                          <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.75rem', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', borderColor: '#38bdf8', display: 'flex', alignItems: 'center', gap: '5px' }} onClick={() => window.open(getDrivePdf(app.offerLetter) || app.offerLetter, '_blank')}>
+                          <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.75rem', background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', borderColor: '#8b5cf6', display: 'flex', alignItems: 'center', gap: '5px' }} onClick={() => window.open(getDrivePdf(app.offerLetter) || app.offerLetter, '_blank')}>
                             <FilePdf weight="fill" size={14} /> Offer Letter
                           </button>
                         ) : (
@@ -478,7 +478,7 @@ export default function PlacedStudents() {
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsAddModalOpen(false)} />
             </div>
             
-            <h3 style={{ fontSize: '0.85rem', color: '#38bdf8', textTransform: 'uppercase', marginBottom: '10px' }}>Student Details</h3>
+            <h3 style={{ fontSize: '0.85rem', color: '#8b5cf6', textTransform: 'uppercase', marginBottom: '10px' }}>Student Details</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', marginBottom: '20px' }}>
               <div><label className="data-label">Student Name *</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.name} onChange={e=>setAddForm({...addForm, name: e.target.value})} /></div>
               <div><label className="data-label">Roll Number *</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.roll} onChange={e=>setAddForm({...addForm, roll: e.target.value})} /></div>
@@ -497,7 +497,7 @@ export default function PlacedStudents() {
               <div><label className="data-label">Branch</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.branch} onChange={e=>setAddForm({...addForm, branch: e.target.value})} /></div>
             </div>
 
-            <h3 style={{ fontSize: '0.85rem', color: '#38bdf8', textTransform: 'uppercase', marginBottom: '10px' }}>Placement Details</h3>
+            <h3 style={{ fontSize: '0.85rem', color: '#8b5cf6', textTransform: 'uppercase', marginBottom: '10px' }}>Placement Details</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
               <div><label className="data-label">Company Name *</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.company} onChange={e=>setAddForm({...addForm, company: e.target.value})} /></div>
               <div><label className="data-label">Position / Role</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.position} onChange={e=>setAddForm({...addForm, position: e.target.value})} /></div>

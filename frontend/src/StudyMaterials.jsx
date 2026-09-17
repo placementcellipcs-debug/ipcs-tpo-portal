@@ -228,7 +228,7 @@ export default function StudyMaterials() {
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
               {subCoursesList.map((subCourse) => (
                 <div key={subCourse} onClick={() => { setSelectedSubCourse(subCourse); setViewLevel('materials'); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.5rem', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <div style={{ width: '45px', height: '45px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><BookBookmark size={24} weight="fill" /></div>
+                  <div style={{ width: '45px', height: '45px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><BookBookmark size={24} weight="fill" /></div>
                   <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-main)', lineHeight: 1.4 }}>{subCourse}</h3>
                 </div>
               ))}
@@ -266,12 +266,12 @@ export default function StudyMaterials() {
                         <td><span className="primary-text">{mat.module || 'General'}</span><span className="sub-text">ID: {mat.id}</span></td>
                         <td><strong style={{ color: 'var(--text-main)' }}>{mat.title}</strong></td>
                         <td><div style={{ display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>{getFileIcon(mat.fileType)} {mat.fileType}</div></td>
-                        <td><a href={mat.link} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 'bold' }}><LinkIcon size={16} /> Open Resource</a></td>
+                        <td><a href={mat.link} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 'bold' }}><LinkIcon size={16} /> Open Resource</a></td>
                         <td style={{ textAlign: 'center' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: mat.status.toLowerCase() === 'active' ? '#10b981' : '#ef4444', fontWeight: 'bold', fontSize: '0.8rem' }}>{mat.status.toLowerCase() === 'active' ? <CheckCircle size={16} weight="fill" /> : <WarningCircle size={16} weight="fill" />} {mat.status}</span></td>
                         {canManage && (
                           <td style={{ textAlign: 'center' }}>
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                              <button onClick={() => openEditModal(mat)} style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Edit"><PencilSimple size={18} weight="bold" /></button>
+                              <button onClick={() => openEditModal(mat)} style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Edit"><PencilSimple size={18} weight="bold" /></button>
                               <button onClick={() => handleDeleteMaterial(mat.id)} style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Delete"><Trash size={18} weight="bold" /></button>
                             </div>
                           </td>

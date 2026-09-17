@@ -255,7 +255,7 @@ export default function Reports() {
     .rt-tabs { display: flex; gap: 15px; margin-bottom: 30px; overflow-x: auto; padding-bottom: 10px; }
     .rt-tab { background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text-muted); padding: 14px 28px; border-radius: 30px; cursor: pointer; white-space: nowrap; font-weight: bold; font-size: 1.05rem; transition: all 0.2s; display: flex; align-items: center; gap: 10px; }
     .rt-tab:hover { background: #1e293b; color: #fff; }
-    .rt-tab.active { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border-color: #38bdf8; box-shadow: 0 4px 15px rgba(56, 189, 248, 0.2); }
+    .rt-tab.active { background: rgba(56, 189, 248, 0.15); color: #8b5cf6; border-color: #8b5cf6; box-shadow: 0 4px 15px rgba(56, 189, 248, 0.2); }
     
     .hero-card { background: #0f1523; border: 1px solid #1e293b; border-radius: 16px; overflow: hidden; margin-bottom: 3rem; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
     .hc-header { background: linear-gradient(90deg, #0284c7, #3b82f6); color: #fff; padding: 22px 30px; font-size: 1.4rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; display: flex; justify-content: space-between; align-items: center; }
@@ -263,7 +263,7 @@ export default function Reports() {
     .hc-item { background: #0f1523; padding: 25px 30px; }
     .hc-label { font-size: 0.9rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 10px; font-weight: bold; letter-spacing: 0.5px; }
     .hc-value { font-size: 1.4rem; color: #fff; font-weight: 700; word-break: break-word; }
-    .hc-subheader { background: #161e2e; color: #38bdf8; padding: 18px 30px; font-weight: bold; font-size: 1.2rem; border-top: 1px solid #1e293b; border-bottom: 1px solid #1e293b; display: flex; align-items: center; gap: 10px; }
+    .hc-subheader { background: #161e2e; color: #8b5cf6; padding: 18px 30px; font-weight: bold; font-size: 1.2rem; border-top: 1px solid #1e293b; border-bottom: 1px solid #1e293b; display: flex; align-items: center; gap: 10px; }
     
     .data-table-wrap { background: #0f1523; border: 1px solid #1e293b; border-radius: 16px; overflow: hidden; margin-bottom: 3rem; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
     .data-table-head { background: #161e2e; padding: 22px 30px; font-weight: bold; font-size: 1.25rem; color: #fff; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; }
@@ -273,11 +273,11 @@ export default function Reports() {
     .dt td { padding: 18px 25px; color: #cbd5e1; border-bottom: 1px solid #1e293b; font-size: 1.15rem; text-align: center; border-right: 1px solid #1e293b; font-weight: 600; }
     .dt td:first-child { text-align: left; color: #fff; }
     .dt tr:hover td { background: #161e2e; }
-    .dt .dt-total { color: #38bdf8; font-weight: 800; background: rgba(56, 189, 248, 0.05); }
+    .dt .dt-total { color: #8b5cf6; font-weight: 800; background: rgba(56, 189, 248, 0.05); }
     .dt .dt-zero { color: #475569; font-weight: 400; }
     
     /* Highlight the Total row at the bottom */
-    .dt tfoot td { background: rgba(255,255,255,0.05); font-weight: 800; color: #fff; font-size: 1.25rem; border-top: 2px solid #38bdf8; border-bottom: none; }
+    .dt tfoot td { background: rgba(255,255,255,0.05); font-weight: 800; color: #fff; font-size: 1.25rem; border-top: 2px solid #8b5cf6; border-bottom: none; }
   `;
 
   return (
@@ -291,7 +291,7 @@ export default function Reports() {
             <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '1.1rem' }}>Comprehensive tracking, matrices, and placement data.</p>
           </div>
           <div>
-            <input type="month" className="sleek-input" style={{ background: '#0f1523', border: '1px solid #38bdf8', color: '#38bdf8', fontWeight: 'bold', fontSize: '1.15rem', padding: '12px 20px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
+            <input type="month" className="sleek-input" style={{ background: '#0f1523', border: '1px solid #8b5cf6', color: '#8b5cf6', fontWeight: 'bold', fontSize: '1.15rem', padding: '12px 20px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
           </div>
         </div>
 
@@ -359,7 +359,7 @@ export default function Reports() {
                       {COURSES.concat(['Others']).map(c => (
                         <div key={c} className="hc-item" style={{ textAlign: 'center' }}>
                           <div className="hc-label">{c}</div>
-                          <div className="hc-value" style={{ fontSize: '2.4rem', color: counts[c] > 0 ? '#38bdf8' : '#475569' }}>{counts[c]}</div>
+                          <div className="hc-value" style={{ fontSize: '2.4rem', color: counts[c] > 0 ? '#8b5cf6' : '#475569' }}>{counts[c]}</div>
                         </div>
                       ))}
                     </div>
@@ -370,7 +370,7 @@ export default function Reports() {
                         <span style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>{totalPlacements} / {targetGoal} Hires</span>
                       </div>
                       <div style={{ width: '100%', height: '14px', background: '#1e293b', borderRadius: '10px', overflow: 'hidden' }}>
-                        <div style={{ width: `${progressPercent}%`, height: '100%', background: progressPercent >= 100 ? '#10b981' : '#38bdf8', transition: 'width 1s ease-in-out' }}></div>
+                        <div style={{ width: `${progressPercent}%`, height: '100%', background: progressPercent >= 100 ? '#10b981' : '#8b5cf6', transition: 'width 1s ease-in-out' }}></div>
                       </div>
                     </div>
                   </div>
@@ -405,7 +405,7 @@ export default function Reports() {
                                   <span style={{ fontSize: '0.95rem', color: '#94a3b8' }}>{getVal(log, 'branch')} • {getVal(log, 'course')}</span>
                                 </td>
                                 <td style={{ textAlign: 'left' }}>
-                                  <strong style={{ display: 'block', color: '#38bdf8', fontSize: '1.2rem', marginBottom: '5px' }}>{getVal(log, 'companyname')}</strong>
+                                  <strong style={{ display: 'block', color: '#8b5cf6', fontSize: '1.2rem', marginBottom: '5px' }}>{getVal(log, 'companyname')}</strong>
                                   <span style={{ fontSize: '0.95rem', color: 'var(--text-muted)' }}>{getVal(log, 'position') || 'N/A'}</span>
                                 </td>
                                 <td style={{ textAlign: 'left', color: '#10b981', fontWeight: 'bold', fontSize: '1.2rem' }}>
@@ -457,7 +457,7 @@ export default function Reports() {
                       <tr>
                         <td>TOTAL ENROLLMENT</td>
                         {COURSES.concat(['Others']).map(c => <td key={`foot-${c}`}>{enrollTotals[c]}</td>)}
-                        <td style={{ color: '#38bdf8' }}>{enrollTotals.Total}</td>
+                        <td style={{ color: '#8b5cf6' }}>{enrollTotals.Total}</td>
                       </tr>
                     </tfoot>
                   )}

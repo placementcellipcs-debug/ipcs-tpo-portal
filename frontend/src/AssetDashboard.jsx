@@ -58,7 +58,7 @@ export default function AssetDashboard() {
 
   // Allocation Data for the Half-Doughnut Gauge
   const statusData = [
-    { name: 'Assigned', value: data.assigned || 0, color: '#38bdf8' },
+    { name: 'Assigned', value: data.assigned || 0, color: '#8b5cf6' },
     { name: 'Available', value: data.available || 0, color: '#10b981' },
     { name: 'Maintenance', value: data.underMaintenance || 0, color: '#ef4444' }
   ].filter(d => d.value > 0);
@@ -124,7 +124,7 @@ export default function AssetDashboard() {
         <div className="kpi-grid-premium">
           <div className="kpi-card-v2">
             <div className="kpi-v2-header">
-              <div className="kpi-v2-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8' }}><Laptop weight="fill" size={24}/></div>
+              <div className="kpi-v2-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#8b5cf6' }}><Laptop weight="fill" size={24}/></div>
               <span className="kpi-v2-title">Total Assets</span>
             </div>
             <div className="kpi-v2-body">
@@ -134,11 +134,11 @@ export default function AssetDashboard() {
                   <AreaChart data={generateSparkline(data.totalAssets)}>
                     <defs>
                       <linearGradient id="colorBlue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#38bdf8" stopOpacity={0}/>
+                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
+                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
                       </linearGradient>
                     </defs>
-                    <Area type="monotone" dataKey="v" stroke="#38bdf8" strokeWidth={2} fillOpacity={1} fill="url(#colorBlue)" />
+                    <Area type="monotone" dataKey="v" stroke="#8b5cf6" strokeWidth={2} fillOpacity={1} fill="url(#colorBlue)" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>

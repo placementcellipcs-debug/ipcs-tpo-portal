@@ -277,7 +277,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
     
     html = `
       <div style="font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; max-width: 650px; margin: 0 auto; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);">
-        <div style="background-color: #0f1523; padding: 35px 20px; text-align: center; border-bottom: 5px solid #38bdf8;">
+        <div style="background-color: #0f1523; padding: 35px 20px; text-align: center; border-bottom: 5px solid #8b5cf6;">
           <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 1px; text-transform: uppercase;">Interview Invitation</h1>
           <p style="color: #94a3b8; margin: 10px 0 0 0; font-size: 14px;">IPCS Global Placement Cell</p>
         </div>
@@ -286,7 +286,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
           <p style="font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 30px 0;">
             We are thrilled to inform you that you have been <strong style="color: #0f1523;">selected for an interview</strong> with one of our esteemed partner companies.
           </p>
-          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 5px solid #38bdf8; border-radius: 8px; padding: 25px; margin-bottom: 30px;">
+          <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; border-left: 5px solid #8b5cf6; border-radius: 8px; padding: 25px; margin-bottom: 30px;">
             <h3 style="margin: 0 0 15px 0; color: #0f1523; font-size: 16px; text-transform: uppercase; letter-spacing: 0.5px;">Event Details</h3>
             <table style="width: 100%; border-collapse: collapse;">
               <tbody>
@@ -294,7 +294,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
                 <tr><td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Position:</td><td style="padding: 10px 0; color: #0f1523; font-size: 15px; border-bottom: 1px solid #e2e8f0;">${studentData.position || 'Professional'}</td></tr>
                 <tr><td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Date:</td><td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${interviewDetails.date || 'TBD'}</td></tr>
                 <tr><td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Time:</td><td style="padding: 10px 0; color: #0f1523; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${interviewDetails.time || 'TBD'}</td></tr>
-                <tr><td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Venue / Link:</td><td style="padding: 10px 0; color: #38bdf8; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${interviewDetails.venue || 'TBD'}</td></tr>
+                <tr><td style="padding: 10px 0; color: #64748b; font-size: 14px; font-weight: 600; border-bottom: 1px solid #e2e8f0;">Venue / Link:</td><td style="padding: 10px 0; color: #8b5cf6; font-size: 15px; font-weight: bold; border-bottom: 1px solid #e2e8f0;">${interviewDetails.venue || 'TBD'}</td></tr>
               </tbody>
             </table>
           </div>
@@ -303,7 +303,7 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
           </p>
           <div style="border-top: 1px solid #e2e8f0; padding-top: 25px;">
             <p style="font-size: 14px; line-height: 1.6; color: #475569; margin: 0 0 15px 0;">We wish you the very best of luck!</p>
-            <p style="font-size: 15px; color: #0f1523; font-weight: bold; margin: 0;">Regards,<br><span style="color: #38bdf8;">IPCS Placement Cell</span></p>
+            <p style="font-size: 15px; color: #0f1523; font-weight: bold; margin: 0;">Regards,<br><span style="color: #8b5cf6;">IPCS Placement Cell</span></p>
           </div>
         </div>
       </div>
@@ -694,7 +694,7 @@ exports.updateStudent = async (req, res) => {
             const refId = Math.floor(10000 + Math.random() * 90000); 
             const html = `
               <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-                <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;">
+                <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #8b5cf6;">
                   <h2 style="color: #ffffff; margin: 0;">PORTAL ACCESS GRANTED!</h2>
                 </div>
                 <div style="padding: 30px; background-color: #ffffff;">
@@ -1184,7 +1184,7 @@ exports.addEvent = async (req, res) => {
               <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
                 <p style="margin: 0 0 3px 0;">Regards,</p>
                 <p style="margin: 0 0 2px 0; font-weight: bold;">Placement Team</p>
-                <p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p>
+                <p style="margin: 0; font-weight: bold; color: #8b5cf6;">IPCS Global</p>
               </div>
             </div>
           </div>
@@ -1272,7 +1272,7 @@ exports.addEvent = async (req, res) => {
               <div style="margin-top: 35px; padding-top: 20px; border-top: 1px solid #cbd5e1; font-size: 14px; color: #0f1523;">
                 <p style="margin: 0 0 3px 0;">Regards,</p>
                 <p style="margin: 0 0 2px 0; font-weight: bold;">Placement Team</p>
-                <p style="margin: 0; font-weight: bold; color: #38bdf8;">IPCS Global</p>
+                <p style="margin: 0; font-weight: bold; color: #8b5cf6;">IPCS Global</p>
               </div>
             </div>
           </div>
@@ -1562,7 +1562,7 @@ exports.runDailyCron = async () => {
     // 6. Build the Final HTML Template with Two Tables
     const html = `
       <div style="font-family: Arial, sans-serif; color: #333; max-width: 800px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
-        <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;">
+        <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #8b5cf6;">
           <h2 style="color: #ffffff; margin: 0; letter-spacing: 1px;">PLACEMENT DRIVE REGISTRATIONS</h2>
         </div>
         <div style="padding: 30px; background-color: #ffffff;">
@@ -1752,7 +1752,7 @@ exports.requestMou = async (req, res) => {
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`, to: companyEmail,
       subject: `Action Required: IPCS Global Hiring Partnership Confirmation With ${companyName} [Ref: ${refId}]`, 
-      html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #38bdf8;"><h2 style="color: #ffffff; margin: 0;">IPCS HIRING PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${companyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Confirmation of Hiring Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review & Sign</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, copy and paste this link into your browser: <br/>${signingLink}</p></div></div>`
+      html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #8b5cf6;"><h2 style="color: #ffffff; margin: 0;">IPCS HIRING PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${companyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Confirmation of Hiring Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review & Sign</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, copy and paste this link into your browser: <br/>${signingLink}</p></div></div>`
     };
     await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Request' }); 
     const sheet = doc.sheetsByTitle["Clients"]; 

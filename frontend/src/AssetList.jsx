@@ -175,7 +175,7 @@ export default function AssetList() {
 
         <div className="top-hero-section">
           <div className="hero-text">
-            <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Barcode color="#38bdf8" weight="fill" /> Master Asset Registry</h1>
+            <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Barcode color="#8b5cf6" weight="fill" /> Master Asset Registry</h1>
             <p>Track, inspect, assign, and audit physical equipment across {isSuperAdmin ? 'all IPCS branches' : `the ${myBranch} branch`}.</p>
           </div>
           {canManageAssets && (
@@ -228,7 +228,7 @@ export default function AssetList() {
                 <div key={a.assetId} className="clean-row glass-panel hover-lift" style={{ opacity: a.status === 'DISPOSED' ? 0.6 : 1 }}>
                   
                   <div className="cl-left" style={{ flex: 2, minWidth: '350px' }}>
-                    <div className="cl-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8' }}><Laptop size={24} weight="fill"/></div>
+                    <div className="cl-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6' }}><Laptop size={24} weight="fill"/></div>
                     <div>
                       <div className="cl-title" style={{ fontSize: '1.1rem' }}>
                         {a.name} <span style={{ color: '#a855f7', fontSize: '0.85rem', marginLeft: '8px', fontFamily: 'monospace', background: 'rgba(168,85,247,0.1)', padding: '2px 8px', borderRadius: '6px' }}>{a.assetId}</span>
@@ -278,7 +278,7 @@ export default function AssetList() {
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div>
                   <h2 style={{ margin: '0 0 5px 0', fontSize: '1.6rem', color: '#fff' }}>{detailModal.name}</h2>
-                  <div style={{ color: '#38bdf8', fontFamily: 'monospace', fontWeight: 'bold' }}>{detailModal.assetId} • <span style={{ color: '#94a3b8', fontFamily: 'Inter' }}>{detailModal.branch}</span></div>
+                  <div style={{ color: '#8b5cf6', fontFamily: 'monospace', fontWeight: 'bold' }}>{detailModal.assetId} • <span style={{ color: '#94a3b8', fontFamily: 'Inter' }}>{detailModal.branch}</span></div>
                 </div>
                 <button className="close-btn" onClick={() => setDetailModal(null)}><X size={24} /></button>
               </div>
@@ -301,7 +301,7 @@ export default function AssetList() {
                 <>
                   <h3 style={{ fontSize: '0.85rem', color: '#10b981', textTransform: 'uppercase', marginBottom: '15px' }}>Technical Specifications</h3>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '30px' }}>
-                    {detailData.loading ? ( <CircleNotch size={20} className="ph-spin" color="#38bdf8"/> ) 
+                    {detailData.loading ? ( <CircleNotch size={20} className="ph-spin" color="#8b5cf6"/> ) 
                     : detailData.customSpecs.length === 0 ? ( <span style={{ color: '#64748b', fontSize: '0.9rem' }}>No custom specs recorded.</span> ) 
                     : ( detailData.customSpecs.map((s, idx) => (
                         <div key={idx} style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
@@ -323,7 +323,7 @@ export default function AssetList() {
                             <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>{h.remarks}</div>
                           </div>
                           <div style={{ textAlign: 'right' }}>
-                            <div style={{ color: '#38bdf8', fontSize: '0.85rem', fontWeight: 'bold' }}>{h.performedBy}</div>
+                            <div style={{ color: '#8b5cf6', fontSize: '0.85rem', fontWeight: 'bold' }}>{h.performedBy}</div>
                             <div style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '4px' }}>{h.timestamp}</div>
                           </div>
                         </div>
@@ -337,7 +337,7 @@ export default function AssetList() {
               {activeDetailTab === 'documents' && (
                 <>
                   {canManageAssets && (
-                    <form onSubmit={handleUploadSubmit} style={{ background: 'rgba(56, 189, 248, 0.05)', border: '1px dashed #38bdf8', padding: '20px', borderRadius: '12px', marginBottom: '25px', display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <form onSubmit={handleUploadSubmit} style={{ background: 'rgba(56, 189, 248, 0.05)', border: '1px dashed #8b5cf6', padding: '20px', borderRadius: '12px', marginBottom: '25px', display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
                       <div style={{ flex: 1, minWidth: '200px' }}>
                         <label className="data-label">Document Type</label>
                         <select className="premium-select" style={{ width: '100%' }} value={uploadForm.type} onChange={e => setUploadForm({...uploadForm, type: e.target.value})}>
@@ -359,13 +359,13 @@ export default function AssetList() {
                   )}
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '15px' }}>
-                    {detailData.loading ? ( <CircleNotch size={20} className="ph-spin" color="#38bdf8"/> ) 
+                    {detailData.loading ? ( <CircleNotch size={20} className="ph-spin" color="#8b5cf6"/> ) 
                     : detailData.documents.length === 0 ? ( <span style={{ color: '#64748b', fontSize: '0.9rem' }}>No photos or documents uploaded yet.</span> ) 
                     : ( detailData.documents.map((doc, idx) => (
                         <a key={idx} href={doc.url} target="_blank" rel="noreferrer" style={{ display: 'block', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '15px', textDecoration: 'none', color: '#fff', transition: '0.2s' }} className="hover-lift">
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                            <Image size={24} color="#38bdf8" weight="duotone" />
-                            <span style={{ fontSize: '0.8rem', color: '#38bdf8', fontWeight: 'bold' }}>{doc.type}</span>
+                            <Image size={24} color="#8b5cf6" weight="duotone" />
+                            <span style={{ fontSize: '0.8rem', color: '#8b5cf6', fontWeight: 'bold' }}>{doc.type}</span>
                           </div>
                           <div style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.fileName}</div>
                           <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{doc.date}</div>

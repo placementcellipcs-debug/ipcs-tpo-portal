@@ -183,7 +183,7 @@ export default function TalentinoExams() {
                       <td style={{ verticalAlign: 'top', padding: '16px' }}>
                         <span className="primary-text" style={{ whiteSpace: 'normal', lineHeight: 1.5, display: 'block', marginBottom: '6px' }}>{q.question}</span>
                         <div style={{ display: 'flex', gap: '8px', marginTop: '8px' }}>
-                          <span style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>Test: {q.testNumber}</span>
+                          <span style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>Test: {q.testNumber}</span>
                           <span style={{ background: 'var(--bg-dark)', color: 'var(--text-muted)', border: '1px solid var(--card-border)', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem' }}>{q.id}</span>
                         </div>
                       </td>
@@ -203,7 +203,7 @@ export default function TalentinoExams() {
                       </td>
                       <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>
                         <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
-                          <button onClick={() => setViewQuestionModal(q)} style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="View">
+                          <button onClick={() => setViewQuestionModal(q)} style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="View">
                             <Eye size={16} weight="bold" />
                           </button>
                           {canManage && (
@@ -259,7 +259,7 @@ export default function TalentinoExams() {
              <div style={{ padding: '10px', background: 'var(--bg-dark)', border: '1px solid var(--card-border)', borderRadius: '8px' }}><b>C:</b> {viewQuestionModal.optC}</div>
              <div style={{ padding: '10px', background: 'var(--bg-dark)', border: '1px solid var(--card-border)', borderRadius: '8px' }}><b>D:</b> {viewQuestionModal.optD}</div>
            </div>
-           {viewQuestionModal.explanation && <div style={{ padding: '15px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid #0284c7', borderRadius: '8px', color: '#38bdf8' }}><b>Explanation:</b> {viewQuestionModal.explanation}</div>}
+           {viewQuestionModal.explanation && <div style={{ padding: '15px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid #0284c7', borderRadius: '8px', color: '#8b5cf6' }}><b>Explanation:</b> {viewQuestionModal.explanation}</div>}
          </div>
        </div>
       )}

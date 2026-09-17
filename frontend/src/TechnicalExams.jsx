@@ -268,7 +268,7 @@ export default function TechnicalExams() {
                     onClick={() => { setSelectedSubCourse(subCourse); setViewLevel('exam_dashboard'); }}
                     style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1.5rem', cursor: 'pointer', transition: '0.2s', display: 'flex', alignItems: 'center', gap: '15px' }}
                   >
-                    <div style={{ width: '45px', height: '45px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <div style={{ width: '45px', height: '45px', borderRadius: '10px', background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <BookBookmark size={24} weight="fill" />
                     </div>
                     <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-main)', lineHeight: 1.4 }}>{subCourse}</h3>
@@ -377,7 +377,7 @@ export default function TechnicalExams() {
                             <div style={{ display: 'flex', gap: '6px', justifyContent: 'center' }}>
                               <button 
                                 onClick={() => setViewQuestionModal(q)} 
-                                style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#38bdf8', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} 
+                                style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} 
                                 title="View"
                               >
                                 <Eye size={16} weight="bold" />
@@ -476,7 +476,7 @@ export default function TechnicalExams() {
              </div>
              
              {viewQuestionModal.explanation && (
-               <div style={{ padding: '15px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid #0284c7', borderRadius: '8px', color: '#38bdf8' }}>
+               <div style={{ padding: '15px', background: 'rgba(56, 189, 248, 0.1)', border: '1px solid #0284c7', borderRadius: '8px', color: '#8b5cf6' }}>
                  <b>Explanation:</b> {viewQuestionModal.explanation}
                </div>
              )}

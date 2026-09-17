@@ -369,7 +369,7 @@ export default function JobTracker() {
             
             <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <h2 style={{ margin: 0, color: '#38bdf8', fontSize: '1.4rem' }}>Schedule Interview</h2>
+                <h2 style={{ margin: 0, color: '#8b5cf6', fontSize: '1.4rem' }}>Schedule Interview</h2>
                 <p style={{ margin: '5px 0 0 0', color: '#94a3b8', fontSize: '0.85rem' }}>
                   These details will be emailed to the student and recorded.
                 </p>
@@ -454,7 +454,7 @@ export default function JobTracker() {
           transition: all 0.2s ease;
         }
         .jt-input:focus, .jt-select:focus {
-          border-color: #38bdf8;
+          border-color: #8b5cf6;
           box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
         }
         .jt-input::placeholder { color: #475569; }
@@ -464,7 +464,7 @@ export default function JobTracker() {
         .jt-loading, .jt-empty-state {
           text-align: center;
           padding: 4rem 0;
-          color: #38bdf8;
+          color: #8b5cf6;
         }
         .jt-empty-state {
           color: #64748b;
@@ -500,7 +500,7 @@ export default function JobTracker() {
         
         .jt-acc-title {
           font-size: 1.1rem;
-          color: #38bdf8; /* Vibrant Cyan */
+          color: #8b5cf6; /* Vibrant Cyan */
           display: block;
           margin-bottom: 4px;
         }
@@ -607,7 +607,7 @@ export default function JobTracker() {
         .jt-badge.chat { color: #10b981; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); }
         .jt-badge.chat:hover { background: rgba(16, 185, 129, 0.25); }
         
-        .jt-badge.mail { color: #38bdf8; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); }
+        .jt-badge.mail { color: #8b5cf6; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); }
         .jt-badge.mail:hover { background: rgba(56, 189, 248, 0.25); }
         
         .jt-badge.cv { color: #f59e0b; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); }
@@ -618,7 +618,7 @@ export default function JobTracker() {
         /* Save & Cancel Buttons */
         .jt-save-btn {
           width: 100%;
-          background: #38bdf8; /* The signature Cyan from mockup */
+          background: #8b5cf6; /* The signature Cyan from mockup */
           color: #020617;
           border: none;
           padding: 10px 16px;
