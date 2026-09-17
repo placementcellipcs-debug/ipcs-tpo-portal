@@ -43,12 +43,12 @@ export default function Clients() {
   const upperRole = String(tpoData?.role || '').toUpperCase().trim();
   const accessType = String(tpoData?.accessType || '').toLowerCase().trim();
   
-  // 🚨 BULLETPROOF ROLE COMPUTATIONS (Catches Abbreviations)
+  // ROLE COMPUTATIONS
   const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole === 'GENERAL MANAGER';
   const isTpo = upperRole.includes('TPO') || upperRole.includes('PLACEMENT OFFICER');
   const canManageClients = isTpo && !isSuperAdmin;
 
-  // 🚨 RESTRICTED MANAGERS (BM, TM, RM, ZM) -> Gets the strictly simplified view
+  // RESTRICTED MANAGERS (BM, TM, RM, ZM)
   const isRestrictedManager = !isSuperAdmin && !isTpo && (
     upperRole.includes('MANAGER') || 
     upperRole.includes('ZONAL') || 
@@ -62,7 +62,6 @@ export default function Clients() {
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('Signed'); 
 
-  // Modal States
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
   const [editForm, setEditForm] = useState({});
@@ -79,41 +78,46 @@ export default function Clients() {
   };
 
   useEffect(() => { 
+    let isMounted = true;
+    
     const fetchClientsInitial = async () => {
       setLoading(true);
       
-      // Attempt to load from cache first for instant rendering
+      // Attempt cache
       try {
         const cached = localStorage.getItem('dash_clients');
         if (cached && cached !== 'undefined' && cached !== 'null') { 
             const parsed = JSON.parse(cached);
             if (Array.isArray(parsed) && parsed.length > 0) {
-                setClients(parsed); 
-                setLoading(false); // Render immediately from cache
+                if (isMounted) { setClients(parsed); setLoading(false); }
             }
         }
-      } catch(e) { console.error("Cache ignored"); }
+      } catch(e) {}
 
-      // Fetch fresh data from backend
+      // Fetch fresh data
       try {
         const payload = { tpoName: (isSuperAdmin || isRestrictedManager) ? '' : (tpoData?.name || '') };
-        const res = await axios.post(`${API_BASE}/api/tpo/clients`, payload);
-        if (res.data && res.data.success) {
+        const res = await axios.post(`${API_BASE}/api/tpo/clients`, payload, { timeout: 10000 }); // 10s strict timeout
+        if (res.data && res.data.success && isMounted) {
           setClients(res.data.clients || []);
           localStorage.setItem('dash_clients', JSON.stringify(res.data.clients || [])); 
         }
       } catch (err) { 
-        console.error("Failed to fetch clients from backend"); 
+        console.error("Backend fetch failed"); 
       } finally { 
-        setLoading(false); // 🚨 GUARANTEED to stop the loading spinner
+        if (isMounted) setLoading(false); // 🚨 GUARANTEED ANTI-FREEZE
       }
     };
     
-    if (tpoData && Object.keys(tpoData).length > 0) {
-      fetchClientsInitial(); 
-    } else {
-      setLoading(false);
-    }
+    fetchClientsInitial();
+    
+    // 🚨 Emergency Failsafe: Force stop spinner after 6 seconds no matter what
+    const failsafe = setTimeout(() => { if (isMounted) setLoading(false); }, 6000);
+    
+    return () => { 
+      isMounted = false; 
+      clearTimeout(failsafe); 
+    };
   }, []); 
 
   const fetchClientsManual = async () => {
@@ -124,7 +128,7 @@ export default function Clients() {
         setClients(res.data.clients || []);
         localStorage.setItem('dash_clients', JSON.stringify(res.data.clients || [])); 
       }
-    } catch (err) { console.error(err); }
+    } catch (err) {}
   };
 
   const submitAddClient = async () => {
@@ -195,21 +199,16 @@ export default function Clients() {
     finally { setSendingRequest(null); }
   };
 
-  // 🚨 Bulletproof array filtering
+  // Safe Filtering
   const safeClients = Array.isArray(clients) ? clients : [];
   const filteredClients = safeClients.filter(c => {
     const matchSearch = String(c.companyName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                         String(c.location || '').toLowerCase().includes(searchQuery.toLowerCase());
-    
     const isSigned = String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink);
-    
-    // MANAGERS SEE ALL COMPANIES ON A SINGLE PAGE (TABS IGNORED)
     const tabMatch = isRestrictedManager ? true : (activeTab === 'Signed' ? isSigned : !isSigned);
-
     return matchSearch && tabMatch;
   });
 
-  // Safely calculate KPIs
   const totalPartners = safeClients.length;
   const totalSigned = safeClients.filter(c => String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink)).length;
   const totalPending = totalPartners - totalSigned;
@@ -232,7 +231,6 @@ export default function Clients() {
                 : 'Directory of corporate partners and countersigned institutional agreements.'}
             </p>
           </div>
-          {/* TPO ONLY: ADD PARTNER BUTTON */}
           {canManageClients && (
             <button className="premium-btn primary hover-lift" onClick={() => setIsAddModalOpen(true)}>
               <Plus weight="bold" size={20} /> Add Partner
@@ -240,7 +238,13 @@ export default function Clients() {
           )}
         </div>
 
-        {/* ADMIN MINI-DASHBOARD (Hidden from Managers) */}
+        {/* 🚨 Emergency Cache Reset Button (In case of future empty state issues) */}
+        {loading && (
+          <div style={{ textAlign: 'center', marginTop: '10px', padding: '10px' }}>
+             <button onClick={() => { localStorage.clear(); window.location.href='/'; }} style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem' }}>Force App Reset (If stuck)</button>
+          </div>
+        )}
+
         {isSuperAdmin && !isRestrictedManager && (
           <div className="mini-dash-grid">
             <div className="kpi-card glass-panel hover-lift">
@@ -258,17 +262,13 @@ export default function Clients() {
           </div>
         )}
 
-        {/* CONTROLS (TABS & SEARCH) */}
         <div className="glass-panel control-action-bar" style={{ flexDirection: 'row', justifyContent: isRestrictedManager ? 'center' : 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-          
-          {/* HIDE TABS FOR MANAGERS (THEY SEE ALL ON ONE PAGE) */}
           {!isRestrictedManager && (
             <div className="segmented-tabs">
               <button className={`seg-tab ${activeTab === 'Signed' ? 'active-green' : ''}`} onClick={() => setActiveTab('Signed')}>Signed MOUs</button>
               <button className={`seg-tab ${activeTab === 'Pending' ? 'active-orange' : ''}`} onClick={() => setActiveTab('Pending')}>Pending Signatures</button>
             </div>
           )}
-          
           <div className="filter-group" style={{ width: isRestrictedManager ? '100%' : 'auto', maxWidth: isRestrictedManager ? '600px' : 'none' }}>
             <div style={{ position: 'relative', flex: 1, minWidth: '300px' }}>
               <input type="text" className="premium-input" placeholder="Search company name..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ width: '100%', paddingLeft: '40px' }} />
@@ -277,7 +277,6 @@ export default function Clients() {
           </div>
         </div>
 
-        {/* CLIENT CARDS GRID */}
         {loading ? (
           <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Fetching corporate directory...</p></div>
         ) : filteredClients.length === 0 ? (
@@ -287,13 +286,11 @@ export default function Clients() {
             {filteredClients.map((c, i) => {
               const isSigned = String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink);
               
-              // 🚨 MANAGER VIEW: Strictly limited info
               if (isRestrictedManager) {
                 return (
                   <div key={i} className="client-card glass-panel hover-lift" style={{ padding: '25px', alignItems: 'center', textAlign: 'center', minHeight: '220px' }}>
                     <ClientLogo client={c} size={70} />
                     <h3 className="client-name" style={{ fontSize: '1.1rem', marginBottom: '15px', wordBreak: 'break-word' }}>{c.companyName || 'Unknown Company'}</h3>
-                    
                     <div className="client-footer" style={{ width: '100%', marginTop: 'auto' }}>
                       {isSigned ? (
                         <button className="mou-btn signed-btn" onClick={() => c.mouLink && window.open(c.mouLink, '_blank')}>
@@ -309,17 +306,14 @@ export default function Clients() {
                 );
               }
 
-              // 🚨 TPO / SUPER ADMIN VIEW: Full Details
               return (
                 <div key={i} className="client-card glass-panel hover-lift">
-                  
                   <div className="client-header">
                     <ClientLogo client={c} size={80} />
                     <h3 className="client-name">{c.companyName || 'Unknown Company'}</h3>
                     <div className="client-loc"><MapPinLine size={14} /> {c.location || 'Location Not Specified'}</div>
                   </div>
 
-                  {/* ADMIN ONLY: CONTACT DETAILS */}
                   {isSuperAdmin && !isRestrictedManager && (
                     <div className="admin-client-details">
                       <div className="acd-item"><UserCircle size={16} /> <span>{c.contactPerson || 'No Name'}</span></div>
@@ -351,7 +345,6 @@ export default function Clients() {
                       </div>
                     )}
                   </div>
-
                 </div>
               );
             })}
@@ -359,7 +352,6 @@ export default function Clients() {
         )}
       </div>
 
-      {/* ADD CLIENT MODAL */}
       {isAddModalOpen && (
         <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
           <div className="premium-modal glass-panel" style={{ maxWidth: '550px', padding: '30px' }}>
@@ -393,7 +385,6 @@ export default function Clients() {
         </div>
       )}
 
-      {/* EDIT MODAL */}
       {isEditModalOpen && selectedClient && (
         <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
           <div className="premium-modal glass-panel" style={{ maxWidth: '500px', padding: '30px' }}>
@@ -423,7 +414,6 @@ export default function Clients() {
         </div>
       )}
 
-      {/* TOAST NOTIFICATION */}
       {notification && (
         <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 999999, backgroundColor: notification.type === 'success' ? '#10b981' : '#ef4444', color: '#ffffff', padding: '16px 24px', borderRadius: '10px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1rem', fontWeight: 'bold' }}>
           {notification.type === 'success' ? <CheckCircle size={24} weight="fill" /> : <WarningCircle size={24} weight="fill" />}
@@ -431,9 +421,6 @@ export default function Clients() {
         </div>
       )}
 
-      {/* ---------------------------------------------------------
-          🎨 PREMIUM CSS FOR CLIENTS PAGE
-      --------------------------------------------------------- */}
       <style>{`
         .premium-dashboard-wrapper { font-family: 'Inter', sans-serif; color: #f8fafc; }
         .glass-panel { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); }
