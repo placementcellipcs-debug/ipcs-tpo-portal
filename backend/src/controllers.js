@@ -1644,30 +1644,41 @@ exports.triggerDailyCron = async (req, res) => {
 // 🚨 SAFER STRICT MATCHING FOR CLIENTS SHEET
 // =========================================================
 exports.getClients = (req, res) => {
-  const cleanTpoName = (req.body.tpoName || '').toString().toLowerCase().trim();
-  let clients = [];
-  getCache().clients.forEach(row => {
-    const officer = getValByHeader(row, ['placementofficer', 'tponame']);
-    const officerClean = (officer || '').toLowerCase().trim();
-    
-    if (cleanTpoName === '' || officerClean === '' || officerClean.includes(cleanTpoName) || cleanTpoName.includes(officerClean)) {
-      clients.push({ 
-        rowNumber: row.rowNumber, 
-        companyName: getValByHeader(row, ['companyname', 'company']) || 'Unknown', 
-        website: getValByHeader(row, ['companywebsite', 'website']) || '', 
-        location: getValByHeader(row, ['companylocation', 'location']) || '', 
-        contact: getValByHeader(row, ['companycontact', 'contactnumber', 'phone']) || '', 
-        email: getValByHeader(row, ['companymailid', 'companyemail', 'mailid', 'email']) || '', 
-        contactPerson: getValByHeader(row, ['companycontactperson', 'contactperson', 'person']) || '', 
-        logo: getValByHeader(row, ['companylogo', 'logo']) || '', 
-        mailStatus: getValByHeader(row, ['mailstatus']) || 'Pending', 
-        documentStatus: getValByHeader(row, ['documentstatus', 'docstatus']) || 'Pending', 
-        mouLink: getValByHeader(row, ['mou', 'moulink']) || '',
-        tpoName: officer || 'Unknown' // 🚨 ADDED TPO NAME FOR ADMINS
+  try {
+    const cleanTpoName = (req.body.tpoName || '').toString().toLowerCase().trim();
+    let clients = [];
+    const cache = getCache();
+
+    // 🚨 Extreme Crash Protection: Check if cache and clients sheet exists
+    if (cache && cache.clients && Array.isArray(cache.clients)) {
+      cache.clients.forEach(row => {
+        const officer = getValByHeader(row, ['placementofficer', 'tponame']);
+        const officerClean = (officer || '').toLowerCase().trim();
+        
+        if (cleanTpoName === '' || officerClean === '' || officerClean.includes(cleanTpoName) || cleanTpoName.includes(officerClean)) {
+          clients.push({ 
+            rowNumber: row.rowNumber, 
+            companyName: getValByHeader(row, ['companyname', 'company']) || 'Unknown', 
+            website: getValByHeader(row, ['companywebsite', 'website']) || '', 
+            location: getValByHeader(row, ['companylocation', 'location']) || '', 
+            contact: getValByHeader(row, ['companycontact', 'contactnumber', 'phone']) || '', 
+            email: getValByHeader(row, ['companymailid', 'companyemail', 'mailid', 'email']) || '', 
+            contactPerson: getValByHeader(row, ['companycontactperson', 'contactperson', 'person']) || '', 
+            logo: getValByHeader(row, ['companylogo', 'logo']) || '', 
+            mailStatus: getValByHeader(row, ['mailstatus']) || 'Pending', 
+            documentStatus: getValByHeader(row, ['documentstatus', 'docstatus']) || 'Pending', 
+            mouLink: getValByHeader(row, ['mou', 'moulink']) || '',
+            tpoName: officer || 'Unknown' 
+          });
+        }
       });
     }
-  });
-  res.json({ success: true, clients: clients.reverse() });
+
+    res.json({ success: true, clients: clients.reverse() });
+  } catch (err) {
+    console.error("Error fetching clients:", err.message);
+    res.status(500).json({ success: false, message: "Server encountered an error fetching clients." });
+  }
 };
 
 exports.getClientById = (req, res) => {
