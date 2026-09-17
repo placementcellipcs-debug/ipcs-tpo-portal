@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
-  Plus, CaretLeft, CaretRight, X, CircleNotch, CalendarBlank, MapPin, 
-  Clock, Buildings, CalendarStar, Briefcase, UserCheck, Image, CaretDown
+  Plus, CaretLeft, CaretRight, X, CircleNotch, MapPin, 
+  Clock, Buildings, CalendarStar, UserCheck, CaretDown
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -10,9 +10,12 @@ import { API_BASE } from './apiConfig';
 
 const parseDate = (dateStr) => {
   if (!dateStr) return null;
+  
+  // Let standard JS handle Google Sheets 'M/D/YYYY' format perfectly!
   const standardDate = new Date(dateStr);
   if (!isNaN(standardDate)) return standardDate;
 
+  // Fallback for tricky string formats if standard parsing fails
   let cleanStr = typeof dateStr === 'string' ? dateStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dateStr;
   if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
     const parts = cleanStr.split(/[/-]/);
@@ -31,10 +34,8 @@ export default function Events() {
   const [branchList, setBranchList] = useState([]); 
   const [loading, setLoading] = useState(true);
   
-  const [categoryTab, setCategoryTab] = useState('calendar');
-  const [view, setView] = useState('Month'); 
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(new Date()); 
+  const [selectedDate, setSelectedDate] = useState(new Date()); // Tracks sidebar agenda
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -127,13 +128,22 @@ export default function Events() {
     setCurrentDate(d);
   };
 
-  const categorizedEvents = events.filter(e => {
-    if (categoryTab === 'calendar') return true;
-    if (categoryTab === 'Other') {
-      return !['Placement Drive', 'Talentino'].some(t => (e.type || '').toLowerCase().includes(t.toLowerCase()));
+  const getMonthName = () => currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+  // 🚨 SMART FILTER: Only show Talentino events for assigned branches
+  const isVisibleEvent = (e) => {
+    const userBranches = tpoData?.assignedBranchesArray || [];
+    const isSuper = tpoData?.accessType === 'superadmin';
+    
+    if (isSuper || userBranches.length === 0 || userBranches.includes('all') || userBranches.includes('All')) return true;
+    
+    if ((e.type || '').toLowerCase().includes('talentino')) {
+      const evtBranch = (e.branch || '').toLowerCase();
+      if (evtBranch === 'all branches' || evtBranch === 'all') return true;
+      return userBranches.some(b => evtBranch.includes(b.toLowerCase()) || b.toLowerCase().includes(evtBranch));
     }
-    return (e.type || '').toLowerCase().includes(categoryTab.toLowerCase());
-  }).sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+    return true; 
+  };
 
   const renderMonthGrid = () => {
     const year = currentDate.getFullYear();
@@ -155,6 +165,7 @@ export default function Events() {
       const isSelected = selectedDate && cellDate.toDateString() === selectedDate.toDateString();
       
       const dayEvents = events.filter(e => {
+        if (!isVisibleEvent(e)) return false; // Apply branch filter
         const pd = parseDate(e.date);
         return pd && pd.getFullYear() === cellDate.getFullYear() && pd.getMonth() === cellDate.getMonth() && pd.getDate() === cellDate.getDate();
       });
@@ -182,6 +193,7 @@ export default function Events() {
   };
 
   const selectedDayEvents = selectedDate ? events.filter(e => {
+    if (!isVisibleEvent(e)) return false; // Apply branch filter to sidebar
     const pd = parseDate(e.date);
     return pd && pd.toDateString() === selectedDate.toDateString();
   }) : [];
@@ -192,7 +204,6 @@ export default function Events() {
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '15px' }}>
           <div>
-            {/* Mockup matching greeting */}
             <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', color: '#fff' }}>
               Morning, {String(tpoData?.name || 'Alex').split(' ')[0]}!
             </h1>
@@ -206,68 +217,52 @@ export default function Events() {
           )}
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '25px', borderBottom: '1px solid #1e293b', paddingBottom: '10px', overflowX: 'auto' }}>
-          <button onClick={() => setCategoryTab('calendar')} className={`neo-tab ${categoryTab === 'calendar' ? 'active-blue' : ''}`}>
-            <CalendarBlank size={18} weight={categoryTab === 'calendar' ? "fill" : "regular"} /> Calendar View
-          </button>
-          <button onClick={() => setCategoryTab('Placement Drive')} className={`neo-tab ${categoryTab === 'Placement Drive' ? 'active-red' : ''}`}>
-            <Briefcase size={18} weight={categoryTab === 'Placement Drive' ? "fill" : "regular"} /> Placement Drives
-          </button>
-          <button onClick={() => setCategoryTab('Talentino')} className={`neo-tab ${categoryTab === 'Talentino' ? 'active-purple' : ''}`}>
-            <UserCheck size={18} weight={categoryTab === 'Talentino' ? "fill" : "regular"} /> Talentino
-          </button>
-          <button onClick={() => setCategoryTab('Other')} className={`neo-tab ${categoryTab === 'Other' ? 'active-green' : ''}`}>
-            <CalendarStar size={18} weight={categoryTab === 'Other' ? "fill" : "regular"} /> Other Events
-          </button>
-        </div>
-
-        {categoryTab === 'calendar' && (
-          <div className="neo-layout">
-            
-            {/* LEFT: CALENDAR GRID (MOCKUP STYLE) */}
-            <div className="neo-calendar-section">
-              <div className="neo-toolbar">
-                <div className="neo-month-display">
-                  {currentDate.toLocaleString('default', { month: 'long' })} <CaretDown size={14} weight="bold" style={{ marginLeft:'8px', marginRight:'20px', color: '#64748b' }}/> 
-                  {currentDate.getFullYear()} <CaretDown size={14} weight="bold" style={{ marginLeft:'8px', color: '#64748b' }}/>
-                </div>
-                <div className="neo-nav-arrows">
-                  <button onClick={prevPeriod}><CaretLeft size={16} weight="bold"/></button>
-                  <button onClick={nextPeriod}><CaretRight size={16} weight="bold"/></button>
-                </div>
+        <div className="neo-layout">
+          
+          {/* LEFT: CALENDAR GRID */}
+          <div className="neo-calendar-section">
+            <div className="neo-toolbar">
+              <div className="neo-month-display">
+                {currentDate.toLocaleString('default', { month: 'long' })} <CaretDown size={14} weight="bold" style={{ marginLeft:'8px', marginRight:'20px', color: '#64748b' }}/> 
+                {currentDate.getFullYear()} <CaretDown size={14} weight="bold" style={{ marginLeft:'8px', color: '#64748b' }}/>
               </div>
-
-              <div className="neo-days-header">
-                {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
-                  <div key={day}>{day}</div>
-                ))}
-              </div>
-
-              <div className="neo-grid">
-                {loading ? (
-                  <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '5rem', color: '#38bdf8' }}>
-                    <CircleNotch size={48} className="ph-spin" />
-                  </div>
-                ) : (
-                  renderMonthGrid()
-                )}
+              <div className="neo-nav-arrows">
+                <button onClick={prevPeriod}><CaretLeft size={16} weight="bold"/></button>
+                <button onClick={nextPeriod}><CaretRight size={16} weight="bold"/></button>
               </div>
             </div>
 
-            {/* RIGHT: AGENDA SIDEBAR (MOCKUP STYLE) */}
-            {selectedDate && (
-              <div className="neo-agenda-section">
-                <div className="neo-agenda-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                  <div>
-                    <h3>Scheduled</h3>
-                    <div className="neo-agenda-date">
-                      {selectedDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
-                    </div>
-                  </div>
-                  <button onClick={() => setSelectedDate(null)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', padding: '6px', borderRadius: '50%', cursor: 'pointer', display: 'flex', transition: '0.2s' }} title="Close Agenda">
-                    <X size={18} weight="bold"/>
-                  </button>
+            <div className="neo-days-header">
+              {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
+                <div key={day}>{day}</div>
+              ))}
+            </div>
+
+            <div className="neo-grid">
+              {loading ? (
+                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '5rem', color: '#38bdf8' }}>
+                  <CircleNotch size={48} className="ph-spin" />
                 </div>
+              ) : (
+                renderMonthGrid()
+              )}
+            </div>
+          </div>
+
+          {/* RIGHT: AGENDA SIDEBAR */}
+          {selectedDate && (
+            <div className="neo-agenda-section">
+              <div className="neo-agenda-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div>
+                  <h3>Scheduled</h3>
+                  <div className="neo-agenda-date">
+                    {selectedDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+                  </div>
+                </div>
+                <button onClick={() => setSelectedDate(null)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', padding: '6px', borderRadius: '50%', cursor: 'pointer', display: 'flex', transition: '0.2s' }} title="Close Agenda">
+                  <X size={18} weight="bold"/>
+                </button>
+              </div>
 
               <div className="neo-agenda-list">
                 {selectedDayEvents.length === 0 ? (
@@ -275,7 +270,6 @@ export default function Events() {
                 ) : (
                   selectedDayEvents.map((e, idx) => (
                     <div key={idx} className="neo-agenda-card">
-                      {/* Top colored accent line mimicking the mockup */}
                       <div className="neo-ac-accent" style={{ background: getEventColor(e.type) }}></div>
                       
                       <div className="neo-ac-time-row">
@@ -301,57 +295,9 @@ export default function Events() {
                 )}
               </div>
             </div>
-            )}
+          )}
 
-          </div>
-        )}
-
-        {/* OTHER TABS (LIST VIEWS) */}
-        {categoryTab !== 'calendar' && (
-          <div style={{ display: 'grid', gap: '15px' }}>
-            {loading ? (
-              <div style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="#38bdf8" /></div>
-            ) : categorizedEvents.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: '3rem', background: '#0f172a', borderRadius: '16px', border: '1px solid #1e293b', color: '#94a3b8' }}>
-                No events recorded for this category.
-              </div>
-            ) : (
-              categorizedEvents.map((evt, idx) => (
-                <div key={idx} style={{ background: '#0f172a', border: '1px solid #1e293b', borderLeft: `6px solid ${getEventColor(evt.type)}`, borderRadius: '16px', padding: '25px', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '20px', transition: '0.2s' }} className="hover-lift">
-                  <div style={{ flex: '1 1 350px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                      <span style={{ background: 'rgba(255,255,255,0.05)', color: getEventColor(evt.type), padding: '4px 10px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 'bold' }}>
-                        {evt.type}
-                      </span>
-                      <span style={{ color: '#94a3b8', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                        <Clock size={14} /> {evt.time || 'Time TBD'}
-                      </span>
-                    </div>
-                    <h3 style={{ margin: '0 0 8px 0', fontSize: '1.3rem', color: '#fff' }}>{evt.title}</h3>
-                    {evt.description && <p style={{ margin: '0 0 15px 0', fontSize: '0.85rem', color: '#94a3b8', lineHeight: '1.6' }}>{evt.description}</p>}
-                    <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', fontSize: '0.85rem', color: '#cbd5e1' }}>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><MapPin size={16} color="#38bdf8" /> Location: <b>{evt.location || 'N/A'}</b></span>
-                      <span style={{ display: 'flex', alignItems: 'center', gap: '5px' }}><Buildings size={16} color="#f59e0b" /> Branch: <b>{evt.branch || 'All Branches'}</b></span>
-                    </div>
-                  </div>
-
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '12px' }}>
-                    <div style={{ background: '#1e293b', border: '1px solid #334155', padding: '12px 20px', borderRadius: '12px', textAlign: 'center' }}>
-                      <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '4px' }}>EVENT DATE</div>
-                      <div style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#fff' }}>{evt.date}</div>
-                    </div>
-                    {evt.poster && (
-                      <button style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', color: '#fff', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }} onClick={() => window.open(evt.poster, '_blank')}>
-                        <Image size={16} /> View Poster
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
+        </div>
       </div>
 
       {isModalOpen && (
@@ -426,35 +372,15 @@ export default function Events() {
         </div>
       )}
 
-      {/* 🎨 NEO CALENDAR STYLES (MOCKUP ACCURATE) */}
+      {/* 🎨 NEO CALENDAR STYLES */}
       <style>{`
         /* Global Reset For This Page */
         .hover-lift:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.1); background: #1e293b; }
         
-        .neo-tab {
-          background: transparent;
-          color: #94a3b8;
-          border: none;
-          padding: 10px 18px;
-          border-radius: 8px;
-          cursor: pointer;
-          font-weight: bold;
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          white-space: nowrap;
-          transition: 0.2s;
-        }
-        .neo-tab:hover { background: rgba(255,255,255,0.05); color: #fff; }
-        .neo-tab.active-blue { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
-        .neo-tab.active-red { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
-        .neo-tab.active-purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; }
-        .neo-tab.active-green { background: rgba(16, 185, 129, 0.15); color: #10b981; }
-
         /* The Main Wrapper */
         .neo-layout {
           display: grid;
-          grid-template-columns: minmax(0, 1fr) auto; /* Instantly collapses if agenda is closed */
+          grid-template-columns: minmax(0, 1fr) auto;
           gap: 30px;
           align-items: start;
           margin-top: 15px;
@@ -528,20 +454,22 @@ export default function Events() {
 
         .neo-grid {
           display: grid;
-          grid-template-columns: repeat(7, 1fr);
-          gap: 15px; /* Distinct gap matching the mockup */
+          grid-template-columns: repeat(7, minmax(0, 1fr));
+          gap: 15px; 
         }
 
         .neo-cell {
-          background: #1e293b; /* Dark cell background */
-          border-radius: 16px;
-          min-height: 140px;
-          padding: 15px;
+          background: #1e293b;
+          border-radius: 12px;
+          min-height: 120px;
+          padding: 12px;
           cursor: pointer;
           transition: 0.2s ease;
           border: 1px solid transparent;
           display: flex;
           flex-direction: column;
+          min-width: 0;
+          overflow: hidden;
         }
         .neo-cell.empty {
           background: transparent;
@@ -551,9 +479,8 @@ export default function Events() {
           background: #27354c;
         }
         
-        /* The Highlighted Selection state */
         .neo-cell.selected {
-          background: #2563eb; /* Strong bright blue */
+          background: #2563eb;
           box-shadow: 0 10px 25px rgba(37, 99, 235, 0.4);
           transform: translateY(-2px);
         }
@@ -562,24 +489,27 @@ export default function Events() {
           color: #e2e8f0;
           font-size: 1.1rem;
           font-weight: 500;
-          margin-bottom: 15px;
+          margin-bottom: 10px;
         }
         .neo-date-num.today {
           color: #38bdf8;
           font-weight: 900;
         }
-        /* Override text color if selected */
         .neo-cell.selected .neo-date-num { color: #fff; }
 
         .neo-events {
           display: flex;
           flex-direction: column;
-          gap: 8px;
+          gap: 6px;
+          min-width: 0;
+          width: 100%;
         }
         .neo-event-indicator {
           display: flex;
           align-items: center;
           gap: 6px;
+          min-width: 0; 
+          width: 100%;
         }
         .neo-event-bar {
           width: 3px;
@@ -588,11 +518,13 @@ export default function Events() {
           flex-shrink: 0;
         }
         .neo-event-title {
-          color: #94a3b8;
+          color: #cbd5e1;
           font-size: 0.75rem;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
+          flex: 1; 
+          min-width: 0;
         }
         .neo-cell.selected .neo-event-title {
           color: rgba(255,255,255,0.9);
@@ -640,7 +572,6 @@ export default function Events() {
           padding-right: 10px;
         }
         
-        /* Custom scrollbar for agenda */
         .neo-agenda-list::-webkit-scrollbar { width: 6px; }
         .neo-agenda-list::-webkit-scrollbar-track { background: transparent; }
         .neo-agenda-list::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
@@ -655,7 +586,7 @@ export default function Events() {
           flex-direction: column;
           position: relative;
           border: 1px solid #1e293b;
-          overflow: hidden; /* Stops cards from exploding outward */
+          overflow: hidden; 
         }
 
         .neo-ac-accent {
@@ -679,7 +610,7 @@ export default function Events() {
         .neo-ac-content {
           display: flex;
           flex-direction: column;
-          min-width: 0; /* Critical for Flexbox text wrapping */
+          min-width: 0; 
         }
 
         .neo-ac-title {
@@ -688,7 +619,7 @@ export default function Events() {
           font-size: 1.05rem;
           font-weight: 600;
           white-space: normal;
-          word-wrap: break-word; /* Forces long titles to wrap nicely */
+          word-wrap: break-word; 
         }
         
         .neo-ac-desc {
@@ -740,7 +671,7 @@ export default function Events() {
           .neo-grid { gap: 8px; }
           .neo-cell { padding: 8px; min-height: 90px; border-radius: 10px; }
           .neo-date-num { font-size: 0.9rem; margin-bottom: 4px; }
-          .neo-event-title { display: none; } /* Hide text on small mobiles, show only bars */
+          .neo-event-title { display: none; } 
           .neo-event-bar { height: 6px; width: 6px; border-radius: 50%; }
         }
       `}</style>
