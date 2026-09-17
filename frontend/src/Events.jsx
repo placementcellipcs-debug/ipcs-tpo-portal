@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
   Plus, CaretLeft, CaretRight, X, CircleNotch, MapPin, 
-  Clock, Buildings, CalendarStar, UserCheck, CaretDown
+  Clock, Buildings, CalendarBlank, UserCheck, CaretDown, Image
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 
@@ -10,12 +10,9 @@ import { API_BASE } from './apiConfig';
 
 const parseDate = (dateStr) => {
   if (!dateStr) return null;
-  
-  // Let standard JS handle Google Sheets 'M/D/YYYY' format perfectly!
   const standardDate = new Date(dateStr);
   if (!isNaN(standardDate)) return standardDate;
 
-  // Fallback for tricky string formats if standard parsing fails
   let cleanStr = typeof dateStr === 'string' ? dateStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dateStr;
   if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
     const parts = cleanStr.split(/[/-]/);
@@ -35,18 +32,11 @@ export default function Events() {
   const [loading, setLoading] = useState(true);
   
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(new Date()); // Tracks sidebar agenda
+  const [selectedDate, setSelectedDate] = useState(new Date()); 
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [viewEventModal, setViewEventModal] = useState(null); // 🚨 NEW: Tracks the clicked event
+  const [viewEventModal, setViewEventModal] = useState(null); 
   const [isSaving, setIsSaving] = useState(false);
-  
-  // 🚨 SMART HELPER: Converts Google Drive Links into previewable images
-  const getDriveImage = (url) => {
-    if (!url || typeof url !== 'string') return null;
-    const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
-    return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : url;
-  };
   
   const [newEvent, setNewEvent] = useState({ 
     date: '', time: '', branch: tpoData?.assignedBranchesArray?.[0] || 'All Branches', 
@@ -119,9 +109,10 @@ export default function Events() {
 
   const getEventColor = (type) => {
     if (!type) return '#38bdf8';
-    if (type.includes('Talentino')) return '#a855f7';
-    if (type.includes('Placement Drive')) return '#ef4444';
-    return '#10b981'; // Green fallback
+    const safeType = String(type).toLowerCase();
+    if (safeType.includes('talentino')) return '#a855f7';
+    if (safeType.includes('placement drive')) return '#ef4444';
+    return '#10b981'; 
   };
 
   const nextPeriod = () => {
@@ -136,9 +127,6 @@ export default function Events() {
     setCurrentDate(d);
   };
 
-  const getMonthName = () => currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
-
-  // 🚨 SMART FILTER: Only show Talentino events for assigned branches
   const isVisibleEvent = (e) => {
     const userBranches = tpoData?.assignedBranchesArray || [];
     const isSuper = tpoData?.accessType === 'superadmin';
@@ -161,19 +149,17 @@ export default function Events() {
     
     const grid = [];
     
-    // Empty prefix cells
     for (let i = 0; i < firstDay; i++) {
       grid.push(<div key={`empty-${i}`} className="neo-cell empty"></div>);
     }
     
-    // Days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       const cellDate = new Date(year, month, day);
       const isToday = day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear();
       const isSelected = selectedDate && cellDate.toDateString() === selectedDate.toDateString();
       
       const dayEvents = events.filter(e => {
-        if (!isVisibleEvent(e)) return false; // Apply branch filter
+        if (!isVisibleEvent(e)) return false; 
         const pd = parseDate(e.date);
         return pd && pd.getFullYear() === cellDate.getFullYear() && pd.getMonth() === cellDate.getMonth() && pd.getDate() === cellDate.getDate();
       });
@@ -183,7 +169,12 @@ export default function Events() {
           <div className={`neo-date-num ${isToday && !isSelected ? 'today' : ''}`}>{day}</div>
           <div className="neo-events">
             {dayEvents.slice(0, 3).map((e, i) => (
-              <div key={i} className="neo-event-indicator">
+              <div 
+                key={i} 
+                className="neo-event-indicator hover-lift" 
+                style={{ cursor: 'pointer' }}
+                onClick={(ev) => { ev.stopPropagation(); setViewEventModal(e); }}
+              >
                 <span className="neo-event-bar" style={{ background: isSelected ? 'rgba(255,255,255,0.8)' : getEventColor(e.type) }}></span>
                 <span className="neo-event-title" style={{ color: isSelected ? '#fff' : '#cbd5e1' }}>{e.title}</span>
               </div>
@@ -201,7 +192,7 @@ export default function Events() {
   };
 
   const selectedDayEvents = selectedDate ? events.filter(e => {
-    if (!isVisibleEvent(e)) return false; // Apply branch filter to sidebar
+    if (!isVisibleEvent(e)) return false; 
     const pd = parseDate(e.date);
     return pd && pd.toDateString() === selectedDate.toDateString();
   }) : [];
@@ -274,7 +265,10 @@ export default function Events() {
 
               <div className="neo-agenda-list">
                 {selectedDayEvents.length === 0 ? (
-                  <div style={{ color: '#64748b', fontSize: '0.9rem', textAlign: 'center', marginTop: '2rem' }}>No events scheduled for this day.</div>
+                  <div style={{ color: '#64748b', fontSize: '0.9rem', textAlign: 'center', marginTop: '2rem' }}>
+                    <CalendarBlank size={32} style={{ opacity: 0.5, marginBottom: '10px' }} /><br/>
+                    No events scheduled for this day.
+                  </div>
                 ) : (
                   selectedDayEvents.map((e, idx) => (
                     <div key={idx} className="neo-agenda-card hover-lift" onClick={() => setViewEventModal(e)} style={{ cursor: 'pointer' }}>
@@ -380,7 +374,7 @@ export default function Events() {
         </div>
       )}
 
-      {/* 🚨 EVENT DETAILS PREVIEW MODAL */}
+      {/* 🚨 SAFE EVENT DETAILS MODAL */}
       {viewEventModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={(e) => { if(e.target === e.currentTarget) setViewEventModal(null); }}>
           <div className="modal-card" style={{ maxWidth: '650px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '24px', padding: '2rem', boxShadow: '0 25px 50px rgba(0,0,0,0.5)', position: 'relative' }}>
@@ -388,10 +382,10 @@ export default function Events() {
             <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '15px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <span style={{ background: 'rgba(255,255,255,0.05)', color: getEventColor(viewEventModal.type), padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', display: 'inline-block', marginBottom: '10px' }}>
-                  {viewEventModal.type}
+                  {String(viewEventModal.type || 'Event')}
                 </span>
-                <h2 style={{ margin: '0 0 5px 0', fontSize: '1.6rem', color: '#fff' }}>{viewEventModal.title}</h2>
-                {viewEventModal.eventId && <div style={{ color: '#38bdf8', fontSize: '0.85rem', fontWeight: 'bold' }}>Event ID: {viewEventModal.eventId}</div>}
+                <h2 style={{ margin: '0 0 5px 0', fontSize: '1.6rem', color: '#fff' }}>{String(viewEventModal.title || 'Untitled Event')}</h2>
+                {viewEventModal.eventId && <div style={{ color: '#38bdf8', fontSize: '0.85rem', fontWeight: 'bold' }}>Event ID: {String(viewEventModal.eventId)}</div>}
               </div>
               <button style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', padding: '8px', borderRadius: '50%', cursor: 'pointer', display: 'flex', transition: '0.2s' }} onClick={() => setViewEventModal(null)} title="Close">
                 <X size={20} weight="bold"/>
@@ -402,15 +396,15 @@ export default function Events() {
               <div style={{ background: '#1e293b', padding: '15px', borderRadius: '12px' }}>
                 <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '5px' }}>Date & Time</div>
                 <div style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Clock size={16} color="#38bdf8" /> {viewEventModal.date} • {viewEventModal.time || 'TBD'}
+                  <Clock size={16} color="#38bdf8" /> {String(viewEventModal.date || 'TBD')} • {String(viewEventModal.time || 'TBD')}
                 </div>
               </div>
               <div style={{ background: '#1e293b', padding: '15px', borderRadius: '12px' }}>
                 <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '5px' }}>Location & Branch</div>
                 <div style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <MapPin size={16} color="#f59e0b" /> {viewEventModal.location || 'Online'}
+                  <MapPin size={16} color="#f59e0b" /> {String(viewEventModal.location || 'Online')}
                 </div>
-                <div style={{ color: '#cbd5e1', fontSize: '0.85rem', marginTop: '4px' }}>Branch: {viewEventModal.branch || 'Global'}</div>
+                <div style={{ color: '#cbd5e1', fontSize: '0.85rem', marginTop: '4px' }}>Branch: {String(viewEventModal.branch || 'Global')}</div>
               </div>
             </div>
 
@@ -418,7 +412,7 @@ export default function Events() {
               <div style={{ background: 'rgba(255,255,255,0.02)', padding: '20px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '20px' }}>
                 <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '8px' }}>Description</div>
                 <div style={{ color: '#e2e8f0', fontSize: '0.95rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
-                  {viewEventModal.description}
+                  {String(viewEventModal.description)}
                 </div>
               </div>
             )}
@@ -436,7 +430,7 @@ export default function Events() {
         </div>
       )}
 
-      {/* 🎨 NEO CALENDAR STYLES (MOCKUP ACCURATE) */}
+      {/* 🎨 NEO CALENDAR STYLES */}
       <style>{`
         /* Global Reset For This Page */
         .hover-lift:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.1); background: #1e293b; }
