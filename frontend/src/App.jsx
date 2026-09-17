@@ -24,13 +24,14 @@ import Branches from './Branches';
 import TrainerLog from './TrainerLog';
 import SecurityActivity from './SecurityActivity';
 
-// 🚨 ASSET MANAGEMENT (IMPORTED EXACTLY ONCE)
+// 🚨 ASSET MANAGEMENT (NOW FULLY IMPORTED TO PREVENT CRASHES)
 import AssetList from './AssetList';
 import AddAsset from './AddAsset';
 import Inventory from './Inventory';
 import AssetTransfers from './AssetTransfers';
 import AssetMaintenance from './AssetMaintenance';
 import AssetDashboard from './AssetDashboard';
+import AssetSettings from './AssetSettings'; // 🚨 THIS WAS THE MISSING IMPORT!
 
 function App() {
   return (
