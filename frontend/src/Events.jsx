@@ -424,18 +424,10 @@ export default function Events() {
             )}
 
             {viewEventModal.poster && viewEventModal.poster !== 'N/A' && (
-              <div>
-                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '10px' }}>Event Poster</div>
-                <div style={{ width: '100%', borderRadius: '12px', overflow: 'hidden', border: '1px solid #1e293b', background: '#0b1121', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
-                  <img 
-                    src={getDriveImage(viewEventModal.poster) || viewEventModal.poster} 
-                    alt="Event Poster" 
-                    style={{ maxWidth: '100%', maxHeight: '350px', objectFit: 'contain' }}
-                    onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.innerHTML = '<div style="padding: 30px; color: #64748b;">Poster Preview Unavailable. Use link below.</div>'; }}
-                  />
-                </div>
-                <button className="btn-secondary" style={{ background: 'transparent', border: '1px solid #334155', color: '#f8fafc', marginTop: '10px', width: '100%', padding: '12px', borderRadius: '10px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontWeight: 'bold' }} onClick={() => window.open(viewEventModal.poster, '_blank')}>
-                  <Image size={18} weight="fill" /> Open Full Poster Link
+              <div style={{ marginTop: '20px' }}>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '10px' }}>Event Poster Attached</div>
+                <button className="btn-secondary hover-lift" style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#38bdf8', width: '100%', padding: '15px', borderRadius: '12px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '1rem', transition: '0.2s' }} onClick={() => window.open(viewEventModal.poster, '_blank')}>
+                  <Image size={22} weight="fill" /> View Full Event Poster
                 </button>
               </div>
             )}
