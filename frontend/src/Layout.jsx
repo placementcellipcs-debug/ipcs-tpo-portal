@@ -6,7 +6,7 @@ import {
   Bell, X, SquaresFour, Trophy, ListChecks, ShieldCheck,
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
   Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin,
-  WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench, Plus
+  WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench, Plus, DesktopTower
 } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
 
@@ -55,8 +55,11 @@ export default function Layout({ children }) {
 
   // 🚨 SECURITY & SESSION MANAGEMENT
   useEffect(() => {
+    // 🚨 BUG FIX: Safe routing for logged out users (Allows Login Page to Render)
     if (!tpoData) {
-      navigate('/');
+      if (location.pathname !== '/') {
+        navigate('/');
+      }
       return;
     }
 
@@ -177,13 +180,14 @@ export default function Layout({ children }) {
     } catch(e) { console.error("Error parsing notifications"); }
   }, [tpoData]);
 
-  if (!tpoData) return null;
+  // 🚨 CRASH PREVENTION: If user is logged out, render ONLY the children (the Login Screen)
+  if (!tpoData) {
+    return <>{children}</>;
+  }
 
-  // 🚨 ROLE COMPUTATIONS
+  // 🚨 ROLE COMPUTATIONS (Safe because tpoData is guaranteed to exist here)
   const userRole = (tpoData.role || '').toUpperCase();
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
-  
-  // 🚨 BAM SILO FLAG
   const isBamOnly = userRole === 'BRANCH ASSET MANAGER' && !isSuperAdmin;
   
   const isTpo = userRole.includes('TPO');
@@ -299,7 +303,7 @@ export default function Layout({ children }) {
             style={{ padding: '20px 30px', position: 'relative' }} 
             onClick={() => setIsNotifOpen(false)}
           >
-            {/* 🚨 DYNAMIC BACK BUTTON FOR BAM vs TPO */}
+            {/* DYNAMIC BACK BUTTON FOR BAM vs TPO */}
             {location.pathname !== '/dashboard' && location.pathname !== '/assets/dashboard' && (
               <div style={{ marginBottom: '25px' }}>
                 <button onClick={() => navigate(isBamOnly ? '/assets/dashboard' : '/dashboard')} style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-muted)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 'bold', transition: '0.2s' }}>
@@ -386,6 +390,11 @@ export default function Layout({ children }) {
                 <div className="drawer-item" onClick={() => handleNav('/assets/inventory')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Package size={22} color={isActive('/assets/inventory') === '#38bdf8' ? '#38bdf8' : '#94a3b8'} /> <span style={{ color: isActive('/assets/inventory') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Consumables</span></div><span style={{ color: '#64748b' }}>›</span></div>
                 <div className="drawer-item" onClick={() => handleNav('/assets/transfers')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ArrowsLeftRight size={22} color={isActive('/assets/transfers') === '#38bdf8' ? '#38bdf8' : '#94a3b8'} /> <span style={{ color: isActive('/assets/transfers') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Transfers</span></div><span style={{ color: '#64748b' }}>›</span></div>
                 <div className="drawer-item" onClick={() => handleNav('/assets/maintenance')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Wrench size={22} color={isActive('/assets/maintenance') === '#38bdf8' ? '#38bdf8' : '#94a3b8'} /> <span style={{ color: isActive('/assets/maintenance') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Maintenance</span></div><span style={{ color: '#64748b' }}>›</span></div>
+                
+                {/* 🚨 ERP SETTINGS (ADMIN ONLY) */}
+                {isSuperAdmin && (
+                  <div className="drawer-item" onClick={() => handleNav('/assets/settings')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><DesktopTower size={22} color={isActive('/assets/settings') === '#38bdf8' ? '#38bdf8' : '#94a3b8'} /> <span style={{ color: isActive('/assets/settings') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Asset Config</span></div><span style={{ color: '#64748b' }}>›</span></div>
+                )}
               </div>
             )}
 
