@@ -970,15 +970,35 @@ exports.getVacancies = (req, res) => {
 };
 
 exports.getIssues = (req, res) => {
-  const { assignedBranchesArray, role, assignedCourse } = req.body;
-  let issuesList = getCache().issues.filter(row => {
-    const rowBranch = getValByHeader(row, ['branch']);
-    const studentName = getValByHeader(row, ['name']) || '';
-    const studentData = getCache().students.find(s => (getValByHeader(s, ['name']) || '').toLowerCase().trim() === studentName.toLowerCase().trim());
-    const sCourse = studentData ? getValByHeader(studentData, ['course']) : 'Unknown';
-    return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
-  }).map(row => ({ rowNumber: row.rowNumber, name: getValByHeader(row, ['name']) || 'Student', branch: getValByHeader(row, ['branch']), details: getValByHeader(row, ['issuedetails']) || '', status: getValByHeader(row, ['status']) || 'Pending', remarks: getValByHeader(row, ['remarks']) || '' }));
-  res.json({ success: true, issues: issuesList.reverse() });
+  try {
+    const { assignedBranchesArray, role, assignedCourse } = req.body;
+    const cache = getCache();
+    
+    // 🚨 PREVENTS CRASH IF SHEET IS EMPTY OR MISSING
+    if (!cache || !cache.issues) {
+      return res.json({ success: true, issues: [] });
+    }
+
+    let issuesList = cache.issues.filter(row => {
+      const rowBranch = getValByHeader(row, ['branch']);
+      const studentName = getValByHeader(row, ['name']) || '';
+      const studentData = (cache.students || []).find(s => (getValByHeader(s, ['name']) || '').toLowerCase().trim() === studentName.toLowerCase().trim());
+      const sCourse = studentData ? getValByHeader(studentData, ['course']) : 'Unknown';
+      return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
+    }).map(row => ({ 
+      rowNumber: row.rowNumber, 
+      name: getValByHeader(row, ['name']) || 'Student', 
+      branch: getValByHeader(row, ['branch']), 
+      details: getValByHeader(row, ['issuedetails']) || '', 
+      status: getValByHeader(row, ['status']) || 'Pending', 
+      remarks: getValByHeader(row, ['remarks']) || '' 
+    }));
+    
+    res.json({ success: true, issues: issuesList.reverse() });
+  } catch (err) {
+    console.error("Get Issues Error:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
 exports.updateIssue = async (req, res) => {

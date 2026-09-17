@@ -7,6 +7,7 @@ import PlacedStudents from './PlacedStudents';
 import StudentApps from './StudentApps';
 import Vacancies from './Vacancies';
 import Events from './Events';
+import Issues from './Issues'; // 🚨 IMPORTED THE ISSUES COMPONENT
 import Reports from './Reports';
 import Talentino from './Talentino';
 import Settings from './Settings';
@@ -24,7 +25,7 @@ import Branches from './Branches';
 import TrainerLog from './TrainerLog';
 import SecurityActivity from './SecurityActivity';
 
-// 🚨 ASSET MANAGEMENT (FULLY IMPORTED TO PREVENT THE BLACK SCREEN CRASH)
+// ASSET MANAGEMENT (ERP)
 import AssetList from './AssetList';
 import AddAsset from './AddAsset';
 import Inventory from './Inventory';
@@ -45,6 +46,7 @@ function App() {
         <Route path="/applications" element={<StudentApps />} />
         <Route path="/vacancies" element={<Vacancies />} />
         <Route path="/events" element={<Events />} />
+        <Route path="/issues" element={<Issues />} /> {/* 🚨 ADDED THE ROUTE HERE */}
         <Route path="/reports" element={<Reports />} />
         <Route path="/talentino" element={<Talentino />} />
         <Route path="/settings" element={<Settings />} />
