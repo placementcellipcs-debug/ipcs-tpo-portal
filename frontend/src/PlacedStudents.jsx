@@ -93,21 +93,42 @@ export default function PlacedStudents() {
       if (repRes.data.success) {
         let logs = repRes.data.tpoLogs || [];
 
+        // 🚨 SMART EXTRACTOR: Ignores spaces and cases in Google Sheet Headers
+        const getVal = (row, searchStrs) => {
+          const keys = Object.keys(row);
+          for (let s of searchStrs) {
+            const clean = s.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const found = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === clean);
+            if (found && row[found] && row[found] !== 'N/A') return row[found];
+          }
+          return '';
+        };
+
         const isSuperUser = localTpo.accessType === 'superadmin' || localTpo.assignedBranchesArray.includes('all');
         if (!isSuperUser) {
           logs = logs.filter(log => {
-            const b = (log['Branch'] || '').toLowerCase();
+            const b = getVal(log, ['branch']).toLowerCase();
             return localTpo.assignedBranchesArray.some(assigned => b.includes(assigned) || assigned.includes(b));
           });
         }
 
         let mappedLogs = logs.map(row => ({
-          name: row['Student Name'] || '', phone: row['Contact'] || '', email: row['Mail ID'] || '',
-          roll: row['Roll Number'] || '', course: row['Course'] || '', branch: row['Branch'] || '',
-          qual: row['Qualification'] || '', company: row['Company Name'] || '', position: row['Position'] || '',
-          status: row['Status'] || 'Placed', remarks: row['Remarks'] || '', datePlaced: row['DATE PLACED'] || row['TimeStamp'] || '',
-          packageLpa: row['PACKAGE (LPA)'] || '', joiningStatus: row['Joining Status'] || '',
-          offerLetter: row['Offer Letter Status'] || row['Offer Letter'] || '', tpoName: row['Placement Officer'] || ''
+          name: getVal(row, ['studentname', 'name']),
+          phone: getVal(row, ['contact', 'phone']),
+          email: getVal(row, ['mailid', 'email']),
+          roll: getVal(row, ['rollnumber', 'roll', 'ipcsroll']),
+          course: getVal(row, ['course']),
+          branch: getVal(row, ['branch']),
+          qual: getVal(row, ['qualification', 'qual']),
+          company: getVal(row, ['companyname', 'company']),
+          position: getVal(row, ['position', 'role']),
+          status: getVal(row, ['status']) || 'Placed',
+          remarks: getVal(row, ['remarks']),
+          datePlaced: getVal(row, ['dateplaced', 'timestamp', 'date']),
+          packageLpa: getVal(row, ['package', 'package(lpa)']),
+          joiningStatus: getVal(row, ['joiningstatus']),
+          offerLetter: getVal(row, ['offerletterstatus', 'offerletter']),
+          tpoName: getVal(row, ['placementofficer', 'tpo'])
         }));
 
         mappedLogs = mappedLogs.filter(a => {
