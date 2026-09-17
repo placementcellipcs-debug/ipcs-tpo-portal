@@ -3,9 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
   Users, Briefcase, Trophy, CalendarCheck, CircleNotch, 
-  BookOpen, NotePencil, Desktop, FolderOpen, ListChecks, 
-  ChartBar, Clock, Student, ChalkboardTeacher, CheckCircle, MapPinLine, ArrowRight,
-  CaretLeft, CaretRight // 🚨 Added arrows for Calendar Navigation
+  BookOpen, NotePencil, FolderOpen, ListChecks, Buildings,
+  ChartBar, Clock, CheckCircle, ArrowRight, CaretLeft, CaretRight
 } from '@phosphor-icons/react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -24,9 +23,7 @@ export default function Dashboard() {
   try {
     const rawData = localStorage.getItem('tpoData');
     if (rawData) tpoData = JSON.parse(rawData) || {};
-  } catch(e) {
-    console.error("Error reading tpoData");
-  }
+  } catch(e) { console.error("Error reading tpoData"); }
   
   const userRole = String(tpoData?.role || '').toUpperCase();
   const accessType = String(tpoData?.accessType || '').toLowerCase();
@@ -35,27 +32,32 @@ export default function Dashboard() {
   const isTpo = userRole.includes('TPO') || isSuperAdmin; 
   const isTrainer = userRole.includes('TRAINER') || userRole.includes('TTH') || isSuperAdmin;
   
-  const [stats, setStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0 });
+  const [stats, setStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0, totalCompanies: 0 });
   const [events, setEvents] = useState([]);
   const [recentPlacements, setRecentPlacements] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  const [trendData, setTrendData] = useState(Array(12).fill({ m: '', Applications: 0, Offers: 0, Placed: 0 }));
+  // Charting Data
+  const [trendData, setTrendData] = useState(Array(12).fill({ m: '', Applications: 0, Placed: 0 }));
   const [domainData, setDomainData] = useState([]);
-  const [pipeline, setPipeline] = useState({ applied: 0, interview: 0, offers: 0, placed: 0 });
+  const [pipeline, setPipeline] = useState({ applied: 0, interview: 0, placed: 0 });
   const [totalAppsCount, setTotalAppsCount] = useState(0);
-
   const [allPlaced, setAllPlaced] = useState([]);
-  const [trainerLogs, setTrainerLogs] = useState([]);
+  
+  // Dynamic Year Filter
+  const [availableYears, setAvailableYears] = useState([new Date().getFullYear()]);
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  
+  // Raw Data Storage for Re-Filtering
+  const [rawChartData, setRawChartData] = useState({ apps: [], logs: [] });
 
-  // 🚨 CALENDAR STATE
+  const [trainerLogs, setTrainerLogs] = useState([]);
   const [calendarDate, setCalendarDate] = useState(new Date());
 
   const DOMAIN_COLORS = ['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#ec4899', '#0ea5e9'];
 
   const parseDateRobust = (dStr) => {
     if (!dStr) return null;
-    // 🚨 SMART FIX: Also strips commas from the dashboard timeline
     let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0].replace(/st|nd|rd|th|,/g, '') : dStr;
     if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
       const parts = cleanStr.split(/[/-]/);
@@ -79,93 +81,107 @@ export default function Dashboard() {
     return 'Other Domains';
   };
 
-  const processApps = (tpoLogs) => {
-    if (!Array.isArray(tpoLogs)) return;
-    const mappedLogs = tpoLogs.map(row => {
-      const getVal = (s) => {
-        const key = Object.keys(row).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
-        return key ? row[key] : '';
-      };
-      return {
-        name: getVal('studentname') || getVal('name') || 'Unknown',
-        roll: getVal('roll'),
-        company: getVal('company'),
-        course: getVal('course') || 'General',
-        status: getVal('status') || 'Applied',
-        date: getVal('dateplaced') || getVal('timestamp'),
-        packageLpa: getVal('package'),
-        joiningStatus: getVal('joiningstatus')
-      };
-    });
-
-    const deduped = {};
-    mappedLogs.forEach(log => {
-      const key = `${log.roll || log.name}_${log.company}`.toLowerCase();
-      if (!deduped[key] || (log.status.toLowerCase().includes('placed') || log.status.toLowerCase().includes('offer'))) {
-        deduped[key] = log;
-      }
-    });
-    const uniqueApps = Object.values(deduped);
-
-    setTotalAppsCount(uniqueApps.length);
-    const currentYear = new Date().getFullYear();
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  // 🚨 SMART CHART PROCESSOR (Handles True Years, Pure App Counts, Strict Placed Deduplication)
+  const processChartData = (applications, tpoLogs, targetYear) => {
+    const yearsSet = new Set();
+    const currentYear = targetYear || new Date().getFullYear();
     
-    let newTrend = months.map(m => ({ m, Applications: 0, Offers: 0, Placed: 0 }));
-    let domCount = {};
-    let pApp = 0, pInt = 0, pOff = 0, pPl = 0;
-    const placedRecent = [];
-
-    uniqueApps.forEach(app => {
-      const st = String(app.status || '').toLowerCase();
-      const jSt = String(app.joiningStatus || '').toLowerCase();
+    // 1. Process Raw Applications (Data Subsheet -> OpeningApplied)
+    let pApp = 0;
+    const appsByMonth = Array(12).fill(0);
+    
+    applications.forEach(app => {
+      const getVal = (s) => { const k = Object.keys(app).find(key => key.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, ''))); return k ? app[k] : ''; };
       
-      const isPlaced = st.includes('placed') || st.includes('got offer') || st.includes('offer') || jSt.includes('join');
-      const isOffer = st.includes('offer') || isPlaced;
-      const isInterview = st.includes('interview') || st.includes('shortlist');
-      
-      if (isPlaced) placedRecent.push(app);
-
-      if (st.includes('applied') || st.includes('register') || st.includes('pending')) pApp++;
-      if (isInterview) pInt++;
-      if (st.includes('offer')) pOff++;
-      if (isPlaced) pPl++;
-
-      if (isPlaced) {
-        let c = getStandardDomain(app.course);
-        domCount[c] = (domCount[c] || 0) + 1;
+      const d = parseDateRobust(getVal('timestamp') || getVal('date'));
+      if (d) {
+        yearsSet.add(d.getFullYear());
+        if (d.getFullYear() === currentYear) appsByMonth[d.getMonth()]++;
       }
-
-      const d = parseDateRobust(app.date);
-      if (d && d.getFullYear() === currentYear) {
-        const mIdx = d.getMonth();
-        newTrend[mIdx].Applications++;
-        if (isOffer) newTrend[mIdx].Offers++;
-        if (isPlaced) newTrend[mIdx].Placed++;
-      }
+      pApp++;
     });
 
-    const formattedDomains = Object.keys(domCount).map((k) => ({
-      name: k, value: domCount[k]
-    })).sort((a,b) => b.value - a.value).slice(0, 5); 
+    // 2. Process TPO Logs (Interviews & Strict Placed)
+    const dedupedPlaced = {};
+    const dedupedInterviews = {};
+    
+    tpoLogs.forEach(log => {
+      const getVal = (s) => { const key = Object.keys(log).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, ''))); return key ? log[key] : ''; };
+      
+      const st = (getVal('status') || '').toLowerCase();
+      const jSt = (getVal('joiningstatus') || '').toLowerCase();
+      const roll = getVal('roll') || getVal('rollnumber');
+      const company = getVal('company') || getVal('companyname');
+      const key = `${roll}_${company}`;
+
+      const isPlaced = st.includes('placed') || st.includes('got offer') || st.includes('offer') || jSt.includes('join');
+      const isInterview = st.includes('interview') || st.includes('shortlist');
+
+      const d = parseDateRobust(getVal('dateplaced') || getVal('timestamp'));
+      if (d) yearsSet.add(d.getFullYear());
+
+      // Only save the most recent placement record per student per company
+      if (isPlaced && (!dedupedPlaced[key] || parseDateRobust(dedupedPlaced[key].date) < d)) {
+        dedupedPlaced[key] = { name: getVal('studentname'), company, course: getVal('course'), packageLpa: getVal('package'), status: getVal('status'), date: d };
+      }
+      
+      if (isInterview && !dedupedInterviews[key]) dedupedInterviews[key] = true;
+    });
+
+    // 3. Populate Placed Month & Domain Data
+    const placedByMonth = Array(12).fill(0);
+    let pPl = 0;
+    const placedRecent = [];
+    let domCount = {};
+
+    Object.values(dedupedPlaced).forEach(p => {
+      pPl++;
+      let c = getStandardDomain(p.course);
+      domCount[c] = (domCount[c] || 0) + 1;
+      
+      if (p.date && p.date.getFullYear() === currentYear) {
+        placedByMonth[p.date.getMonth()]++;
+      }
+      placedRecent.push(p);
+    });
+
+    // Set States
+    const sortedYears = Array.from(yearsSet).sort((a,b) => b - a);
+    if (sortedYears.length > 0) setAvailableYears(sortedYears);
+
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const newTrend = months.map((m, i) => ({
+      m,
+      Applications: appsByMonth[i],
+      Placed: placedByMonth[i]
+    }));
+
+    const formattedDomains = Object.keys(domCount).map(k => ({ name: k, value: domCount[k] })).sort((a,b) => b.value - a.value).slice(0, 5); 
 
     setTrendData(newTrend);
     setDomainData(formattedDomains);
-    setPipeline({ applied: pApp, interview: pInt, offers: pOff, placed: pPl });
+    setPipeline({ applied: pApp, interview: Object.keys(dedupedInterviews).length, placed: pPl });
+    setTotalAppsCount(pApp);
     
+    // Set 9 Recent Placements
     setAllPlaced(placedRecent);
-    
-    const sortedRecent = placedRecent.sort((a, b) => {
-      return (parseDateRobust(b.date)?.getTime()||0) - (parseDateRobust(a.date)?.getTime()||0);
-    }).slice(0, 5);
+    const sortedRecent = placedRecent.sort((a, b) => (b.date?.getTime()||0) - (a.date?.getTime()||0)).slice(0, 9);
     setRecentPlacements(sortedRecent);
   };
 
+  // Re-run chart processing if year changes
+  useEffect(() => {
+    if (rawChartData.apps.length > 0 || rawChartData.logs.length > 0) {
+      processChartData(rawChartData.apps, rawChartData.logs, selectedYear);
+    }
+  }, [selectedYear]);
+
+  // Rotate placements
   useEffect(() => {
     if (allPlaced.length === 0) return;
     const interval = setInterval(() => {
       const shuffled = [...allPlaced].sort(() => 0.5 - Math.random());
-      setRecentPlacements(shuffled.slice(0, 5));
+      setRecentPlacements(shuffled.slice(0, 9));
     }, 60000); 
     return () => clearInterval(interval);
   }, [allPlaced]);
@@ -176,17 +192,13 @@ export default function Dashboard() {
     const localTpo = JSON.parse(localTpoStr);
 
     const fetchData = async () => {
-      const cachedStats = localStorage.getItem('dash_stats');
-      const cachedLogs = localStorage.getItem('dash_logs');
-      if (cachedStats) setStats(JSON.parse(cachedStats));
-      if (cachedLogs) { processApps(JSON.parse(cachedLogs)); setLoading(false); }
-
       try {
         const reqPayload = { 
           assignedBranchesArray: localTpo.assignedBranchesArray || [], 
           role: localTpo.role || '', 
           assignedCourse: localTpo.assignedCourse || '', 
-          tpoName: localTpo.name || ''
+          tpoName: localTpo.name || '',
+          isDashboard: true 
         };
         
         const [statsRes, reportsRes] = await Promise.all([
@@ -196,14 +208,14 @@ export default function Dashboard() {
         
         if (statsRes.data && statsRes.data.success) {
           setStats(statsRes.data.stats || stats);
-          localStorage.setItem('dash_stats', JSON.stringify(statsRes.data.stats));
           setEvents(statsRes.data.events || []);
         }
 
         if (reportsRes.data && reportsRes.data.success) {
+          const apps = reportsRes.data.applications || [];
           const logs = reportsRes.data.tpoLogs || [];
-          localStorage.setItem('dash_logs', JSON.stringify(logs));
-          processApps(logs);
+          setRawChartData({ apps, logs });
+          processChartData(apps, logs, selectedYear);
         }
 
         if ((localTpo.role || '').toUpperCase().includes('TRAINER') || localTpo.accessType === 'superadmin') {
@@ -246,12 +258,11 @@ export default function Dashboard() {
     );
   };
 
-  // RECHARTS TOOLTIP
   const CustomTooltip = ({ active, payload, label }) => {
     if (active && payload && payload.length) {
       return (
         <div style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #334155', padding: '12px', borderRadius: '8px', color: '#fff', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', zIndex: 1000 }}>
-          {label && <p style={{ margin: '0 0 8px 0', borderBottom: '1px solid #334155', paddingBottom: '6px', fontSize: '0.9rem', fontWeight: 'bold' }}>{label} {new Date().getFullYear()}</p>}
+          {label && <p style={{ margin: '0 0 8px 0', borderBottom: '1px solid #334155', paddingBottom: '6px', fontSize: '0.9rem', fontWeight: 'bold' }}>{label} {selectedYear}</p>}
           {payload.map((entry, index) => (
             <div key={index} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', fontSize: '0.8rem' }}>
               <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: entry.color }}></div>
@@ -265,7 +276,6 @@ export default function Dashboard() {
     return null;
   };
 
-  // 🚨 CALENDAR GENERATION LOGIC
   const prevMonth = () => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1));
   const nextMonth = () => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1));
 
@@ -288,7 +298,7 @@ export default function Dashboard() {
         <div className="dashboard-header">
           <div>
             <h1 className="dash-title">Good Morning, {String(tpoData?.name || 'Officer').split(' ')[0]} 👋</h1>
-            <p className="dash-subtitle">Here's what's happening across your branches today.</p>
+            <p className="dash-subtitle">Here's what's happening across the network today.</p>
           </div>
           <div className="date-badge">
             <Clock size={16} /> {today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
@@ -317,9 +327,11 @@ export default function Dashboard() {
             <div className="kpi-header"><div className="icon-c pink"><CalendarCheck weight="fill" size={20}/></div><div><div className="kpi-title">Upcoming Drives</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : upDrivesCount}</div></div></div>
             <div className="kpi-trend green">↑ Scheduled Events</div>{makeSparkline('#ec4899')}
           </div>
+          
+          {/* 🚨 NEW: TOTAL COMPANIES KPI */}
           <div className="dash-card">
-            <div className="kpi-header"><div className="icon-c teal"><ListChecks weight="fill" size={20}/></div><div><div className="kpi-title">Total Applications</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : totalAppsCount}</div></div></div>
-            <div className="kpi-trend green">↑ Submitted</div>{makeSparkline('#0ea5e9')}
+            <div className="kpi-header"><div className="icon-c teal"><Buildings weight="fill" size={20}/></div><div><div className="kpi-title">Total Companies</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.totalCompanies}</div></div></div>
+            <div className="kpi-trend green">↑ Active Network</div>{makeSparkline('#0ea5e9')}
           </div>
         </div>
 
@@ -328,8 +340,11 @@ export default function Dashboard() {
           
           <div className="dash-card span-2-col" style={{ display: 'flex', flexDirection: 'column' }}>
             <div className="card-top">
-              <h3>Placement Trends ({new Date().getFullYear()})</h3>
-              <select className="mini-select"><option>This Year</option></select>
+              <h3>Placement Trends</h3>
+              {/* 🚨 DYNAMIC YEAR SELECTOR */}
+              <select className="mini-select" value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))}>
+                {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
             </div>
             
             <div style={{ flex: 1, width: '100%', minHeight: '260px' }}>
@@ -337,25 +352,24 @@ export default function Dashboard() {
                 <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
                     <linearGradient id="colorApps" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/><stop offset="95%" stopColor="#a855f7" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="colorOff" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="colorPl" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/><stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="colorPl" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                   <XAxis dataKey="m" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <Tooltip content={<CustomTooltip />} />
                   <Area type="monotone" dataKey="Applications" stroke="#a855f7" strokeWidth={2} fillOpacity={1} fill="url(#colorApps)" activeDot={{ r: 5, fill: '#a855f7', strokeWidth: 0 }} />
-                  <Area type="monotone" dataKey="Offers" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorOff)" activeDot={{ r: 5, fill: '#10b981', strokeWidth: 0 }} />
-                  <Area type="monotone" dataKey="Placed" stroke="#3b82f6" strokeWidth={2} fillOpacity={1} fill="url(#colorPl)" activeDot={{ r: 5, fill: '#3b82f6', strokeWidth: 0 }} />
+                  {/* 🚨 REMOVED OFFERS LINE, ONLY SHOWS PLACED */}
+                  <Area type="monotone" dataKey="Placed" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorPl)" activeDot={{ r: 5, fill: '#10b981', strokeWidth: 0 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
 
-            <div className="pipeline-stats-row">
-              <div><div className="stat-lbl">Applications</div><div className="stat-val">{totalAppsCount}</div></div>
-              <div><div className="stat-lbl">Interviews</div><div className="stat-val">{pipeline.interview}</div></div>
-              <div><div className="stat-lbl">Total Offers</div><div className="stat-val">{pipeline.offers}</div></div>
-              <div><div className="stat-lbl">Total Placed</div><div className="stat-val">{stats.placed}</div></div>
+            {/* 🚨 UPDATED PIPELINE: APPLIED -> INTERVIEW -> PLACED */}
+            <div className="pipeline-stats-row" style={{ gridTemplateColumns: 'repeat(3, 1fr)', display: 'grid', textAlign: 'center' }}>
+              <div><div className="stat-lbl">Total Applications</div><div className="stat-val" style={{ color: '#3b82f6' }}>{pipeline.applied}</div></div>
+              <div style={{ borderLeft: '1px solid #1e293b', borderRight: '1px solid #1e293b' }}><div className="stat-lbl">Interviews Scheduled</div><div className="stat-val" style={{ color: '#f59e0b' }}>{pipeline.interview}</div></div>
+              <div><div className="stat-lbl">Total Placed</div><div className="stat-val" style={{ color: '#10b981' }}>{pipeline.placed}</div></div>
             </div>
           </div>
 
@@ -388,31 +402,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* TRAINER LOGS */}
-        {(isTrainer || isSuperAdmin) && (
-          <div className="dash-card" style={{ marginBottom: '20px' }}>
-            <div className="card-top">
-              <h3>{isSuperAdmin ? "Global Trainer Reports" : "My Daily Reports"}</h3>
-              <button className="text-link" onClick={() => navigate('/trainer-logs')}>View All</button>
-            </div>
-            <div className="table-responsive-wrapper">
-              <table className="mini-table">
-                <thead><tr><th>Date</th><th>Present</th><th>Absent</th><th>Remarks</th></tr></thead>
-                <tbody>
-                  {trainerLogs.length > 0 ? trainerLogs.map((l, i) => (
-                    <tr key={i}>
-                      <td><span className="primary-text">{String(l.timestamp||'').split(' ')[0]}</span></td>
-                      <td style={{ color: '#10b981', fontWeight: 'bold' }}>{l.present}</td>
-                      <td style={{ color: '#ef4444', fontWeight: 'bold' }}>{l.absentees}</td>
-                      <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.feedbacks || '-'}</td>
-                    </tr>
-                  )) : <tr><td colSpan="4" style={{textAlign:'center', padding:'20px'}}>No logs submitted yet.</td></tr>}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
         {/* RECENT PLACEMENTS & CALENDAR EVENTS GRID */}
         <div className="grid-3-col">
           
@@ -430,6 +419,7 @@ export default function Dashboard() {
                   <tr><th>Student</th><th>Company</th><th>Role</th><th style={{textAlign:'right'}}>Package</th><th style={{textAlign:'right'}}>Status</th></tr>
                 </thead>
                 <tbody>
+                  {/* 🚨 NOW RENDER 9 ROWS */}
                   {recentPlacements.length > 0 ? recentPlacements.map((p, i) => (
                     <tr key={i} style={{ animation: 'fadeInReveal 0.5s ease' }}>
                       <td><div style={{display:'flex', alignItems:'center', gap:'8px'}}><div className="tiny-avatar">{String(p.name||'U').charAt(0).toUpperCase()}</div> <span style={{color:'#fff'}}>{p.name}</span></div></td>
@@ -446,13 +436,11 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* 🚨 NEW: CALENDAR & EVENT SCHEDULE MODULE */}
           <div className="dash-card dark-task-list" style={{ padding: '20px' }}>
             <div className="dark-task-header">
               <h3>Event Calendar</h3>
             </div>
             
-            {/* Visual Calendar Widget */}
             <div className="calendar-widget">
               <div className="cal-header">
                 <button onClick={prevMonth}><CaretLeft size={16} weight="bold"/></button>
@@ -514,6 +502,7 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {/* 🚨 PIPELINE: APPLIED -> INTERVIEW -> PLACED */}
           <div className="dash-card">
             <div className="card-top">
               <h3>Live Application Pipeline</h3>
@@ -521,11 +510,9 @@ export default function Dashboard() {
             </div>
             
             <div className="pipeline-visual">
-              <div><div className="pl-dot orange">● Applied</div><div className="pl-val">{pipeline.applied}</div></div>
+              <div><div className="pl-dot blue">● Applied</div><div className="pl-val">{pipeline.applied}</div></div>
               <div className="pl-arrow">→</div>
-              <div><div className="pl-dot blue">● Interview</div><div className="pl-val">{pipeline.interview}</div></div>
-              <div className="pl-arrow">→</div>
-              <div><div className="pl-dot purple">● Offers</div><div className="pl-val">{pipeline.offers}</div></div>
+              <div><div className="pl-dot orange">● Interview</div><div className="pl-val">{pipeline.interview}</div></div>
               <div className="pl-arrow">→</div>
               <div><div className="pl-dot green">● Placed</div><div className="pl-val">{pipeline.placed}</div></div>
             </div>
@@ -536,12 +523,8 @@ export default function Dashboard() {
                 <strong className="conv-val blue">{pipeline.applied ? ((pipeline.interview/pipeline.applied)*100).toFixed(1) : 0}%</strong>
               </div>
               <div className="conv-box">
-                <span className="conv-lbl">Interview ➔ Offer</span> 
-                <strong className="conv-val purple">{pipeline.interview ? ((pipeline.offers/pipeline.interview)*100).toFixed(1) : 0}%</strong>
-              </div>
-              <div className="conv-box">
-                <span className="conv-lbl">Offer ➔ Joined</span> 
-                <strong className="conv-val green">{pipeline.offers ? ((pipeline.placed/pipeline.offers)*100).toFixed(1) : 0}%</strong>
+                <span className="conv-lbl">Interview ➔ Placed</span> 
+                <strong className="conv-val green">{pipeline.interview ? ((pipeline.placed/pipeline.interview)*100).toFixed(1) : 0}%</strong>
               </div>
             </div>
           </div>
@@ -580,9 +563,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* ---------------------------------------------------------
-            🎨 PREMIUM RESPONSIVE CSS INJECTED GLOBALLY
-        --------------------------------------------------------- */}
         <style>{`
           .db-wrapper { font-family: 'Inter', sans-serif; }
           .dash-card { background: #111827; border: 1px solid #1e293b; border-radius: 12px; padding: 20px; display: flex; flex-direction: column; }
@@ -619,9 +599,9 @@ export default function Dashboard() {
           .mini-select { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; border-radius: 6px; padding: 4px 8px; font-size: 0.75rem; outline: none; }
           
           /* Area Chart Stats Row */
-          .pipeline-stats-row { display: flex; justify-content: space-between; border-top: 1px solid #1e293b; padding-top: 15px; margin-top: 15px; flex-wrap: wrap; gap: 15px; }
-          .stat-lbl { font-size: 0.7rem; color: #64748b; margin-bottom: 4px; }
-          .stat-val { font-size: 1.1rem; font-weight: bold; color: #fff; }
+          .pipeline-stats-row { padding-top: 15px; margin-top: 15px; gap: 15px; }
+          .stat-lbl { font-size: 0.75rem; color: #64748b; margin-bottom: 4px; text-transform: uppercase; font-weight: bold;}
+          .stat-val { font-size: 1.4rem; font-weight: bold; }
 
           /* Donut Chart Center Text */
           .donut-center { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center; pointer-events: none; }
@@ -636,26 +616,26 @@ export default function Dashboard() {
           
           .tiny-avatar { width: 24px; height: 24px; border-radius: 50%; background: #3b82f6; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; flex-shrink: 0; }
           .status-badge.green { background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 4px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: bold; }
-          .text-link { background: transparent; border: none; color: #3b82f6; font-size: 0.8rem; cursor: pointer; font-weight: bold; }
+          .text-link { background: transparent; border: none; color: #8b5cf6; font-size: 0.8rem; cursor: pointer; font-weight: bold; }
           .text-link:hover { text-decoration: underline; }
 
           /* Quick Access Boxes */
           .qa-box { display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; font-size: 0.7rem; color: #cbd5e1; font-weight: bold; }
           .qa-icon { width: 36px; height: 36px; border-radius: 10px; border: 1px solid #1e293b; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; transition: 0.2s; }
-          .qa-box:hover .qa-icon { border-color: #3b82f6; transform: translateY(-2px); }
+          .qa-box:hover .qa-icon { border-color: #8b5cf6; transform: translateY(-2px); }
           .qa-icon.blue { color: #3b82f6; } .qa-icon.green { color: #10b981; } .qa-icon.orange { color: #f59e0b; } .qa-icon.pink { color: #ec4899; } .qa-icon.teal { color: #0ea5e9; } .qa-icon.purple { color: #a855f7; } .qa-icon.yellow { color: #eab308; }
 
           /* Live Pipeline Section */
-          .pipeline-visual { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; text-align: center; flex-wrap: wrap; gap: 10px; }
-          .pl-dot { font-size: 0.7rem; margin-bottom: 5px; }
+          .pipeline-visual { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; text-align: center; flex-wrap: wrap; gap: 10px; padding: 10px 20px;}
+          .pl-dot { font-size: 0.7rem; margin-bottom: 5px; font-weight: bold; text-transform: uppercase; }
           .pl-dot.orange { color: #f59e0b; } .pl-dot.blue { color: #3b82f6; } .pl-dot.purple { color: #a855f7; } .pl-dot.green { color: #10b981; }
-          .pl-val { font-size: 1.4rem; font-weight: bold; color: #fff; }
-          .pl-arrow { color: #334155; display: flex; align-items: center; }
+          .pl-val { font-size: 1.8rem; font-weight: bold; color: #fff; }
+          .pl-arrow { color: #334155; display: flex; align-items: center; font-size: 1.5rem; }
           
           .pipeline-conversion { margin-top: 25px; padding: 15px; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px dashed #1e293b; display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 10px; }
-          .conv-box { background: #0f1523; padding: 10px; border-radius: 8px; border: 1px solid #1e293b; }
-          .conv-lbl { color: #94a3b8; display: block; margin-bottom: 4px; font-size: 0.75rem; }
-          .conv-val { font-size: 1rem; } .conv-val.blue { color: #3b82f6; } .conv-val.purple { color: #a855f7; } .conv-val.green { color: #10b981; }
+          .conv-box { background: #0f1523; padding: 10px; border-radius: 8px; border: 1px solid #1e293b; text-align: center;}
+          .conv-lbl { color: #94a3b8; display: block; margin-bottom: 4px; font-size: 0.75rem; text-transform: uppercase; font-weight: bold;}
+          .conv-val { font-size: 1.1rem; } .conv-val.blue { color: #3b82f6; } .conv-val.purple { color: #a855f7; } .conv-val.green { color: #10b981; }
 
           /* Module Cards */
           .module-card { background: rgba(255,255,255,0.02); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; display: flex; flex-direction: column; cursor: pointer; transition: 0.2s; }
@@ -672,13 +652,12 @@ export default function Dashboard() {
           .module-card.teal { background: rgba(14, 165, 233, 0.05); border-color: rgba(14, 165, 233, 0.2); } .module-card.teal .link { color: #0ea5e9; }
           .module-card.orange { background: rgba(249, 115, 22, 0.05); border-color: rgba(249, 115, 22, 0.2); } .module-card.orange .link { color: #f97316; }
 
-          /* 🚨 NEW: CALENDAR & UPCOMING SCHEDULE */
+          /* Calendar & Schedule */
           .dark-task-list { background: #1a1a1a; border: none; box-shadow: inset 0 2px 10px rgba(0,0,0,0.5); }
           .dark-task-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #333; }
           .dark-task-header h3 { margin: 0; font-size: 1rem; color: #fff; }
           .task-count { font-size: 1.2rem; color: #fff; font-weight: bold; }
           
-          /* Calendar Styles */
           .calendar-widget { background: #0f1523; border-radius: 12px; padding: 15px; border: 1px solid #1e293b; }
           .cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; color: #fff; font-weight: bold; font-size: 0.9rem; }
           .cal-header button { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #94a3b8; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 6px; }
@@ -688,7 +667,7 @@ export default function Dashboard() {
           .cal-day { position: relative; font-size: 0.85rem; color: #cbd5e1; padding: 8px 0; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-direction: column; transition: 0.2s; }
           .cal-day.blank { background: transparent; }
           .cal-day:not(.blank):hover { background: rgba(255,255,255,0.05); cursor: pointer; color: #fff; }
-          .cal-day.today { background: rgba(56, 189, 248, 0.15); color: #8b5cf6; font-weight: bold; border: 1px solid rgba(56, 189, 248, 0.3); }
+          .cal-day.today { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; font-weight: bold; border: 1px solid rgba(139, 92, 246, 0.3); }
           .cal-day.has-event { color: #fff; font-weight: bold; }
           .event-dot { width: 4px; height: 4px; background: #f59e0b; border-radius: 50%; margin-top: 2px; }
 
@@ -698,14 +677,10 @@ export default function Dashboard() {
           .dt-info { flex: 1; min-width: 0; }
           .dt-info h4 { margin: 0 0 4px 0; font-size: 0.85rem; color: #e2e8f0; font-weight: 600; white-space: normal; line-height: 1.3; }
           .dt-info p { margin: 0; font-size: 0.7rem; color: #64748b; display: flex; align-items: center; gap: 4px; }
-          .dt-check { color: #f59e0b; flex-shrink: 0; }
+          .dt-check { color: #10b981; flex-shrink: 0; }
           .empty-tasks { color: #64748b; font-size: 0.85rem; font-style: italic; }
 
-          /* ==============================================
-             📱 RESPONSIVE BREAKPOINTS (FLUID CALIBRATION)
-          ============================================== */
-          
-          /* 💻 TABLET / SMALL LAPTOP */
+          /* RESPONSIVE */
           @media (max-width: 1100px) {
             .grid-3-col { grid-template-columns: 1fr 1fr; }
             .span-2-col { grid-column: span 2; }
@@ -713,36 +688,19 @@ export default function Dashboard() {
             .qa-grid { grid-template-columns: repeat(4, 1fr); }
           }
           
-          /* 📱 MOBILE */
           @media (max-width: 768px) {
             .dashboard-header { flex-direction: column; align-items: flex-start; gap: 10px; }
             .dash-title { font-size: 1.5rem; }
-            
             .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
             .kpi-header { gap: 10px; }
             .icon-c { width: 35px; height: 35px; }
             .kpi-val { font-size: 1.2rem; }
-            
             .grid-3-col, .grid-2-col { grid-template-columns: 1fr; gap: 15px; }
             .span-2-col { grid-column: span 1; }
-            
             .qa-grid { grid-template-columns: repeat(2, 1fr); }
             .pipeline-visual { flex-direction: column; gap: 15px; align-items: flex-start; }
             .pl-arrow { display: none; }
-            
             .modules-grid { grid-template-columns: 1fr; gap: 10px; }
-          }
-          
-          /* 📱 TINY MOBILE */
-          @media (max-width: 480px) {
-            .kpi-grid { grid-template-columns: 1fr; }
-          }
-
-          /* 📺 4K TV / LARGE DISPLAYS */
-          @media (min-width: 1800px) {
-            .kpi-grid { grid-template-columns: repeat(6, 1fr); }
-            .qa-grid { grid-template-columns: repeat(8, 1fr); }
-            .modules-grid { grid-template-columns: repeat(4, 1fr); }
           }
         `}</style>
       </div>

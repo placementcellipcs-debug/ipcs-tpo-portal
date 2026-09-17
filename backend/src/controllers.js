@@ -535,29 +535,49 @@ exports.login = async (req, res) => {
 
 exports.getDashboardStats = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
+  
+  // 🚨 DASHBOARD VIEW RULE: If not a TPO, view ALL data globally.
+  const isTpo = (role || '').toUpperCase() === 'TPO' || (role || '').toUpperCase() === 'PLACEMENT OFFICER';
+  const bypassFilter = !isTpo;
+  const checkAccess = (rBranch, rCourse) => bypassFilter || hasAccess(rBranch, rCourse, role, assignedBranchesArray, assignedCourse);
+
   const cache = getCache();
   let studentCount = 0, pendingApps = 0, placedCount = 0, activeVacs = 0;
+  const uniqueCompanies = new Set();
 
   cache.students.forEach(row => { 
     const branch = getValByHeader(row, ['branch']);
     const course = getValByHeader(row, ['course']);
-    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse)) studentCount++; 
+    if (checkAccess(branch, course)) studentCount++; 
   });
   
   const logsSource = cache.tpoLogs || [];
   const dedupedLogs = {};
+  
   logsSource.forEach(row => {
     const roll = getValByHeader(row, ['roll', 'rollnumber']);
     const name = getValByHeader(row, ['name', 'studentname']);
     const company = getValByHeader(row, ['company', 'companyname']);
     const key = `${roll || name}_${company}`.toLowerCase();
-    dedupedLogs[key] = row;
+    
+    // Strict Deduplication to prevent double counting
+    if (!dedupedLogs[key]) {
+      dedupedLogs[key] = row;
+    } else {
+      const existingStatus = getValByHeader(dedupedLogs[key], ['status']).toLowerCase();
+      const newStatus = getValByHeader(row, ['status']).toLowerCase();
+      // Prioritize placed/offer status over applied/interview
+      if (newStatus.includes('placed') || newStatus.includes('offer')) {
+        dedupedLogs[key] = row;
+      }
+    }
   });
 
   Object.values(dedupedLogs).forEach(row => {
     const branch = getValByHeader(row, ['branch']);
     const course = getValByHeader(row, ['course']);
-    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse)) {
+    
+    if (checkAccess(branch, course)) {
       const stat = getValByHeader(row, ['status']).toLowerCase();
       const joinStat = getValByHeader(row, ['joiningstatus']).toLowerCase();
       const placeStat = getValByHeader(row, ['placementstatus']).toLowerCase();
@@ -573,6 +593,10 @@ exports.getDashboardStats = (req, res) => {
   todayStart.setHours(0,0,0,0);
 
   cache.vacancies.forEach(row => {
+    // Collect Unique Companies
+    const compName = getValByHeader(row, ['companyname', 'company']);
+    if (compName && compName.trim() !== '') uniqueCompanies.add(compName.toLowerCase().trim());
+
     const status = getValByHeader(row, ['status']).toLowerCase() || 'open';
     const lastDateStr = getValByHeader(row, ['lastdate']);
     let isExpired = false;
@@ -589,7 +613,17 @@ exports.getDashboardStats = (req, res) => {
 
   let eventsList = cache.events.slice(-8).map(row => ({ title: getValByHeader(row, ['title']) || 'Event', date: getValByHeader(row, ['date']) || '', time: getValByHeader(row, ['time']) || '', type: getValByHeader(row, ['type', 'event']) || 'Placement Drive', location: getValByHeader(row, ['location', 'eventhappeningin']) || '' }));
   
-  res.json({ success: true, stats: { totalStudents: studentCount, pendingApps, placed: placedCount, activeVacancies: activeVacs }, events: eventsList.reverse() });
+  res.json({ 
+    success: true, 
+    stats: { 
+      totalStudents: studentCount, 
+      pendingApps, 
+      placed: placedCount, 
+      activeVacancies: activeVacs,
+      totalCompanies: uniqueCompanies.size // 🚨 NEW: Unique Companies Count
+    }, 
+    events: eventsList.reverse() 
+  });
 };
 
 exports.getStudents = (req, res) => {
@@ -1012,33 +1046,46 @@ exports.updateIssue = async (req, res) => {
 };
 
 exports.getReports = (req, res) => {
-  const { assignedBranchesArray, role, assignedCourse } = req.body;
-  let students = [], applications = [], issues = [], talentino = [], tpoLogs = [];
+  const { assignedBranchesArray, role, assignedCourse, isDashboard } = req.body;
   
-  getCache().students.forEach(row => {
-    if(!hasAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']), role, assignedBranchesArray, assignedCourse)) return;
+  // 🚨 DASHBOARD VIEW RULE: If not a TPO, bypass the filter for global dashboard stats.
+  const isTpo = (role || '').toUpperCase() === 'TPO' || (role || '').toUpperCase() === 'PLACEMENT OFFICER';
+  const bypassFilter = isDashboard && !isTpo; 
+  const checkAccess = (rBranch, rCourse) => bypassFilter || hasAccess(rBranch, rCourse, role, assignedBranchesArray, assignedCourse);
+
+  let students = [], applications = [], issues = [], talentino = [], tpoLogs = [];
+  const cache = getCache();
+  
+  cache.students.forEach(row => {
+    if(!checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) return;
     students.push({ name: getValByHeader(row, ['name']), roll: getValByHeader(row, ['rollnumber', 'roll']), branch: getValByHeader(row, ['branch']), course: getValByHeader(row, ['course']), status: getValByHeader(row, ['status']), placementStatus: getValByHeader(row, ['placementstat', 'placementstatus']) });
   });
   
-  getCache().applications.forEach(row => {
-    if(!hasAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']), role, assignedBranchesArray, assignedCourse)) return;
+  cache.applications.forEach(row => {
+    if(!checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) return;
     applications.push({ name: getValByHeader(row, ['studentname', 'name']), roll: getValByHeader(row, ['rollnumber', 'roll']), jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']), date: getValByHeader(row, ['timestamp']), status: getValByHeader(row, ['status']), remarks: getValByHeader(row, ['remarks']), tpoName: getValByHeader(row, ['placementofficer']), branch: getValByHeader(row, ['branch']), course: getValByHeader(row, ['course']) });
   });
   
-  getCache().issues.forEach(row => { 
-    if (hasAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']), role, assignedBranchesArray, assignedCourse)) issues.push({ name: getValByHeader(row, ['name']), branch: getValByHeader(row, ['branch']), details: getValByHeader(row, ['issuedetails']), status: getValByHeader(row, ['status']), remarks: getValByHeader(row, ['remarks']) }); 
+  cache.issues.forEach(row => { 
+    if (checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) issues.push({ name: getValByHeader(row, ['name']), branch: getValByHeader(row, ['branch']), details: getValByHeader(row, ['issuedetails']), status: getValByHeader(row, ['status']), remarks: getValByHeader(row, ['remarks']) }); 
   });
   
-  getCache().tAtt.forEach(row => { 
-    if (hasAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']), role, assignedBranchesArray, assignedCourse)) talentino.push({ name: getValByHeader(row, ['name']), branch: getValByHeader(row, ['branch']), date: getValByHeader(row, ['check-in', 'date']), rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes']) }); 
+  cache.tAtt.forEach(row => { 
+    if (checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) talentino.push({ name: getValByHeader(row, ['name']), branch: getValByHeader(row, ['branch']), date: getValByHeader(row, ['check-in', 'date']), rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes']) }); 
   });
   
-  let vacancies = getCache().vacancies.map(row => ({ id: getValByHeader(row, ['jobid', 'id']) || '', company: getValByHeader(row, ['company']) || '', location: getValByHeader(row, ['location']) || '', mode: getValByHeader(row, ['mode']) || '', status: getValByHeader(row, ['status']) || 'Open', course: getValByHeader(row, ['course']) || '', date: getValByHeader(row, ['lastdate', 'date']) || '' }));
-  let events = getCache().events.map(row => ({ date: getValByHeader(row, ['date']) || '' }));
+  let vacancies = cache.vacancies.map(row => ({ id: getValByHeader(row, ['jobid', 'id']) || '', company: getValByHeader(row, ['company']) || '', location: getValByHeader(row, ['location']) || '', mode: getValByHeader(row, ['mode']) || '', status: getValByHeader(row, ['status']) || 'Open', course: getValByHeader(row, ['course']) || '', date: getValByHeader(row, ['lastdate', 'date']) || '' }));
+  let events = cache.events.map(row => ({ date: getValByHeader(row, ['date']) || '' }));
 
-  if (getCache().tpoLogs) {
-    getCache().tpoLogs.forEach(row => { 
-      try { tpoLogs.push(row.toObject()); } catch(e) {}
+  if (cache.tpoLogs) {
+    cache.tpoLogs.forEach(row => { 
+      try { 
+        const rowData = row.toObject();
+        // Strict mapping to ensure global view processes properly
+        if(checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) {
+          tpoLogs.push(rowData); 
+        }
+      } catch(e) {}
     });
   }
 
