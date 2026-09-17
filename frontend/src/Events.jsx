@@ -152,7 +152,7 @@ export default function Events() {
     for (let day = 1; day <= daysInMonth; day++) {
       const cellDate = new Date(year, month, day);
       const isToday = day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear();
-      const isSelected = cellDate.toDateString() === selectedDate.toDateString();
+      const isSelected = selectedDate && cellDate.toDateString() === selectedDate.toDateString();
       
       const dayEvents = events.filter(e => {
         const pd = parseDate(e.date);
@@ -181,10 +181,10 @@ export default function Events() {
     return grid;
   };
 
-  const selectedDayEvents = events.filter(e => {
+  const selectedDayEvents = selectedDate ? events.filter(e => {
     const pd = parseDate(e.date);
     return pd && pd.toDateString() === selectedDate.toDateString();
-  });
+  }) : [];
 
   return (
     <Layout>
@@ -255,13 +255,19 @@ export default function Events() {
             </div>
 
             {/* RIGHT: AGENDA SIDEBAR (MOCKUP STYLE) */}
-            <div className="neo-agenda-section">
-              <div className="neo-agenda-header">
-                <h3>Scheduled</h3>
-                <div className="neo-agenda-date">
-                  {selectedDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+            {selectedDate && (
+              <div className="neo-agenda-section">
+                <div className="neo-agenda-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <div>
+                    <h3>Scheduled</h3>
+                    <div className="neo-agenda-date">
+                      {selectedDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    </div>
+                  </div>
+                  <button onClick={() => setSelectedDate(null)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', padding: '6px', borderRadius: '50%', cursor: 'pointer', display: 'flex', transition: '0.2s' }} title="Close Agenda">
+                    <X size={18} weight="bold"/>
+                  </button>
                 </div>
-              </div>
 
               <div className="neo-agenda-list">
                 {selectedDayEvents.length === 0 ? (
@@ -295,6 +301,7 @@ export default function Events() {
                 )}
               </div>
             </div>
+            )}
 
           </div>
         )}
@@ -446,11 +453,12 @@ export default function Events() {
 
         /* The Main Wrapper */
         .neo-layout {
-          display: flex;
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) auto; /* Instantly collapses if agenda is closed */
           gap: 30px;
-          align-items: flex-start;
+          align-items: start;
           margin-top: 15px;
-          background: #0b1121; /* Deep mock-up background */
+          background: #0b1121; 
           padding: 25px;
           border-radius: 24px;
           border: 1px solid #1e293b;
@@ -458,7 +466,7 @@ export default function Events() {
 
         /* LEFT SIDE: CALENDAR GRID */
         .neo-calendar-section {
-          flex: 1;
+          width: 100%;
           min-width: 0;
         }
 
@@ -598,12 +606,16 @@ export default function Events() {
 
         /* RIGHT SIDE: AGENDA SIDEBAR */
         .neo-agenda-section {
-          width: 380px;
-          background: transparent;
+          width: 360px;
+          background: rgba(15, 23, 42, 0.5);
+          border: 1px solid #1e293b;
+          border-radius: 20px;
+          padding: 25px;
           display: flex;
           flex-direction: column;
-          max-height: 900px;
+          max-height: 800px;
           flex-shrink: 0;
+          box-sizing: border-box;
         }
 
         .neo-agenda-header {
@@ -634,13 +646,16 @@ export default function Events() {
         .neo-agenda-list::-webkit-scrollbar-thumb { background: #334155; border-radius: 10px; }
 
         .neo-agenda-card {
-          background: #111827; /* Very dark card */
+          width: 100%;
+          box-sizing: border-box;
+          background: #111827; 
           border-radius: 16px;
           padding: 20px;
           display: flex;
           flex-direction: column;
           position: relative;
           border: 1px solid #1e293b;
+          overflow: hidden; /* Stops cards from exploding outward */
         }
 
         .neo-ac-accent {
@@ -664,13 +679,16 @@ export default function Events() {
         .neo-ac-content {
           display: flex;
           flex-direction: column;
+          min-width: 0; /* Critical for Flexbox text wrapping */
         }
 
         .neo-ac-title {
           margin: 0 0 6px 0;
           color: #fff;
-          font-size: 1.15rem;
+          font-size: 1.05rem;
           font-weight: 600;
+          white-space: normal;
+          word-wrap: break-word; /* Forces long titles to wrap nicely */
         }
         
         .neo-ac-desc {
