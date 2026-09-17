@@ -22,13 +22,15 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchSheetWithRetry(sheet, retries = 3) {
   if (!sheet) return [];
+  const backoffs = [10000, 30000, 60000]; // 🚨 10s, 30s, 60s delays for 429 limits
   for (let i = 0; i < retries; i++) {
     try {
       return await sheet.getRows();
     } catch (error) {
       if (error.response && error.response.status === 429) {
-        console.warn(`⚠️ Google API Rate Limit Hit (429). Retrying in ${2000 * (i + 1)}ms...`);
-        await delay(2000 * (i + 1));
+        const waitTime = backoffs[i] || 60000;
+        console.warn(`⚠️ Google API Rate Limit Hit (429) on "${sheet.title}". Retrying in ${waitTime}ms to let quota reset...`);
+        await delay(waitTime);
       } else {
         throw error;
       }
@@ -60,7 +62,7 @@ async function refreshCache() {
     const fetchedData = [];
     for (let i = 0; i < sheetsToFetch.length; i++) {
       fetchedData.push(await fetchSheetWithRetry(sheetsToFetch[i]));
-      await delay(1500); 
+      await delay(3000); // 🚨 Increased to 3 seconds to safely pace below 60 req/min
     }
 
     const [

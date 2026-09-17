@@ -18,6 +18,7 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchSheetWithRetry(sheet, retries = 3) {
   if (!sheet) return [];
+  const backoffs = [10000, 30000, 60000]; // 🚨 10s, 30s, 60s delays for 429 limits
   for (let i = 0; i < retries; i++) {
     try {
       return await sheet.getRows();
@@ -28,8 +29,9 @@ async function fetchSheetWithRetry(sheet, retries = 3) {
         return [];
       }
       if (error.response && error.response.status === 429) {
-        console.warn(`⚠️ Google API Rate Limit Hit on Asset DB. Retrying in ${1500 * (i + 1)}ms...`);
-        await delay(1500 * (i + 1));
+        const waitTime = backoffs[i] || 60000;
+        console.warn(`⚠️ Google API Rate Limit Hit (429) on Asset DB "${sheet.title}". Retrying in ${waitTime}ms...`);
+        await delay(waitTime);
       } else {
         throw error;
       }
@@ -64,7 +66,7 @@ async function refreshAssetCache() {
       } else {
         fetchedData[key] = [];
       }
-      await delay(1500); // 🚨 Increased to 1.5 seconds 
+      await delay(3000); // 🚨 Increased to 3 seconds to safely pace below 60 req/min
     }
 
     assetCache = fetchedData;
