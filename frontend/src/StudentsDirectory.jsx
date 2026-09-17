@@ -47,8 +47,9 @@ export default function StudentsDirectory() {
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
   const [monthFilter, setMonthFilter] = useState('');
+  const [placementStatusFilter, setPlacementStatusFilter] = useState('All'); // 🚨 NEW FILTER STATE
   const [sortOrder, setSortOrder] = useState('newest'); 
-  const [viewType, setViewType] = useState('list'); 
+  const [viewType, setViewType] = useState('list');
 
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -110,7 +111,7 @@ export default function StudentsDirectory() {
   }, []);
 
   const resetFilters = () => {
-    setSearchQuery(''); setCourseFilter('All'); setMonthFilter(''); setSortOrder('newest');
+    setSearchQuery(''); setCourseFilter('All'); setMonthFilter(''); setPlacementStatusFilter('All'); setSortOrder('newest');
   };
 
   const getDriveImage = (url) => {
@@ -195,7 +196,16 @@ export default function StudentsDirectory() {
     const dateObj = parseDate(dateVal);
     const monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
     let mMatch = monthFilter === '' || monthKey === monthFilter;
-    return cMatch && mMatch;
+    
+    // 🚨 SMART PLACEMENT STATUS MATCHING
+    const pStat = (s.placementStatus || 'Pending').toLowerCase();
+    let pMatch = true;
+    if (placementStatusFilter !== 'All') {
+      if (placementStatusFilter === 'Pending') pMatch = pStat.includes('pending') || pStat === '';
+      else pMatch = pStat.includes(placementStatusFilter.toLowerCase());
+    }
+    
+    return cMatch && mMatch && pMatch;
   });
 
   const branchData = {};
@@ -286,6 +296,17 @@ export default function StudentsDirectory() {
             </div>
           )}
 
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Placement:</span>
+            <select className="sleek-select" style={{ minWidth: '150px' }} value={placementStatusFilter} onChange={(e) => setPlacementStatusFilter(e.target.value)}>
+              <option value="All">All Statuses</option>
+              <option value="Pending">Pending</option>
+              <option value="Placed">Placed</option>
+              <option value="Not Responding">Not Responding</option>
+              <option value="No Need of Placement">No Need</option>
+            </select>
+          </div>
+
           {selectedBranch && (
             <>
               <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
@@ -301,7 +322,7 @@ export default function StudentsDirectory() {
             </>
           )}
 
-          {(courseFilter !== 'All' || monthFilter !== '' || searchQuery !== '') && (
+          {(courseFilter !== 'All' || monthFilter !== '' || placementStatusFilter !== 'All' || searchQuery !== '') && (
             <button onClick={resetFilters} style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem' }}>
               <ArrowsClockwise size={14} /> Reset
             </button>

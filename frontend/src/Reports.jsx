@@ -81,7 +81,7 @@ export default function Reports() {
     if (!dateStr) return false;
     let year, month;
     if (dateStr.includes('/')) {
-      const parts = dateStr.split(/[/\s]+/);
+      const parts = dateStr.split(/[/\s,]+/); // 🚨 Safely splits away commas
       year = parts[2];
       month = parts[1].padStart(2, '0');
     } else if (dateStr.includes('-')) {

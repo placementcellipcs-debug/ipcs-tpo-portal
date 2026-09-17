@@ -55,7 +55,8 @@ export default function Dashboard() {
 
   const parseDateRobust = (dStr) => {
     if (!dStr) return null;
-    let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dStr;
+    // 🚨 SMART FIX: Also strips commas from the dashboard timeline
+    let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0].replace(/st|nd|rd|th|,/g, '') : dStr;
     if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
       const parts = cleanStr.split(/[/-]/);
       if (parts.length === 3) {
