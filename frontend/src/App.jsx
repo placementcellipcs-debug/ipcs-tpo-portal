@@ -68,6 +68,7 @@ function App() {
         <Route path="/assets/transfers" element={<AssetTransfers />} />
         <Route path="/assets/maintenance" element={<AssetMaintenance />} />
         <Route path="/assets/dashboard" element={<AssetDashboard />} />
+        <Route path="/assets/settings" element={<AssetSettings />} />
       </Routes>
     </BrowserRouter>
   );

@@ -10,7 +10,8 @@ import { API_BASE } from './apiConfig';
 
 const ClientLogo = ({ client, size = 70, noMargin = false }) => {
   const [imgErr, setImgErr] = useState(false);
-  
+  if (!client) return null;
+
   const getDriveImage = (url) => {
     if (!url) return null;
     const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
@@ -32,16 +33,29 @@ const ClientLogo = ({ client, size = 70, noMargin = false }) => {
 };
 
 export default function Clients() {
-  const tpoDataStr = localStorage.getItem('tpoData');
-  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
-  const upperRole = String(tpoData?.role || '').toUpperCase();
-  const accessType = String(tpoData?.accessType || '').toLowerCase();
+  const [tpoData, setTpoData] = useState(() => {
+    try {
+      const data = localStorage.getItem('tpoData');
+      return data ? JSON.parse(data) : {};
+    } catch (e) { return {}; }
+  });
+
+  const upperRole = String(tpoData?.role || '').toUpperCase().trim();
+  const accessType = String(tpoData?.accessType || '').toLowerCase().trim();
   
-  const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole.includes('MANAGER');
-  
-  // 🚨 RESTRICT ACCESS: TPO ONLY (NO ADMINS)
-  const isTpo = upperRole.includes('TPO');
+  // 🚨 BULLETPROOF ROLE COMPUTATIONS (Catches Abbreviations)
+  const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole === 'GENERAL MANAGER';
+  const isTpo = upperRole.includes('TPO') || upperRole.includes('PLACEMENT OFFICER');
   const canManageClients = isTpo && !isSuperAdmin;
+
+  // 🚨 RESTRICTED MANAGERS (BM, TM, RM, ZM) -> Gets the strictly simplified view
+  const isRestrictedManager = !isSuperAdmin && !isTpo && (
+    upperRole.includes('MANAGER') || 
+    upperRole.includes('ZONAL') || 
+    upperRole.includes('TERRITORY') || 
+    upperRole.includes('REGIONAL') ||
+    upperRole === 'BM' || upperRole === 'TM' || upperRole === 'RM' || upperRole === 'ZM'
+  );
 
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -52,8 +66,6 @@ export default function Clients() {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
   const [editForm, setEditForm] = useState({});
-  
-  // New Add Client Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addForm, setAddForm] = useState({ companyName: '', website: '', location: '', phone: '', email: '', contactPerson: '', logoFile: null });
 
@@ -68,45 +80,59 @@ export default function Clients() {
 
   useEffect(() => { 
     const fetchClientsInitial = async () => {
-      const localStr = localStorage.getItem('tpoData');
-      if (!localStr) return;
-      const localTpo = JSON.parse(localStr);
-      const isSA = localTpo.accessType === 'superadmin' || String(localTpo.role||'').toUpperCase().includes('ADMIN');
-
-      const cached = localStorage.getItem('dash_clients');
-      if (cached) { setClients(JSON.parse(cached)); setLoading(false); }
-
+      setLoading(true);
+      
+      // Attempt to load from cache first for instant rendering
       try {
-        const payload = { tpoName: isSA ? '' : localTpo.name };
+        const cached = localStorage.getItem('dash_clients');
+        if (cached && cached !== 'undefined' && cached !== 'null') { 
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+                setClients(parsed); 
+                setLoading(false); // Render immediately from cache
+            }
+        }
+      } catch(e) { console.error("Cache ignored"); }
+
+      // Fetch fresh data from backend
+      try {
+        const payload = { tpoName: (isSuperAdmin || isRestrictedManager) ? '' : (tpoData?.name || '') };
         const res = await axios.post(`${API_BASE}/api/tpo/clients`, payload);
-        if (res.data.success) {
+        if (res.data && res.data.success) {
           setClients(res.data.clients || []);
           localStorage.setItem('dash_clients', JSON.stringify(res.data.clients || [])); 
         }
-      } catch (err) { console.error("Failed to fetch clients:", err); } 
-      finally { setLoading(false); }
+      } catch (err) { 
+        console.error("Failed to fetch clients from backend"); 
+      } finally { 
+        setLoading(false); // 🚨 GUARANTEED to stop the loading spinner
+      }
     };
-    fetchClientsInitial(); 
+    
+    if (tpoData && Object.keys(tpoData).length > 0) {
+      fetchClientsInitial(); 
+    } else {
+      setLoading(false);
+    }
   }, []); 
 
   const fetchClientsManual = async () => {
     try {
-      const payload = { tpoName: isSuperAdmin ? '' : tpoData.name };
+      const payload = { tpoName: (isSuperAdmin || isRestrictedManager) ? '' : (tpoData?.name || '') };
       const res = await axios.post(`${API_BASE}/api/tpo/clients`, payload);
-      if (res.data.success) {
+      if (res.data && res.data.success) {
         setClients(res.data.clients || []);
         localStorage.setItem('dash_clients', JSON.stringify(res.data.clients || [])); 
       }
     } catch (err) { console.error(err); }
   };
 
-  // 🚨 ADD NEW CLIENT HANDLER
   const submitAddClient = async () => {
     if (!addForm.companyName) return showToast("Company Name is required", "error");
     setSavingStatus(true);
     try {
       const formData = new FormData();
-      formData.append('tpoName', tpoData.name);
+      formData.append('tpoName', tpoData.name || 'Unknown');
       formData.append('companyName', addForm.companyName);
       formData.append('website', addForm.website);
       formData.append('location', addForm.location);
@@ -169,20 +195,25 @@ export default function Clients() {
     finally { setSendingRequest(null); }
   };
 
-  const filteredClients = clients.filter(c => {
+  // 🚨 Bulletproof array filtering
+  const safeClients = Array.isArray(clients) ? clients : [];
+  const filteredClients = safeClients.filter(c => {
     const matchSearch = String(c.companyName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                         String(c.location || '').toLowerCase().includes(searchQuery.toLowerCase());
     
     const isSigned = String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink);
-    const tabMatch = activeTab === 'Signed' ? isSigned : !isSigned;
+    
+    // MANAGERS SEE ALL COMPANIES ON A SINGLE PAGE (TABS IGNORED)
+    const tabMatch = isRestrictedManager ? true : (activeTab === 'Signed' ? isSigned : !isSigned);
 
     return matchSearch && tabMatch;
   });
 
-  const totalPartners = clients.length;
-  const totalSigned = clients.filter(c => String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink)).length;
+  // Safely calculate KPIs
+  const totalPartners = safeClients.length;
+  const totalSigned = safeClients.filter(c => String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink)).length;
   const totalPending = totalPartners - totalSigned;
-  const uniqueTPOs = new Set(clients.map(c => c.tpoName || 'Unknown').filter(n => n !== 'Unknown')).size;
+  const uniqueTPOs = new Set(safeClients.map(c => c.tpoName || 'Unknown').filter(n => n !== 'Unknown')).size;
 
   return (
     <Layout>
@@ -191,10 +222,17 @@ export default function Clients() {
         {/* HERO SECTION */}
         <div className="top-hero-section">
           <div className="hero-text">
-            <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Handshake color="#38bdf8" weight="fill" /> Hiring Partners & MOUs</h1>
-            <p>Directory of corporate partners and countersigned institutional agreements.</p>
+            <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <Handshake color="#38bdf8" weight="fill" /> 
+              {isRestrictedManager ? 'Corporate MOUs & Agreements' : 'Hiring Partners & MOUs'}
+            </h1>
+            <p>
+              {isRestrictedManager 
+                ? 'Directory of global corporate tie-ups and official institutional agreements.' 
+                : 'Directory of corporate partners and countersigned institutional agreements.'}
+            </p>
           </div>
-          {/* 🚨 TPO ONLY: ADD PARTNER BUTTON */}
+          {/* TPO ONLY: ADD PARTNER BUTTON */}
           {canManageClients && (
             <button className="premium-btn primary hover-lift" onClick={() => setIsAddModalOpen(true)}>
               <Plus weight="bold" size={20} /> Add Partner
@@ -202,8 +240,8 @@ export default function Clients() {
           )}
         </div>
 
-        {/* 🚨 ADMIN MINI-DASHBOARD */}
-        {isSuperAdmin && (
+        {/* ADMIN MINI-DASHBOARD (Hidden from Managers) */}
+        {isSuperAdmin && !isRestrictedManager && (
           <div className="mini-dash-grid">
             <div className="kpi-card glass-panel hover-lift">
               <div className="kpi-top"><div><div className="kpi-title">Total Partners</div><div className="kpi-val">{totalPartners}</div></div><div className="kpi-icon blue"><Buildings weight="fill" size={26}/></div></div>
@@ -221,15 +259,19 @@ export default function Clients() {
         )}
 
         {/* CONTROLS (TABS & SEARCH) */}
-        <div className="glass-panel control-action-bar" style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-          <div className="segmented-tabs">
-            <button className={`seg-tab ${activeTab === 'Signed' ? 'active-green' : ''}`} onClick={() => setActiveTab('Signed')}>Signed MOUs</button>
-            <button className={`seg-tab ${activeTab === 'Pending' ? 'active-orange' : ''}`} onClick={() => setActiveTab('Pending')}>Pending Signatures</button>
-          </div>
+        <div className="glass-panel control-action-bar" style={{ flexDirection: 'row', justifyContent: isRestrictedManager ? 'center' : 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
           
-          <div className="filter-group">
+          {/* HIDE TABS FOR MANAGERS (THEY SEE ALL ON ONE PAGE) */}
+          {!isRestrictedManager && (
+            <div className="segmented-tabs">
+              <button className={`seg-tab ${activeTab === 'Signed' ? 'active-green' : ''}`} onClick={() => setActiveTab('Signed')}>Signed MOUs</button>
+              <button className={`seg-tab ${activeTab === 'Pending' ? 'active-orange' : ''}`} onClick={() => setActiveTab('Pending')}>Pending Signatures</button>
+            </div>
+          )}
+          
+          <div className="filter-group" style={{ width: isRestrictedManager ? '100%' : 'auto', maxWidth: isRestrictedManager ? '600px' : 'none' }}>
             <div style={{ position: 'relative', flex: 1, minWidth: '300px' }}>
-              <input type="text" className="premium-input" placeholder="Search company name or location..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ width: '100%', paddingLeft: '40px' }} />
+              <input type="text" className="premium-input" placeholder="Search company name..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ width: '100%', paddingLeft: '40px' }} />
               <Buildings size={18} style={{ position: 'absolute', left: '15px', top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
             </div>
           </div>
@@ -237,13 +279,37 @@ export default function Clients() {
 
         {/* CLIENT CARDS GRID */}
         {loading ? (
-          <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Fetching corporate partners...</p></div>
+          <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Fetching corporate directory...</p></div>
         ) : filteredClients.length === 0 ? (
-          <div className="empty-state-card"><span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🏢</span>No companies found in this category.</div>
+          <div className="empty-state-card"><span style={{ fontSize: '2.5rem', margin: '0 auto 10px auto', display: 'block' }}>🏢</span>No companies found.</div>
         ) : (
           <div className="client-grid">
             {filteredClients.map((c, i) => {
               const isSigned = String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink);
+              
+              // 🚨 MANAGER VIEW: Strictly limited info
+              if (isRestrictedManager) {
+                return (
+                  <div key={i} className="client-card glass-panel hover-lift" style={{ padding: '25px', alignItems: 'center', textAlign: 'center', minHeight: '220px' }}>
+                    <ClientLogo client={c} size={70} />
+                    <h3 className="client-name" style={{ fontSize: '1.1rem', marginBottom: '15px', wordBreak: 'break-word' }}>{c.companyName || 'Unknown Company'}</h3>
+                    
+                    <div className="client-footer" style={{ width: '100%', marginTop: 'auto' }}>
+                      {isSigned ? (
+                        <button className="mou-btn signed-btn" onClick={() => c.mouLink && window.open(c.mouLink, '_blank')}>
+                          <FilePdf size={18} weight="fill" /> Open Signed MOU <ArrowSquareOut size={14} />
+                        </button>
+                      ) : (
+                        <div className="mou-btn pending-btn" style={{ opacity: 0.8, cursor: 'default' }}>
+                          <Clock size={18} weight="bold"/> MOU Pending
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              // 🚨 TPO / SUPER ADMIN VIEW: Full Details
               return (
                 <div key={i} className="client-card glass-panel hover-lift">
                   
@@ -253,8 +319,8 @@ export default function Clients() {
                     <div className="client-loc"><MapPinLine size={14} /> {c.location || 'Location Not Specified'}</div>
                   </div>
 
-                  {/* ADMIN ONLY: HIDDEN DETAILS */}
-                  {isSuperAdmin && (
+                  {/* ADMIN ONLY: CONTACT DETAILS */}
+                  {isSuperAdmin && !isRestrictedManager && (
                     <div className="admin-client-details">
                       <div className="acd-item"><UserCircle size={16} /> <span>{c.contactPerson || 'No Name'}</span></div>
                       <div className="acd-item"><Phone size={16} /> <span>{c.contact || 'No Phone'}</span></div>
@@ -270,7 +336,6 @@ export default function Clients() {
                       </button>
                     ) : (
                       <div className="pending-footer">
-                        {/* 🚨 TPO ONLY: BUTTONS */}
                         {canManageClients ? (
                           <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
                             <button className="mou-btn edit-btn" onClick={() => openEditModal(c)}>
@@ -281,7 +346,6 @@ export default function Clients() {
                             </button>
                           </div>
                         ) : (
-                          /* ADMINS / TRAINERS ONLY SEE STATUS PENDANT */
                           <div className="mou-btn pending-btn"><Clock size={18} weight="bold"/> Signature Pending</div>
                         )}
                       </div>
@@ -295,7 +359,7 @@ export default function Clients() {
         )}
       </div>
 
-      {/* 🚨 ADD CLIENT MODAL */}
+      {/* ADD CLIENT MODAL */}
       {isAddModalOpen && (
         <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
           <div className="premium-modal glass-panel" style={{ maxWidth: '550px', padding: '30px' }}>
@@ -404,7 +468,7 @@ export default function Clients() {
         .premium-input { background: rgba(0,0,0,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 15px; font-size: 0.9rem; outline: none; transition: 0.2s; width: 100%; box-sizing: border-box; }
         .premium-input:focus { border-color: #3b82f6; background: rgba(0,0,0,0.4); }
 
-        .client-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+        .client-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
         .client-card { border-radius: 20px; padding: 25px; display: flex; flex-direction: column; justify-content: space-between; }
         
         .client-header { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 20px; }
