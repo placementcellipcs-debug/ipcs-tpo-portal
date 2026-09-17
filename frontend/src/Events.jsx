@@ -38,7 +38,15 @@ export default function Events() {
   const [selectedDate, setSelectedDate] = useState(new Date()); // Tracks sidebar agenda
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [viewEventModal, setViewEventModal] = useState(null); // 🚨 NEW: Tracks the clicked event
   const [isSaving, setIsSaving] = useState(false);
+  
+  // 🚨 SMART HELPER: Converts Google Drive Links into previewable images
+  const getDriveImage = (url) => {
+    if (!url || typeof url !== 'string') return null;
+    const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+    return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : url;
+  };
   
   const [newEvent, setNewEvent] = useState({ 
     date: '', time: '', branch: tpoData?.assignedBranchesArray?.[0] || 'All Branches', 
@@ -269,7 +277,7 @@ export default function Events() {
                   <div style={{ color: '#64748b', fontSize: '0.9rem', textAlign: 'center', marginTop: '2rem' }}>No events scheduled for this day.</div>
                 ) : (
                   selectedDayEvents.map((e, idx) => (
-                    <div key={idx} className="neo-agenda-card">
+                    <div key={idx} className="neo-agenda-card hover-lift" onClick={() => setViewEventModal(e)} style={{ cursor: 'pointer' }}>
                       <div className="neo-ac-accent" style={{ background: getEventColor(e.type) }}></div>
                       
                       <div className="neo-ac-time-row">
@@ -372,7 +380,71 @@ export default function Events() {
         </div>
       )}
 
-      {/* 🎨 NEO CALENDAR STYLES */}
+      {/* 🚨 EVENT DETAILS PREVIEW MODAL */}
+      {viewEventModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={(e) => { if(e.target === e.currentTarget) setViewEventModal(null); }}>
+          <div className="modal-card" style={{ maxWidth: '650px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '24px', padding: '2rem', boxShadow: '0 25px 50px rgba(0,0,0,0.5)', position: 'relative' }}>
+            
+            <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '15px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div>
+                <span style={{ background: 'rgba(255,255,255,0.05)', color: getEventColor(viewEventModal.type), padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', display: 'inline-block', marginBottom: '10px' }}>
+                  {viewEventModal.type}
+                </span>
+                <h2 style={{ margin: '0 0 5px 0', fontSize: '1.6rem', color: '#fff' }}>{viewEventModal.title}</h2>
+                {viewEventModal.eventId && <div style={{ color: '#38bdf8', fontSize: '0.85rem', fontWeight: 'bold' }}>Event ID: {viewEventModal.eventId}</div>}
+              </div>
+              <button style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', padding: '8px', borderRadius: '50%', cursor: 'pointer', display: 'flex', transition: '0.2s' }} onClick={() => setViewEventModal(null)} title="Close">
+                <X size={20} weight="bold"/>
+              </button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
+              <div style={{ background: '#1e293b', padding: '15px', borderRadius: '12px' }}>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '5px' }}>Date & Time</div>
+                <div style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Clock size={16} color="#38bdf8" /> {viewEventModal.date} • {viewEventModal.time || 'TBD'}
+                </div>
+              </div>
+              <div style={{ background: '#1e293b', padding: '15px', borderRadius: '12px' }}>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '5px' }}>Location & Branch</div>
+                <div style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <MapPin size={16} color="#f59e0b" /> {viewEventModal.location || 'Online'}
+                </div>
+                <div style={{ color: '#cbd5e1', fontSize: '0.85rem', marginTop: '4px' }}>Branch: {viewEventModal.branch || 'Global'}</div>
+              </div>
+            </div>
+
+            {viewEventModal.description && (
+              <div style={{ background: 'rgba(255,255,255,0.02)', padding: '20px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', marginBottom: '20px' }}>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '8px' }}>Description</div>
+                <div style={{ color: '#e2e8f0', fontSize: '0.95rem', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                  {viewEventModal.description}
+                </div>
+              </div>
+            )}
+
+            {viewEventModal.poster && viewEventModal.poster !== 'N/A' && (
+              <div>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '10px' }}>Event Poster</div>
+                <div style={{ width: '100%', borderRadius: '12px', overflow: 'hidden', border: '1px solid #1e293b', background: '#0b1121', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
+                  <img 
+                    src={getDriveImage(viewEventModal.poster) || viewEventModal.poster} 
+                    alt="Event Poster" 
+                    style={{ maxWidth: '100%', maxHeight: '350px', objectFit: 'contain' }}
+                    onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.innerHTML = '<div style="padding: 30px; color: #64748b;">Poster Preview Unavailable. Use link below.</div>'; }}
+                  />
+                </div>
+                <button className="btn-secondary" style={{ background: 'transparent', border: '1px solid #334155', color: '#f8fafc', marginTop: '10px', width: '100%', padding: '12px', borderRadius: '10px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontWeight: 'bold' }} onClick={() => window.open(viewEventModal.poster, '_blank')}>
+                  <Image size={18} weight="fill" /> Open Full Poster Link
+                </button>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {/* 🎨 NEO CALENDAR STYLES (MOCKUP ACCURATE) */}
       <style>{`
         /* Global Reset For This Page */
         .hover-lift:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.1); background: #1e293b; }
