@@ -24,14 +24,14 @@ import Branches from './Branches';
 import TrainerLog from './TrainerLog';
 import SecurityActivity from './SecurityActivity';
 
-// 🚨 ASSET MANAGEMENT (NOW FULLY IMPORTED TO PREVENT CRASHES)
+// 🚨 ASSET MANAGEMENT (FULLY IMPORTED TO PREVENT THE BLACK SCREEN CRASH)
 import AssetList from './AssetList';
 import AddAsset from './AddAsset';
 import Inventory from './Inventory';
 import AssetTransfers from './AssetTransfers';
 import AssetMaintenance from './AssetMaintenance';
 import AssetDashboard from './AssetDashboard';
-import AssetSettings from './AssetSettings'; // 🚨 THIS WAS THE MISSING IMPORT!
+import AssetSettings from './AssetSettings'; // 👈 THIS WAS MISSING!
 
 function App() {
   return (
