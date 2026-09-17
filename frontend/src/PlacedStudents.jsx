@@ -60,6 +60,7 @@ export default function PlacedStudents() {
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
   const [monthFilter, setMonthFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All'); // 🚨 NEW FILTER
   const [sortOrder, setSortOrder] = useState('newest');
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -166,7 +167,7 @@ export default function PlacedStudents() {
   useEffect(() => { fetchData(); }, []);
 
   const resetFilters = () => {
-    setSearchQuery(''); setCourseFilter('All'); setMonthFilter(''); setSortOrder('newest');
+    setSearchQuery(''); setCourseFilter('All'); setMonthFilter(''); setStatusFilter('All'); setSortOrder('newest');
   };
 
   const globallyFiltered = applications.filter(a => {
@@ -176,7 +177,20 @@ export default function PlacedStudents() {
     let dateObj = parseDate(a.datePlaced || a.date);
     let monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
     let mMatch = monthFilter === '' ? true : monthKey === monthFilter;
-    return cMatch && mMatch;
+    
+    // 🚨 SMART STATUS & JOINING FILTER
+    let sMatch = true;
+    if (statusFilter !== 'All') {
+      const stat = (a.status || '').toLowerCase();
+      const join = (a.joiningStatus || '').toLowerCase();
+      
+      if (statusFilter === 'Joined') sMatch = join.includes('joined') && !join.includes('not');
+      else if (statusFilter === 'Not Joined') sMatch = join.includes('not joined');
+      else if (statusFilter === 'Got Offer') sMatch = stat.includes('offer');
+      else if (statusFilter === 'Placed') sMatch = stat.includes('placed');
+    }
+    
+    return cMatch && mMatch && sMatch;
   });
 
   const branchData = {};
@@ -300,6 +314,18 @@ export default function PlacedStudents() {
             <input type="month" className="sleek-input" style={{ minWidth: '150px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
           </div>
 
+          {/* 🚨 NEW PLACEMENT STATUS FILTER UI */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Status:</span>
+            <select className="sleek-select" style={{ minWidth: '140px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="All">All Statuses</option>
+              <option value="Placed">Placed</option>
+              <option value="Got Offer">Got Offer</option>
+              <option value="Joined">Joined Company</option>
+              <option value="Not Joined">Not Joined</option>
+            </select>
+          </div>
+
           {selectedBranch && (
             <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
               <option value="newest">Sort: Date Placed</option>
@@ -308,7 +334,7 @@ export default function PlacedStudents() {
             </select>
           )}
 
-          {(courseFilter !== 'All' || monthFilter !== '' || searchQuery !== '') && (
+          {(courseFilter !== 'All' || monthFilter !== '' || statusFilter !== 'All' || searchQuery !== '') && (
             <button onClick={resetFilters} style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem' }}>
               <ArrowsClockwise size={14} /> Reset
             </button>
