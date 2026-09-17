@@ -63,11 +63,12 @@ export default function StudentsDirectory() {
 
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
-  const isTpo = upperRole === 'TPO';
+  const isTpo = upperRole === 'TPO' || upperRole.includes('PLACEMENT OFFICER');
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
   const isTrainer = upperRole.includes('TRAINER');
   
-  const isBranchManager = upperRole.includes('BRANCH MANAGER');
+  // 🚨 FIXED: Expanded to all Managers (BM, TM, RM, ZM)
+  const isManager = upperRole.includes('MANAGER') || upperRole.includes('ZONAL') || upperRole.includes('TERRITORY') || upperRole.includes('REGIONAL') || ['BM', 'TM', 'RM', 'ZM'].includes(upperRole);
   
   const isCourseSpecific = isRth || upperRole.includes('TTH') || isTrainer || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
@@ -512,23 +513,45 @@ export default function StudentsDirectory() {
                 })()}
              </div>
 
-             {isBranchManager && (
+             {/* 🚨 FIXED: Smart Reference Matcher for all Managers */}
+             {isManager && (
                <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #1e293b' }}>
                  <h3 style={{ margin: '0 0 15px 0', color: '#38bdf8', fontSize: '1.1rem' }}>Reference Contacts</h3>
                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
                    {(() => {
                       const raw = selectedStudent.rawData || {};
                       
-                      // 🚨 FIXED: STRICT AND SAFE MATCHING TO PREVENT WRONG COLUMN MAPPING
-                      const getExact = (str) => {
-                        const key = Object.keys(raw).find(k => k.toLowerCase().replace(/\s/g, '') === str.toLowerCase().replace(/\s/g, ''));
-                        return key && raw[key] && raw[key] !== 'N/A' ? raw[key] : null;
+                      // Aggressive Smart Extractor
+                      const getRefField = (searchKeywords) => {
+                        // First pass: Exact match
+                        for (let keyword of searchKeywords) {
+                          const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
+                          const foundKey = Object.keys(raw).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanKeyword);
+                          if (foundKey && raw[foundKey] && raw[foundKey] !== 'N/A') return raw[foundKey];
+                        }
+                        // Second pass: Partial match (but avoid standard contact numbers)
+                        for (let keyword of searchKeywords) {
+                          const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
+                          const foundKey = Object.keys(raw).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanKeyword));
+                          
+                          if (foundKey && foundKey.toLowerCase().replace(/[^a-z0-9]/g, '') === 'contactnumber') continue;
+                          if (foundKey && foundKey.toLowerCase().replace(/[^a-z0-9]/g, '') === 'phone') continue;
+
+                          if (foundKey && raw[foundKey] && raw[foundKey] !== 'N/A') return raw[foundKey];
+                        }
+                        return null;
                       };
-                      
-                      const f1Name = getExact('name(friend1)');
-                      const f1Cont = getExact('contactnumber'); 
-                      const f2Name = getExact('name(friend2)');
-                      const f2Cont = getExact('contactnumber2');
+
+                      const f1Name = getRefField(['friend1name', 'namefriend1', 'reference1name']);
+                      const f1Cont = getRefField(['friend1contact', 'contactnumber1', 'contactnumberfriend1', 'friend1phone']);
+                      const f2Name = getRefField(['friend2name', 'namefriend2', 'reference2name']);
+                      const f2Cont = getRefField(['friend2contact', 'contactnumber2', 'contactnumberfriend2', 'friend2phone']);
+
+                      const hasRefs = f1Name || f1Cont || f2Name || f2Cont;
+
+                      if (!hasRefs) {
+                        return <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No reference contacts provided by this student.</div>;
+                      }
 
                       return (
                         <>
@@ -563,7 +586,7 @@ export default function StudentsDirectory() {
                </div>
              )}
 
-             {!isBranchManager && (
+             {!isManager && (
                <div style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid #1e293b', borderRadius: '16px', padding: '1.5rem', marginTop: '2.5rem' }}>
                   <h3 style={{ margin: '0 0 1.2rem 0', color: '#fff', fontSize: '1.1rem', borderBottom: '1px solid #1e293b', paddingBottom: '0.8rem' }}>Access & Permissions Control</h3>
                   
