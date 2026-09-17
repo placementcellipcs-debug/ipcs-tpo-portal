@@ -137,7 +137,7 @@ export default function Layout({ children }) {
     } catch(e) { console.error("Error parsing notifications"); }
   }, [tpoData]);
 
-  if (!tpoData) return null;
+  if (!tpoData) return <div style={{ minHeight: '100vh', background: '#020617' }}>{children}</div>;
 
   const userRole = (tpoData.role || '').toUpperCase();
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';

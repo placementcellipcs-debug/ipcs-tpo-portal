@@ -631,7 +631,8 @@ exports.getStudents = (req, res) => {
         vacOpen: getValByHeader(row, ['vacancyopen', 'vaccancyopen']) || 'Yes', 
         studyAccess: getValByHeader(row, ['studymaterialaccess']) || 'No', 
         examAccess: getValByHeader(row, ['technialexam', 'technicalexam']) || 'No', 
-        placementStatus: pStatus
+        placementStatus: pStatus,
+        rawData: typeof row.toObject === 'function' ? row.toObject() : {}
       });
     }
   });

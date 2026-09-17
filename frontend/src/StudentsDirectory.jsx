@@ -542,10 +542,10 @@ export default function StudentsDirectory() {
                         return null;
                       };
 
-                      const f1Name = getRefField(['friend1name', 'namefriend1', 'reference1name']);
-                      const f1Cont = getRefField(['friend1contact', 'contactnumber1', 'contactnumberfriend1', 'friend1phone']);
-                      const f2Name = getRefField(['friend2name', 'namefriend2', 'reference2name']);
-                      const f2Cont = getRefField(['friend2contact', 'contactnumber2', 'contactnumberfriend2', 'friend2phone']);
+                      const f1Name = getRefField(['name(friend1)', 'friend1name', 'namefriend1', 'reference1name']);
+                      const f1Cont = getRefField(['contactnumber', 'friend1contact', 'contactnumber1', 'contactnumberfriend1', 'friend1phone']);
+                      const f2Name = getRefField(['name(friend2)', 'friend2name', 'namefriend2', 'reference2name']);
+                      const f2Cont = getRefField(['contactnumber2', 'friend2contact', 'contactnumberfriend2', 'friend2phone']);
 
                       const hasRefs = f1Name || f1Cont || f2Name || f2Cont;
 
