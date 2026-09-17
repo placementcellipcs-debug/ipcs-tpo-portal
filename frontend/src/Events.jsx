@@ -146,7 +146,9 @@ export default function Events() {
     const daysInMonth = new Date(year, month + 1, 0).getDate();
     
     const grid = [];
-    for (let i = 0; i < firstDay; i++) grid.push(<div key={`empty-${i}`} className="cal-cell empty" style={{ minHeight: '120px', background: 'var(--bg-dark)', borderRight: '1px solid var(--card-border)', borderBottom: '1px solid var(--card-border)' }}></div>);
+    for (let i = 0; i < firstDay; i++) {
+      grid.push(<div key={`empty-${i}`} className="cal-cell empty"></div>);
+    }
     
     for (let day = 1; day <= daysInMonth; day++) {
       const cellDate = new Date(year, month, day);
@@ -154,39 +156,24 @@ export default function Events() {
       
       const dayEvents = events.filter(e => {
         const pd = parseDate(e.date);
-        return pd && 
-               pd.getFullYear() === cellDate.getFullYear() && 
-               pd.getMonth() === cellDate.getMonth() && 
-               pd.getDate() === cellDate.getDate();
+        return pd && pd.getFullYear() === cellDate.getFullYear() && pd.getMonth() === cellDate.getMonth() && pd.getDate() === cellDate.getDate();
       });
       
       const hasEvents = dayEvents.length > 0;
 
       grid.push(
-        <div key={day} className="cal-cell" style={{ 
-            minHeight: '120px', padding: '8px', 
-            borderRight: '1px solid var(--card-border)', borderBottom: '1px solid var(--card-border)',
-            background: hasEvents ? 'rgba(56, 189, 248, 0.05)' : (isToday ? 'rgba(255,255,255,0.05)' : 'transparent')
-        }}>
-          <div style={{ 
-            fontSize: '0.85rem', fontWeight: isToday ? 800 : 600, 
-            color: isToday ? '#fff' : (hasEvents ? '#38bdf8' : 'var(--text-muted)'), 
-            marginBottom: '8px', display: 'inline-block', 
-            padding: (hasEvents || isToday) ? '4px 8px' : '4px', 
-            background: isToday ? '#ef4444' : (hasEvents ? 'rgba(56, 189, 248, 0.15)' : 'transparent'), 
-            borderRadius: '50%' 
-          }}>
+        <div key={day} className="cal-cell">
+          <div className={`cal-date-number ${isToday ? 'today' : (hasEvents ? 'has-event' : '')}`}>
             {day}
           </div>
-          {dayEvents.map((e, i) => (
-            <div key={i} className="cal-event-pill" style={{ 
-              background: getEventColor(e.type), marginBottom: '4px', padding: '4px 6px', 
-              borderRadius: '4px', fontSize: '0.75rem', color: '#fff', whiteSpace: 'nowrap', 
-              overflow: 'hidden', textOverflow: 'ellipsis' 
-            }} title={`${e.time || 'All Day'} - ${e.title}`}>
-              {e.time && <strong>{e.time}</strong>} {e.title}
-            </div>
-          ))}
+          <div className="cal-events-container">
+            {dayEvents.map((e, i) => (
+              <div key={i} className="cal-event-pill" style={{ background: getEventColor(e.type) }} title={`${e.time || 'All Day'} - ${e.title}`}>
+                {e.time && <span style={{ marginRight: '4px', fontWeight: 900 }}>{e.time}</span>}
+                {e.title}
+              </div>
+            ))}
+          </div>
         </div>
       );
     }
@@ -228,23 +215,25 @@ export default function Events() {
         </div>
 
         {categoryTab === 'calendar' && (
-          <div className="cal-main" style={{ background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)', overflow: 'hidden' }}>
-            <div className="cal-toolbar" style={{ background: '#161e2e', padding: '15px 20px', borderBottom: '1px solid var(--card-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '15px', fontWeight: 'bold', fontSize: '1.2rem', color: '#fff' }}>
-                <CaretLeft size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={prevPeriod} />
-                {getMonthName()}
-                <CaretRight size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={nextPeriod} />
+          <div className="cal-main-redesign">
+            <div className="cal-toolbar-redesign">
+              <div className="cal-nav-redesign">
+                <CaretLeft size={20} weight="bold" className="cal-nav-btn" onClick={prevPeriod} />
+                <span className="cal-month-title">{getMonthName()}</span>
+                <CaretRight size={20} weight="bold" className="cal-nav-btn" onClick={nextPeriod} />
               </div>
             </div>
 
-            <div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', textAlign: 'center', padding: '15px 0', borderBottom: '1px solid var(--card-border)' }}>
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => <div key={day} style={{ fontWeight: 'bold', color: 'var(--text-muted)', fontSize: '0.85rem', textTransform: 'uppercase' }}>{day}</div>)}
+            <div className="cal-wrapper-redesign">
+              <div className="cal-header-row">
+                {['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'].map(day => (
+                  <div key={day} className="cal-day-name">{day}</div>
+                ))}
               </div>
-              <div className="cal-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)' }}>
+              <div className="cal-grid-redesign">
                 {loading ? (
-                  <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '4rem', color: 'var(--accent-primary)' }}>
-                    <CircleNotch size={40} className="ph-spin" />
+                  <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '5rem', color: '#38bdf8' }}>
+                    <CircleNotch size={48} className="ph-spin" />
                   </div>
                 ) : (
                   renderMonthGrid()
@@ -372,6 +361,108 @@ export default function Events() {
           </div>
         </div>
       )}
+
+      {/* 🎨 NEW CALENDAR STYLES TO MATCH SCREENSHOT EXACTLY */}
+      <style>{`
+        .cal-main-redesign {
+          background: transparent;
+          border: 1px solid #1e293b;
+          border-radius: 12px;
+          overflow: hidden;
+          margin-top: 10px;
+        }
+        .cal-toolbar-redesign {
+          background: #161e2e;
+          padding: 15px 25px;
+          border-bottom: 1px solid #1e293b;
+          display: flex;
+          align-items: center;
+        }
+        .cal-nav-redesign {
+          display: flex;
+          align-items: center;
+          gap: 15px;
+        }
+        .cal-month-title {
+          color: #fff;
+          font-size: 1.3rem;
+          font-weight: 800;
+          letter-spacing: 0.5px;
+        }
+        .cal-nav-btn {
+          color: #94a3b8;
+          cursor: pointer;
+          transition: 0.2s;
+        }
+        .cal-nav-btn:hover { color: #fff; }
+        .cal-header-row {
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+          background: #0f1523;
+          border-bottom: 1px solid #1e293b;
+        }
+        .cal-day-name {
+          padding: 15px 0;
+          text-align: center;
+          color: #94a3b8;
+          font-size: 0.75rem;
+          font-weight: 800;
+          letter-spacing: 1px;
+        }
+        .cal-grid-redesign {
+          display: grid;
+          grid-template-columns: repeat(7, 1fr);
+          background: #0f1523;
+        }
+        .cal-cell {
+          min-height: 140px;
+          border-right: 1px solid #1e293b;
+          border-bottom: 1px solid #1e293b;
+          padding: 10px;
+          display: flex;
+          flex-direction: column;
+        }
+        .cal-cell:nth-child(7n) { border-right: none; }
+        .cal-cell.empty { background: transparent; }
+        .cal-date-number {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          font-size: 0.85rem;
+          font-weight: 700;
+          color: #cbd5e1;
+          margin-bottom: 8px;
+        }
+        .cal-date-number.has-event {
+          background: #38bdf8;
+          color: #0f172a;
+        }
+        .cal-date-number.today {
+          background: #ef4444;
+          color: #fff;
+        }
+        .cal-events-container {
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .cal-event-pill {
+          padding: 4px 8px;
+          border-radius: 6px;
+          font-size: 0.75rem;
+          color: #fff;
+          font-weight: 600;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+          cursor: pointer;
+        }
+        .cal-event-pill:hover { opacity: 0.9; }
+      `}</style>
     </Layout>
   );
 }
