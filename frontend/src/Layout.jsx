@@ -5,7 +5,8 @@ import {
   Bell, X, SquaresFour, Trophy, ListChecks, ShieldCheck,
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
   Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin,
-  WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench ,  Plus // 🚨 Added Barcode and Plus imports here
+  WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench, Plus,
+  Headset, SignOut
 } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
 
@@ -141,17 +142,19 @@ export default function Layout({ children }) {
 
   const userRole = (tpoData.role || '').toUpperCase();
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
-  const isTpo = userRole.includes('TPO');
+  const isTpo = userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER');
   const isTrainer = userRole.includes('TRAINER');
   const isRth = userRole.includes('RTH') || userRole.includes('REGIONAL TECHNICAL HEAD');
   const isTL = userRole.includes('TECHNICAL LEAD') || userRole.includes('TTH') || isRth || userRole.includes('MANAGER') || isSuperAdmin;
 
+  // Role Checks
   const showTracker = isTpo && !isSuperAdmin; 
   const showReports = isSuperAdmin || isTpo; 
   const showManageAdmin = isSuperAdmin;
   const showStudyMaterials = isSuperAdmin || isRth || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD') || isTrainer; 
   const showTrainerLogs = isTrainer || isTL;
   const showStudentApps = isTpo && !isSuperAdmin;
+  const showIssues = isTpo || isSuperAdmin || userRole.includes('MANAGER') || userRole.includes('ZONAL'); // 🚨 ISSUES TAB VISIBILITY
 
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
@@ -232,97 +235,367 @@ export default function Layout({ children }) {
         </div>
       </main>
 
-      <div className={`drawer-overlay ${isDrawerOpen ? 'open' : ''}`} onClick={(e) => { if(e.target.classList.contains('drawer-overlay')) setIsDrawerOpen(false); }}>
-        <div className="drawer-card" style={{ backgroundImage: `linear-gradient(rgba(11, 17, 32, 0.85), rgba(11, 17, 32, 0.98)), url('https://lh3.googleusercontent.com/d/1dr27VR3Xu8EwDf4dCAO1ucq441VjpfwB')`, backgroundSize: 'cover', backgroundPosition: 'center', borderLeft: '1px solid rgba(255,255,255,0.1)', display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* 🚨 PREMIUM FLOATING MENU SLIDER */}
+      <div className={`premium-drawer-overlay ${isDrawerOpen ? 'open' : ''}`} onClick={(e) => { if(e.target.classList.contains('premium-drawer-overlay')) setIsDrawerOpen(false); }}>
+        <div className="premium-drawer-card">
           
-          <div className="drawer-header" style={{ padding: '30px 20px', position: 'relative', borderBottom: '1px solid rgba(255,255,255,0.1)', flexShrink: 0 }}>
-            <div className="drawer-close-btn" onClick={() => setIsDrawerOpen(false)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'rgba(255,255,255,0.2)', color: '#fff', borderRadius: '50%', padding: '4px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><X size={16} weight="bold" /></div>
-            <div className="drawer-profile-row" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-              <div className="drawer-avatar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', width: '60px', height: '60px', borderRadius: '50%', overflow: 'hidden', border: '2px solid rgba(255,255,255,0.4)', flexShrink: 0 }}>{renderAvatar()}</div>
-              <div style={{ color: '#fff' }}>
-                <strong style={{ display: 'block', fontSize: '1.25rem', fontWeight: 700, letterSpacing: '0.5px' }}>{tpoData.name}</strong>
-                <span style={{ fontSize: '0.75rem', opacity: 0.9, textTransform: 'uppercase', letterSpacing: '1px', color: '#cbd5e1' }}>{tpoData.role || 'Placement Officer'}</span>
+          <div className="pd-header">
+            <div className="pd-close-btn" onClick={() => setIsDrawerOpen(false)}>
+              <X size={18} weight="bold" />
+            </div>
+            <div className="pd-profile-group">
+              <div className="pd-avatar-ring">
+                <div className="pd-avatar-inner">{renderAvatar()}</div>
               </div>
+              <h3 className="pd-name">{tpoData.name}</h3>
+              <p className="pd-role">{tpoData.role || 'Placement Officer'}</p>
             </div>
           </div>
-          
-          <div className="drawer-menu" style={{ padding: '15px', flex: 1, overflowY: 'auto' }}>
-            <div className="drawer-item" onClick={() => handleNav('/dashboard')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><SquaresFour size={22} color={isActive('/dashboard')} /> <span style={{ color: isActive('/dashboard') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Dashboard</span></div><span style={{ color: '#64748b' }}>›</span></div>
-            <div className="drawer-item" onClick={() => handleNav('/students')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Users size={22} color={isActive('/students')} /> <span style={{ color: isActive('/students') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Students Directory</span></div><span style={{ color: '#64748b' }}>›</span></div>
+
+          <div className="pd-nav-list">
+            <span className="pd-divider-label">Main Menu</span>
             
+            <div className={`pd-nav-item ${isActive('/dashboard') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/dashboard')}>
+              <SquaresFour size={22} weight={isActive('/dashboard') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Dashboard</span>
+            </div>
+            
+            <div className={`pd-nav-item ${isActive('/students') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/students')}>
+              <Users size={22} weight={isActive('/students') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Students Directory</span>
+            </div>
+            
+            {/* 🚨 ADDED THE ISSUES TAB HERE */}
+            {showIssues && (
+              <div className={`pd-nav-item ${isActive('/issues') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/issues')}>
+                <Headset size={22} weight={isActive('/issues') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Issue Resolution</span>
+              </div>
+            )}
+
             {showTracker && (
-               <div className="drawer-item" onClick={() => handleNav('/tracker')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Files size={22} color={isActive('/tracker')} /> <span style={{ color: isActive('/tracker') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Job Tracker</span></div><span style={{ color: '#64748b' }}>›</span></div>
+              <div className={`pd-nav-item ${isActive('/tracker') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/tracker')}>
+                <Files size={22} weight={isActive('/tracker') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Job Tracker</span>
+              </div>
             )}
-            
+
             {showReports && (
-               <div className="drawer-item" onClick={() => handleNav('/reports')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/reports')} /> <span style={{ color: isActive('/reports') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Reports</span></div><span style={{ color: '#64748b' }}>›</span></div>
+              <div className={`pd-nav-item ${isActive('/reports') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/reports')}>
+                <ChartBar size={22} weight={isActive('/reports') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Reports</span>
+              </div>
             )}
 
-            <div className="drawer-item" onClick={() => handleNav('/placed')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Trophy size={22} color={isActive('/placed')} /> <span style={{ color: isActive('/placed') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Placed Students</span></div><span style={{ color: '#64748b' }}>›</span></div>
-            
+            <div className={`pd-nav-item ${isActive('/placed') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/placed')}>
+              <Trophy size={22} weight={isActive('/placed') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Placed Students</span>
+            </div>
+
             {showStudentApps && (
-              <div className="drawer-item" onClick={() => handleNav('/applications')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ListChecks size={22} color={isActive('/applications')} /> <span style={{ color: isActive('/applications') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Student Apps</span></div><span style={{ color: '#64748b' }}>›</span></div>
+              <div className={`pd-nav-item ${isActive('/applications') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/applications')}>
+                <ListChecks size={22} weight={isActive('/applications') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Student Apps</span>
+              </div>
             )}
 
-            <div className="drawer-item" onClick={() => handleNav('/vacancies')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Briefcase size={22} color={isActive('/vacancies')} /> <span style={{ color: isActive('/vacancies') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Vacancies</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            <div className={`pd-nav-item ${isActive('/vacancies') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/vacancies')}>
+              <Briefcase size={22} weight={isActive('/vacancies') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Vacancies</span>
+            </div>
+
+            {!isTrainer && (
+              <div className={`pd-nav-item ${isActive('/placement-drives') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}>
+                <IdentificationCard size={22} weight={isActive('/placement-drives') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Placement Drives</span>
+              </div>
+            )}
             
             {!isTrainer && (
-              <div className="drawer-item" onClick={() => handleNav('/placement-drives')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><IdentificationCard size={22} color={isActive('/placement-drives')} /> <span style={{ color: isActive('/placement-drives') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Placement Drives</span></div><span style={{ color: '#64748b' }}>›</span></div>
-            )}
-            {!isTrainer && (
-              <div className="drawer-item" onClick={() => handleNav('/clients')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Handshake size={22} color={isActive('/clients')} /> <span style={{ color: isActive('/clients') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Clients & Partners</span></div><span style={{ color: '#64748b' }}>›</span></div>
+              <div className={`pd-nav-item ${isActive('/clients') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/clients')}>
+                <Handshake size={22} weight={isActive('/clients') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Clients & Partners</span>
+              </div>
             )}
 
-            <div className="drawer-item" onClick={() => handleNav('/events')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><CalendarStar size={22} color={isActive('/events')} /> <span style={{ color: isActive('/events') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Events</span></div><span style={{ color: '#64748b' }}>›</span></div>
-            <div className="drawer-item" onClick={() => handleNav('/talentino')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><UserCheck size={22} color={isActive('/talentino')} /> <span style={{ color: isActive('/talentino') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Talentino</span></div><span style={{ color: '#64748b' }}>›</span></div>
-            
+            <span className="pd-divider-label" style={{ marginTop: '15px' }}>Academic & Ops</span>
+
+            <div className={`pd-nav-item ${isActive('/events') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/events')}>
+              <CalendarStar size={22} weight={isActive('/events') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Events</span>
+            </div>
+
+            <div className={`pd-nav-item ${isActive('/talentino') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/talentino')}>
+              <UserCheck size={22} weight={isActive('/talentino') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Talentino</span>
+            </div>
+
             {showStudyMaterials && (
-               <div className="drawer-item" onClick={() => handleNav('/study-materials')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Book size={22} color={isActive('/study-materials')} /> <span style={{ color: isActive('/study-materials') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Study Materials</span></div><span style={{ color: '#64748b' }}>›</span></div>
+              <div className={`pd-nav-item ${isActive('/study-materials') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/study-materials')}>
+                <Book size={22} weight={isActive('/study-materials') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Study Materials</span>
+              </div>
             )}
 
             {showTrainerLogs && (
-               <div className="drawer-item" onClick={() => handleNav('/trainer-logs')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Notebook size={22} color={isActive('/trainer-logs')} /> <span style={{ color: isActive('/trainer-logs') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Daily Log Report</span></div><span style={{ color: '#64748b' }}>›</span></div>
-            )}
-            
-            {!userRole.includes('MANAGER') && !isTpo && (
-               <div className="drawer-item" onClick={() => handleNav('/exams')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><FileText size={22} color={isActive('/exams')} /> <span style={{ color: isActive('/exams') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Exams Hub</span></div><span style={{ color: '#64748b' }}>›</span></div>
-            )}
-
-            {/* 🚨 ASSET MANAGEMENT (MINI-ERP) */}
-            {(isSuperAdmin || userRole.includes('MANAGER')) && (
-              <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                <span style={{ display: 'block', padding: '0 1.5rem', fontSize: '0.75rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>Asset Management</span>
-                
-                {/* 🚨 NEW DASHBOARD LINK */}
-                <div className="drawer-item" onClick={() => handleNav('/assets/dashboard')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ChartBar size={22} color={isActive('/assets/dashboard') === '#38bdf8' ? '#38bdf8' : '#94a3b8'} /> <span style={{ color: isActive('/assets/dashboard') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Dashboard</span></div><span style={{ color: '#64748b' }}>›</span></div>
-                
-                <div className="drawer-item" onClick={() => handleNav('/assets')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Barcode size={22} color={isActive('/assets') === '#38bdf8' ? '#38bdf8' : '#94a3b8'} /> <span style={{ color: isActive('/assets') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Master Registry</span></div><span style={{ color: '#64748b' }}>›</span></div>
-                <div className="drawer-item" onClick={() => handleNav('/assets/add')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Plus size={22} color={isActive('/assets/add') === '#38bdf8' ? '#38bdf8' : '#94a3b8'} /> <span style={{ color: isActive('/assets/add') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Register Asset</span></div><span style={{ color: '#64748b' }}>›</span></div>
-                <div className="drawer-item" onClick={() => handleNav('/assets/inventory')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Package size={22} color={isActive('/assets/inventory') === '#38bdf8' ? '#38bdf8' : '#94a3b8'} /> <span style={{ color: isActive('/assets/inventory') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Consumables</span></div><span style={{ color: '#64748b' }}>›</span></div>
-                <div className="drawer-item" onClick={() => handleNav('/assets/transfers')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ArrowsLeftRight size={22} color={isActive('/assets/transfers') === '#38bdf8' ? '#38bdf8' : '#94a3b8'} /> <span style={{ color: isActive('/assets/transfers') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Transfers</span></div><span style={{ color: '#64748b' }}>›</span></div>
-                <div className="drawer-item" onClick={() => handleNav('/assets/maintenance')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Wrench size={22} color={isActive('/assets/maintenance') === '#38bdf8' ? '#38bdf8' : '#94a3b8'} /> <span style={{ color: isActive('/assets/maintenance') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Maintenance</span></div><span style={{ color: '#64748b' }}>›</span></div>
+              <div className={`pd-nav-item ${isActive('/trainer-logs') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/trainer-logs')}>
+                <Notebook size={22} weight={isActive('/trainer-logs') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Daily Log Report</span>
               </div>
             )}
 
-            {showManageAdmin && (
-               <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
-                 <span style={{ display: 'block', padding: '0 1.5rem', fontSize: '0.75rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '10px' }}>System Admin</span>
-                 <div className="drawer-item" onClick={() => handleNav('/branches')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><MapPin size={22} color={isActive('/branches')} /> <span style={{ color: isActive('/branches') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Manage Branches</span></div><span style={{ color: '#64748b' }}>›</span></div>
-                 <div className="drawer-item" onClick={() => handleNav('/courses')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Bookmarks size={22} color={isActive('/courses')} /> <span style={{ color: isActive('/courses') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Manage Courses</span></div><span style={{ color: '#64748b' }}>›</span></div>
-                 <div className="drawer-item" onClick={() => handleNav('/users')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/users')} /> <span style={{ color: isActive('/users') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>User Management</span></div><span style={{ color: '#64748b' }}>›</span></div>
-                 <div className="drawer-item" onClick={() => handleNav('/security-logs')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><ShieldCheck size={22} color={isActive('/security-logs')} /> <span style={{ color: isActive('/security-logs') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Security Logs</span></div><span style={{ color: '#64748b' }}>›</span></div>
-               </div>
+            {!userRole.includes('MANAGER') && !isTpo && (
+              <div className={`pd-nav-item ${isActive('/exams') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/exams')}>
+                <FileText size={22} weight={isActive('/exams') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Exams Hub</span>
+              </div>
             )}
 
-            <div className="drawer-item" style={{ marginTop: '20px', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '20px' }} onClick={() => handleNav('/settings')}><div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Gear size={22} color={isActive('/settings')} /> <span style={{ color: isActive('/settings') === '#38bdf8' ? '#fff' : '#cbd5e1' }}>Settings</span></div><span style={{ color: '#64748b' }}>›</span></div>
+            {/* 🚨 ASSET MANAGEMENT */}
+            {(isSuperAdmin || userRole.includes('MANAGER')) && (
+              <>
+                <span className="pd-divider-label" style={{ marginTop: '15px' }}>Asset Management</span>
+                <div className={`pd-nav-item ${isActive('/assets/dashboard') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/assets/dashboard')}>
+                  <ChartBar size={22} weight={isActive('/assets/dashboard') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Asset Dashboard</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/assets') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/assets')}>
+                  <Barcode size={22} weight={isActive('/assets') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Master Registry</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/assets/add') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/assets/add')}>
+                  <Plus size={22} weight={isActive('/assets/add') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Register Asset</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/assets/inventory') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/assets/inventory')}>
+                  <Package size={22} weight={isActive('/assets/inventory') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Consumables</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/assets/transfers') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/assets/transfers')}>
+                  <ArrowsLeftRight size={22} weight={isActive('/assets/transfers') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Transfers</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/assets/maintenance') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/assets/maintenance')}>
+                  <Wrench size={22} weight={isActive('/assets/maintenance') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Maintenance</span>
+                </div>
+              </>
+            )}
+
+            {showManageAdmin && (
+              <>
+                <span className="pd-divider-label" style={{ marginTop: '15px' }}>System Admin</span>
+                <div className={`pd-nav-item ${isActive('/branches') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/branches')}>
+                  <MapPin size={22} weight={isActive('/branches') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Manage Branches</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/courses') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/courses')}>
+                  <Bookmarks size={22} weight={isActive('/courses') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Manage Courses</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/users') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/users')}>
+                  <ShieldCheck size={22} weight={isActive('/users') === '#38bdf8' ? 'fill' : 'regular'} /> <span>User Management</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/security-logs') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/security-logs')}>
+                  <ShieldCheck size={22} weight={isActive('/security-logs') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Security Logs</span>
+                </div>
+              </>
+            )}
+
+            <span className="pd-divider-label" style={{ marginTop: '15px' }}>Preferences</span>
+            <div className={`pd-nav-item ${isActive('/settings') === '#38bdf8' ? 'active' : ''}`} onClick={() => handleNav('/settings')}>
+              <Gear size={22} weight={isActive('/settings') === '#38bdf8' ? 'fill' : 'regular'} /> <span>Settings</span>
+            </div>
           </div>
-          
-          <div className="drawer-footer" style={{ borderTop: '1px solid rgba(255,255,255,0.1)', padding: '20px', flexShrink: 0 }}>
-            <button className="btn-logout-drawer" onClick={handleLogout} style={{ width: '100%', padding: '10px', background: 'rgba(239, 68, 68, 0.2)', border: '1px solid rgba(239, 68, 68, 0.4)', color: '#ef4444', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}>Log Out</button>
-            <div style={{ fontSize: '0.72rem', color: '#cbd5e1', marginTop: '12px', textAlign: 'center' }}>Copyright © 2026 IPCS Global</div>
+
+          <div className="pd-footer">
+            <button className="pd-logout-btn hover-lift" onClick={handleLogout}>
+              <SignOut size={20} weight="bold" /> Logout
+            </button>
           </div>
         </div>
       </div>
+
+      {/* 🎨 PREMIUM MENU CSS */}
+      <style>{`
+        .premium-drawer-overlay {
+          position: fixed;
+          top: 0; left: 0; right: 0; bottom: 0;
+          background: rgba(2, 6, 23, 0.6);
+          backdrop-filter: blur(8px);
+          -webkit-backdrop-filter: blur(8px);
+          z-index: 9999;
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 0.3s ease;
+        }
+        .premium-drawer-overlay.open {
+          opacity: 1;
+          pointer-events: all;
+        }
+
+        .premium-drawer-card {
+          position: absolute;
+          top: 20px;
+          right: -350px; /* Hidden state */
+          bottom: 20px;
+          width: 320px;
+          background: #12121f; /* Deep dark indigo matching mockup */
+          border-radius: 28px;
+          display: flex;
+          flex-direction: column;
+          box-shadow: -15px 15px 40px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.05);
+          transition: right 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+          overflow: hidden;
+        }
+        .premium-drawer-overlay.open .premium-drawer-card {
+          right: 20px;
+        }
+
+        /* Responsive collapse for mobile */
+        @media (max-width: 480px) {
+          .premium-drawer-card {
+            top: 0; bottom: 0; right: -100%;
+            width: 85%;
+            border-radius: 20px 0 0 20px;
+          }
+          .premium-drawer-overlay.open .premium-drawer-card { right: 0; }
+        }
+
+        .pd-header {
+          padding: 30px 20px 20px 20px;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          position: relative;
+        }
+
+        .pd-close-btn {
+          position: absolute;
+          top: 20px;
+          right: 20px;
+          width: 32px;
+          height: 32px;
+          background: rgba(255,255,255,0.05);
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #94a3b8;
+          cursor: pointer;
+          transition: 0.2s;
+        }
+        .pd-close-btn:hover {
+          background: rgba(239, 68, 68, 0.1);
+          color: #ef4444;
+          transform: rotate(90deg);
+        }
+
+        .pd-profile-group {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          text-align: center;
+        }
+
+        .pd-avatar-ring {
+          width: 76px;
+          height: 76px;
+          border-radius: 50%;
+          background: linear-gradient(135deg, #8b5cf6, #38bdf8);
+          padding: 3px;
+          margin-bottom: 12px;
+          box-shadow: 0 4px 15px rgba(56, 189, 248, 0.3);
+        }
+
+        .pd-avatar-inner {
+          width: 100%;
+          height: 100%;
+          border-radius: 50%;
+          background: #0f1523;
+          overflow: hidden;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #fff;
+          font-weight: bold;
+          font-size: 1.5rem;
+        }
+        .pd-avatar-inner img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+        }
+
+        .pd-name {
+          margin: 0 0 4px 0;
+          color: #f8fafc;
+          font-size: 1.2rem;
+          font-weight: 700;
+          letter-spacing: -0.5px;
+        }
+        .pd-role {
+          margin: 0;
+          color: #94a3b8;
+          font-size: 0.75rem;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          font-weight: 600;
+        }
+
+        .pd-divider-label {
+          display: block;
+          color: #475569;
+          font-size: 0.65rem;
+          text-transform: uppercase;
+          letter-spacing: 1.5px;
+          font-weight: 800;
+          margin: 10px 0 8px 15px;
+        }
+
+        .pd-nav-list {
+          flex: 1;
+          overflow-y: auto;
+          padding: 0 15px;
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        
+        /* Custom Scrollbar for Menu */
+        .pd-nav-list::-webkit-scrollbar { width: 4px; }
+        .pd-nav-list::-webkit-scrollbar-track { background: transparent; }
+        .pd-nav-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
+
+        .pd-nav-item {
+          display: flex;
+          align-items: center;
+          gap: 15px;
+          padding: 12px 18px;
+          border-radius: 16px;
+          color: #94a3b8;
+          font-size: 0.95rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .pd-nav-item:hover {
+          background: rgba(255,255,255,0.03);
+          color: #e2e8f0;
+          transform: translateX(4px);
+        }
+        
+        /* The Mockup Active State */
+        .pd-nav-item.active {
+          background: linear-gradient(135deg, #6366f1, #a855f7);
+          color: #ffffff;
+          box-shadow: 0 8px 20px -6px rgba(99, 102, 241, 0.6);
+        }
+
+        .pd-footer {
+          padding: 20px;
+          background: rgba(0,0,0,0.1);
+        }
+
+        .pd-logout-btn {
+          width: 100%;
+          background: #fff;
+          color: #0f172a;
+          border: none;
+          padding: 14px;
+          border-radius: 14px;
+          font-weight: 800;
+          font-size: 0.95rem;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 10px;
+          cursor: pointer;
+          transition: 0.2s ease;
+        }
+        .pd-logout-btn:hover {
+          background: #ef4444;
+          color: #fff;
+          box-shadow: 0 8px 20px -6px rgba(239, 68, 68, 0.5);
+        }
+      `}</style>
     </div>
   );
 }
