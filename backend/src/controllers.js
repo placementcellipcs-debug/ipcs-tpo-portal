@@ -1058,7 +1058,15 @@ exports.getReports = (req, res) => {
   
   cache.students.forEach(row => {
     if(!checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) return;
-    students.push({ name: getValByHeader(row, ['name']), roll: getValByHeader(row, ['rollnumber', 'roll']), branch: getValByHeader(row, ['branch']), course: getValByHeader(row, ['course']), status: getValByHeader(row, ['status']), placementStatus: getValByHeader(row, ['placementstat', 'placementstatus']) });
+    students.push({ 
+      name: getValByHeader(row, ['name']), 
+      roll: getValByHeader(row, ['rollnumber', 'roll']), 
+      branch: getValByHeader(row, ['branch']), 
+      course: getValByHeader(row, ['course']), 
+      status: getValByHeader(row, ['status']), 
+      placementStatus: getValByHeader(row, ['placementstat', 'placementstatus']),
+      timestamp: getValByHeader(row, ['timestamp']) // 🚨 Added to plot the Area Chart applications
+    });
   });
   
   cache.applications.forEach(row => {
