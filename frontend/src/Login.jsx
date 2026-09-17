@@ -11,6 +11,8 @@ import { API_BASE } from './apiConfig';
 const ClientLogo = ({ client, size = 70, noMargin = false }) => {
   const [imgErr, setImgErr] = useState(false);
   
+  if (!client) return null; // 🚨 Crash Protection
+
   const getDriveImage = (url) => {
     if (!url) return null;
     const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
@@ -42,7 +44,7 @@ export default function Clients() {
   const isTpo = upperRole.includes('TPO');
   const canManageClients = isTpo && !isSuperAdmin;
 
-  // 🚨 MANAGERS (BM, TM, RM, ZM) -> Gets the Restricted View
+  // 🚨 MANAGERS (BM, TM, RM, ZM) -> Gets the strictly restricted simple view
   const isRestrictedManager = !isSuperAdmin && !isTpo && (
     upperRole.includes('MANAGER') || 
     upperRole.includes('ZONAL') || 
@@ -82,18 +84,27 @@ export default function Clients() {
       const isSA = localTpo.accessType === 'superadmin' || localUpperRole.includes('ADMIN') || localUpperRole.includes('HEAD') || localUpperRole === 'GENERAL MANAGER';
       const isRestrictedMgr = !isSA && !localUpperRole.includes('TPO') && (localUpperRole.includes('MANAGER') || localUpperRole.includes('ZONAL') || localUpperRole.includes('TERRITORY') || localUpperRole.includes('REGIONAL'));
 
-      const cached = localStorage.getItem('dash_clients');
-      if (cached) { setClients(JSON.parse(cached)); setLoading(false); }
+      // 🚨 Bulletproof Cache Loading to prevent Black Screen crashes
+      try {
+        const cached = localStorage.getItem('dash_clients');
+        if (cached && cached !== 'undefined' && cached !== 'null') { 
+            const parsed = JSON.parse(cached);
+            if (Array.isArray(parsed)) {
+                setClients(parsed); 
+                setLoading(false); 
+            }
+        }
+      } catch(e) { console.error("Cache ignored"); }
 
       try {
-        // 🚨 Managers and Super Admins pull the entire nationwide list (tpoName = '')
+        // Super Admins and Managers pull the entire nationwide list (tpoName = '')
         const payload = { tpoName: (isSA || isRestrictedMgr) ? '' : localTpo.name };
         const res = await axios.post(`${API_BASE}/api/tpo/clients`, payload);
-        if (res.data.success) {
+        if (res.data && res.data.success) {
           setClients(res.data.clients || []);
           localStorage.setItem('dash_clients', JSON.stringify(res.data.clients || [])); 
         }
-      } catch (err) { console.error("Failed to fetch clients:", err); } 
+      } catch (err) { console.error("Failed to fetch clients"); } 
       finally { setLoading(false); }
     };
     fetchClientsInitial(); 
@@ -101,9 +112,9 @@ export default function Clients() {
 
   const fetchClientsManual = async () => {
     try {
-      const payload = { tpoName: (isSuperAdmin || isRestrictedManager) ? '' : tpoData.name };
+      const payload = { tpoName: (isSuperAdmin || isRestrictedManager) ? '' : tpoData?.name };
       const res = await axios.post(`${API_BASE}/api/tpo/clients`, payload);
-      if (res.data.success) {
+      if (res.data && res.data.success) {
         setClients(res.data.clients || []);
         localStorage.setItem('dash_clients', JSON.stringify(res.data.clients || [])); 
       }
@@ -178,7 +189,9 @@ export default function Clients() {
     finally { setSendingRequest(null); }
   };
 
-  const filteredClients = clients.filter(c => {
+  // 🚨 Bulletproof array filtering
+  const safeClients = Array.isArray(clients) ? clients : [];
+  const filteredClients = safeClients.filter(c => {
     const matchSearch = String(c.companyName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                         String(c.location || '').toLowerCase().includes(searchQuery.toLowerCase());
     
@@ -190,10 +203,11 @@ export default function Clients() {
     return matchSearch && tabMatch;
   });
 
-  const totalPartners = clients.length;
-  const totalSigned = clients.filter(c => String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink)).length;
+  // 🚨 Safely calculate KPIs
+  const totalPartners = safeClients.length;
+  const totalSigned = safeClients.filter(c => String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink)).length;
   const totalPending = totalPartners - totalSigned;
-  const uniqueTPOs = new Set(clients.map(c => c.tpoName || 'Unknown').filter(n => n !== 'Unknown')).size;
+  const uniqueTPOs = new Set(safeClients.map(c => c.tpoName || 'Unknown').filter(n => n !== 'Unknown')).size;
 
   return (
     <Layout>
@@ -212,7 +226,7 @@ export default function Clients() {
                 : 'Directory of corporate partners and countersigned institutional agreements.'}
             </p>
           </div>
-          {/* 🚨 TPO ONLY: ADD PARTNER BUTTON */}
+          {/* TPO ONLY: ADD PARTNER BUTTON */}
           {canManageClients && (
             <button className="premium-btn primary hover-lift" onClick={() => setIsAddModalOpen(true)}>
               <Plus weight="bold" size={20} /> Add Partner
@@ -220,8 +234,8 @@ export default function Clients() {
           )}
         </div>
 
-        {/* 🚨 ADMIN MINI-DASHBOARD (Hidden from Managers) */}
-        {isSuperAdmin && (
+        {/* ADMIN MINI-DASHBOARD (Hidden from Managers) */}
+        {isSuperAdmin && !isRestrictedManager && (
           <div className="mini-dash-grid">
             <div className="kpi-card glass-panel hover-lift">
               <div className="kpi-top"><div><div className="kpi-title">Total Partners</div><div className="kpi-val">{totalPartners}</div></div><div className="kpi-icon blue"><Buildings weight="fill" size={26}/></div></div>
@@ -241,7 +255,7 @@ export default function Clients() {
         {/* CONTROLS (TABS & SEARCH) */}
         <div className="glass-panel control-action-bar" style={{ flexDirection: 'row', justifyContent: isRestrictedManager ? 'center' : 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
           
-          {/* 🚨 HIDE TABS FOR MANAGERS (THEY SEE ALL ON ONE PAGE) */}
+          {/* HIDE TABS FOR MANAGERS (THEY SEE ALL ON ONE PAGE) */}
           {!isRestrictedManager && (
             <div className="segmented-tabs">
               <button className={`seg-tab ${activeTab === 'Signed' ? 'active-green' : ''}`} onClick={() => setActiveTab('Signed')}>Signed MOUs</button>
@@ -266,19 +280,41 @@ export default function Clients() {
           <div className="client-grid">
             {filteredClients.map((c, i) => {
               const isSigned = String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink);
-              return (
-                <div key={i} className="client-card glass-panel hover-lift" style={{ padding: isRestrictedManager ? '20px' : '25px' }}>
-                  
-                  <div className="client-header" style={{ marginBottom: isRestrictedManager ? '10px' : '20px' }}>
-                    <ClientLogo client={c} size={isRestrictedManager ? 60 : 80} />
-                    <h3 className="client-name" style={{ fontSize: isRestrictedManager ? '1.05rem' : '1.15rem' }}>{c.companyName || 'Unknown Company'}</h3>
+              
+              // 🚨 MANAGER VIEW: Strictly limited info
+              if (isRestrictedManager) {
+                return (
+                  <div key={i} className="client-card glass-panel hover-lift" style={{ padding: '25px', alignItems: 'center', textAlign: 'center', minHeight: '220px' }}>
+                    <ClientLogo client={c} size={70} />
+                    <h3 className="client-name" style={{ fontSize: '1.1rem', marginBottom: '15px', wordBreak: 'break-word' }}>{c.companyName || 'Unknown Company'}</h3>
                     
-                    {/* 🚨 HIDE LOCATION FOR MANAGERS */}
-                    {!isRestrictedManager && <div className="client-loc"><MapPinLine size={14} /> {c.location || 'Location Not Specified'}</div>}
+                    <div className="client-footer" style={{ width: '100%', marginTop: 'auto' }}>
+                      {isSigned ? (
+                        <button className="mou-btn signed-btn" onClick={() => c.mouLink && window.open(c.mouLink, '_blank')}>
+                          <FilePdf size={18} weight="fill" /> Open Signed MOU <ArrowSquareOut size={14} />
+                        </button>
+                      ) : (
+                        <div className="mou-btn pending-btn" style={{ opacity: 0.8, cursor: 'default' }}>
+                          <Clock size={18} weight="bold"/> MOU Pending
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              }
+
+              // 🚨 TPO / SUPER ADMIN VIEW: Full Details
+              return (
+                <div key={i} className="client-card glass-panel hover-lift">
+                  
+                  <div className="client-header">
+                    <ClientLogo client={c} size={80} />
+                    <h3 className="client-name">{c.companyName || 'Unknown Company'}</h3>
+                    <div className="client-loc"><MapPinLine size={14} /> {c.location || 'Location Not Specified'}</div>
                   </div>
 
-                  {/* 🚨 ADMIN ONLY: HIDDEN CONTACT DETAILS */}
-                  {isSuperAdmin && !isRestrictedManager && (
+                  {/* ADMIN ONLY: CONTACT DETAILS */}
+                  {isSuperAdmin && (
                     <div className="admin-client-details">
                       <div className="acd-item"><UserCircle size={16} /> <span>{c.contactPerson || 'No Name'}</span></div>
                       <div className="acd-item"><Phone size={16} /> <span>{c.contact || 'No Phone'}</span></div>
@@ -294,11 +330,7 @@ export default function Clients() {
                       </button>
                     ) : (
                       <div className="pending-footer">
-                        {/* 🚨 MANGER VIEW FOR PENDING (Read Only) */}
-                        {isRestrictedManager ? (
-                          <div className="mou-btn pending-btn" style={{ opacity: 0.8, cursor: 'default' }}><Clock size={18} weight="bold"/> MOU Pending</div>
-                        ) : canManageClients ? (
-                          /* TPO ONLY BUTTONS */
+                        {canManageClients ? (
                           <div style={{ display: 'flex', gap: '8px', width: '100%' }}>
                             <button className="mou-btn edit-btn" onClick={() => openEditModal(c)}>
                               <PencilSimple size={18} weight="bold" /> Edit
@@ -308,7 +340,6 @@ export default function Clients() {
                             </button>
                           </div>
                         ) : (
-                          /* SUPER ADMIN VIEW FOR PENDING */
                           <div className="mou-btn pending-btn"><Clock size={18} weight="bold"/> Signature Pending</div>
                         )}
                       </div>
@@ -322,7 +353,7 @@ export default function Clients() {
         )}
       </div>
 
-      {/* 🚨 ADD CLIENT MODAL */}
+      {/* ADD CLIENT MODAL */}
       {isAddModalOpen && (
         <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
           <div className="premium-modal glass-panel" style={{ maxWidth: '550px', padding: '30px' }}>
