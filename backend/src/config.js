@@ -56,7 +56,7 @@ async function refreshCache() {
       getSheetFuzzy("StudyMaterials"), getSheetFuzzy("TechQuestions"), getSheetFuzzy("TechResults"),
       getSheetFuzzy("AptitudeQuestions"), getSheetFuzzy("AptitudeResults"), getSheetFuzzy("TalentinoQuestions"), getSheetFuzzy("TalentinoResults"),
       getSheetFuzzy("Courses"), getSheetFuzzy("DriveRegistration"), getSheetFuzzy("Contact"), getSheetFuzzy("User"), getSheetFuzzy("Branches"), getSheetFuzzy("Mail"),
-      getSheetFuzzy("trainer"), getSheetFuzzy("security")
+      getSheetFuzzy("trainer"), getSheetFuzzy("security"), getSheetFuzzy("TPOStats")
     ];
 
     const fetchedData = [];
@@ -68,7 +68,7 @@ async function refreshCache() {
     const [
       stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, 
       matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows,
-      courseRows, driveRows, contactRows, userRows, branchRows, mailRows, trainerLogRows, securityRows
+      courseRows, driveRows, contactRows, userRows, branchRows, mailRows, trainerLogRows, securityRows, tpoStatsRows
     ] = fetchedData;
 
     let coursesDict = {};
@@ -94,7 +94,8 @@ async function refreshCache() {
       talQuestions: talQRows, talResults: talRRows, coursesDict: coursesDict, drives: driveRows,
       contacts: contactRows, users: userRows, branches: branchRows, mails: mailRows,
       trainerLogs: trainerLogRows,
-      securityLogs: securityRows
+      securityLogs: securityRows,
+      tpoStats: tpoStatsRows
     };
     
     console.log("✅ Cache successfully synced with Google Sheets!");

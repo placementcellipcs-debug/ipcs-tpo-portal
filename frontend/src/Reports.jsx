@@ -1,10 +1,8 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree } from '@phosphor-icons/react';
+import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus } from '@phosphor-icons/react';
 import Layout from './Layout';
-
 import { API_BASE } from './apiConfig';
-const COURSES = ['Automation', 'BMS', 'IT', 'DM', 'Embedded'];
 
 export default function Reports() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -22,16 +20,26 @@ export default function Reports() {
   const [vacancies, setVacancies] = useState([]); 
   const [events, setEvents] = useState([]);
   const [tpoLogs, setTpoLogs] = useState([]); 
+  
   const [tpoList, setTpoList] = useState([]);
   const [allBranchesList, setAllBranchesList] = useState([]);
+  // Replaced hardcoded courses with dynamic state (initialized with the 5 defaults)
+  const [mainCourses, setMainCourses] = useState(['Industrial Automation', 'BMS AND CCTV', 'Information technology (IT)', 'Digital Marketing', 'Embedded and IoT']);
+
+  // 🚨 NEW STATES FOR TPO ACTIVITY
+  const [tpoStatsData, setTpoStatsData] = useState([]);
+  const [showActivityModal, setShowActivityModal] = useState(false);
+  const [activityForm, setActivityForm] = useState({ companiesVisited: 0, branchVideos: 0, branchPosters: 0 });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const fetchAllData = async () => {
       try {
-        const [res, uRes, bRes] = await Promise.all([
+        const [res, uRes, bRes, cRes] = await Promise.all([
           axios.post(`${API_BASE}/api/tpo/reports`, { assignedBranchesArray: ['all'] }),
           axios.get(`${API_BASE}/api/admin/users`),
-          axios.get(`${API_BASE}/api/admin/branches`)
+          axios.get(`${API_BASE}/api/admin/branches`),
+          axios.get(`${API_BASE}/api/admin/courses`).catch(() => ({ data: { success: false } })) // Graceful fail if endpoint missing
         ]);
         
         if (res.data.success) {
@@ -39,6 +47,7 @@ export default function Reports() {
           setVacancies(res.data.vacancies || []);
           setEvents(res.data.events || []);
           setTpoLogs(res.data.tpoLogs || []); 
+          setTpoStatsData(res.data.tpoStats || []); // 🚨 FETCHED STATS
         }
 
         if (uRes.data.success) {
@@ -56,6 +65,11 @@ export default function Reports() {
           setAllBranchesList(branches);
         }
 
+        if (cRes?.data?.success && cRes.data.courses) {
+          const fetchedCourses = Object.keys(cRes.data.courses).filter(c => c.trim() !== '' && c !== 'Others');
+          if (fetchedCourses.length > 0) setMainCourses(fetchedCourses);
+        }
+
       } catch (error) {
         console.error("Failed to fetch reports", error);
       } finally {
@@ -65,14 +79,20 @@ export default function Reports() {
     fetchAllData();
   }, [isSuperAdmin, myName, tpoData]); 
 
+  // Course normalizer for matrix alignment
   const getCourse = (c) => {
     if(!c) return 'Others';
     const lower = c.toLowerCase();
-    if(lower.includes('auto')) return 'Automation';
-    if(lower.includes('bms')) return 'BMS';
-    if(lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'IT';
-    if(lower.includes('digital') || lower.includes('dm')) return 'DM';
-    if(lower.includes('embed') || lower.includes('iot')) return 'Embedded';
+    const matched = mainCourses.find(mc => lower.includes(mc.toLowerCase().split(' ')[0]));
+    if (matched) return matched;
+    
+    // Fallback mappings if names are abbreviated in students sheet
+    if(lower.includes('auto')) return mainCourses.find(c => c.includes('Automation')) || 'Industrial Automation';
+    if(lower.includes('bms') || lower.includes('cctv')) return mainCourses.find(c => c.includes('BMS')) || 'BMS AND CCTV';
+    if(lower.includes('it') || lower.includes('software')) return mainCourses.find(c => c.includes('IT') || c.includes('Information')) || 'Information technology (IT)';
+    if(lower.includes('dm') || lower.includes('digital')) return mainCourses.find(c => c.includes('Digital')) || 'Digital Marketing';
+    if(lower.includes('embed') || lower.includes('iot')) return mainCourses.find(c => c.includes('Embed')) || 'Embedded and IoT';
+    
     return 'Others';
   };
 
@@ -81,7 +101,7 @@ export default function Reports() {
     if (!dateStr) return false;
     let year, month;
     if (dateStr.includes('/')) {
-      const parts = dateStr.split(/[/\s,]+/); // 🚨 Safely splits away commas
+      const parts = dateStr.split(/[/\s,]+/); 
       year = parts[2];
       month = parts[1].padStart(2, '0');
     } else if (dateStr.includes('-')) {
@@ -113,8 +133,13 @@ export default function Reports() {
   // 1. BRANCH ENROLLMENTS
   const assignedBranches = [...new Set(students.filter(s => isAssignedBranch(s.branch)).map(s => s.branch))].filter(Boolean).sort();
   const branchEnrolls = {};
-  assignedBranches.forEach(b => branchEnrolls[b] = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0, Total: 0 });
-  const enrollTotals = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0, Total: 0 };
+  const enrollTotals = { Others: 0, Total: 0 };
+  mainCourses.forEach(c => enrollTotals[c] = 0);
+
+  assignedBranches.forEach(b => {
+    branchEnrolls[b] = { Others: 0, Total: 0 };
+    mainCourses.forEach(c => branchEnrolls[b][c] = 0);
+  });
 
   students.forEach(s => {
     if (isAssignedBranch(s.branch) && branchEnrolls[s.branch]) {
@@ -122,30 +147,43 @@ export default function Reports() {
       if (branchEnrolls[s.branch][c] !== undefined) {
         branchEnrolls[s.branch][c]++;
         enrollTotals[c]++;
+      } else {
+        branchEnrolls[s.branch].Others++;
+        enrollTotals.Others++;
       }
       branchEnrolls[s.branch].Total++;
       enrollTotals.Total++;
     }
   });
 
-  // 2. BRANCH PLACEMENT MATRIX (STRICTLY FROM TPO_LOG FOR LOGGED IN TPO)
+  // 2. BRANCH PLACEMENT MATRIX
   const branchPlaces = {};
-  allBranchesList.forEach(b => branchPlaces[b] = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0, Total: 0 });
-  const placeTotals = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0, Total: 0 };
+  const placeTotals = { Others: 0, Total: 0 };
+  mainCourses.forEach(c => placeTotals[c] = 0);
+
+  allBranchesList.forEach(b => {
+    branchPlaces[b] = { Others: 0, Total: 0 };
+    mainCourses.forEach(c => branchPlaces[b][c] = 0);
+  });
 
   tpoLogs.forEach(log => {
     const b = getVal(log, 'branch');
     const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
     const logTpo = getVal(log, 'placementofficer').toLowerCase().trim();
     
-    // Filter by branch, month, and logged-in TPO only!
-    if (branchPlaces[b] && checkMonth(dStr) && (logTpo === myName || logTpo.includes(myName) || myName.includes(logTpo))) {
+    // Admins see all, TPOs see only their own placements
+    const hasAccessToLog = isSuperAdmin || (logTpo === myName || logTpo.includes(myName) || myName.includes(logTpo));
+
+    if (branchPlaces[b] && checkMonth(dStr) && hasAccessToLog) {
       const stat = (getVal(log, 'status') || '').toLowerCase();
       if(stat.includes('placed') || stat.includes('join') || stat.includes('offer')) {
         const c = getCourse(getVal(log, 'course'));
         if (branchPlaces[b][c] !== undefined) {
           branchPlaces[b][c]++;
           placeTotals[c]++;
+        } else {
+          branchPlaces[b].Others++;
+          placeTotals.Others++;
         }
         branchPlaces[b].Total++;
         placeTotals.Total++;
@@ -153,35 +191,50 @@ export default function Reports() {
     }
   });
 
-  // 3. BRANCH VS TPO STATUS (Only Logged-in TPO's column + Total)
+  // 3. BRANCH VS TPO STATUS
   const branchTPO = {};
+  // Determine which TPOs to show as columns based on access level
+  const displayTpos = isSuperAdmin ? tpoList.map(t => t.userName || t.name) : [tpoData.name];
+  
   allBranchesList.forEach(b => {
-    branchTPO[b] = { [tpoData.name]: 0, Total: 0 };
+    branchTPO[b] = { Total: 0 };
+    displayTpos.forEach(tName => branchTPO[b][tName] = 0);
   });
 
   tpoLogs.forEach(log => {
     const b = getVal(log, 'branch');
     const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
-    const logTpo = getVal(log, 'placementofficer').toLowerCase().trim();
+    const logTpoRaw = getVal(log, 'placementofficer');
+    const logTpo = logTpoRaw.toLowerCase().trim();
 
-    if (branchTPO[b] && checkMonth(dStr) && (logTpo === myName || logTpo.includes(myName) || myName.includes(logTpo))) {
+    if (branchTPO[b] && checkMonth(dStr)) {
       const stat = (getVal(log, 'status') || '').toLowerCase();
       if(stat.includes('placed') || stat.includes('join') || stat.includes('offer')) {
-        branchTPO[b][tpoData.name]++;
-        branchTPO[b].Total++;
+        
+        // Find matching column
+        const matchedTpoColumn = displayTpos.find(t => {
+           const cleanT = t.toLowerCase().trim();
+           return logTpo === cleanT || logTpo.includes(cleanT) || cleanT.includes(logTpo);
+        });
+
+        if (matchedTpoColumn && branchTPO[b][matchedTpoColumn] !== undefined) {
+          branchTPO[b][matchedTpoColumn]++;
+          branchTPO[b].Total++;
+        }
       }
     }
   });
 
   // 4. PIPELINE TRACKER
   const pipeline = {};
-  COURSES.concat(['Others']).forEach(c => pipeline[c] = { placed: 0, joined: 0, notJoined: 0 });
+  mainCourses.concat(['Others']).forEach(c => pipeline[c] = { placed: 0, joined: 0, notJoined: 0 });
 
   tpoLogs.forEach(log => {
     const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
     const logTpo = getVal(log, 'placementofficer').toLowerCase().trim();
+    const hasAccessToLog = isSuperAdmin || (logTpo === myName || logTpo.includes(myName) || myName.includes(logTpo));
 
-    if (!checkMonth(dStr) || (logTpo !== myName && !logTpo.includes(myName) && !myName.includes(logTpo))) return;
+    if (!checkMonth(dStr) || !hasAccessToLog) return;
     
     const c = getCourse(getVal(log, 'course'));
     if (!pipeline[c]) return;
@@ -194,11 +247,14 @@ export default function Reports() {
 
   // 5. PENDING STUDENTS
   const pendingByCourse = {};
-  assignedBranches.forEach(b => {
-    pendingByCourse[b] = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0, Total: 0 };
-  });
-  const pendTotals = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0, Total: 0 };
+  const pendTotals = { Others: 0, Total: 0 };
+  mainCourses.forEach(c => pendTotals[c] = 0);
 
+  assignedBranches.forEach(b => {
+    pendingByCourse[b] = { Others: 0, Total: 0 };
+    mainCourses.forEach(c => pendingByCourse[b][c] = 0);
+  });
+  
   students.forEach(s => {
     if (isAssignedBranch(s.branch) && pendingByCourse[s.branch]) {
       const stat = (s.placementStatus || '').toLowerCase();
@@ -207,6 +263,9 @@ export default function Reports() {
         if (pendingByCourse[s.branch][c] !== undefined) {
           pendingByCourse[s.branch][c]++;
           pendTotals[c]++;
+        } else {
+          pendingByCourse[s.branch].Others++;
+          pendTotals.Others++;
         }
         pendingByCourse[s.branch].Total++;
         pendTotals.Total++;
@@ -214,17 +273,24 @@ export default function Reports() {
     }
   });
 
-  const newsLetterStats = {};
-  COURSES.concat(['Others']).forEach(c => newsLetterStats[c] = 0);
-  
-  vacancies.forEach(v => {
-    if (!checkMonth(v.date)) return;
-    const c = getCourse(v.course);
-    if (newsLetterStats[c] !== undefined) newsLetterStats[c]++;
-  });
-
+  // TPO ACTIVITY LOGIC
   const tpoActivity = tpoList.map(t => {
     const targetName = (t.userName || t.name || '').toLowerCase().trim();
+    
+    // 🚨 Find manual stats for this TPO in the selected month
+    const currentMonthPrefix = monthFilter; // "YYYY-MM" format
+    const manualStats = tpoStatsData.find(stat => {
+      const statUser = (stat['USER'] || stat['user'] || '').toLowerCase().trim();
+      let statMonth = '';
+      const ts = getVal(stat, 'timestamp') || '';
+      if (ts) {
+        const d = new Date(ts);
+        if (!isNaN(d)) statMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      }
+      return statUser === targetName && statMonth === currentMonthPrefix;
+    });
+
+    // Total Applications & Joining Status from TPO Logs
     const logs = tpoLogs.filter(log => {
        const logTpo = getVal(log, 'placementofficer').toLowerCase().trim();
        const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
@@ -233,24 +299,58 @@ export default function Reports() {
     
     const joined = logs.filter(log => (getVal(log, 'status') || '').toLowerCase().includes('join')).length;
     const notJoined = logs.filter(log => (getVal(log, 'status') || '').toLowerCase().includes('reject') || (getVal(log, 'status') || '').toLowerCase().includes('not attend')).length;
-    const uniqueCompanies = new Set(logs.map(log => getVal(log, 'companyname') || getVal(log, 'company')).filter(Boolean));
+    const autoUniqueCompanies = new Set(logs.map(log => getVal(log, 'companyname') || getVal(log, 'company')).filter(Boolean)).size;
 
+    // Drives Conducted from Event Sheet
     const tpoEvents = events.filter(e => checkMonth(e.date) && ((e.tpo || '').toLowerCase().includes(targetName) || targetName.includes((e.tpo || '').toLowerCase())));
     const drivesConducted = tpoEvents.filter(e => (e.type || '').toLowerCase().includes('drive')).length;
 
     return {
       tpo: t.userName || t.name,
-      companiesVisited: uniqueCompanies.size,
+      companiesVisited: manualStats && manualStats['Companies Visited'] ? parseInt(manualStats['Companies Visited']) : autoUniqueCompanies,
+      branchVideos: manualStats ? parseInt(manualStats['Branch Videos'] || 0) : 0,
+      branchPosters: manualStats ? parseInt(manualStats['Branch Posters'] || 0) : 0,
       drivesConducted: drivesConducted,
-      postersMade: 0,
-      videosMade: 0, 
       joining: joined,
       notJoining: notJoined,
       totalApps: logs.length
     };
   });
 
-  // 🚨 LARGER, MORE READABLE STYLES
+  const submitActivityStats = async (e) => {
+    e.preventDefault();
+    setIsSubmitting(true);
+    try {
+      const res = await axios.post(`${API_BASE}/api/tpo/activity`, {
+        tpoName: myName || tpoData?.name,
+        companiesVisited: activityForm.companiesVisited,
+        branchVideos: activityForm.branchVideos,
+        branchPosters: activityForm.branchPosters
+      });
+      if (res.data.success) {
+        alert("Stats updated successfully!");
+        setShowActivityModal(false);
+        window.location.reload(); 
+      }
+    } catch (err) {
+      alert("Failed to update stats.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAddActivityClick = () => {
+    const currentMyStat = tpoActivity.find(t => t.tpo === (tpoData?.name || tpoData?.userName));
+    if (currentMyStat) {
+      setActivityForm({
+        companiesVisited: currentMyStat.companiesVisited,
+        branchVideos: currentMyStat.branchVideos,
+        branchPosters: currentMyStat.branchPosters
+      });
+    }
+    setShowActivityModal(true);
+  };
+
   const reportStyles = `
     .rt-tabs { display: flex; gap: 15px; margin-bottom: 30px; overflow-x: auto; padding-bottom: 10px; }
     .rt-tab { background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text-muted); padding: 14px 28px; border-radius: 30px; cursor: pointer; white-space: nowrap; font-weight: bold; font-size: 1.05rem; transition: all 0.2s; display: flex; align-items: center; gap: 10px; }
@@ -275,8 +375,6 @@ export default function Reports() {
     .dt tr:hover td { background: #161e2e; }
     .dt .dt-total { color: #8b5cf6; font-weight: 800; background: rgba(56, 189, 248, 0.05); }
     .dt .dt-zero { color: #475569; font-weight: 400; }
-    
-    /* Highlight the Total row at the bottom */
     .dt tfoot td { background: rgba(255,255,255,0.05); font-weight: 800; color: #fff; font-size: 1.25rem; border-top: 2px solid #8b5cf6; border-bottom: none; }
   `;
 
@@ -299,13 +397,19 @@ export default function Reports() {
           <button className={`rt-tab ${activeTab === 1 ? 'active' : ''}`} onClick={() => setActiveTab(1)}>
             <Target size={24} weight={activeTab === 1 ? "fill" : "regular"} /> {isSuperAdmin ? 'TPO Target Reports' : 'My Target Report'}
           </button>
-          <button className={`rt-tab ${activeTab === 2 ? 'active' : ''}`} onClick={() => setActiveTab(2)}><Buildings size={24} weight={activeTab === 2 ? "fill" : "regular"} /> Branch Matrices</button>
-          <button className={`rt-tab ${activeTab === 3 ? 'active' : ''}`} onClick={() => setActiveTab(3)}><ChartLineUp size={24} weight={activeTab === 3 ? "fill" : "regular"} /> Placement Tracker</button>
-          <button className={`rt-tab ${activeTab === 4 ? 'active' : ''}`} onClick={() => setActiveTab(4)}><ShieldCheck size={24} weight={activeTab === 4 ? "fill" : "regular"} /> TPO Activities</button>
+          <button className={`rt-tab ${activeTab === 2 ? 'active' : ''}`} onClick={() => setActiveTab(2)}>
+            <Buildings size={24} weight={activeTab === 2 ? "fill" : "regular"} /> Branch Matrices
+          </button>
+          <button className={`rt-tab ${activeTab === 3 ? 'active' : ''}`} onClick={() => setActiveTab(3)}>
+            <ChartLineUp size={24} weight={activeTab === 3 ? "fill" : "regular"} /> Placement Tracker
+          </button>
+          <button className={`rt-tab ${activeTab === 4 ? 'active' : ''}`} onClick={() => setActiveTab(4)}>
+            <ShieldCheck size={24} weight={activeTab === 4 ? "fill" : "regular"} /> TPO Activities
+          </button>
         </div>
 
         {/* ========================================================= */}
-        {/* TAB 1: DYNAMIC STACKED TPO TARGET REPORTS (FROM TPO_LOG)  */}
+        {/* TAB 1: DYNAMIC STACKED TPO TARGET REPORTS                 */}
         {/* ========================================================= */}
         {activeTab === 1 && (
           <div className="fade-in">
@@ -324,10 +428,13 @@ export default function Reports() {
                 return checkMonth(dateStr);
               });
 
-              const counts = { Automation: 0, BMS: 0, IT: 0, DM: 0, Embedded: 0, Others: 0 };
+              const counts = { Others: 0 };
+              mainCourses.forEach(c => counts[c] = 0);
+              
               placedStudentsLog.forEach(p => {
                  const c = getCourse(getVal(p, 'course'));
-                 counts[c]++;
+                 if (counts[c] !== undefined) counts[c]++;
+                 else counts.Others++;
               });
 
               const totalPlacements = placedStudentsLog.length;
@@ -356,7 +463,7 @@ export default function Reports() {
                     <div className="hc-subheader"><Briefcase size={24} weight="fill" /> Current Status On Placements</div>
                     
                     <div className="hc-grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
-                      {COURSES.concat(['Others']).map(c => (
+                      {mainCourses.concat(['Others']).map(c => (
                         <div key={c} className="hc-item" style={{ textAlign: 'center' }}>
                           <div className="hc-label">{c}</div>
                           <div className="hc-value" style={{ fontSize: '2.4rem', color: counts[c] > 0 ? '#8b5cf6' : '#475569' }}>{counts[c]}</div>
@@ -429,7 +536,9 @@ export default function Reports() {
           </div>
         )}
 
-        {/* TAB 2 */}
+        {/* ========================================================= */}
+        {/* TAB 2: BRANCH MATRICES                                    */}
+        {/* ========================================================= */}
         {activeTab === 2 && (
           <div className="fade-in">
             <div className="data-table-wrap">
@@ -440,14 +549,14 @@ export default function Reports() {
               <div style={{ overflowX: 'auto' }}>
                 <table className="dt">
                   <thead>
-                    <tr><th>Branch Name</th>{COURSES.map(c => <th key={c}>{c}</th>)}<th>Others</th><th className="dt-total">Total Students</th></tr>
+                    <tr><th>Branch Name</th>{mainCourses.map(c => <th key={c}>{c}</th>)}<th>Others</th><th className="dt-total">Total Students</th></tr>
                   </thead>
                   <tbody>
-                    {assignedBranches.length === 0 ? <tr><td colSpan="8" style={{textAlign:'center', padding: '2rem'}}>No students found in assigned branches.</td></tr> : 
+                    {assignedBranches.length === 0 ? <tr><td colSpan={mainCourses.length + 3} style={{textAlign:'center', padding: '2rem'}}>No students found in assigned branches.</td></tr> : 
                     assignedBranches.map(b => (
                       <tr key={`en-${b}`}>
                         <td>{b}</td>
-                        {COURSES.concat(['Others']).map(c => <td key={c} className={branchEnrolls[b][c] === 0 ? 'dt-zero' : ''}>{branchEnrolls[b][c]}</td>)}
+                        {mainCourses.concat(['Others']).map(c => <td key={c} className={branchEnrolls[b][c] === 0 ? 'dt-zero' : ''}>{branchEnrolls[b][c]}</td>)}
                         <td className="dt-total">{branchEnrolls[b].Total}</td>
                       </tr>
                     ))}
@@ -456,7 +565,7 @@ export default function Reports() {
                     <tfoot>
                       <tr>
                         <td>TOTAL ENROLLMENT</td>
-                        {COURSES.concat(['Others']).map(c => <td key={`foot-${c}`}>{enrollTotals[c]}</td>)}
+                        {mainCourses.concat(['Others']).map(c => <td key={`foot-${c}`}>{enrollTotals[c]}</td>)}
                         <td style={{ color: '#8b5cf6' }}>{enrollTotals.Total}</td>
                       </tr>
                     </tfoot>
@@ -473,13 +582,13 @@ export default function Reports() {
               <div style={{ overflowX: 'auto' }}>
                 <table className="dt">
                   <thead>
-                    <tr><th>Branch Name</th>{COURSES.map(c => <th key={c}>{c}</th>)}<th>Others</th><th className="dt-total" style={{ color: '#10b981' }}>Total Placed</th></tr>
+                    <tr><th>Branch Name</th>{mainCourses.map(c => <th key={c}>{c}</th>)}<th>Others</th><th className="dt-total" style={{ color: '#10b981' }}>Total Placed</th></tr>
                   </thead>
                   <tbody>
                     {allBranchesList.map(b => (
                       <tr key={`pl-${b}`}>
                         <td>{b}</td>
-                        {COURSES.concat(['Others']).map(c => <td key={c} className={branchPlaces[b][c] === 0 ? 'dt-zero' : ''}>{branchPlaces[b][c]}</td>)}
+                        {mainCourses.concat(['Others']).map(c => <td key={c} className={branchPlaces[b][c] === 0 ? 'dt-zero' : ''}>{branchPlaces[b][c]}</td>)}
                         <td className="dt-total" style={{ color: '#10b981' }}>{branchPlaces[b].Total}</td>
                       </tr>
                     ))}
@@ -487,7 +596,7 @@ export default function Reports() {
                   <tfoot>
                     <tr>
                       <td>TOTAL PLACED</td>
-                      {COURSES.concat(['Others']).map(c => <td key={`pfoot-${c}`}>{placeTotals[c]}</td>)}
+                      {mainCourses.concat(['Others']).map(c => <td key={`pfoot-${c}`}>{placeTotals[c]}</td>)}
                       <td style={{ color: '#10b981' }}>{placeTotals.Total}</td>
                     </tr>
                   </tfoot>
@@ -503,13 +612,21 @@ export default function Reports() {
               <div style={{ overflowX: 'auto' }}>
                 <table className="dt">
                   <thead>
-                    <tr><th>Branch Name</th><th style={{ color: '#fff' }}>{tpoData.name.toUpperCase()}</th><th className="dt-total" style={{ color: '#8b5cf6' }}>Branch Total</th></tr>
+                    <tr>
+                      <th>Branch Name</th>
+                      {displayTpos.map(tName => <th key={tName} style={{ color: '#fff' }}>{tName.toUpperCase()}</th>)}
+                      <th className="dt-total" style={{ color: '#8b5cf6' }}>Branch Total</th>
+                    </tr>
                   </thead>
                   <tbody>
                     {allBranchesList.map(b => (
                       <tr key={`tpo-${b}`}>
                         <td>{b}</td>
-                        <td className={branchTPO[b][tpoData.name] === 0 ? 'dt-zero' : ''} style={{ color: branchTPO[b][tpoData.name] > 0 ? '#fff' : '' }}>{branchTPO[b][tpoData.name]}</td>
+                        {displayTpos.map(tName => (
+                          <td key={tName} className={branchTPO[b][tName] === 0 ? 'dt-zero' : ''} style={{ color: branchTPO[b][tName] > 0 ? '#fff' : '' }}>
+                            {branchTPO[b][tName]}
+                          </td>
+                        ))}
                         <td className="dt-total" style={{ color: '#8b5cf6' }}>{branchTPO[b].Total}</td>
                       </tr>
                     ))}
@@ -520,7 +637,9 @@ export default function Reports() {
           </div>
         )}
 
-        {/* TAB 3 */}
+        {/* ========================================================= */}
+        {/* TAB 3: PLACEMENT TRACKER                                  */}
+        {/* ========================================================= */}
         {activeTab === 3 && (
           <div className="fade-in">
             <div className="data-table-wrap">
@@ -539,7 +658,7 @@ export default function Reports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {COURSES.concat(['Others']).map(c => {
+                    {mainCourses.concat(['Others']).map(c => {
                       const d = pipeline[c];
                       return (
                         <tr key={`trk-${c}`}>
@@ -563,14 +682,14 @@ export default function Reports() {
               <div style={{ overflowX: 'auto' }}>
                 <table className="dt">
                   <thead>
-                    <tr><th>Branch Name</th>{COURSES.map(c => <th key={c}>{c}</th>)}<th>Others</th><th className="dt-total" style={{ color: '#f59e0b' }}>Total Pending</th></tr>
+                    <tr><th>Branch Name</th>{mainCourses.map(c => <th key={c}>{c}</th>)}<th>Others</th><th className="dt-total" style={{ color: '#f59e0b' }}>Total Pending</th></tr>
                   </thead>
                   <tbody>
-                    {assignedBranches.length === 0 ? <tr><td colSpan="8" style={{textAlign:'center', padding: '2rem'}}>No pending students in assigned branches.</td></tr> : 
+                    {assignedBranches.length === 0 ? <tr><td colSpan={mainCourses.length + 3} style={{textAlign:'center', padding: '2rem'}}>No pending students in assigned branches.</td></tr> : 
                     assignedBranches.map(b => (
                       <tr key={`pend-${b}`}>
                         <td>{b}</td>
-                        {COURSES.concat(['Others']).map(c => <td key={c} className={pendingByCourse[b][c] === 0 ? 'dt-zero' : ''}>{pendingByCourse[b][c]}</td>)}
+                        {mainCourses.concat(['Others']).map(c => <td key={c} className={pendingByCourse[b][c] === 0 ? 'dt-zero' : ''}>{pendingByCourse[b][c]}</td>)}
                         <td className="dt-total" style={{ color: '#f59e0b' }}>{pendingByCourse[b].Total}</td>
                       </tr>
                     ))}
@@ -579,7 +698,7 @@ export default function Reports() {
                     <tfoot>
                       <tr>
                         <td>TOTAL PENDING</td>
-                        {COURSES.concat(['Others']).map(c => <td key={`pdfoot-${c}`}>{pendTotals[c]}</td>)}
+                        {mainCourses.concat(['Others']).map(c => <td key={`pdfoot-${c}`}>{pendTotals[c]}</td>)}
                         <td style={{ color: '#f59e0b' }}>{pendTotals.Total}</td>
                       </tr>
                     </tfoot>
@@ -590,13 +709,24 @@ export default function Reports() {
           </div>
         )}
 
-        {/* TAB 4 */}
+        {/* ========================================================= */}
+        {/* TAB 4: TPO ACTIVITIES                                     */}
+        {/* ========================================================= */}
         {activeTab === 4 && (
           <div className="fade-in">
             <div className="data-table-wrap">
               <div className="data-table-head">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><ShieldCheck size={26} color="#0ea5e9" weight="fill"/> Placement Officer Activities & Logs</div>
-                <div style={{ fontSize: '1rem', color: '#94a3b8' }}>{displayMonthName}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <ShieldCheck size={26} color="#0ea5e9" weight="fill"/> Placement Officer Activities & Logs
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                  <div style={{ fontSize: '1rem', color: '#94a3b8' }}>{displayMonthName}</div>
+                  <button 
+                    onClick={handleAddActivityClick}
+                    style={{ background: '#0284c7', border: 'none', color: 'white', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <Plus weight="bold" /> Add Activity Count
+                  </button>
+                </div>
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table className="dt">
@@ -605,8 +735,8 @@ export default function Reports() {
                       <th>Placement Officer</th>
                       <th>Companies Visited</th>
                       <th>Drives Conducted</th>
-                      <th>Videos Created</th>
-                      <th>Posters Created</th>
+                      <th>Branch Videos</th>
+                      <th>Branch Posters</th>
                       <th style={{ color: '#10b981' }}>Total Joined</th>
                       <th style={{ color: '#ef4444' }}>Not Joining</th>
                       <th className="dt-total">Total Apps Handled</th>
@@ -619,8 +749,8 @@ export default function Reports() {
                         <td>{t.tpo}</td>
                         <td className={t.companiesVisited === 0 ? 'dt-zero' : ''}>{t.companiesVisited}</td>
                         <td className={t.drivesConducted === 0 ? 'dt-zero' : ''}>{t.drivesConducted}</td>
-                        <td className={t.videosMade === 0 ? 'dt-zero' : ''}>{t.videosMade}</td>
-                        <td className={t.postersMade === 0 ? 'dt-zero' : ''}>{t.postersMade}</td>
+                        <td className={t.branchVideos === 0 ? 'dt-zero' : ''}>{t.branchVideos}</td>
+                        <td className={t.branchPosters === 0 ? 'dt-zero' : ''}>{t.branchPosters}</td>
                         <td style={{ color: '#10b981', fontWeight: 'bold' }} className={t.joining === 0 ? 'dt-zero' : ''}>{t.joining}</td>
                         <td style={{ color: '#ef4444', fontWeight: 'bold' }} className={t.notJoining === 0 ? 'dt-zero' : ''}>{t.notJoining}</td>
                         <td className="dt-total">{t.totalApps}</td>
@@ -634,6 +764,36 @@ export default function Reports() {
         )}
 
       </div>
+
+      {/* 🚨 TPO ACTIVITY MODAL */}
+      {showActivityModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div style={{ background: '#0f1523', padding: '30px', borderRadius: '12px', border: '1px solid #1e293b', width: '400px', maxWidth: '90%' }}>
+            <h2 style={{ marginTop: 0, color: '#fff', borderBottom: '1px solid #1e293b', paddingBottom: '15px' }}>Update Monthly Stats</h2>
+            <form onSubmit={submitActivityStats}>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', color: '#94a3b8', marginBottom: '8px' }}>Companies Visited</label>
+                <input type="number" required value={activityForm.companiesVisited} onChange={(e) => setActivityForm({...activityForm, companiesVisited: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#fff' }} />
+              </div>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', color: '#94a3b8', marginBottom: '8px' }}>Branch Videos</label>
+                <input type="number" required value={activityForm.branchVideos} onChange={(e) => setActivityForm({...activityForm, branchVideos: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#fff' }} />
+              </div>
+              <div style={{ marginBottom: '25px' }}>
+                <label style={{ display: 'block', color: '#94a3b8', marginBottom: '8px' }}>Branch Posters</label>
+                <input type="number" required value={activityForm.branchPosters} onChange={(e) => setActivityForm({...activityForm, branchPosters: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#fff' }} />
+              </div>
+              <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+                <button type="button" onClick={() => setShowActivityModal(false)} style={{ padding: '10px 20px', borderRadius: '6px', border: '1px solid #334155', background: 'transparent', color: '#fff', cursor: 'pointer' }}>Cancel</button>
+                <button type="submit" disabled={isSubmitting} style={{ padding: '10px 20px', borderRadius: '6px', border: 'none', background: '#8b5cf6', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
+                  {isSubmitting ? 'Saving...' : 'Save Stats'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
     </Layout>
   );
 }

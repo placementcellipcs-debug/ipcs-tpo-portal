@@ -71,6 +71,38 @@ const safeParseDate = (dateStr) => {
   return isNaN(parsedDate.getTime()) ? null : parsedDate;
 };
 
+// 🚨 UPSERT HELPER FOR TPO_STATS
+const syncTpoStats = async (userName, updates) => {
+  if (!userName) return;
+  try {
+    const sheet = doc.sheetsByTitle["TPO_Stats"];
+    if (!sheet) return;
+    const rows = await sheet.getRows();
+    
+    const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' });
+    const currentMonthPrefix = formatter.format(new Date()).slice(0, 7); // e.g., "2026-09"
+    
+    let targetRow = rows.find(r => {
+       const un = (r.get('USER') || '').toLowerCase().trim();
+       const ts = r.get('TimeStamp') || '';
+       const rowDate = safeParseDate(ts);
+       const rowMonthStr = rowDate ? formatter.format(rowDate).slice(0, 7) : '';
+       return un === userName.toLowerCase().trim() && rowMonthStr === currentMonthPrefix;
+    });
+
+    if (targetRow) {
+       targetRow.assign(updates);
+       await targetRow.save();
+    } else {
+       await sheet.addRow({
+         'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+         'USER': userName,
+         ...updates
+       });
+    }
+  } catch(e) { console.error("TPO Stats Sync Error:", e); }
+};
+
 // =========================================================
 // 🚨 ENTERPRISE DYNAMIC LOOKUP FUNCTIONS
 // =========================================================
@@ -1097,7 +1129,15 @@ exports.getReports = (req, res) => {
     });
   }
 
-  res.json({ success: true, students, applications, issues, talentino, vacancies, events, tpoLogs });
+  // 🚨 EXPORT TPO STATS FOR FRONTEND
+  let tpoStatsList = [];
+  if (cache.tpoStats) {
+    cache.tpoStats.forEach(r => {
+      try { tpoStatsList.push(r.toObject()); } catch(e) {}
+    });
+  }
+
+  res.json({ success: true, students, applications, issues, talentino, vacancies, events, tpoLogs, tpoStats: tpoStatsList });
 };
 
 exports.getTalentino = (req, res) => {
@@ -2034,6 +2074,12 @@ exports.addAdminUser = async (req, res) => {
     if(hTgt && target !== undefined) newRow[hTgt] = target;
 
     await s.addRow(newRow);
+
+    // 🚨 NEW: Sync to TPO_Stats if Target is updated
+    if (target !== undefined && userName) {
+      await syncTpoStats(userName, { 'Monthly Target': target });
+    }
+
     refreshCache(); 
     res.json({ success: true, message: "User added" });
   } catch (err) { 
@@ -2096,6 +2142,12 @@ exports.updateAdminUser = async (req, res) => {
 
       rows[0].assign(updateObj); 
       await rows[0].save(); 
+
+      // 🚨 NEW: Sync to TPO_Stats if Target is updated
+      if (target !== undefined && userName) {
+        await syncTpoStats(userName, { 'Monthly Target': target });
+      }
+
       refreshCache(); 
       res.json({ success: true, message: "User updated" });
     } else { 
@@ -2835,6 +2887,24 @@ exports.verifySession = (req, res) => {
   }
 
   return res.json({ valid: true });
+};
+
+// =========================================================
+// 🚨 SUBMIT TPO ACTIVITY STATS
+// =========================================================
+exports.updateTpoActivity = async (req, res) => {
+  const { tpoName, companiesVisited, branchVideos, branchPosters } = req.body;
+  try {
+    await syncTpoStats(tpoName, {
+      'Companies Visited': companiesVisited,
+      'Branch Videos': branchVideos,
+      'Branch Posters': branchPosters
+    });
+    refreshCache();
+    res.json({ success: true, message: "Activity stats updated successfully!" });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 // =========================================================
