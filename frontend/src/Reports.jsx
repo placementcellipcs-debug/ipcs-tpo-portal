@@ -333,7 +333,8 @@ export default function Reports() {
         window.location.reload(); 
       }
     } catch (err) {
-      alert("Failed to update stats.");
+      const errorMsg = err.response?.data?.message || err.message || "Unknown error occurred";
+      alert(`Failed to update stats: ${errorMsg}`);
     } finally {
       setIsSubmitting(false);
     }

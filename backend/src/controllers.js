@@ -73,34 +73,35 @@ const safeParseDate = (dateStr) => {
 
 // 🚨 UPSERT HELPER FOR TPO_STATS
 const syncTpoStats = async (userName, updates) => {
-  if (!userName) return;
-  try {
-    const sheet = doc.sheetsByTitle["TPO_Stats"];
-    if (!sheet) return;
-    const rows = await sheet.getRows();
-    
-    const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' });
-    const currentMonthPrefix = formatter.format(new Date()).slice(0, 7); // e.g., "2026-09"
-    
-    let targetRow = rows.find(r => {
-       const un = (r.get('USER') || '').toLowerCase().trim();
-       const ts = r.get('TimeStamp') || '';
-       const rowDate = safeParseDate(ts);
-       const rowMonthStr = rowDate ? formatter.format(rowDate).slice(0, 7) : '';
-       return un === userName.toLowerCase().trim() && rowMonthStr === currentMonthPrefix;
-    });
+  if (!userName) throw new Error("TPO Name is missing");
+  
+  const sheet = doc.sheetsByTitle["TPO_Stats"];
+  if (!sheet) {
+    throw new Error("The sheet named 'TPO_Stats' was not found in the Google Spreadsheet.");
+  }
+  
+  const rows = await sheet.getRows();
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' });
+  const currentMonthPrefix = formatter.format(new Date()).slice(0, 7); // e.g., "2026-09"
+  
+  let targetRow = rows.find(r => {
+     const un = (r.get('USER') || '').toLowerCase().trim();
+     const ts = r.get('TimeStamp') || '';
+     const rowDate = safeParseDate(ts);
+     const rowMonthStr = rowDate ? formatter.format(rowDate).slice(0, 7) : '';
+     return un === userName.toLowerCase().trim() && rowMonthStr === currentMonthPrefix;
+  });
 
-    if (targetRow) {
-       targetRow.assign(updates);
-       await targetRow.save();
-    } else {
-       await sheet.addRow({
-         'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
-         'USER': userName,
-         ...updates
-       });
-    }
-  } catch(e) { console.error("TPO Stats Sync Error:", e); }
+  if (targetRow) {
+     targetRow.assign(updates);
+     await targetRow.save();
+  } else {
+     await sheet.addRow({
+       'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+       'USER': userName,
+       ...updates
+     });
+  }
 };
 
 // =========================================================

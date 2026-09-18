@@ -136,6 +136,7 @@ app.get('/api/talentino-exams/results', controllers.getTalExamResults);
 app.post('/api/talentino-exams/questions/add', controllers.addTalExamQuestion); 
 app.post('/api/talentino-exams/questions/update', controllers.updateTalExamQuestion);
 app.post('/api/talentino-exams/questions/delete', controllers.deleteTalExamQuestion); 
+app.post('/api/tpo/activity', controllers.updateTpoActivity);
 
 // ---------------------------------------------------------
 // 🚨 ASSET MANAGEMENT (ERP) ROUTES
