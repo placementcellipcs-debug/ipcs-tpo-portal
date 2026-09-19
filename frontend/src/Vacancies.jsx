@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
@@ -7,6 +7,42 @@ import {
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
+
+// 🚨 ERROR BOUNDARY: Intercepts fatal crashes and prevents the "Black Screen of Death"
+class VacanciesErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, errorInfo: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, errorInfo: error.message };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("Vacancies Render Crash:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <Layout>
+          <div style={{ padding: '40px', maxWidth: '800px', margin: '40px auto', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: '16px', color: '#f8fafc', textAlign: 'center' }}>
+            <WarningCircle size={64} color="#ef4444" weight="fill" style={{ marginBottom: '20px' }} />
+            <h2 style={{ color: '#ef4444', margin: '0 0 15px 0' }}>Data Formatting Crash Prevented</h2>
+            <p style={{ fontSize: '1.1rem', color: '#cbd5e1', lineHeight: '1.6' }}>
+              The portal intercepted a fatal crash caused by corrupted or improperly formatted data inside the Google Sheets database (likely an invalid date, number, or missing column in the Vacancies sheet).
+            </p>
+            <div style={{ marginTop: '20px', padding: '15px', background: '#0f1523', borderRadius: '8px', color: '#ef4444', fontFamily: 'monospace', fontSize: '0.9rem', textAlign: 'left', overflowX: 'auto' }}>
+              {this.state.errorInfo}
+            </div>
+            <button onClick={() => window.location.reload()} style={{ marginTop: '25px', background: '#3b82f6', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold' }}>
+              Reload Page
+            </button>
+          </div>
+        </Layout>
+      );
+    }
+    return this.props.children; 
+  }
+}
 
 const DetailBox = ({ label, value, icon }) => (
   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
@@ -43,7 +79,9 @@ const parseDateSafe = (dateStr) => {
       }
     }
     return isNaN(d.getTime()) ? null : d;
-  } catch(e) { return null; }
+  } catch(e) {
+    return null;
+  }
 };
 
 function VacanciesContent() {
@@ -94,7 +132,10 @@ function VacanciesContent() {
   useEffect(() => {
     const fetchAllData = async () => {
       const localTpoStr = localStorage.getItem('tpoData');
-      if (!localTpoStr) return;
+      if (!localTpoStr) {
+        setLoading(false);
+        return;
+      }
       const localTpo = JSON.parse(localTpoStr);
       
       try {
@@ -119,261 +160,286 @@ function VacanciesContent() {
     fetchAllData();
   }, []);
 
-  const safeVacancies = Array.isArray(vacancies) ? vacancies : [];
-  const safeApplications = Array.isArray(applications) ? applications : [];
-
-  const appsByJobId = {};
-  safeApplications.forEach(app => {
-    if (!app) return;
-    const jobId = String(app.jobId || '').trim();
-    if (!appsByJobId[jobId]) appsByJobId[jobId] = [];
-    appsByJobId[jobId].push(app);
-  });
-  
-  const today = new Date();
-  today.setHours(0,0,0,0);
-
-  const uniqueTPOs = [...new Set(safeVacancies.map(v => String(v?.tpoName || v?.placementofficer || v?.placementOfficer || 'Unknown')).filter(n => n !== 'Unknown'))].sort();
-  
-  const uniqueMonths = [...new Set(safeVacancies.map(v => {
-    const d = parseDateSafe(v?.datePosted || v?.timestamp || v?.date);
-    if (d && d.getFullYear() < 2050 && d.getFullYear() > 2000) return d.toLocaleString('en-us', { month: 'long', year: 'numeric' });
-    return null;
-  }).filter(Boolean))].sort((a, b) => (new Date(b).getTime() || 0) - (new Date(a).getTime() || 0));
-
-  const filteredVacs = safeVacancies.filter(v => {
-    if (!v) return false;
-    
-    const safeSearch = String(searchQuery || '').toLowerCase();
-    const matchQuery = String(v.id || '').toLowerCase().includes(safeSearch) || 
-                       String(v.company || '').toLowerCase().includes(safeSearch) || 
-                       String(v.position || '').toLowerCase().includes(safeSearch);
-    
-    const matchCourse = courseFilter === 'All' || getStandardCourse(v.course) === getStandardCourse(courseFilter);
-    
-    let matchTrainerScope = true;
-    if (isCourseSpecific && !assignedDomains.includes('All')) {
-       matchTrainerScope = assignedDomains.includes(getStandardCourse(v.course));
-    }
-
-    const deadline = parseDateSafe(v.lastDate);
-    const isExpired = (deadline && deadline < today) || String(v.status || '').toLowerCase().includes('expire');
-    const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
-    
-    const tabMatch = activeTab === 'Open' ? (!isExpired && !isClosed) : (isExpired || isClosed);
-    const statMatch = statusFilter === 'All' || (statusFilter === 'Open' && !isExpired && !isClosed) || (statusFilter === 'Expired' && (isExpired || isClosed));
-
-    const rowTpo = String(v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown');
-    const tpoMatch = tpoFilter === 'All' || rowTpo === tpoFilter;
-    
-    let monthMatch = true;
-    if (monthYearFilter !== 'All') {
-      const d = parseDateSafe(v.datePosted || v.timestamp || v.date);
-      if (d && d.getFullYear() < 2050) monthMatch = d.toLocaleString('en-us', { month: 'long', year: 'numeric' }) === monthYearFilter;
-      else monthMatch = false;
-    }
-
-    return matchQuery && matchCourse && matchTrainerScope && tabMatch && statMatch && tpoMatch && monthMatch;
-  });
-
-  const groupedVacs = {};
-  filteredVacs.forEach(v => {
-    let loc = 'OTHER STATES';
+  const {
+    groupedVacs, uniqueTPOs, uniqueMonths, 
+    totalActiveOpenings, totalExpiredOpenings, 
+    totalApplicationsCount, uniqueCompaniesCount, 
+    renderError, appsMap
+  } = useMemo(() => {
     try {
-      if (v && v.state) loc = String(v.state).toUpperCase().trim();
-      else if (v && v.location) loc = String(v.location).toUpperCase().trim();
-    } catch(e) {}
-    
-    if (!loc || loc === 'UNDEFINED' || loc === 'NULL') loc = 'OTHER STATES';
+      const safeVacancies = Array.isArray(vacancies) ? vacancies : [];
+      const safeApplications = Array.isArray(applications) ? applications : [];
 
-    if (!groupedVacs[loc]) groupedVacs[loc] = [];
-    groupedVacs[loc].push(v);
-  });
+      const today = new Date();
+      today.setHours(0,0,0,0);
+      
+      const appsByJobId = {};
+      safeApplications.forEach(app => {
+        if (!app) return;
+        const jobId = String(app.jobId || '').trim();
+        if (!appsByJobId[jobId]) appsByJobId[jobId] = [];
+        appsByJobId[jobId].push(app);
+      });
 
-  let totalActiveOpenings = 0; let totalExpiredOpenings = 0; let totalApplicationsCount = 0;
-  let uniqueCompaniesSet = new Set();
+      const uniqueTPOsSet = new Set();
+      const uniqueMonthsSet = new Set();
+      let activeOpenings = 0; let expiredOpenings = 0; let totalApps = 0;
+      const companiesSet = new Set();
 
-  safeVacancies.forEach(v => {
-    if (!v) return;
-    const deadline = parseDateSafe(v.lastDate);
-    const isExpired = (deadline && deadline < today) || String(v.status || '').toLowerCase().includes('expire') || String(v.status || '').toLowerCase().includes('close');
-    if (isExpired) totalExpiredOpenings++; else totalActiveOpenings++;
-    if (v.company && String(v.company).toLowerCase() !== 'unknown company') uniqueCompaniesSet.add(String(v.company));
-    
-    const safeJobId = String(v.id || '').trim();
-    totalApplicationsCount += (appsByJobId[safeJobId] || []).length;
-  });
+      const fVacs = safeVacancies.filter(v => {
+        if (!v) return false;
+        
+        const deadline = parseDateSafe(v.lastDate);
+        const isExpired = (deadline && deadline < today) || String(v.status || '').toLowerCase().includes('expire');
+        const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
+        
+        if (isExpired || isClosed) expiredOpenings++; else activeOpenings++;
+        if (v.company && String(v.company).toLowerCase() !== 'unknown company') companiesSet.add(String(v.company));
+        
+        const safeJobId = String(v.id || '').trim();
+        totalApps += (appsByJobId[safeJobId] || []).length;
+
+        const rowTpo = String(v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown');
+        if (rowTpo !== 'Unknown') uniqueTPOsSet.add(rowTpo);
+
+        const d = parseDateSafe(v.datePosted || v.timestamp || v.date);
+        if (d && !isNaN(d.getTime()) && d.getFullYear() < 2050 && d.getFullYear() > 2000) {
+          uniqueMonthsSet.add(d.toLocaleString('en-us', { month: 'long', year: 'numeric' }));
+        }
+
+        const safeSearch = String(searchQuery || '').toLowerCase();
+        const matchQuery = String(v.id || '').toLowerCase().includes(safeSearch) || 
+                           String(v.company || '').toLowerCase().includes(safeSearch) || 
+                           String(v.position || '').toLowerCase().includes(safeSearch);
+        
+        const matchCourse = courseFilter === 'All' || getStandardCourse(v.course) === getStandardCourse(courseFilter);
+        
+        let matchTrainerScope = true;
+        if (isCourseSpecific && assignedDomains[0] !== 'All') {
+           matchTrainerScope = assignedDomains.includes(getStandardCourse(v.course));
+        }
+
+        const tabMatch = activeTab === 'Open' ? (!isExpired && !isClosed) : (isExpired || isClosed);
+        const statMatch = statusFilter === 'All' || (statusFilter === 'Open' && !isExpired && !isClosed) || (statusFilter === 'Expired' && (isExpired || isClosed));
+        const tpoMatch = tpoFilter === 'All' || rowTpo === tpoFilter;
+        
+        let monthMatch = true;
+        if (monthYearFilter !== 'All') {
+          if (d && !isNaN(d.getTime()) && d.getFullYear() < 2050) monthMatch = d.toLocaleString('en-us', { month: 'long', year: 'numeric' }) === monthYearFilter;
+          else monthMatch = false;
+        }
+
+        return matchQuery && matchCourse && matchTrainerScope && tabMatch && statMatch && tpoMatch && monthMatch;
+      });
+
+      const gVacs = {};
+      fVacs.forEach(v => {
+        let loc = 'OTHER STATES';
+        try {
+          if (v && v.state) loc = String(v.state).toUpperCase().trim();
+          else if (v && v.location) loc = String(v.location).toUpperCase().trim();
+        } catch(e) {}
+        
+        if (!loc || loc === 'UNDEFINED' || loc === 'NULL') loc = 'OTHER STATES';
+        if (!gVacs[loc]) gVacs[loc] = [];
+        gVacs[loc].push(v);
+      });
+
+      const sortedTPOs = Array.from(uniqueTPOsSet).sort();
+      const sortedMonths = Array.from(uniqueMonthsSet).sort((a, b) => (new Date(b).getTime() || 0) - (new Date(a).getTime() || 0));
+
+      return {
+        groupedVacs: gVacs, uniqueTPOs: sortedTPOs, uniqueMonths: sortedMonths,
+        totalActiveOpenings: activeOpenings, totalExpiredOpenings: expiredOpenings,
+        totalApplicationsCount: totalApps, uniqueCompaniesCount: companiesSet.size,
+        renderError: null, appsMap: appsByJobId
+      };
+
+    } catch(err) {
+      console.error("FATAL RENDER ERROR CAUGHT:", err);
+      return {
+        groupedVacs: {}, uniqueTPOs: [], uniqueMonths: [],
+        totalActiveOpenings: 0, totalExpiredOpenings: 0,
+        totalApplicationsCount: 0, uniqueCompaniesCount: 0,
+        renderError: err.message, appsMap: {}
+      };
+    }
+  }, [vacancies, applications, searchQuery, courseFilter, statusFilter, tpoFilter, monthYearFilter, activeTab, isCourseSpecific, assignedDomains]);
 
   return (
-    <div className="premium-dashboard-wrapper page-container" style={{ maxWidth: '1600px', margin: '0 auto', paddingBottom: '50px' }}>
-      
-      {/* HEADER SECTION */}
-      <div className="top-hero-section">
-        <div className="hero-text">
-          <h1>Active Job Ecosystem</h1>
-          <p>Real-time applicant tracking and opening management</p>
+    <Layout>
+      <div className="premium-dashboard-wrapper page-container" style={{ maxWidth: '1600px', margin: '0 auto', paddingBottom: '50px' }}>
+        
+        {renderError && (
+          <div style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', padding: '15px', borderRadius: '12px', color: '#ef4444', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <WarningCircle size={24} weight="fill"/> 
+            <div>
+              <strong>Data Format Error:</strong> The system intercepted a corrupted cell in Google Sheets. 
+              <span style={{ display: 'block', fontSize: '0.8rem', opacity: 0.8 }}>Technical Details: {renderError}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="top-hero-section">
+          <div className="hero-text">
+            <h1>Active Job Ecosystem</h1>
+            <p>Real-time applicant tracking and opening management</p>
+          </div>
+          {canAddOpening && (
+            <button className="premium-btn primary hover-lift" onClick={() => window.open('https://forms.gle/9Gxbwx1S2uqeXHne9', '_blank')}>
+              <Plus weight="bold" size={20} /> Add Opening
+            </button>
+          )}
         </div>
-        {canAddOpening && (
-          <button className="premium-btn primary hover-lift" onClick={() => window.open('https://forms.gle/9Gxbwx1S2uqeXHne9', '_blank')}>
-            <Plus weight="bold" size={20} /> Add Opening
-          </button>
+
+        {isSuperAdmin && (
+          <div className="bento-grid mini-dash-wrapper">
+            <div className="kpi-card glass-panel hover-lift">
+              <div className="kpi-top">
+                <div><div className="kpi-title">Total Active</div><div className="kpi-val">{totalActiveOpenings}</div></div>
+                <div className="kpi-icon blue"><Briefcase weight="fill" size={26}/></div>
+              </div>
+            </div>
+            <div className="kpi-card glass-panel hover-lift">
+              <div className="kpi-top">
+                <div><div className="kpi-title">Total Applicants</div><div className="kpi-val">{totalApplicationsCount}</div></div>
+                <div className="kpi-icon green"><Users weight="fill" size={26}/></div>
+              </div>
+            </div>
+            <div className="kpi-card glass-panel hover-lift">
+              <div className="kpi-top">
+                <div><div className="kpi-title">Hiring Companies</div><div className="kpi-val">{uniqueCompaniesCount}</div></div>
+                <div className="kpi-icon purple"><Buildings weight="fill" size={26}/></div>
+              </div>
+            </div>
+            <div className="kpi-card glass-panel hover-lift">
+              <div className="kpi-top">
+                <div><div className="kpi-title">Expired Openings</div><div className="kpi-val">{totalExpiredOpenings}</div></div>
+                <div className="kpi-icon red"><Prohibit weight="fill" size={26}/></div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="glass-panel control-action-bar">
+          <div className="segmented-tabs">
+            <button className={`seg-tab ${activeTab === 'Open' ? 'active' : ''}`} onClick={() => setActiveTab('Open')}>Active Openings</button>
+            <button className={`seg-tab ${activeTab === 'Expired' ? 'active-expired' : ''}`} onClick={() => setActiveTab('Expired')}>Expired / Closed</button>
+          </div>
+
+          <div className="filter-group">
+            <input type="text" className="premium-input" placeholder="Search ID, Role, Company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            
+            {(!isCourseSpecific || assignedDomains.length > 1) && (
+              <select className="premium-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
+                {isCourseSpecific ? (
+                  <><option value="All">All My Courses</option>{assignedDomains.map(c => <option key={c} value={c}>{c}</option>)}</>
+                ) : (
+                  <>
+                    <option value="All">All Main Courses</option>
+                    <option value="Industrial Automation">Industrial Automation</option>
+                    <option value="BMS AND CCTV">BMS AND CCTV</option>
+                    <option value="Embedded and IoT">Embedded and IoT</option>
+                    <option value="Digital Marketing">Digital Marketing</option>
+                    <option value="Information technology (IT)">Information technology (IT)</option>
+                  </>
+                )}
+              </select>
+            )}
+
+            {isSuperAdmin && (
+              <>
+                <select className="premium-select border-purple" value={tpoFilter} onChange={(e) => setTpoFilter(e.target.value)}>
+                  <option value="All">All TPOs</option>
+                  {uniqueTPOs.map((tpo, i) => <option key={i} value={tpo}>{tpo}</option>)}
+                </select>
+                <select className="premium-select border-green" value={monthYearFilter} onChange={(e) => setMonthYearFilter(e.target.value)}>
+                  <option value="All">All Time</option>
+                  {uniqueMonths.map((m, i) => <option key={i} value={m}>{m}</option>)}
+                </select>
+              </>
+            )}
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Fetching vacancies...</p></div>
+        ) : Object.keys(groupedVacs).length === 0 ? (
+          <div className="empty-state-card">
+            <span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🔍</span>
+            No {String(activeTab || '').toLowerCase()} vacancies match your current filters.
+          </div>
+        ) : (
+          Object.keys(groupedVacs).map((state, idx) => (
+            <div key={idx} className="state-group-section">
+              <div className="state-header">
+                <span className="state-line"></span>
+                <h2 className="state-title">{state}</h2>
+                <span className="state-line"></span>
+              </div>
+              
+              <div className="job-card-grid">
+                {groupedVacs[state].map((v, i) => {
+                  const deadline = parseDateSafe(v.lastDate);
+                  const isExpired = (deadline && deadline < today) || String(v.status || '').toLowerCase().includes('expire');
+                  const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
+                  
+                  let statClass = 'green'; let statText = 'Open Now';
+                  if(isClosed) { statClass = 'gray'; statText = 'Closed'; }
+                  else if(isExpired) { statClass = 'red'; statText = 'Expired'; }
+
+                  const safeJobId = String(v.id || '').trim();
+                  const applicantCount = (appsMap[safeJobId] || []).length;
+                  const rowTpo = String(v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown');
+                  const datePostedObj = parseDateSafe(v.datePosted || v.timestamp || v.date);
+                  const datePostedStr = (datePostedObj && datePostedObj.getFullYear() < 2050 && datePostedObj.getFullYear() > 2000) ? datePostedObj.toLocaleDateString('en-GB') : 'N/A';
+
+                  return (
+                    <div key={i} className="job-card glass-panel hover-lift">
+                      <div className="jc-header">
+                        <div className="jc-company-logo">{String(v.company || 'U').charAt(0).toUpperCase()}</div>
+                        <div className="jc-company-info">
+                          <h3 className="text-truncate">{String(v.position || 'N/A')}</h3>
+                          <p className="text-truncate">{String(v.company || 'N/A')}</p>
+                        </div>
+                        <div className="jc-id">{safeJobId || 'N/A'}</div>
+                      </div>
+
+                      <div className="jc-body">
+                        <div className="jc-detail"><MapPinLine size={16} /> <span>{String(v.location || 'N/A')} ({String(v.mode || 'N/A')})</span></div>
+                        <div className="jc-detail"><GraduationCap size={16} /> <span>{String(v.course || 'N/A')}</span></div>
+                        {isSuperAdmin && <div className="jc-detail text-purple"><Clock size={16} /> <span>{rowTpo} • {datePostedStr}</span></div>}
+                      </div>
+
+                      <div className="jc-divider"></div>
+
+                      <div className="jc-footer">
+                        <div>
+                          <div className={`status-pill ${statClass}`}>{statText}</div>
+                          <div className="jc-deadline">Ends: <span style={{color: isExpired || isClosed ? '#ef4444' : '#fff'}}>{String(v.lastDate || 'N/A')}</span></div>
+                        </div>
+                        <div className="jc-applicants" onClick={() => { setSelectedJob(v); setIsApplicantsModalOpen(true); }}>
+                          <Users size={16} weight={applicantCount > 0 ? "fill" : "regular"} color={applicantCount > 0 ? '#3b82f6' : '#94a3b8'}/>
+                          <span style={{ color: applicantCount > 0 ? '#3b82f6' : '#94a3b8' }}>{applicantCount} Applied</span>
+                        </div>
+                      </div>
+
+                      <div className="jc-hover-actions">
+                        <button className="premium-btn secondary" onClick={() => { if(!isExpired) { setSelectedJob(v); setIsJobDetailsModalOpen(true); } }} disabled={isExpired}>
+                          {isExpired ? <Prohibit size={18}/> : <Eye size={18} />} Details
+                        </button>
+                        <button className="premium-btn primary" onClick={() => { setSelectedJob(v); setIsApplicantsModalOpen(true); }}>
+                          <Users size={18} /> View List
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))
         )}
       </div>
-
-      {/* ADMIN MINI DASHBOARD */}
-      {isSuperAdmin && (
-        <div className="bento-grid mini-dash-wrapper">
-          <div className="kpi-card glass-panel hover-lift">
-            <div className="kpi-top">
-              <div><div className="kpi-title">Total Active</div><div className="kpi-val">{totalActiveOpenings}</div></div>
-              <div className="kpi-icon blue"><Briefcase weight="fill" size={26}/></div>
-            </div>
-          </div>
-          <div className="kpi-card glass-panel hover-lift">
-            <div className="kpi-top">
-              <div><div className="kpi-title">Total Applicants</div><div className="kpi-val">{totalApplicationsCount}</div></div>
-              <div className="kpi-icon green"><Users weight="fill" size={26}/></div>
-            </div>
-          </div>
-          <div className="kpi-card glass-panel hover-lift">
-            <div className="kpi-top">
-              <div><div className="kpi-title">Hiring Companies</div><div className="kpi-val">{uniqueCompaniesSet.size}</div></div>
-              <div className="kpi-icon purple"><Buildings weight="fill" size={26}/></div>
-            </div>
-          </div>
-          <div className="kpi-card glass-panel hover-lift">
-            <div className="kpi-top">
-              <div><div className="kpi-title">Expired Openings</div><div className="kpi-val">{totalExpiredOpenings}</div></div>
-              <div className="kpi-icon red"><Prohibit weight="fill" size={26}/></div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* PREMIUM FILTER & TAB ACTION BAR */}
-      <div className="glass-panel control-action-bar">
-        <div className="segmented-tabs">
-          <button className={`seg-tab ${activeTab === 'Open' ? 'active' : ''}`} onClick={() => setActiveTab('Open')}>Active Openings</button>
-          <button className={`seg-tab ${activeTab === 'Expired' ? 'active-expired' : ''}`} onClick={() => setActiveTab('Expired')}>Expired / Closed</button>
-        </div>
-
-        <div className="filter-group">
-          <input type="text" className="premium-input" placeholder="Search ID, Role, Company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-          
-          {(!isCourseSpecific || assignedDomains.length > 1) && (
-            <select className="premium-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
-              {isCourseSpecific ? (
-                <><option value="All">All My Courses</option>{assignedDomains.map(c => <option key={c} value={c}>{c}</option>)}</>
-              ) : (
-                <>
-                  <option value="All">All Main Courses</option>
-                  <option value="Industrial Automation">Industrial Automation</option>
-                  <option value="BMS AND CCTV">BMS AND CCTV</option>
-                  <option value="Embedded and IoT">Embedded and IoT</option>
-                  <option value="Digital Marketing">Digital Marketing</option>
-                  <option value="Information technology (IT)">Information technology (IT)</option>
-                </>
-              )}
-            </select>
-          )}
-
-          {isSuperAdmin && (
-            <>
-              <select className="premium-select border-purple" value={tpoFilter} onChange={(e) => setTpoFilter(e.target.value)}>
-                <option value="All">All TPOs</option>
-                {uniqueTPOs.map((tpo, i) => <option key={i} value={tpo}>{tpo}</option>)}
-              </select>
-              <select className="premium-select border-green" value={monthYearFilter} onChange={(e) => setMonthYearFilter(e.target.value)}>
-                <option value="All">All Time</option>
-                {uniqueMonths.map((m, i) => <option key={i} value={m}>{m}</option>)}
-              </select>
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* JOB CARDS GRID */}
-      {loading ? (
-        <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Fetching vacancies...</p></div>
-      ) : Object.keys(groupedVacs).length === 0 ? (
-        <div className="empty-state-card">
-          <span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🔍</span>
-          No {String(activeTab || '').toLowerCase()} vacancies match your current filters.
-        </div>
-      ) : (
-        Object.keys(groupedVacs).map((state, idx) => (
-          <div key={idx} className="state-group-section">
-            <div className="state-header">
-              <span className="state-line"></span>
-              <h2 className="state-title">{state}</h2>
-              <span className="state-line"></span>
-            </div>
-            
-            <div className="job-card-grid">
-              {groupedVacs[state].map((v, i) => {
-                if (!v) return null;
-                
-                const deadline = parseDateSafe(v.lastDate);
-                const isExpired = (deadline && deadline < today) || String(v.status || '').toLowerCase().includes('expire');
-                const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
-                
-                let statClass = 'green'; let statText = 'Open Now';
-                if(isClosed) { statClass = 'gray'; statText = 'Closed'; }
-                else if(isExpired) { statClass = 'red'; statText = 'Expired'; }
-
-                const safeJobId = String(v.id || '').trim();
-                const myApplicants = appsByJobId[safeJobId] || [];
-                const applicantCount = myApplicants.length;
-
-                const rowTpo = String(v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown');
-                const datePostedObj = parseDateSafe(v.datePosted || v.timestamp || v.date);
-                const datePostedStr = (datePostedObj && datePostedObj.getFullYear() < 2050 && datePostedObj.getFullYear() > 2000) ? datePostedObj.toLocaleDateString('en-GB') : 'N/A';
-
-                return (
-                  <div key={i} className="job-card glass-panel hover-lift">
-                    <div className="jc-header">
-                      <div className="jc-company-logo">{String(v.company || 'U').charAt(0).toUpperCase()}</div>
-                      <div className="jc-company-info">
-                        <h3 className="text-truncate">{String(v.position || 'N/A')}</h3>
-                        <p className="text-truncate">{String(v.company || 'N/A')}</p>
-                      </div>
-                      <div className="jc-id">{safeJobId || 'N/A'}</div>
-                    </div>
-
-                    <div className="jc-body">
-                      <div className="jc-detail"><MapPinLine size={16} /> <span>{String(v.location || 'N/A')} ({String(v.mode || 'N/A')})</span></div>
-                      <div className="jc-detail"><GraduationCap size={16} /> <span>{String(v.course || 'N/A')}</span></div>
-                      {isSuperAdmin && <div className="jc-detail text-purple"><Clock size={16} /> <span>{rowTpo} • {datePostedStr}</span></div>}
-                    </div>
-
-                    <div className="jc-divider"></div>
-
-                    <div className="jc-footer">
-                      <div>
-                        <div className={`status-pill ${statClass}`}>{statText}</div>
-                        <div className="jc-deadline">Ends: <span style={{color: isExpired || isClosed ? '#ef4444' : '#fff'}}>{String(v.lastDate || 'N/A')}</span></div>
-                      </div>
-                      <div className="jc-applicants" onClick={() => { setSelectedJob(v); setIsApplicantsModalOpen(true); }}>
-                        <Users size={16} weight={applicantCount > 0 ? "fill" : "regular"} color={applicantCount > 0 ? '#3b82f6' : '#94a3b8'}/>
-                        <span style={{ color: applicantCount > 0 ? '#3b82f6' : '#94a3b8' }}>{applicantCount} Applied</span>
-                      </div>
-                    </div>
-
-                    <div className="jc-hover-actions">
-                      <button className="premium-btn secondary" onClick={() => { if(!isExpired) { setSelectedJob(v); setIsJobDetailsModalOpen(true); } }} disabled={isExpired}>
-                        {isExpired ? <Prohibit size={18}/> : <Eye size={18} />} Details
-                      </button>
-                      <button className="premium-btn primary" onClick={() => { setSelectedJob(v); setIsApplicantsModalOpen(true); }}>
-                        <Users size={18} /> View List
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        ))
-      )}
 
       {/* JOB DETAILS MODAL */}
       {isJobDetailsModalOpen && selectedJob && (
@@ -421,8 +487,8 @@ function VacanciesContent() {
 
             <div style={{ overflowY: 'auto', padding: '20px' }}>
               <div className="clean-list">
-                {appsByJobId[String(selectedJob.id || '').trim()] && appsByJobId[String(selectedJob.id || '').trim()].length > 0 ? (
-                  appsByJobId[String(selectedJob.id || '').trim()].map((app, i) => {
+                {appsMap[String(selectedJob.id || '').trim()] && appsMap[String(selectedJob.id || '').trim()].length > 0 ? (
+                  appsMap[String(selectedJob.id || '').trim()].map((app, i) => {
                     if (!app) return null;
                     let statClass = 'blue';
                     let s = String(app.status || '').toLowerCase();
