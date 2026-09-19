@@ -51,11 +51,11 @@ export default function Vacancies() {
   
   const isCourseSpecific = userRole.includes('TRAINER') || userRole.includes('RTH') || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD');
   
-  // 🚨 NEW: Parse multiple assigned courses from the DB
+  // 🚨 FIXED: Parse multiple assigned courses splitting by comma and newline
   const rawCourse = tpoData?.assignedCourse || 'All';
   const assignedCoursesArray = (rawCourse === 'All' || rawCourse === 'All Courses') 
     ? ['All'] 
-    : rawCourse.split(',').map(c => getStandardCourse(c.trim())).filter(Boolean);
+    : [...new Set(rawCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim())).filter(Boolean))];
 
   const [vacancies, setVacancies] = useState([]);
   const [applications, setApplications] = useState([]); 
@@ -90,9 +90,14 @@ export default function Vacancies() {
           })
         ]);
         
-        if (vacRes.data.success) setVacancies(vacRes.data.vacancies);
-        if (appRes.data.success) setApplications(appRes.data.applications);
-      } catch (error) { console.error("Failed to fetch data", error); } finally { setLoading(false); }
+        // 🚨 PREVENTS CRASHES IF EMPTY
+        if (vacRes.data.success) setVacancies(vacRes.data.vacancies || []);
+        if (appRes.data.success) setApplications(appRes.data.applications || []);
+      } catch (error) { 
+        console.error("Failed to fetch data", error); 
+      } finally { 
+        setLoading(false); 
+      }
     };
     fetchAllData();
   }, []);
@@ -135,13 +140,13 @@ export default function Vacancies() {
     
     const matchCourse = courseFilter === 'All' || getStandardCourse(v.course) === getStandardCourse(courseFilter);
     
-    // 🚨 MULTI-COURSE TRAINER SCOPE MATCHING
     let matchTrainerScope = true;
     if (isCourseSpecific && assignedCoursesArray[0] !== 'All') {
        const vCourseStd = getStandardCourse(v.course).toLowerCase();
        matchTrainerScope = assignedCoursesArray.some(ac => {
          const stdAc = ac.toLowerCase();
-         return stdAc === vCourseStd || v.course?.toLowerCase().includes(stdAc);
+         // 🚨 SAFE CHECK: Prevents crash if v.course is undefined
+         return stdAc === vCourseStd || (v.course || '').toLowerCase().includes(stdAc);
        });
     }
 

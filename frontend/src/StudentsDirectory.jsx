@@ -71,11 +71,11 @@ export default function StudentsDirectory() {
   const isManager = upperRole.includes('MANAGER') || upperRole.includes('ZONAL') || upperRole.includes('TERRITORY') || upperRole.includes('REGIONAL') || ['BM', 'TM', 'RM', 'ZM'].includes(upperRole);
   const isCourseSpecific = isRth || upperRole.includes('TTH') || isTrainer || upperRole.includes('TECHNICAL LEAD');
   
-  // 🚨 NEW: Parse multiple assigned courses from the DB
+  // 🚨 FIXED: Parse multiple assigned courses splitting by comma and newline
   const rawCourse = tpoData?.assignedCourse || 'All';
   const assignedCoursesArray = (rawCourse === 'All' || rawCourse === 'All Courses') 
     ? ['All'] 
-    : rawCourse.split(',').map(c => getStandardCourse(c.trim())).filter(Boolean);
+    : [...new Set(rawCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim())).filter(Boolean))];
 
   const canEditAll = isSuperAdmin || isTpo; 
   const canEditAcademic = canEditAll || isRth || isTrainer; 
@@ -187,7 +187,6 @@ export default function StudentsDirectory() {
     } catch (error) { alert("Failed to update student data"); } finally { setSavingStatus(false); }
   };
 
-  // 🚨 MULTI-COURSE SCOPING
   const scopedStudents = rawStudents.filter(s => {
     if (isCourseSpecific && assignedCoursesArray[0] !== 'All') {
       return assignedCoursesArray.some(ac => getStandardCourse(s.course) === ac);
@@ -280,7 +279,6 @@ export default function StudentsDirectory() {
             <input type="text" className="sleek-input" placeholder="Search name or roll..." style={{ minWidth: '200px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           )}
 
-          {/* 🚨 DYNAMIC COURSE FILTER FOR MULTI-ASSIGNMENT */}
           {(!isCourseSpecific || assignedCoursesArray.length > 1 || !selectedBranch) && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
@@ -443,7 +441,6 @@ export default function StudentsDirectory() {
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '15px', overflow: 'hidden' }} onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
         <div className="modal-card" style={{ maxWidth: '950px', width: '100%', maxHeight: '95vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
           
-          {/* MODAL CONTENT REMAINS IDENTICAL TO ORIGINAL */}
           <div style={{ position: 'sticky', top: 0, background: '#0f1523', zIndex: 10, padding: '1.5rem 2rem', borderBottom: '1px solid #1e293b' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '15px' }}>
               

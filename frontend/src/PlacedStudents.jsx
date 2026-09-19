@@ -53,11 +53,11 @@ export default function PlacedStudents() {
 
   const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
   
-  // 🚨 NEW: Parse multiple assigned courses from the DB
+  // 🚨 FIXED: Parse multiple assigned courses splitting by comma and newline
   const rawCourse = tpoData?.assignedCourse || 'All';
   const assignedCoursesArray = (rawCourse === 'All' || rawCourse === 'All Courses') 
     ? ['All'] 
-    : rawCourse.split(',').map(c => getStandardCourse(c.trim())).filter(Boolean);
+    : [...new Set(rawCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim())).filter(Boolean))];
   
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -440,7 +440,6 @@ export default function PlacedStudents() {
         )}
       </div>
 
-      {/* MODALS REMAINS EXACTLY THE SAME */}
       {isEditModalOpen && selectedApp && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>

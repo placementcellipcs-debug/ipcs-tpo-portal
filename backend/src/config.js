@@ -134,8 +134,15 @@ function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCo
   if (upperRole.includes('ADMIN') || upperRole === 'GENERAL MANAGER' || upperRole === 'TECHNICAL HEAD' || upperRole === 'ZONAL PLACEMENT HEAD') return true; 
   
   const stdRowCourse = getStandardCourse(rowCourse);
-  const stdAssignedCourse = getStandardCourse(assignedCourse);
-  const matchCourse = (stdRowCourse === stdAssignedCourse) || stdAssignedCourse === 'OTHERS'; 
+  
+  // 🚨 FIXED: Splits by both commas AND newlines to catch all hidden courses
+  let assignedCoursesArray = ['All'];
+  if (assignedCourse && assignedCourse !== 'All' && assignedCourse !== 'All Courses') {
+     assignedCoursesArray = assignedCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim()));
+  }
+  
+  const matchCourse = assignedCoursesArray.includes('All') || assignedCoursesArray.includes(stdRowCourse) || assignedCoursesArray.includes('OTHERS');
+  
   const matchBranch = checkBranchMatch(rowBranch, assignedBranchesArray);
 
   if (upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD') return matchCourse; 

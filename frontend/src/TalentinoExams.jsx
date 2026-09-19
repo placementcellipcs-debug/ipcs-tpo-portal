@@ -27,6 +27,7 @@ export default function TechnicalExams() {
   const isTrainer = upperRole.includes('TRAINER');
   
   const canManage = isSuperAdmin || isRth;
+  const rthAssignedCourse = tpoData?.assignedCourse || '';
 
   const [courseDict, setCourseDict] = useState(DEFAULT_COURSES);
   const [questions, setQuestions] = useState([]);
@@ -34,8 +35,8 @@ export default function TechnicalExams() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  const [viewLevel, setViewLevel] = useState('main_courses');
-  const [selectedMainCourse, setSelectedMainCourse] = useState(null);
+  const [viewLevel, setViewLevel] = useState(isSuperAdmin ? 'main_courses' : 'sub_courses');
+  const [selectedMainCourse, setSelectedMainCourse] = useState(isSuperAdmin ? null : rthAssignedCourse);
   const [selectedSubCourse, setSelectedSubCourse] = useState(null);
   
   const [activeTab, setActiveTab] = useState(isTrainer ? 'results' : 'questions'); 
@@ -49,8 +50,16 @@ export default function TechnicalExams() {
     id: '', course: '', question: '', optA: '', optB: '', optC: '', optD: '', correct: 'A', explanation: '', status: 'Active'
   });
 
-  // 🚨 NEW: Smart string cleaner
-  const cleanStr = (s) => (s || '').toLowerCase().replace(/and/g, '&').replace(/[^a-z0-9]/g, '');
+  const getStandardCourse = (c) => {
+    if (!c) return 'Others';
+    const lower = c.toLowerCase().trim();
+    if (lower.includes('bms') || lower.includes('cctv')) return 'BMS AND CCTV';
+    if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
+    if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
+    if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
+    if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
+    return 'Others';
+  };
 
   const fetchData = async () => {
     try {
@@ -73,13 +82,11 @@ export default function TechnicalExams() {
       }
       setCourseDict(cDict);
 
-      // 🚨 FIXED: MULTI-DOMAIN RTH LOGIC
+      // 🚨 FIXED: Splits array by newline and standardizes to catch all
       let allowedDomains = Object.keys(cDict);
       if (!isSuperAdmin && tpoData?.assignedCourse && !['All Courses', 'All'].includes(tpoData.assignedCourse)) {
-        const assignedArray = tpoData.assignedCourse.split(',').map(c => cleanStr(c));
-        allowedDomains = Object.keys(cDict).filter(domain => 
-          assignedArray.some(assigned => cleanStr(domain).includes(assigned) || assigned.includes(cleanStr(domain)))
-        );
+        const assignedArray = tpoData.assignedCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim()));
+        allowedDomains = Object.keys(cDict).filter(domain => assignedArray.includes(getStandardCourse(domain)));
       }
 
       if (allowedDomains.length === 1) {
@@ -100,12 +107,11 @@ export default function TechnicalExams() {
     fetchData();
   }, []);
 
+  // 🚨 FIXED: Standardized array matching for Multi-Domain Display
   let MAIN_COURSES = Object.keys(courseDict);
   if (!isSuperAdmin && tpoData?.assignedCourse && !['All Courses', 'All'].includes(tpoData.assignedCourse)) {
-    const assignedArray = tpoData.assignedCourse.split(',').map(c => cleanStr(c));
-    MAIN_COURSES = MAIN_COURSES.filter(domain => 
-      assignedArray.some(assigned => cleanStr(domain).includes(assigned) || assigned.includes(cleanStr(domain)))
-    );
+    const assignedArray = tpoData.assignedCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim()));
+    MAIN_COURSES = MAIN_COURSES.filter(domain => assignedArray.includes(getStandardCourse(domain)));
   }
 
   // 🚨 STRICT FUZZY MATCHER

@@ -97,12 +97,11 @@ export default function StudyMaterials() {
     fetchData();
   }, []);
 
+  // 🚨 FIXED: Standardized domain filtering for Multi-Course RTHs
   let MAIN_COURSES = Object.keys(courseDict);
   if (!isSuperAdmin && tpoData?.assignedCourse && !['All Courses', 'All'].includes(tpoData.assignedCourse)) {
-    const assignedArray = tpoData.assignedCourse.split(',').map(c => cleanStr(c));
-    MAIN_COURSES = MAIN_COURSES.filter(domain => 
-      assignedArray.some(assigned => cleanStr(domain).includes(assigned) || assigned.includes(cleanStr(domain)))
-    );
+    const assignedArray = tpoData.assignedCourse.split(',').map(c => getStandardCourse(c.trim()));
+    MAIN_COURSES = MAIN_COURSES.filter(domain => assignedArray.includes(getStandardCourse(domain)));
   }
 
   const subCoursesList = courseDict[selectedMainCourse] || [selectedMainCourse] || [];
