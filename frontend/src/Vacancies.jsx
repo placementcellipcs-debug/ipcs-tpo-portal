@@ -15,7 +15,7 @@ const DetailBox = ({ label, value, icon }) => (
     </div>
     <div>
       <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 'bold', letterSpacing: '0.5px' }}>{label}</div>
-      <div style={{ fontWeight: '600', color: '#fff', fontSize: '0.95rem' }}>{value || 'Not Specified'}</div>
+      <div style={{ fontWeight: '600', color: '#fff', fontSize: '0.95rem' }}>{String(value || 'Not Specified')}</div>
     </div>
   </div>
 );
@@ -50,7 +50,7 @@ export default function Vacancies() {
   const canAddOpening = isTpo && !isSuperAdmin;
   const isCourseSpecific = userRole.includes('TRAINER') || userRole.includes('RTH') || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD');
   
-  // 🚨 BULLETPROOF KEYWORD SCANNER (Never crashes, ignores formatting errors)
+  // 🚨 AGGRESSIVE TYPE-SAFETY: Forces the course to a string to prevent .split() crash
   const rawCourse = String(tpoData?.assignedCourse || 'All').toLowerCase();
   let assignedCoursesArray = ['All'];
   if (rawCourse !== 'all' && rawCourse !== 'all courses') {
@@ -114,9 +114,10 @@ export default function Vacancies() {
     appsByJobId[jobId].push(app);
   });
 
-  // 🚨 FIXED: String casting ensures it never crashes on Number formats
+  // 🚨 FIXED: STRICT DATE PARSER PREVENTS .includes() CRASH ON NUMBERS
   const parseDate = (dateStr) => {
     if (!dateStr) return new Date(8640000000000000); 
+    // Force string conversion first to prevent fatal crashes
     let cleanStr = String(dateStr).split(' ')[0].replace(/st|nd|rd|th/g, '');
     let d = new Date(cleanStr);
     
@@ -132,7 +133,7 @@ export default function Vacancies() {
   const today = new Date();
   today.setHours(0,0,0,0);
 
-  const uniqueTPOs = [...new Set(vacancies.map(v => v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown').filter(n => n !== 'Unknown'))].sort();
+  const uniqueTPOs = [...new Set(vacancies.map(v => String(v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown')).filter(n => n !== 'Unknown'))].sort();
   const uniqueMonths = [...new Set(vacancies.map(v => {
     const d = parseDate(v.datePosted || v.timestamp || v.date);
     if (d && d.getFullYear() < 2050 && d.getFullYear() > 2000) return d.toLocaleString('en-us', { month: 'long', year: 'numeric' });
@@ -140,13 +141,13 @@ export default function Vacancies() {
   }).filter(Boolean))].sort((a, b) => new Date(b) - new Date(a));
 
   const filteredVacs = vacancies.filter(v => {
-    const matchQuery = (v.id || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                       (v.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                       (v.position || '').toLowerCase().includes(searchQuery.toLowerCase());
+    // 🚨 FORCE STRING ON SEARCH TO PREVENT CRASH
+    const matchQuery = String(v.id || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                       String(v.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+                       String(v.position || '').toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchCourse = courseFilter === 'All' || getStandardCourse(v.course) === getStandardCourse(courseFilter);
     
-    // 🚨 MULTI-COURSE TRAINER SCOPE MATCHING
     let matchTrainerScope = true;
     if (isCourseSpecific && !assignedCoursesArray.includes('All')) {
        const vCourseStd = getStandardCourse(v.course);
@@ -163,7 +164,7 @@ export default function Vacancies() {
                       (statusFilter === 'Open' && !isExpired && !isClosed) ||
                       (statusFilter === 'Expired' && (isExpired || isClosed));
 
-    const rowTpo = v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown';
+    const rowTpo = String(v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown');
     const tpoMatch = tpoFilter === 'All' || rowTpo === tpoFilter;
     
     let monthMatch = true;
@@ -179,7 +180,8 @@ export default function Vacancies() {
 
   const groupedVacs = {};
   filteredVacs.forEach(v => {
-    const loc = (v.state || 'OTHER STATES').toUpperCase().trim();
+    // 🚨 FORCE STRING ON LOCATION KEY
+    const loc = String(v.state || 'OTHER STATES').toUpperCase().trim();
     if (!groupedVacs[loc]) groupedVacs[loc] = [];
     groupedVacs[loc].push(v);
   });
@@ -191,7 +193,7 @@ export default function Vacancies() {
     const deadline = parseDate(v.lastDate);
     const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire') || String(v.status || '').toLowerCase().includes('close');
     if (isExpired) totalExpiredOpenings++; else totalActiveOpenings++;
-    if (v.company && String(v.company).toLowerCase() !== 'unknown company') uniqueCompaniesSet.add(v.company);
+    if (v.company && String(v.company).toLowerCase() !== 'unknown company') uniqueCompaniesSet.add(String(v.company));
     totalApplicationsCount += (appsByJobId[v.id] || []).length;
   });
 
@@ -333,15 +335,15 @@ export default function Vacancies() {
                       <div className="jc-header">
                         <div className="jc-company-logo">{String(v.company || 'U').charAt(0).toUpperCase()}</div>
                         <div className="jc-company-info">
-                          <h3 className="text-truncate">{v.position}</h3>
-                          <p className="text-truncate">{v.company}</p>
+                          <h3 className="text-truncate">{String(v.position)}</h3>
+                          <p className="text-truncate">{String(v.company)}</p>
                         </div>
-                        <div className="jc-id">{v.id}</div>
+                        <div className="jc-id">{String(v.id)}</div>
                       </div>
 
                       <div className="jc-body">
-                        <div className="jc-detail"><MapPinLine size={16} /> <span>{v.location} ({v.mode})</span></div>
-                        <div className="jc-detail"><GraduationCap size={16} /> <span>{v.course}</span></div>
+                        <div className="jc-detail"><MapPinLine size={16} /> <span>{String(v.location)} ({String(v.mode)})</span></div>
+                        <div className="jc-detail"><GraduationCap size={16} /> <span>{String(v.course)}</span></div>
                         {isSuperAdmin && <div className="jc-detail text-purple"><Clock size={16} /> <span>{rowTpo} • {datePostedStr}</span></div>}
                       </div>
 
@@ -350,7 +352,7 @@ export default function Vacancies() {
                       <div className="jc-footer">
                         <div>
                           <div className={`status-pill ${statClass}`}>{statText}</div>
-                          <div className="jc-deadline">Ends: <span style={{color: isExpired || isClosed ? '#ef4444' : '#fff'}}>{v.lastDate}</span></div>
+                          <div className="jc-deadline">Ends: <span style={{color: isExpired || isClosed ? '#ef4444' : '#fff'}}>{String(v.lastDate || 'N/A')}</span></div>
                         </div>
                         <div className="jc-applicants" onClick={() => { setSelectedJob(v); setIsApplicantsModalOpen(true); }}>
                           <Users size={16} weight={applicantCount > 0 ? "fill" : "regular"} color={applicantCount > 0 ? '#3b82f6' : '#94a3b8'}/>
@@ -382,8 +384,8 @@ export default function Vacancies() {
           <div className="premium-modal glass-panel">
             <div className="modal-header">
               <div>
-                <h2>{selectedJob.position}</h2>
-                <div className="modal-subtitle">{selectedJob.company}</div>
+                <h2>{String(selectedJob.position)}</h2>
+                <div className="modal-subtitle">{String(selectedJob.company)}</div>
               </div>
               <button className="close-btn" onClick={() => setIsJobDetailsModalOpen(false)}><X size={24} /></button>
             </div>
@@ -401,7 +403,7 @@ export default function Vacancies() {
             {selectedJob.description && (
               <div className="modal-desc-box">
                 <div className="desc-title">Job Description</div>
-                <div className="desc-content">{selectedJob.description}</div>
+                <div className="desc-content">{String(selectedJob.description)}</div>
               </div>
             )}
           </div>
@@ -416,7 +418,7 @@ export default function Vacancies() {
             <div className="modal-header" style={{ padding: '25px', background: 'rgba(15, 23, 42, 0.95)', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: 0 }}>
               <div>
                 <h2>Applicants List</h2>
-                <div className="modal-subtitle">{selectedJob.id} | {selectedJob.company}</div>
+                <div className="modal-subtitle">{String(selectedJob.id)} | {String(selectedJob.company)}</div>
               </div>
               <button className="close-btn" onClick={() => setIsApplicantsModalOpen(false)}><X size={24} /></button>
             </div>
@@ -434,11 +436,11 @@ export default function Vacancies() {
                     return (
                       <div key={i} className="clean-row hover-bg">
                         <div className="cl-left">
-                          <div className="cl-avatar">{app.name.charAt(0).toUpperCase()}</div>
-                          <div><div className="cl-title">{app.name}</div><div className="cl-sub">{app.roll} • {app.branch}</div></div>
+                          <div className="cl-avatar">{String(app.name || 'U').charAt(0).toUpperCase()}</div>
+                          <div><div className="cl-title">{String(app.name)}</div><div className="cl-sub">{String(app.roll)} • {String(app.branch)}</div></div>
                         </div>
                         <div className="cl-middle">
-                           <span className={`status-pill ${statClass}`}>{app.status || 'Applied'}</span>
+                           <span className={`status-pill ${statClass}`}>{String(app.status || 'Applied')}</span>
                         </div>
                         <div className="cl-right" style={{ display: 'flex', gap: '10px' }}>
                           {app.phone && (
