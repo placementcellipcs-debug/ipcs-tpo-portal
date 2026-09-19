@@ -24,12 +24,22 @@ export default function TechnicalExams() {
   const isSuperAdmin = tpoData?.accessType === 'superadmin';
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
-  
-  // 🚨 FIXED: Strict role check using .includes to handle trailing spaces in the DB
   const isTrainer = upperRole.includes('TRAINER');
   
   const canManage = isSuperAdmin || isRth;
-  const rthAssignedCourse = tpoData?.assignedCourse || '';
+
+  // 🚨 BULLETPROOF KEYWORD SCANNER (Never crashes, ignores formatting errors)
+  const rawCourse = String(tpoData?.assignedCourse || 'All').toLowerCase();
+  let assignedCoursesArray = ['All'];
+  if (rawCourse !== 'all' && rawCourse !== 'all courses') {
+     assignedCoursesArray = [];
+     if (rawCourse.includes('bms') || rawCourse.includes('cctv')) assignedCoursesArray.push('BMS AND CCTV');
+     if (rawCourse.includes('automation') || rawCourse.includes('plc') || rawCourse.includes('scada')) assignedCoursesArray.push('Industrial Automation');
+     if (rawCourse.includes('embed') || rawCourse.includes('iot')) assignedCoursesArray.push('Embedded and IoT');
+     if (rawCourse.includes('digital') || rawCourse.includes('dm') || rawCourse.includes('marketing')) assignedCoursesArray.push('Digital Marketing');
+     if (rawCourse.includes('it') || rawCourse.includes('python') || rawCourse.includes('software') || rawCourse.includes('data')) assignedCoursesArray.push('Information technology (IT)');
+     if (assignedCoursesArray.length === 0) assignedCoursesArray = ['Others'];
+  }
 
   const [courseDict, setCourseDict] = useState(DEFAULT_COURSES);
   const [questions, setQuestions] = useState([]);
@@ -37,8 +47,8 @@ export default function TechnicalExams() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  const [viewLevel, setViewLevel] = useState(isSuperAdmin ? 'main_courses' : 'sub_courses');
-  const [selectedMainCourse, setSelectedMainCourse] = useState(isSuperAdmin ? null : rthAssignedCourse);
+  const [viewLevel, setViewLevel] = useState('main_courses');
+  const [selectedMainCourse, setSelectedMainCourse] = useState(null);
   const [selectedSubCourse, setSelectedSubCourse] = useState(null);
   
   const [activeTab, setActiveTab] = useState(isTrainer ? 'results' : 'questions'); 
@@ -73,13 +83,9 @@ export default function TechnicalExams() {
       }
       setCourseDict(cDict);
 
-      // 🚨 FIXED: MULTI-DOMAIN RTH LOGIC
       let allowedDomains = Object.keys(cDict);
-      if (!isSuperAdmin && tpoData?.assignedCourse && !['All Courses', 'All'].includes(tpoData.assignedCourse)) {
-        const assignedArray = tpoData.assignedCourse.split(',').map(c => c.trim().toLowerCase());
-        allowedDomains = Object.keys(cDict).filter(domain => 
-          assignedArray.some(assigned => domain.toLowerCase().includes(assigned) || assigned.includes(domain.toLowerCase()))
-        );
+      if (!isSuperAdmin && !assignedCoursesArray.includes('All')) {
+        allowedDomains = Object.keys(cDict).filter(domain => assignedCoursesArray.includes(domain));
       }
 
       if (allowedDomains.length === 1) {
@@ -100,16 +106,11 @@ export default function TechnicalExams() {
     fetchData();
   }, []);
 
-  // 🚨 FIXED: FILTER MAIN COURSES FOR MULTI-DOMAIN RTHs
   let MAIN_COURSES = Object.keys(courseDict);
-  if (!isSuperAdmin && tpoData?.assignedCourse && !['All Courses', 'All'].includes(tpoData.assignedCourse)) {
-    const assignedArray = tpoData.assignedCourse.split(',').map(c => c.trim().toLowerCase());
-    MAIN_COURSES = MAIN_COURSES.filter(domain => 
-      assignedArray.some(assigned => domain.toLowerCase().includes(assigned) || assigned.includes(domain.toLowerCase()))
-    );
+  if (!isSuperAdmin && !assignedCoursesArray.includes('All')) {
+    MAIN_COURSES = MAIN_COURSES.filter(domain => assignedCoursesArray.includes(domain));
   }
 
-  // 🚨 STRICT FUZZY MATCHER: Guarantees the right sub-course array is pulled
   const getSubCourses = (mainCourse) => {
     if (!mainCourse) return [];
     const cleanMain = mainCourse.toLowerCase().replace(/[^a-z0-9]/g, '');

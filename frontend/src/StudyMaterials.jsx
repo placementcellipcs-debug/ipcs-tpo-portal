@@ -25,9 +25,21 @@ export default function StudyMaterials() {
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
-  const isTrainer = upperRole.includes('TRAINER');
   
   const canManage = isSuperAdmin || isRth;
+
+  // 🚨 BULLETPROOF KEYWORD SCANNER (Never crashes, ignores formatting errors)
+  const rawCourse = String(tpoData?.assignedCourse || 'All').toLowerCase();
+  let assignedCoursesArray = ['All'];
+  if (rawCourse !== 'all' && rawCourse !== 'all courses') {
+     assignedCoursesArray = [];
+     if (rawCourse.includes('bms') || rawCourse.includes('cctv')) assignedCoursesArray.push('BMS AND CCTV');
+     if (rawCourse.includes('automation') || rawCourse.includes('plc') || rawCourse.includes('scada')) assignedCoursesArray.push('Industrial Automation');
+     if (rawCourse.includes('embed') || rawCourse.includes('iot')) assignedCoursesArray.push('Embedded and IoT');
+     if (rawCourse.includes('digital') || rawCourse.includes('dm') || rawCourse.includes('marketing')) assignedCoursesArray.push('Digital Marketing');
+     if (rawCourse.includes('it') || rawCourse.includes('python') || rawCourse.includes('software') || rawCourse.includes('data')) assignedCoursesArray.push('Information technology (IT)');
+     if (assignedCoursesArray.length === 0) assignedCoursesArray = ['Others'];
+  }
 
   const [courseDict, setCourseDict] = useState(DEFAULT_COURSES);
   const [materials, setMaterials] = useState([]);
@@ -46,9 +58,6 @@ export default function StudyMaterials() {
   const [formData, setFormData] = useState({
     id: '', course: '', module: '', title: '', fileType: 'pdf', link: '', status: 'Active'
   });
-
-  // 🚨 NEW: Smart string cleaner for flawless array matching
-  const cleanStr = (s) => (s || '').toLowerCase().replace(/and/g, '&').replace(/[^a-z0-9]/g, '');
 
   const fetchData = async () => {
     try {
@@ -72,11 +81,8 @@ export default function StudyMaterials() {
       setCourseDict(cDict);
 
       let allowedDomains = Object.keys(cDict);
-      if (!isSuperAdmin && tpoData?.assignedCourse && !['All Courses', 'All'].includes(tpoData.assignedCourse)) {
-        const assignedArray = tpoData.assignedCourse.split(',').map(c => cleanStr(c));
-        allowedDomains = Object.keys(cDict).filter(domain => 
-          assignedArray.some(assigned => cleanStr(domain).includes(assigned) || assigned.includes(cleanStr(domain)))
-        );
+      if (!isSuperAdmin && !assignedCoursesArray.includes('All')) {
+        allowedDomains = Object.keys(cDict).filter(domain => assignedCoursesArray.includes(domain));
       }
 
       if (allowedDomains.length === 1) {
@@ -97,11 +103,9 @@ export default function StudyMaterials() {
     fetchData();
   }, []);
 
-  // 🚨 FIXED: Standardized domain filtering for Multi-Course RTHs
   let MAIN_COURSES = Object.keys(courseDict);
-  if (!isSuperAdmin && tpoData?.assignedCourse && !['All Courses', 'All'].includes(tpoData.assignedCourse)) {
-    const assignedArray = tpoData.assignedCourse.split(',').map(c => getStandardCourse(c.trim()));
-    MAIN_COURSES = MAIN_COURSES.filter(domain => assignedArray.includes(getStandardCourse(domain)));
+  if (!isSuperAdmin && !assignedCoursesArray.includes('All')) {
+    MAIN_COURSES = MAIN_COURSES.filter(domain => assignedCoursesArray.includes(domain));
   }
 
   const subCoursesList = courseDict[selectedMainCourse] || [selectedMainCourse] || [];

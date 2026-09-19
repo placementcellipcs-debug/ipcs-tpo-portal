@@ -22,7 +22,7 @@ const DetailBox = ({ label, value, icon }) => (
 
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
-  const lower = c.toLowerCase().trim();
+  const lower = String(c).toLowerCase().trim();
   if (lower.includes('bms') || lower.includes('cctv')) return 'BMS AND CCTV';
   if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
   if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
@@ -48,14 +48,20 @@ export default function Vacancies() {
   const isSuperAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
   const isTpo = userRole.includes('TPO');
   const canAddOpening = isTpo && !isSuperAdmin;
-  
   const isCourseSpecific = userRole.includes('TRAINER') || userRole.includes('RTH') || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD');
   
-  // 🚨 FIXED: Parse multiple assigned courses splitting by comma and newline
-  const rawCourse = tpoData?.assignedCourse || 'All';
-  const assignedCoursesArray = (rawCourse === 'All' || rawCourse === 'All Courses') 
-    ? ['All'] 
-    : [...new Set(rawCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim())).filter(Boolean))];
+  // 🚨 BULLETPROOF KEYWORD SCANNER (Never crashes, ignores formatting errors)
+  const rawCourse = String(tpoData?.assignedCourse || 'All').toLowerCase();
+  let assignedCoursesArray = ['All'];
+  if (rawCourse !== 'all' && rawCourse !== 'all courses') {
+     assignedCoursesArray = [];
+     if (rawCourse.includes('bms') || rawCourse.includes('cctv')) assignedCoursesArray.push('BMS AND CCTV');
+     if (rawCourse.includes('automation') || rawCourse.includes('plc') || rawCourse.includes('scada')) assignedCoursesArray.push('Industrial Automation');
+     if (rawCourse.includes('embed') || rawCourse.includes('iot')) assignedCoursesArray.push('Embedded and IoT');
+     if (rawCourse.includes('digital') || rawCourse.includes('dm') || rawCourse.includes('marketing')) assignedCoursesArray.push('Digital Marketing');
+     if (rawCourse.includes('it') || rawCourse.includes('python') || rawCourse.includes('software') || rawCourse.includes('data')) assignedCoursesArray.push('Information technology (IT)');
+     if (assignedCoursesArray.length === 0) assignedCoursesArray = ['Others'];
+  }
 
   const [vacancies, setVacancies] = useState([]);
   const [applications, setApplications] = useState([]); 
@@ -90,7 +96,6 @@ export default function Vacancies() {
           })
         ]);
         
-        // 🚨 PREVENTS CRASHES IF EMPTY
         if (vacRes.data.success) setVacancies(vacRes.data.vacancies || []);
         if (appRes.data.success) setApplications(appRes.data.applications || []);
       } catch (error) { 
@@ -109,9 +114,10 @@ export default function Vacancies() {
     appsByJobId[jobId].push(app);
   });
 
+  // 🚨 FIXED: String casting ensures it never crashes on Number formats
   const parseDate = (dateStr) => {
     if (!dateStr) return new Date(8640000000000000); 
-    let cleanStr = typeof dateStr === 'string' ? dateStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dateStr;
+    let cleanStr = String(dateStr).split(' ')[0].replace(/st|nd|rd|th/g, '');
     let d = new Date(cleanStr);
     
     if (isNaN(d.getTime()) && (cleanStr.includes('/') || cleanStr.includes('-'))) {
@@ -140,14 +146,11 @@ export default function Vacancies() {
     
     const matchCourse = courseFilter === 'All' || getStandardCourse(v.course) === getStandardCourse(courseFilter);
     
+    // 🚨 MULTI-COURSE TRAINER SCOPE MATCHING
     let matchTrainerScope = true;
-    if (isCourseSpecific && assignedCoursesArray[0] !== 'All') {
-       const vCourseStd = getStandardCourse(v.course).toLowerCase();
-       matchTrainerScope = assignedCoursesArray.some(ac => {
-         const stdAc = ac.toLowerCase();
-         // 🚨 SAFE CHECK: Prevents crash if v.course is undefined
-         return stdAc === vCourseStd || (v.course || '').toLowerCase().includes(stdAc);
-       });
+    if (isCourseSpecific && !assignedCoursesArray.includes('All')) {
+       const vCourseStd = getStandardCourse(v.course);
+       matchTrainerScope = assignedCoursesArray.includes(vCourseStd);
     }
 
     const deadline = parseDate(v.lastDate);
