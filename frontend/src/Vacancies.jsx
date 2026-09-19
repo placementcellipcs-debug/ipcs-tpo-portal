@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
   Users, Briefcase, CircleNotch, BookOpen, 
-  MapPinLine, Clock, Prohibit, EnvelopeSimple, Phone, GraduationCap, Money, X, Eye, Plus, WarningCircle
+  MapPinLine, Clock, Prohibit, EnvelopeSimple, Phone, GraduationCap, Money, X, Eye, Plus, WarningCircle, Buildings
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
@@ -380,6 +380,8 @@ function VacanciesContent() {
               
               <div className="job-card-grid">
                 {groupedVacs[state].map((v, i) => {
+                  if (!v) return null;
+                  
                   const deadline = parseDateSafe(v.lastDate);
                   const isExpired = (deadline && deadline < today) || String(v.status || '').toLowerCase().includes('expire');
                   const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
@@ -392,7 +394,7 @@ function VacanciesContent() {
                   const applicantCount = (appsMap[safeJobId] || []).length;
                   const rowTpo = String(v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown');
                   const datePostedObj = parseDateSafe(v.datePosted || v.timestamp || v.date);
-                  const datePostedStr = (datePostedObj && datePostedObj.getFullYear() < 2050 && datePostedObj.getFullYear() > 2000) ? datePostedObj.toLocaleDateString('en-GB') : 'N/A';
+                  const datePostedStr = (datePostedObj && !isNaN(datePostedObj.getTime()) && datePostedObj.getFullYear() < 2050 && datePostedObj.getFullYear() > 2000) ? datePostedObj.toLocaleDateString('en-GB') : 'N/A';
 
                   return (
                     <div key={i} className="job-card glass-panel hover-lift">
