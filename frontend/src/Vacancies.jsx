@@ -170,8 +170,8 @@ function VacanciesContent() {
       const safeVacancies = Array.isArray(vacancies) ? vacancies : [];
       const safeApplications = Array.isArray(applications) ? applications : [];
 
-      const today = new Date();
-      today.setHours(0,0,0,0);
+      const todayInner = new Date();
+      todayInner.setHours(0,0,0,0);
       
       const appsByJobId = {};
       safeApplications.forEach(app => {
@@ -190,7 +190,7 @@ function VacanciesContent() {
         if (!v) return false;
         
         const deadline = parseDateSafe(v.lastDate);
-        const isExpired = (deadline && deadline < today) || String(v.status || '').toLowerCase().includes('expire');
+        const isExpired = (deadline && deadline < todayInner) || String(v.status || '').toLowerCase().includes('expire');
         const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
         
         if (isExpired || isClosed) expiredOpenings++; else activeOpenings++;
@@ -266,6 +266,10 @@ function VacanciesContent() {
     }
   }, [vacancies, applications, searchQuery, courseFilter, statusFilter, tpoFilter, monthYearFilter, activeTab, isCourseSpecific, assignedDomains]);
 
+  // Define today for the renderer
+  const today = new Date();
+  today.setHours(0,0,0,0);
+
   return (
     <Layout>
       <div className="premium-dashboard-wrapper page-container" style={{ maxWidth: '1600px', margin: '0 auto', paddingBottom: '50px' }}>
@@ -292,6 +296,7 @@ function VacanciesContent() {
           )}
         </div>
 
+        {/* ADMIN MINI DASHBOARD */}
         {isSuperAdmin && (
           <div className="bento-grid mini-dash-wrapper">
             <div className="kpi-card glass-panel hover-lift">
