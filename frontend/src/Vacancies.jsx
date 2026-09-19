@@ -24,11 +24,26 @@ const getStandardCourse = (c) => {
   if (!c) return 'Others';
   const lower = String(c).toLowerCase().trim();
   if (lower.includes('bms') || lower.includes('cctv')) return 'BMS AND CCTV';
-  if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
+  if (lower.includes('auto') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
   if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
   if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
   if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
   return 'Others';
+};
+
+// 🚨 BULLETPROOF DATE PARSER: Guarantees a valid Date object or null, never an "Invalid Date" that causes NaN crashes
+const parseDateSafe = (dateStr) => {
+  if (!dateStr) return null; 
+  let cleanStr = String(dateStr).split(' ')[0].replace(/st|nd|rd|th/gi, '').trim();
+  let d = new Date(cleanStr);
+  
+  if (isNaN(d.getTime()) && (cleanStr.includes('/') || cleanStr.includes('-'))) {
+    const parts = cleanStr.split(/[/\-]/);
+    if (parts.length >= 3) {
+      d = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+    }
+  }
+  return isNaN(d.getTime()) ? null : d;
 };
 
 export default function Vacancies() {
@@ -48,11 +63,17 @@ export default function Vacancies() {
   const canAddOpening = isTpo && !isSuperAdmin;
   const isCourseSpecific = userRole.includes('TRAINER') || userRole.includes('RTH') || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD');
   
-  // 🚨 IDENTICAL TO STUDENTSDIRECTORY: Proven multi-course splitting logic
-  const rawCourse = tpoData?.assignedCourse || 'All';
-  const assignedCoursesArray = (rawCourse === 'All' || rawCourse === 'All Courses') 
-    ? ['All'] 
-    : [...new Set(String(rawCourse).split(/[,\n]+/).map(c => getStandardCourse(c.trim())).filter(Boolean))];
+  const rawCourse = String(tpoData?.assignedCourse || 'All').toLowerCase();
+  let assignedDomains = ['All'];
+  if (rawCourse !== 'all' && rawCourse !== 'all courses') {
+     assignedDomains = [];
+     if (rawCourse.includes('bms') || rawCourse.includes('cctv')) assignedDomains.push('BMS AND CCTV');
+     if (rawCourse.includes('auto') || rawCourse.includes('plc') || rawCourse.includes('scada')) assignedDomains.push('Industrial Automation');
+     if (rawCourse.includes('embed') || rawCourse.includes('iot')) assignedDomains.push('Embedded and IoT');
+     if (rawCourse.includes('digital') || rawCourse.includes('dm') || rawCourse.includes('marketing')) assignedDomains.push('Digital Marketing');
+     if (rawCourse.includes('it') || rawCourse.includes('python') || rawCourse.includes('data')) assignedDomains.push('Information technology (IT)');
+     if (assignedDomains.length === 0) assignedDomains = ['Others'];
+  }
 
   const [vacancies, setVacancies] = useState([]);
   const [applications, setApplications] = useState([]); 
@@ -62,6 +83,7 @@ export default function Vacancies() {
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
+  
   const [tpoFilter, setTpoFilter] = useState('All');
   const [monthYearFilter, setMonthYearFilter] = useState('All');
 
@@ -97,63 +119,65 @@ export default function Vacancies() {
     fetchAllData();
   }, []);
 
+  const safeVacancies = Array.isArray(vacancies) ? vacancies : [];
+  const safeApplications = Array.isArray(applications) ? applications : [];
+
   const appsByJobId = {};
-  applications.forEach(app => {
+  safeApplications.forEach(app => {
     if (!app) return;
     const jobId = String(app.jobId || '').trim();
     if (!appsByJobId[jobId]) appsByJobId[jobId] = [];
     appsByJobId[jobId].push(app);
   });
 
-  const parseDate = (dateStr) => {
-    if (!dateStr) return new Date(8640000000000000); 
-    let cleanStr = String(dateStr).split(' ')[0].replace(/st|nd|rd|th/g, '');
-    let d = new Date(cleanStr);
-    if (isNaN(d.getTime()) && (cleanStr.includes('/') || cleanStr.includes('-'))) {
-      const parts = cleanStr.split(/[/\-]/);
-      if (parts.length >= 3) d = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-    }
-    return isNaN(d.getTime()) ? new Date(8640000000000000) : d;
-  };
-  
   const today = new Date();
   today.setHours(0,0,0,0);
 
-  const uniqueTPOs = [...new Set(vacancies.map(v => String(v?.tpoName || v?.placementofficer || 'Unknown')).filter(n => n !== 'Unknown'))].sort();
-  const uniqueMonths = [...new Set(vacancies.map(v => {
-    const d = parseDate(v?.datePosted || v?.timestamp || v?.date);
+  const uniqueTPOs = [...new Set(safeVacancies.map(v => String(v?.tpoName || v?.placementofficer || v?.placementOfficer || 'Unknown')).filter(n => n !== 'Unknown'))].sort();
+  
+  // 🚨 CRASH FIX: Uses .getTime() || 0 to completely prevent NaN sorting failures
+  const uniqueMonths = [...new Set(safeVacancies.map(v => {
+    const d = parseDateSafe(v?.datePosted || v?.timestamp || v?.date);
     if (d && d.getFullYear() < 2050 && d.getFullYear() > 2000) return d.toLocaleString('en-us', { month: 'long', year: 'numeric' });
     return null;
-  }).filter(Boolean))].sort((a, b) => new Date(b) - new Date(a));
+  }).filter(Boolean))].sort((a, b) => (new Date(b).getTime() || 0) - (new Date(a).getTime() || 0));
 
-  const filteredVacs = vacancies.filter(v => {
+  const filteredVacs = safeVacancies.filter(v => {
     if (!v) return false;
-    const matchQuery = String(v.id || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                       String(v.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                       String(v.position || '').toLowerCase().includes(searchQuery.toLowerCase());
+    
+    const matchQuery = String(v.id || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) || 
+                       String(v.company || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) || 
+                       String(v.position || '').toLowerCase().includes(String(searchQuery || '').toLowerCase());
     
     const matchCourse = courseFilter === 'All' || getStandardCourse(v.course) === getStandardCourse(courseFilter);
     
     let matchTrainerScope = true;
-    if (isCourseSpecific && assignedCoursesArray[0] !== 'All') {
-       matchTrainerScope = assignedCoursesArray.includes(getStandardCourse(v.course));
+    if (isCourseSpecific && !assignedDomains.includes('All')) {
+       matchTrainerScope = assignedDomains.includes(getStandardCourse(v.course));
     }
 
-    const deadline = parseDate(v.lastDate);
-    const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire');
+    const deadline = parseDateSafe(v.lastDate);
+    // If deadline is null, we assume it is not expired, it relies on manual status closure
+    const isExpired = (deadline && deadline < today) || String(v.status || '').toLowerCase().includes('expire');
     const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
     
     const tabMatch = activeTab === 'Open' ? (!isExpired && !isClosed) : (isExpired || isClosed);
-    const statMatch = statusFilter === 'All' || (statusFilter === 'Open' && !isExpired && !isClosed) || (statusFilter === 'Expired' && (isExpired || isClosed));
-    const rowTpo = String(v.tpoName || v.placementofficer || 'Unknown');
+    
+    const statMatch = statusFilter === 'All' ||
+                      (statusFilter === 'Open' && !isExpired && !isClosed) ||
+                      (statusFilter === 'Expired' && (isExpired || isClosed));
+
+    const rowTpo = String(v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown');
     const tpoMatch = tpoFilter === 'All' || rowTpo === tpoFilter;
     
     let monthMatch = true;
     if (monthYearFilter !== 'All') {
-      const d = parseDate(v.datePosted || v.timestamp || v.date);
-      if (d && d.getFullYear() < 2050) monthMatch = d.toLocaleString('en-us', { month: 'long', year: 'numeric' }) === monthYearFilter;
-      else monthMatch = false;
+      const d = parseDateSafe(v.datePosted || v.timestamp || v.date);
+      if (d && d.getFullYear() < 2050) {
+        monthMatch = d.toLocaleString('en-us', { month: 'long', year: 'numeric' }) === monthYearFilter;
+      } else { monthMatch = false; }
     }
+
     return matchQuery && matchCourse && matchTrainerScope && tabMatch && statMatch && tpoMatch && monthMatch;
   });
 
@@ -162,20 +186,25 @@ export default function Vacancies() {
     let loc = 'OTHER STATES';
     if (v && v.state) loc = String(v.state).toUpperCase().trim();
     else if (v && v.location) loc = String(v.location).toUpperCase().trim();
+    
     if (!loc || loc === 'UNDEFINED' || loc === 'NULL') loc = 'OTHER STATES';
+
     if (!groupedVacs[loc]) groupedVacs[loc] = [];
     groupedVacs[loc].push(v);
   });
 
   let totalActiveOpenings = 0; let totalExpiredOpenings = 0; let totalApplicationsCount = 0;
   let uniqueCompaniesSet = new Set();
-  vacancies.forEach(v => {
+
+  safeVacancies.forEach(v => {
     if (!v) return;
-    const deadline = parseDate(v.lastDate);
-    const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire') || String(v.status || '').toLowerCase().includes('close');
+    const deadline = parseDateSafe(v.lastDate);
+    const isExpired = (deadline && deadline < today) || String(v.status || '').toLowerCase().includes('expire') || String(v.status || '').toLowerCase().includes('close');
     if (isExpired) totalExpiredOpenings++; else totalActiveOpenings++;
     if (v.company && String(v.company).toLowerCase() !== 'unknown company') uniqueCompaniesSet.add(String(v.company));
-    totalApplicationsCount += (appsByJobId[v.id] || []).length;
+    
+    const safeJobId = String(v.id || '').trim();
+    totalApplicationsCount += (appsByJobId[safeJobId] || []).length;
   });
 
   return (
@@ -240,12 +269,13 @@ export default function Vacancies() {
           <div className="filter-group">
             <input type="text" className="premium-input" placeholder="Search ID, Role, Company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             
-            {(!isCourseSpecific || assignedCoursesArray.length > 1) && (
+            {/* 🚨 DYNAMIC COURSE FILTER FOR MULTI-ASSIGNMENT */}
+            {(!isCourseSpecific || assignedDomains.length > 1) && (
               <select className="premium-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
                 {isCourseSpecific ? (
                   <>
                     <option value="All">All My Courses</option>
-                    {assignedCoursesArray.map(c => <option key={c} value={c}>{c}</option>)}
+                    {assignedDomains.map(c => <option key={c} value={c}>{c}</option>)}
                   </>
                 ) : (
                   <>
@@ -281,7 +311,7 @@ export default function Vacancies() {
         ) : Object.keys(groupedVacs).length === 0 ? (
           <div className="empty-state-card">
             <span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🔍</span>
-            No {activeTab.toLowerCase()} vacancies match your current filters.
+            No {String(activeTab || '').toLowerCase()} vacancies match your current filters.
           </div>
         ) : (
           Object.keys(groupedVacs).map((state, idx) => (
@@ -294,29 +324,34 @@ export default function Vacancies() {
               
               <div className="job-card-grid">
                 {groupedVacs[state].map((v, i) => {
-                  const deadline = parseDate(v.lastDate);
-                  const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire');
+                  if (!v) return null;
+                  
+                  const deadline = parseDateSafe(v.lastDate);
+                  const isExpired = (deadline && deadline < today) || String(v.status || '').toLowerCase().includes('expire');
                   const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
                   
                   let statClass = 'green'; let statText = 'Open Now';
                   if(isClosed) { statClass = 'gray'; statText = 'Closed'; }
                   else if(isExpired) { statClass = 'red'; statText = 'Expired'; }
 
-                  const myApplicants = appsByJobId[v.id] || [];
+                  const safeJobId = String(v.id || '').trim();
+                  const myApplicants = appsByJobId[safeJobId] || [];
                   const applicantCount = myApplicants.length;
+
                   const rowTpo = String(v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown');
-                  const datePostedObj = parseDate(v.datePosted || v.timestamp || v.date);
+                  const datePostedObj = parseDateSafe(v.datePosted || v.timestamp || v.date);
                   const datePostedStr = (datePostedObj && datePostedObj.getFullYear() < 2050 && datePostedObj.getFullYear() > 2000) ? datePostedObj.toLocaleDateString('en-GB') : 'N/A';
 
                   return (
                     <div key={i} className="job-card glass-panel hover-lift">
+                      
                       <div className="jc-header">
                         <div className="jc-company-logo">{String(v.company || 'U').charAt(0).toUpperCase()}</div>
                         <div className="jc-company-info">
                           <h3 className="text-truncate">{String(v.position || 'N/A')}</h3>
                           <p className="text-truncate">{String(v.company || 'N/A')}</p>
                         </div>
-                        <div className="jc-id">{String(v.id || 'N/A')}</div>
+                        <div className="jc-id">{safeJobId || 'N/A'}</div>
                       </div>
 
                       <div className="jc-body">
@@ -346,6 +381,7 @@ export default function Vacancies() {
                           <Users size={18} /> View List
                         </button>
                       </div>
+
                     </div>
                   );
                 })}
@@ -355,6 +391,7 @@ export default function Vacancies() {
         )}
       </div>
 
+      {/* JOB DETAILS MODAL */}
       {isJobDetailsModalOpen && selectedJob && (
         <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsJobDetailsModalOpen(false); }}>
           <div className="premium-modal glass-panel">
@@ -365,6 +402,7 @@ export default function Vacancies() {
               </div>
               <button className="close-btn" onClick={() => setIsJobDetailsModalOpen(false)}><X size={24} /></button>
             </div>
+
             <div className="modal-grid">
               <DetailBox label="Job ID" value={selectedJob.id} icon={<Briefcase size={20} weight="fill"/>} />
               <DetailBox label="Location & Mode" value={`${selectedJob.location || ''} (${selectedJob.mode || ''})`} icon={<MapPinLine size={20} weight="fill"/>} />
@@ -374,6 +412,7 @@ export default function Vacancies() {
               <DetailBox label="Qualification" value={selectedJob.qualification} icon={<BookOpen size={20} weight="fill"/>} />
               <DetailBox label="Gender Pref." value={selectedJob.gender} icon={<Users size={20} weight="fill"/>} />
             </div>
+
             {selectedJob.description && (
               <div className="modal-desc-box">
                 <div className="desc-title">Job Description</div>
@@ -384,9 +423,11 @@ export default function Vacancies() {
         </div>
       )}
 
+      {/* APPLICANTS MODAL */}
       {isApplicantsModalOpen && selectedJob && (
         <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsApplicantsModalOpen(false); }}>
           <div className="premium-modal glass-panel" style={{ maxWidth: '900px', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '85vh' }}>
+            
             <div className="modal-header" style={{ padding: '25px', background: 'rgba(15, 23, 42, 0.95)', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: 0 }}>
               <div>
                 <h2>Applicants List</h2>
@@ -394,10 +435,12 @@ export default function Vacancies() {
               </div>
               <button className="close-btn" onClick={() => setIsApplicantsModalOpen(false)}><X size={24} /></button>
             </div>
+
             <div style={{ overflowY: 'auto', padding: '20px' }}>
               <div className="clean-list">
-                {appsByJobId[selectedJob.id] ? (
-                  appsByJobId[selectedJob.id].map((app, i) => {
+                {appsByJobId[String(selectedJob.id || '').trim()] && appsByJobId[String(selectedJob.id || '').trim()].length > 0 ? (
+                  appsByJobId[String(selectedJob.id || '').trim()].map((app, i) => {
+                    if (!app) return null;
                     let statClass = 'blue';
                     let s = String(app.status || '').toLowerCase();
                     if(s.includes('interview')) statClass = 'purple';
