@@ -47,6 +47,9 @@ export default function StudyMaterials() {
     id: '', course: '', module: '', title: '', fileType: 'pdf', link: '', status: 'Active'
   });
 
+  // 🚨 NEW: Smart string cleaner for flawless array matching
+  const cleanStr = (s) => (s || '').toLowerCase().replace(/and/g, '&').replace(/[^a-z0-9]/g, '');
+
   const fetchData = async () => {
     try {
       const [matRes, courseRes] = await Promise.all([
@@ -68,12 +71,11 @@ export default function StudyMaterials() {
       }
       setCourseDict(cDict);
 
-      // 🚨 FIXED: Handle comma-separated multiple courses for RTHs
       let allowedDomains = Object.keys(cDict);
       if (!isSuperAdmin && tpoData?.assignedCourse && !['All Courses', 'All'].includes(tpoData.assignedCourse)) {
-        const assignedArray = tpoData.assignedCourse.split(',').map(c => c.trim().toLowerCase());
+        const assignedArray = tpoData.assignedCourse.split(',').map(c => cleanStr(c));
         allowedDomains = Object.keys(cDict).filter(domain => 
-          assignedArray.some(assigned => domain.toLowerCase().includes(assigned) || assigned.includes(domain.toLowerCase()))
+          assignedArray.some(assigned => cleanStr(domain).includes(assigned) || assigned.includes(cleanStr(domain)))
         );
       }
 
@@ -95,12 +97,11 @@ export default function StudyMaterials() {
     fetchData();
   }, []);
 
-  // 🚨 Filter domains dynamically based on role
   let MAIN_COURSES = Object.keys(courseDict);
   if (!isSuperAdmin && tpoData?.assignedCourse && !['All Courses', 'All'].includes(tpoData.assignedCourse)) {
-    const assignedArray = tpoData.assignedCourse.split(',').map(c => c.trim().toLowerCase());
+    const assignedArray = tpoData.assignedCourse.split(',').map(c => cleanStr(c));
     MAIN_COURSES = MAIN_COURSES.filter(domain => 
-      assignedArray.some(assigned => domain.toLowerCase().includes(assigned) || assigned.includes(domain.toLowerCase()))
+      assignedArray.some(assigned => cleanStr(domain).includes(assigned) || assigned.includes(cleanStr(domain)))
     );
   }
 

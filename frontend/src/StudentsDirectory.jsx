@@ -47,7 +47,7 @@ export default function StudentsDirectory() {
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
   const [monthFilter, setMonthFilter] = useState('');
-  const [placementStatusFilter, setPlacementStatusFilter] = useState('All'); // 🚨 NEW FILTER STATE
+  const [placementStatusFilter, setPlacementStatusFilter] = useState('All'); 
   const [sortOrder, setSortOrder] = useState('newest'); 
   const [viewType, setViewType] = useState('list');
 
@@ -68,11 +68,14 @@ export default function StudentsDirectory() {
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
   const isTrainer = upperRole.includes('TRAINER');
   
-  // 🚨 FIXED: Expanded to all Managers (BM, TM, RM, ZM)
   const isManager = upperRole.includes('MANAGER') || upperRole.includes('ZONAL') || upperRole.includes('TERRITORY') || upperRole.includes('REGIONAL') || ['BM', 'TM', 'RM', 'ZM'].includes(upperRole);
-  
   const isCourseSpecific = isRth || upperRole.includes('TTH') || isTrainer || upperRole.includes('TECHNICAL LEAD');
-  const displayCourse = tpoData?.assignedCourse || '';
+  
+  // 🚨 NEW: Parse multiple assigned courses from the DB
+  const rawCourse = tpoData?.assignedCourse || 'All';
+  const assignedCoursesArray = (rawCourse === 'All' || rawCourse === 'All Courses') 
+    ? ['All'] 
+    : rawCourse.split(',').map(c => getStandardCourse(c.trim())).filter(Boolean);
 
   const canEditAll = isSuperAdmin || isTpo; 
   const canEditAcademic = canEditAll || isRth || isTrainer; 
@@ -184,8 +187,11 @@ export default function StudentsDirectory() {
     } catch (error) { alert("Failed to update student data"); } finally { setSavingStatus(false); }
   };
 
+  // 🚨 MULTI-COURSE SCOPING
   const scopedStudents = rawStudents.filter(s => {
-    if (isCourseSpecific) return getStandardCourse(s.course) === getStandardCourse(displayCourse);
+    if (isCourseSpecific && assignedCoursesArray[0] !== 'All') {
+      return assignedCoursesArray.some(ac => getStandardCourse(s.course) === ac);
+    }
     return true;
   });
 
@@ -197,7 +203,6 @@ export default function StudentsDirectory() {
     const monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
     let mMatch = monthFilter === '' || monthKey === monthFilter;
     
-    // 🚨 SMART PLACEMENT STATUS MATCHING
     const pStat = (s.placementStatus || 'Pending').toLowerCase();
     let pMatch = true;
     if (placementStatusFilter !== 'All') {
@@ -239,7 +244,7 @@ export default function StudentsDirectory() {
         
         {!selectedBranch && (
           <div className="universal-kpi-bar" style={{ marginBottom: '2.5rem' }}>
-            <div className="kpi-card"><div><div className="kpi-val">{globallyFiltered.length}</div><div className="kpi-label">{isCourseSpecific ? `${displayCourse} Students` : 'Filtered Students'}</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6' }}><UsersThree weight="fill"/></div></div>
+            <div className="kpi-card"><div><div className="kpi-val">{globallyFiltered.length}</div><div className="kpi-label">{isCourseSpecific ? `Assigned Students` : 'Filtered Students'}</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6' }}><UsersThree weight="fill"/></div></div>
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.activeVacancies}</div><div className="kpi-label">Active Vacancies</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><Briefcase weight="fill"/></div></div>
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.pendingApps}</div><div className="kpi-label">Pending Apps</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><Files weight="fill"/></div></div>
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.placed}</div><div className="kpi-label">Total Hired</div></div><div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}><Confetti weight="fill"/></div></div>
@@ -254,7 +259,7 @@ export default function StudentsDirectory() {
           )}
           <div>
             <h1 style={{ fontSize: '1.8rem', margin: 0 }}>
-              {selectedBranch ? `${selectedBranch} Student Directory` : (isCourseSpecific ? `Branches with ${displayCourse} Students` : 'Student Directory')}
+              {selectedBranch ? `${selectedBranch} Student Directory` : (isCourseSpecific ? `Branches with My Students` : 'Student Directory')}
             </h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>
               {selectedBranch ? (!canSave ? 'View student profiles, resumes, and vacancy statuses.' : 'Manage student profiles, view resumes, and control access levels.') : 'Select an assigned branch to view its registered students and placement statistics.'}
@@ -275,16 +280,26 @@ export default function StudentsDirectory() {
             <input type="text" className="sleek-input" placeholder="Search name or roll..." style={{ minWidth: '200px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           )}
 
-          {!isCourseSpecific && !selectedBranch && (
+          {/* 🚨 DYNAMIC COURSE FILTER FOR MULTI-ASSIGNMENT */}
+          {(!isCourseSpecific || assignedCoursesArray.length > 1 || !selectedBranch) && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
               <select className="sleek-select" style={{ minWidth: '190px' }} value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
-                <option value="All">All Main Courses</option>
-                <option value="Industrial Automation">Industrial Automation</option>
-                <option value="BMS AND CCTV">BMS AND CCTV</option>
-                <option value="Embedded and IoT">Embedded and IoT</option>
-                <option value="Digital Marketing">Digital Marketing</option>
-                <option value="Information technology (IT)">Information technology (IT)</option>
+                {isCourseSpecific ? (
+                  <>
+                    <option value="All">All My Courses</option>
+                    {assignedCoursesArray.map(c => <option key={c} value={c}>{c}</option>)}
+                  </>
+                ) : (
+                  <>
+                    <option value="All">All Main Courses</option>
+                    <option value="Industrial Automation">Industrial Automation</option>
+                    <option value="BMS AND CCTV">BMS AND CCTV</option>
+                    <option value="Embedded and IoT">Embedded and IoT</option>
+                    <option value="Digital Marketing">Digital Marketing</option>
+                    <option value="Information technology (IT)">Information technology (IT)</option>
+                  </>
+                )}
               </select>
             </div>
           )}
@@ -428,6 +443,7 @@ export default function StudentsDirectory() {
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '15px', overflow: 'hidden' }} onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
         <div className="modal-card" style={{ maxWidth: '950px', width: '100%', maxHeight: '95vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
           
+          {/* MODAL CONTENT REMAINS IDENTICAL TO ORIGINAL */}
           <div style={{ position: 'sticky', top: 0, background: '#0f1523', zIndex: 10, padding: '1.5rem 2rem', borderBottom: '1px solid #1e293b' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '15px' }}>
               
@@ -534,7 +550,6 @@ export default function StudentsDirectory() {
                 })()}
              </div>
 
-             {/* 🚨 FIXED: Smart Reference Matcher for all Managers */}
              {isManager && (
                <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #1e293b' }}>
                  <h3 style={{ margin: '0 0 15px 0', color: '#8b5cf6', fontSize: '1.1rem' }}>Reference Contacts</h3>
@@ -542,15 +557,12 @@ export default function StudentsDirectory() {
                    {(() => {
                       const raw = selectedStudent.rawData || {};
                       
-                      // Aggressive Smart Extractor
                       const getRefField = (searchKeywords) => {
-                        // First pass: Exact match
                         for (let keyword of searchKeywords) {
                           const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
                           const foundKey = Object.keys(raw).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanKeyword);
                           if (foundKey && raw[foundKey] && raw[foundKey] !== 'N/A') return raw[foundKey];
                         }
-                        // Second pass: Partial match (but avoid standard contact numbers)
                         for (let keyword of searchKeywords) {
                           const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
                           const foundKey = Object.keys(raw).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanKeyword));

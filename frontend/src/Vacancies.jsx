@@ -2,10 +2,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
-  Users, Briefcase, Trophy, CalendarCheck, CircleNotch, 
-  BookOpen, NotePencil, Desktop, FolderOpen, ListChecks, 
-  ChartBar, MapPinLine, Clock, Student, ChalkboardTeacher,
-  WarningCircle, Buildings, CheckCircle, ArrowUpRight, Plus, Eye, X, Prohibit, EnvelopeSimple, Phone, GraduationCap, Money
+  Users, Briefcase, CircleNotch, BookOpen, 
+  MapPinLine, Clock, Prohibit, EnvelopeSimple, Phone, GraduationCap, Money, X, Eye, Plus
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
@@ -21,6 +19,17 @@ const DetailBox = ({ label, value, icon }) => (
     </div>
   </div>
 );
+
+const getStandardCourse = (c) => {
+  if (!c) return 'Others';
+  const lower = c.toLowerCase().trim();
+  if (lower.includes('bms') || lower.includes('cctv')) return 'BMS AND CCTV';
+  if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
+  if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
+  if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
+  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
+  return 'Others';
+};
 
 export default function Vacancies() {
   const navigate = useNavigate();
@@ -39,8 +48,14 @@ export default function Vacancies() {
   const isSuperAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
   const isTpo = userRole.includes('TPO');
   const canAddOpening = isTpo && !isSuperAdmin;
+  
   const isCourseSpecific = userRole.includes('TRAINER') || userRole.includes('RTH') || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD');
-  const displayCourse = tpoData?.assignedCourse || '';
+  
+  // 🚨 NEW: Parse multiple assigned courses from the DB
+  const rawCourse = tpoData?.assignedCourse || 'All';
+  const assignedCoursesArray = (rawCourse === 'All' || rawCourse === 'All Courses') 
+    ? ['All'] 
+    : rawCourse.split(',').map(c => getStandardCourse(c.trim())).filter(Boolean);
 
   const [vacancies, setVacancies] = useState([]);
   const [applications, setApplications] = useState([]); 
@@ -89,24 +104,17 @@ export default function Vacancies() {
     appsByJobId[jobId].push(app);
   });
 
-  // 🚨 FIXED: SMART DATE PARSER FOR FRONTEND
   const parseDate = (dateStr) => {
     if (!dateStr) return new Date(8640000000000000); 
     let cleanStr = typeof dateStr === 'string' ? dateStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dateStr;
-    
-    // 1. Try native parsing first (Handles MM/DD/YYYY like "9/13/2026" perfectly)
     let d = new Date(cleanStr);
     
-    // 2. If native parsing fails, it's likely DD/MM/YYYY (like "13/09/2026")
     if (isNaN(d.getTime()) && (cleanStr.includes('/') || cleanStr.includes('-'))) {
       const parts = cleanStr.split(/[/\-]/);
       if (parts.length >= 3) {
-        // Assume parts are DD-MM-YYYY, so rewrite it as YYYY-MM-DD
         d = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
       }
     }
-    
-    // 3. If it still failed, default to future date
     return isNaN(d.getTime()) ? new Date(8640000000000000) : d;
   };
   
@@ -125,12 +133,16 @@ export default function Vacancies() {
                        (v.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                        (v.position || '').toLowerCase().includes(searchQuery.toLowerCase());
     
-    const matchCourse = courseFilter === 'All' || (v.course || '').toLowerCase().includes(courseFilter.toLowerCase());
+    const matchCourse = courseFilter === 'All' || getStandardCourse(v.course) === getStandardCourse(courseFilter);
+    
+    // 🚨 MULTI-COURSE TRAINER SCOPE MATCHING
     let matchTrainerScope = true;
-    if (isCourseSpecific && displayCourse !== 'All Courses') {
-       const vCourse = (v.course || '').toLowerCase();
-       const myCourse = displayCourse.toLowerCase();
-       matchTrainerScope = vCourse.includes(myCourse) || myCourse.includes(vCourse);
+    if (isCourseSpecific && assignedCoursesArray[0] !== 'All') {
+       const vCourseStd = getStandardCourse(v.course).toLowerCase();
+       matchTrainerScope = assignedCoursesArray.some(ac => {
+         const stdAc = ac.toLowerCase();
+         return stdAc === vCourseStd || v.course?.toLowerCase().includes(stdAc);
+       });
     }
 
     const deadline = parseDate(v.lastDate);
@@ -236,13 +248,27 @@ export default function Vacancies() {
 
           <div className="filter-group">
             <input type="text" className="premium-input" placeholder="Search ID, Role, Company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-            <select className="premium-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
-              <option value="All">All Courses</option>
-              <option value="Industrial Automation">Industrial Automation</option>
-              <option value="BMS & CCTV">BMS & CCTV</option>
-              <option value="Python and Data Science">Python & Data</option>
-              <option value="Digital Marketing">Digital Marketing</option>
-            </select>
+            
+            {/* 🚨 DYNAMIC COURSE FILTER FOR MULTI-ASSIGNMENT */}
+            {(!isCourseSpecific || assignedCoursesArray.length > 1) && (
+              <select className="premium-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
+                {isCourseSpecific ? (
+                  <>
+                    <option value="All">All My Courses</option>
+                    {assignedCoursesArray.map(c => <option key={c} value={c}>{c}</option>)}
+                  </>
+                ) : (
+                  <>
+                    <option value="All">All Main Courses</option>
+                    <option value="Industrial Automation">Industrial Automation</option>
+                    <option value="BMS AND CCTV">BMS AND CCTV</option>
+                    <option value="Embedded and IoT">Embedded and IoT</option>
+                    <option value="Digital Marketing">Digital Marketing</option>
+                    <option value="Information technology (IT)">Information technology (IT)</option>
+                  </>
+                )}
+              </select>
+            )}
 
             {isSuperAdmin && (
               <>
@@ -325,7 +351,6 @@ export default function Vacancies() {
                       </div>
 
                       <div className="jc-hover-actions">
-                        {/* 🚨 SAFELY ATTACHED ONCLICK EVENT TO PREVENT CRASH */}
                         <button className="premium-btn secondary" onClick={() => { if(!isExpired) { setSelectedJob(v); setIsJobDetailsModalOpen(true); } }} disabled={isExpired}>
                           {isExpired ? <Prohibit size={18}/> : <Eye size={18} />} Details
                         </button>
@@ -434,16 +459,12 @@ export default function Vacancies() {
         </div>
       )}
 
-      {/* ---------------------------------------------------------
-          🎨 PREMIUM CSS FOR VACANCIES PAGE
-      --------------------------------------------------------- */}
       <style>{`
+        /* ... Keep existing Vacancies CSS ... */
         .premium-dashboard-wrapper { font-family: 'Inter', sans-serif; color: #f8fafc; }
-        
         .glass-panel { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); }
         .hover-lift { transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); cursor: pointer; }
         .hover-lift:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7); border-color: rgba(255, 255, 255, 0.1); background: rgba(30, 41, 59, 0.8); }
-
         .top-hero-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 20px; }
         .hero-text h1 { font-size: 2.2rem; font-weight: 800; margin: 0 0 5px 0; color: #fff; }
         .hero-text p { color: #94a3b8; margin: 0; font-size: 1rem; }
@@ -451,7 +472,6 @@ export default function Vacancies() {
         .premium-btn.primary { background: #3b82f6; color: #fff; }
         .premium-btn.secondary { background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1); }
         .premium-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
-
         .mini-dash-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 25px; }
         .kpi-card { border-radius: 16px; padding: 20px; }
         .kpi-top { display: flex; justify-content: space-between; align-items: flex-start; }
@@ -462,13 +482,11 @@ export default function Vacancies() {
         .kpi-icon.green { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
         .kpi-icon.purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.3); }
         .kpi-icon.red { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
-
         .control-action-bar { border-radius: 16px; padding: 15px; margin-bottom: 30px; display: flex; flex-direction: column; gap: 15px; }
         .segmented-tabs { display: flex; background: rgba(0,0,0,0.3); padding: 5px; border-radius: 12px; width: fit-content; border: 1px solid rgba(255,255,255,0.05); }
         .seg-tab { background: transparent; border: none; padding: 8px 24px; color: #94a3b8; font-weight: bold; font-size: 0.9rem; border-radius: 8px; cursor: pointer; transition: 0.3s; }
         .seg-tab.active { background: #3b82f6; color: #fff; box-shadow: 0 4px 10px rgba(59,130,246,0.3); }
         .seg-tab.active-expired { background: #ef4444; color: #fff; box-shadow: 0 4px 10px rgba(239,68,68,0.3); }
-        
         .filter-group { display: flex; gap: 12px; flex-wrap: wrap; }
         .premium-input, .premium-select { background: rgba(0,0,0,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 10px 15px; font-size: 0.85rem; outline: none; transition: 0.2s; }
         .premium-input { min-width: 250px; flex: 1; }
@@ -476,20 +494,16 @@ export default function Vacancies() {
         .premium-select option { background: #0f1523; color: #fff; padding: 10px; font-weight: bold; }
         .border-purple { border-color: rgba(168, 85, 247, 0.3); } .border-purple:focus { border-color: #a855f7; }
         .border-green { border-color: rgba(16, 185, 129, 0.3); } .border-green:focus { border-color: #10b981; }
-
         .empty-state-card { background: rgba(15, 23, 42, 0.5); border: 1px dashed rgba(255,255,255,0.1); border-radius: 16px; padding: 50px 20px; text-align: center; color: #94a3b8; font-size: 1.1rem; font-weight: bold; }
         .text-blue { color: #3b82f6; }
-
         .state-group-section { margin-bottom: 40px; }
         .state-header { display: flex; align-items: center; gap: 15px; margin-bottom: 20px; opacity: 0.8; }
         .state-title { margin: 0; font-size: 1.2rem; font-weight: 900; letter-spacing: 2px; color: #cbd5e1; text-transform: uppercase; }
         .state-line { flex: 1; height: 1px; background: linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0) 100%); }
-
         .job-card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 20px; }
         .job-card { border-radius: 20px; padding: 20px; display: flex; flex-direction: column; position: relative; overflow: hidden; }
         .jc-hover-actions { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; opacity: 0; transition: 0.3s ease; border-radius: 20px; }
         .job-card:hover .jc-hover-actions { opacity: 1; }
-        
         .jc-header { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
         .jc-company-logo { width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 900; color: #fff; flex-shrink: 0; box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3); }
         .jc-company-info { flex: 1; min-width: 0; }
@@ -497,13 +511,10 @@ export default function Vacancies() {
         .jc-company-info p { margin: 0; font-size: 0.8rem; color: #94a3b8; font-weight: 500; }
         .jc-id { background: rgba(255,255,255,0.05); padding: 4px 8px; border-radius: 8px; font-size: 0.7rem; font-weight: bold; color: #cbd5e1; border: 1px solid rgba(255,255,255,0.1); }
         .text-truncate { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        
         .jc-body { display: flex; flex-direction: column; gap: 8px; margin-bottom: 15px; }
         .jc-detail { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; color: #cbd5e1; }
         .text-purple { color: #a855f7; font-weight: bold; }
-        
         .jc-divider { height: 1px; background: rgba(255,255,255,0.05); margin-bottom: 15px; }
-        
         .jc-footer { display: flex; justify-content: space-between; align-items: flex-end; }
         .status-pill { padding: 4px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: 800; display: inline-block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
         .status-pill.green { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
@@ -511,10 +522,8 @@ export default function Vacancies() {
         .status-pill.gray { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); }
         .status-pill.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3); }
         .status-pill.purple { background: rgba(168, 85, 247, 0.15); color: #a855f7; border: 1px solid rgba(168, 85, 247, 0.3); }
-        
         .jc-deadline { font-size: 0.75rem; color: #64748b; font-weight: 500; }
         .jc-applicants { display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.03); padding: 8px 12px; border-radius: 12px; font-size: 0.8rem; font-weight: bold; border: 1px solid rgba(255,255,255,0.05); }
-
         .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); z-index: 99999; display: flex; justify-content: center; align-items: center; padding: 20px; }
         .premium-modal { width: 100%; max-width: 800px; max-height: 90vh; overflow-y: auto; border-radius: 24px; padding: 30px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
         .modal-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px; margin-bottom: 20px; }
@@ -522,14 +531,11 @@ export default function Vacancies() {
         .modal-subtitle { color: #8b5cf6; font-weight: bold; font-size: 1.1rem; }
         .close-btn { background: none; border: none; color: #64748b; cursor: pointer; transition: 0.2s; display: flex; }
         .close-btn:hover { color: #ef4444; transform: scale(1.1); }
-        
         .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
         @media (max-width: 600px) { .modal-grid { grid-template-columns: 1fr; } }
-        
         .modal-desc-box { background: rgba(255,255,255,0.02); padding: 20px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05); margin-bottom: 20px; }
         .desc-title { font-size: 0.8rem; color: #94a3b8; text-transform: uppercase; margin-bottom: 10px; font-weight: bold; letter-spacing: 0.5px; }
         .desc-content { color: #e2e8f0; font-size: 0.95rem; line-height: 1.6; white-space: pre-wrap; }
-
         .clean-list { display: flex; flex-direction: column; gap: 10px; }
         .clean-row { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: rgba(0, 0, 0, 0.2); border-radius: 12px; border: 1px solid rgba(255,255,255,0.02); transition: 0.2s; }
         .hover-bg:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); }

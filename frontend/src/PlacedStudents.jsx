@@ -22,7 +22,6 @@ const getStandardCourse = (c) => {
 
 const parseDate = (dStr) => {
   if (!dStr) return null;
-  // 🚨 SMART FIX: Strips out the rogue comma from the Google Sheets timestamp
   let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0].replace(/,/g, '') : dStr;
   if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
     const parts = cleanStr.split(/[/-]/);
@@ -48,19 +47,23 @@ export default function PlacedStudents() {
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   
-  // 🚨 RESTRICT ACTIONS BY ROLE: ONLY TPO CAN ADD/EDIT
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isTpo = upperRole.includes('TPO');
-  const canEditPlacement = isTpo; // 🚨 Admin is no longer allowed
+  const canEditPlacement = isTpo; 
 
   const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
-  const displayCourse = tpoData?.assignedCourse || '';
+  
+  // 🚨 NEW: Parse multiple assigned courses from the DB
+  const rawCourse = tpoData?.assignedCourse || 'All';
+  const assignedCoursesArray = (rawCourse === 'All' || rawCourse === 'All Courses') 
+    ? ['All'] 
+    : rawCourse.split(',').map(c => getStandardCourse(c.trim())).filter(Boolean);
   
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
   const [monthFilter, setMonthFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState('All'); // 🚨 NEW FILTER
+  const [statusFilter, setStatusFilter] = useState('All'); 
   const [sortOrder, setSortOrder] = useState('newest');
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -96,7 +99,6 @@ export default function PlacedStudents() {
       if (repRes.data.success) {
         let logs = repRes.data.tpoLogs || [];
 
-        // 🚨 SMART EXTRACTOR: Ignores spaces and cases in Google Sheet Headers
         const getVal = (row, searchStrs) => {
           const keys = Object.keys(row);
           for (let s of searchStrs) {
@@ -170,15 +172,20 @@ export default function PlacedStudents() {
     setSearchQuery(''); setCourseFilter('All'); setMonthFilter(''); setStatusFilter('All'); setSortOrder('newest');
   };
 
-  const globallyFiltered = applications.filter(a => {
-    if (isCourseSpecific && getStandardCourse(a.course) !== getStandardCourse(displayCourse)) return false;
+  // 🚨 MULTI-COURSE SCOPING
+  const scopedApps = applications.filter(a => {
+    if (isCourseSpecific && assignedCoursesArray[0] !== 'All') {
+      return assignedCoursesArray.some(ac => getStandardCourse(a.course) === ac);
+    }
+    return true;
+  });
 
+  const globallyFiltered = scopedApps.filter(a => {
     let cMatch = courseFilter === 'All' || getStandardCourse(a.course) === getStandardCourse(courseFilter);
     let dateObj = parseDate(a.datePlaced || a.date);
     let monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
     let mMatch = monthFilter === '' ? true : monthKey === monthFilter;
     
-    // 🚨 SMART STATUS & JOINING FILTER
     let sMatch = true;
     if (statusFilter !== 'All') {
       const stat = (a.status || '').toLowerCase();
@@ -295,16 +302,26 @@ export default function PlacedStudents() {
             <input type="text" className="sleek-input" placeholder="Search student, roll, or company..." style={{ minWidth: '220px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           )}
 
-          {!isCourseSpecific && (
+          {/* 🚨 DYNAMIC COURSE FILTER FOR MULTI-ASSIGNMENT */}
+          {(!isCourseSpecific || assignedCoursesArray.length > 1) && (
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
               <select className="sleek-select" style={{ minWidth: '190px' }} value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
-                <option value="All">All Main Courses</option>
-                <option value="Industrial Automation">Industrial Automation</option>
-                <option value="BMS AND CCTV">BMS AND CCTV</option>
-                <option value="Embedded and IoT">Embedded and IoT</option>
-                <option value="Digital Marketing">Digital Marketing</option>
-                <option value="Information technology (IT)">Information technology (IT)</option>
+                {isCourseSpecific ? (
+                  <>
+                    <option value="All">All My Courses</option>
+                    {assignedCoursesArray.map(c => <option key={c} value={c}>{c}</option>)}
+                  </>
+                ) : (
+                  <>
+                    <option value="All">All Main Courses</option>
+                    <option value="Industrial Automation">Industrial Automation</option>
+                    <option value="BMS AND CCTV">BMS AND CCTV</option>
+                    <option value="Embedded and IoT">Embedded and IoT</option>
+                    <option value="Digital Marketing">Digital Marketing</option>
+                    <option value="Information technology (IT)">Information technology (IT)</option>
+                  </>
+                )}
               </select>
             </div>
           )}
@@ -314,7 +331,6 @@ export default function PlacedStudents() {
             <input type="month" className="sleek-input" style={{ minWidth: '150px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
           </div>
 
-          {/* 🚨 NEW PLACEMENT STATUS FILTER UI */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Status:</span>
             <select className="sleek-select" style={{ minWidth: '140px' }} value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
@@ -424,6 +440,7 @@ export default function PlacedStudents() {
         )}
       </div>
 
+      {/* MODALS REMAINS EXACTLY THE SAME */}
       {isEditModalOpen && selectedApp && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
