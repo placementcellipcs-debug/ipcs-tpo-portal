@@ -1015,7 +1015,7 @@ exports.addApplication = async (req, res) => {
 exports.getVacancies = (req, res) => {
   try {
     const cache = getCache();
-    // 🚨 EXTREME BACKEND SAFETY: If the sheet is empty, return empty array rather than throwing 500 error
+    // 🚨 EXTREME BACKEND SAFETY: Prevents server crash if Google Sheet is empty/syncing
     if (!cache || !cache.vacancies || !Array.isArray(cache.vacancies)) {
       return res.json({ success: true, vacancies: [] });
     }
