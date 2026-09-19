@@ -31,21 +31,6 @@ const getStandardCourse = (c) => {
   return 'Others';
 };
 
-// 🚨 BULLETPROOF DATE PARSER: Guarantees a valid Date object or null, never an "Invalid Date" that causes NaN crashes
-const parseDateSafe = (dateStr) => {
-  if (!dateStr) return null; 
-  let cleanStr = String(dateStr).split(' ')[0].replace(/st|nd|rd|th/gi, '').trim();
-  let d = new Date(cleanStr);
-  
-  if (isNaN(d.getTime()) && (cleanStr.includes('/') || cleanStr.includes('-'))) {
-    const parts = cleanStr.split(/[/\-]/);
-    if (parts.length >= 3) {
-      d = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-    }
-  }
-  return isNaN(d.getTime()) ? null : d;
-};
-
 export default function Vacancies() {
   const navigate = useNavigate();
   
@@ -63,6 +48,7 @@ export default function Vacancies() {
   const canAddOpening = isTpo && !isSuperAdmin;
   const isCourseSpecific = userRole.includes('TRAINER') || userRole.includes('RTH') || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD');
   
+  // 🚨 BULLETPROOF KEYWORD PARSER: Never crashes, ignores commas/formatting completely
   const rawCourse = String(tpoData?.assignedCourse || 'All').toLowerCase();
   let assignedDomains = ['All'];
   if (rawCourse !== 'all' && rawCourse !== 'all courses') {
@@ -124,20 +110,30 @@ export default function Vacancies() {
 
   const appsByJobId = {};
   safeApplications.forEach(app => {
-    if (!app) return;
-    const jobId = String(app.jobId || '').trim();
+    const jobId = String(app?.jobId || '').trim();
     if (!appsByJobId[jobId]) appsByJobId[jobId] = [];
     appsByJobId[jobId].push(app);
   });
 
+  const parseDate = (dateStr) => {
+    if (!dateStr) return new Date(8640000000000000); 
+    let cleanStr = String(dateStr).split(' ')[0].replace(/st|nd|rd|th/g, '');
+    let d = new Date(cleanStr);
+    if (isNaN(d.getTime()) && (cleanStr.includes('/') || cleanStr.includes('-'))) {
+      const parts = cleanStr.split(/[/\-]/);
+      if (parts.length >= 3) {
+        d = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+      }
+    }
+    return isNaN(d.getTime()) ? new Date(8640000000000000) : d;
+  };
+  
   const today = new Date();
   today.setHours(0,0,0,0);
 
   const uniqueTPOs = [...new Set(safeVacancies.map(v => String(v?.tpoName || v?.placementofficer || v?.placementOfficer || 'Unknown')).filter(n => n !== 'Unknown'))].sort();
-  
-  // 🚨 CRASH FIX: Uses .getTime() || 0 to completely prevent NaN sorting failures
   const uniqueMonths = [...new Set(safeVacancies.map(v => {
-    const d = parseDateSafe(v?.datePosted || v?.timestamp || v?.date);
+    const d = parseDate(v?.datePosted || v?.timestamp || v?.date);
     if (d && d.getFullYear() < 2050 && d.getFullYear() > 2000) return d.toLocaleString('en-us', { month: 'long', year: 'numeric' });
     return null;
   }).filter(Boolean))].sort((a, b) => (new Date(b).getTime() || 0) - (new Date(a).getTime() || 0));
@@ -145,9 +141,11 @@ export default function Vacancies() {
   const filteredVacs = safeVacancies.filter(v => {
     if (!v) return false;
     
-    const matchQuery = String(v.id || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) || 
-                       String(v.company || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) || 
-                       String(v.position || '').toLowerCase().includes(String(searchQuery || '').toLowerCase());
+    // 🚨 EXTREME TYPE SAFETY: Forces string conversion before searching
+    const safeSearch = String(searchQuery || '').toLowerCase();
+    const matchQuery = String(v.id || '').toLowerCase().includes(safeSearch) || 
+                       String(v.company || '').toLowerCase().includes(safeSearch) || 
+                       String(v.position || '').toLowerCase().includes(safeSearch);
     
     const matchCourse = courseFilter === 'All' || getStandardCourse(v.course) === getStandardCourse(courseFilter);
     
@@ -156,26 +154,21 @@ export default function Vacancies() {
        matchTrainerScope = assignedDomains.includes(getStandardCourse(v.course));
     }
 
-    const deadline = parseDateSafe(v.lastDate);
-    // If deadline is null, we assume it is not expired, it relies on manual status closure
-    const isExpired = (deadline && deadline < today) || String(v.status || '').toLowerCase().includes('expire');
+    const deadline = parseDate(v.lastDate);
+    const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire');
     const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
     
     const tabMatch = activeTab === 'Open' ? (!isExpired && !isClosed) : (isExpired || isClosed);
-    
-    const statMatch = statusFilter === 'All' ||
-                      (statusFilter === 'Open' && !isExpired && !isClosed) ||
-                      (statusFilter === 'Expired' && (isExpired || isClosed));
+    const statMatch = statusFilter === 'All' || (statusFilter === 'Open' && !isExpired && !isClosed) || (statusFilter === 'Expired' && (isExpired || isClosed));
 
     const rowTpo = String(v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown');
     const tpoMatch = tpoFilter === 'All' || rowTpo === tpoFilter;
     
     let monthMatch = true;
     if (monthYearFilter !== 'All') {
-      const d = parseDateSafe(v.datePosted || v.timestamp || v.date);
-      if (d && d.getFullYear() < 2050) {
-        monthMatch = d.toLocaleString('en-us', { month: 'long', year: 'numeric' }) === monthYearFilter;
-      } else { monthMatch = false; }
+      const d = parseDate(v.datePosted || v.timestamp || v.date);
+      if (d && d.getFullYear() < 2050) monthMatch = d.toLocaleString('en-us', { month: 'long', year: 'numeric' }) === monthYearFilter;
+      else monthMatch = false;
     }
 
     return matchQuery && matchCourse && matchTrainerScope && tabMatch && statMatch && tpoMatch && monthMatch;
@@ -183,12 +176,14 @@ export default function Vacancies() {
 
   const groupedVacs = {};
   filteredVacs.forEach(v => {
+    // 🚨 FATAL CRASH FIX: Wrap location extraction in a massive safe-cast
     let loc = 'OTHER STATES';
-    if (v && v.state) loc = String(v.state).toUpperCase().trim();
-    else if (v && v.location) loc = String(v.location).toUpperCase().trim();
+    try {
+      if (v && v.state) loc = String(v.state).toUpperCase().trim();
+      else if (v && v.location) loc = String(v.location).toUpperCase().trim();
+    } catch(e) {}
     
     if (!loc || loc === 'UNDEFINED' || loc === 'NULL') loc = 'OTHER STATES';
-
     if (!groupedVacs[loc]) groupedVacs[loc] = [];
     groupedVacs[loc].push(v);
   });
@@ -198,8 +193,8 @@ export default function Vacancies() {
 
   safeVacancies.forEach(v => {
     if (!v) return;
-    const deadline = parseDateSafe(v.lastDate);
-    const isExpired = (deadline && deadline < today) || String(v.status || '').toLowerCase().includes('expire') || String(v.status || '').toLowerCase().includes('close');
+    const deadline = parseDate(v.lastDate);
+    const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire') || String(v.status || '').toLowerCase().includes('close');
     if (isExpired) totalExpiredOpenings++; else totalActiveOpenings++;
     if (v.company && String(v.company).toLowerCase() !== 'unknown company') uniqueCompaniesSet.add(String(v.company));
     
@@ -269,7 +264,6 @@ export default function Vacancies() {
           <div className="filter-group">
             <input type="text" className="premium-input" placeholder="Search ID, Role, Company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             
-            {/* 🚨 DYNAMIC COURSE FILTER FOR MULTI-ASSIGNMENT */}
             {(!isCourseSpecific || assignedDomains.length > 1) && (
               <select className="premium-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
                 {isCourseSpecific ? (
@@ -326,8 +320,8 @@ export default function Vacancies() {
                 {groupedVacs[state].map((v, i) => {
                   if (!v) return null;
                   
-                  const deadline = parseDateSafe(v.lastDate);
-                  const isExpired = (deadline && deadline < today) || String(v.status || '').toLowerCase().includes('expire');
+                  const deadline = parseDate(v.lastDate);
+                  const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire');
                   const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
                   
                   let statClass = 'green'; let statText = 'Open Now';
@@ -339,7 +333,7 @@ export default function Vacancies() {
                   const applicantCount = myApplicants.length;
 
                   const rowTpo = String(v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown');
-                  const datePostedObj = parseDateSafe(v.datePosted || v.timestamp || v.date);
+                  const datePostedObj = parseDate(v.datePosted || v.timestamp || v.date);
                   const datePostedStr = (datePostedObj && datePostedObj.getFullYear() < 2050 && datePostedObj.getFullYear() > 2000) ? datePostedObj.toLocaleDateString('en-GB') : 'N/A';
 
                   return (
