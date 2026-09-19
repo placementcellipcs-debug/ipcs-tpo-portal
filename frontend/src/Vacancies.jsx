@@ -24,7 +24,7 @@ const getStandardCourse = (c) => {
   if (!c) return 'Others';
   const lower = String(c).toLowerCase().trim();
   if (lower.includes('bms') || lower.includes('cctv')) return 'BMS AND CCTV';
-  if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
+  if (lower.includes('auto') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
   if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
   if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
   if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
@@ -38,9 +38,7 @@ export default function Vacancies() {
   try {
     const rawData = localStorage.getItem('tpoData');
     if (rawData) tpoData = JSON.parse(rawData);
-  } catch(e) {
-    console.error("Error reading tpoData");
-  }
+  } catch(e) {}
   
   const userRole = String(tpoData?.role || '').toUpperCase();
   const accessType = String(tpoData?.accessType || '').toLowerCase();
@@ -50,17 +48,17 @@ export default function Vacancies() {
   const canAddOpening = isTpo && !isSuperAdmin;
   const isCourseSpecific = userRole.includes('TRAINER') || userRole.includes('RTH') || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD');
   
-  // 🚨 AGGRESSIVE TYPE-SAFETY: Forces the course to a string to prevent .split() crash
+  // 🚨 BULLETPROOF KEYWORD PARSER: Never crashes, ignores commas/formatting completely
   const rawCourse = String(tpoData?.assignedCourse || 'All').toLowerCase();
-  let assignedCoursesArray = ['All'];
+  let assignedDomains = ['All'];
   if (rawCourse !== 'all' && rawCourse !== 'all courses') {
-     assignedCoursesArray = [];
-     if (rawCourse.includes('bms') || rawCourse.includes('cctv')) assignedCoursesArray.push('BMS AND CCTV');
-     if (rawCourse.includes('automation') || rawCourse.includes('plc') || rawCourse.includes('scada')) assignedCoursesArray.push('Industrial Automation');
-     if (rawCourse.includes('embed') || rawCourse.includes('iot')) assignedCoursesArray.push('Embedded and IoT');
-     if (rawCourse.includes('digital') || rawCourse.includes('dm') || rawCourse.includes('marketing')) assignedCoursesArray.push('Digital Marketing');
-     if (rawCourse.includes('it') || rawCourse.includes('python') || rawCourse.includes('software') || rawCourse.includes('data')) assignedCoursesArray.push('Information technology (IT)');
-     if (assignedCoursesArray.length === 0) assignedCoursesArray = ['Others'];
+     assignedDomains = [];
+     if (rawCourse.includes('bms') || rawCourse.includes('cctv')) assignedDomains.push('BMS AND CCTV');
+     if (rawCourse.includes('auto') || rawCourse.includes('plc') || rawCourse.includes('scada')) assignedDomains.push('Industrial Automation');
+     if (rawCourse.includes('embed') || rawCourse.includes('iot')) assignedDomains.push('Embedded and IoT');
+     if (rawCourse.includes('digital') || rawCourse.includes('dm') || rawCourse.includes('marketing')) assignedDomains.push('Digital Marketing');
+     if (rawCourse.includes('it') || rawCourse.includes('python') || rawCourse.includes('data')) assignedDomains.push('Information technology (IT)');
+     if (assignedDomains.length === 0) assignedDomains = ['Others'];
   }
 
   const [vacancies, setVacancies] = useState([]);
@@ -96,8 +94,8 @@ export default function Vacancies() {
           })
         ]);
         
-        if (vacRes.data.success) setVacancies(vacRes.data.vacancies || []);
-        if (appRes.data.success) setApplications(appRes.data.applications || []);
+        if (vacRes.data.success) setVacancies(Array.isArray(vacRes.data.vacancies) ? vacRes.data.vacancies : []);
+        if (appRes.data.success) setApplications(Array.isArray(appRes.data.applications) ? appRes.data.applications : []);
       } catch (error) { 
         console.error("Failed to fetch data", error); 
       } finally { 
@@ -107,17 +105,18 @@ export default function Vacancies() {
     fetchAllData();
   }, []);
 
+  const safeVacancies = Array.isArray(vacancies) ? vacancies : [];
+  const safeApplications = Array.isArray(applications) ? applications : [];
+
   const appsByJobId = {};
-  applications.forEach(app => {
-    const jobId = String(app.jobId || '').trim();
+  safeApplications.forEach(app => {
+    const jobId = String(app?.jobId || '').trim();
     if (!appsByJobId[jobId]) appsByJobId[jobId] = [];
     appsByJobId[jobId].push(app);
   });
 
-  // 🚨 FIXED: STRICT DATE PARSER PREVENTS .includes() CRASH ON NUMBERS
   const parseDate = (dateStr) => {
     if (!dateStr) return new Date(8640000000000000); 
-    // Force string conversion first to prevent fatal crashes
     let cleanStr = String(dateStr).split(' ')[0].replace(/st|nd|rd|th/g, '');
     let d = new Date(cleanStr);
     
@@ -133,25 +132,26 @@ export default function Vacancies() {
   const today = new Date();
   today.setHours(0,0,0,0);
 
-  const uniqueTPOs = [...new Set(vacancies.map(v => String(v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown')).filter(n => n !== 'Unknown'))].sort();
-  const uniqueMonths = [...new Set(vacancies.map(v => {
-    const d = parseDate(v.datePosted || v.timestamp || v.date);
+  const uniqueTPOs = [...new Set(safeVacancies.map(v => String(v?.tpoName || v?.placementofficer || v?.placementOfficer || 'Unknown')).filter(n => n !== 'Unknown'))].sort();
+  const uniqueMonths = [...new Set(safeVacancies.map(v => {
+    const d = parseDate(v?.datePosted || v?.timestamp || v?.date);
     if (d && d.getFullYear() < 2050 && d.getFullYear() > 2000) return d.toLocaleString('en-us', { month: 'long', year: 'numeric' });
     return null;
   }).filter(Boolean))].sort((a, b) => new Date(b) - new Date(a));
 
-  const filteredVacs = vacancies.filter(v => {
-    // 🚨 FORCE STRING ON SEARCH TO PREVENT CRASH
-    const matchQuery = String(v.id || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                       String(v.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-                       String(v.position || '').toLowerCase().includes(searchQuery.toLowerCase());
+  const filteredVacs = safeVacancies.filter(v => {
+    if (!v) return false;
+    
+    // 🚨 EXTREME TYPE SAFETY: Forces string conversion before searching
+    const matchQuery = String(v.id || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) || 
+                       String(v.company || '').toLowerCase().includes(String(searchQuery || '').toLowerCase()) || 
+                       String(v.position || '').toLowerCase().includes(String(searchQuery || '').toLowerCase());
     
     const matchCourse = courseFilter === 'All' || getStandardCourse(v.course) === getStandardCourse(courseFilter);
     
     let matchTrainerScope = true;
-    if (isCourseSpecific && !assignedCoursesArray.includes('All')) {
-       const vCourseStd = getStandardCourse(v.course);
-       matchTrainerScope = assignedCoursesArray.includes(vCourseStd);
+    if (isCourseSpecific && !assignedDomains.includes('All')) {
+       matchTrainerScope = assignedDomains.includes(getStandardCourse(v.course));
     }
 
     const deadline = parseDate(v.lastDate);
@@ -180,19 +180,12 @@ export default function Vacancies() {
 
   const groupedVacs = {};
   filteredVacs.forEach(v => {
-    // 🚨 FATAL CRASH FIX: Safely handles null, undefined, or empty objects
+    // 🚨 FATAL CRASH FIX: Handles null, numbers, undefined safely
     let loc = 'OTHER STATES';
-    if (v && v.state) {
-      loc = String(v.state).toUpperCase().trim();
-    } else if (v && v.location) {
-      // Fallback to location if state is missing
-      loc = String(v.location).toUpperCase().trim();
-    }
+    if (v && v.state) loc = String(v.state).toUpperCase().trim();
+    else if (v && v.location) loc = String(v.location).toUpperCase().trim();
     
-    // Final safety check to prevent undefined keys
-    if (!loc || loc === 'UNDEFINED' || loc === 'NULL') {
-      loc = 'OTHER STATES';
-    }
+    if (!loc || loc === 'UNDEFINED' || loc === 'NULL') loc = 'OTHER STATES';
 
     if (!groupedVacs[loc]) groupedVacs[loc] = [];
     groupedVacs[loc].push(v);
@@ -201,7 +194,8 @@ export default function Vacancies() {
   let totalActiveOpenings = 0; let totalExpiredOpenings = 0; let totalApplicationsCount = 0;
   let uniqueCompaniesSet = new Set();
 
-  vacancies.forEach(v => {
+  safeVacancies.forEach(v => {
+    if (!v) return;
     const deadline = parseDate(v.lastDate);
     const isExpired = deadline < today || String(v.status || '').toLowerCase().includes('expire') || String(v.status || '').toLowerCase().includes('close');
     if (isExpired) totalExpiredOpenings++; else totalActiveOpenings++;
@@ -272,12 +266,12 @@ export default function Vacancies() {
             <input type="text" className="premium-input" placeholder="Search ID, Role, Company..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             
             {/* 🚨 DYNAMIC COURSE FILTER FOR MULTI-ASSIGNMENT */}
-            {(!isCourseSpecific || assignedCoursesArray.length > 1) && (
+            {(!isCourseSpecific || assignedDomains.length > 1) && (
               <select className="premium-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
                 {isCourseSpecific ? (
                   <>
                     <option value="All">All My Courses</option>
-                    {assignedCoursesArray.map(c => <option key={c} value={c}>{c}</option>)}
+                    {assignedDomains.map(c => <option key={c} value={c}>{c}</option>)}
                   </>
                 ) : (
                   <>
@@ -313,7 +307,7 @@ export default function Vacancies() {
         ) : Object.keys(groupedVacs).length === 0 ? (
           <div className="empty-state-card">
             <span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🔍</span>
-            No {activeTab.toLowerCase()} vacancies match your current filters.
+            No {String(activeTab || '').toLowerCase()} vacancies match your current filters.
           </div>
         ) : (
           Object.keys(groupedVacs).map((state, idx) => (
@@ -337,7 +331,7 @@ export default function Vacancies() {
                   const myApplicants = appsByJobId[v.id] || [];
                   const applicantCount = myApplicants.length;
 
-                  const rowTpo = v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown';
+                  const rowTpo = String(v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown');
                   const datePostedObj = parseDate(v.datePosted || v.timestamp || v.date);
                   const datePostedStr = (datePostedObj && datePostedObj.getFullYear() < 2050 && datePostedObj.getFullYear() > 2000) ? datePostedObj.toLocaleDateString('en-GB') : 'N/A';
 
@@ -347,15 +341,15 @@ export default function Vacancies() {
                       <div className="jc-header">
                         <div className="jc-company-logo">{String(v.company || 'U').charAt(0).toUpperCase()}</div>
                         <div className="jc-company-info">
-                          <h3 className="text-truncate">{String(v.position)}</h3>
-                          <p className="text-truncate">{String(v.company)}</p>
+                          <h3 className="text-truncate">{String(v.position || 'N/A')}</h3>
+                          <p className="text-truncate">{String(v.company || 'N/A')}</p>
                         </div>
-                        <div className="jc-id">{String(v.id)}</div>
+                        <div className="jc-id">{String(v.id || 'N/A')}</div>
                       </div>
 
                       <div className="jc-body">
-                        <div className="jc-detail"><MapPinLine size={16} /> <span>{String(v.location)} ({String(v.mode)})</span></div>
-                        <div className="jc-detail"><GraduationCap size={16} /> <span>{String(v.course)}</span></div>
+                        <div className="jc-detail"><MapPinLine size={16} /> <span>{String(v.location || 'N/A')} ({String(v.mode || 'N/A')})</span></div>
+                        <div className="jc-detail"><GraduationCap size={16} /> <span>{String(v.course || 'N/A')}</span></div>
                         {isSuperAdmin && <div className="jc-detail text-purple"><Clock size={16} /> <span>{rowTpo} • {datePostedStr}</span></div>}
                       </div>
 
@@ -396,15 +390,15 @@ export default function Vacancies() {
           <div className="premium-modal glass-panel">
             <div className="modal-header">
               <div>
-                <h2>{String(selectedJob.position)}</h2>
-                <div className="modal-subtitle">{String(selectedJob.company)}</div>
+                <h2>{String(selectedJob.position || 'N/A')}</h2>
+                <div className="modal-subtitle">{String(selectedJob.company || 'N/A')}</div>
               </div>
               <button className="close-btn" onClick={() => setIsJobDetailsModalOpen(false)}><X size={24} /></button>
             </div>
 
             <div className="modal-grid">
               <DetailBox label="Job ID" value={selectedJob.id} icon={<Briefcase size={20} weight="fill"/>} />
-              <DetailBox label="Location & Mode" value={`${selectedJob.location} (${selectedJob.mode})`} icon={<MapPinLine size={20} weight="fill"/>} />
+              <DetailBox label="Location & Mode" value={`${selectedJob.location || ''} (${selectedJob.mode || ''})`} icon={<MapPinLine size={20} weight="fill"/>} />
               <DetailBox label="Eligible Course" value={selectedJob.course} icon={<GraduationCap size={20} weight="fill"/>} />
               <DetailBox label="Salary" value={selectedJob.salary} icon={<Money size={20} weight="fill"/>} />
               <DetailBox label="Experience" value={selectedJob.experience} icon={<Clock size={20} weight="fill"/>} />
@@ -430,7 +424,7 @@ export default function Vacancies() {
             <div className="modal-header" style={{ padding: '25px', background: 'rgba(15, 23, 42, 0.95)', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: 0 }}>
               <div>
                 <h2>Applicants List</h2>
-                <div className="modal-subtitle">{String(selectedJob.id)} | {String(selectedJob.company)}</div>
+                <div className="modal-subtitle">{String(selectedJob.id || 'N/A')} | {String(selectedJob.company || 'N/A')}</div>
               </div>
               <button className="close-btn" onClick={() => setIsApplicantsModalOpen(false)}><X size={24} /></button>
             </div>
@@ -449,7 +443,7 @@ export default function Vacancies() {
                       <div key={i} className="clean-row hover-bg">
                         <div className="cl-left">
                           <div className="cl-avatar">{String(app.name || 'U').charAt(0).toUpperCase()}</div>
-                          <div><div className="cl-title">{String(app.name)}</div><div className="cl-sub">{String(app.roll)} • {String(app.branch)}</div></div>
+                          <div><div className="cl-title">{String(app.name || 'N/A')}</div><div className="cl-sub">{String(app.roll || 'N/A')} • {String(app.branch || 'N/A')}</div></div>
                         </div>
                         <div className="cl-middle">
                            <span className={`status-pill ${statClass}`}>{String(app.status || 'Applied')}</span>
