@@ -135,7 +135,7 @@ function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCo
   
   const stdRowCourse = getStandardCourse(rowCourse);
   
-  // 🚨 FIXED: Splits by both commas AND newlines to catch all hidden courses
+  // 🚨 BULLETPROOF SPLITTER: Detects both commas and Google Sheets newlines (\n)
   let assignedCoursesArray = ['All'];
   if (assignedCourse && assignedCourse !== 'All' && assignedCourse !== 'All Courses') {
      assignedCoursesArray = assignedCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim()));
