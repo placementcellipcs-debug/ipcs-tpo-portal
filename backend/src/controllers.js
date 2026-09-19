@@ -1013,27 +1013,38 @@ exports.addApplication = async (req, res) => {
 // ---------------------------------------------------------
 
 exports.getVacancies = (req, res) => {
-  let vacs = getCache().vacancies.map((row, i) => {
-    return {
-      id: getValByHeader(row, ['jobid', 'id']) || `JOB-${i+1}`, 
-      company: getValByHeader(row, ['companyname', 'company']), 
-      position: getValByHeader(row, ['position', 'role']), 
-      location: getValByHeader(row, ['openingat(location)', 'location']), 
-      state: getValByHeader(row, ['state']), 
-      mode: getValByHeader(row, ['workmode', 'mode']), 
-      lastDate: getValByHeader(row, ['lastdate']), 
-      course: getValByHeader(row, ['course']), 
-      qualification: getValByHeader(row, ['qualification']), 
-      description: getValByHeader(row, ['jobdescription']), 
-      experience: getValByHeader(row, ['experience']), 
-      salary: getValByHeader(row, ['salary']), 
-      gender: getValByHeader(row, ['genderpreference']), 
-      status: getValByHeader(row, ['status']) || 'Open',
-      tpoName: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || 'Unknown',
-      datePosted: getValByHeader(row, ['timestamp', 'date', 'posteddate']) || ''
-    };
-  });
-  res.json({ success: true, vacancies: vacs.reverse() });
+  try {
+    const cache = getCache();
+    // 🚨 EXTREME BACKEND SAFETY: If the sheet is empty, return empty array rather than throwing 500 error
+    if (!cache || !cache.vacancies || !Array.isArray(cache.vacancies)) {
+      return res.json({ success: true, vacancies: [] });
+    }
+
+    let vacs = cache.vacancies.map((row, i) => {
+      return {
+        id: getValByHeader(row, ['jobid', 'id']) || `JOB-${i+1}`, 
+        company: getValByHeader(row, ['companyname', 'company']), 
+        position: getValByHeader(row, ['position', 'role']), 
+        location: getValByHeader(row, ['openingat(location)', 'location']), 
+        state: getValByHeader(row, ['state']), 
+        mode: getValByHeader(row, ['workmode', 'mode']), 
+        lastDate: getValByHeader(row, ['lastdate']), 
+        course: getValByHeader(row, ['course']), 
+        qualification: getValByHeader(row, ['qualification']), 
+        description: getValByHeader(row, ['jobdescription']), 
+        experience: getValByHeader(row, ['experience']), 
+        salary: getValByHeader(row, ['salary']), 
+        gender: getValByHeader(row, ['genderpreference']), 
+        status: getValByHeader(row, ['status']) || 'Open',
+        tpoName: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || 'Unknown',
+        datePosted: getValByHeader(row, ['timestamp', 'date', 'posteddate']) || ''
+      };
+    });
+    res.json({ success: true, vacancies: vacs.reverse() });
+  } catch (err) {
+    console.error("Get Vacancies Error:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 };
 
 exports.getIssues = (req, res) => {
