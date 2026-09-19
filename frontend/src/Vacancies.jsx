@@ -180,8 +180,20 @@ export default function Vacancies() {
 
   const groupedVacs = {};
   filteredVacs.forEach(v => {
-    // 🚨 FORCE STRING ON LOCATION KEY
-    const loc = String(v.state || 'OTHER STATES').toUpperCase().trim();
+    // 🚨 FATAL CRASH FIX: Safely handles null, undefined, or empty objects
+    let loc = 'OTHER STATES';
+    if (v && v.state) {
+      loc = String(v.state).toUpperCase().trim();
+    } else if (v && v.location) {
+      // Fallback to location if state is missing
+      loc = String(v.location).toUpperCase().trim();
+    }
+    
+    // Final safety check to prevent undefined keys
+    if (!loc || loc === 'UNDEFINED' || loc === 'NULL') {
+      loc = 'OTHER STATES';
+    }
+
     if (!groupedVacs[loc]) groupedVacs[loc] = [];
     groupedVacs[loc].push(v);
   });
