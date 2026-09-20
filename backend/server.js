@@ -187,6 +187,12 @@ app.post('/api/design/category', designControllers.addDesignCategory);
 app.post('/api/design/task', designControllers.createManualTask);
 
 // ---------------------------------------------------------
+// ACADEMIC & TRAINING ROUTES 
+// ---------------------------------------------------------
+
+app.get('/api/academic/training', academicControllers.getTrainingData);
+
+// ---------------------------------------------------------
 // SERVER INITIALIZATION & SCHEDULED AUTOMATIONS
 // ---------------------------------------------------------
 

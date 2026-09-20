@@ -41,7 +41,14 @@ import MediaFiles from './MediaFiles';
 import MediaCategories from './MediaCategories';
 import MediaSocial from './MediaSocial';
 import MediaLogs from './MediaLogs';
-import MediaSettings from './MediaSettings';                                    
+import MediaSettings from './MediaSettings';   
+
+// 🚨 ACADEMIC & TRAINING ERP
+import AcademicTraining from './AcademicTraining';
+import AcademicBatches from './AcademicBatches';
+import AcademicSessions from './AcademicSessions';
+import AcademicAttendance from './AcademicAttendance';
+import AcademicDiary from './AcademicDiary';
       
 function App() {
   return (
@@ -90,6 +97,14 @@ function App() {
         <Route path="/media/social" element={<MediaSocial />} />
         <Route path="/media/logs" element={<MediaLogs />} />
         <Route path="/media/settings" element={<MediaSettings />} />
+
+        {/* 🚨 MODULAR ACADEMIC & TRAINING ROUTES */}
+        <Route path="/academic/training" element={<AcademicTraining />} />
+        <Route path="/academic/batches" element={<AcademicBatches />} />
+        <Route path="/academic/sessions" element={<AcademicSessions />} />
+        <Route path="/academic/attendance" element={<AcademicAttendance />} />
+        <Route path="/academic/diary" element={<AcademicDiary />} />
+        
       </Routes>
     </BrowserRouter>
   );

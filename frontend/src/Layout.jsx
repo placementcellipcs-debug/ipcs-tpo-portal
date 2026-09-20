@@ -280,12 +280,22 @@ export default function Layout({ children }) {
                 {!isTrainer && <div className={`pd-nav-item ${isActive('/placement-drives') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}><IdentificationCard size={22} weight={isActive('/placement-drives') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Placement Drives</span></div>}
                 {!isTrainer && <div className={`pd-nav-item ${isActive('/clients') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/clients')}><Handshake size={22} weight={isActive('/clients') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Clients & Partners</span></div>}
 
-                <span className="pd-divider-label" style={{ marginTop: '15px' }}>Academic & Ops</span>
-                <div className={`pd-nav-item ${isActive('/events') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} weight={isActive('/events') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Events</span></div>
-                <div className={`pd-nav-item ${isActive('/talentino') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/talentino')}><UserCheck size={22} weight={isActive('/talentino') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Talentino</span></div>
-                {showStudyMaterials && <div className={`pd-nav-item ${isActive('/study-materials') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/study-materials')}><Book size={22} weight={isActive('/study-materials') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Study Materials</span></div>}
-                {showTrainerLogs && <div className={`pd-nav-item ${isActive('/trainer-logs') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/trainer-logs')}><Notebook size={22} weight={isActive('/trainer-logs') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Daily Log Report</span></div>}
-                {!userRole.includes('MANAGER') && !isTpo && <div className={`pd-nav-item ${isActive('/exams') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/exams')}><FileText size={22} weight={isActive('/exams') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Exams Hub</span></div>}
+                <span className="pd-divider-label" style={{ marginTop: '15px' }}>Training & Academics</span>
+                <div className={`pd-nav-item ${isActive('/academic/training') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/training')}>
+                  <GraduationCap size={22} weight={isActive('/academic/training') === '#10b981' ? 'fill' : 'regular'} /> <span>Student Training</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/academic/batches') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/batches')}>
+                  <UsersFour size={22} weight={isActive('/academic/batches') === '#10b981' ? 'fill' : 'regular'} /> <span>Batch Management</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/academic/sessions') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/sessions')}>
+                  <ChalkboardTeacher size={22} weight={isActive('/academic/sessions') === '#10b981' ? 'fill' : 'regular'} /> <span>Live Sessions</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/academic/attendance') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/attendance')}>
+                  <CalendarCheck size={22} weight={isActive('/academic/attendance') === '#10b981' ? 'fill' : 'regular'} /> <span>Attendance Register</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/academic/diary') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/diary')}>
+                  <Notebook size={22} weight={isActive('/academic/diary') === '#10b981' ? 'fill' : 'regular'} /> <span>Student Diary</span>
+                </div>
               </>
             )}
 
