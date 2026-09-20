@@ -35,14 +35,13 @@ import AssetDashboard from './AssetDashboard';
 import AssetSettings from './AssetSettings';
 
 // 🚨 MEDIA & DESIGN
-import MediaDashboard from './MediaDashboard';
 import MediaTasks from './MediaTasks';
 import MediaPreview from './MediaPreview';
-import MediaFiles from './MediaFiles';            
+import MediaFiles from './MediaFiles';
 import MediaCategories from './MediaCategories';
 import MediaSocial from './MediaSocial';
 import MediaLogs from './MediaLogs';
-import MediaSettings from './MediaSettings';                                      
+import MediaSettings from './MediaSettings';                                    
       
 function App() {
   return (
