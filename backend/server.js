@@ -173,6 +173,16 @@ app.post('/api/v1/assets/documents/upload', upload.single('file'), assetControll
 app.post('/api/v1/assets/dispose', assetControllers.disposeAsset);
 
 // ---------------------------------------------------------
+// CREATIVE & DESIGN MANAGEMENT 
+// ---------------------------------------------------------
+
+const designControllers = require('./src/designControllers');
+
+app.get('/api/design/tasks', designControllers.getDesignTasks);
+app.post('/api/design/upload', upload.single('file'), designControllers.uploadDesignFile);
+app.post('/api/design/social', designControllers.trackSocialMedia);
+
+// ---------------------------------------------------------
 // SERVER INITIALIZATION & SCHEDULED AUTOMATIONS
 // ---------------------------------------------------------
 

@@ -6,7 +6,7 @@ import {
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
   Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin,
   WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench, Plus,
-  Headset, SignOut
+  Headset, SignOut, PaintBrush
 } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
 
@@ -141,29 +141,29 @@ export default function Layout({ children }) {
   if (!tpoData) return <div style={{ minHeight: '100vh', background: '#020617' }}>{children}</div>;
 
   const userRole = (tpoData.role || '').toUpperCase();
+  const sheetAccess = (tpoData.accessType || '').toLowerCase();
   
-  // 🚨 FIXED: Strict Role Segregation for Asset Managers
-  const isAssetManager = userRole.includes('ASSET MANAGER');
-  const showPlacementAndAcademic = !isAssetManager; // Asset Managers are strictly blocked from seeing placement tabs
+  // 🚨 STRICT ISOLATION: Locks out anyone with "Asset" or "Design" in their role or access type
+  const isAssetManager = userRole.includes('ASSET') || sheetAccess.includes('asset');
+  const isDesigner = userRole.includes('DESIGN') || userRole.includes('MEDIA') || userRole.includes('CREATIVE');
+  
+  // Force hiding of all Student/Placement tabs if they are strictly Asset or Design
+  const showPlacementAndAcademic = !isAssetManager && !isDesigner;
 
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
   const isTpo = userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER');
   const isTrainer = userRole.includes('TRAINER');
   const isRth = userRole.includes('RTH') || userRole.includes('REGIONAL TECHNICAL HEAD');
-  
-  // Prevent Asset Manager from leaking into the Technical Lead / Generic Manager roles
-  const isTL = userRole.includes('TECHNICAL LEAD') || userRole.includes('TTH') || isRth || (userRole.includes('MANAGER') && !isAssetManager) || isSuperAdmin;
+  const isTL = userRole.includes('TECHNICAL LEAD') || userRole.includes('TTH') || isRth || (userRole.includes('MANAGER') && showPlacementAndAcademic) || isSuperAdmin;
 
   // Role Checks
-  const showTracker = isTpo && !isSuperAdmin; 
-  const showReports = isSuperAdmin || isTpo; 
+  const showTracker = isTpo && !isSuperAdmin && showPlacementAndAcademic; 
+  const showReports = (isSuperAdmin || isTpo) && showPlacementAndAcademic; 
   const showManageAdmin = isSuperAdmin;
-  const showStudyMaterials = isSuperAdmin || isRth || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD') || isTrainer; 
-  const showTrainerLogs = isTrainer || isTL;
-  const showStudentApps = isTpo && !isSuperAdmin;
-  
-  // Safely prevents Asset Manager from seeing Issues Tab
-  const showIssues = isTpo || isSuperAdmin || (userRole.includes('MANAGER') && !isAssetManager) || userRole.includes('ZONAL');
+  const showStudyMaterials = (isSuperAdmin || isRth || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD') || isTrainer) && showPlacementAndAcademic; 
+  const showTrainerLogs = (isTrainer || isTL) && showPlacementAndAcademic;
+  const showStudentApps = isTpo && !isSuperAdmin && showPlacementAndAcademic;
+  const showIssues = (isTpo || isSuperAdmin || (userRole.includes('MANAGER') && showPlacementAndAcademic) || userRole.includes('ZONAL')) && showPlacementAndAcademic;
 
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
@@ -182,6 +182,8 @@ export default function Layout({ children }) {
     if (!profilePhotoUrl || profilePhotoUrl === 'N/A' || imgError) return <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#ffffff' }}>{initial}</span>;
     return <img src={profilePhotoUrl} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={() => setImgError(true)} />;
   };
+
+  const defaultBackPath = isAssetManager ? '/assets/dashboard' : (isDesigner ? '/media/dashboard' : '/dashboard');
 
   return (
     <div className="app-layout">
@@ -208,7 +210,7 @@ export default function Layout({ children }) {
                   </div>
                   <div style={{ padding: '0', maxHeight: '350px', overflowY: 'auto' }}>
                     {notifications.length === 0 ? (
-                      <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No recent activity for your domain.</div>
+                      <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No recent activity.</div>
                     ) : (
                       notifications.map((notif, idx) => (
                         <div key={idx} style={{ padding: '15px', display: 'flex', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
@@ -233,9 +235,9 @@ export default function Layout({ children }) {
         </header>
 
         <div className="page-container" style={{ padding: '20px 30px', position: 'relative' }} onClick={() => setIsNotifOpen(false)}>
-          {location.pathname !== '/dashboard' && location.pathname !== '/assets/dashboard' && (
+          {location.pathname !== '/dashboard' && location.pathname !== '/assets/dashboard' && location.pathname !== '/media/dashboard' && (
             <div style={{ marginBottom: '25px' }}>
-              <button onClick={() => navigate(isAssetManager ? '/assets/dashboard' : '/dashboard')} style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-muted)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 'bold', transition: '0.2s' }}>
+              <button onClick={() => navigate(defaultBackPath)} style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-muted)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 'bold', transition: '0.2s' }}>
                 <CaretLeft weight="bold" size={16} /> Back to Dashboard
               </button>
             </div>
@@ -257,101 +259,47 @@ export default function Layout({ children }) {
                 <div className="pd-avatar-inner">{renderAvatar()}</div>
               </div>
               <h3 className="pd-name">{tpoData.name}</h3>
-              <p className="pd-role">{tpoData.role || 'Placement Officer'}</p>
+              <p className="pd-role">{tpoData.role || 'User'}</p>
             </div>
           </div>
 
           <div className="pd-nav-list">
             
-            {/* 🚨 STRICT BLOCK: Hides all student/placement items from Asset Managers */}
             {showPlacementAndAcademic && (
               <>
                 <span className="pd-divider-label">Main Menu</span>
-                
-                <div className={`pd-nav-item ${isActive('/dashboard') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/dashboard')}>
-                  <SquaresFour size={22} weight={isActive('/dashboard') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Dashboard</span>
-                </div>
-                
-                <div className={`pd-nav-item ${isActive('/students') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/students')}>
-                  <Users size={22} weight={isActive('/students') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Students Directory</span>
-                </div>
-                
-                {showIssues && (
-                  <div className={`pd-nav-item ${isActive('/issues') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/issues')}>
-                    <Headset size={22} weight={isActive('/issues') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Issue Resolution</span>
-                  </div>
-                )}
-
-                {showTracker && (
-                  <div className={`pd-nav-item ${isActive('/tracker') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/tracker')}>
-                    <Files size={22} weight={isActive('/tracker') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Job Tracker</span>
-                  </div>
-                )}
-
-                {showReports && (
-                  <div className={`pd-nav-item ${isActive('/reports') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/reports')}>
-                    <ChartBar size={22} weight={isActive('/reports') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Reports</span>
-                  </div>
-                )}
-
-                <div className={`pd-nav-item ${isActive('/placed') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/placed')}>
-                  <Trophy size={22} weight={isActive('/placed') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Placed Students</span>
-                </div>
-
-                {showStudentApps && (
-                  <div className={`pd-nav-item ${isActive('/applications') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/applications')}>
-                    <ListChecks size={22} weight={isActive('/applications') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Student Apps</span>
-                  </div>
-                )}
-
-                <div className={`pd-nav-item ${isActive('/vacancies') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/vacancies')}>
-                  <Briefcase size={22} weight={isActive('/vacancies') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Vacancies</span>
-                </div>
-
-                {!isTrainer && (
-                  <div className={`pd-nav-item ${isActive('/placement-drives') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}>
-                    <IdentificationCard size={22} weight={isActive('/placement-drives') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Placement Drives</span>
-                  </div>
-                )}
-                
-                {!isTrainer && (
-                  <div className={`pd-nav-item ${isActive('/clients') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/clients')}>
-                    <Handshake size={22} weight={isActive('/clients') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Clients & Partners</span>
-                  </div>
-                )}
+                <div className={`pd-nav-item ${isActive('/dashboard') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/dashboard')}><SquaresFour size={22} weight={isActive('/dashboard') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Dashboard</span></div>
+                <div className={`pd-nav-item ${isActive('/students') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/students')}><Users size={22} weight={isActive('/students') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Students Directory</span></div>
+                {showIssues && <div className={`pd-nav-item ${isActive('/issues') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/issues')}><Headset size={22} weight={isActive('/issues') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Issue Resolution</span></div>}
+                {showTracker && <div className={`pd-nav-item ${isActive('/tracker') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/tracker')}><Files size={22} weight={isActive('/tracker') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Job Tracker</span></div>}
+                {showReports && <div className={`pd-nav-item ${isActive('/reports') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/reports')}><ChartBar size={22} weight={isActive('/reports') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Reports</span></div>}
+                <div className={`pd-nav-item ${isActive('/placed') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/placed')}><Trophy size={22} weight={isActive('/placed') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Placed Students</span></div>
+                {showStudentApps && <div className={`pd-nav-item ${isActive('/applications') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/applications')}><ListChecks size={22} weight={isActive('/applications') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Student Apps</span></div>}
+                <div className={`pd-nav-item ${isActive('/vacancies') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/vacancies')}><Briefcase size={22} weight={isActive('/vacancies') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Vacancies</span></div>
+                {!isTrainer && <div className={`pd-nav-item ${isActive('/placement-drives') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}><IdentificationCard size={22} weight={isActive('/placement-drives') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Placement Drives</span></div>}
+                {!isTrainer && <div className={`pd-nav-item ${isActive('/clients') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/clients')}><Handshake size={22} weight={isActive('/clients') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Clients & Partners</span></div>}
 
                 <span className="pd-divider-label" style={{ marginTop: '15px' }}>Academic & Ops</span>
+                <div className={`pd-nav-item ${isActive('/events') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} weight={isActive('/events') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Events</span></div>
+                <div className={`pd-nav-item ${isActive('/talentino') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/talentino')}><UserCheck size={22} weight={isActive('/talentino') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Talentino</span></div>
+                {showStudyMaterials && <div className={`pd-nav-item ${isActive('/study-materials') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/study-materials')}><Book size={22} weight={isActive('/study-materials') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Study Materials</span></div>}
+                {showTrainerLogs && <div className={`pd-nav-item ${isActive('/trainer-logs') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/trainer-logs')}><Notebook size={22} weight={isActive('/trainer-logs') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Daily Log Report</span></div>}
+                {!userRole.includes('MANAGER') && !isTpo && <div className={`pd-nav-item ${isActive('/exams') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/exams')}><FileText size={22} weight={isActive('/exams') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Exams Hub</span></div>}
+              </>
+            )}
 
-                <div className={`pd-nav-item ${isActive('/events') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/events')}>
-                  <CalendarStar size={22} weight={isActive('/events') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Events</span>
+            {/* 🚨 MEDIA & DESIGN MANAGEMENT */}
+            {(isSuperAdmin || isDesigner) && (
+              <>
+                <span className="pd-divider-label" style={isSuperAdmin ? { marginTop: '15px' } : {}}>Media & Design Studio</span>
+                <div className={`pd-nav-item ${isActive('/media/dashboard') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/dashboard')}>
+                  <PaintBrush size={22} weight={isActive('/media/dashboard') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Creative Dashboard</span>
                 </div>
-
-                <div className={`pd-nav-item ${isActive('/talentino') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/talentino')}>
-                  <UserCheck size={22} weight={isActive('/talentino') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Talentino</span>
-                </div>
-
-                {showStudyMaterials && (
-                  <div className={`pd-nav-item ${isActive('/study-materials') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/study-materials')}>
-                    <Book size={22} weight={isActive('/study-materials') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Study Materials</span>
-                  </div>
-                )}
-
-                {showTrainerLogs && (
-                  <div className={`pd-nav-item ${isActive('/trainer-logs') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/trainer-logs')}>
-                    <Notebook size={22} weight={isActive('/trainer-logs') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Daily Log Report</span>
-                  </div>
-                )}
-
-                {!userRole.includes('MANAGER') && !isTpo && (
-                  <div className={`pd-nav-item ${isActive('/exams') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/exams')}>
-                    <FileText size={22} weight={isActive('/exams') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Exams Hub</span>
-                  </div>
-                )}
               </>
             )}
 
             {/* 🚨 ASSET MANAGEMENT */}
-            {(isSuperAdmin || userRole.includes('MANAGER') || isAssetManager) && (
+            {(isSuperAdmin || userRole.includes('MANAGER') || isAssetManager) && !isDesigner && (
               <>
                 <span className="pd-divider-label" style={showPlacementAndAcademic ? { marginTop: '15px' } : {}}>Asset Management</span>
                 <div className={`pd-nav-item ${isActive('/assets/dashboard') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets/dashboard')}>
@@ -407,208 +355,32 @@ export default function Layout({ children }) {
         </div>
       </div>
 
-      {/* 🎨 PREMIUM MENU CSS */}
       <style>{`
-        .premium-drawer-overlay {
-          position: fixed;
-          top: 0; left: 0; right: 0; bottom: 0;
-          background: rgba(2, 6, 23, 0.6);
-          backdrop-filter: blur(8px);
-          -webkit-backdrop-filter: blur(8px);
-          z-index: 9999;
-          opacity: 0;
-          pointer-events: none;
-          transition: opacity 0.3s ease;
-        }
-        .premium-drawer-overlay.open {
-          opacity: 1;
-          pointer-events: all;
-        }
-
-        .premium-drawer-card {
-          position: absolute;
-          top: 20px;
-          right: -350px; /* Hidden state */
-          bottom: 20px;
-          width: 320px;
-          background: #12121f; /* Deep dark indigo matching mockup */
-          border-radius: 28px;
-          display: flex;
-          flex-direction: column;
-          box-shadow: -15px 15px 40px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.05);
-          transition: right 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
-          overflow: hidden;
-        }
-        .premium-drawer-overlay.open .premium-drawer-card {
-          right: 20px;
-        }
-
-        /* Responsive collapse for mobile */
-        @media (max-width: 480px) {
-          .premium-drawer-card {
-            top: 0; bottom: 0; right: -100%;
-            width: 85%;
-            border-radius: 20px 0 0 20px;
-          }
-          .premium-drawer-overlay.open .premium-drawer-card { right: 0; }
-        }
-
-        .pd-header {
-          padding: 30px 20px 20px 20px;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          position: relative;
-        }
-
-        .pd-close-btn {
-          position: absolute;
-          top: 20px;
-          right: 20px;
-          width: 32px;
-          height: 32px;
-          background: rgba(255,255,255,0.05);
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #94a3b8;
-          cursor: pointer;
-          transition: 0.2s;
-        }
-        .pd-close-btn:hover {
-          background: rgba(239, 68, 68, 0.1);
-          color: #ef4444;
-          transform: rotate(90deg);
-        }
-
-        .pd-profile-group {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          text-align: center;
-        }
-
-        .pd-avatar-ring {
-          width: 76px;
-          height: 76px;
-          border-radius: 50%;
-          background: linear-gradient(135deg, #8b5cf6, #8b5cf6);
-          padding: 3px;
-          margin-bottom: 12px;
-          box-shadow: 0 4px 15px rgba(56, 189, 248, 0.3);
-        }
-
-        .pd-avatar-inner {
-          width: 100%;
-          height: 100%;
-          border-radius: 50%;
-          background: #0f1523;
-          overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          color: #fff;
-          font-weight: bold;
-          font-size: 1.5rem;
-        }
-        .pd-avatar-inner img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-        }
-
-        .pd-name {
-          margin: 0 0 4px 0;
-          color: #f8fafc;
-          font-size: 1.2rem;
-          font-weight: 700;
-          letter-spacing: -0.5px;
-        }
-        .pd-role {
-          margin: 0;
-          color: #94a3b8;
-          font-size: 0.75rem;
-          text-transform: uppercase;
-          letter-spacing: 1px;
-          font-weight: 600;
-        }
-
-        .pd-divider-label {
-          display: block;
-          color: #475569;
-          font-size: 0.65rem;
-          text-transform: uppercase;
-          letter-spacing: 1.5px;
-          font-weight: 800;
-          margin: 10px 0 8px 15px;
-        }
-
-        .pd-nav-list {
-          flex: 1;
-          overflow-y: auto;
-          padding: 0 15px;
-          display: flex;
-          flex-direction: column;
-          gap: 6px;
-        }
-        
-        /* Custom Scrollbar for Menu */
+        .premium-drawer-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(2, 6, 23, 0.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); z-index: 9999; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
+        .premium-drawer-overlay.open { opacity: 1; pointer-events: all; }
+        .premium-drawer-card { position: absolute; top: 20px; right: -350px; bottom: 20px; width: 320px; background: #12121f; border-radius: 28px; display: flex; flex-direction: column; box-shadow: -15px 15px 40px rgba(0,0,0,0.6), inset 0 0 0 1px rgba(255,255,255,0.05); transition: right 0.4s cubic-bezier(0.2, 0.8, 0.2, 1); overflow: hidden; }
+        .premium-drawer-overlay.open .premium-drawer-card { right: 20px; }
+        @media (max-width: 480px) { .premium-drawer-card { top: 0; bottom: 0; right: -100%; width: 85%; border-radius: 20px 0 0 20px; } .premium-drawer-overlay.open .premium-drawer-card { right: 0; } }
+        .pd-header { padding: 30px 20px 20px 20px; display: flex; flex-direction: column; align-items: center; position: relative; }
+        .pd-close-btn { position: absolute; top: 20px; right: 20px; width: 32px; height: 32px; background: rgba(255,255,255,0.05); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #94a3b8; cursor: pointer; transition: 0.2s; }
+        .pd-close-btn:hover { background: rgba(239, 68, 68, 0.1); color: #ef4444; transform: rotate(90deg); }
+        .pd-profile-group { display: flex; flex-direction: column; align-items: center; text-align: center; }
+        .pd-avatar-ring { width: 76px; height: 76px; border-radius: 50%; background: linear-gradient(135deg, #8b5cf6, #8b5cf6); padding: 3px; margin-bottom: 12px; box-shadow: 0 4px 15px rgba(56, 189, 248, 0.3); }
+        .pd-avatar-inner { width: 100%; height: 100%; border-radius: 50%; background: #0f1523; overflow: hidden; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 1.5rem; }
+        .pd-avatar-inner img { width: 100%; height: 100%; object-fit: cover; }
+        .pd-name { margin: 0 0 4px 0; color: #f8fafc; font-size: 1.2rem; font-weight: 700; letter-spacing: -0.5px; }
+        .pd-role { margin: 0; color: #94a3b8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+        .pd-divider-label { display: block; color: #475569; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 800; margin: 10px 0 8px 15px; }
+        .pd-nav-list { flex: 1; overflow-y: auto; padding: 0 15px; display: flex; flex-direction: column; gap: 6px; }
         .pd-nav-list::-webkit-scrollbar { width: 4px; }
         .pd-nav-list::-webkit-scrollbar-track { background: transparent; }
         .pd-nav-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
-
-        .pd-nav-item {
-          display: flex;
-          align-items: center;
-          gap: 15px;
-          padding: 12px 18px;
-          border-radius: 16px;
-          color: #94a3b8;
-          font-size: 0.95rem;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .pd-nav-item:hover {
-          background: rgba(255,255,255,0.03);
-          color: #e2e8f0;
-          transform: translateX(4px);
-        }
-        
-        /* The Mockup Active State */
-        .pd-nav-item.active {
-          background: linear-gradient(135deg, #6366f1, #a855f7);
-          color: #ffffff;
-          box-shadow: 0 8px 20px -6px rgba(99, 102, 241, 0.6);
-        }
-
-        .pd-footer {
-          padding: 20px;
-          background: rgba(0,0,0,0.1);
-        }
-
-        .pd-logout-btn {
-          width: 100%;
-          background: #fff;
-          color: #0f172a;
-          border: none;
-          padding: 14px;
-          border-radius: 14px;
-          font-weight: 800;
-          font-size: 0.95rem;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 10px;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-        .pd-logout-btn:hover {
-          background: #ef4444;
-          color: #fff;
-          box-shadow: 0 8px 20px -6px rgba(239, 68, 68, 0.5);
-        }
+        .pd-nav-item { display: flex; align-items: center; gap: 15px; padding: 12px 18px; border-radius: 16px; color: #94a3b8; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .pd-nav-item:hover { background: rgba(255,255,255,0.03); color: #e2e8f0; transform: translateX(4px); }
+        .pd-nav-item.active { background: linear-gradient(135deg, #6366f1, #a855f7); color: #ffffff; box-shadow: 0 8px 20px -6px rgba(99, 102, 241, 0.6); }
+        .pd-footer { padding: 20px; background: rgba(0,0,0,0.1); }
+        .pd-logout-btn { width: 100%; background: #fff; color: #0f172a; border: none; padding: 14px; border-radius: 14px; font-weight: 800; font-size: 0.95rem; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; transition: 0.2s ease; }
+        .pd-logout-btn:hover { background: #ef4444; color: #fff; box-shadow: 0 8px 20px -6px rgba(239, 68, 68, 0.5); }
       `}</style>
     </div>
   );

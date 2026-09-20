@@ -7,7 +7,7 @@ import PlacedStudents from './PlacedStudents';
 import StudentApps from './StudentApps';
 import Vacancies from './Vacancies';
 import Events from './Events';
-import Issues from './Issues'; // 🚨 IMPORTED THE ISSUES COMPONENT
+import Issues from './Issues'; 
 import Reports from './Reports';
 import Talentino from './Talentino';
 import Settings from './Settings';
@@ -34,6 +34,9 @@ import AssetMaintenance from './AssetMaintenance';
 import AssetDashboard from './AssetDashboard';
 import AssetSettings from './AssetSettings';
 
+// 🚨 MEDIA & DESIGN
+import MediaDashboard from './MediaDashboard';
+
 function App() {
   return (
     <BrowserRouter>
@@ -46,7 +49,7 @@ function App() {
         <Route path="/applications" element={<StudentApps />} />
         <Route path="/vacancies" element={<Vacancies />} />
         <Route path="/events" element={<Events />} />
-        <Route path="/issues" element={<Issues />} /> {/* 🚨 ADDED THE ROUTE HERE */}
+        <Route path="/issues" element={<Issues />} /> 
         <Route path="/reports" element={<Reports />} />
         <Route path="/talentino" element={<Talentino />} />
         <Route path="/settings" element={<Settings />} />
@@ -72,6 +75,9 @@ function App() {
         <Route path="/assets/maintenance" element={<AssetMaintenance />} />
         <Route path="/assets/dashboard" element={<AssetDashboard />} />
         <Route path="/assets/settings" element={<AssetSettings />} />
+
+        {/* MEDIA & DESIGN PORTAL */}
+        <Route path="/media/dashboard" element={<MediaDashboard />} />
       </Routes>
     </BrowserRouter>
   );

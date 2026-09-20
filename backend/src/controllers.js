@@ -29,6 +29,8 @@ const {
   sendIPCSMail, uploadToDrive
 } = require('./config');
 
+const { autoCreateDesignTask } = require('./designControllers');
+
 const FOLDER_OFFER_LETTERS = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5';
 const FOLDER_CLIENT_LOGOS = '11M8jGi1ISWP2mOpWRZncHhThHLoc7cDi'; 
 const FOLDER_MOU_CERTIFICATES = '1Hu1zPs56nFXyJPSl7PVfs-oFW4QrKqiD';
@@ -961,6 +963,9 @@ exports.updateApplication = async (req, res) => {
        .catch(e => console.error("Background Mail Error")); 
     }
 
+    // 🚨 DESIGN PORTAL AUTO-TRIGGER: Sends the student to Media Team if Placed/Joined
+    await autoCreateDesignTask({ ...fullApp, status: status });
+
     refreshCache(); 
     res.json({ success: true, message: "Updated!" });
   } catch (error) { 
@@ -1003,6 +1008,9 @@ exports.addApplication = async (req, res) => {
     if (logSheet) await logSheet.addRow({ ...newRowObj, 'Offer Letter Status': offerLetterLink });
     
     checkAndSendStudentMails({ ...appData, tpoName: tpoName }, appData.status || 'Placed', {}, req.body.currentUserEmail);
+
+    // 🚨 DESIGN PORTAL AUTO-TRIGGER: Sends the manual addition to the Media Team
+    await autoCreateDesignTask({ ...appData, status: appData.status || 'Placed' });
 
     refreshCache(); res.json({ success: true, message: "Placement added manually." });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
@@ -1462,6 +1470,131 @@ exports.addEvent = async (req, res) => {
     console.error("Event add error:", error);
     res.status(500).json({ success: false, message: error.message }); 
   }
+};
+
+// =========================================================
+// 🚨 MEDIA & DESIGN MANAGEMENT (NEW API)
+// =========================================================
+
+exports.getDesignTasks = async (req, res) => {
+  try {
+    const sheet = doc.sheetsByTitle["Design_Tasks"];
+    if (!sheet) return res.status(404).json({ success: false, message: "Design Tasks sheet missing" });
+    
+    const rows = await sheet.getRows();
+    const h = sheet.headerValues;
+    const safeH = (target) => getFuzzyHeader(h, target);
+
+    const tasks = rows.map(r => ({
+      rowNumber: r.rowNumber,
+      designId: r.get(safeH('designid')) || '',
+      studentName: r.get(safeH('studentname')) || '',
+      roll: r.get(safeH('rollnumber')) || '',
+      branch: r.get(safeH('branch')) || '',
+      course: r.get(safeH('course')) || '',
+      company: r.get(safeH('company')) || '',
+      position: r.get(safeH('position')) || '',
+      package: r.get(safeH('package')) || '',
+      profilePhoto: r.get(safeH('profilephoto')) || '',
+      designType: r.get(safeH('designtype')) || 'Placement Poster',
+      status: r.get(safeH('status')) || 'Pending',
+      session1File: r.get(safeH('session1file')) || ''
+    }));
+
+    res.json({ success: true, tasks: tasks.reverse() });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.uploadDesignFile = async (req, res) => {
+  try {
+    const { designId, sessionLevel, status } = req.body;
+    let fileLink = '';
+
+    // 🚨 YOU NEED TO PROVIDE YOUR OWN DRIVE FOLDER ID FOR POSTERS
+    // Replace this string with the Folder ID you created in Phase 1
+    const DESIGN_FOLDER_ID = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5'; 
+
+    if (req.file) {
+      fileLink = await uploadToDrive(req.file, DESIGN_FOLDER_ID);
+    }
+
+    const sheet = doc.sheetsByTitle["Design_Tasks"];
+    const rows = await sheet.getRows();
+    const h = sheet.headerValues;
+
+    const row = rows.find(r => r.get(getFuzzyHeader(h, 'designid')) === designId);
+    if (!row) return res.status(404).json({ success: false, message: "Task not found" });
+
+    const updateData = { [getFuzzyHeader(h, 'status')]: status };
+    
+    if (sessionLevel === 'Session 1') {
+      updateData[getFuzzyHeader(h, 'session1status')] = status;
+      if (fileLink) updateData[getFuzzyHeader(h, 'session1file')] = fileLink;
+      updateData[getFuzzyHeader(h, 'session1date')] = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    } else {
+      updateData[getFuzzyHeader(h, 'session2status')] = status;
+      if (fileLink) updateData[getFuzzyHeader(h, 'session2file')] = fileLink;
+      updateData[getFuzzyHeader(h, 'session2date')] = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    }
+
+    row.assign(updateData);
+    await row.save();
+
+    res.json({ success: true, message: "Design file updated successfully" });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+// 🚨 AUTOMATION HELPER: Call this inside `updateApplication` and `addApplication`
+const autoCreateDesignTask = async (appData) => {
+  try {
+    const status = String(appData.status || '').toLowerCase();
+    if (!status.includes('placed') && !status.includes('joined') && !status.includes('got offer')) return;
+
+    const sheet = doc.sheetsByTitle["Design_Tasks"];
+    if (!sheet) return;
+
+    const rows = await sheet.getRows();
+    const h = sheet.headerValues;
+    const safeH = (target) => getFuzzyHeader(h, target);
+
+    // Prevent duplicate tasks for the same job
+    const exists = rows.find(r => r.get(safeH('rollnumber')) === appData.roll && r.get(safeH('company')) === appData.company);
+    if (exists) return;
+
+    // Fetch Student Photo from cache
+    let photo = '';
+    const cache = getCache();
+    const student = cache.students.find(s => getValByHeader(s, ['roll', 'rollnumber', 'ipcsrollnumber']) === appData.roll);
+    if (student) {
+       photo = getValByHeader(student, ['profilephoto', 'photo']);
+    }
+
+    const designId = `DES-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    await sheet.addRow({
+      [safeH('designid')]: designId,
+      [safeH('createddate')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      [safeH('source')]: 'Placement Auto',
+      [safeH('rollnumber')]: appData.roll,
+      [safeH('studentname')]: appData.name,
+      [safeH('course')]: appData.course,
+      [safeH('branch')]: appData.branch,
+      [safeH('profilephoto')]: photo,
+      [safeH('jobid')]: appData.jobId || '',
+      [safeH('company')]: appData.company,
+      [safeH('position')]: appData.position,
+      [safeH('package')]: appData.packageLpa || '',
+      [safeH('dateplaced')]: appData.datePlaced || '',
+      [safeH('designcategory')]: 'Placement',
+      [safeH('designtype')]: 'Placement Poster',
+      [safeH('status')]: 'Pending'
+    });
+
+  } catch(e) { console.error("Auto Create Design Error:", e); }
 };
 
 // =========================================================
