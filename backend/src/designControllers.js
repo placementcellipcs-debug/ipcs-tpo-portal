@@ -291,37 +291,43 @@ exports.autoCreateDesignTask = async (appData) => {
   } catch(e) { console.error("Auto Create Design Error:", e); }
 };
 
-// 🚨 ONE-TIME SYNC FOR EXISTING PLACEMENTS
+// 🚨 ONE-TIME SYNC FOR EXISTING PLACEMENTS (USES CACHE)
 exports.syncExistingPlacements = async (req, res) => {
   try {
     await loadDesignDoc();
     const dSheet = designDoc.sheetsByTitle["Design_Tasks"];
-    const mainAppSheet = mainDoc.sheetsByTitle["Opening_Applied"];
     
-    if (!dSheet || !mainAppSheet) return res.status(404).json({success: false, message: "Sheets missing"});
+    if (!dSheet) return res.status(404).json({success: false, message: "Design_Tasks sheet missing in the Design Database."});
 
-    const [dRows, appRows] = await Promise.all([dSheet.getRows(), mainAppSheet.getRows()]);
+    const dRows = await dSheet.getRows();
     const dH = dSheet.headerValues;
-    const aH = mainAppSheet.headerValues;
-    
-    const getAH = (target) => getFuzzyHeader(aH, target);
     const getDH = (target) => getFuzzyHeader(dH, target);
 
     let addedCount = 0;
     const cache = getCache();
+    
+    // 🚨 Safe check to ensure cache is loaded
+    if (!cache || !cache.applications) {
+        return res.status(503).json({success: false, message: "Main database is still syncing. Please wait 10 seconds and click Sync again."});
+    }
+
+    const appRows = cache.applications;
 
     for (let r of appRows) {
+      const aH = r._worksheet.headerValues;
+      const getAH = (target) => getFuzzyHeader(aH, target);
+
       const status = String(r.get(getAH('status')) || '').toLowerCase();
       if (status.includes('placed') || status.includes('joined') || status.includes('got offer')) {
         const roll = r.get(getAH('rollnumber')) || '';
-        const company = r.get(getAH('companyname')) || '';
+        const company = r.get(getAH('companyname')) || r.get(getAH('company')) || '';
         
         // Check if it already exists in the Design sheet to prevent duplicates
         const exists = dRows.find(dr => dr.get(getDH('rollnumber')) === roll && dr.get(getDH('company')) === company);
-        if (!exists) {
+        if (!exists && roll && company) {
            // Fetch photo from cache
            let photo = '';
-           if (cache && cache.students) {
+           if (cache.students) {
              const student = cache.students.find(s => {
                const hdrs = s._worksheet.headerValues.map(x => x.toLowerCase().replace(/[^a-z0-9]/g, ''));
                const rIndex = hdrs.indexOf('rollnumber') !== -1 ? hdrs.indexOf('rollnumber') : hdrs.findIndex(x => x.includes('roll'));
@@ -339,7 +345,7 @@ exports.syncExistingPlacements = async (req, res) => {
               [getDH('createddate')]: r.get(getAH('timestamp')) || new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
               [getDH('source')]: 'Legacy Sync',
               [getDH('rollnumber')]: roll,
-              [getDH('studentname')]: r.get(getAH('studentname')) || '',
+              [getDH('studentname')]: r.get(getAH('studentname')) || r.get(getAH('name')) || '',
               [getDH('course')]: r.get(getAH('course')) || '',
               [getDH('branch')]: r.get(getAH('branch')) || '',
               [getDH('profilephoto')]: photo,
@@ -360,6 +366,7 @@ exports.syncExistingPlacements = async (req, res) => {
     await logDesignActivity('System Admin', 'SYNC', `Synced ${addedCount} legacy placements into Design Tasks`);
     res.json({success: true, message: `Successfully synced ${addedCount} existing placements into the Design Queue!`});
   } catch(e) {
-    res.status(500).json({success: false, message: e.message});
+    console.error("Sync Error:", e);
+    res.status(500).json({success: false, message: `Server Error: ${e.message}`});
   }
 };
