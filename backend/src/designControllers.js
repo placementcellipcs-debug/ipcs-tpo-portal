@@ -370,3 +370,45 @@ exports.syncExistingPlacements = async (req, res) => {
     res.status(500).json({success: false, message: `Server Error: ${e.message}`});
   }
 };
+
+// 🚨 CREATE MANUAL CATEGORY
+exports.addDesignCategory = async (req, res) => {
+  try {
+    const { category, designType } = req.body;
+    await loadDesignDoc();
+    const sheet = designDoc.sheetsByTitle["Design_Categories"];
+    const h = sheet.headerValues;
+    await sheet.addRow({
+      [getFuzzyHeader(h, 'category')]: category,
+      [getFuzzyHeader(h, 'designtype')]: designType
+    });
+    res.json({ success: true, message: "Category added successfully!" });
+  } catch(e) { res.status(500).json({ success: false, message: e.message }); }
+};
+
+// 🚨 CREATE MANUAL DESIGN TASK (For Social Media, Visits, etc.)
+exports.createManualTask = async (req, res) => {
+  try {
+    const { studentName, company, designCategory, designType, remarks, user } = req.body;
+    await loadDesignDoc();
+    const sheet = designDoc.sheetsByTitle["Design_Tasks"];
+    const h = sheet.headerValues;
+    const designId = `DES-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    await sheet.addRow({
+      [getFuzzyHeader(h, 'designid')]: designId,
+      [getFuzzyHeader(h, 'createddate')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      [getFuzzyHeader(h, 'source')]: 'Manual Request',
+      [getFuzzyHeader(h, 'studentname')]: studentName || '',
+      [getFuzzyHeader(h, 'company')]: company || '',
+      [getFuzzyHeader(h, 'designcategory')]: designCategory || 'Custom',
+      [getFuzzyHeader(h, 'designtype')]: designType || 'Custom Design',
+      [getFuzzyHeader(h, 'remarks')]: remarks || '',
+      [getFuzzyHeader(h, 'status')]: 'Pending',
+      [getFuzzyHeader(h, 'assignedto')]: user || ''
+    });
+
+    await logDesignActivity(user, designId, `Created custom task: ${designType}`);
+    res.json({ success: true, message: "Custom task added to Active Queue!" });
+  } catch(e) { res.status(500).json({ success: false, message: e.message }); }
+};

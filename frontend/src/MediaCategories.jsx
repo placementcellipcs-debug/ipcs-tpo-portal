@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, Tag } from '@phosphor-icons/react';
+import { CircleNotch, Tag, Plus, X } from '@phosphor-icons/react';
 import Layout from './Layout';
 import MediaTopNav from './MediaTopNav';
 import { API_BASE } from './apiConfig';
@@ -9,20 +9,35 @@ export default function MediaCategories() {
   const [categories, setCategories] = useState([]);
   const [counts, setCounts] = useState({ pending: 0, social: 0 });
   const [loading, setLoading] = useState(true);
+  
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({ category: 'Social Media', designType: '' });
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await axios.get(`${API_BASE}/api/design/tasks`);
-        if (res.data.success) {
-          setCategories(res.data.categories || []);
-          const pending = (res.data.tasks || []).filter(t => String(t.status).toLowerCase() !== 'completed').length;
-          setCounts({ pending, social: (res.data.social || []).length });
-        }
-      } catch (err) {} finally { setLoading(false); }
-    };
-    fetchData();
-  }, []);
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const res = await axios.get(`${API_BASE}/api/design/tasks`);
+      if (res.data.success) {
+        setCategories(res.data.categories || []);
+        const pending = (res.data.tasks || []).filter(t => String(t.status).toLowerCase() !== 'completed').length;
+        setCounts({ pending, social: (res.data.social || []).length });
+      }
+    } catch (err) {} finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  const handleAddCategory = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await axios.post(`${API_BASE}/api/design/category`, form);
+      setIsModalOpen(false);
+      setForm({ category: 'Social Media', designType: '' });
+      fetchData();
+    } catch (err) { alert("Failed to add category."); } finally { setSubmitting(false); }
+  };
 
   const groupedCategories = {};
   categories.forEach(c => {
@@ -35,31 +50,64 @@ export default function MediaCategories() {
       <div className="page-container" style={{ padding: 0, maxWidth: '1600px', margin: '0 auto' }}>
         <MediaTopNav title="Categories" subtitle="Master list of available design types." pendingCount={counts.pending} publishedCount={counts.social} />
 
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '20px' }}>
+          <button onClick={() => setIsModalOpen(true)} className="hover-lift" style={{ background: '#ec4899', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Plus weight="bold" /> Add Category
+          </button>
+        </div>
+
         {loading ? (
           <div style={{ textAlign: 'center', padding: '100px' }}><CircleNotch size={50} className="ph-spin" color="#ec4899" /></div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
-            {Object.keys(groupedCategories).length === 0 ? (
-               <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', background: 'var(--card-bg)', borderRadius: '16px', border: '1px dashed var(--card-border)' }}>No categories defined in sheet.</div>
-            ) : (
-              Object.keys(groupedCategories).map((masterCat, i) => (
-                <div key={i} style={{ background: 'var(--card-bg)', borderRadius: '16px', border: '1px solid var(--card-border)', overflow: 'hidden' }}>
-                  <div style={{ padding: '15px 20px', background: 'rgba(236, 72, 153, 0.05)', borderBottom: '1px solid var(--card-border)', borderLeft: '4px solid #ec4899' }}>
-                    <h3 style={{ margin: 0, color: '#fff', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}><Tag color="#ec4899"/> {masterCat}</h3>
-                  </div>
-                  <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {groupedCategories[masterCat].map((subType, j) => (
-                      <div key={j} style={{ padding: '10px 15px', background: 'var(--bg-dark)', borderRadius: '8px', border: '1px solid var(--card-border)', color: '#cbd5e1', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#3b82f6' }}></div> {subType}
-                      </div>
-                    ))}
-                  </div>
+            {Object.keys(groupedCategories).map((masterCat, i) => (
+              <div key={i} style={{ background: 'var(--card-bg)', borderRadius: '16px', border: '1px solid var(--card-border)', overflow: 'hidden' }}>
+                <div style={{ padding: '15px 20px', background: 'rgba(236, 72, 153, 0.05)', borderBottom: '1px solid var(--card-border)', borderLeft: '4px solid #ec4899' }}>
+                  <h3 style={{ margin: 0, color: '#fff', fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}><Tag color="#ec4899"/> {masterCat}</h3>
                 </div>
-              ))
-            )}
+                <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {groupedCategories[masterCat].map((subType, j) => (
+                    <div key={j} style={{ padding: '10px 15px', background: 'var(--bg-dark)', borderRadius: '8px', border: '1px solid var(--card-border)', color: '#cbd5e1', fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#3b82f6' }}></div> {subType}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
+
+      {isModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#0f1523', width: '100%', maxWidth: '500px', borderRadius: '20px', padding: '30px', border: '1px solid var(--card-border)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, color: '#fff' }}>New Design Type</h2>
+              <X size={24} color="#94a3b8" style={{ cursor: 'pointer' }} onClick={() => setIsModalOpen(false)} />
+            </div>
+            <form onSubmit={handleAddCategory}>
+              <div style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px' }}>Master Category</label>
+                <select className="sleek-select" style={{ width: '100%' }} value={form.category} onChange={e => setForm({...form, category: e.target.value})}>
+                  <option value="Placement">Placement</option>
+                  <option value="Social Media">Social Media</option>
+                  <option value="Event">Event</option>
+                  <option value="Activity">Campus Activity</option>
+                  <option value="Company">Company / Client</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+              <div style={{ marginBottom: '25px' }}>
+                <label style={{ display: 'block', fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '8px' }}>Specific Design Type Name</label>
+                <input type="text" required className="sleek-input" style={{ width: '100%' }} placeholder="e.g., Instagram Reel, Workshop Poster..." value={form.designType} onChange={e => setForm({...form, designType: e.target.value})} />
+              </div>
+              <button type="submit" disabled={submitting} style={{ width: '100%', padding: '14px', background: '#ec4899', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
+                {submitting ? 'Saving...' : 'Save Category'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }
