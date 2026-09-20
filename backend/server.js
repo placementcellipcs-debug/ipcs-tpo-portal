@@ -178,7 +178,7 @@ app.post('/api/v1/assets/dispose', assetControllers.disposeAsset);
 
 const designControllers = require('./src/designControllers');
 
-app.get('/api/design/tasks', designControllers.getDesignTasks);
+app.get('/api/design/tasks', designControllers.getDesignDashboardData);
 app.post('/api/design/upload', upload.single('file'), designControllers.uploadDesignFile);
 app.post('/api/design/social', designControllers.trackSocialMedia);
 
