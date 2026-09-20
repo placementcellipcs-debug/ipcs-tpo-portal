@@ -6,7 +6,8 @@ import {
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
   Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin,
   WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench, Plus,
-  Headset, SignOut, PaintBrush
+  Headset, SignOut, PaintBrush,
+  Kanban, ImageSquare, ShareNetwork, CheckCircle, ClockCounterClockwise, SlidersHorizontal
 } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
 
