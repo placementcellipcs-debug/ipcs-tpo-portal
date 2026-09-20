@@ -190,6 +190,8 @@ app.post('/api/design/task', designControllers.createManualTask);
 // ACADEMIC & TRAINING ROUTES 
 // ---------------------------------------------------------
 
+const academicControllers = require('./src/academicControllers');
+
 app.get('/api/academic/training', academicControllers.getTrainingData);
 
 // ---------------------------------------------------------
