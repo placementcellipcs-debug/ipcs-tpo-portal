@@ -1,6 +1,6 @@
 const { JWT } = require('google-auth-library');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
-const { getCache, uploadToDrive } = require('./config');
+const { getCache, uploadToDrive, doc: mainDoc } = require('./config');
 
 // Authenticate specifically for the new Design Spreadsheet
 const serviceAccountAuth = new JWT({
@@ -289,4 +289,77 @@ exports.autoCreateDesignTask = async (appData) => {
     await logDesignActivity('System Automation', designId, `Auto-Created Design Task for ${appData.name}`);
 
   } catch(e) { console.error("Auto Create Design Error:", e); }
+};
+
+// 🚨 ONE-TIME SYNC FOR EXISTING PLACEMENTS
+exports.syncExistingPlacements = async (req, res) => {
+  try {
+    await loadDesignDoc();
+    const dSheet = designDoc.sheetsByTitle["Design_Tasks"];
+    const mainAppSheet = mainDoc.sheetsByTitle["Opening_Applied"];
+    
+    if (!dSheet || !mainAppSheet) return res.status(404).json({success: false, message: "Sheets missing"});
+
+    const [dRows, appRows] = await Promise.all([dSheet.getRows(), mainAppSheet.getRows()]);
+    const dH = dSheet.headerValues;
+    const aH = mainAppSheet.headerValues;
+    
+    const getAH = (target) => getFuzzyHeader(aH, target);
+    const getDH = (target) => getFuzzyHeader(dH, target);
+
+    let addedCount = 0;
+    const cache = getCache();
+
+    for (let r of appRows) {
+      const status = String(r.get(getAH('status')) || '').toLowerCase();
+      if (status.includes('placed') || status.includes('joined') || status.includes('got offer')) {
+        const roll = r.get(getAH('rollnumber')) || '';
+        const company = r.get(getAH('companyname')) || '';
+        
+        // Check if it already exists in the Design sheet to prevent duplicates
+        const exists = dRows.find(dr => dr.get(getDH('rollnumber')) === roll && dr.get(getDH('company')) === company);
+        if (!exists) {
+           // Fetch photo from cache
+           let photo = '';
+           if (cache && cache.students) {
+             const student = cache.students.find(s => {
+               const hdrs = s._worksheet.headerValues.map(x => x.toLowerCase().replace(/[^a-z0-9]/g, ''));
+               const rIndex = hdrs.indexOf('rollnumber') !== -1 ? hdrs.indexOf('rollnumber') : hdrs.findIndex(x => x.includes('roll'));
+               return rIndex !== -1 && s._rawData[rIndex] === roll;
+             });
+             if (student) {
+                const pIndex = student._worksheet.headerValues.map(x => x.toLowerCase().replace(/[^a-z0-9]/g, '')).findIndex(x => x.includes('photo'));
+                if (pIndex !== -1) photo = student._rawData[pIndex] || '';
+             }
+           }
+
+           const designId = `DES-${Math.floor(10000 + Math.random() * 90000)}`;
+           await dSheet.addRow({
+              [getDH('designid')]: designId,
+              [getDH('createddate')]: r.get(getAH('timestamp')) || new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+              [getDH('source')]: 'Legacy Sync',
+              [getDH('rollnumber')]: roll,
+              [getDH('studentname')]: r.get(getAH('studentname')) || '',
+              [getDH('course')]: r.get(getAH('course')) || '',
+              [getDH('branch')]: r.get(getAH('branch')) || '',
+              [getDH('profilephoto')]: photo,
+              [getDH('jobid')]: r.get(getAH('jobid')) || '',
+              [getDH('company')]: company,
+              [getDH('position')]: r.get(getAH('position')) || '',
+              [getDH('package')]: r.get(getAH('package')) || '',
+              [getDH('dateplaced')]: r.get(getAH('dateplaced')) || '',
+              [getDH('designcategory')]: 'Placement',
+              [getDH('designtype')]: 'Placement Poster',
+              [getDH('status')]: 'Pending'
+           });
+           addedCount++;
+        }
+      }
+    }
+
+    await logDesignActivity('System Admin', 'SYNC', `Synced ${addedCount} legacy placements into Design Tasks`);
+    res.json({success: true, message: `Successfully synced ${addedCount} existing placements into the Design Queue!`});
+  } catch(e) {
+    res.status(500).json({success: false, message: e.message});
+  }
 };

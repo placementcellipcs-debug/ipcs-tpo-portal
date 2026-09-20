@@ -293,7 +293,25 @@ export default function Layout({ children }) {
               <>
                 <span className="pd-divider-label" style={isSuperAdmin ? { marginTop: '15px' } : {}}>Media & Design Studio</span>
                 <div className={`pd-nav-item ${isActive('/media/dashboard') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/dashboard')}>
-                  <PaintBrush size={22} weight={isActive('/media/dashboard') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Creative Dashboard</span>
+                  <Kanban size={22} weight={isActive('/media/dashboard') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Active Queues</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/media/preview') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/preview')}>
+                  <ImageSquare size={22} weight={isActive('/media/preview') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Preview Gallery</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/media/files') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/files')}>
+                  <Files size={22} weight={isActive('/media/files') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>File Vault</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/media/social') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/social')}>
+                  <ShareNetwork size={22} weight={isActive('/media/social') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Social Media</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/media/categories') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/categories')}>
+                  <CheckCircle size={22} weight={isActive('/media/categories') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Categories</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/media/logs') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/logs')}>
+                  <ClockCounterClockwise size={22} weight={isActive('/media/logs') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Activity Logs</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/media/settings') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/settings')}>
+                  <SlidersHorizontal size={22} weight={isActive('/media/settings') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Studio Settings</span>
                 </div>
               </>
             )}

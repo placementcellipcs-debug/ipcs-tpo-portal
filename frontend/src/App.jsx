@@ -36,7 +36,14 @@ import AssetSettings from './AssetSettings';
 
 // 🚨 MEDIA & DESIGN
 import MediaDashboard from './MediaDashboard';
-
+import MediaTasks from './MediaTasks';
+import MediaPreview from './MediaPreview';
+import MediaFiles from './MediaFiles';            
+import MediaCategories from './MediaCategories';
+import MediaSocial from './MediaSocial';
+import MediaLogs from './MediaLogs';
+import MediaSettings from './MediaSettings';                                      
+      
 function App() {
   return (
     <BrowserRouter>
@@ -76,8 +83,14 @@ function App() {
         <Route path="/assets/dashboard" element={<AssetDashboard />} />
         <Route path="/assets/settings" element={<AssetSettings />} />
 
-        {/* MEDIA & DESIGN PORTAL */}
-        <Route path="/media/dashboard" element={<MediaDashboard />} />
+        {/* 🚨 MODULAR MEDIA & DESIGN PORTAL ROUTES */}
+        <Route path="/media/dashboard" element={<MediaTasks />} />
+        <Route path="/media/preview" element={<MediaPreview />} />
+        <Route path="/media/files" element={<MediaFiles />} />
+        <Route path="/media/categories" element={<MediaCategories />} />
+        <Route path="/media/social" element={<MediaSocial />} />
+        <Route path="/media/logs" element={<MediaLogs />} />
+        <Route path="/media/settings" element={<MediaSettings />} />
       </Routes>
     </BrowserRouter>
   );

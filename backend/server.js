@@ -181,6 +181,8 @@ const designControllers = require('./src/designControllers');
 app.get('/api/design/tasks', designControllers.getDesignDashboardData);
 app.post('/api/design/upload', upload.single('file'), designControllers.uploadDesignFile);
 app.post('/api/design/social', designControllers.trackSocialMedia);
+// 🚨 ADD THIS NEW LINE:
+app.post('/api/design/sync-existing', designControllers.syncExistingPlacements);
 
 // ---------------------------------------------------------
 // SERVER INITIALIZATION & SCHEDULED AUTOMATIONS
