@@ -1,18 +1,35 @@
-const { doc, getCache, uploadToDrive } = require('./config');
+const { JWT } = require('google-auth-library');
+const { GoogleSpreadsheet } = require('google-spreadsheet');
+const { getCache, uploadToDrive } = require('./config');
+
+// Authenticate specifically for the new Design Spreadsheet
+const serviceAccountAuth = new JWT({
+  email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+  key: process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') : '',
+  scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'],
+});
+
+// The New Design Sheet ID
+const designDoc = new GoogleSpreadsheet('149BVIP9GDXjPx3QYWE_b_6Wt4-J4Slu0kfYWWubu8sI', serviceAccountAuth);
+let isDesignDocLoaded = false;
+
+async function loadDesignDoc() {
+  if (!isDesignDocLoaded) {
+    await designDoc.loadInfo();
+    isDesignDocLoaded = true;
+  }
+}
 
 const getFuzzyHeader = (headers, target) => {
   const cleanTarget = target.toLowerCase().replace(/[^a-z0-9]/g, '');
   return headers.find(h => h.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanTarget) || target;
 };
 
-// 🚨 UPDATE THESE TO YOUR ACTUAL GOOGLE DRIVE FOLDER IDS
-const FOLDER_POSTERS = 'YOUR_POSTER_FOLDER_ID_HERE'; 
-const FOLDER_VIDEOS = 'YOUR_VIDEO_FOLDER_ID_HERE';
-
 // 📌 LOG ACTIVITY HELPER
 const logDesignActivity = async (user, designId, action, remarks = '') => {
   try {
-    const sheet = doc.sheetsByTitle["05_Design_Activity_Log"];
+    await loadDesignDoc();
+    const sheet = designDoc.sheetsByTitle["Design_Activity_Log"];
     if (!sheet) return;
     const h = sheet.headerValues;
     await sheet.addRow({
@@ -28,17 +45,17 @@ const logDesignActivity = async (user, designId, action, remarks = '') => {
 
 exports.getDesignDashboardData = async (req, res) => {
   try {
-    // Load all 6 sheets
-    const tSheet = doc.sheetsByTitle["01_Design_Tasks"];
-    const fSheet = doc.sheetsByTitle["02_Design_Files"];
-    const cSheet = doc.sheetsByTitle["03_Design_Categories"];
-    const sSheet = doc.sheetsByTitle["04_Design_Social_Media"];
-    const lSheet = doc.sheetsByTitle["05_Design_Activity_Log"];
-    const cfgSheet = doc.sheetsByTitle["06_Design_Settings"];
+    await loadDesignDoc();
+    const tSheet = designDoc.sheetsByTitle["Design_Tasks"];
+    const fSheet = designDoc.sheetsByTitle["Design_Files"];
+    const cSheet = designDoc.sheetsByTitle["Design_Categories"];
+    const sSheet = designDoc.sheetsByTitle["Design_Social_Media"];
+    const lSheet = designDoc.sheetsByTitle["Design_Activity_Log"];
+    const cfgSheet = designDoc.sheetsByTitle["Design_Settings"];
 
     if (!tSheet) return res.status(404).json({ success: false, message: "Design Tasks sheet missing" });
 
-    // Parallel fetch for speed
+    // Fetch all sheets in parallel
     const [tRows, fRows, cRows, sRows, lRows, cfgRows] = await Promise.all([
       tSheet.getRows(),
       fSheet ? fSheet.getRows() : [],
@@ -62,7 +79,7 @@ exports.getDesignDashboardData = async (req, res) => {
       package: r.get(getFuzzyHeader(th, 'package')) || '',
       profilePhoto: r.get(getFuzzyHeader(th, 'profilephoto')) || '',
       designCategory: r.get(getFuzzyHeader(th, 'designcategory')) || '',
-      designType: r.get(getFuzzyHeader(th, 'designtype')) || 'Poster',
+      designType: r.get(getFuzzyHeader(th, 'designtype')) || 'Placement Poster',
       status: r.get(getFuzzyHeader(th, 'status')) || 'Pending',
       session1Status: r.get(getFuzzyHeader(th, 'session1status')) || '',
       session1File: r.get(getFuzzyHeader(th, 'session1file')) || '',
@@ -96,7 +113,21 @@ exports.getDesignDashboardData = async (req, res) => {
       action: r.get(getFuzzyHeader(lSheet.headerValues, 'action'))
     }));
 
-    res.json({ success: true, tasks: tasks.reverse(), files: files.reverse(), social: social.reverse(), logs: logs.reverse() });
+    const categories = cRows.map(r => ({
+      category: r.get(getFuzzyHeader(cSheet.headerValues, 'category')),
+      designType: r.get(getFuzzyHeader(cSheet.headerValues, 'designtype'))
+    }));
+
+    let settings = {};
+    if (cfgRows.length > 0) {
+       settings = {
+         posterFolder: cfgRows[0].get(getFuzzyHeader(cfgSheet.headerValues, 'posterfolder')),
+         videoFolder: cfgRows[0].get(getFuzzyHeader(cfgSheet.headerValues, 'videofolder')),
+         autoPlacement: cfgRows[0].get(getFuzzyHeader(cfgSheet.headerValues, 'autocreateplacementtask'))
+       };
+    }
+
+    res.json({ success: true, tasks: tasks.reverse(), files: files.reverse(), social: social.reverse(), logs: logs.reverse(), categories, settings });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -105,14 +136,30 @@ exports.getDesignDashboardData = async (req, res) => {
 exports.uploadDesignFile = async (req, res) => {
   try {
     const { designId, sessionLevel, status, user } = req.body;
-    let fileLink = '';
+    await loadDesignDoc();
 
-    if (req.file) {
-      fileLink = await uploadToDrive(req.file, FOLDER_POSTERS);
+    // Dynamically pull the Folder ID from Settings, default to an empty string if missing
+    let targetFolder = '';
+    const cfgSheet = designDoc.sheetsByTitle["Design_Settings"];
+    if (cfgSheet) {
+      const cRows = await cfgSheet.getRows();
+      if (cRows.length > 0) {
+        // Automatically put videos in the video folder, everything else in the poster folder
+        const isVideo = req.file && req.file.mimetype.includes('video');
+        targetFolder = isVideo 
+          ? cRows[0].get(getFuzzyHeader(cfgSheet.headerValues, 'videofolder')) 
+          : cRows[0].get(getFuzzyHeader(cfgSheet.headerValues, 'posterfolder'));
+      }
     }
 
-    // 1. Update 01_Design_Tasks
-    const tSheet = doc.sheetsByTitle["01_Design_Tasks"];
+    let fileLink = '';
+    if (req.file) {
+      // 🚨 Ensure you put a default Drive Folder ID here just in case settings is empty
+      fileLink = await uploadToDrive(req.file, targetFolder || '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5');
+    }
+
+    // 1. Update Design_Tasks
+    const tSheet = designDoc.sheetsByTitle["Design_Tasks"];
     const tRows = await tSheet.getRows();
     const th = tSheet.headerValues;
     const taskRow = tRows.find(r => r.get(getFuzzyHeader(th, 'designid')) === designId);
@@ -134,9 +181,9 @@ exports.uploadDesignFile = async (req, res) => {
       await taskRow.save();
     }
 
-    // 2. Log to 02_Design_Files
+    // 2. Log to Design_Files
     if (fileLink) {
-        const fSheet = doc.sheetsByTitle["02_Design_Files"];
+        const fSheet = designDoc.sheetsByTitle["Design_Files"];
         if (fSheet) {
             const fh = fSheet.headerValues;
             await fSheet.addRow({
@@ -152,7 +199,7 @@ exports.uploadDesignFile = async (req, res) => {
         }
     }
 
-    // 3. Log to 05_Design_Activity_Log
+    // 3. Log to Design_Activity_Log
     await logDesignActivity(user, designId, `Uploaded ${sessionLevel} File and set status to ${status}`);
 
     res.json({ success: true, message: "File updated successfully", link: fileLink });
@@ -164,7 +211,8 @@ exports.uploadDesignFile = async (req, res) => {
 exports.trackSocialMedia = async (req, res) => {
   try {
     const { designId, platform, postType, postLink, status, user } = req.body;
-    const sSheet = doc.sheetsByTitle["04_Design_Social_Media"];
+    await loadDesignDoc();
+    const sSheet = designDoc.sheetsByTitle["Design_Social_Media"];
     if (!sSheet) return res.status(404).json({ success: false });
 
     const sh = sSheet.headerValues;
@@ -191,13 +239,15 @@ exports.autoCreateDesignTask = async (appData) => {
     const status = String(appData.status || '').toLowerCase();
     if (!status.includes('placed') && !status.includes('joined') && !status.includes('got offer')) return;
 
-    const sheet = doc.sheetsByTitle["01_Design_Tasks"];
+    await loadDesignDoc();
+    const sheet = designDoc.sheetsByTitle["Design_Tasks"];
     if (!sheet) return;
 
     const rows = await sheet.getRows();
     const h = sheet.headerValues;
     const safeH = (target) => getFuzzyHeader(h, target);
     
+    // Prevent duplicate tasks for the exact same job role & student
     const exists = rows.find(r => r.get(safeH('rollnumber')) === appData.roll && r.get(safeH('company')) === appData.company);
     if (exists) return;
 
@@ -230,6 +280,7 @@ exports.autoCreateDesignTask = async (appData) => {
       [safeH('company')]: appData.company || '',
       [safeH('position')]: appData.position || '',
       [safeH('package')]: appData.packageLpa || '',
+      [safeH('dateplaced')]: appData.datePlaced || '',
       [safeH('designcategory')]: 'Placement',
       [safeH('designtype')]: 'Placement Poster',
       [safeH('status')]: 'Pending'
