@@ -34,22 +34,22 @@ import AssetMaintenance from './AssetMaintenance';
 import AssetDashboard from './AssetDashboard';
 import AssetSettings from './AssetSettings';
 
-// 🚨 MEDIA & DESIGN
+// MEDIA & DESIGN PORTAL
 import MediaTasks from './MediaTasks';
 import MediaPreview from './MediaPreview';
 import MediaFiles from './MediaFiles';
 import MediaCategories from './MediaCategories';
 import MediaSocial from './MediaSocial';
 import MediaLogs from './MediaLogs';
-import MediaSettings from './MediaSettings';   
+import MediaSettings from './MediaSettings';
 
-// 🚨 ACADEMIC & TRAINING ERP
+// ACADEMIC & TRAINING ERP
 import AcademicTraining from './AcademicTraining';
 import AcademicBatches from './AcademicBatches';
 import AcademicSessions from './AcademicSessions';
 import AcademicAttendance from './AcademicAttendance';
 import AcademicDiary from './AcademicDiary';
-      
+
 function App() {
   return (
     <BrowserRouter>
@@ -89,7 +89,7 @@ function App() {
         <Route path="/assets/dashboard" element={<AssetDashboard />} />
         <Route path="/assets/settings" element={<AssetSettings />} />
 
-        {/* 🚨 MODULAR MEDIA & DESIGN PORTAL ROUTES */}
+        {/* MODULAR MEDIA & DESIGN PORTAL ROUTES */}
         <Route path="/media/dashboard" element={<MediaTasks />} />
         <Route path="/media/preview" element={<MediaPreview />} />
         <Route path="/media/files" element={<MediaFiles />} />
@@ -98,13 +98,12 @@ function App() {
         <Route path="/media/logs" element={<MediaLogs />} />
         <Route path="/media/settings" element={<MediaSettings />} />
 
-        {/* 🚨 MODULAR ACADEMIC & TRAINING ROUTES */}
+        {/* MODULAR ACADEMIC & TRAINING ROUTES */}
         <Route path="/academic/training" element={<AcademicTraining />} />
         <Route path="/academic/batches" element={<AcademicBatches />} />
         <Route path="/academic/sessions" element={<AcademicSessions />} />
         <Route path="/academic/attendance" element={<AcademicAttendance />} />
         <Route path="/academic/diary" element={<AcademicDiary />} />
-        
       </Routes>
     </BrowserRouter>
   );

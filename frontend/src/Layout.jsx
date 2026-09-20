@@ -7,7 +7,8 @@ import {
   Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin,
   WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench, Plus,
   Headset, SignOut, PaintBrush,
-  Kanban, ImageSquare, ShareNetwork, CheckCircle, ClockCounterClockwise, SlidersHorizontal
+  Kanban, ImageSquare, ShareNetwork, CheckCircle, ClockCounterClockwise, SlidersHorizontal,
+  GraduationCap, UsersFour, ChalkboardTeacher, CalendarCheck
 } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
 
@@ -144,25 +145,18 @@ export default function Layout({ children }) {
   const userRole = (tpoData.role || '').toUpperCase();
   const sheetAccess = (tpoData.accessType || '').toLowerCase();
   
-  // 🚨 STRICT ISOLATION: Locks out anyone with "Asset" or "Design" in their role or access type
   const isAssetManager = userRole.includes('ASSET') || sheetAccess.includes('asset');
   const isDesigner = userRole.includes('DESIGN') || userRole.includes('MEDIA') || userRole.includes('CREATIVE');
-  
-  // Force hiding of all Student/Placement tabs if they are strictly Asset or Design
   const showPlacementAndAcademic = !isAssetManager && !isDesigner;
 
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
   const isTpo = userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER');
   const isTrainer = userRole.includes('TRAINER');
   const isRth = userRole.includes('RTH') || userRole.includes('REGIONAL TECHNICAL HEAD');
-  const isTL = userRole.includes('TECHNICAL LEAD') || userRole.includes('TTH') || isRth || (userRole.includes('MANAGER') && showPlacementAndAcademic) || isSuperAdmin;
-
-  // Role Checks
+  
   const showTracker = isTpo && !isSuperAdmin && showPlacementAndAcademic; 
   const showReports = (isSuperAdmin || isTpo) && showPlacementAndAcademic; 
   const showManageAdmin = isSuperAdmin;
-  const showStudyMaterials = (isSuperAdmin || isRth || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD') || isTrainer) && showPlacementAndAcademic; 
-  const showTrainerLogs = (isTrainer || isTL) && showPlacementAndAcademic;
   const showStudentApps = isTpo && !isSuperAdmin && showPlacementAndAcademic;
   const showIssues = (isTpo || isSuperAdmin || (userRole.includes('MANAGER') && showPlacementAndAcademic) || userRole.includes('ZONAL')) && showPlacementAndAcademic;
 
@@ -174,6 +168,7 @@ export default function Layout({ children }) {
   
   const profilePhotoUrl = getDriveImage(tpoData.photo);
   const isActive = (path) => location.pathname.startsWith(path) ? '#8b5cf6' : '#94a3b8';
+  const isAcadActive = (path) => location.pathname.startsWith(path) ? '#10b981' : '#94a3b8';
 
   const handleLogout = () => { localStorage.removeItem('tpoData'); navigate('/'); };
   const handleNav = (path) => { setIsDrawerOpen(false); navigate(path); };
@@ -236,7 +231,7 @@ export default function Layout({ children }) {
         </header>
 
         <div className="page-container" style={{ padding: '20px 30px', position: 'relative' }} onClick={() => setIsNotifOpen(false)}>
-          {location.pathname !== '/dashboard' && location.pathname !== '/assets/dashboard' && location.pathname !== '/media/dashboard' && (
+          {location.pathname !== '/dashboard' && location.pathname !== '/assets/dashboard' && location.pathname !== '/media/dashboard' && !location.pathname.includes('/academic/') && (
             <div style={{ marginBottom: '25px' }}>
               <button onClick={() => navigate(defaultBackPath)} style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-muted)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 'bold', transition: '0.2s' }}>
                 <CaretLeft weight="bold" size={16} /> Back to Dashboard
@@ -247,7 +242,6 @@ export default function Layout({ children }) {
         </div>
       </main>
 
-      {/* 🚨 PREMIUM FLOATING MENU SLIDER */}
       <div className={`premium-drawer-overlay ${isDrawerOpen ? 'open' : ''}`} onClick={(e) => { if(e.target.classList.contains('premium-drawer-overlay')) setIsDrawerOpen(false); }}>
         <div className="premium-drawer-card">
           
@@ -280,21 +274,22 @@ export default function Layout({ children }) {
                 {!isTrainer && <div className={`pd-nav-item ${isActive('/placement-drives') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}><IdentificationCard size={22} weight={isActive('/placement-drives') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Placement Drives</span></div>}
                 {!isTrainer && <div className={`pd-nav-item ${isActive('/clients') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/clients')}><Handshake size={22} weight={isActive('/clients') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Clients & Partners</span></div>}
 
+                {/* 🚨 ACADEMIC & TRAINING MENU */}
                 <span className="pd-divider-label" style={{ marginTop: '15px' }}>Training & Academics</span>
-                <div className={`pd-nav-item ${isActive('/academic/training') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/training')}>
-                  <GraduationCap size={22} weight={isActive('/academic/training') === '#10b981' ? 'fill' : 'regular'} /> <span>Student Training</span>
+                <div className={`pd-nav-item ${isAcadActive('/academic/training') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/training')}>
+                  <GraduationCap size={22} weight={isAcadActive('/academic/training') === '#10b981' ? 'fill' : 'regular'} /> <span>Student Training</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/academic/batches') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/batches')}>
-                  <UsersFour size={22} weight={isActive('/academic/batches') === '#10b981' ? 'fill' : 'regular'} /> <span>Batch Management</span>
+                <div className={`pd-nav-item ${isAcadActive('/academic/batches') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/batches')}>
+                  <UsersFour size={22} weight={isAcadActive('/academic/batches') === '#10b981' ? 'fill' : 'regular'} /> <span>Batch Management</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/academic/sessions') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/sessions')}>
-                  <ChalkboardTeacher size={22} weight={isActive('/academic/sessions') === '#10b981' ? 'fill' : 'regular'} /> <span>Live Sessions</span>
+                <div className={`pd-nav-item ${isAcadActive('/academic/sessions') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/sessions')}>
+                  <ChalkboardTeacher size={22} weight={isAcadActive('/academic/sessions') === '#10b981' ? 'fill' : 'regular'} /> <span>Live Sessions</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/academic/attendance') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/attendance')}>
-                  <CalendarCheck size={22} weight={isActive('/academic/attendance') === '#10b981' ? 'fill' : 'regular'} /> <span>Attendance Register</span>
+                <div className={`pd-nav-item ${isAcadActive('/academic/attendance') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/attendance')}>
+                  <CalendarCheck size={22} weight={isAcadActive('/academic/attendance') === '#10b981' ? 'fill' : 'regular'} /> <span>Attendance Register</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/academic/diary') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/diary')}>
-                  <Notebook size={22} weight={isActive('/academic/diary') === '#10b981' ? 'fill' : 'regular'} /> <span>Student Diary</span>
+                <div className={`pd-nav-item ${isAcadActive('/academic/diary') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/diary')}>
+                  <Notebook size={22} weight={isAcadActive('/academic/diary') === '#10b981' ? 'fill' : 'regular'} /> <span>Student Diary</span>
                 </div>
               </>
             )}
@@ -406,7 +401,10 @@ export default function Layout({ children }) {
         .pd-nav-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
         .pd-nav-item { display: flex; align-items: center; gap: 15px; padding: 12px 18px; border-radius: 16px; color: #94a3b8; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         .pd-nav-item:hover { background: rgba(255,255,255,0.03); color: #e2e8f0; transform: translateX(4px); }
+        
         .pd-nav-item.active { background: linear-gradient(135deg, #6366f1, #a855f7); color: #ffffff; box-shadow: 0 8px 20px -6px rgba(99, 102, 241, 0.6); }
+        .pd-nav-item.active-acad { background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; box-shadow: 0 8px 20px -6px rgba(16, 185, 129, 0.6); }
+
         .pd-footer { padding: 20px; background: rgba(0,0,0,0.1); }
         .pd-logout-btn { width: 100%; background: #fff; color: #0f172a; border: none; padding: 14px; border-radius: 14px; font-weight: 800; font-size: 0.95rem; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; transition: 0.2s ease; }
         .pd-logout-btn:hover { background: #ef4444; color: #fff; box-shadow: 0 8px 20px -6px rgba(239, 68, 68, 0.5); }
