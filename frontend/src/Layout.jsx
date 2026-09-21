@@ -147,16 +147,21 @@ export default function Layout({ children }) {
   
   const isAssetManager = userRole.includes('ASSET') || sheetAccess.includes('asset');
   const isDesigner = userRole.includes('DESIGN') || userRole.includes('MEDIA') || userRole.includes('CREATIVE');
+  
   const showPlacementAndAcademic = !isAssetManager && !isDesigner;
 
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
   const isTpo = userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER');
   const isTrainer = userRole.includes('TRAINER');
   const isRth = userRole.includes('RTH') || userRole.includes('REGIONAL TECHNICAL HEAD');
-  
+  const isTL = userRole.includes('TECHNICAL LEAD') || userRole.includes('TTH') || isRth || (userRole.includes('MANAGER') && showPlacementAndAcademic) || isSuperAdmin;
+
+  // Role Checks
   const showTracker = isTpo && !isSuperAdmin && showPlacementAndAcademic; 
   const showReports = (isSuperAdmin || isTpo) && showPlacementAndAcademic; 
   const showManageAdmin = isSuperAdmin;
+  const showStudyMaterials = (isSuperAdmin || isRth || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD') || isTrainer) && showPlacementAndAcademic; 
+  const showTrainerLogs = (isTrainer || isTL) && showPlacementAndAcademic;
   const showStudentApps = isTpo && !isSuperAdmin && showPlacementAndAcademic;
   const showIssues = (isTpo || isSuperAdmin || (userRole.includes('MANAGER') && showPlacementAndAcademic) || userRole.includes('ZONAL')) && showPlacementAndAcademic;
 
@@ -262,6 +267,7 @@ export default function Layout({ children }) {
             
             {showPlacementAndAcademic && (
               <>
+                {/* 🚨 PLACEMENT MENU */}
                 <span className="pd-divider-label">Main Menu</span>
                 <div className={`pd-nav-item ${isActive('/dashboard') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/dashboard')}><SquaresFour size={22} weight={isActive('/dashboard') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Dashboard</span></div>
                 <div className={`pd-nav-item ${isActive('/students') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/students')}><Users size={22} weight={isActive('/students') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Students Directory</span></div>
@@ -274,7 +280,15 @@ export default function Layout({ children }) {
                 {!isTrainer && <div className={`pd-nav-item ${isActive('/placement-drives') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}><IdentificationCard size={22} weight={isActive('/placement-drives') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Placement Drives</span></div>}
                 {!isTrainer && <div className={`pd-nav-item ${isActive('/clients') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/clients')}><Handshake size={22} weight={isActive('/clients') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Clients & Partners</span></div>}
 
-                {/* 🚨 ACADEMIC & TRAINING MENU */}
+                {/* 🚨 ACADEMIC & OPS (RESTORED) */}
+                <span className="pd-divider-label" style={{ marginTop: '15px' }}>Academic & Ops</span>
+                <div className={`pd-nav-item ${isActive('/events') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} weight={isActive('/events') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Events</span></div>
+                <div className={`pd-nav-item ${isActive('/talentino') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/talentino')}><UserCheck size={22} weight={isActive('/talentino') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Talentino</span></div>
+                {showStudyMaterials && <div className={`pd-nav-item ${isActive('/study-materials') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/study-materials')}><Book size={22} weight={isActive('/study-materials') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Study Materials</span></div>}
+                {showTrainerLogs && <div className={`pd-nav-item ${isActive('/trainer-logs') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/trainer-logs')}><Notebook size={22} weight={isActive('/trainer-logs') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Daily Log Report</span></div>}
+                {!userRole.includes('MANAGER') && !isTpo && <div className={`pd-nav-item ${isActive('/exams') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/exams')}><FileText size={22} weight={isActive('/exams') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Exams Hub</span></div>}
+
+                {/* 🚨 NEW TRAINING & ACADEMICS */}
                 <span className="pd-divider-label" style={{ marginTop: '15px' }}>Training & Academics</span>
                 <div className={`pd-nav-item ${isAcadActive('/academic/training') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/training')}>
                   <GraduationCap size={22} weight={isAcadActive('/academic/training') === '#10b981' ? 'fill' : 'regular'} /> <span>Student Training</span>
