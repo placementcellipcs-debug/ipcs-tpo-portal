@@ -1245,10 +1245,10 @@ exports.addEvent = async (req, res) => {
     // Add to sheet
     const newRow = await eventSheet.addRow(rowData);
 
-    // 🚨 FETCH DYNAMIC EMAILS VIA USER IDs
-    const giftyEmail = getUserEmailById('U003');
-    const ajithEmail = getUserEmailById('U001');
-    const rakeshEmail = getUserEmailById('U002');
+    // 🚨 GUARANTEED EXECUTIVE EMAILS (Fallback to hardcoded if ID lookup fails)
+    const giftyEmail = getUserEmailById('U003') || 'gifty@ipcsglobal.com';
+    const ajithEmail = getUserEmailById('U001') || 'ajith@ipcsglobal.com';
+    const rakeshEmail = getUserEmailById('U002') || 'rakesh@ipcsglobal.com';
 
     const logo1 = "https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
     const logo2 = "https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
