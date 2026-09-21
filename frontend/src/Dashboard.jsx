@@ -54,18 +54,24 @@ export default function Dashboard() {
 
   const DOMAIN_COLORS = ['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#ec4899', '#0ea5e9'];
 
+  // 🚨 FIXED DATE PARSER: Now handles MM/DD/YYYY directly from Google Sheets
   const parseDateRobust = (dStr) => {
     if (!dStr) return null;
-    let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0].replace(/st|nd|rd|th|,/g, '') : dStr;
-    if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
-      const parts = cleanStr.split(/[/-]/);
-      if (parts.length === 3) {
-        if (parts[2].length === 4) return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-        if (parts[0].length === 4) return new Date(`${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`);
+    
+    // 1. Try native parsing first (works flawlessly for MM/DD/YYYY)
+    let parsedDate = new Date(dStr);
+    
+    // 2. If it fails, fallback to cleaning the string for DD/MM/YYYY formats
+    if (isNaN(parsedDate.getTime())) {
+      let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0].replace(/st|nd|rd|th|,/g, '') : dStr;
+      if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
+        const parts = cleanStr.split(/[/-]/);
+        if (parts.length === 3) {
+           parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+        }
       }
     }
-    const d = new Date(cleanStr);
-    return isNaN(d) ? null : d;
+    return isNaN(parsedDate.getTime()) ? null : parsedDate;
   };
 
   const getStandardDomain = (courseStr) => {
