@@ -45,7 +45,8 @@ export default function Layout({ children }) {
       return;
     }
 
-    const INACTIVITY_TIMEOUT = 15 * 60 * 1000; 
+    // 🚨 UPDATED: 6 Hours of Inactivity
+    const INACTIVITY_TIMEOUT = 6 * 60 * 60 * 1000; 
     let lastActivity = Date.now();
     const handleUserInteraction = () => { lastActivity = Date.now(); };
     const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
@@ -56,7 +57,7 @@ export default function Layout({ children }) {
         clearInterval(inactivityInterval);
         activityEvents.forEach((evt) => window.removeEventListener(evt, handleUserInteraction));
         localStorage.removeItem('tpoData');
-        alert("Session Expired: You have been logged out due to 15 minutes of inactivity.");
+        alert("Session Expired: You have been logged out due to 6 hours of inactivity.");
         window.location.href = '/';
       }
     }, 10000);
