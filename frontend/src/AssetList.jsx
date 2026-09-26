@@ -1,571 +1,287 @@
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { 
-  Barcode, CircleNotch, Plus, Eye, UserCheck, ArrowUUpLeft, 
-  QrCode, X, CheckCircle, WarningCircle, Laptop, Wrench, Truck, Image, Trash, UploadSimple 
-} from '@phosphor-icons/react';
+import { useNavigate } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, Barcode, Buildings, Camera, CheckCircle, CircleNotch, Cube, Image as ImageIcon, MagnifyingGlass, MapPinLine, QrCode, UserCheck, Wrench, X } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
+import './AssetManagement.css';
+
+const readUser = () => {
+  try { return JSON.parse(localStorage.getItem('tpoData') || '{}'); } catch { return {}; }
+};
+const clean = value => String(value || '').trim().toLowerCase();
+const fileImage = value => {
+  if (!value) return '';
+  const match = String(value).match(/(?:file\/d\/|[?&]id=|\/d\/)([\w-]{20,})/);
+  return match ? `https://drive.google.com/thumbnail?id=${match[1]}&sz=w900` : value;
+};
+const statusLabel = status => ({ AVAILABLE: 'Available', ASSIGNED: 'Assigned', UNDER_MAINTENANCE: 'Maintenance', TRANSFER_PENDING: 'In transit', DISPOSED: 'Retired' }[status] || status || 'Available');
+
+function PhotoField({ label, value, onChange, required = false }) {
+  return (
+    <label className="asset-photo-field">
+      <Camera size={18} />
+      <span><b>{value ? value.name : label}</b><small>{required ? 'Photo required' : 'Photo optional · JPG or PNG'}</small></span>
+      <input type="file" accept="image/*" capture="environment" required={required} onChange={event => onChange(event.target.files?.[0] || null)} />
+    </label>
+  );
+}
+
+function Modal({ title, subtitle, onClose, children }) {
+  return (
+    <div className="asset-modal-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <section className="asset-modal" role="dialog" aria-modal="true" aria-label={title}>
+        <header className="asset-modal-head"><div><h2>{title}</h2><p>{subtitle}</p></div><button type="button" aria-label="Close" onClick={onClose}><X size={20} /></button></header>
+        {children}
+      </section>
+    </div>
+  );
+}
 
 export default function AssetList() {
-  const tpoData = JSON.parse(localStorage.getItem('tpoData') || '{}');
-  const userRole = String(tpoData?.role || '').toUpperCase();
-  const accessType = String(tpoData?.accessType || '').toLowerCase();
-  const myBranch = tpoData?.sittingBranch || '';
-  
-  const isSuperAdmin = accessType === 'superadmin' || userRole.includes('SYSTEM ADMIN') || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
-  const canManageAssets = isSuperAdmin || userRole.includes('ASSET');
-
+  const user = useMemo(() => readUser(), []);
+  const role = String(user.role || '').toUpperCase();
+  const isGlobalAdmin = String(user.accessType || '').toLowerCase() === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
+  const canManage = isGlobalAdmin || role.includes('ASSET');
+  const navigate = useNavigate();
   const [assets, setAssets] = useState([]);
-  const [dbData, setDbData] = useState({ branches: [] });
+  const [dbData, setDbData] = useState({ branches: [], locations: [] });
   const [loading, setLoading] = useState(true);
-  
-  const [searchQuery, setSearchQuery] = useState('');
-  const [branchFilter, setBranchFilter] = useState('All');
-  const [locationFilter, setLocationFilter] = useState('All');
-  const [categoryFilter, setCategoryFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState('All');
-
-  const [detailModal, setDetailModal] = useState(null);
+  const [selectedBranch, setSelectedBranch] = useState(isGlobalAdmin ? '' : (user.sittingBranch || ''));
+  const selectedBranchRef = useRef(isGlobalAdmin ? '' : (user.sittingBranch || ''));
+  const [selectedSpace, setSelectedSpace] = useState('');
+  const [search, setSearch] = useState('');
+  const [message, setMessage] = useState('');
+  const [details, setDetails] = useState(null);
   const [detailData, setDetailData] = useState({ loading: false, customSpecs: [], assignments: [], history: [], documents: [] });
-  const [activeDetailTab, setActiveDetailTab] = useState('specs'); // 'specs', 'history', 'documents', 'disposal'
-  
-  const [assignModal, setAssignModal] = useState(null);
-  const [returnModal, setReturnModal] = useState(null);
-  const [qrModal, setQrModal] = useState(null);
-  const [maintenanceReqModal, setMaintenanceReqModal] = useState(null);
-  const [transferReqModal, setTransferReqModal] = useState(null);
+  const [assignItem, setAssignItem] = useState(null);
+  const [returnItem, setReturnItem] = useState(null);
+  const [qrItem, setQrItem] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [assignForm, setAssignForm] = useState({ employeeName: '', employeeId: '', conditionOnIssue: 'GOOD', accessories: '', remarks: '', photo: null });
+  const [returnForm, setReturnForm] = useState({ conditionOnReturn: 'GOOD', returnStatus: 'AVAILABLE', remarks: '', photo: null });
 
-  const [assignForm, setAssignForm] = useState({ employeeName: '', employeeId: '', conditionOnIssue: 'GOOD', accessories: 'Charger, Bag', remarks: '' });
-  const [returnForm, setReturnForm] = useState({ conditionOnReturn: 'GOOD', returnStatus: 'AVAILABLE', remarks: '' });
-  const [maintenanceForm, setMaintenanceForm] = useState({ issue: '' });
-  const [transferForm, setTransferForm] = useState({ toBranch: '', remarks: '' });
-  
-  const [uploadForm, setUploadForm] = useState({ file: null, type: 'PHOTO_BEFORE' });
-  const [disposeForm, setDisposeForm] = useState({ reason: '', method: 'E-WASTE', value: '' });
-
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [notification, setNotification] = useState(null);
-  const fileInputRef = useRef(null);
-
-  const showToast = (text, type = 'success') => {
-    setNotification({ text, type });
-    setTimeout(() => setNotification(null), 4000);
-  };
-
-  const fetchAssetsAndData = async () => {
+  const loadData = useCallback(async () => {
     try {
-      setLoading(true);
       const [assetRes, formRes] = await Promise.all([
         axios.get(`${API_BASE}/api/v1/assets`),
         axios.get(`${API_BASE}/api/v1/assets/form-data`)
       ]);
-      if (assetRes.data.success) setAssets(assetRes.data.assets || []);
-      if (formRes.data.success) setDbData({ branches: formRes.data.branches || [] });
-    } catch (err) { console.error(err); } finally { setLoading(false); }
-  };
+      const nextAssets = assetRes.data?.assets || [];
+      const form = formRes.data || {};
+      const branchNames = [...new Set([...(form.branches || []), ...nextAssets.map(item => item.branch).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
+      setAssets(nextAssets);
+      setDbData({ branches: branchNames, locations: form.locations || [] });
+      if (!isGlobalAdmin && !selectedBranchRef.current) {
+        const defaultBranch = user.sittingBranch || branchNames[0] || '';
+        selectedBranchRef.current = defaultBranch;
+        setSelectedBranch(defaultBranch);
+      }
+    } catch (error) {
+      setMessage(error.response?.data?.message || 'Could not load asset records.');
+    } finally { setLoading(false); }
+  }, [isGlobalAdmin, user.sittingBranch]);
 
   useEffect(() => {
-    let active = true;
-    Promise.all([
-      axios.get(`${API_BASE}/api/v1/assets`),
-      axios.get(`${API_BASE}/api/v1/assets/form-data`)
-    ]).then(([assetRes, formRes]) => {
-      if (!active) return;
-      if (assetRes.data.success) setAssets(assetRes.data.assets || []);
-      if (formRes.data.success) setDbData({ branches: formRes.data.branches || [] });
-    }).catch(error => {
-      if (active) showToast(error.response?.data?.message || 'Could not load the asset registry.', 'error');
-    }).finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, []);
+    const timer = window.setTimeout(() => { void loadData(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadData]);
+  useEffect(() => {
+    if (!message) return undefined;
+    const timeout = window.setTimeout(() => setMessage(''), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [message]);
 
-  const openDetails = async (asset) => {
-    setDetailModal(asset);
-    setActiveDetailTab('specs');
+  const branchAssets = useMemo(() => assets.filter(asset => clean(asset.branch) === clean(selectedBranch)), [assets, selectedBranch]);
+  const spaces = useMemo(() => {
+    const names = new Set(branchAssets.map(asset => asset.location?.trim() || 'Unassigned space'));
+    dbData.locations.forEach(location => {
+      const name = location.locationname || location.name || location.location || '';
+      const branch = location.branch || location.branchname || '';
+      if (name && (!branch || clean(branch) === clean(selectedBranch))) names.add(name);
+    });
+    return [...names].sort((a, b) => a.localeCompare(b));
+  }, [branchAssets, dbData.locations, selectedBranch]);
+
+  const matchesSearch = item => {
+    const query = clean(search);
+    return !query || [item.assetId, item.name, item.brand, item.model, item.category, item.subcategory, item.location].some(value => clean(value).includes(query));
+  };
+  const spaceAssets = branchAssets.filter(asset => (asset.location?.trim() || 'Unassigned space') === selectedSpace && matchesSearch(asset));
+  const selectedBranchStats = {
+    total: branchAssets.length,
+    assigned: branchAssets.filter(item => item.status === 'ASSIGNED').length,
+    available: branchAssets.filter(item => item.status === 'AVAILABLE').length
+  };
+  const showToast = text => { setMessage(text); };
+
+  const openDetails = async item => {
+    setDetails(item);
     setDetailData({ loading: true, customSpecs: [], assignments: [], history: [], documents: [] });
     try {
-      const res = await axios.get(`${API_BASE}/api/v1/assets/${asset.assetId}/details`);
-      if (res.data.success) {
-        setDetailData({ loading: false, customSpecs: res.data.customSpecs || [], assignments: res.data.assignments || [], history: res.data.history || [], documents: res.data.documents || [] });
-      }
-    } catch { setDetailData({ loading: false, customSpecs: [], assignments: [], history: [], documents: [] }); showToast('Could not load asset details.', 'error'); }
+      const response = await axios.get(`${API_BASE}/api/v1/assets/${encodeURIComponent(item.assetId)}/details`);
+      setDetailData({ loading: false, ...response.data, customSpecs: response.data.customSpecs || [], assignments: response.data.assignments || [], history: response.data.history || [], documents: response.data.documents || [] });
+    } catch (error) {
+      setDetailData({ loading: false, customSpecs: [], assignments: [], history: [], documents: [] });
+      showToast(error.response?.data?.message || 'Could not load item details.');
+    }
   };
 
-  // ================= ACTION SUBMISSIONS =================
-  const handleAssignSubmit = async (e) => {
-    e.preventDefault(); setIsSubmitting(true);
+  const submitHandover = async event => {
+    event.preventDefault();
+    setBusy(true);
+    const data = new FormData();
+    Object.entries(assignForm).forEach(([key, value]) => { if (key !== 'photo') data.append(key, value); });
+    data.append('assetId', assignItem.assetId);
+    data.append('userName', user.name || '');
+    if (assignForm.photo) data.append('photo', assignForm.photo);
     try {
-      const res = await axios.post(`${API_BASE}/api/v1/assets/assign`, { assetId: assignModal.assetId, ...assignForm, userName: tpoData.name, userBranch: myBranch });
-      if (res.data.success) { showToast(res.data.message); setAssignModal(null); fetchAssetsAndData(); }
-    } catch (err) { showToast(err.response?.data?.message || 'Assignment failed.', 'error'); } finally { setIsSubmitting(false); }
+      const response = await axios.post(`${API_BASE}/api/v1/assets/assign`, data);
+      setAssignItem(null);
+      setAssignForm({ employeeName: '', employeeId: '', conditionOnIssue: 'GOOD', accessories: '', remarks: '', photo: null });
+      showToast(response.data.message || 'Asset assigned.');
+      await loadData();
+    } catch (error) { showToast(error.response?.data?.message || 'Could not assign the asset.'); }
+    finally { setBusy(false); }
   };
 
-  const handleReturnSubmit = async (e) => {
-    e.preventDefault(); setIsSubmitting(true);
+  const submitReturn = async event => {
+    event.preventDefault();
+    setBusy(true);
+    const data = new FormData();
+    Object.entries(returnForm).forEach(([key, value]) => { if (key !== 'photo') data.append(key, value); });
+    data.append('assetId', returnItem.assetId);
+    data.append('userName', user.name || '');
+    if (returnForm.photo) data.append('photo', returnForm.photo);
     try {
-      const res = await axios.post(`${API_BASE}/api/v1/assets/return`, { assetId: returnModal.assetId, ...returnForm, userName: tpoData.name, userBranch: myBranch });
-      if (res.data.success) { showToast(res.data.message); setReturnModal(null); fetchAssetsAndData(); }
-    } catch (err) { showToast(err.response?.data?.message || 'Return failed.', 'error'); } finally { setIsSubmitting(false); }
+      const response = await axios.post(`${API_BASE}/api/v1/assets/return`, data);
+      setReturnItem(null);
+      setReturnForm({ conditionOnReturn: 'GOOD', returnStatus: 'AVAILABLE', remarks: '', photo: null });
+      showToast(response.data.message || 'Asset return recorded.');
+      await loadData();
+    } catch (error) { showToast(error.response?.data?.message || 'Could not record the return.'); }
+    finally { setBusy(false); }
   };
 
-  const handleMaintenanceSubmit = async (e) => {
-    e.preventDefault(); setIsSubmitting(true);
-    try {
-      const res = await axios.post(`${API_BASE}/api/v1/assets/maintenance/report`, { assetId: maintenanceReqModal.assetId, issue: maintenanceForm.issue, userName: tpoData.name });
-      if (res.data.success) { showToast("Ticket raised! Sent to Maintenance Lab."); setMaintenanceReqModal(null); setMaintenanceForm({ issue: '' }); fetchAssetsAndData(); }
-    } catch (err) { showToast(err.response?.data?.message || 'Failed to report maintenance.', 'error'); } finally { setIsSubmitting(false); }
-  };
-
-  const handleTransferSubmit = async (e) => {
-    e.preventDefault(); setIsSubmitting(true);
-    try {
-      const res = await axios.post(`${API_BASE}/api/v1/assets/transfers/request`, { assetId: transferReqModal.assetId, toBranch: transferForm.toBranch, remarks: transferForm.remarks, userName: tpoData.name, userBranch: myBranch });
-      if (res.data.success) { showToast("Transfer requested!"); setTransferReqModal(null); setTransferForm({ toBranch: '', remarks: '' }); fetchAssetsAndData(); }
-    } catch (err) { showToast(err.response?.data?.message || 'Failed to request transfer.', 'error'); } finally { setIsSubmitting(false); }
-  };
-
-  // 🚨 NEW: UPLOAD DOCUMENT / PHOTO
-  const handleUploadSubmit = async (e) => {
-    e.preventDefault();
-    if (!uploadForm.file) return showToast("Please select a file first.", "error");
-    setIsSubmitting(true);
-    const formData = new FormData();
-    formData.append('file', uploadForm.file);
-    formData.append('assetId', detailModal.assetId);
-    formData.append('documentType', uploadForm.type);
-    formData.append('userName', tpoData.name);
-
-    try {
-      const res = await axios.post(`${API_BASE}/api/v1/assets/documents/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
-      if (res.data.success) {
-        showToast("File uploaded successfully!");
-        setUploadForm({ file: null, type: 'PHOTO_BEFORE' });
-        if(fileInputRef.current) fileInputRef.current.value = '';
-        openDetails(detailModal); // Refresh details
-      }
-    } catch { showToast("Upload failed.", "error"); } finally { setIsSubmitting(false); }
-  };
-
-  // 🚨 NEW: DISPOSE ASSET
-  const handleDisposeSubmit = async (e) => {
-    e.preventDefault();
-    if (!window.confirm("WARNING: This will permanently retire this asset from the active registry. Continue?")) return;
-    setIsSubmitting(true);
-    try {
-      const res = await axios.post(`${API_BASE}/api/v1/assets/dispose`, { assetId: detailModal.assetId, ...disposeForm, userName: tpoData.name });
-      if (res.data.success) {
-        showToast("Asset successfully disposed.");
-        setDetailModal(null);
-        fetchAssetsAndData();
-      }
-    } catch { showToast("Disposal failed.", "error"); } finally { setIsSubmitting(false); }
-  };
-
-  const availableLocations = ['All', ...new Set(assets.map(a => a.location).filter(Boolean))];
-  const uniqueCategories = ['All', ...new Set(assets.map(a => a.category).filter(Boolean))];
-
-  const filteredAssets = assets.filter(a => {
-    const q = searchQuery.toLowerCase();
-    const matchQ = (a.assetId || '').toLowerCase().includes(q) || (a.name || '').toLowerCase().includes(q) || (a.brand || '').toLowerCase().includes(q);
-    const matchB = isSuperAdmin ? (branchFilter === 'All' || a.branch === branchFilter) : (a.branch === myBranch);
-    const matchL = locationFilter === 'All' || a.location === locationFilter;
-    const matchC = categoryFilter === 'All' || a.category === categoryFilter;
-    const matchS = statusFilter === 'All' || a.status === statusFilter;
-    return matchQ && matchB && matchL && matchC && matchS;
-  });
+  const openBranch = branch => { selectedBranchRef.current = branch; setSelectedBranch(branch); setSelectedSpace(''); setSearch(''); };
+  const itemPhoto = item => fileImage(item.photoUrl);
 
   return (
     <Layout>
-      <div className="premium-dashboard-wrapper page-container" style={{ maxWidth: '1600px', margin: '0 auto', paddingBottom: '50px' }}>
-        
-        {notification && (
-          <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 999999, backgroundColor: notification.type === 'success' ? '#10b981' : '#ef4444', color: '#ffffff', padding: '16px 24px', borderRadius: '10px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1rem', fontWeight: 'bold' }}>
-            {notification.type === 'success' ? <CheckCircle size={24} weight="fill" /> : <WarningCircle size={24} weight="fill" />}
-            {notification.text}
+      <main className="asset-workspace">
+        {message && <div className="asset-toast" role="status">{message}<button type="button" onClick={() => setMessage('')} aria-label="Dismiss"><X size={16} /></button></div>}
+        <section className="asset-overview-hero">
+          <div className="asset-overview-icon"><Barcode size={25} weight="duotone" /></div>
+          <div className="asset-overview-copy"><span>IPCS · OPERATIONS</span><h1>Asset management</h1><p>Browse each branch, open an office space, and inspect the equipment assigned there.</p></div>
+          {canManage && <button type="button" className="asset-action-primary" onClick={() => navigate('/assets/add')}>Register an item <ArrowRight size={17} /></button>}
+        </section>
+
+        <section className="asset-summary-strip" aria-label="Asset summary">
+          <div><span>Tracked items</span><strong>{assets.length}</strong></div>
+          <div><span>Branches</span><strong>{dbData.branches.length}</strong></div>
+          <div><span>Assigned</span><strong>{assets.filter(item => item.status === 'ASSIGNED').length}</strong></div>
+          <div><span>Available</span><strong>{assets.filter(item => item.status === 'AVAILABLE').length}</strong></div>
+        </section>
+
+        <div className="asset-toolbar">
+          <div className="asset-breadcrumbs" aria-label="Asset location">
+            <button type="button" onClick={() => { selectedBranchRef.current = ''; setSelectedBranch(''); setSelectedSpace(''); }}>Branches</button>
+            {selectedBranch && <><span>/</span><button type="button" onClick={() => setSelectedSpace('')}>{selectedBranch}</button></>}
+            {selectedSpace && <><span>/</span><strong>{selectedSpace}</strong></>}
           </div>
+          {selectedSpace && <label className="asset-search"><MagnifyingGlass size={17} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search this space" /></label>}
+        </div>
+
+        {loading ? (
+          <div className="asset-state-card"><CircleNotch size={28} className="ph-spin" /><p>Loading branch inventory…</p></div>
+        ) : !selectedBranch ? (
+          <section className="asset-branch-grid" aria-label="Branches">
+            {dbData.branches.map(branch => {
+              const list = assets.filter(item => clean(item.branch) === clean(branch));
+              const roomCount = new Set(list.map(item => item.location?.trim() || 'Unassigned space')).size;
+              return (
+                <button className="asset-branch-card" type="button" key={branch} onClick={() => openBranch(branch)}>
+                  <span className="asset-card-kicker">BRANCH INVENTORY</span><span className="asset-branch-glyph"><Buildings size={23} weight="duotone" /></span>
+                  <h2>{branch}</h2><p>{roomCount} office spaces · {list.length} items</p>
+                  <span className="asset-card-foot">Open branch <ArrowRight size={16} /></span>
+                </button>
+              );
+            })}
+            {!dbData.branches.length && <div className="asset-state-card">No branches are assigned to this account.</div>}
+          </section>
+        ) : !selectedSpace ? (
+          <>
+            <div className="asset-step-heading"><div><span>BRANCH</span><h2>{selectedBranch}</h2><p>Choose an office space to see its inventory.</p></div><div className="asset-branch-counts"><span><b>{selectedBranchStats.total}</b> Items</span><span><b>{selectedBranchStats.assigned}</b> Assigned</span><span><b>{selectedBranchStats.available}</b> Available</span></div></div>
+            <section className="asset-space-grid" aria-label={`${selectedBranch} office spaces`}>
+              {spaces.map(space => {
+                const list = branchAssets.filter(item => (item.location?.trim() || 'Unassigned space') === space);
+                return (
+                  <button className="asset-space-card" type="button" key={space} onClick={() => setSelectedSpace(space)}>
+                    <span className="asset-space-glyph"><MapPinLine size={24} weight="duotone" /></span><div className="asset-space-title"><span>OFFICE SPACE</span><h3>{space}</h3></div>
+                    <div className="asset-space-metrics"><span><b>{list.length}</b> total items</span><span><b>{list.filter(item => item.status === 'ASSIGNED').length}</b> assigned</span></div>
+                    <span className="asset-space-open">View items <ArrowRight size={16} /></span>
+                  </button>
+                );
+              })}
+              {!spaces.length && <div className="asset-state-card">No office spaces have been registered for this branch yet.</div>}
+            </section>
+          </>
+        ) : (
+          <>
+            <div className="asset-step-heading"><div><span>OFFICE SPACE</span><h2>{selectedSpace}</h2><p>{selectedBranch} · {spaceAssets.length} matching items</p></div><button type="button" className="asset-back-button" onClick={() => setSelectedSpace('')}><ArrowLeft size={16} /> All spaces</button></div>
+            <section className="asset-item-grid" aria-label="Office space assets">
+              {spaceAssets.map(item => (
+                <article className="asset-item-card" key={item.assetId}>
+                  <button className="asset-item-photo" type="button" onClick={() => openDetails(item)} aria-label={`Open ${item.name} details`}>
+                    {itemPhoto(item) ? <img src={itemPhoto(item)} alt={item.name} loading="lazy" /> : <span><Cube size={38} weight="duotone" /></span>}
+                    <b className={`asset-status status-${String(item.status || 'AVAILABLE').toLowerCase()}`}>{statusLabel(item.status)}</b>
+                  </button>
+                  <div className="asset-item-info"><div className="asset-item-code">{item.assetId}</div><h3>{item.name}</h3><p>{[item.brand, item.model].filter(Boolean).join(' · ') || item.subcategory || item.category}</p><div className="asset-condition"><span>Condition</span><b>{item.condition || 'GOOD'}</b></div></div>
+                  <div className="asset-item-actions">
+                    <button type="button" className="asset-icon-button" title="Item history and photos" onClick={() => openDetails(item)}><ImageIcon size={17} /></button>
+                    <button type="button" className="asset-icon-button" title="Print asset QR" onClick={() => setQrItem(item)}><QrCode size={17} /></button>
+                    {canManage && item.status === 'AVAILABLE' && <button type="button" className="asset-small-action" onClick={() => setAssignItem(item)}><UserCheck size={16} /> Assign</button>}
+                    {canManage && item.status === 'ASSIGNED' && <button type="button" className="asset-small-action return-action" onClick={() => setReturnItem(item)}><ArrowLeft size={16} /> Return</button>}
+                    {item.status === 'UNDER_MAINTENANCE' && <span className="asset-maintenance-tag"><Wrench size={14} /> Service</span>}
+                  </div>
+                </article>
+              ))}
+              {!spaceAssets.length && <div className="asset-state-card">No items match this space and search.</div>}
+            </section>
+          </>
         )}
 
-        <div className="top-hero-section">
-          <div className="hero-text">
-            <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><Barcode color="#8b5cf6" weight="fill" /> Master Asset Registry</h1>
-            <p>Track, inspect, assign, and audit physical equipment across {isSuperAdmin ? 'all IPCS branches' : `the ${myBranch} branch`}.</p>
-          </div>
-          {canManageAssets && (
-            <button className="premium-btn primary hover-lift" onClick={() => window.location.href = '/assets/add'}>
-              <Plus weight="bold" size={18} /> Register Asset
-            </button>
-          )}
-        </div>
-
-        <div className="glass-panel control-action-bar">
-          <div className="filter-group">
-            <input type="text" className="premium-input" placeholder="Search by ID, name, brand, model..." value={searchQuery} onChange={e => setSearchQuery(e.target.value)} />
-            {isSuperAdmin && (
-              <select className="premium-select" value={branchFilter} onChange={e => setBranchFilter(e.target.value)}>
-                <option value="All">All Branches</option>
-                {dbData.branches.map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
-            )}
-            <select className="premium-select" value={locationFilter} onChange={e => setLocationFilter(e.target.value)}>
-              {availableLocations.map(l => <option key={l} value={l}>{l === 'All' ? 'All Labs & Locations' : l}</option>)}
-            </select>
-            <select className="premium-select" value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
-              {uniqueCategories.map(c => <option key={c} value={c}>{c === 'All' ? 'All Categories' : c}</option>)}
-            </select>
-            <select className="premium-select" value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-              <option value="All">All Statuses</option>
-              <option value="AVAILABLE">Available</option>
-              <option value="ASSIGNED">Assigned</option>
-              <option value="UNDER_MAINTENANCE">Under Maintenance</option>
-              <option value="TRANSFER_PENDING">Transfer Pending</option>
-              <option value="DISPOSED">Disposed</option>
-            </select>
-          </div>
-        </div>
-
-        <div className="clean-list">
-          {loading ? (
-            <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Fetching assets...</p></div>
-          ) : filteredAssets.length === 0 ? (
-            <div className="empty-state-card"><span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🔍</span>No assets found matching your criteria.</div>
-          ) : (
-            filteredAssets.map(a => {
-              let sClass = 'green'; let sText = 'AVAILABLE';
-              if (a.status === 'ASSIGNED') { sClass = 'blue'; sText = 'ASSIGNED'; }
-              if (a.status === 'UNDER_MAINTENANCE') { sClass = 'red'; sText = 'REPAIR'; }
-              if (a.status === 'TRANSFER_PENDING') { sClass = 'orange'; sText = 'IN TRANSIT'; }
-              if (a.status === 'DISPOSED') { sClass = 'gray'; sText = 'DISPOSED'; }
-
-              return (
-                <div key={a.assetId} className="clean-row glass-panel hover-lift" style={{ opacity: a.status === 'DISPOSED' ? 0.6 : 1 }}>
-                  
-                  <div className="cl-left" style={{ flex: 2, minWidth: '350px' }}>
-                    <div className="cl-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6' }}><Laptop size={24} weight="fill"/></div>
-                    <div>
-                      <div className="cl-title" style={{ fontSize: '1.1rem' }}>
-                        {a.name} <span style={{ color: '#a855f7', fontSize: '0.85rem', marginLeft: '8px', fontFamily: 'monospace', background: 'rgba(168,85,247,0.1)', padding: '2px 8px', borderRadius: '6px' }}>{a.assetId}</span>
-                      </div>
-                      <div className="cl-sub">{a.subcategory} ({a.category}) • <b>{a.branch}</b> • {a.location || 'No Location'}</div>
-                    </div>
-                  </div>
-                  
-                  <div className="cl-middle" style={{ minWidth: '150px' }}>
-                    <span className={`status-pill ${sClass}`}>{sText}</span>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '6px' }}>Condition: <strong style={{color: '#cbd5e1'}}>{a.condition}</strong></div>
-                  </div>
-                  
-                  <div className="cl-right" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                    <button className="premium-btn secondary" title="View Hub" onClick={() => openDetails(a)}><Eye size={18} /></button>
-                    {a.status !== 'DISPOSED' && <button className="premium-btn secondary" title="Print QR" onClick={() => setQrModal(a)}><QrCode size={18} /></button>}
-                    
-                    {canManageAssets && a.status !== 'DISPOSED' && (
-                      <>
-                        {a.status === 'AVAILABLE' && <button className="premium-btn" style={{ background: '#10b981', color: '#fff' }} onClick={() => setAssignModal(a)}><UserCheck size={18} weight="bold" /> Assign</button>}
-                        {a.status === 'ASSIGNED' && <button className="premium-btn" style={{ background: '#f59e0b', color: '#fff' }} onClick={() => setReturnModal(a)}><ArrowUUpLeft size={18} weight="bold" /> Return</button>}
-                        {(a.status === 'AVAILABLE' || a.status === 'ASSIGNED') && (
-                          <>
-                            <button className="premium-btn" style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.3)' }} title="Report Issue" onClick={() => setMaintenanceReqModal(a)}><Wrench size={18} weight="bold" /></button>
-                            <button className="premium-btn" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7', border: '1px solid rgba(168,85,247,0.3)' }} title="Request Transfer" onClick={() => setTransferReqModal(a)}><Truck size={18} weight="bold" /></button>
-                          </>
-                        )}
-                      </>
-                    )}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-
-      {/* ================= MODALS SECTION ================= */}
-
-      {/* 🚨 1. ASSET CONTROL HUB (SPECS, PHOTOS, DISPOSAL) */}
-      {detailModal && (
-        <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setDetailModal(null); }}>
-          <div className="premium-modal glass-panel" style={{ maxWidth: '850px', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            
-            {/* Header */}
-            <div style={{ padding: '25px', background: 'rgba(15, 23, 42, 0.95)', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div>
-                  <h2 style={{ margin: '0 0 5px 0', fontSize: '1.6rem', color: '#fff' }}>{detailModal.name}</h2>
-                  <div style={{ color: '#8b5cf6', fontFamily: 'monospace', fontWeight: 'bold' }}>{detailModal.assetId} • <span style={{ color: '#94a3b8', fontFamily: 'Inter' }}>{detailModal.branch}</span></div>
-                </div>
-                <button className="close-btn" onClick={() => setDetailModal(null)}><X size={24} /></button>
-              </div>
-
-              {/* TABS */}
-              <div style={{ display: 'flex', gap: '15px', marginTop: '20px' }}>
-                <button className={`tab-btn ${activeDetailTab === 'specs' ? 'active' : ''}`} onClick={() => setActiveDetailTab('specs')}>Specs & History</button>
-                <button className={`tab-btn ${activeDetailTab === 'assignments' ? 'active' : ''}`} onClick={() => setActiveDetailTab('assignments')}>Assignment Ledger</button>
-                <button className={`tab-btn ${activeDetailTab === 'documents' ? 'active' : ''}`} onClick={() => setActiveDetailTab('documents')}><Image size={16}/> Photos & Docs</button>
-                {canManageAssets && detailModal.status !== 'DISPOSED' && (
-                  <button className={`tab-btn text-red ${activeDetailTab === 'disposal' ? 'active-red' : ''}`} onClick={() => setActiveDetailTab('disposal')}><Trash size={16}/> Discard Asset</button>
-                )}
-              </div>
+        {details && (
+          <Modal title={details.name} subtitle={`${details.assetId} · ${details.branch} · ${details.location || 'Unassigned space'}`} onClose={() => setDetails(null)}>
+            <div className="asset-detail-body">
+              <div className="asset-detail-overview"><div><span>Current condition</span><b>{details.condition || 'GOOD'}</b></div><div><span>Status</span><b>{statusLabel(details.status)}</b></div><div><span>Category</span><b>{details.category || '—'}</b></div><div><span>Model</span><b>{details.brand} {details.model}</b></div></div>
+              <h3>Condition photos</h3>
+              {(() => {
+                const registered = detailData.documents.find(doc => doc.type === 'PHOTO_REGISTERED') || detailData.documents.find(doc => doc.type === 'PHOTO_BEFORE');
+                const issue = detailData.documents.find(doc => doc.type === 'PHOTO_ISSUE');
+                const returned = detailData.documents.find(doc => doc.type === 'PHOTO_RETURN');
+                const previous = issue || registered;
+                const latestPhoto = detailData.documents.find(doc => String(doc.type || '').startsWith('PHOTO'));
+                const current = returned || latestPhoto;
+                return <div className="asset-condition-photos">{[
+                  { title: issue ? 'At handover' : 'At registration', photo: previous, condition: detailData.assignments[0]?.conditionOnIssue || 'Initial condition' },
+                  { title: returned ? 'Latest return' : 'Latest photo', photo: current, condition: detailData.assignments[0]?.conditionOnReturn || details.condition || 'Current condition' }
+                ].map((entry, index) => <div className="asset-condition-photo" key={`${entry.title}-${index}`}>{entry.photo?.url ? <a href={entry.photo.url} target="_blank" rel="noreferrer"><img src={fileImage(entry.photo.url)} alt={entry.title} /></a> : <span className="asset-no-photo"><Camera size={22} />No photo yet</span>}<div><b>{entry.title}</b><span>{entry.condition}</span><small>{entry.photo?.date || ''}</small></div></div>)}</div>;
+              })()}
+              <h3>Specifications</h3>
+              {detailData.loading ? <span className="asset-detail-loading"><CircleNotch size={18} className="ph-spin" /> Loading record…</span> : detailData.customSpecs.length ? <div className="asset-spec-grid">{detailData.customSpecs.map((spec, index) => <div key={`${spec.name}-${index}`}><span>{spec.name}</span><b>{spec.value || '—'}</b></div>)}</div> : <p className="asset-detail-empty">No additional technical specifications.</p>}
+              <h3>Assignment history</h3>
+              {detailData.loading ? <span className="asset-detail-loading"><CircleNotch size={18} className="ph-spin" /> Loading record…</span> : detailData.assignments.length ? <div className="asset-assignment-list">{detailData.assignments.map(assignment => <article key={assignment.assignmentId}><div><b>{assignment.employeeName || 'Unassigned'}</b><span>{assignment.assignmentId} · {assignment.status}</span></div><div><span>Issued {assignment.conditionOnIssue || '—'}</span><span>Returned {assignment.conditionOnReturn || 'Pending'}</span></div></article>)}</div> : <p className="asset-detail-empty">No assignment history.</p>}
             </div>
+          </Modal>
+        )}
 
-            {/* Scrollable Content Area */}
-            <div style={{ padding: '25px', overflowY: 'auto', maxHeight: '60vh' }}>
-              
-              {/* TAB 1: SPECS & HISTORY */}
-              {activeDetailTab === 'specs' && (
-                <>
-                  <h3 style={{ fontSize: '0.85rem', color: '#10b981', textTransform: 'uppercase', marginBottom: '15px' }}>Technical Specifications</h3>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '30px' }}>
-                    {detailData.loading ? ( <CircleNotch size={20} className="ph-spin" color="#8b5cf6"/> ) 
-                    : detailData.customSpecs.length === 0 ? ( <span style={{ color: '#64748b', fontSize: '0.9rem' }}>No custom specs recorded.</span> ) 
-                    : ( detailData.customSpecs.map((s, idx) => (
-                        <div key={idx} style={{ background: 'rgba(0,0,0,0.2)', padding: '12px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)' }}>
-                          <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '4px', fontWeight: 'bold' }}>{s.name}</div>
-                          <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.95rem' }}>{s.value}</div>
-                        </div>
-                      ))
-                    )}
-                  </div>
+        {assignItem && <Modal title="Assign this item" subtitle={`${assignItem.name} · ${assignItem.assetId}`} onClose={() => setAssignItem(null)}><form className="asset-form" onSubmit={submitHandover}><label>Employee name<input value={assignForm.employeeName} onChange={event => setAssignForm({ ...assignForm, employeeName: event.target.value })} required /></label><label>Employee ID<input value={assignForm.employeeId} onChange={event => setAssignForm({ ...assignForm, employeeId: event.target.value })} /></label><label>Condition at handover<select value={assignForm.conditionOnIssue} onChange={event => setAssignForm({ ...assignForm, conditionOnIssue: event.target.value })}><option>NEW</option><option>EXCELLENT</option><option>GOOD</option><option>FAIR</option><option>DAMAGED</option></select></label><label>Accessories<input value={assignForm.accessories} onChange={event => setAssignForm({ ...assignForm, accessories: event.target.value })} placeholder="Charger, bag…" /></label><label>Notes<input value={assignForm.remarks} onChange={event => setAssignForm({ ...assignForm, remarks: event.target.value })} /></label><PhotoField label="Add handover photo" value={assignForm.photo} onChange={photo => setAssignForm({ ...assignForm, photo })} /><button className="asset-action-primary form-submit" type="submit" disabled={busy}>{busy ? <CircleNotch size={18} className="ph-spin" /> : <UserCheck size={18} />} Confirm handover</button></form></Modal>}
 
-                  <h3 style={{ fontSize: '0.85rem', color: '#f59e0b', textTransform: 'uppercase', marginBottom: '15px' }}>Audit Ledger History</h3>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                    {detailData.loading ? ( <CircleNotch size={20} className="ph-spin" color="#f59e0b"/> ) 
-                    : detailData.history.length === 0 ? ( <span style={{ color: '#64748b', fontSize: '0.9rem' }}>No audit history found.</span> ) 
-                    : ( detailData.history.map((h, idx) => (
-                        <div key={idx} style={{ background: 'rgba(0,0,0,0.2)', padding: '15px', borderRadius: '10px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.95rem', marginBottom: '4px' }}>{h.action.replace(/_/g, ' ')}</div>
-                            <div style={{ color: '#94a3b8', fontSize: '0.85rem' }}>{h.remarks}</div>
-                          </div>
-                          <div style={{ textAlign: 'right' }}>
-                            <div style={{ color: '#8b5cf6', fontSize: '0.85rem', fontWeight: 'bold' }}>{h.performedBy}</div>
-                            <div style={{ color: '#64748b', fontSize: '0.75rem', marginTop: '4px' }}>{h.timestamp}</div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </>
-              )}
+        {returnItem && <Modal title="Return this item" subtitle={`${returnItem.name} · ${returnItem.assetId}`} onClose={() => setReturnItem(null)}><form className="asset-form" onSubmit={submitReturn}><label>Condition on return<select value={returnForm.conditionOnReturn} onChange={event => setReturnForm({ ...returnForm, conditionOnReturn: event.target.value, returnStatus: event.target.value === 'DAMAGED' ? 'UNDER_MAINTENANCE' : returnForm.returnStatus })}><option>NEW</option><option>EXCELLENT</option><option>GOOD</option><option>FAIR</option><option>DAMAGED</option></select></label><label>Next status<select value={returnForm.returnStatus} onChange={event => setReturnForm({ ...returnForm, returnStatus: event.target.value })}><option value="AVAILABLE">Available</option><option value="UNDER_MAINTENANCE">Maintenance</option></select></label><label>Return notes<input value={returnForm.remarks} onChange={event => setReturnForm({ ...returnForm, remarks: event.target.value })} placeholder="Note visible damage or missing parts" /></label><PhotoField label="Add current return photo" value={returnForm.photo} onChange={photo => setReturnForm({ ...returnForm, photo })} /><button className="asset-action-primary form-submit" type="submit" disabled={busy}>{busy ? <CircleNotch size={18} className="ph-spin" /> : <CheckCircle size={18} />} Record return</button></form></Modal>}
 
-              {activeDetailTab === 'assignments' && (
-                <>
-                  <h3 style={{ fontSize: '0.85rem', color: '#10b981', textTransform: 'uppercase', marginBottom: '15px' }}>Custody &amp; Return Ledger</h3>
-                  {detailData.loading ? <CircleNotch size={20} className="ph-spin" color="#10b981" /> : detailData.assignments.length === 0 ? (
-                    <span style={{ color: '#64748b', fontSize: '0.9rem' }}>No assignment records found.</span>
-                  ) : (
-                    <div style={{ overflowX: 'auto' }}><table className="modern-table"><thead><tr><th>Custodian</th><th>Assignment</th><th>Issued</th><th>Returned</th><th>Condition</th><th>Status</th></tr></thead><tbody>
-                      {detailData.assignments.map(item => <tr key={item.assignmentId}><td>{item.employeeName}</td><td>{item.assignmentId}</td><td>{item.assignedDate}</td><td>{item.returnedDate || '—'}</td><td>{item.conditionOnReturn || item.conditionOnIssue || '—'}</td><td>{item.status}</td></tr>)}
-                    </tbody></table></div>
-                  )}
-                </>
-              )}
-
-              {/* TAB 2: DOCUMENTS & PHOTOS */}
-              {activeDetailTab === 'documents' && (
-                <>
-                  {canManageAssets && (
-                    <form onSubmit={handleUploadSubmit} style={{ background: 'rgba(56, 189, 248, 0.05)', border: '1px dashed #8b5cf6', padding: '20px', borderRadius: '12px', marginBottom: '25px', display: 'flex', gap: '15px', alignItems: 'center', flexWrap: 'wrap' }}>
-                      <div style={{ flex: 1, minWidth: '200px' }}>
-                        <label className="data-label">Document Type</label>
-                        <select className="premium-select" style={{ width: '100%' }} value={uploadForm.type} onChange={e => setUploadForm({...uploadForm, type: e.target.value})}>
-                          <option value="PHOTO_BEFORE">Before Image (Condition)</option>
-                          <option value="PHOTO_AFTER">After Image (Repaired)</option>
-                          <option value="INVOICE">Purchase Invoice</option>
-                          <option value="WARRANTY">Warranty Card</option>
-                          <option value="REPORT">Service Report</option>
-                        </select>
-                      </div>
-                      <div style={{ flex: 1, minWidth: '200px' }}>
-                        <label className="data-label">Select File</label>
-                        <input type="file" ref={fileInputRef} className="premium-input" style={{ width: '100%', padding: '9px' }} onChange={e => setUploadForm({...uploadForm, file: e.target.files[0]})} required />
-                      </div>
-                      <button type="submit" className="premium-btn primary" style={{ height: '42px', marginTop: '22px' }} disabled={isSubmitting}>
-                        {isSubmitting ? <CircleNotch size={20} className="ph-spin" /> : <><UploadSimple size={18} weight="bold"/> Upload</>}
-                      </button>
-                    </form>
-                  )}
-
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '15px' }}>
-                    {detailData.loading ? ( <CircleNotch size={20} className="ph-spin" color="#8b5cf6"/> ) 
-                    : detailData.documents.length === 0 ? ( <span style={{ color: '#64748b', fontSize: '0.9rem' }}>No photos or documents uploaded yet.</span> ) 
-                    : ( detailData.documents.map((doc, idx) => (
-                        <a key={idx} href={doc.url} target="_blank" rel="noreferrer" style={{ display: 'block', background: 'rgba(0,0,0,0.3)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: '12px', padding: '15px', textDecoration: 'none', color: '#fff', transition: '0.2s' }} className="hover-lift">
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
-                            <Image size={24} color="#8b5cf6" weight="duotone" />
-                            <span style={{ fontSize: '0.8rem', color: '#8b5cf6', fontWeight: 'bold' }}>{doc.type}</span>
-                          </div>
-                          <div style={{ fontSize: '0.9rem', fontWeight: 'bold', marginBottom: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{doc.fileName}</div>
-                          <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{doc.date}</div>
-                        </a>
-                      ))
-                    )}
-                  </div>
-                </>
-              )}
-
-              {/* TAB 3: DISPOSAL */}
-              {activeDetailTab === 'disposal' && canManageAssets && (
-                <div style={{ background: 'rgba(239, 68, 68, 0.05)', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '16px', padding: '25px' }}>
-                  <h3 style={{ color: '#ef4444', margin: '0 0 15px 0', display: 'flex', alignItems: 'center', gap: '8px' }}><WarningCircle size={24} /> Danger Zone: Asset Disposal</h3>
-                  <p style={{ color: '#94a3b8', fontSize: '0.9rem', marginBottom: '20px' }}>Disposing an asset permanently removes it from available inventory. The audit history will be preserved.</p>
-                  
-                  <form onSubmit={handleDisposeSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                      <div>
-                        <label className="data-label">Disposal Method *</label>
-                        <select className="premium-select" style={{ width: '100%' }} value={disposeForm.method} onChange={e => setDisposeForm({...disposeForm, method: e.target.value})}>
-                          <option value="E-WASTE">E-Waste / Recycled</option>
-                          <option value="SOLD">Sold</option>
-                          <option value="SCRAPPED">Scrapped / Destroyed</option>
-                          <option value="LOST">Lost / Stolen</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="data-label">Salvage Value (₹) (If Sold)</label>
-                        <input type="number" className="premium-input" style={{ width: '100%' }} value={disposeForm.value} onChange={e => setDisposeForm({...disposeForm, value: e.target.value})} placeholder="e.g. 5000" disabled={disposeForm.method !== 'SOLD'} />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="data-label">Reason / Remarks *</label>
-                      <input type="text" className="premium-input" style={{ width: '100%' }} value={disposeForm.reason} onChange={e => setDisposeForm({...disposeForm, reason: e.target.value})} placeholder="e.g. Laptop motherboard dead, beyond repair." required />
-                    </div>
-                    <button type="submit" className="premium-btn" style={{ background: '#ef4444', color: '#fff', padding: '14px', marginTop: '10px' }} disabled={isSubmitting}>
-                      {isSubmitting ? <CircleNotch size={24} className="ph-spin" /> : "Confirm Permanent Disposal"}
-                    </button>
-                  </form>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 2. ASSIGN ASSET MODAL */}
-      {assignModal && (
-        <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setAssignModal(null); }}>
-          <div className="premium-modal glass-panel" style={{ maxWidth: '500px' }}>
-            <div className="modal-header" style={{ borderBottom: '1px solid rgba(16, 185, 129, 0.2)' }}>
-              <div><h2 style={{ color: '#10b981', margin: 0 }}>Assign Asset</h2><div className="modal-subtitle" style={{ color: '#cbd5e1' }}>{assignModal.assetId} - {assignModal.name}</div></div>
-              <button className="close-btn" onClick={() => setAssignModal(null)}><X size={24} /></button>
-            </div>
-            <form onSubmit={handleAssignSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '20px' }}>
-              <div><label className="data-label">Employee Name *</label><input type="text" className="premium-input" style={{ width: '100%' }} value={assignForm.employeeName} onChange={e => setAssignForm({ ...assignForm, employeeName: e.target.value })} required /></div>
-              <div><label className="data-label">Employee ID</label><input type="text" className="premium-input" style={{ width: '100%' }} value={assignForm.employeeId} onChange={e => setAssignForm({ ...assignForm, employeeId: e.target.value })} /></div>
-              <div><label className="data-label">Accessories Provided</label><input type="text" className="premium-input" style={{ width: '100%' }} value={assignForm.accessories} onChange={e => setAssignForm({ ...assignForm, accessories: e.target.value })} /></div>
-              <div><label className="data-label">Remarks</label><input type="text" className="premium-input" style={{ width: '100%' }} value={assignForm.remarks} onChange={e => setAssignForm({ ...assignForm, remarks: e.target.value })} /></div>
-              <button type="submit" className="premium-btn" style={{ background: '#10b981', color: '#0f172a', padding: '14px' }} disabled={isSubmitting}>{isSubmitting ? <CircleNotch className="ph-spin" /> : "Confirm Handover"}</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 3. RETURN ASSET MODAL */}
-      {returnModal && (
-        <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setReturnModal(null); }}>
-          <div className="premium-modal glass-panel" style={{ maxWidth: '500px' }}>
-            <div className="modal-header" style={{ borderBottom: '1px solid rgba(245, 158, 11, 0.2)' }}>
-              <div><h2 style={{ color: '#f59e0b', margin: 0 }}>Return Asset</h2><div className="modal-subtitle" style={{ color: '#cbd5e1' }}>{returnModal.assetId} - {returnModal.name}</div></div>
-              <button className="close-btn" onClick={() => setReturnModal(null)}><X size={24} /></button>
-            </div>
-            <form onSubmit={handleReturnSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '20px' }}>
-              <div><label className="data-label">Condition On Return</label><select className="premium-select" style={{ width: '100%' }} value={returnForm.conditionOnReturn} onChange={e => setReturnForm({ ...returnForm, conditionOnReturn: e.target.value })}><option value="GOOD">Good</option><option value="FAIR">Fair</option><option value="DAMAGED">Damaged</option></select></div>
-              <div><label className="data-label">Target Inventory Status</label><select className="premium-select" style={{ width: '100%' }} value={returnForm.returnStatus} onChange={e => setReturnForm({ ...returnForm, returnStatus: e.target.value })}><option value="AVAILABLE">Available</option><option value="UNDER_MAINTENANCE">Maintenance</option></select></div>
-              <div><label className="data-label">Remarks</label><input type="text" className="premium-input" style={{ width: '100%' }} value={returnForm.remarks} onChange={e => setReturnForm({ ...returnForm, remarks: e.target.value })} /></div>
-              <button type="submit" className="premium-btn" style={{ background: '#f59e0b', color: '#0f172a', padding: '14px' }} disabled={isSubmitting}>{isSubmitting ? <CircleNotch className="ph-spin" /> : "Confirm Return"}</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {maintenanceReqModal && (
-        <div className="modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setMaintenanceReqModal(null); }}>
-          <div className="premium-modal glass-panel" style={{ maxWidth: '520px', padding: '26px' }}>
-            <div className="modal-header"><div><h2 style={{ color: '#ef4444', margin: 0 }}>Report an Issue</h2><div className="modal-subtitle">{maintenanceReqModal.assetId} · {maintenanceReqModal.name}</div></div><button className="close-btn" onClick={() => setMaintenanceReqModal(null)}><X size={24} /></button></div>
-            <form onSubmit={handleMaintenanceSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <label className="data-label">Issue description *<textarea className="premium-input" style={{ width: '100%', minHeight: '100px', marginTop: '7px' }} value={maintenanceForm.issue} onChange={event => setMaintenanceForm({ issue: event.target.value })} placeholder="Describe the fault or service required" required /></label>
-              <button type="submit" className="premium-btn" style={{ background: '#ef4444', color: '#fff', padding: '13px' }} disabled={isSubmitting}>{isSubmitting ? <CircleNotch size={18} className="ph-spin" /> : 'Create maintenance ticket'}</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {transferReqModal && (
-        <div className="modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setTransferReqModal(null); }}>
-          <div className="premium-modal glass-panel" style={{ maxWidth: '520px', padding: '26px' }}>
-            <div className="modal-header"><div><h2 style={{ color: '#a855f7', margin: 0 }}>Request Asset Transfer</h2><div className="modal-subtitle">{transferReqModal.assetId} · {transferReqModal.name}</div></div><button className="close-btn" onClick={() => setTransferReqModal(null)}><X size={24} /></button></div>
-            <form onSubmit={handleTransferSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-              <label className="data-label">Destination branch *<select className="premium-select" style={{ width: '100%', marginTop: '7px' }} value={transferForm.toBranch} onChange={event => setTransferForm({ ...transferForm, toBranch: event.target.value })} required><option value="">Select destination</option>{dbData.branches.filter(branch => branch !== myBranch).map(branch => <option key={branch} value={branch}>{branch}</option>)}</select></label>
-              <label className="data-label">Transfer reason<textarea className="premium-input" style={{ width: '100%', minHeight: '75px', marginTop: '7px' }} value={transferForm.remarks} onChange={event => setTransferForm({ ...transferForm, remarks: event.target.value })} /></label>
-              <button type="submit" className="premium-btn" style={{ background: '#a855f7', color: '#fff', padding: '13px' }} disabled={isSubmitting}>{isSubmitting ? <CircleNotch size={18} className="ph-spin" /> : 'Submit transfer request'}</button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {qrModal && (
-        <div className="modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setQrModal(null); }}>
-          <div className="premium-modal glass-panel asset-print-card" style={{ maxWidth: '380px', padding: '28px', textAlign: 'center' }}>
-            <button className="close-btn" style={{ marginLeft: 'auto' }} onClick={() => setQrModal(null)}><X size={22} /></button>
-            <h2 style={{ margin: '0 0 4px', color: '#fff' }}>{qrModal.name}</h2>
-            <div style={{ color: '#a855f7', fontFamily: 'monospace', fontWeight: 800 }}>{qrModal.assetId}</div>
-            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrModal.assetId)}`} alt={`QR code for ${qrModal.assetId}`} style={{ display: 'block', width: 220, height: 220, margin: '18px auto', background: '#fff', padding: 8, borderRadius: 10 }} />
-            <div style={{ color: '#94a3b8', fontSize: '.82rem', marginBottom: 16 }}>{qrModal.category} · {qrModal.branch}</div>
-            <button type="button" className="premium-btn primary" style={{ margin: '0 auto' }} onClick={() => window.print()}>Print asset label</button>
-          </div>
-        </div>
-      )}
-
-      <style>{`
-        .premium-dashboard-wrapper { font-family: 'Inter', sans-serif; color: #f8fafc; }
-        .glass-panel { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); }
-        .hover-lift { transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1); cursor: default; }
-        .hover-lift:hover { transform: translateY(-4px); box-shadow: 0 20px 40px -10px rgba(0,0,0,0.7); border-color: rgba(255, 255, 255, 0.1); background: rgba(30, 41, 59, 0.8); }
-
-        .top-hero-section { display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-wrap: wrap; gap: 20px; }
-        .hero-text h1 { font-size: 2.2rem; font-weight: 800; margin: 0 0 5px 0; color: #fff; }
-        .hero-text p { color: #94a3b8; margin: 0; font-size: 1rem; }
-        
-        .premium-btn { border: none; padding: 10px 20px; border-radius: 12px; font-weight: bold; font-size: 0.9rem; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; cursor: pointer; }
-        .premium-btn.primary { background: #3b82f6; color: #fff; }
-        .premium-btn.secondary { background: rgba(255,255,255,0.05); color: #fff; border: 1px solid rgba(255,255,255,0.1); }
-        .premium-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-        .control-action-bar { border-radius: 16px; padding: 15px; margin-bottom: 30px; }
-        .filter-group { display: flex; gap: 12px; flex-wrap: wrap; }
-        .premium-input, .premium-select { background: rgba(0,0,0,0.2); color: #fff; border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 15px; font-size: 0.9rem; outline: none; transition: 0.2s; box-sizing: border-box; }
-        .premium-input { flex: 1; min-width: 250px; }
-        .premium-input:focus, .premium-select:focus { border-color: #3b82f6; background: rgba(0,0,0,0.4); }
-        .premium-select option { background: #0f1523; color: #fff; padding: 10px; font-weight: bold; }
-        .data-label { color: #94a3b8; font-size: 0.8rem; font-weight: bold; display: block; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
-
-        .empty-state-card { background: rgba(15, 23, 42, 0.5); border: 1px dashed rgba(255,255,255,0.1); border-radius: 16px; padding: 50px 20px; text-align: center; color: #94a3b8; font-size: 1.1rem; font-weight: bold; display: flex; flex-direction: column; align-items: center; }
-        
-        .clean-list { display: flex; flex-direction: column; gap: 15px; }
-        .clean-row { display: flex; justify-content: space-between; align-items: center; padding: 20px; border-radius: 16px; flex-wrap: wrap; gap: 15px; }
-        .cl-left { display: flex; align-items: center; gap: 20px; }
-        .cl-icon { width: 48px; height: 48px; border-radius: 12px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
-        .cl-title { font-weight: 800; color: #fff; margin-bottom: 4px; display: flex; align-items: center; }
-        .cl-sub { font-size: 0.85rem; color: #94a3b8; }
-        
-        .status-pill { padding: 6px 14px; border-radius: 20px; font-size: 0.75rem; font-weight: 800; display: inline-block; text-transform: uppercase; letter-spacing: 0.5px; width: max-content; }
-        .status-pill.green { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
-        .status-pill.blue { background: rgba(59, 130, 246, 0.15); color: #3b82f6; border: 1px solid rgba(59, 130, 246, 0.3); }
-        .status-pill.red { background: rgba(239, 68, 68, 0.15); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.3); }
-        .status-pill.orange { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
-        .status-pill.gray { background: rgba(148, 163, 184, 0.15); color: #94a3b8; border: 1px solid rgba(148, 163, 184, 0.3); }
-
-        .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); z-index: 99999; display: flex; justify-content: center; align-items: center; padding: 20px; }
-        .premium-modal { width: 100%; border-radius: 24px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
-        .close-btn { background: none; border: none; color: #64748b; cursor: pointer; transition: 0.2s; display: flex; }
-        .close-btn:hover { color: #ef4444; }
-
-        .tab-btn { background: transparent; border: none; color: #94a3b8; font-weight: bold; font-size: 0.9rem; padding: 8px 16px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: 0.3s; }
-        .tab-btn:hover { background: rgba(255,255,255,0.05); color: #fff; }
-        .tab-btn.active { background: #3b82f6; color: #fff; }
-        .tab-btn.active-red { background: #ef4444; color: #fff; }
-        .text-red:hover { color: #ef4444; }
-        @media print { body * { visibility: hidden !important; } .asset-print-card, .asset-print-card * { visibility: visible !important; } .asset-print-card { position: fixed !important; inset: 10mm auto auto 10mm !important; width: 80mm !important; box-shadow: none !important; background: #fff !important; color: #111827 !important; } .asset-print-card h2, .asset-print-card div { color: #111827 !important; } .asset-print-card button { display: none !important; } }
-      `}</style>
+        {qrItem && <Modal title="Asset label" subtitle={qrItem.assetId} onClose={() => setQrItem(null)}><div className="asset-qr-card"><h3>{qrItem.name}</h3><img src={`https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(qrItem.assetId)}`} alt={`QR code for ${qrItem.assetId}`} /><p>{qrItem.branch} · {qrItem.location || 'Unassigned space'}</p><button type="button" className="asset-action-primary" onClick={() => window.print()}>Print label</button></div></Modal>}
+      </main>
     </Layout>
   );
 }

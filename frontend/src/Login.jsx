@@ -1,21 +1,20 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, ArrowRight, CircleNotch, Compass, List, UsersThree, X } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowRight, CircleNotch, Compass, UsersThree } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
-import ipcsLogo from './ipcs-logo.png';
 import './Login.css';
-import PublicSiteSections from './PublicSiteSections';
+import PublicSiteHeader from './PublicSiteHeader';
 
 export default function Login() {
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('home');
-  const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const isLoginPage = pathname === '/login';
 
   const [showIntro, setShowIntro] = useState(false);
   const [videoOpacity, setVideoOpacity] = useState(1);
@@ -33,21 +32,7 @@ export default function Login() {
     }
   }, [navigate]);
 
-  const openLogin = () => {
-    setError('');
-    setMenuOpen(false);
-    setActiveTab('login');
-  };
-
-  const showHomeSection = (sectionId) => {
-    setActiveTab('home');
-    setMenuOpen(false);
-    if (sectionId === 'home') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      return;
-    }
-    window.setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
-  };
+  const openLogin = () => { setError(''); navigate('/login'); };
 
   const handleLogin = async (event) => {
     event.preventDefault();
@@ -84,8 +69,12 @@ export default function Login() {
       <div className="login-intro" style={{ opacity: videoOpacity }}>
         <video
           src="/Intro.mp4"
+          className="login-intro-video"
           autoPlay
           playsInline
+          controls={false}
+          preload="auto"
+          aria-label="IPCS Global introduction"
           onTimeUpdate={(event) => {
             if (event.target.duration - event.target.currentTime <= 1) setVideoOpacity(0);
           }}
@@ -101,26 +90,10 @@ export default function Login() {
       <div className="portal-glow portal-glow-one" aria-hidden="true" />
       <div className="portal-glow portal-glow-two" aria-hidden="true" />
 
-      <header className="portal-header">
-        <Link className="portal-brand" to="/" aria-label="IPCS Global home" onClick={() => { setActiveTab('home'); setMenuOpen(false); }}>
-          <img src={ipcsLogo} alt="IPCS Global" />
-        </Link>
-        <button className="portal-menu-toggle" type="button" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={menuOpen} onClick={() => setMenuOpen(value => !value)}>
-          {menuOpen ? <X size={20} /> : <List size={21} />}
-        </button>
-        <nav className={`portal-nav${menuOpen ? ' is-open' : ''}`} aria-label="Main navigation">
-          <button className={activeTab === 'home' ? 'portal-nav-link active' : 'portal-nav-link'} onClick={() => showHomeSection('home')}>Home</button>
-          <a className="portal-nav-link" href="/recruiter?section=mou" target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)}>Recruiter</a>
-          <button className="portal-nav-link" onClick={() => showHomeSection('about')}>About Us</button>
-          <button className="portal-nav-link" onClick={() => showHomeSection('placement')}>Placements</button>
-          <button className="portal-nav-link" onClick={() => showHomeSection('partners')}>Partners</button>
-          <button className="portal-nav-link" onClick={() => showHomeSection('updates')}>Updates</button>
-        </nav>
-        <button className="portal-login-button" onClick={openLogin}>Login <ArrowRight size={17} weight="bold" /></button>
-      </header>
+      <PublicSiteHeader />
 
       <AnimatePresence mode="wait">
-        {activeTab === 'home' ? (
+        {!isLoginPage ? (
           <motion.section
             key="home"
             id="home"
@@ -160,7 +133,7 @@ export default function Login() {
             transition={{ duration: 0.32, ease: 'easeOut' }}
           >
             <div className="login-context">
-              <button className="login-back" type="button" onClick={() => setActiveTab('home')}><ArrowLeft size={18} /> Back to home</button>
+              <Link className="login-back" to="/"><ArrowLeft size={18} /> Back to home</Link>
               <div className="portal-eyebrow"><span /> Secure workspace</div>
               <h1>Your work<br /><span>starts here.</span></h1>
               <p>Sign in to continue to IPCS Global’s placement, training, and operations workspace.</p>
@@ -185,8 +158,6 @@ export default function Login() {
           </motion.section>
         )}
       </AnimatePresence>
-
-      {activeTab === 'home' && <PublicSiteSections onLogin={openLogin} />}
 
       <footer className="portal-footer"><span>© IPCS Global</span><span>Learn · Connect · Grow</span></footer>
     </main>

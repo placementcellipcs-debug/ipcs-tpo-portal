@@ -375,7 +375,7 @@ async function uploadToDrive(file, folderId) {
 }
 
 module.exports = { 
-  doc, getCache, refreshCache, hasAccess, getFuzzyHeader, 
+  doc, drive, getCache, refreshCache, hasAccess, getFuzzyHeader,
   sendIPCSMail, uploadToDrive,
   getTpoEmail, getBranchManagerEmail, getAllTpoEmails, getAllBranchManagerEmails, getSuperAdminEmails,
   getUserEmailById

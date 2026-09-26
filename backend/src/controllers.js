@@ -26,7 +26,7 @@ function parseUserAgent(ua = '') {
 }
 
 const { 
-  doc, getCache, refreshCache, hasAccess, getFuzzyHeader, 
+  doc, drive, getCache, refreshCache, hasAccess, getFuzzyHeader,
   sendIPCSMail, uploadToDrive
 } = require('./config');
 
@@ -1860,7 +1860,7 @@ exports.getPublicPartners = (req, res) => {
     rows.forEach(row => {
       const documentStatus = getValByHeader(row, ['documentstatus', 'docstatus']).toLowerCase().trim();
       const mouLink = getValByHeader(row, ['mou', 'moulink']).trim();
-      if (documentStatus !== 'completed' && !mouLink) return;
+      if (documentStatus !== 'completed') return;
 
       const companyName = getValByHeader(row, ['companyname', 'company']).trim();
       if (!companyName) return;
@@ -1877,6 +1877,99 @@ exports.getPublicPartners = (req, res) => {
   } catch (err) {
     console.error('Error fetching public partners:', err.message);
     res.status(500).json({ success: false, message: 'Partner directory is temporarily unavailable.' });
+  }
+};
+
+const PLACEMENT_POSTER_FOLDER_ID = '1YwMEIp5Nyn3Hi9kLlBxHfxE2okK6Tqm4';
+let placementPosterCache = { expiresAt: 0, posters: [], byId: new Map() };
+
+async function getPlacementPosterFiles(forceRefresh = false) {
+  if (!forceRefresh && placementPosterCache.expiresAt > Date.now()) return placementPosterCache;
+
+  const posters = [];
+  const visited = new Set();
+  const listFolder = async (folderId, folderPath = '', depth = 0) => {
+    if (visited.has(folderId) || depth > 5) return;
+    visited.add(folderId);
+    let pageToken;
+    const children = [];
+    do {
+      const response = await drive.files.list({
+        q: `'${folderId}' in parents and trashed = false`,
+        pageSize: 1000,
+        pageToken,
+        orderBy: 'name',
+        fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink,thumbnailLink)',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true
+      });
+      children.push(...(response.data.files || []));
+      pageToken = response.data.nextPageToken;
+    } while (pageToken);
+
+    for (const file of children) {
+      if (file.mimeType === 'application/vnd.google-apps.folder') {
+        await listFolder(file.id, folderPath ? `${folderPath} / ${file.name}` : file.name, depth + 1);
+      } else if (String(file.mimeType || '').startsWith('image/')) {
+        posters.push({
+          id: file.id,
+          name: file.name,
+          folder: folderPath || 'Placement creatives',
+          mimeType: file.mimeType,
+          modifiedTime: file.modifiedTime || '',
+          webViewLink: file.webViewLink || ''
+        });
+      }
+    }
+  };
+
+  await listFolder(PLACEMENT_POSTER_FOLDER_ID);
+  posters.sort((a, b) => (b.modifiedTime || '').localeCompare(a.modifiedTime || '') || a.name.localeCompare(b.name));
+  placementPosterCache = {
+    expiresAt: Date.now() + 5 * 60 * 1000,
+    posters,
+    byId: new Map(posters.map(poster => [poster.id, poster]))
+  };
+  return placementPosterCache;
+}
+
+exports.getPublicPlacementPosters = async (req, res) => {
+  try {
+    const { posters } = await getPlacementPosterFiles();
+    res.json({
+      success: true,
+      posters: posters.map(poster => ({
+        ...poster,
+        imageUrl: `/api/public/placement-posters/${encodeURIComponent(poster.id)}`
+      }))
+    });
+  } catch (err) {
+    console.error('Error reading placement posters from Drive:', err.message);
+    res.status(503).json({ success: false, message: 'Placement posters are temporarily unavailable.' });
+  }
+};
+
+exports.streamPublicPlacementPoster = async (req, res) => {
+  try {
+    const { byId } = await getPlacementPosterFiles();
+    const poster = byId.get(String(req.params.fileId || ''));
+    if (!poster) return res.status(404).end();
+
+    const response = await drive.files.get(
+      { fileId: poster.id, alt: 'media', supportsAllDrives: true },
+      { responseType: 'stream' }
+    );
+    res.set('Content-Type', poster.mimeType);
+    res.set('Cache-Control', 'public, max-age=3600');
+    response.data.on('error', error => {
+      console.error('Error streaming placement poster:', error.message);
+      if (!res.headersSent) res.status(502).end();
+      else res.end();
+    });
+    response.data.pipe(res);
+  } catch (err) {
+    console.error('Error opening placement poster:', err.message);
+    res.status(502).end();
   }
 };
 

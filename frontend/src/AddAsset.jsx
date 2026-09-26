@@ -1,8 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { 
   CircleNotch, Laptop, Barcode, ShieldCheck, 
-  MapPinLine, Plus, Trash, CheckCircle, WarningCircle 
+  MapPinLine, Plus, Trash, CheckCircle, WarningCircle, Image as ImageIcon, UploadSimple
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
@@ -41,6 +41,9 @@ export default function AddAsset() {
   });
 
   const [customFields, setCustomFields] = useState([]);
+  const [assetPhoto, setAssetPhoto] = useState(null);
+  const [assetPhotoPreview, setAssetPhotoPreview] = useState('');
+  const assetPhotoPreviewRef = useRef('');
   
   // 🚨 NEW: State for "Other" Custom Location
   const [customLocation, setCustomLocation] = useState('');
@@ -58,6 +61,18 @@ export default function AddAsset() {
       }
     }).finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => () => {
+    if (assetPhotoPreviewRef.current) URL.revokeObjectURL(assetPhotoPreviewRef.current);
+  }, []);
+
+  const handleAssetPhotoChange = file => {
+    if (assetPhotoPreviewRef.current) URL.revokeObjectURL(assetPhotoPreviewRef.current);
+    const previewUrl = file ? URL.createObjectURL(file) : '';
+    assetPhotoPreviewRef.current = previewUrl;
+    setAssetPhoto(file);
+    setAssetPhotoPreview(previewUrl);
+  };
 
   const handleCategoryChange = (e) => {
     setAsset({ ...asset, category: e.target.value, subcategory: '' });
@@ -101,18 +116,23 @@ export default function AddAsset() {
     }
 
     try {
-      const res = await axios.post(`${API_BASE}/api/v1/assets/add`, {
-        asset: { ...asset, location: finalLocation },
-        customFields: customFields.filter(f => f.name && f.value),
-        userName: tpoData.name,
-        userEmail: tpoData.email
-      });
+      const formData = new FormData();
+      formData.append('asset', JSON.stringify({ ...asset, location: finalLocation }));
+      formData.append('customFields', JSON.stringify(customFields.filter(f => f.name && f.value)));
+      formData.append('userName', tpoData.name || '');
+      formData.append('userEmail', tpoData.email || '');
+      if (assetPhoto) formData.append('photo', assetPhoto);
+      const res = await axios.post(`${API_BASE}/api/v1/assets/add`, formData);
       if(res.data.success) {
         setNotification({ type: 'success', text: `Asset ${res.data.assetId} successfully registered!` });
         // Reset form
         setAsset({ name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', location: '', condition: 'NEW', brand: '', model: '', purchaseDate: '', purchaseCost: '', vendor: '', invoice: '', warrantyEnd: '' });
         setCustomLocation('');
         setCustomFields([]);
+        if (assetPhotoPreviewRef.current) URL.revokeObjectURL(assetPhotoPreviewRef.current);
+        assetPhotoPreviewRef.current = '';
+        setAssetPhoto(null);
+        setAssetPhotoPreview('');
       }
     } catch (err) {
       setNotification({ type: 'error', text: err.response?.data?.message || 'Failed to register asset.' });
@@ -264,6 +284,13 @@ export default function AddAsset() {
                 </div>
               </div>
 
+              <div className="asset-photo-upload">
+                <div className="asset-photo-upload-copy"><ImageIcon size={22} weight="duotone" /><span><b>Asset condition photo</b><small>Capture the item when it enters the register.</small></span></div>
+                <label className="asset-photo-picker">{assetPhoto ? <CheckCircle size={18} /> : <UploadSimple size={18} />} {assetPhoto ? 'Replace photo' : 'Add photo'}<input type="file" accept="image/*" capture="environment" onChange={event => handleAssetPhotoChange(event.target.files?.[0] || null)} /></label>
+                {assetPhoto && <span className="asset-photo-filename">{assetPhoto.name}</span>}
+                {assetPhotoPreview && <img className="asset-photo-preview" src={assetPhotoPreview} alt="Asset preview" />}
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '20px' }}>
                 <div>
                   <label className="data-label">Purchase Date</label>
@@ -295,6 +322,16 @@ export default function AddAsset() {
           🎨 PREMIUM CSS FOR ADD ASSET
       --------------------------------------------------------- */}
       <style>{`
+        .asset-photo-upload { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 18px 0 22px; padding: 15px; border: 1px dashed rgba(59,130,246,.42); border-radius: 14px; background: rgba(59,130,246,.06); }
+        .asset-photo-upload-copy { display: flex; align-items: center; gap: 11px; margin-right: auto; color: #60a5fa; }
+        .asset-photo-upload-copy b, .asset-photo-upload-copy small { display: block; }
+        .asset-photo-upload-copy b { color: #e2e8f0; font-size: .88rem; }
+        .asset-photo-upload-copy small { margin-top: 3px; color: #94a3b8; font-size: .73rem; }
+        .asset-photo-picker { display: inline-flex; align-items: center; gap: 8px; padding: 9px 12px; border: 1px solid rgba(59,130,246,.5); border-radius: 10px; color: #bfdbfe; font-size: .8rem; font-weight: 800; cursor: pointer; }
+        .asset-photo-picker input { position: absolute; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
+        .asset-photo-filename { max-width: 180px; overflow: hidden; color: #94a3b8; font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+        .asset-photo-preview { width: 72px; height: 72px; border: 1px solid rgba(255,255,255,.16); border-radius: 12px; object-fit: cover; }
+        @media (max-width: 700px) { .asset-photo-upload { align-items: flex-start; } .asset-photo-picker { margin-left: 32px; } }
         .premium-dashboard-wrapper { font-family: 'Inter', sans-serif; color: #f8fafc; }
         
         .glass-panel { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); box-shadow: 0 10px 30px -10px rgba(0,0,0,0.5); }

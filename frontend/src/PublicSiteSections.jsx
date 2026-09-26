@@ -100,12 +100,18 @@ function SectionHeading({ eyebrow, title, description, align = 'left' }) {
   );
 }
 
-export default function PublicSiteSections({ onLogin }) {
+export default function PublicSiteSections({ onLogin, page = 'all' }) {
   const [partners, setPartners] = useState([]);
-  const [partnersLoading, setPartnersLoading] = useState(true);
+  const [partnersLoaded, setPartnersLoaded] = useState(false);
   const [partnersError, setPartnersError] = useState(false);
+  const [posters, setPosters] = useState([]);
+  const [postersLoaded, setPostersLoaded] = useState(false);
+  const [postersError, setPostersError] = useState(false);
+  const partnersLoading = page === 'partners' && !partnersLoaded;
+  const postersLoading = page === 'placement' && !postersLoaded;
 
   useEffect(() => {
+    if (page !== 'partners') return undefined;
     let active = true;
     axios.get(`${API_BASE}/api/public/partners`)
       .then(response => {
@@ -114,12 +120,27 @@ export default function PublicSiteSections({ onLogin }) {
         setPartners(Array.isArray(response.data.partners) ? response.data.partners : []);
       })
       .catch(() => { if (active) setPartnersError(true); })
-      .finally(() => { if (active) setPartnersLoading(false); });
+      .finally(() => { if (active) setPartnersLoaded(true); });
     return () => { active = false; };
-  }, []);
+  }, [page]);
+
+  useEffect(() => {
+    if (page !== 'placement') return undefined;
+    let active = true;
+    axios.get(`${API_BASE}/api/public/placement-posters`)
+      .then(response => {
+        if (!active) return;
+        if (!response.data?.success) throw new Error('Placement poster gallery unavailable');
+        setPosters(Array.isArray(response.data.posters) ? response.data.posters : []);
+      })
+      .catch(() => { if (active) setPostersError(true); })
+      .finally(() => { if (active) setPostersLoaded(true); });
+    return () => { active = false; };
+  }, [page]);
 
   return (
     <div className="public-story">
+      {['about', 'all'].includes(page) && <>
       <section className="public-about-section" id="about">
         <div className="public-story-shell">
           <SectionHeading
@@ -173,7 +194,9 @@ export default function PublicSiteSections({ onLogin }) {
           </div>
         </div>
       </section>
+      </>}
 
+      {['placement', 'all'].includes(page) && <>
       <section className="public-placement-section" id="placement">
         <div className="public-story-shell">
           <SectionHeading
@@ -207,9 +230,30 @@ export default function PublicSiteSections({ onLogin }) {
               })}
             </div>
           </div>
+          <div className="public-poster-gallery">
+            <div className="public-subheading"><span>PLACEMENT POSTERS</span><h3>Career moments, shared across IPCS.</h3></div>
+            {postersLoading ? (
+              <div className="public-poster-grid" aria-label="Loading placement posters">{[1, 2, 3, 4].map(item => <div className="public-poster-skeleton" key={item} />)}</div>
+            ) : postersError ? (
+              <div className="public-poster-empty" role="status">The poster gallery is temporarily unavailable. Please check the Drive folder sharing with the portal’s Drive account.</div>
+            ) : posters.length === 0 ? (
+              <div className="public-poster-empty">No poster images were found in the shared placement creatives folder.</div>
+            ) : (
+              <div className="public-poster-grid">
+                {posters.map(poster => (
+                  <a className="public-poster-card" key={poster.id} href={`${API_BASE}${poster.imageUrl}`} target="_blank" rel="noreferrer">
+                    <div className="public-poster-image"><img src={`${API_BASE}${poster.imageUrl}`} alt={poster.name} loading="lazy" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></div>
+                    <div className="public-poster-meta"><span>{poster.folder}</span><h4>{poster.name}</h4></div>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </section>
+      </>}
 
+      {['partners', 'all'].includes(page) && <>
       <section className="public-partners-section" id="partners">
         <div className="public-story-shell">
           <div className="public-partners-heading">
@@ -241,7 +285,9 @@ export default function PublicSiteSections({ onLogin }) {
           <p className="public-partners-footnote">Signed MOU PDFs linked here are publicly available. Pending agreements remain in the staff portal.</p>
         </div>
       </section>
+      </>}
 
+      {['updates', 'all'].includes(page) && <>
       <section className="public-updates-section" id="updates">
         <div className="public-story-shell">
           <SectionHeading eyebrow="From IPCS Global" title="Ideas, updates, and learning." description="Read about digital marketing, automation, career growth, and the people shaping our learning community." />
@@ -266,6 +312,7 @@ export default function PublicSiteSections({ onLogin }) {
       <section className="public-bottom-cta">
         <div className="public-story-shell"><span>YOUR NEXT STEP STARTS HERE</span><h2>Learn. Connect. Grow.</h2><p>Sign in to continue to the IPCS Global placement and learning portal.</p><button type="button" className="portal-primary-button" onClick={onLogin}>Enter the portal <ArrowRight size={18} /></button></div>
       </section>
+      </>}
     </div>
   );
 }

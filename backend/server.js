@@ -128,6 +128,8 @@ app.post('/api/tpo/reports', controllers.getReports);
 app.post('/api/tpo/talentino', controllers.getTalentino);
 app.post('/api/tpo/clients', controllers.getClients);
 app.get('/api/public/partners', controllers.getPublicPartners);
+app.get('/api/public/placement-posters', controllers.getPublicPlacementPosters);
+app.get('/api/public/placement-posters/:fileId', controllers.streamPublicPlacementPoster);
 app.get('/api/tpo/clients/:id', controllers.getClientById);
 app.post('/api/tpo/clients/update', upload.single('logoFile'), controllers.updateClient);
 app.post('/api/tpo/clients/request-mou', controllers.requestMou);
@@ -197,11 +199,11 @@ app.post('/api/tpo/activity', controllers.updateTpoActivity);
 // 🚨 ASSET MANAGEMENT (ERP) ROUTES
 // ---------------------------------------------------------
 app.get('/api/v1/assets/form-data', assetControllers.getRegistrationData);
-app.post('/api/v1/assets/add', requireSession('asset-admin'), assetControllers.addAsset);
+app.post('/api/v1/assets/add', requireSession('asset-admin'), upload.single('photo'), assetControllers.addAsset);
 app.get('/api/v1/assets', assetControllers.getAssets);
 app.get('/api/v1/assets/:assetId/details', assetControllers.getAssetDetails);
-app.post('/api/v1/assets/assign', assetControllers.assignAsset);
-app.post('/api/v1/assets/return', assetControllers.returnAsset);
+app.post('/api/v1/assets/assign', upload.single('photo'), assetControllers.assignAsset);
+app.post('/api/v1/assets/return', upload.single('photo'), assetControllers.returnAsset);
 app.get('/api/v1/assets/dashboard', assetControllers.getAssetDashboardStats);
 
 // 🚨 INVENTORY, TRANSFERS, AND MAINTENANCE ROUTES

@@ -111,7 +111,9 @@
 .portal-login-note { margin-top: 23px; padding-top: 17px; border-top: 1px solid #edf0f5; color: #8a96a7; text-align: center; font-size: .72rem; }
 .portal-footer { width: min(1280px, calc(100% - 72px)); min-height: 60px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(15, 35, 64, .08); color: #8895a7; font-size: .72rem; font-weight: 700; letter-spacing: .03em; }
 .login-intro { position: fixed; inset: 0; z-index: 99999; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; transition: opacity 1s ease-in-out; }
-.login-intro video { width: 100%; height: 100%; object-fit: cover; transform: scale(1.02); }
+.login-intro video { display: block; width: 100vw; height: 100dvh; max-width: 100vw; max-height: 100dvh; object-fit: contain; object-position: center; background: #000; }
+@media (orientation: portrait) { .login-intro video { width: 100vw; height: 100dvh; object-fit: contain; } }
+@media (orientation: landscape) { .login-intro video { width: 100vw; height: 100dvh; object-fit: contain; } }
 
 @keyframes portal-rise { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes portal-card-in { from { opacity: 0; transform: translateY(13px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }

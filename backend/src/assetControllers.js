@@ -1,5 +1,6 @@
 const { assetDoc, getAssetCache, refreshAssetCache } = require('./assetConfig');
-const { getCache } = require('./config');
+const { getCache, uploadToDrive } = require('./config');
+const { randomBytes } = require('crypto');
 
 // Helper to safely map sheet headers regardless of spaces or cases
 const getH = (headers, target) => {
@@ -16,6 +17,29 @@ const rowValue = (row, field) => {
   const key = Object.keys(values).find(header => normalize(header) === normalize(field));
   return key ? values[key] : '';
 };
+const parseJsonField = (value, fallback) => {
+  if (typeof value !== 'string') return value ?? fallback;
+  try { return JSON.parse(value); } catch { return fallback; }
+};
+const sheetByKey = key => assetDoc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes(key));
+
+async function saveAssetPhoto(assetId, file, documentType, userName, fileUrl = '') {
+  if (!file) return '';
+  const docSheet = sheetByKey('documents');
+  if (!docSheet) throw new Error('Asset photo history is unavailable. Add the Documents sheet before uploading photos.');
+  const storedUrl = fileUrl || await uploadToDrive(file, process.env.DRIVE_FOLDER_ID || '');
+  const headers = docSheet.headerValues;
+  await docSheet.addRow({
+    [getH(headers, 'Document_ID')]: `DOC-${randomBytes(5).toString('hex').toUpperCase()}`,
+    [getH(headers, 'Asset_ID')]: assetId,
+    [getH(headers, 'Document_Type')]: documentType,
+    [getH(headers, 'File_Name')]: file.originalname,
+    [getH(headers, 'Drive_URL')]: storedUrl,
+    [getH(headers, 'Uploaded_By')]: userName || '',
+    [getH(headers, 'Uploaded_At')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+  });
+  return storedUrl;
+}
 const isAssetAdmin = req => {
   const user = req.portalUser || {};
   const role = String(user.role || '').toUpperCase();
@@ -175,21 +199,28 @@ exports.getRegistrationData = async (req, res) => {
 // =========================================================
 exports.addAsset = async (req, res) => {
   try {
-    const { asset, customFields, userName, userEmail } = req.body || {};
+    const { userName, userEmail } = req.body || {};
+    const asset = parseJsonField(req.body?.asset, {});
+    const customFields = parseJsonField(req.body?.customFields, []);
     if (!asset?.name || !asset?.category || !asset?.branch) return res.status(400).json({ success: false, message: 'Asset name, category, and branch are required.' });
     if (!canAccessAssetBranch(req, asset.branch)) return res.status(403).json({ success: false, message: 'You cannot register an asset for that branch.' });
 
-    const getSheet = (keyword) => assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes(keyword));
-    const assetSheet = getSheet('assets');
-    const customSheet = getSheet('assetcustomdata');
-    const historySheet = getSheet('history');
+    const assetSheet = sheetByKey('assets');
+    const customSheet = sheetByKey('assetcustomdata');
+    const historySheet = sheetByKey('history');
+    const documentsSheet = sheetByKey('documents');
 
     if (!assetSheet) return res.status(404).json({ success: false, message: "Asset sheet missing in database." });
+    if (req.file && !documentsSheet) return res.status(503).json({ success: false, message: 'Asset photo history is unavailable. No asset was registered.' });
 
     // Generate Unique IDs
     const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-    const uniqueHash = Math.random().toString(36).substring(2, 6).toUpperCase();
-    const assetId = `IPCS-AST-${Date.now().toString().slice(-4)}${uniqueHash}`;
+    const existingAssetIds = new Set((await assetSheet.getRows()).map(row => String(rowValue(row, 'Asset_ID') || '').trim().toUpperCase()));
+    let assetId;
+    do {
+      assetId = `IPCS-AST-${new Date().getFullYear()}-${randomBytes(4).toString('hex').toUpperCase()}`;
+    } while (existingAssetIds.has(assetId));
+    const photoUrl = req.file ? await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || '') : '';
 
     // 1. Write to Main Assets Sheet
     const aH = assetSheet.headerValues;
@@ -212,6 +243,8 @@ exports.addAsset = async (req, res) => {
       [getH(aH, 'Created_By')]: userName,
       [getH(aH, 'Timestamp')]: timestamp,
     });
+
+    if (req.file) await saveAssetPhoto(assetId, req.file, 'PHOTO_REGISTERED', userName, photoUrl);
 
     // 2. Write Dynamic Data to Custom Data Sheet (EAV Model)
     if (customSheet && customFields && customFields.length > 0) {
@@ -242,7 +275,7 @@ exports.addAsset = async (req, res) => {
     }
 
     refreshAssetCache();
-    res.json({ success: true, assetId, message: "Asset successfully registered!" });
+    res.json({ success: true, assetId, photoUrl, message: "Asset successfully registered!" });
 
   } catch (err) {
     console.error(err);
@@ -258,6 +291,7 @@ exports.getAssets = async (req, res) => {
     const cache = getAssetCache();
     const rawAssets = (cache.assets || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'Branch')));
 
+    const documents = cache.documents || [];
     const assets = rawAssets.map(r => {
       const rd = r.toObject();
       const getVal = (str) => {
@@ -265,9 +299,14 @@ exports.getAssets = async (req, res) => {
         return k ? rd[k] : '';
       };
 
+      const assetId = getVal('assetid');
+      const photos = documents.filter(document =>
+        String(rowValue(document, 'Asset_ID') || '').trim().toLowerCase() === String(assetId).trim().toLowerCase() &&
+        String(rowValue(document, 'Document_Type') || '').toUpperCase().startsWith('PHOTO')
+      );
       return {
         rowNumber: r.rowNumber,
-        assetId: getVal('assetid'),
+        assetId,
         name: getVal('assetname'),
         category: getVal('category'),
         subcategory: getVal('subcategory'),
@@ -283,7 +322,8 @@ exports.getAssets = async (req, res) => {
         invoice: getVal('invoicenumber'),
         warrantyEnd: getVal('warrantyend'),
         createdBy: getVal('createdby'),
-        timestamp: getVal('timestamp')
+        timestamp: getVal('timestamp'),
+        photoUrl: photos.length ? rowValue(photos[photos.length - 1], 'Drive_URL') : ''
       };
     }).filter(a => a.assetId !== '');
 
@@ -331,7 +371,7 @@ exports.getAssetDetails = async (req, res) => {
     }).map(r => {
       const rd = r.toObject();
       const getVal = (str) => { const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, '')); return k ? rd[k] : ''; };
-      return { assignmentId: getVal('assignmentid'), employeeName: getVal('employeename'), assignedBy: getVal('assignedby'), assignedDate: getVal('assigneddate'), returnedDate: getVal('returneddate'), status: getVal('status') };
+      return { assignmentId: getVal('assignmentid'), employeeName: getVal('employeename'), assignedBy: getVal('assignedby'), assignedDate: getVal('assigneddate'), returnedDate: getVal('returneddate'), conditionOnIssue: getVal('conditiononissue'), conditionOnReturn: getVal('conditiononreturn'), status: getVal('status') };
     }).reverse();
 
     // 4. Audit Trail
@@ -366,6 +406,7 @@ exports.getAssetDetails = async (req, res) => {
 exports.assignAsset = async (req, res) => {
   try {
     const { assetId, employeeName, employeeId, conditionOnIssue, accessories, remarks, userName } = req.body;
+    if (!assetId || !String(employeeName || '').trim()) return res.status(400).json({ success: false, message: 'Asset and employee name are required.' });
 
     const getSheet = (keyword) => assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes(keyword));
     const assetSheet = getSheet('assets');
@@ -385,6 +426,8 @@ exports.assignAsset = async (req, res) => {
     if (!canAccessAssetBranch(req, assetBranch)) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
     const currentStatus = String(assetRow.get(getH(assetSheet.headerValues, 'Status')) || '').toUpperCase();
     if (currentStatus !== 'AVAILABLE') return res.status(409).json({ success: false, message: 'Only available assets can be assigned.' });
+    if (req.file && !sheetByKey('documents')) return res.status(503).json({ success: false, message: 'Asset photo history is unavailable. No assignment was made.' });
+    const issuePhotoUrl = req.file ? await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || '') : '';
 
     const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     const assignmentId = `ASN-${Date.now()}`;
@@ -416,6 +459,8 @@ exports.assignAsset = async (req, res) => {
         [getH(asgH, 'Status')]: 'ACTIVE'
       });
     }
+
+    if (req.file) await saveAssetPhoto(assetId, req.file, 'PHOTO_ISSUE', userName, issuePhotoUrl);
 
     // 4. Log in 17_History
     if (historySheet) {
@@ -467,6 +512,8 @@ exports.returnAsset = async (req, res) => {
     if (String(assetRow.get(getH(aH, 'Status')) || '').toUpperCase() !== 'ASSIGNED') {
       return res.status(409).json({ success: false, message: 'This asset does not have an active assignment to return.' });
     }
+    if (req.file && !sheetByKey('documents')) return res.status(503).json({ success: false, message: 'Asset photo history is unavailable. No return was recorded.' });
+    const returnPhotoUrl = req.file ? await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || '') : '';
 
     const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     const targetStatus = returnStatus || (conditionOnReturn === 'DAMAGED' ? 'UNDER_MAINTENANCE' : 'AVAILABLE');
@@ -499,6 +546,8 @@ exports.returnAsset = async (req, res) => {
         await activeAsg.save();
       }
     }
+
+    if (req.file) await saveAssetPhoto(assetId, req.file, 'PHOTO_RETURN', userName, returnPhotoUrl);
 
     // 4. Log in 17_History
     if (historySheet) {

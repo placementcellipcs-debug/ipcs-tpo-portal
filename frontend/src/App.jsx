@@ -27,6 +27,7 @@ const ExamsHub = lazy(() => import('./ExamsHub'));
 const Branches = lazy(() => import('./Branches'));
 const TrainerLog = lazy(() => import('./TrainerLog'));
 const SecurityActivity = lazy(() => import('./SecurityActivity'));
+const PublicSitePage = lazy(() => import('./PublicSitePage'));
 
 // ASSET MANAGEMENT (ERP)
 const AssetList = lazy(() => import('./AssetList'));
@@ -59,6 +60,11 @@ function App() {
       <Suspense fallback={<div role="status" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#f6f8fb', color: '#263746', fontFamily: 'Inter, sans-serif' }}>Loading IPCS workspace…</div>}>
       <Routes>
         <Route path="/" element={<Login />} />
+        <Route path="/login" element={<Login />} />
+        <Route path="/about" element={<PublicSitePage page="about" />} />
+        <Route path="/placements" element={<PublicSitePage page="placement" />} />
+        <Route path="/partners" element={<PublicSitePage page="partners" />} />
+        <Route path="/updates" element={<PublicSitePage page="updates" />} />
         <Route path="/recruiter" element={<RecruiterMOU />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/students" element={<StudentsDirectory />} />
