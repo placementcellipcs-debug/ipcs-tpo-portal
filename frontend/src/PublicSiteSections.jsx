@@ -332,6 +332,17 @@ export default function PublicSiteSections({ page = 'all' }) {
               <div className="public-poster-empty" role="status">The poster gallery is temporarily unavailable. Please check the Drive folder sharing with the portal’s Drive account.</div>
             ) : posters.length === 0 ? (
               <div className="public-poster-empty">No poster images were found in the shared placement creatives folder.</div>
+            ) : page === 'placement' ? (
+              <div className="public-poster-marquee" aria-label="Recent placement posters">
+                <div className="public-poster-marquee-track">
+                  {[...posters, ...posters].map((poster, index) => (
+                    <a className="public-poster-card public-poster-marquee-card" key={`${poster.id}-${index}`} href={`${API_BASE}${poster.imageUrl}`} target="_blank" rel="noreferrer" aria-hidden={index >= posters.length || undefined} tabIndex={index >= posters.length ? -1 : undefined}>
+                      <div className="public-poster-image"><img src={`${API_BASE}${poster.imageUrl}`} alt={poster.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></div>
+                      <div className="public-poster-meta"><span>{poster.folder}</span><h4>{poster.name}</h4></div>
+                    </a>
+                  ))}
+                </div>
+              </div>
             ) : (
               <div className="public-poster-grid">
                 {posters.map(poster => (

@@ -23,6 +23,11 @@
 .asset-primary-tabs button:hover { color: #eaf4ff; background: rgba(255,255,255,.04); }
 .asset-primary-tabs button.active { border-color: rgba(81,153,225,.3); color: #e9f4ff; background: linear-gradient(120deg,rgba(31,112,184,.27),rgba(23,80,131,.2)); box-shadow: inset 0 0 0 1px rgba(56,135,207,.08); }
 .asset-primary-tabs button > span { min-width: 21px; padding: 2px 5px; border-radius: 99px; color: #bddcff; background: rgba(64,134,195,.19); text-align: center; font-size: .64rem; }
+.asset-primary-tabs button.asset-route-tab { border-color: rgba(112,146,186,.12); color: #a4b8ce; background: rgba(255,255,255,.025); }
+.asset-primary-tabs button.asset-route-tab:hover { border-color: rgba(91,157,218,.28); color: #e6f3ff; background: rgba(35,92,146,.17); }
+.asset-primary-tabs button.asset-create-tab { border-color: rgba(55,157,221,.25); color: #a9dcff; background: rgba(33,117,182,.13); }
+.asset-row-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.asset-register-open.asset-return-inline { border-color: rgba(230,170,75,.22); color: #ffd18b; background: rgba(110,72,17,.13); }
 .asset-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; min-height: 52px; margin: 6px 0 16px; padding: 0 2px; }
 .asset-registry-intro { display: grid; gap: 4px; }
 .asset-registry-intro b { color: #e7f1fb; font-size: .83rem; }

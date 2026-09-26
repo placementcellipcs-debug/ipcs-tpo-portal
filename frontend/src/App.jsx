@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './Login';
 
 const Dashboard = lazy(() => import('./Dashboard'));
+const AdminCommandCenter = lazy(() => import('./AdminCommandCenter'));
 const StudentsDirectory = lazy(() => import('./StudentsDirectory'));
 const JobTracker = lazy(() => import('./JobTracker'));
 const PlacedStudents = lazy(() => import('./PlacedStudents'));
@@ -34,7 +35,6 @@ const AddAsset = lazy(() => import('./AddAsset'));
 const Inventory = lazy(() => import('./Inventory'));
 const AssetTransfers = lazy(() => import('./AssetTransfers'));
 const AssetMaintenance = lazy(() => import('./AssetMaintenance'));
-const AssetDashboard = lazy(() => import('./AssetDashboard'));
 const AssetSettings = lazy(() => import('./AssetSettings'));
 
 // MEDIA & DESIGN PORTAL
@@ -70,6 +70,7 @@ function App() {
         <Route path="/updates" element={<PublicSitePage page="updates" />} />
         <Route path="/recruiter" element={<Navigate to="/placements#recruiter-partnerships" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/admin-command" element={<AdminCommandCenter />} />
         <Route path="/students" element={<StudentsDirectory />} />
         <Route path="/tracker" element={<JobTracker />} />
         <Route path="/placed" element={<PlacedStudents />} />
@@ -100,7 +101,7 @@ function App() {
         <Route path="/assets/inventory" element={<Inventory />} />
         <Route path="/assets/transfers" element={<AssetTransfers />} />
         <Route path="/assets/maintenance" element={<AssetMaintenance />} />
-        <Route path="/assets/dashboard" element={<AssetDashboard />} />
+        <Route path="/assets/dashboard" element={<Navigate to="/assets" replace />} />
         <Route path="/assets/settings" element={<AssetSettings />} />
 
         {/* MODULAR MEDIA & DESIGN PORTAL ROUTES */}

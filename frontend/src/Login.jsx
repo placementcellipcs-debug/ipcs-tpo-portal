@@ -7,6 +7,14 @@ import { API_BASE } from './apiConfig';
 import './Login.css';
 import PublicSiteHeader from './PublicSiteHeader';
 
+const getLandingPath = account => {
+  const role = String(account?.role || '').toUpperCase();
+  const isSuperAdmin = String(account?.accessType || '').toLowerCase() === 'superadmin';
+  if (role === 'BRANCH ASSET MANAGER' && !isSuperAdmin) return '/assets';
+  if (isSuperAdmin || role.includes('SYSTEM ADMIN') || role.includes('GENERAL MANAGER') || role.includes('ZONAL PLACEMENT HEAD') || role === 'TECHNICAL HEAD') return '/admin-command';
+  return '/dashboard';
+};
+
 export default function Login() {
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
@@ -16,6 +24,11 @@ export default function Login() {
   const { pathname } = useLocation();
   const isLoginPage = pathname === '/login';
 
+  const navigateToLanding = () => {
+    try { navigate(getLandingPath(JSON.parse(localStorage.getItem('tpoData') || '{}'))); }
+    catch { navigate('/dashboard'); }
+  };
+
   const [showIntro, setShowIntro] = useState(false);
   const [videoOpacity, setVideoOpacity] = useState(1);
 
@@ -24,9 +37,7 @@ export default function Login() {
     if (!tpoData) return;
     try {
       const parsed = JSON.parse(tpoData);
-      const userRole = String(parsed.role || '').toUpperCase();
-      const isSuperAdmin = parsed.accessType === 'superadmin';
-      navigate(userRole === 'BRANCH ASSET MANAGER' && !isSuperAdmin ? '/assets/dashboard' : '/dashboard');
+      navigate(getLandingPath(parsed));
     } catch {
       localStorage.removeItem('tpoData');
     }
@@ -48,11 +59,10 @@ export default function Login() {
 
       const account = res.data.tpo || res.data.tpoData;
       localStorage.setItem('tpoData', JSON.stringify(account));
-      const userRole = String(account?.role || '').toUpperCase();
-      const isSuperAdmin = account?.accessType === 'superadmin';
+      const landingPath = getLandingPath(account);
 
-      if (userRole === 'BRANCH ASSET MANAGER' && !isSuperAdmin) {
-        navigate('/assets/dashboard');
+      if (landingPath === '/assets') {
+        navigate(landingPath);
       } else {
         setShowIntro(true);
       }
@@ -77,8 +87,8 @@ export default function Login() {
           onTimeUpdate={(event) => {
             if (event.target.duration - event.target.currentTime <= 1) setVideoOpacity(0);
           }}
-          onEnded={() => navigate('/dashboard')}
-          onError={() => navigate('/dashboard')}
+          onEnded={navigateToLanding}
+          onError={navigateToLanding}
         />
       </div>
     );

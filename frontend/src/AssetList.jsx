@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, Barcode, Buildings, Camera, CheckCircle, CircleNotch, ClockCounterClockwise, Cube, Image as ImageIcon, MagnifyingGlass, MapPinLine, QrCode, UserCheck, Wrench, X } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowRight, ArrowsLeftRight, Barcode, Buildings, Camera, CheckCircle, CircleNotch, ClockCounterClockwise, Cube, Gear, Image as ImageIcon, MagnifyingGlass, MapPinLine, Package, Plus, QrCode, UserCheck, Wrench, X } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
 import './AssetManagement.css';
@@ -112,7 +112,7 @@ export default function AssetList() {
     return !query || [item.assetId, item.name, item.brand, item.model, item.category, item.subcategory, item.branch, item.location, item.vendor].some(value => clean(value).includes(query));
   };
   const spaceAssets = branchAssets.filter(asset => (asset.location?.trim() || 'Unassigned space') === selectedSpace && matchesSearch(asset));
-  const registryAssets = assets.filter(asset => matchesSearch(asset) && (assetView === 'retired' ? asset.status === 'DISPOSED' : asset.status !== 'DISPOSED')).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  const registryAssets = assets.filter(asset => matchesSearch(asset) && (assetView === 'retired' ? asset.status === 'DISPOSED' : assetView === 'assignments' ? asset.status === 'ASSIGNED' : asset.status !== 'DISPOSED')).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   const selectedBranchStats = {
     total: branchAssets.length,
     assigned: branchAssets.filter(item => item.status === 'ASSIGNED').length,
@@ -206,7 +206,7 @@ export default function AssetList() {
         {message && <div className="asset-toast" role="status">{message}<button type="button" onClick={() => setMessage('')} aria-label="Dismiss"><X size={16} /></button></div>}
         <section className="asset-overview-hero">
           <div className="asset-overview-icon"><Barcode size={25} weight="duotone" /></div>
-          <div className="asset-overview-copy"><span>IPCS · OPERATIONS</span><h1>Asset management</h1><p>Browse each branch, open an office space, and inspect the equipment assigned there.</p></div>
+          <div className="asset-overview-copy"><span>IPCS · OPERATIONS</span><h1>Asset management</h1><p>Explore the branch inventory, manage assignment and return, and follow each item through its full lifecycle.</p></div>
           {canManage && <button type="button" className="asset-action-primary" onClick={() => navigate('/assets/add')}>Register an item <ArrowRight size={17} /></button>}
         </section>
 
@@ -222,7 +222,13 @@ export default function AssetList() {
         <nav className="asset-primary-tabs" aria-label="Asset views">
           <button type="button" className={assetView === 'branches' ? 'active' : ''} onClick={() => { setAssetView('branches'); setSearch(''); }}><Buildings size={17} /> Branches &amp; spaces</button>
           <button type="button" className={assetView === 'register' ? 'active' : ''} onClick={() => { setAssetView('register'); setSearch(''); }}><Barcode size={17} /> Item register <span>{assets.filter(item => item.status !== 'DISPOSED').length}</span></button>
+          <button type="button" className={assetView === 'assignments' ? 'active' : ''} onClick={() => { setAssetView('assignments'); setSearch(''); }}><UserCheck size={17} /> Assignments <span>{assets.filter(item => item.status === 'ASSIGNED').length}</span></button>
           <button type="button" className={assetView === 'retired' ? 'active' : ''} onClick={() => { setAssetView('retired'); setSearch(''); }}><ClockCounterClockwise size={17} /> Retired <span>{assets.filter(item => item.status === 'DISPOSED').length}</span></button>
+          {canManage && <button type="button" className="asset-route-tab asset-create-tab" onClick={() => navigate('/assets/add')}><Plus size={17} /> Register new</button>}
+          <button type="button" className="asset-route-tab" onClick={() => navigate('/assets/transfers')}><ArrowsLeftRight size={17} /> Transfers</button>
+          <button type="button" className="asset-route-tab" onClick={() => navigate('/assets/maintenance')}><Wrench size={17} /> Maintenance</button>
+          <button type="button" className="asset-route-tab" onClick={() => navigate('/assets/inventory')}><Package size={17} /> Consumables</button>
+          {canManage && <button type="button" className="asset-route-tab" onClick={() => navigate('/assets/settings')}><Gear size={17} /> Vendors &amp; settings</button>}
         </nav>
 
         <div className="asset-toolbar">
@@ -230,22 +236,22 @@ export default function AssetList() {
             <button type="button" onClick={() => { selectedBranchRef.current = ''; setSelectedBranch(''); setSelectedSpace(''); }}>Branches</button>
             {selectedBranch && <><span>/</span><button type="button" onClick={() => setSelectedSpace('')}>{selectedBranch}</button></>}
             {selectedSpace && <><span>/</span><strong>{selectedSpace}</strong></>}
-          </div> : <div className="asset-registry-intro"><b>{assetView === 'retired' ? 'Retired asset records' : 'All registered items'}</b><span>Search by asset code, name, branch, room, or vendor.</span></div>}
+          </div> : <div className="asset-registry-intro"><b>{assetView === 'retired' ? 'Retired asset records' : assetView === 'assignments' ? 'Current assignments' : 'All registered items'}</b><span>{assetView === 'assignments' ? 'Track item custodians, issue condition, and return status.' : 'Search by asset code, name, branch, room, or vendor.'}</span></div>}
           {(selectedSpace && assetView === 'branches' || assetView !== 'branches') && <label className="asset-search"><MagnifyingGlass size={17} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder={assetView === 'branches' ? 'Search this space' : 'Search asset register'} /></label>}
         </div>
 
         {loading ? (
           <div className="asset-state-card"><CircleNotch size={28} className="ph-spin" /><p>Loading branch inventory…</p></div>
         ) : assetView !== 'branches' ? (
-          <section className="asset-register-panel" aria-label={assetView === 'retired' ? 'Retired assets' : 'Asset register'}>
-            {registryAssets.length ? <div className="asset-register-scroll"><table className="asset-register-table"><thead><tr><th>Asset</th><th>Branch &amp; space</th><th>Vendor</th><th>Condition</th><th>Status</th><th><span className="sr-only">Open</span></th></tr></thead><tbody>
+          <section className="asset-register-panel" aria-label={assetView === 'retired' ? 'Retired assets' : assetView === 'assignments' ? 'Assigned assets' : 'Asset register'}>
+            {registryAssets.length ? <div className="asset-register-scroll"><table className="asset-register-table"><thead><tr><th>Asset</th><th>Branch &amp; space</th><th>{assetView === 'assignments' ? 'Current custodian' : 'Vendor'}</th><th>Condition</th><th>Status</th><th><span className="sr-only">Open</span></th></tr></thead><tbody>
               {registryAssets.map(item => <tr key={item.assetId}>
                 <td><button type="button" className="asset-register-item" onClick={() => openDetails(item)}><b>{item.name}</b><span>{item.assetId}</span></button></td>
                 <td><b>{item.branch || '—'}</b><span>{item.location || 'Unassigned space'}</span></td>
-                <td>{item.vendor || '—'}</td>
+                <td>{assetView === 'assignments' ? item.assignedTo || item.employeeName || item.custodian || 'Assigned' : item.vendor || '—'}</td>
                 <td>{item.condition || 'GOOD'}</td>
                 <td><span className={`asset-status status-${String(item.status || 'AVAILABLE').toLowerCase()}`}>{statusLabel(item.status)}</span></td>
-                <td><button type="button" className="asset-register-open" onClick={() => openDetails(item)}>View details <ArrowRight size={15} /></button></td>
+                <td><div className="asset-row-actions"><button type="button" className="asset-register-open" onClick={() => openDetails(item)}>History <ArrowRight size={15} /></button>{canManage && assetView === 'assignments' && <button type="button" className="asset-register-open asset-return-inline" onClick={() => setReturnItem(item)}>Return item</button>}</div></td>
               </tr>)}
             </tbody></table></div> : <div className="asset-state-card">{assetView === 'retired' ? 'No retired items match this search.' : 'No items match this search.'}</div>}
           </section>

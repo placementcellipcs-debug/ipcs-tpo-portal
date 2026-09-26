@@ -36,6 +36,7 @@ export default function Dashboard() {
   const [events, setEvents] = useState([]);
   const [recentPlacements, setRecentPlacements] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [greetingTime, setGreetingTime] = useState(() => new Date());
 
   // Charting Data
   const [trendData, setTrendData] = useState(Array(12).fill({ m: '', Applications: 0, Placed: 0 }));
@@ -53,6 +54,12 @@ export default function Dashboard() {
   const [calendarDate, setCalendarDate] = useState(new Date());
 
   const DOMAIN_COLORS = ['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#ec4899', '#0ea5e9'];
+
+  useEffect(() => {
+    const timer = setInterval(() => setGreetingTime(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+  const greeting = greetingTime.getHours() < 12 ? 'Good Morning' : greetingTime.getHours() < 17 ? 'Good Afternoon' : 'Good Evening';
 
   // 🚨 FIXED DATE PARSER: Now handles MM/DD/YYYY directly from Google Sheets
   const parseDateRobust = (dStr) => {
@@ -309,7 +316,7 @@ export default function Dashboard() {
         {/* HEADER SECTION */}
         <div className="dashboard-header">
           <div>
-            <h1 className="dash-title">Good Morning, {String(tpoData?.name || 'Officer').split(' ')[0]} 👋</h1>
+            <h1 className="dash-title">{greeting}, {String(tpoData?.name || 'Officer').split(' ')[0]} 👋</h1>
             <p className="dash-subtitle">Here's what's happening across the network today.</p>
           </div>
           <div className="date-badge">

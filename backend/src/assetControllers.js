@@ -304,6 +304,10 @@ exports.getAssets = async (req, res) => {
         String(rowValue(document, 'Asset_ID') || '').trim().toLowerCase() === String(assetId).trim().toLowerCase() &&
         String(rowValue(document, 'Document_Type') || '').toUpperCase().startsWith('PHOTO')
       );
+      const activeAssignment = (cache.assignments || []).find(assignment =>
+        String(rowValue(assignment, 'Asset_ID') || '').trim().toLowerCase() === String(assetId).trim().toLowerCase() &&
+        String(rowValue(assignment, 'Status') || '').trim().toUpperCase() === 'ASSIGNED'
+      );
       return {
         rowNumber: r.rowNumber,
         assetId,
@@ -313,6 +317,8 @@ exports.getAssets = async (req, res) => {
         branch: getVal('branch'),
         location: getVal('location'),
         status: getVal('status') || 'AVAILABLE',
+        assignedTo: activeAssignment ? rowValue(activeAssignment, 'Employee_Name') : '',
+        assignedEmployeeId: activeAssignment ? rowValue(activeAssignment, 'Employee_ID') : '',
         condition: getVal('condition') || 'GOOD',
         brand: getVal('brand'),
         model: getVal('model'),

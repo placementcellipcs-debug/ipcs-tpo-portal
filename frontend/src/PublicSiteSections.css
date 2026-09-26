@@ -40,6 +40,12 @@
 
 .public-team-section { background: #f7f9fc; }
 .public-poster-gallery { margin-top: 58px; }
+.public-poster-marquee { overflow: hidden; margin: 18px -1px 0; padding: 7px 1px 18px; mask-image: linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent); }
+.public-poster-marquee-track { width: max-content; display: flex; gap: 16px; animation: poster-marquee-drift 48s linear infinite; }
+.public-poster-marquee:hover .public-poster-marquee-track, .public-poster-marquee:focus-within .public-poster-marquee-track { animation-play-state: paused; }
+.public-poster-marquee-card { width: 218px; flex: 0 0 218px; }
+.public-poster-marquee-card .public-poster-image { height: 274px; }
+@keyframes poster-marquee-drift { to { transform: translateX(-50%); } }
 .public-poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); gap: 16px; }
 .public-poster-card { min-width: 0; overflow: hidden; border: 1px solid #e3eaf2; border-radius: 18px; color: inherit; background: #fff; box-shadow: 0 14px 35px rgba(26, 63, 103, .065); text-decoration: none; transition: transform .2s ease, box-shadow .2s ease; }
 .public-poster-card:hover { transform: translateY(-4px); box-shadow: 0 20px 44px rgba(26, 63, 103, .13); }
@@ -226,3 +232,54 @@
 @media (prefers-reduced-motion: reduce) {
   .public-story *, .public-story *::before, .public-story *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
 }
+
+@media (prefers-reduced-motion: reduce) { .public-poster-marquee-track { animation: none; } }
+
+/* Public portal theme is shared by the login, placement and partner pages. */
+html[data-ipcs-theme='dark'] .public-portal { --portal-ink: #eff6ff; --portal-muted: #a1b2c9; color: #eff6ff; background: #081426; }
+html[data-ipcs-theme='dark'] .portal-header { border-color: rgba(187,211,239,.13); }
+html[data-ipcs-theme='dark'] .portal-nav-link { color: #afc0d4; }
+html[data-ipcs-theme='dark'] .portal-nav-link:hover, html[data-ipcs-theme='dark'] .portal-nav-link.active { color: #fff; }
+html[data-ipcs-theme='dark'] .portal-theme-toggle { border-color: rgba(163,191,222,.2); color: #d9eaff; background: rgba(28,46,69,.8); }
+html[data-ipcs-theme='dark'] .portal-menu-toggle { border-color: rgba(163,191,222,.22); color: #d9eaff; background: #15253b; }
+html[data-ipcs-theme='dark'] .portal-nav { border-color: rgba(163,191,222,.18); background: #13243a; }
+html[data-ipcs-theme='dark'] .portal-nav-link:hover, html[data-ipcs-theme='dark'] .portal-nav-link.active { background: rgba(72,125,187,.16); }
+html[data-ipcs-theme='dark'] .portal-secondary-button { border-color: rgba(163,191,222,.23); color: #e2efff; background: rgba(23,42,65,.84); }
+html[data-ipcs-theme='dark'] .portal-home-copy > p, html[data-ipcs-theme='dark'] .login-context > p { color: #a1b2c9; }
+html[data-ipcs-theme='dark'] .portal-home-copy h1, html[data-ipcs-theme='dark'] .login-context h1 { color: #f3f8ff; }
+html[data-ipcs-theme='dark'] .portal-home-copy h1 span, html[data-ipcs-theme='dark'] .login-context h1 span { color: #80b9ff; }
+html[data-ipcs-theme='dark'] .portal-trust-line, html[data-ipcs-theme='dark'] .portal-visual-caption { color: #91a7c1; }
+html[data-ipcs-theme='dark'] .portal-visual-center { border-color: rgba(163,191,222,.2); color: #69aaff; background: rgba(20,38,62,.93); }
+html[data-ipcs-theme='dark'] .portal-visual-center span { color: #e5f0ff; }
+html[data-ipcs-theme='dark'] .portal-float-card { border-color: rgba(163,191,222,.17); background: rgba(20,38,62,.92); }
+html[data-ipcs-theme='dark'] .portal-float-card b { color: #eef6ff; }
+html[data-ipcs-theme='dark'] .portal-float-card small { color: #a0b3ca; }
+html[data-ipcs-theme='dark'] .portal-login-card { border-color: rgba(163,191,222,.17); background: rgba(17,33,54,.96); }
+html[data-ipcs-theme='dark'] .login-card-heading h2, html[data-ipcs-theme='dark'] .login-card-heading p { color: #eff6ff; }
+html[data-ipcs-theme='dark'] .portal-field-label { color: #b4c4d8; }
+html[data-ipcs-theme='dark'] .portal-login-card input { border-color: rgba(156,184,217,.2); color: #f3f8ff; background: #0d1b2e; }
+html[data-ipcs-theme='dark'] .portal-login-note, html[data-ipcs-theme='dark'] .login-back { color: #95a9c1; }
+html[data-ipcs-theme='dark'] .portal-footer { color: #8398b1; }
+html[data-ipcs-theme='dark'] .public-story { color: #eaf2fc; background: #0b1728; }
+html[data-ipcs-theme='dark'] .public-about-section, html[data-ipcs-theme='dark'] .public-placement-section { background: #0b1728; }
+html[data-ipcs-theme='dark'] .public-team-section, html[data-ipcs-theme='dark'] .public-partners-section, html[data-ipcs-theme='dark'] .public-updates-section { background: #0e1c30; }
+html[data-ipcs-theme='dark'] .public-section-heading h2, html[data-ipcs-theme='dark'] .public-subheading h3, html[data-ipcs-theme='dark'] .public-about-main h3, html[data-ipcs-theme='dark'] .public-objectives-card h3, html[data-ipcs-theme='dark'] .public-team-card h3, html[data-ipcs-theme='dark'] .public-placement-tile h4, html[data-ipcs-theme='dark'] .public-blog-card h4 { color: #edf5ff; }
+html[data-ipcs-theme='dark'] .public-section-heading p, html[data-ipcs-theme='dark'] .public-about-main p, html[data-ipcs-theme='dark'] .public-team-card p, html[data-ipcs-theme='dark'] .public-placement-copy > p, html[data-ipcs-theme='dark'] .public-objectives-card li, html[data-ipcs-theme='dark'] .public-subheading > p { color: #9eafc4; }
+html[data-ipcs-theme='dark'] .public-about-card, html[data-ipcs-theme='dark'] .public-fact-card, html[data-ipcs-theme='dark'] .public-team-card, html[data-ipcs-theme='dark'] .public-objectives-card, html[data-ipcs-theme='dark'] .public-values-row > div, html[data-ipcs-theme='dark'] .public-placement-tile, html[data-ipcs-theme='dark'] .public-partner-card, html[data-ipcs-theme='dark'] .public-blog-card, html[data-ipcs-theme='dark'] .public-magazine-card { border-color: rgba(147,176,210,.15); background: #13243a; box-shadow: 0 16px 38px rgba(0,0,0,.15); }
+html[data-ipcs-theme='dark'] .public-fact-card > span:last-child, html[data-ipcs-theme='dark'] .public-values-row b, html[data-ipcs-theme='dark'] .public-placement-tile p, html[data-ipcs-theme='dark'] .public-magazine-card > span { color: #9aadc3; }
+html[data-ipcs-theme='dark'] .public-values-row small, html[data-ipcs-theme='dark'] .public-partner-card p { color: #879bb3; }
+html[data-ipcs-theme='dark'] .public-values-row b, html[data-ipcs-theme='dark'] .public-partner-card h3 { color: #e8f1fc; }
+html[data-ipcs-theme='dark'] .public-recruiter-panel, html[data-ipcs-theme='dark'] .public-talentino-card { border-color: rgba(145,177,213,.16); background: linear-gradient(120deg,#11243a,#13283b); }
+html[data-ipcs-theme='dark'] .public-recruiter-intro h3, html[data-ipcs-theme='dark'] .public-talentino-card h3, html[data-ipcs-theme='dark'] .public-placement-note b { color: #eaf4ff; }
+html[data-ipcs-theme='dark'] .public-recruiter-intro p, html[data-ipcs-theme='dark'] .public-talentino-card p, html[data-ipcs-theme='dark'] .public-placement-note small { color: #9cadc1; }
+html[data-ipcs-theme='dark'] .public-recruiter-steps article { border-color: rgba(145,177,213,.12); background: rgba(6,17,31,.38); }
+html[data-ipcs-theme='dark'] .public-recruiter-steps b { color: #dce9f8; }
+html[data-ipcs-theme='dark'] .public-recruiter-steps p { color: #95a8bf; }
+html[data-ipcs-theme='dark'] .public-partner-cta, html[data-ipcs-theme='dark'] .public-media-tab { border-color: rgba(147,176,210,.18); color: #c3d3e5; background: #13243a; }
+html[data-ipcs-theme='dark'] .public-media-tab:hover, html[data-ipcs-theme='dark'] .public-media-tab.active { border-color: rgba(89,160,225,.3); color: #c8e4ff; background: rgba(33,91,144,.28); }
+html[data-ipcs-theme='dark'] .public-poster-card { border-color: rgba(147,176,210,.18); background: #13243a; }
+html[data-ipcs-theme='dark'] .public-poster-meta h4 { color: #eaf3fd; }
+html[data-ipcs-theme='dark'] .public-poster-empty, html[data-ipcs-theme='dark'] .public-gallery-more { border-color: rgba(147,176,210,.16); color: #98abc1; background: #12243a; }
+html[data-ipcs-theme='dark'] .public-poster-image { background: #0b1728; }
+html[data-ipcs-theme='dark'] .public-placement-media { border-color: rgba(147,176,210,.12); }
+html[data-ipcs-theme='dark'] .public-blog-card > span, html[data-ipcs-theme='dark'] .public-blog-card > svg { color: #8ea4bf; }

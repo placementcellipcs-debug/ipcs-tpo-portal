@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ArrowRight, List, X } from '@phosphor-icons/react';
+import { ArrowRight, List, Moon, Sun, X } from '@phosphor-icons/react';
 import ipcsLogo from './ipcs-logo.png';
 
 const links = [
@@ -14,6 +14,16 @@ const links = [
 export default function PublicSiteHeader() {
   const { pathname } = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('ipcs-public-theme') === 'dark' ? 'dark' : 'light'; }
+    catch { return 'light'; }
+  });
+
+  useEffect(() => {
+    document.documentElement.dataset.ipcsTheme = theme;
+    document.body.style.backgroundColor = theme === 'dark' ? '#081426' : '';
+    try { localStorage.setItem('ipcs-public-theme', theme); } catch { /* Theme still applies for this visit. */ }
+  }, [theme]);
 
   return (
     <header className="portal-header">
@@ -30,7 +40,13 @@ export default function PublicSiteHeader() {
           return <Link key={link.label} className={className} to={link.to} aria-current={active ? 'page' : undefined} onClick={() => setMenuOpen(false)}>{link.label}</Link>;
         })}
       </nav>
-      <Link className="portal-login-button" to="/login" onClick={() => setMenuOpen(false)}>Staff access <ArrowRight size={17} weight="bold" /></Link>
+      <div className="portal-header-actions">
+        <button className="portal-theme-toggle" type="button" onClick={() => setTheme(value => value === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>
+          {theme === 'dark' ? <Sun size={18} weight="duotone" /> : <Moon size={18} weight="duotone" />}
+          <span>{theme === 'dark' ? 'Light' : 'Dark'}</span>
+        </button>
+        <Link className="portal-login-button" to="/login" onClick={() => setMenuOpen(false)}>Staff access <ArrowRight size={17} weight="bold" /></Link>
+      </div>
     </header>
   );
 }
