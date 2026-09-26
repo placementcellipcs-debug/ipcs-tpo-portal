@@ -51,6 +51,10 @@
 .public-poster-meta h4 { overflow: hidden; margin: 0; color: #193451; font-size: .78rem; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
 .public-poster-skeleton { height: 315px; border: 1px solid #e6edf5; border-radius: 18px; background: linear-gradient(100deg, #f0f4f8 25%, #fafbfd 40%, #f0f4f8 60%); background-size: 220% 100%; animation: poster-shimmer 1.3s ease-in-out infinite; }
 .public-poster-empty { padding: 24px; border: 1px dashed #cedbe8; border-radius: 16px; color: #6d7d91; background: #f8fbfe; font-size: .88rem; line-height: 1.7; }
+.public-gallery-more { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 18px; padding: 13px 15px; border: 1px solid #e6edf4; border-radius: 12px; color: #79899d; background: #f8fbfe; font-size: .69rem; }
+.public-gallery-more > a, .public-gallery-more > button { display: inline-flex; align-items: center; gap: 7px; padding: 0; border: 0; color: #155eef; background: transparent; font: inherit; font-size: .7rem; font-weight: 900; text-decoration: none; cursor: pointer; white-space: nowrap; }
+.public-gallery-more > a:hover, .public-gallery-more > button:hover { color: #0e459b; }
+.public-gallery-back { margin: -11px 0 17px; display: inline-flex; color: #53718e; font-size: .72rem; font-weight: 800; text-decoration: none; }
 @keyframes poster-shimmer { to { background-position: -220% 0; } }
 .public-team-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px; }
 .public-team-card { min-height: 310px; padding: 25px; transition: transform .2s ease, box-shadow .2s ease; }
@@ -64,6 +68,15 @@
 .public-team-card p { margin: 0; color: #6a7a8e; font-size: .75rem; line-height: 1.68; }
 
 .public-placement-section { background: #fff; }
+.public-recruiter-panel { margin-top: 28px; padding: 25px 27px; display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.1fr); gap: 28px; border: 1px solid #dce9f4; border-radius: 19px; background: linear-gradient(120deg,#f5faff,#f7fcfc); }
+.public-recruiter-intro h3 { margin: 9px 0 8px; color: #173451; font-size: 1.14rem; letter-spacing: -.025em; }
+.public-recruiter-intro p { margin: 0; color: #708198; font-size: .74rem; line-height: 1.65; }
+.public-recruiter-link { margin-top: 13px; display: inline-flex; align-items: center; gap: 6px; color: #155eef; font-size: .72rem; font-weight: 900; text-decoration: none; }
+.public-recruiter-steps { display: grid; gap: 9px; }
+.public-recruiter-steps article { display: grid; grid-template-columns: 32px 1fr; align-items: start; gap: 10px; padding: 10px 12px; border: 1px solid #e5edf4; border-radius: 12px; background: rgba(255,255,255,.78); }
+.public-recruiter-steps article > span { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 9px; color: #16799e; background: #e7f6fa; font-size: .6rem; font-weight: 900; }
+.public-recruiter-steps b { color: #26435e; font-size: .7rem; }
+.public-recruiter-steps p { margin: 4px 0 0; color: #78889b; font-size: .65rem; line-height: 1.5; }
 .public-placement-copy-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(300px, .78fr); gap: 20px; align-items: stretch; }
 .public-placement-copy { padding: 13px 3px 0; }
 .public-placement-copy > p { margin: 0 0 15px; color: #66778c; font-size: .88rem; line-height: 1.8; }
@@ -94,11 +107,24 @@
 .public-placement-tile h4 { margin: 15px 0 8px; color: #183351; font-size: .8rem; line-height: 1.35; }
 .public-placement-tile p { min-height: 58px; margin: 0; color: #758499; font-size: .68rem; line-height: 1.6; }
 .public-placement-tile button { margin-top: 10px; padding: 0; display: inline-flex; align-items: center; gap: 4px; border: 0; color: #155eef; background: none; font: inherit; font-size: .68rem; font-weight: 900; cursor: pointer; }
+.public-placement-tile > a { margin-top: 10px; display: inline-flex; align-items: center; gap: 4px; color: #155eef; font-size: .68rem; font-weight: 900; text-decoration: none; }
+.public-placement-tile > a:hover { color: #0f459f; }
+.public-placement-media { margin-top: 48px; padding-top: 34px; border-top: 1px solid #eaf0f5; }
+.public-placement-media .public-subheading > p { margin: 9px 0 0; color: #8190a2; font-size: .72rem; line-height: 1.6; }
+.public-media-tabs { display: flex; gap: 7px; overflow-x: auto; margin: 18px 0; padding-bottom: 5px; scrollbar-width: thin; }
+.public-media-tab { min-height: 37px; display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; padding: 0 12px; border: 1px solid #e1e9f1; border-radius: 10px; color: #62758b; background: #fff; font: inherit; font-size: .69rem; font-weight: 800; text-decoration: none; cursor: pointer; }
+.public-media-tab:hover, .public-media-tab.active { border-color: #bfdbf3; color: #145ba6; background: #edf7ff; }
+.public-media-card { display: flex; flex-direction: column; }
+.public-media-card .public-poster-meta { flex: 1; }
+.public-poster-video { display: grid; place-items: center; height: 255px; overflow: hidden; background: #0b1624; }
+.public-poster-video video { width: 100%; height: 100%; object-fit: contain; }
 
 .public-partners-section { background: #f7f9fc; }
 .public-partners-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; }
 .public-partners-heading .public-section-heading { margin-bottom: 27px; }
+.public-partner-actions { margin-bottom: 31px; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
 .public-partner-cta { margin-bottom: 31px; padding: 11px 15px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid #dbe6f1; border-radius: 11px; color: #173b67; background: #fff; font-size: .74rem; font-weight: 900; text-decoration: none; white-space: nowrap; }
+.public-partner-actions .public-partner-cta { margin-bottom: 0; }
 .public-partner-cta:hover { border-color: #b7d2ed; color: #155eef; }
 .public-partner-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .public-partner-card { min-height: 225px; padding: 20px 17px; display: flex; flex-direction: column; align-items: center; text-align: center; border: 1px solid #e5ebf2; border-radius: 17px; background: #fff; box-shadow: 0 10px 28px rgba(25, 59, 95, .04); }
@@ -153,6 +179,7 @@
   .public-story-shell { width: min(100% - 40px, 600px); }
   .public-about-section, .public-team-section, .public-placement-section, .public-partners-section, .public-updates-section { padding: 66px 0; }
   .public-about-grid, .public-placement-copy-grid, .public-updates-columns { grid-template-columns: 1fr; }
+  .public-recruiter-panel { grid-template-columns: 1fr; gap: 20px; padding: 20px; }
   .public-about-main { min-height: 0; padding: 26px; }
   .public-about-facts { grid-template-columns: repeat(3, 1fr); }
   .public-fact-card { min-height: 112px; padding: 14px 11px; flex-direction: column; align-items: flex-start; justify-content: center; gap: 3px; }
@@ -173,8 +200,10 @@
   .public-placement-tile { min-height: 205px; }
   .public-partners-heading { align-items: flex-start; flex-direction: column; gap: 0; }
   .public-partners-heading .public-section-heading { margin-bottom: 13px; }
+  .public-partner-actions { justify-content: flex-start; margin-bottom: 20px; }
   .public-partner-cta { margin-bottom: 20px; }
   .public-partner-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .public-gallery-more { align-items: flex-start; flex-direction: column; }
   .public-updates-columns { gap: 35px; }
   .public-magazine-card { min-height: 130px; }
 }

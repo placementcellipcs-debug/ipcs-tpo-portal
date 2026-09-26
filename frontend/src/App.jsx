@@ -1,8 +1,7 @@
 import { lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './Login';
 
-const RecruiterMOU = lazy(() => import('./RecruiterMOU'));
 const Dashboard = lazy(() => import('./Dashboard'));
 const StudentsDirectory = lazy(() => import('./StudentsDirectory'));
 const JobTracker = lazy(() => import('./JobTracker'));
@@ -63,9 +62,13 @@ function App() {
         <Route path="/login" element={<Login />} />
         <Route path="/about" element={<PublicSitePage page="about" />} />
         <Route path="/placements" element={<PublicSitePage page="placement" />} />
+        <Route path="/placements/posters" element={<PublicSitePage page="placement-gallery" />} />
+        <Route path="/placements/media" element={<PublicSitePage page="placement-media" />} />
         <Route path="/partners" element={<PublicSitePage page="partners" />} />
+        <Route path="/partners/all" element={<PublicSitePage page="partners-all" />} />
+        <Route path="/partners/media" element={<PublicSitePage page="partners-media" />} />
         <Route path="/updates" element={<PublicSitePage page="updates" />} />
-        <Route path="/recruiter" element={<RecruiterMOU />} />
+        <Route path="/recruiter" element={<Navigate to="/placements#recruiter-partnerships" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/students" element={<StudentsDirectory />} />
         <Route path="/tracker" element={<JobTracker />} />

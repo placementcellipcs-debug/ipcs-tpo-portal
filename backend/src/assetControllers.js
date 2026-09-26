@@ -371,7 +371,12 @@ exports.getAssetDetails = async (req, res) => {
     }).map(r => {
       const rd = r.toObject();
       const getVal = (str) => { const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, '')); return k ? rd[k] : ''; };
-      return { assignmentId: getVal('assignmentid'), employeeName: getVal('employeename'), assignedBy: getVal('assignedby'), assignedDate: getVal('assigneddate'), returnedDate: getVal('returneddate'), conditionOnIssue: getVal('conditiononissue'), conditionOnReturn: getVal('conditiononreturn'), status: getVal('status') };
+      return {
+        assignmentId: getVal('assignmentid'), employeeName: getVal('employeename'), employeeId: getVal('employeeid'),
+        assignedBy: getVal('assignedby'), assignedDate: getVal('assigneddate'), returnedDate: getVal('returneddate'),
+        conditionOnIssue: getVal('conditiononissue'), conditionOnReturn: getVal('conditiononreturn'),
+        accessories: getVal('accessories'), remarks: getVal('remarks'), status: getVal('status')
+      };
     }).reverse();
 
     // 4. Audit Trail
@@ -382,7 +387,7 @@ exports.getAssetDetails = async (req, res) => {
     }).map(r => {
       const rd = r.toObject();
       const getVal = (str) => { const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, '')); return k ? rd[k] : ''; };
-      return { action: getVal('action'), performedBy: getVal('performedby'), timestamp: getVal('timestamp'), remarks: getVal('remarks') };
+      return { action: getVal('action'), oldValue: getVal('oldvalue'), newValue: getVal('newvalue'), performedBy: getVal('performedby'), timestamp: getVal('timestamp'), remarks: getVal('remarks') };
     }).reverse();
 
     // 5. 🚨 NEW: DOCUMENTS & PHOTOS
@@ -396,7 +401,38 @@ exports.getAssetDetails = async (req, res) => {
       return { documentId: getVal('documentid'), type: getVal('documenttype'), fileName: getVal('filename'), url: getVal('driveurl'), uploadedBy: getVal('uploadedby'), date: getVal('uploadedat') };
     }).reverse();
 
-    res.json({ success: true, customSpecs, assignments, history, documents });
+    const rawData = rawAsset.toObject();
+    const readAssetValue = name => {
+      const key = Object.keys(rawData).find(value => value.toLowerCase().replace(/[^a-z0-9]/g, '') === name.toLowerCase().replace(/[^a-z0-9]/g, ''));
+      return key ? rawData[key] : '';
+    };
+    const disposals = (cache.disposals || []).filter(row => String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase() === cleanId).map(row => {
+      const rd = row.toObject();
+      const getVal = name => { const key = Object.keys(rd).find(value => value.toLowerCase().replace(/[^a-z0-9]/g, '') === name.toLowerCase().replace(/[^a-z0-9]/g, '')); return key ? rd[key] : ''; };
+      return {
+        disposalId: getVal('disposalid'), reason: getVal('reason'), method: getVal('disposalmethod'),
+        value: getVal('disposalvalue'), requestedBy: getVal('requestedby'), approvedBy: getVal('approvedby'),
+        date: getVal('disposeddate'), remarks: getVal('remarks')
+      };
+    }).reverse();
+    const asset = {
+      vendor: readAssetValue('vendor'), invoice: readAssetValue('invoicenumber'), purchaseDate: readAssetValue('purchasedate'),
+      purchaseCost: isAssetAdmin(req) ? readAssetValue('purchasecost') : '', warrantyEnd: readAssetValue('warrantyend'),
+      createdBy: readAssetValue('createdby'), registeredAt: readAssetValue('timestamp')
+    };
+    const vendorKey = String(asset.vendor || '').trim().toLowerCase();
+    const vendorDetails = (cache.vendors || []).map(row => row.toObject()).map(values => {
+      const getVal = (...names) => {
+        const key = Object.keys(values).find(header => names.some(name => header.toLowerCase().replace(/[^a-z0-9]/g, '') === name));
+        return key ? values[key] : '';
+      };
+      return {
+        id: getVal('vendorid'), name: getVal('vendorname', 'name'), contactPerson: getVal('contactperson'),
+        phone: getVal('phone', 'contactnumber'), email: getVal('email'), address: getVal('address'), gstNumber: getVal('gstnumber')
+      };
+    }).find(vendor => vendorKey && [vendor.id, vendor.name].some(value => String(value || '').trim().toLowerCase() === vendorKey));
+
+    res.json({ success: true, asset: { ...asset, vendorDetails: vendorDetails || null }, customSpecs, assignments, history, documents, disposals });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -1193,7 +1229,7 @@ exports.uploadAssetDocument = async (req, res) => {
 // =========================================================
 exports.disposeAsset = async (req, res) => {
   try {
-    const { assetId, reason, method, value, userName } = req.body || {};
+    const { assetId, reason, method, value, userName, remarks } = req.body || {};
     const cleanAssetId = String(assetId || '').trim();
     const cleanReason = String(reason || '').trim();
     const cleanMethod = String(method || '').trim();
@@ -1237,7 +1273,7 @@ exports.disposeAsset = async (req, res) => {
       [getH(dH, 'Requested_By')]: userName || '',
       [getH(dH, 'Approved_By')]: userName || '',
       [getH(dH, 'Disposed_Date')]: timestamp,
-      [getH(dH, 'Remarks')]: 'Asset permanently retired.'
+      [getH(dH, 'Remarks')]: String(remarks || '').trim() || 'Asset permanently retired.'
     });
 
     assetRow.assign({ [getH(aH, 'Status')]: 'DISPOSED' });
@@ -1252,10 +1288,10 @@ exports.disposeAsset = async (req, res) => {
        [getH(hH, 'New_Value')]: 'DISPOSED',
        [getH(hH, 'Performed_By')]: userName || '',
        [getH(hH, 'Timestamp')]: timestamp,
-       [getH(hH, 'Remarks')]: `Disposal ${disposalId}; method: ${cleanMethod} | reason: ${cleanReason}`
+       [getH(hH, 'Remarks')]: [`Disposal ${disposalId}; method: ${cleanMethod} | reason: ${cleanReason}`, String(remarks || '').trim()].filter(Boolean).join(' | ')
     });
 
     refreshAssetCache();
-    res.json({ success: true, message: "Asset has been permanently disposed." });
+    res.json({ success: true, disposalId, disposedDate: timestamp, message: "Asset has been permanently disposed." });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };

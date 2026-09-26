@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowRight, ArrowUpRight, BookOpenText, Briefcase, Buildings, CheckCircle, Compass, FilePdf, GlobeHemisphereWest, GraduationCap, Handshake, Lightbulb, Megaphone, PlayCircle, Star, Target, UsersThree } from '@phosphor-icons/react';
+import { ArrowRight, ArrowUpRight, BookOpenText, Briefcase, Buildings, CheckCircle, Compass, FilePdf, GlobeHemisphereWest, GraduationCap, Handshake, Lightbulb, Megaphone, PlayCircle, Star, Target, UsersThree, VideoCamera } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
 import './PublicSiteSections.css';
 
@@ -100,43 +101,125 @@ function SectionHeading({ eyebrow, title, description, align = 'left' }) {
   );
 }
 
-export default function PublicSiteSections({ onLogin, page = 'all' }) {
+export default function PublicSiteSections({ page = 'all' }) {
+  const location = useLocation();
   const [partners, setPartners] = useState([]);
   const [partnersLoaded, setPartnersLoaded] = useState(false);
   const [partnersError, setPartnersError] = useState(false);
+  const [partnerTotal, setPartnerTotal] = useState(0);
+  const [partnerNextOffset, setPartnerNextOffset] = useState(null);
   const [posters, setPosters] = useState([]);
   const [postersLoaded, setPostersLoaded] = useState(false);
   const [postersError, setPostersError] = useState(false);
-  const partnersLoading = page === 'partners' && !partnersLoaded;
-  const postersLoading = page === 'placement' && !postersLoaded;
+  const [posterTotal, setPosterTotal] = useState(0);
+  const [posterNextOffset, setPosterNextOffset] = useState(null);
+  const [mediaTab, setMediaTab] = useState('placement-drive');
+  const [mediaItems, setMediaItems] = useState([]);
+  const [mediaOpen, setMediaOpen] = useState(true);
+  const [mediaLoaded, setMediaLoaded] = useState(false);
+  const [mediaLoading, setMediaLoading] = useState(false);
+  const [mediaError, setMediaError] = useState(false);
+  const [mediaNextOffset, setMediaNextOffset] = useState(null);
+  const [mediaTotal, setMediaTotal] = useState(0);
+  const partnerListPage = page === 'partners-all';
+  const posterGalleryPage = page === 'placement-gallery';
+  const partnerMediaPage = page === 'partners-media';
+  const mediaPage = ['placement-media', 'partners-media'].includes(page);
+  const placementPage = ['placement', 'placement-gallery', 'placement-media', 'all'].includes(page);
+  const placementCategory = mediaPage
+    ? (partnerMediaPage
+      ? (['clients', 'client-videos'].includes(new URLSearchParams(location.search).get('category')) ? new URLSearchParams(location.search).get('category') : 'clients')
+      : (['placement-drive', 'testimonials', 'talentino', 'videos'].includes(new URLSearchParams(location.search).get('category')) ? new URLSearchParams(location.search).get('category') : 'placement-drive'))
+    : mediaTab;
+  const mediaTabs = partnerMediaPage
+    ? [['clients', 'Client stories'], ['client-videos', 'Client videos']]
+    : [['placement-drive', 'Placement drives'], ['testimonials', 'Student testimonials'], ['talentino', 'Talentino videos'], ['videos', 'All videos']];
+  const mediaBasePath = partnerMediaPage ? '/partners/media' : '/placements/media';
+  const partnersLoading = ['partners', 'partners-all', 'all'].includes(page) && !partnersLoaded;
+  const postersLoading = ['placement', 'placement-gallery', 'all'].includes(page) && !postersLoaded;
 
   useEffect(() => {
-    if (page !== 'partners') return undefined;
+    if (!['partners', 'partners-all', 'all'].includes(page)) return undefined;
     let active = true;
-    axios.get(`${API_BASE}/api/public/partners`)
+    const limit = partnerListPage ? 100 : 8;
+    axios.get(`${API_BASE}/api/public/partners?limit=${limit}&offset=0`)
       .then(response => {
         if (!active) return;
         if (!response.data?.success) throw new Error('Partner directory unavailable');
+        setPartnersError(false);
         setPartners(Array.isArray(response.data.partners) ? response.data.partners : []);
+        setPartnerTotal(Number(response.data.total) || 0);
+        setPartnerNextOffset(response.data.nextOffset ?? null);
       })
       .catch(() => { if (active) setPartnersError(true); })
       .finally(() => { if (active) setPartnersLoaded(true); });
     return () => { active = false; };
-  }, [page]);
+  }, [page, partnerListPage]);
 
   useEffect(() => {
-    if (page !== 'placement') return undefined;
+    if (!['placement', 'placement-gallery', 'all'].includes(page)) return undefined;
     let active = true;
-    axios.get(`${API_BASE}/api/public/placement-posters`)
+    const limit = posterGalleryPage ? 24 : 6;
+    axios.get(`${API_BASE}/api/public/placement-posters?category=posters&limit=${limit}&offset=0`)
       .then(response => {
         if (!active) return;
         if (!response.data?.success) throw new Error('Placement poster gallery unavailable');
+        setPostersError(false);
         setPosters(Array.isArray(response.data.posters) ? response.data.posters : []);
+        setPosterTotal(Number(response.data.total) || 0);
+        setPosterNextOffset(response.data.nextOffset ?? null);
       })
       .catch(() => { if (active) setPostersError(true); })
       .finally(() => { if (active) setPostersLoaded(true); });
     return () => { active = false; };
-  }, [page]);
+  }, [page, posterGalleryPage]);
+
+  useEffect(() => {
+    if ((!placementPage && !partnerMediaPage) || (page === 'placement' && !mediaOpen)) return undefined;
+    let active = true;
+    axios.get(`${API_BASE}/api/public/placement-posters?category=${encodeURIComponent(placementCategory)}&limit=${mediaPage ? 24 : 6}&offset=0`)
+      .then(response => {
+        if (!active) return;
+        if (!response.data?.success) throw new Error('Placement media unavailable');
+        setMediaError(false);
+        setMediaItems(response.data.posters || []);
+        setMediaNextOffset(response.data.nextOffset ?? null);
+        setMediaTotal(Number(response.data.total) || 0);
+      })
+      .catch(() => { if (active) setMediaError(true); })
+      .finally(() => { if (active) { setMediaLoaded(true); setMediaLoading(false); } });
+    return () => { active = false; };
+  }, [page, placementCategory, placementPage, partnerMediaPage, mediaPage, mediaOpen]);
+
+  const loadMore = async (kind) => {
+    const isPartner = kind === 'partners';
+    const isPoster = kind === 'posters';
+    const offset = isPartner ? partnerNextOffset : isPoster ? posterNextOffset : mediaNextOffset;
+    if (offset === null) return;
+    try {
+      const category = isPoster ? 'posters' : placementCategory;
+      const response = await axios.get(isPartner
+        ? `${API_BASE}/api/public/partners?limit=100&offset=${offset}`
+        : `${API_BASE}/api/public/placement-posters?category=${encodeURIComponent(category)}&limit=24&offset=${offset}`);
+      if (isPartner) {
+        setPartners(current => [...current, ...(response.data?.partners || [])]);
+        setPartnerNextOffset(response.data?.nextOffset ?? null);
+        return;
+      }
+      const newItems = response.data?.posters || [];
+      if (isPoster) {
+        setPosters(current => [...current, ...newItems]);
+        setPosterNextOffset(response.data.nextOffset ?? null);
+      } else {
+        setMediaItems(current => [...current, ...newItems]);
+        setMediaNextOffset(response.data.nextOffset ?? null);
+      }
+    } catch {
+      if (isPartner) setPartnersError(true);
+      else if (isPoster) setPostersError(true);
+      else setMediaError(true);
+    }
+  };
 
   return (
     <div className="public-story">
@@ -196,7 +279,7 @@ export default function PublicSiteSections({ onLogin, page = 'all' }) {
       </section>
       </>}
 
-      {['placement', 'all'].includes(page) && <>
+      {['placement', 'placement-gallery', 'placement-media', 'all'].includes(page) && <>
       <section className="public-placement-section" id="placement">
         <div className="public-story-shell">
           <SectionHeading
@@ -216,22 +299,33 @@ export default function PublicSiteSections({ onLogin, page = 'all' }) {
               <ul>{objectives.map(item => <li key={item}><CheckCircle size={18} weight="fill" />{item}</li>)}</ul>
             </article>
           </div>
+          {page === 'placement' && <section className="public-recruiter-panel" id="recruiter-partnerships">
+            <div className="public-recruiter-intro"><span className="public-card-kicker">RECRUITER PARTNERSHIPS · OPEN ACCESS</span><h3>Work with IPCS to meet career-ready talent.</h3><p>Explore the placement program and partnership process here. Recruiters can review public information without creating an account; private MOU signing links are issued directly by IPCS.</p><Link className="public-recruiter-link" to="/partners">Meet our signed partners <ArrowRight size={16} /></Link></div>
+            <div className="public-recruiter-steps">{[
+              ['01', 'Align on hiring needs', 'Discuss candidate profiles, roles, and the recruitment plan.'],
+              ['02', 'Review the agreement', 'IPCS sends an authorized representative a private MOU link.'],
+              ['03', 'Start the partnership', 'After signing, the placement team coordinates candidate introductions and drives.']
+            ].map(([number, title, copy]) => <article key={number}><span>{number}</span><div><b>{title}</b><p>{copy}</p></div></article>)}</div>
+          </section>}
           <div className="public-talentino-card">
             <div className="public-talentino-icon"><Lightbulb size={26} weight="duotone" /></div>
             <div><span className="public-card-kicker">CAREER DEVELOPMENT PROGRAM</span><h3>Talentino</h3><p>A practical program for all students, with personality development, communication skills, group discussions, mock interviews, industry and internship orientation, and interactive activities that build confidence.</p><div className="public-career-program-list">{careerPrograms.map(program => <span key={program}>{program}</span>)}</div></div>
-            <button type="button" className="public-inline-link" onClick={onLogin}>Explore the portal <ArrowRight size={17} /></button>
+            <Link className="public-inline-link" to="/placements/media?category=talentino">Explore Talentino media <ArrowRight size={17} /></Link>
           </div>
           <div className="public-placement-updates">
             <div className="public-subheading"><span>PLACEMENT UPDATES</span><h3>Stories, activities, and opportunities.</h3></div>
             <div className="public-placement-grid">
               {placementHighlights.map(item => {
                 const Icon = item.icon;
-                return <article className="public-placement-tile" key={item.title}><span className="public-tile-icon"><Icon size={22} weight="duotone" /></span><h4>{item.title}</h4><p>{item.copy}</p><button type="button" onClick={onLogin}>Explore <ArrowUpRight size={15} /></button></article>;
+                const title = item.title.toLowerCase();
+                const target = title.includes('poster') ? '/placements/posters' : title.includes('video') ? '/placements/media?category=testimonials' : title.includes('drive') ? '/placements/media?category=placement-drive' : '/placements/media?category=talentino';
+                return <article className="public-placement-tile" key={item.title}><span className="public-tile-icon"><Icon size={22} weight="duotone" /></span><h4>{item.title}</h4><p>{item.copy}</p><Link to={target}>Explore <ArrowUpRight size={15} /></Link></article>;
               })}
             </div>
           </div>
-          <div className="public-poster-gallery">
-            <div className="public-subheading"><span>PLACEMENT POSTERS</span><h3>Career moments, shared across IPCS.</h3></div>
+          {page !== 'placement-media' && <div className="public-poster-gallery">
+            <div className="public-subheading"><span>PLACEMENT POSTERS</span><h3>{posterGalleryPage ? 'Every poster in the placement gallery.' : 'Career moments, shared across IPCS.'}</h3>{posterGalleryPage && <p>Browse placement announcements and career-drive creatives from IPCS Global.</p>}</div>
+            {posterGalleryPage && <Link className="public-gallery-back" to="/placements">← Back to placements</Link>}
             {postersLoading ? (
               <div className="public-poster-grid" aria-label="Loading placement posters">{[1, 2, 3, 4].map(item => <div className="public-poster-skeleton" key={item} />)}</div>
             ) : postersError ? (
@@ -242,24 +336,45 @@ export default function PublicSiteSections({ onLogin, page = 'all' }) {
               <div className="public-poster-grid">
                 {posters.map(poster => (
                   <a className="public-poster-card" key={poster.id} href={`${API_BASE}${poster.imageUrl}`} target="_blank" rel="noreferrer">
-                    <div className="public-poster-image"><img src={`${API_BASE}${poster.imageUrl}`} alt={poster.name} loading="lazy" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></div>
+                    <div className="public-poster-image"><img src={`${API_BASE}${poster.imageUrl}`} alt={poster.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></div>
                     <div className="public-poster-meta"><span>{poster.folder}</span><h4>{poster.name}</h4></div>
                   </a>
                 ))}
               </div>
             )}
+            {!postersLoading && !postersError && posterTotal > 6 && page === 'placement' && <div className="public-gallery-more"><span>Showing {posters.length} of {posterTotal} posters</span><Link to="/placements/posters">See all posters <ArrowRight size={16} /></Link></div>}
+            {!postersLoading && posterGalleryPage && posterNextOffset !== null && <div className="public-gallery-more"><span>Showing {posters.length} of {posterTotal} posters</span><button type="button" onClick={() => loadMore('posters')}>Load more posters <ArrowRight size={16} /></button></div>}
+          </div>}
+          <div className="public-placement-media" id="placement-media">
+            <div className="public-subheading"><span>PLACEMENT MEDIA</span><h3>{mediaPage ? 'Placement drives, stories, and Talentino.' : 'More than a poster: meet the people and moments.'}</h3><p>Drive media from the shared IPCS creatives folder appears here by album. Add images or videos in folders named for placement drives, testimonials, or Talentino.</p></div>
+            <div className="public-media-tabs" role="tablist" aria-label="Placement media albums">
+              {mediaTabs.map(([key, label]) => mediaPage
+                ? <Link key={key} role="tab" aria-selected={placementCategory === key} className={`public-media-tab${placementCategory === key ? ' active' : ''}`} to={`${mediaBasePath}?category=${key}`}><VideoCamera size={16} />{label}</Link>
+                : <button key={key} type="button" role="tab" aria-selected={mediaTab === key} className={`public-media-tab${mediaTab === key ? ' active' : ''}`} onClick={() => { setMediaTab(key); setMediaOpen(true); setMediaItems([]); setMediaLoaded(false); setMediaLoading(true); setMediaError(false); }}><VideoCamera size={16} />{label}</button>)}
+            </div>
+            {mediaLoading || ((mediaPage || mediaOpen) && !mediaLoaded) ? <div className="public-poster-grid">{[1, 2, 3].map(item => <div className="public-poster-skeleton" key={item} />)}</div>
+              : mediaError ? <div className="public-poster-empty" role="status">Placement media could not be loaded. Check the shared Drive folder connection and try again.</div>
+                : !mediaLoaded && !mediaPage ? <div className="public-poster-empty">Choose an album to load its placement media.</div>
+                  : mediaLoaded && !mediaItems.length ? <div className="public-poster-empty">No media has been added to this album yet. Add files to a Drive folder named “{placementCategory === 'placement-drive' ? 'Placement Drive' : placementCategory === 'testimonials' ? 'Testimonials' : placementCategory === 'talentino' ? 'Talentino' : placementCategory === 'clients' ? 'Clients' : placementCategory === 'client-videos' ? 'Client Videos' : 'Videos'}” and it will appear here.</div>
+                    : <div className="public-poster-grid">{mediaItems.map(item => <article className="public-poster-card public-media-card" key={item.id}>
+                      {item.mediaType === 'video' ? <div className="public-poster-video"><video src={`${API_BASE}${item.imageUrl}`} controls preload="metadata" playsInline aria-label={item.name} /></div> : <a className="public-poster-image" href={`${API_BASE}${item.imageUrl}`} target="_blank" rel="noreferrer"><img src={`${API_BASE}${item.imageUrl}`} alt={item.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></a>}
+                      <div className="public-poster-meta"><span>{item.folder}</span><h4>{item.name}</h4></div>
+                    </article>)}</div>}
+            {mediaLoaded && mediaItems.length > 0 && !mediaPage && <div className="public-gallery-more"><span>Showing {mediaItems.length} of {mediaTotal} items</span><Link to={`${mediaBasePath}?category=${placementCategory}`}>See all {placementCategory === 'videos' ? 'videos' : 'media'} <ArrowRight size={16} /></Link></div>}
+            {mediaPage && mediaLoaded && mediaItems.length > 0 && <div className="public-gallery-more"><span>Showing {mediaItems.length} of {mediaTotal} items</span>{mediaNextOffset !== null && <button type="button" onClick={() => loadMore('media')}>Load more <ArrowRight size={16} /></button>}</div>}
           </div>
         </div>
       </section>
       </>}
 
-      {['partners', 'all'].includes(page) && <>
+      {['partners', 'partners-all', 'all'].includes(page) && <>
       <section className="public-partners-section" id="partners">
         <div className="public-story-shell">
           <div className="public-partners-heading">
-            <SectionHeading eyebrow="Corporate relationships" title="Partners who move opportunity forward." description="Our corporate relationships help connect technical learning with real workplace needs." />
-            <a className="public-partner-cta" href="/recruiter?section=mou" target="_blank" rel="noreferrer">Become a partner <ArrowUpRight size={17} /></a>
+            <SectionHeading eyebrow="Corporate relationships" title={partnerListPage ? 'Our complete signed partner directory.' : 'Partners who move opportunity forward.'} description="Our corporate relationships help connect technical learning with real workplace needs." />
+            <div className="public-partner-actions"><Link className="public-partner-cta" to="/partners/media?category=clients">Client stories <VideoCamera size={16} /></Link><Link className="public-partner-cta" to="/placements#recruiter-partnerships">Become a partner <ArrowUpRight size={17} /></Link></div>
           </div>
+          {partnerListPage && <Link className="public-gallery-back" to="/partners">← Back to partners</Link>}
           {partnersLoading ? (
             <div className="public-partner-grid" aria-label="Loading partners">{[1, 2, 3, 4].map(item => <div className="public-partner-skeleton" key={item} />)}</div>
           ) : partnersError ? (
@@ -283,9 +398,29 @@ export default function PublicSiteSections({ onLogin, page = 'all' }) {
             </div>
           )}
           <p className="public-partners-footnote">Signed MOU PDFs linked here are publicly available. Pending agreements remain in the staff portal.</p>
+          {!partnerListPage && partnerTotal > partners.length && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} signed partners</span><Link to="/partners/all">See all partners <ArrowRight size={16} /></Link></div>}
+          {partnerListPage && partnerNextOffset !== null && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} signed partners</span><button type="button" onClick={() => loadMore('partners')}>Load more partners <ArrowRight size={16} /></button></div>}
         </div>
       </section>
       </>}
+
+      {partnerMediaPage && <section className="public-partners-section public-client-media-section">
+        <div className="public-story-shell">
+          <SectionHeading eyebrow="Clients &amp; partners" title="People and projects behind the partnership." description="Client stories, testimonials, and videos shared from the IPCS creatives Drive folder." />
+          <Link className="public-gallery-back" to="/partners">← Back to signed partners</Link>
+          <div className="public-media-tabs" role="tablist" aria-label="Client media albums">
+            {mediaTabs.map(([key, label]) => <Link key={key} role="tab" aria-selected={placementCategory === key} className={`public-media-tab${placementCategory === key ? ' active' : ''}`} to={`/partners/media?category=${key}`}><VideoCamera size={16} />{label}</Link>)}
+          </div>
+          {mediaLoading || !mediaLoaded ? <div className="public-poster-grid">{[1, 2, 3].map(item => <div className="public-poster-skeleton" key={item} />)}</div>
+            : mediaError ? <div className="public-poster-empty" role="status">Client media could not be loaded. Check the shared Drive folder connection and try again.</div>
+              : !mediaItems.length ? <div className="public-poster-empty">No client media has been added yet. Add files to a folder named “{placementCategory === 'client-videos' ? 'Client Videos' : 'Clients'}” inside the shared IPCS creatives folder.</div>
+                : <div className="public-poster-grid">{mediaItems.map(item => <article className="public-poster-card public-media-card" key={item.id}>
+                  {item.mediaType === 'video' ? <div className="public-poster-video"><video src={`${API_BASE}${item.imageUrl}`} controls preload="metadata" playsInline aria-label={item.name} /></div> : <a className="public-poster-image" href={`${API_BASE}${item.imageUrl}`} target="_blank" rel="noreferrer"><img src={`${API_BASE}${item.imageUrl}`} alt={item.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></a>}
+                  <div className="public-poster-meta"><span>{item.folder}</span><h4>{item.name}</h4></div>
+                </article>)}</div>}
+          {mediaLoaded && mediaItems.length > 0 && <div className="public-gallery-more"><span>Showing {mediaItems.length} of {mediaTotal} items</span>{mediaNextOffset !== null && <button type="button" onClick={() => loadMore('media')}>Load more <ArrowRight size={16} /></button>}</div>}
+        </div>
+      </section>}
 
       {['updates', 'all'].includes(page) && <>
       <section className="public-updates-section" id="updates">
@@ -310,7 +445,7 @@ export default function PublicSiteSections({ onLogin, page = 'all' }) {
       </section>
 
       <section className="public-bottom-cta">
-        <div className="public-story-shell"><span>YOUR NEXT STEP STARTS HERE</span><h2>Learn. Connect. Grow.</h2><p>Sign in to continue to the IPCS Global placement and learning portal.</p><button type="button" className="portal-primary-button" onClick={onLogin}>Enter the portal <ArrowRight size={18} /></button></div>
+        <div className="public-story-shell"><span>YOUR NEXT STEP STARTS HERE</span><h2>Learn. Connect. Grow.</h2><p>Explore career programs, placement updates, and IPCS industry partnerships.</p><Link className="portal-primary-button" to="/placements">Explore placements <ArrowRight size={18} /></Link></div>
       </section>
       </>}
     </div>

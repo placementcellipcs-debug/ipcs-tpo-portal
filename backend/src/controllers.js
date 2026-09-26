@@ -1873,7 +1873,16 @@ exports.getPublicPartners = (req, res) => {
       });
     });
 
-    res.json({ success: true, partners });
+    const total = partners.length;
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || total || 1));
+    const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+    const items = partners.slice(offset, offset + limit);
+    res.json({
+      success: true,
+      partners: items,
+      total,
+      nextOffset: offset + items.length < total ? offset + items.length : null
+    });
   } catch (err) {
     console.error('Error fetching public partners:', err.message);
     res.status(500).json({ success: false, message: 'Partner directory is temporarily unavailable.' });
@@ -1882,10 +1891,13 @@ exports.getPublicPartners = (req, res) => {
 
 const PLACEMENT_POSTER_FOLDER_ID = '1YwMEIp5Nyn3Hi9kLlBxHfxE2okK6Tqm4';
 let placementPosterCache = { expiresAt: 0, posters: [], byId: new Map() };
+let placementPosterLoading = null;
 
 async function getPlacementPosterFiles(forceRefresh = false) {
   if (!forceRefresh && placementPosterCache.expiresAt > Date.now()) return placementPosterCache;
+  if (placementPosterLoading) return placementPosterLoading;
 
+  placementPosterLoading = (async () => {
   const posters = [];
   const visited = new Set();
   const listFolder = async (folderId, folderPath = '', depth = 0) => {
@@ -1896,10 +1908,10 @@ async function getPlacementPosterFiles(forceRefresh = false) {
     do {
       const response = await drive.files.list({
         q: `'${folderId}' in parents and trashed = false`,
-        pageSize: 1000,
+        pageSize: 250,
         pageToken,
         orderBy: 'name',
-        fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink,thumbnailLink)',
+        fields: 'nextPageToken,files(id,name,mimeType,modifiedTime)',
         supportsAllDrives: true,
         includeItemsFromAllDrives: true
       });
@@ -1907,19 +1919,23 @@ async function getPlacementPosterFiles(forceRefresh = false) {
       pageToken = response.data.nextPageToken;
     } while (pageToken);
 
+    const folders = [];
     for (const file of children) {
       if (file.mimeType === 'application/vnd.google-apps.folder') {
-        await listFolder(file.id, folderPath ? `${folderPath} / ${file.name}` : file.name, depth + 1);
-      } else if (String(file.mimeType || '').startsWith('image/')) {
+        folders.push({ id: file.id, path: folderPath ? `${folderPath} / ${file.name}` : file.name });
+      } else if (String(file.mimeType || '').startsWith('image/') || String(file.mimeType || '').startsWith('video/')) {
         posters.push({
           id: file.id,
           name: file.name,
           folder: folderPath || 'Placement creatives',
           mimeType: file.mimeType,
-          modifiedTime: file.modifiedTime || '',
-          webViewLink: file.webViewLink || ''
+          mediaType: String(file.mimeType || '').startsWith('video/') ? 'video' : 'image',
+          modifiedTime: file.modifiedTime || ''
         });
       }
+    }
+    for (let index = 0; index < folders.length; index += 4) {
+      await Promise.all(folders.slice(index, index + 4).map(folder => listFolder(folder.id, folder.path, depth + 1)));
     }
   };
 
@@ -1931,17 +1947,48 @@ async function getPlacementPosterFiles(forceRefresh = false) {
     byId: new Map(posters.map(poster => [poster.id, poster]))
   };
   return placementPosterCache;
+  })();
+  try {
+    return await placementPosterLoading;
+  } finally {
+    placementPosterLoading = null;
+  }
 }
 
 exports.getPublicPlacementPosters = async (req, res) => {
   try {
     const { posters } = await getPlacementPosterFiles();
+    const category = String(req.query.category || 'posters').toLowerCase();
+    const keywords = {
+      'placement-drive': /placement[\s_-]*drive|drive[\s_-]*placement/i,
+      testimonials: /testimonial|student[\s_-]*story|success[\s_-]*story/i,
+      talentino: /talentino/i,
+      videos: /video|testimonial|talentino|drive|client|partner/i,
+      clients: /client|corporate[\s_-]*partner|partner[\s_-]*(story|testimonial|media)/i,
+      'client-videos': /client|corporate[\s_-]*partner|partner[\s_-]*(story|testimonial|media)/i
+    };
+    const matchesCategory = poster => {
+      const content = `${poster.folder || ''} ${poster.name || ''}`;
+      if (category === 'posters') return poster.mediaType === 'image';
+      if (category === 'videos') return poster.mediaType === 'video';
+      if (category === 'client-videos') return poster.mediaType === 'video' && keywords['client-videos'].test(content);
+      const keyword = keywords[category];
+      if (!keyword || !keyword.test(content)) return false;
+      return true;
+    };
+    const filtered = posters.filter(matchesCategory);
+    const total = filtered.length;
+    const limit = Math.min(48, Math.max(1, Number.parseInt(req.query.limit, 10) || 8));
+    const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+    const page = filtered.slice(offset, offset + limit);
     res.json({
       success: true,
-      posters: posters.map(poster => ({
+      posters: page.map(poster => ({
         ...poster,
         imageUrl: `/api/public/placement-posters/${encodeURIComponent(poster.id)}`
-      }))
+      })),
+      total,
+      nextOffset: offset + page.length < total ? offset + page.length : null
     });
   } catch (err) {
     console.error('Error reading placement posters from Drive:', err.message);
@@ -1955,12 +2002,17 @@ exports.streamPublicPlacementPoster = async (req, res) => {
     const poster = byId.get(String(req.params.fileId || ''));
     if (!poster) return res.status(404).end();
 
+    const requestedRange = req.get('range');
     const response = await drive.files.get(
       { fileId: poster.id, alt: 'media', supportsAllDrives: true },
-      { responseType: 'stream' }
+      { responseType: 'stream', ...(requestedRange ? { headers: { Range: requestedRange } } : {}) }
     );
+    if (response.status === 206) res.status(206);
     res.set('Content-Type', poster.mimeType);
     res.set('Cache-Control', 'public, max-age=3600');
+    res.set('Accept-Ranges', 'bytes');
+    if (response.headers?.['content-range']) res.set('Content-Range', response.headers['content-range']);
+    if (response.headers?.['content-length']) res.set('Content-Length', response.headers['content-length']);
     response.data.on('error', error => {
       console.error('Error streaming placement poster:', error.message);
       if (!res.headersSent) res.status(502).end();

@@ -32,7 +32,6 @@ export default function Login() {
     }
   }, [navigate]);
 
-  const openLogin = () => { setError(''); navigate('/login'); };
 
   const handleLogin = async (event) => {
     event.preventDefault();
@@ -108,8 +107,8 @@ export default function Login() {
               <h1>Build skills.<br /><span>Shape what’s next.</span></h1>
               <p>Connecting future-ready talent in industrial automation, embedded systems, IoT, and digital technology with opportunities around the world.</p>
               <div className="portal-home-actions">
-                <button className="portal-primary-button" onClick={openLogin}>Enter the portal <ArrowRight size={19} weight="bold" /></button>
-                <a className="portal-secondary-button" href="/recruiter?section=mou" target="_blank" rel="noreferrer"><UsersThree size={19} /> Recruiter partnerships</a>
+                <Link className="portal-primary-button" to="/placements">Explore placements <ArrowRight size={19} weight="bold" /></Link>
+                <Link className="portal-secondary-button" to="/placements#recruiter-partnerships"><UsersThree size={19} /> Recruiter partnerships</Link>
               </div>
               <div className="portal-trust-line"><span className="portal-trust-dot" /> Skills, academics, and career opportunities in one place</div>
             </div>

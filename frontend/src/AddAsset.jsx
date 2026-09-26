@@ -302,7 +302,8 @@ export default function AddAsset() {
                 </div>
                 <div>
                   <label className="data-label">Vendor / Supplier</label>
-                  <input type="text" className="premium-input" style={{ width: '100%' }} value={asset.vendor} onChange={e => setAsset({...asset, vendor: e.target.value})} placeholder="e.g. Amazon" />
+                  <input type="text" list="asset-vendor-options" className="premium-input" style={{ width: '100%' }} value={asset.vendor} onChange={e => setAsset({...asset, vendor: e.target.value})} placeholder="Choose or enter a vendor" />
+                  <datalist id="asset-vendor-options">{dbData.vendors.map((vendor, index) => <option key={`${vendor.vendorid || vendor.vendorname}-${index}`} value={vendor.vendorname || vendor.name || ''} />)}</datalist>
                 </div>
                 <div>
                   <label className="data-label">Warranty End Date</label>
