@@ -1,5 +1,6 @@
 // 🚨 IN-MEMORY MULTI-DEVICE SESSION REGISTRY
 const activeSessions = new Map();
+const activeAccounts = new Map();
 
 function parseUserAgent(ua = '') {
   let browser = 'Unknown Browser';
@@ -455,6 +456,7 @@ exports.login = async (req, res) => {
       
       if (sheetMail === cleanInput && sheetPass === cleanPass && cleanInput !== '') {
         foundUser = {
+          email: getValByHeader(row, ['mailid', 'email']) || cleanInput,
           sittingbranch: getValByHeader(row, ['sittingbranch']),
           assignedbranches: getValByHeader(row, ['assignedbranches']),
           access: getValByHeader(row, ['access', 'accesstype']),
@@ -479,6 +481,7 @@ exports.login = async (req, res) => {
         
         if ((sheetUsername === cleanInput || sheetMail === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
           foundUser = {
+            email: getValByHeader(row, ['mailid', 'email']) || cleanInput,
             sittingbranch: getValByHeader(row, ['sittingbranch']),
             assignedbranches: getValByHeader(row, ['assignedbranches']),
             access: getValByHeader(row, ['access', 'accesstype']),
@@ -518,7 +521,23 @@ exports.login = async (req, res) => {
     }
 
     const sessionToken = `IPCS_SESS_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-    activeSessions.set(cleanInput, sessionToken);
+    const sessionKey = String(foundUser.email || cleanInput).trim().toLowerCase();
+    const sessionUser = {
+      name: userName,
+      email: sessionKey,
+      loginId: cleanInput,
+      sittingBranch: foundUser['sittingbranch'] || 'N/A',
+      assignedBranchesArray: assignedArray,
+      photo: foundUser['profilephoto'] || '',
+      phone: foundUser['contactnumber'] || 'Not Provided',
+      role,
+      assignedCourse: course,
+      accessType,
+      empId: foundUser.empId || '',
+      target: foundUser.target || '0'
+    };
+    activeSessions.set(sessionKey, sessionToken);
+    activeAccounts.set(sessionKey, sessionUser);
 
     (async () => {
       try {
@@ -547,21 +566,7 @@ exports.login = async (req, res) => {
 
     return res.json({ 
       success: true, 
-      tpo: { 
-        name: userName, 
-        email: cleanInput, 
-        loginId: cleanInput, 
-        sittingBranch: foundUser['sittingbranch'] || 'N/A', 
-        assignedBranchesArray: assignedArray, 
-        photo: foundUser['profilephoto'] || '', 
-        phone: foundUser['contactnumber'] || 'Not Provided', 
-        role: role, 
-        assignedCourse: course, 
-        accessType: accessType,
-        empId: foundUser.empId || '',
-        target: foundUser.target || '0',
-        sessionToken: sessionToken
-      } 
+      tpo: { ...sessionUser, sessionToken }
     });
   } catch (error) { 
     res.status(500).json({ success: false, message: error.message }); 
@@ -709,11 +714,27 @@ exports.getStudents = (req, res) => {
 };
 
 exports.updateStudent = async (req, res) => {
-  const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus, coursePercentage } = req.body;
+  const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus, coursePercentage } = req.body || {};
+  const rowIndex = Number(rowNumber);
+  const user = req.portalUser;
+  const role = String(user?.role || '').toUpperCase();
+  const isAdmin = user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
+  const isPlacementEditor = isAdmin || role === 'TPO' || role.includes('PLACEMENT OFFICER');
+  const isAcademicEditor = isAdmin || ['RTH', 'REGIONAL TECHNICAL HEAD', 'TRAINER', 'TECHNICAL LEAD', 'TTH'].some(part => role.includes(part));
+  if (!Number.isInteger(rowIndex) || rowIndex < 2) return res.status(400).json({ success: false, message: 'A valid student record is required.' });
+  if (!isPlacementEditor && !isAcademicEditor) return res.status(403).json({ success: false, message: 'Your role cannot update this student record.' });
+  if (studyAccess !== undefined && !['yes', 'no'].includes(String(studyAccess).toLowerCase())) return res.status(400).json({ success: false, message: 'Study access must be Yes or No.' });
+  if (examAccess !== undefined && !['yes', 'no'].includes(String(examAccess).toLowerCase())) return res.status(400).json({ success: false, message: 'Technical exam access must be Yes or No.' });
   try {
     const stuSheet = doc.sheetsByTitle["Data"];
-    const rows = await stuSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (!stuSheet) return res.status(503).json({ success: false, message: 'Student register is unavailable.' });
+    const rows = await stuSheet.getRows({ offset: rowIndex - 2, limit: 1 });
     if (rows.length > 0) {
+      const studentBranch = getValByHeader(rows[0], ['branch']) || '';
+      const studentCourse = getValByHeader(rows[0], ['course']) || '';
+      if (!hasAccess(studentBranch, studentCourse, user.role, user.assignedBranchesArray, user.assignedCourse)) {
+        return res.status(403).json({ success: false, message: 'This student is outside your branch or course assignment.' });
+      }
       const headers = stuSheet.headerValues.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
       const updateObj = {};
       
@@ -734,17 +755,17 @@ exports.updateStudent = async (req, res) => {
 
       const vH = getRealHeader(['vacancyopen', 'vaccancyopen']); 
       let oldVacOpen = vH ? getOldVal(vH).toLowerCase() : '';
-      if(vH && vacOpen !== undefined) updateObj[vH] = vacOpen;
+      if(isPlacementEditor && vH && vacOpen !== undefined) updateObj[vH] = vacOpen;
       
-      const pH = getRealHeader(['placementstatus', 'placementstat', 'placementstatsu']); if(pH) updateObj[pH] = placementStatus;
-      const sH = getRealHeader(['studymaterialaccess']); if(sH) updateObj[sH] = studyAccess;
-      const eH = getRealHeader(['technicalexam', 'technialexam']); if(eH) updateObj[eH] = examAccess;
+      const pH = getRealHeader(['placementstatus', 'placementstat', 'placementstatsu']); if(isPlacementEditor && pH && placementStatus !== undefined) updateObj[pH] = placementStatus;
+      const sH = getRealHeader(['studymaterialaccess']); if(isAcademicEditor && sH && studyAccess !== undefined) updateObj[sH] = studyAccess;
+      const eH = getRealHeader(['technicalexam', 'technialexam']); if(isAcademicEditor && eH && examAccess !== undefined) updateObj[eH] = examAccess;
       
       const cPercH = getRealHeader(['coursepercentage']);
-      if (cPercH && coursePercentage !== undefined) updateObj[cPercH] = coursePercentage;
+      if (isAcademicEditor && cPercH && coursePercentage !== undefined) updateObj[cPercH] = coursePercentage;
 
       const cStatusH = getRealHeader(['coursestatus', 'status(currently']); 
-      if (cStatusH) {
+      if (isAcademicEditor && cStatusH) {
         if (coursePercentage === '100% completed' || coursePercentage === '100%') {
           updateObj[cStatusH] = 'Completed Course';
         } else if (courseStatus !== undefined) {
@@ -752,6 +773,7 @@ exports.updateStudent = async (req, res) => {
         }
       }
 
+      if (Object.keys(updateObj).length === 0) return res.status(400).json({ success: false, message: 'No permitted student fields were provided.' });
       rows[0].assign(updateObj); 
       await rows[0].save(); 
 
@@ -1779,6 +1801,18 @@ exports.triggerDailyCron = async (req, res) => {
 // =========================================================
 // 🚨 SAFER STRICT MATCHING FOR CLIENTS SHEET
 // =========================================================
+const canManageEveryClient = (user) => {
+  const role = String(user?.role || '').toUpperCase();
+  return user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role) || role === 'BM' || role.includes('BRANCH MANAGER') || role.includes('MANAGER');
+};
+
+const canManageClientRow = (user, row) => {
+  if (canManageEveryClient(user)) return true;
+  const assignedTo = getValByHeader(row, ['placementofficer', 'tponame']).toLowerCase().trim();
+  const signedInName = String(user?.name || '').toLowerCase().trim();
+  return Boolean(assignedTo && signedInName && assignedTo === signedInName);
+};
+
 exports.getClients = (req, res) => {
   try {
     const cleanTpoName = (req.body.tpoName || '').toString().toLowerCase().trim();
@@ -1791,7 +1825,7 @@ exports.getClients = (req, res) => {
         const officer = getValByHeader(row, ['placementofficer', 'tponame']);
         const officerClean = (officer || '').toLowerCase().trim();
         
-        if (cleanTpoName === '' || officerClean === '' || officerClean.includes(cleanTpoName) || cleanTpoName.includes(officerClean)) {
+        if (cleanTpoName === '' || officerClean.includes(cleanTpoName) || (officerClean && cleanTpoName.includes(officerClean))) {
           clients.push({ 
             rowNumber: row.rowNumber, 
             companyName: getValByHeader(row, ['companyname', 'company']) || 'Unknown', 
@@ -1814,6 +1848,35 @@ exports.getClients = (req, res) => {
   } catch (err) {
     console.error("Error fetching clients:", err.message);
     res.status(500).json({ success: false, message: "Server encountered an error fetching clients." });
+  }
+};
+
+exports.getPublicPartners = (req, res) => {
+  try {
+    const cache = getCache();
+    const rows = Array.isArray(cache?.clients) ? cache.clients : [];
+    const partners = [];
+
+    rows.forEach(row => {
+      const documentStatus = getValByHeader(row, ['documentstatus', 'docstatus']).toLowerCase().trim();
+      const mouLink = getValByHeader(row, ['mou', 'moulink']).trim();
+      if (documentStatus !== 'completed' && !mouLink) return;
+
+      const companyName = getValByHeader(row, ['companyname', 'company']).trim();
+      if (!companyName) return;
+      partners.push({
+        companyName,
+        logo: getValByHeader(row, ['companylogo', 'logo']).trim(),
+        website: getValByHeader(row, ['companywebsite', 'website']).trim(),
+        location: getValByHeader(row, ['companylocation', 'location']).trim(),
+        mouLink
+      });
+    });
+
+    res.json({ success: true, partners });
+  } catch (err) {
+    console.error('Error fetching public partners:', err.message);
+    res.status(500).json({ success: false, message: 'Partner directory is temporarily unavailable.' });
   }
 };
 
@@ -1841,9 +1904,12 @@ exports.updateClient = async (req, res) => {
     if (req.file) { logoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); }
     
     const sheet = doc.sheetsByTitle["Clients"]; 
-    const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
+    const numericRow = Number(rowNumber);
+    if (!Number.isInteger(numericRow) || numericRow < 2) return res.status(400).json({ success: false, message: 'A valid client record is required.' });
+    const rows = await sheet.getRows({ offset: numericRow - 2, limit: 1 });
     
     if (rows.length > 0) {
+      if (!canManageClientRow(req.portalUser, rows[0])) return res.status(403).json({ success: false, message: 'You cannot edit this client record.' });
       const headers = sheet.headerValues;
       const updateObj = {};
       
@@ -1880,8 +1946,18 @@ exports.updateClient = async (req, res) => {
 };
 
 exports.requestMou = async (req, res) => {
-  const { rowNumber, companyEmail, companyName } = req.body;
+  const rowNumber = Number(req.body?.rowNumber);
   try {
+    if (!Number.isInteger(rowNumber) || rowNumber < 2) return res.status(400).json({ success: false, message: 'A valid client record is required.' });
+    const sheet = doc.sheetsByTitle['Clients'];
+    if (!sheet) return res.status(503).json({ success: false, message: 'Client register is unavailable.' });
+    const rows = await sheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Client record was not found.' });
+    const clientRow = rows[0];
+    if (!canManageClientRow(req.portalUser, clientRow)) return res.status(403).json({ success: false, message: 'You cannot send an MOU for this client.' });
+    const companyEmail = getValByHeader(clientRow, ['companymailid', 'companyemail', 'mailid', 'email']);
+    const companyName = getValByHeader(clientRow, ['companyname', 'company']);
+    if (!companyEmail || !companyName) return res.status(400).json({ success: false, message: 'This client needs a company name and email before an MOU can be sent.' });
     const signingLink = `https://talenzo.ipcsglobal.info/sign-certificate/${rowNumber}`;
     const refId = Math.floor(10000 + Math.random() * 90000); 
     const mailOptions = {
@@ -1890,12 +1966,8 @@ exports.requestMou = async (req, res) => {
       html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #8b5cf6;"><h2 style="color: #ffffff; margin: 0;">IPCS HIRING PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${companyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Confirmation of Hiring Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review & Sign</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, copy and paste this link into your browser: <br/>${signingLink}</p></div></div>`
     };
     await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Request' }); 
-    const sheet = doc.sheetsByTitle["Clients"]; 
-    const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
-    if(rows.length > 0) {
-      const statusCol = getFuzzyHeader(sheet.headerValues, 'mailstatus') || getFuzzyHeader(sheet.headerValues, 'status');
-      if (statusCol) { rows[0].assign({ [statusCol]: 'Request Sent' }); await rows[0].save(); }
-    }
+    const statusCol = getFuzzyHeader(sheet.headerValues, 'mailstatus') || getFuzzyHeader(sheet.headerValues, 'status');
+    if (statusCol) { clientRow.assign({ [statusCol]: 'Request Sent' }); await clientRow.save(); }
     refreshCache(); res.json({ success: true });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
@@ -2894,8 +2966,7 @@ exports.verifySession = (req, res) => {
   const currentActiveToken = activeSessions.get(cleanEmail);
 
   if (!currentActiveToken) {
-    activeSessions.set(cleanEmail, sessionToken);
-    return res.json({ valid: true });
+    return res.json({ valid: false, reason: 'SESSION_EXPIRED', message: 'Your session expired. Please sign in again.' });
   }
 
   if (currentActiveToken !== sessionToken) {
@@ -2907,6 +2978,12 @@ exports.verifySession = (req, res) => {
   }
 
   return res.json({ valid: true });
+};
+
+exports.getSessionUser = (email, sessionToken) => {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanEmail || !sessionToken || activeSessions.get(cleanEmail) !== sessionToken) return null;
+  return activeAccounts.get(cleanEmail) || null;
 };
 
 // =========================================================
@@ -2932,7 +3009,8 @@ exports.updateTpoActivity = async (req, res) => {
 // =========================================================
 exports.addClient = async (req, res) => {
   try {
-    const { tpoName, companyName, website, location, phone, email, contactPerson } = req.body;
+    const { companyName, website, location, phone, email, contactPerson } = req.body;
+    const tpoName = req.portalUser?.name || '';
     const clientSheet = doc.sheetsByTitle["Clients"]; 
     
     let logoUrl = '';

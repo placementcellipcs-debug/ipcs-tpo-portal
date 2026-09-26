@@ -1,20 +1,31 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
-  Laptop, Package, Wrench, WarningCircle, CircleNotch, 
+  Laptop, Package, Wrench, CircleNotch,
   CheckCircle, Buildings, ChartLineUp, TrendUp, Export, 
   Plus, ShieldCheck, Warning, DesktopTower 
 } from '@phosphor-icons/react';
 import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, 
+  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   BarChart, Bar, Cell, PieChart, Pie 
 } from 'recharts';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
 
+const CustomTooltip = ({ active, payload }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', borderRadius: '12px', color: '#fff', backdropFilter: 'blur(10px)', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
+      <p style={{ margin: '0 0 5px 0', fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>{payload[0].payload.name || 'Count'}</p>
+      <span style={{ color: payload[0].payload.color || '#fff', fontWeight: '900', fontSize: '1.3rem' }}>{payload[0].value}</span>
+    </div>
+  );
+};
+
 export default function AssetDashboard() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
+  const [loadError, setLoadError] = useState('');
 
   // Access Control
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -23,15 +34,18 @@ export default function AssetDashboard() {
   const accessType = String(tpoData?.accessType || '').toLowerCase();
   
   // 🚨 FIXED: Strict Admin Check (Prevents BAM from seeing financials)
-  const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole === 'GENERAL MANAGER';
+  const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('SYSTEM ADMIN') || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
 
   useEffect(() => {
     const fetchData = async () => {
       try {
+        setLoadError('');
         const res = await axios.get(`${API_BASE}/api/v1/assets/dashboard`);
         if (res.data && res.data.success) setData(res.data.stats);
+        else setLoadError(res.data?.message || 'Could not load asset dashboard data.');
       } catch (err) { 
         console.error("Dashboard load failed", err); 
+        setLoadError(err.response?.data?.message || 'Could not load asset dashboard data.');
       } finally { 
         setLoading(false); 
       }
@@ -39,7 +53,7 @@ export default function AssetDashboard() {
     fetchData();
   }, []);
 
-  if (loading || !data) return (
+  if (loading) return (
     <Layout>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '70vh' }}>
         <CircleNotch size={50} className="ph-spin" color="#eab308" />
@@ -48,33 +62,23 @@ export default function AssetDashboard() {
     </Layout>
   );
 
+  if (!data) return (
+    <Layout>
+      <div style={{ minHeight: '65vh', display: 'grid', placeContent: 'center', textAlign: 'center', gap: 14 }}>
+        <p style={{ color: '#fca5a5', margin: 0 }}>{loadError || 'Asset dashboard data is unavailable.'}</p>
+        <button className="action-btn primary" onClick={() => window.location.reload()}>Retry dashboard</button>
+      </div>
+    </Layout>
+  );
+
   const formatCurrency = (val) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(val);
   
-  // Custom Sparkline Data (Simulating live activity)
-  const generateSparkline = (base) => [
-    { v: base * 0.8 }, { v: base * 1.1 }, { v: base * 0.9 }, { v: base * 1.2 }, 
-    { v: base * 1.0 }, { v: base * 1.4 }, { v: base }
-  ];
-
   // Allocation Data for the Half-Doughnut Gauge
   const statusData = [
     { name: 'Assigned', value: data.assigned || 0, color: '#8b5cf6' },
     { name: 'Available', value: data.available || 0, color: '#10b981' },
     { name: 'Maintenance', value: data.underMaintenance || 0, color: '#ef4444' }
   ].filter(d => d.value > 0);
-
-  // Custom Tooltip for Recharts
-  const CustomTooltip = ({ active, payload }) => {
-    if (active && payload && payload.length) {
-      return (
-        <div style={{ background: 'rgba(15, 23, 42, 0.9)', border: '1px solid rgba(255,255,255,0.1)', padding: '12px 16px', borderRadius: '12px', color: '#fff', backdropFilter: 'blur(10px)', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}>
-          <p style={{ margin: '0 0 5px 0', fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '1px' }}>{payload[0].payload.name || 'Count'}</p>
-          <span style={{ color: payload[0].payload.color || '#fff', fontWeight: '900', fontSize: '1.3rem' }}>{payload[0].value}</span>
-        </div>
-      );
-    }
-    return null;
-  };
 
   return (
     <Layout>
@@ -87,7 +91,7 @@ export default function AssetDashboard() {
         {/* 💳 MAIN PORTFOLIO HEADER (Crypto-Style) */}
         <div className="portfolio-banner">
           <div className="portfolio-content">
-            <span className="welcome-text">Welcome back, {tpoData?.name.split(' ')[0]}</span>
+            <span className="welcome-text">Welcome back, {(tpoData?.name || 'User').split(' ')[0]}</span>
             <h1 className="dashboard-title">Asset Command Center</h1>
             
             {isSuperAdmin && (
@@ -129,19 +133,7 @@ export default function AssetDashboard() {
             </div>
             <div className="kpi-v2-body">
               <div className="kpi-v2-val">{data.totalAssets}</div>
-              <div className="sparkline">
-                <ResponsiveContainer width="100%" height={40}>
-                  <AreaChart data={generateSparkline(data.totalAssets)}>
-                    <defs>
-                      <linearGradient id="colorBlue" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <Area type="monotone" dataKey="v" stroke="#8b5cf6" strokeWidth={2} fillOpacity={1} fill="url(#colorBlue)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+              <span className="kpi-v2-note">Tracked in register</span>
             </div>
           </div>
 
@@ -152,19 +144,7 @@ export default function AssetDashboard() {
             </div>
             <div className="kpi-v2-body">
               <div className="kpi-v2-val">{data.assigned}</div>
-              <div className="sparkline">
-                <ResponsiveContainer width="100%" height={40}>
-                  <AreaChart data={generateSparkline(data.assigned)}>
-                    <defs>
-                      <linearGradient id="colorGreen" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <Area type="monotone" dataKey="v" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorGreen)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+              <span className="kpi-v2-note">Active assignments</span>
             </div>
           </div>
 
@@ -175,19 +155,7 @@ export default function AssetDashboard() {
             </div>
             <div className="kpi-v2-body">
               <div className="kpi-v2-val">{data.available}</div>
-              <div className="sparkline">
-                <ResponsiveContainer width="100%" height={40}>
-                  <AreaChart data={generateSparkline(data.available)}>
-                    <defs>
-                      <linearGradient id="colorPurple" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#a855f7" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <Area type="monotone" dataKey="v" stroke="#a855f7" strokeWidth={2} fillOpacity={1} fill="url(#colorPurple)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+              <span className="kpi-v2-note">Ready to assign</span>
             </div>
           </div>
 
@@ -198,19 +166,7 @@ export default function AssetDashboard() {
             </div>
             <div className="kpi-v2-body">
               <div className="kpi-v2-val">{data.underMaintenance}</div>
-              <div className="sparkline">
-                <ResponsiveContainer width="100%" height={40}>
-                  <AreaChart data={generateSparkline(data.underMaintenance)}>
-                    <defs>
-                      <linearGradient id="colorRed" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3}/>
-                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0}/>
-                      </linearGradient>
-                    </defs>
-                    <Area type="monotone" dataKey="v" stroke="#ef4444" strokeWidth={2} fillOpacity={1} fill="url(#colorRed)" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+              <span className="kpi-v2-note">Open service state</span>
             </div>
           </div>
         </div>
@@ -401,7 +357,7 @@ export default function AssetDashboard() {
         
         .kpi-v2-body { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: -5px; }
         .kpi-v2-val { font-size: 2.2rem; font-weight: 900; color: #fff; line-height: 1; }
-        .sparkline { flex: 1; max-width: 120px; margin: 0 -20px; }
+        .kpi-v2-note { color: #64748b; text-align: right; font-size: .69rem; line-height: 1.4; max-width: 96px; }
 
         /* Bento Grid */
         .bento-grid-complex { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }

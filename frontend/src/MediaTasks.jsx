@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { CircleNotch, PaintBrush, UploadSimple, ArrowSquareOut, DownloadSimple, User, Briefcase, MapPin, X, Plus } from '@phosphor-icons/react';
 import Layout from './Layout';
@@ -10,6 +10,8 @@ export default function MediaTasks() {
   const [categories, setCategories] = useState([]);
   const [socialCount, setSocialCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [notice, setNotice] = useState(null);
   const [activeTaskTab, setActiveTaskTab] = useState('Pending');
   
   // Modals
@@ -21,27 +23,40 @@ export default function MediaTasks() {
   const [sessionForm, setSessionForm] = useState({ sessionLevel: 'Session 1', status: 'Review', file: null });
   const [newTaskForm, setNewTaskForm] = useState({ studentName: '', company: '', designCategory: 'Social Media', designType: '', remarks: '' });
 
-  const tpoDataStr = localStorage.getItem('tpoData');
-  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : { name: 'Designer' };
+  const tpoData = (() => {
+    try { return JSON.parse(localStorage.getItem('tpoData') || '{}'); }
+    catch { return {}; }
+  })();
 
   const fetchTasks = async () => {
     try {
-      setLoading(true);
       const res = await axios.get(`${API_BASE}/api/design/tasks`);
       if (res.data.success) {
+        setLoadError('');
         setTasks(res.data.tasks || []);
         setCategories(res.data.categories || []);
         setSocialCount((res.data.social || []).length);
       }
-    } catch (err) {} finally { setLoading(false); }
+    } catch (err) { setLoadError(err.response?.data?.message || 'Could not load the design queue.'); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchTasks(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void fetchTasks(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const handleUpload = async (e) => {
     e.preventDefault();
-    if (!sessionForm.file && sessionForm.status !== 'Completed') return alert("Please attach a file.");
+    if (!sessionForm.file) {
+      setNotice({ type: 'error', text: 'Attach the design file before saving this session.' });
+      return;
+    }
+    if (sessionForm.status === 'Completed' && sessionForm.sessionLevel !== 'Session 2') {
+      setNotice({ type: 'error', text: 'Complete a task only after uploading its final Session 2 file.' });
+      return;
+    }
     setUploading(true);
+    setNotice(null);
     const formData = new FormData();
     formData.append('designId', selectedTask.designId);
     formData.append('sessionLevel', sessionForm.sessionLevel);
@@ -50,22 +65,30 @@ export default function MediaTasks() {
     if (sessionForm.file) formData.append('file', sessionForm.file);
 
     try {
-      await axios.post(`${API_BASE}/api/design/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      const response = await axios.post(`${API_BASE}/api/design/upload`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      if (!response.data.success) throw new Error(response.data.message || 'Could not save this design update.');
       setIsWorkspaceOpen(false);
       setSessionForm({ sessionLevel: 'Session 1', status: 'Review', file: null });
       fetchTasks();
-    } catch (err) { alert("Upload failed."); } finally { setUploading(false); }
+      setNotice({ type: 'success', text: response.data.message || 'Design update saved.' });
+    } catch (err) { setNotice({ type: 'error', text: err.response?.data?.message || err.message || 'Upload failed.' }); } finally { setUploading(false); }
   };
 
   const handleCreateTask = async (e) => {
     e.preventDefault();
+    if (!newTaskForm.designType.trim()) {
+      setNotice({ type: 'error', text: 'Choose a design type before creating the task.' });
+      return;
+    }
     setUploading(true);
+    setNotice(null);
     try {
       await axios.post(`${API_BASE}/api/design/task`, { ...newTaskForm, user: tpoData.name });
       setIsNewTaskOpen(false);
       setNewTaskForm({ studentName: '', company: '', designCategory: 'Social Media', designType: '', remarks: '' });
       fetchTasks();
-    } catch (err) { alert("Failed to create task"); } finally { setUploading(false); }
+      setNotice({ type: 'success', text: 'Task added to the design queue.' });
+    } catch (err) { setNotice({ type: 'error', text: err.response?.data?.message || 'Failed to create task.' }); } finally { setUploading(false); }
   };
 
   const getDriveImage = (url) => {
@@ -93,8 +116,15 @@ export default function MediaTasks() {
           </button>
         </div>
 
+        {notice && <div role="status" style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 10, border: `1px solid ${notice.type === 'error' ? 'rgba(248,113,113,.35)' : 'rgba(52,211,153,.3)'}`, color: notice.type === 'error' ? '#fca5a5' : '#6ee7b7', background: notice.type === 'error' ? 'rgba(127,29,29,.2)' : 'rgba(6,78,59,.2)' }}>{notice.text}</div>}
+
         {loading ? (
           <div style={{ textAlign: 'center', padding: '100px' }}><CircleNotch size={50} className="ph-spin" color="#ec4899" /></div>
+        ) : loadError ? (
+          <div style={{ background: 'var(--card-bg)', padding: '45px', textAlign: 'center', borderRadius: '16px', border: '1px solid rgba(248,113,113,.25)' }}>
+            <p style={{ color: '#fca5a5', margin: '0 0 16px' }}>{loadError}</p>
+            <button type="button" onClick={() => { setLoading(true); fetchTasks(); }} style={{ padding: '9px 17px', border: 0, borderRadius: 9, background: '#ec4899', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>Retry</button>
+          </div>
         ) : displayTasks.length === 0 ? (
           <div className="empty-state-card" style={{ background: 'var(--card-bg)', padding: '60px', textAlign: 'center', borderRadius: '16px', border: '1px dashed var(--card-border)' }}>
             <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem', margin: 0 }}>No {activeTaskTab.toLowerCase()} tasks found in the queue.</p>
@@ -102,10 +132,10 @@ export default function MediaTasks() {
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '20px' }}>
             {displayTasks.map((task, i) => (
-              <div key={i} className="hover-lift" style={{ background: 'var(--card-bg)', borderRadius: '16px', border: '1px solid var(--card-border)', overflow: 'hidden', display: 'flex', flexDirection: 'column', cursor: 'pointer' }} onClick={() => { setSelectedTask(task); setIsWorkspaceOpen(true); }}>
+                <div key={task.designId || i} className="hover-lift" style={{ background: 'var(--card-bg)', borderRadius: '16px', border: '1px solid var(--card-border)', overflow: 'hidden', display: 'flex', flexDirection: 'column', cursor: 'pointer' }} onClick={() => { setSelectedTask(task); setSessionForm({ sessionLevel: task.session1File ? 'Session 2' : 'Session 1', status: task.session1File ? 'Review' : 'In Progress', file: null }); setNotice(null); setIsWorkspaceOpen(true); }}>
                 <div style={{ padding: '20px', display: 'flex', gap: '15px', alignItems: 'center', borderBottom: '1px solid var(--card-border)', background: 'rgba(255,255,255,0.02)' }}>
                   <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#1e293b', overflow: 'hidden', flexShrink: 0, border: `2px solid ${task.source === 'Manual Request' ? '#3b82f6' : '#ec4899'}` }}>
-                    {task.profilePhoto ? <img src={getDriveImage(task.profilePhoto)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}><User size={32} /></div>}
+                    {task.profilePhoto ? <img src={getDriveImage(task.profilePhoto)} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}><User size={32} /></div>}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <h3 style={{ margin: '0 0 4px 0', fontSize: '1.1rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: '#fff' }}>{task.studentName || 'General Event'}</h3>
@@ -118,7 +148,7 @@ export default function MediaTasks() {
                   {task.branch && <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'var(--text-muted)', fontSize: '0.85rem' }}><MapPin size={16} /> <span style={{ color: '#e2e8f0' }}>{task.branch}</span></div>}
                 </div>
                 <div style={{ padding: '15px 20px', background: 'rgba(0,0,0,0.3)', borderTop: '1px solid var(--card-border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: task.status.toLowerCase() === 'completed' ? '#10b981' : '#f59e0b', padding: '4px 10px', borderRadius: '20px', background: task.status.toLowerCase() === 'completed' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)' }}>{task.status.toUpperCase()}</span>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: String(task.status || 'Pending').toLowerCase() === 'completed' ? '#10b981' : '#f59e0b', padding: '4px 10px', borderRadius: '20px', background: String(task.status || 'Pending').toLowerCase() === 'completed' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(245, 158, 11, 0.1)' }}>{String(task.status || 'Pending').toUpperCase()}</span>
                   <span style={{ color: '#94a3b8', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: '5px', fontWeight: 'bold' }}>Workspace <ArrowSquareOut size={16} /></span>
                 </div>
               </div>
@@ -202,7 +232,7 @@ export default function MediaTasks() {
                   <h3 style={{ fontSize: '0.9rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '20px', letterSpacing: '1px', fontWeight: 'bold' }}>Provided Details Snapshot</h3>
                   <div style={{ display: 'flex', gap: '15px', alignItems: 'center', marginBottom: '25px' }}>
                     <div style={{ width: '90px', height: '90px', borderRadius: '16px', background: '#1e293b', overflow: 'hidden', border: '2px solid #334155' }}>
-                      {selectedTask.profilePhoto ? <img src={getDriveImage(selectedTask.profilePhoto)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <User size={40} color="#64748b" style={{ margin: '25px' }}/>}
+                      {selectedTask.profilePhoto ? <img src={getDriveImage(selectedTask.profilePhoto)} alt="Student profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : <User size={40} color="#64748b" style={{ margin: '25px' }}/>}
                     </div>
                     {selectedTask.profilePhoto && (
                       <a href={selectedTask.profilePhoto} target="_blank" rel="noreferrer" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '5px', background: 'rgba(14, 165, 233, 0.1)', color: '#0ea5e9', padding: '12px 15px', borderRadius: '12px', textDecoration: 'none', fontSize: '0.85rem', fontWeight: 'bold', border: '1px solid rgba(14, 165, 233, 0.3)', flex: 1 }}>
@@ -224,10 +254,18 @@ export default function MediaTasks() {
                     <div style={{ background: '#ec4899', color: '#fff', width: '24px', height: '24px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 'bold' }}>1</div> Upload Work & Status
                   </h3>
                   <form onSubmit={handleUpload}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+                      <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        {[['Session 1', selectedTask.session1Status, selectedTask.session1File], ['Session 2', selectedTask.session2Status, selectedTask.session2File]].map(([name, status, link]) => (
+                          <div key={name} style={{ flex: '1 1 190px', padding: '11px 13px', background: 'var(--bg-dark)', border: '1px solid var(--card-border)', borderRadius: 10, color: '#cbd5e1', fontSize: '.78rem' }}>
+                            <b style={{ color: '#fff' }}>{name}</b><span style={{ marginLeft: 8, color: status ? '#fbbf24' : '#64748b' }}>{status || 'Not started'}</span>
+                            {link && <a href={link} target="_blank" rel="noreferrer" style={{ display: 'block', marginTop: 6, color: '#60a5fa' }}>Open latest file</a>}
+                          </div>
+                        ))}
+                      </div>
                       <div>
                         <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '8px', fontWeight: 'bold' }}>Update Target</label>
-                        <select className="sleek-select" style={{ width: '100%', background: '#0f1523', padding: '12px' }} value={sessionForm.sessionLevel} onChange={(e) => setSessionForm({...sessionForm, sessionLevel: e.target.value})}>
+                        <select className="sleek-select" style={{ width: '100%', background: '#0f1523', padding: '12px' }} value={sessionForm.sessionLevel} onChange={(e) => setSessionForm({...sessionForm, sessionLevel: e.target.value, status: 'Review', file: null})}>
                           <option value="Session 1">Session 1 (Draft/Review)</option>
                           <option value="Session 2">Session 2 (Final Version)</option>
                         </select>
@@ -237,11 +275,11 @@ export default function MediaTasks() {
                         <select className="sleek-select" style={{ width: '100%', background: '#0f1523', padding: '12px', color: sessionForm.status === 'Completed' ? '#10b981' : '#fff' }} value={sessionForm.status} onChange={(e) => setSessionForm({...sessionForm, status: e.target.value})}>
                           <option value="In Progress">In Progress (Working)</option>
                           <option value="Review">Ready for Review</option>
-                          <option value="Completed">Completed (Approved) ✅</option>
+                          {sessionForm.sessionLevel === 'Session 2' && <option value="Completed">Completed (Final approved) ✅</option>}
                         </select>
                       </div>
                     </div>
-                    <div style={{ marginBottom: '20px' }}><input type="file" className="sleek-input" style={{ width: '100%', padding: '12px', background: '#0f1523', borderStyle: 'dashed' }} onChange={(e) => setSessionForm({...sessionForm, file: e.target.files[0]})} /></div>
+                    <div style={{ marginBottom: '20px' }}><input type="file" accept="image/*,video/*,.pdf" required className="sleek-input" style={{ width: '100%', padding: '12px', background: '#0f1523', borderStyle: 'dashed' }} onChange={(e) => setSessionForm({...sessionForm, file: e.target.files[0]})} /><small style={{ display: 'block', marginTop: 7, color: '#64748b' }}>Images, video, or PDF · maximum 50 MB</small></div>
                     <button type="submit" disabled={uploading} style={{ width: '100%', background: '#ec4899', color: '#fff', border: 'none', padding: '14px', borderRadius: '12px', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px' }}>
                       {uploading ? <CircleNotch size={24} className="ph-spin" /> : <><UploadSimple size={22} weight="bold" /> Publish to Drive Repository</>}
                     </button>

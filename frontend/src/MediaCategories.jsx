@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { CircleNotch, Tag, Plus, X } from '@phosphor-icons/react';
 import Layout from './Layout';
@@ -9,6 +9,8 @@ export default function MediaCategories() {
   const [categories, setCategories] = useState([]);
   const [counts, setCounts] = useState({ pending: 0, social: 0 });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -16,27 +18,33 @@ export default function MediaCategories() {
 
   const fetchData = async () => {
     try {
-      setLoading(true);
       const res = await axios.get(`${API_BASE}/api/design/tasks`);
       if (res.data.success) {
+        setError('');
         setCategories(res.data.categories || []);
         const pending = (res.data.tasks || []).filter(t => String(t.status).toLowerCase() !== 'completed').length;
         setCounts({ pending, social: (res.data.social || []).length });
       }
-    } catch (err) {} finally { setLoading(false); }
+    } catch (err) { setError(err.response?.data?.message || 'Could not load design categories.'); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void fetchData(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const handleAddCategory = async (e) => {
     e.preventDefault();
+    setNotice('');
     setSubmitting(true);
     try {
-      await axios.post(`${API_BASE}/api/design/category`, form);
+      const response = await axios.post(`${API_BASE}/api/design/category`, form);
+      if (!response.data.success) throw new Error(response.data.message || 'Could not add this design type.');
       setIsModalOpen(false);
       setForm({ category: 'Social Media', designType: '' });
+      setNotice(response.data.message || 'Design type added.');
       fetchData();
-    } catch (err) { alert("Failed to add category."); } finally { setSubmitting(false); }
+    } catch (err) { setNotice(err.response?.data?.message || err.message || 'Failed to add category.'); } finally { setSubmitting(false); }
   };
 
   const groupedCategories = {};
@@ -56,8 +64,12 @@ export default function MediaCategories() {
           </button>
         </div>
 
+        {notice && <div role="status" style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 10, color: '#cbd5e1', background: 'rgba(255,255,255,.05)' }}>{notice}</div>}
+
         {loading ? (
           <div style={{ textAlign: 'center', padding: '100px' }}><CircleNotch size={50} className="ph-spin" color="#ec4899" /></div>
+        ) : error ? (
+          <div style={{ background: 'var(--card-bg)', padding: '45px', textAlign: 'center', borderRadius: '16px', border: '1px solid rgba(248,113,113,.25)' }}><p style={{ color: '#fca5a5', margin: '0 0 14px' }}>{error}</p><button type="button" onClick={() => { setLoading(true); fetchData(); }} style={{ padding: '9px 17px', border: 0, borderRadius: 9, background: '#ec4899', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>Retry</button></div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
             {Object.keys(groupedCategories).map((masterCat, i) => (

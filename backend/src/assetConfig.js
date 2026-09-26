@@ -10,10 +10,12 @@ const serviceAccountAuth = new JWT({
 
 const assetDoc = new GoogleSpreadsheet(process.env.ASSET_SPREADSHEET_ID, serviceAccountAuth);
 
-let assetCache = {};
+let assetCache = null;
 let isFetching = false;
+let refreshRequested = false;
 
 const getAssetCache = () => assetCache;
+const isAssetCacheReady = () => assetCache !== null;
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchSheetWithRetry(sheet, retries = 3) {
@@ -41,7 +43,10 @@ async function fetchSheetWithRetry(sheet, retries = 3) {
 }
 
 async function refreshAssetCache() {
-  if (isFetching) return;
+  if (isFetching) {
+    refreshRequested = true;
+    return;
+  }
   isFetching = true;
   try {
     await assetDoc.loadInfo();
@@ -66,22 +71,26 @@ async function refreshAssetCache() {
       } else {
         fetchedData[key] = [];
       }
-      await delay(3000); // 🚨 Increased to 3 seconds to safely pace below 60 req/min
+      await delay(1000);
     }
 
     assetCache = fetchedData;
     console.log("📦 Asset Management Cache successfully synced with Google Sheets!");
-    isFetching = false;
   } catch (err) { 
     console.error("❌ Asset Management Cache sync failed:", err.message); 
-    isFetching = false;
     setTimeout(refreshAssetCache, 15000);
+  } finally {
+    isFetching = false;
+    if (refreshRequested) {
+      refreshRequested = false;
+      setTimeout(refreshAssetCache, 0);
+    }
   }
 }
 
-// 🚨 Stagger the startup by 30 seconds so it doesn't run at the exact same time as config.js
-setTimeout(refreshAssetCache, 30000);
+// Start after the placement cache's initial load has begun.
+setTimeout(refreshAssetCache, 5000);
 // 🚨 Run every 6 minutes instead of 5 to further reduce overlap
 setInterval(refreshAssetCache, 360000); 
 
-module.exports = { assetDoc, getAssetCache, refreshAssetCache };
+module.exports = { assetDoc, getAssetCache, isAssetCacheReady, refreshAssetCache };

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { CircleNotch } from '@phosphor-icons/react';
 import Layout from './Layout';
@@ -9,17 +9,19 @@ export default function MediaLogs() {
   const [logs, setLogs] = useState([]);
   const [counts, setCounts] = useState({ pending: 0, social: 0 });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const res = await axios.get(`${API_BASE}/api/design/tasks`);
         if (res.data.success) {
+          setError('');
           setLogs(res.data.logs || []);
           const pending = (res.data.tasks || []).filter(t => String(t.status).toLowerCase() !== 'completed').length;
           setCounts({ pending, social: (res.data.social || []).length });
         }
-      } catch (err) {} finally { setLoading(false); }
+      } catch (err) { setError(err.response?.data?.message || 'Could not load activity history.'); } finally { setLoading(false); }
     };
     fetchData();
   }, []);
@@ -31,6 +33,8 @@ export default function MediaLogs() {
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '100px' }}><CircleNotch size={50} className="ph-spin" color="#ec4899" /></div>
+        ) : error ? (
+          <div style={{ background: 'var(--card-bg)', padding: '45px', textAlign: 'center', borderRadius: '16px', border: '1px solid rgba(248,113,113,.25)' }}><p style={{ color: '#fca5a5', margin: '0 0 14px' }}>{error}</p><button type="button" onClick={() => window.location.reload()} style={{ padding: '9px 17px', border: 0, borderRadius: 9, background: '#ec4899', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>Retry</button></div>
         ) : (
           <div style={{ maxWidth: '900px', margin: '0 auto', padding: '20px' }}>
             <div style={{ position: 'relative', paddingLeft: '30px' }}>
@@ -43,11 +47,11 @@ export default function MediaLogs() {
                   <div style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '20px', transition: '0.2s', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
                       <div style={{ width: '45px', height: '45px', borderRadius: '12px', background: 'rgba(236, 72, 153, 0.1)', color: '#ec4899', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.2rem', fontWeight: 'bold', border: '1px solid rgba(236, 72, 153, 0.3)' }}>
-                        {String(log.user).charAt(0).toUpperCase()}
+                        {String(log.user || 'S').charAt(0).toUpperCase()}
                       </div>
                       <div>
                         <div style={{ fontSize: '1rem', color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}>{log.action}</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{log.user} • {log.date}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{log.user || 'System'} • {log.date || 'Date unavailable'}</div>
                       </div>
                     </div>
                     <div>

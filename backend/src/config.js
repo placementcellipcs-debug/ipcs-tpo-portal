@@ -131,6 +131,7 @@ function checkBranchMatch(branch, tpoBranchesArray) {
 function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCourse) {
   if (!role) role = 'TPO'; 
   const upperRole = role.toUpperCase();
+  const hasRoleToken = (token) => new RegExp(`(^|[^A-Z0-9])${token}([^A-Z0-9]|$)`).test(upperRole);
   if (upperRole.includes('ADMIN') || upperRole === 'GENERAL MANAGER' || upperRole === 'TECHNICAL HEAD' || upperRole === 'ZONAL PLACEMENT HEAD') return true; 
   
   const stdRowCourse = getStandardCourse(rowCourse);
@@ -145,8 +146,8 @@ function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCo
   
   const matchBranch = checkBranchMatch(rowBranch, assignedBranchesArray);
 
-  if (upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD') return matchCourse; 
-  if (upperRole.includes('TTH') || upperRole === 'TERRITORY TECHNICAL HEAD' || upperRole.includes('TRAINER')) return matchBranch && matchCourse;
+  if (hasRoleToken('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD') return matchCourse;
+  if (hasRoleToken('TTH') || upperRole === 'TERRITORY TECHNICAL HEAD' || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD')) return matchBranch && matchCourse;
   return matchBranch; 
 }
 

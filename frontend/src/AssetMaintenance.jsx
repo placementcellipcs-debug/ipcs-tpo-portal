@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, Wrench, X, CheckCircle, WarningCircle, DesktopTower, Screwdriver } from '@phosphor-icons/react';
+import { CircleNotch, Wrench, X, CheckCircle, WarningCircle, Screwdriver } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
 
 export default function AssetMaintenance() {
-  const tpoData = JSON.parse(localStorage.getItem('tpoData') || '{}');
-  
   const [maintenance, setMaintenance] = useState([]);
   const [loading, setLoading] = useState(true);
   
@@ -33,8 +31,9 @@ export default function AssetMaintenance() {
     }
   };
 
-  useEffect(() => { 
-    fetchMaintenance(); 
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void fetchMaintenance(); }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const handleResolveSubmit = async (e) => {
@@ -51,7 +50,7 @@ export default function AssetMaintenance() {
       setResolveModal(null); 
       setResolveForm({ cost: '', remarks: '' }); 
       fetchMaintenance();
-    } catch (err) { 
+    } catch {
       showToast("Failed to resolve maintenance ticket.", "error"); 
     } finally {
       setIsSubmitting(false);

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { CircleNotch, ShareNetwork, InstagramLogo, LinkedinLogo, FacebookLogo, YoutubeLogo, ArrowSquareOut } from '@phosphor-icons/react';
 import Layout from './Layout';
@@ -9,16 +9,18 @@ export default function MediaSocial() {
   const [social, setSocial] = useState([]);
   const [counts, setCounts] = useState({ pending: 0 });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     const fetchData = async () => {
       try {
         const res = await axios.get(`${API_BASE}/api/design/tasks`);
         if (res.data.success) {
+          setError('');
           setSocial(res.data.social || []);
           setCounts({ pending: (res.data.tasks || []).filter(t => String(t.status).toLowerCase() !== 'completed').length });
         }
-      } catch (err) {} finally { setLoading(false); }
+      } catch (err) { setError(err.response?.data?.message || 'Could not load social media records.'); } finally { setLoading(false); }
     };
     fetchData();
   }, []);
@@ -39,6 +41,8 @@ export default function MediaSocial() {
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '100px' }}><CircleNotch size={50} className="ph-spin" color="#ec4899" /></div>
+        ) : error ? (
+          <div style={{ background: 'var(--card-bg)', padding: '45px', textAlign: 'center', borderRadius: '16px', border: '1px solid rgba(248,113,113,.25)' }}><p style={{ color: '#fca5a5', margin: '0 0 14px' }}>{error}</p><button type="button" onClick={() => window.location.reload()} style={{ padding: '9px 17px', border: 0, borderRadius: 9, background: '#ec4899', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>Retry</button></div>
         ) : (
           <div className="table-container" style={{ background: 'var(--card-bg)', borderRadius: '16px', border: '1px solid var(--card-border)', overflow: 'hidden' }}>
             <table className="modern-table" style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -64,9 +68,9 @@ export default function MediaSocial() {
                     </td>
                     <td style={{ padding: '15px 20px' }}>
                       <div style={{ fontWeight: 'bold', color: '#e2e8f0', marginBottom: '4px' }}>{s.postType}</div>
-                      <a href={s.link} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', color: '#3b82f6', textDecoration: 'none', fontWeight: 'bold' }}>
+                      {s.link && <a href={s.link} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem', color: '#3b82f6', textDecoration: 'none', fontWeight: 'bold' }}>
                         View Live Post <ArrowSquareOut size={14} weight="bold" />
-                      </a>
+                      </a>}
                     </td>
                     <td style={{ padding: '15px 20px' }}><span style={{ color: '#ec4899', fontWeight: 'bold', background: 'rgba(236,72,153,0.1)', padding: '6px 12px', borderRadius: '8px' }}>{s.designId}</span></td>
                     <td style={{ padding: '15px 20px', color: '#e2e8f0', fontSize: '0.85rem' }}>{s.date}</td>

@@ -6,6 +6,30 @@ const getH = (headers, target) => {
   const cleanTarget = target.toLowerCase().replace(/[^a-z0-9]/g, '');
   return headers.find(h => (h||'').toLowerCase().replace(/[^a-z0-9]/g, '') === cleanTarget) || target;
 };
+const getOptionalH = (headers, target) => {
+  const cleanTarget = target.toLowerCase().replace(/[^a-z0-9]/g, '');
+  return headers.find(h => (h || '').toLowerCase().replace(/[^a-z0-9]/g, '') === cleanTarget) || null;
+};
+const normalize = value => String(value || '').trim().toLowerCase().replace(/\s*branch\s*/g, ' ').replace(/[^a-z0-9]/g, '');
+const rowValue = (row, field) => {
+  const values = row?.toObject?.() || {};
+  const key = Object.keys(values).find(header => normalize(header) === normalize(field));
+  return key ? values[key] : '';
+};
+const isAssetAdmin = req => {
+  const user = req.portalUser || {};
+  const role = String(user.role || '').toUpperCase();
+  return user.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
+};
+const canAccessAssetBranch = (req, branch) => {
+  if (isAssetAdmin(req)) return true;
+  const user = req.portalUser || {};
+  const branches = Array.isArray(user.assignedBranchesArray) ? user.assignedBranchesArray : [];
+  const assigned = branches.length ? branches : [user.sittingBranch];
+  if (assigned.some(value => String(value).trim().toLowerCase() === 'all')) return false;
+  const target = normalize(branch);
+  return Boolean(target && assigned.some(value => normalize(value) === target));
+};
 
 // =========================================================
 // 1. ASSET DASHBOARD ANALYTICS
@@ -13,9 +37,10 @@ const getH = (headers, target) => {
 exports.getAssetDashboardStats = async (req, res) => {
   try {
     const cache = getAssetCache();
-    const assets = cache.assets || [];
-    const inventory = cache.inventory || [];
-    const maintenance = cache.maintenance || [];
+    const assets = (cache.assets || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'Branch')));
+    const allowedAssetIds = new Set(assets.map(row => String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase()));
+    const inventory = (cache.inventory || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'Branch')));
+    const maintenance = (cache.maintenance || []).filter(row => allowedAssetIds.has(String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase()));
 
     let totalAssets = 0;
     let totalValue = 0;
@@ -83,7 +108,7 @@ exports.getAssetDashboardStats = async (req, res) => {
       success: true,
       stats: { 
         totalAssets, 
-        totalValue, 
+        totalValue: isAssetAdmin(req) ? totalValue : null,
         assigned, 
         available, 
         underMaintenance, 
@@ -118,6 +143,7 @@ exports.getRegistrationData = async (req, res) => {
 
     // Deduplicate and sort branches alphabetically
     branches = [...new Set(branches)].sort();
+    if (!isAssetAdmin(req)) branches = branches.filter(branch => canAccessAssetBranch(req, branch));
 
     // Map Asset DB Sheets
     const mapSheet = (rows) => rows.map(r => {
@@ -129,13 +155,14 @@ exports.getRegistrationData = async (req, res) => {
       });
       return cleanObj;
     });
+    const locations = mapSheet(cache.locations || []);
 
     res.json({ 
       success: true, 
       branches, 
       categories: mapSheet(cache.categories || []), 
       subcategories: mapSheet(cache.subcategories || []), 
-      locations: mapSheet(cache.locations || []), 
+      locations,
       vendors: mapSheet(cache.vendors || []) 
     });
   } catch (err) {
@@ -148,7 +175,9 @@ exports.getRegistrationData = async (req, res) => {
 // =========================================================
 exports.addAsset = async (req, res) => {
   try {
-    const { asset, customFields, userName, userEmail } = req.body;
+    const { asset, customFields, userName, userEmail } = req.body || {};
+    if (!asset?.name || !asset?.category || !asset?.branch) return res.status(400).json({ success: false, message: 'Asset name, category, and branch are required.' });
+    if (!canAccessAssetBranch(req, asset.branch)) return res.status(403).json({ success: false, message: 'You cannot register an asset for that branch.' });
 
     const getSheet = (keyword) => assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes(keyword));
     const assetSheet = getSheet('assets');
@@ -227,7 +256,7 @@ exports.addAsset = async (req, res) => {
 exports.getAssets = async (req, res) => {
   try {
     const cache = getAssetCache();
-    const rawAssets = cache.assets || [];
+    const rawAssets = (cache.assets || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'Branch')));
 
     const assets = rawAssets.map(r => {
       const rd = r.toObject();
@@ -249,7 +278,7 @@ exports.getAssets = async (req, res) => {
         brand: getVal('brand'),
         model: getVal('model'),
         purchaseDate: getVal('purchasedate'),
-        purchaseCost: getVal('purchasecost'),
+        purchaseCost: isAssetAdmin(req) ? getVal('purchasecost') : '',
         vendor: getVal('vendor'),
         invoice: getVal('invoicenumber'),
         warrantyEnd: getVal('warrantyend'),
@@ -281,6 +310,7 @@ exports.getAssetDetails = async (req, res) => {
     });
 
     if (!rawAsset) return res.status(404).json({ success: false, message: "Asset not found." });
+    if (!canAccessAssetBranch(req, rowValue(rawAsset, 'Branch'))) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
 
     // 2. Custom Specs
     const customSpecs = (cache.assetcustomdata || []).filter(r => {
@@ -335,7 +365,7 @@ exports.getAssetDetails = async (req, res) => {
 // =========================================================
 exports.assignAsset = async (req, res) => {
   try {
-    const { assetId, employeeName, employeeId, conditionOnIssue, accessories, remarks, userName, userBranch } = req.body;
+    const { assetId, employeeName, employeeId, conditionOnIssue, accessories, remarks, userName } = req.body;
 
     const getSheet = (keyword) => assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes(keyword));
     const assetSheet = getSheet('assets');
@@ -351,6 +381,10 @@ exports.assignAsset = async (req, res) => {
     });
 
     if (!assetRow) return res.status(404).json({ success: false, message: "Asset row not found." });
+    const assetBranch = assetRow.get(getH(assetSheet.headerValues, 'Branch')) || '';
+    if (!canAccessAssetBranch(req, assetBranch)) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
+    const currentStatus = String(assetRow.get(getH(assetSheet.headerValues, 'Status')) || '').toUpperCase();
+    if (currentStatus !== 'AVAILABLE') return res.status(409).json({ success: false, message: 'Only available assets can be assigned.' });
 
     const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     const assignmentId = `ASN-${Date.now()}`;
@@ -371,7 +405,7 @@ exports.assignAsset = async (req, res) => {
         [getH(asgH, 'Asset_ID')]: assetId,
         [getH(asgH, 'Employee_ID')]: employeeId || '',
         [getH(asgH, 'Employee_Name')]: employeeName,
-        [getH(asgH, 'Branch_ID')]: userBranch || assetRow.get(getH(aH, 'Branch')) || '',
+        [getH(asgH, 'Branch_ID')]: assetBranch,
         [getH(asgH, 'Assigned_By')]: userName,
         [getH(asgH, 'Assigned_Date')]: timestamp,
         [getH(asgH, 'Returned_Date')]: '',
@@ -393,7 +427,7 @@ exports.assignAsset = async (req, res) => {
         [getH(hH, 'Old_Value')]: 'AVAILABLE',
         [getH(hH, 'New_Value')]: `ASSIGNED to ${employeeName}`,
         [getH(hH, 'Performed_By')]: userName,
-        [getH(hH, 'Branch')]: userBranch || assetRow.get(getH(aH, 'Branch')),
+        [getH(hH, 'Branch')]: assetBranch,
         [getH(hH, 'Timestamp')]: timestamp,
         [getH(hH, 'Remarks')]: remarks || `Issued with: ${accessories || 'Standard Accessories'}`
       });
@@ -411,7 +445,7 @@ exports.assignAsset = async (req, res) => {
 // =========================================================
 exports.returnAsset = async (req, res) => {
   try {
-    const { assetId, conditionOnReturn, returnStatus, remarks, userName, userBranch } = req.body;
+    const { assetId, conditionOnReturn, returnStatus, remarks, userName } = req.body;
 
     const getSheet = (keyword) => assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes(keyword));
     const assetSheet = getSheet('assets');
@@ -428,6 +462,11 @@ exports.returnAsset = async (req, res) => {
     });
 
     if (!assetRow) return res.status(404).json({ success: false, message: "Asset row not found." });
+    const assetBranch = assetRow.get(getH(aH, 'Branch')) || '';
+    if (!canAccessAssetBranch(req, assetBranch)) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
+    if (String(assetRow.get(getH(aH, 'Status')) || '').toUpperCase() !== 'ASSIGNED') {
+      return res.status(409).json({ success: false, message: 'This asset does not have an active assignment to return.' });
+    }
 
     const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     const targetStatus = returnStatus || (conditionOnReturn === 'DAMAGED' ? 'UNDER_MAINTENANCE' : 'AVAILABLE');
@@ -471,7 +510,7 @@ exports.returnAsset = async (req, res) => {
         [getH(hH, 'Old_Value')]: 'ASSIGNED',
         [getH(hH, 'New_Value')]: targetStatus,
         [getH(hH, 'Performed_By')]: userName,
-        [getH(hH, 'Branch')]: userBranch || assetRow.get(getH(aH, 'Branch')),
+        [getH(hH, 'Branch')]: assetBranch,
         [getH(hH, 'Timestamp')]: timestamp,
         [getH(hH, 'Remarks')]: `Returned in condition: ${conditionOnReturn || 'GOOD'}. ${remarks || ''}`
       });
@@ -505,7 +544,7 @@ exports.getInventory = async (req, res) => {
         minQuantity: parseInt(getV('minimumquantity') || 0), 
         status: getV('status') || 'IN STOCK' 
       };
-    }).filter(i => i.itemId !== '');
+    }).filter(i => i.itemId !== '' && canAccessAssetBranch(req, i.branch));
     
     res.json({ success: true, inventory: inventory.reverse() });
   } catch (err) { 
@@ -515,7 +554,13 @@ exports.getInventory = async (req, res) => {
 
 exports.addInventory = async (req, res) => {
   try {
-    const { item, userName } = req.body;
+    const { item, userName } = req.body || {};
+    const quantity = Number(item?.quantity);
+    const minimumQuantity = Number(item?.minQuantity);
+    if (!item?.name || !item?.branch || !Number.isInteger(quantity) || quantity < 0 || !Number.isInteger(minimumQuantity) || minimumQuantity < 0) {
+      return res.status(400).json({ success: false, message: 'Item name, branch, whole-number quantity, and minimum quantity are required.' });
+    }
+    if (!canAccessAssetBranch(req, item.branch)) return res.status(403).json({ success: false, message: 'You cannot manage inventory for that branch.' });
     
     // 🚨 STRICT MATCHER: Ignores the Transaction sheet!
     const invSheet = assetDoc.sheetsByIndex.find(s => {
@@ -534,9 +579,9 @@ exports.addInventory = async (req, res) => {
       [getH(iH, 'Item_Name')]: item.name, 
       [getH(iH, 'Category')]: item.category, 
       [getH(iH, 'Branch')]: item.branch,
-      [getH(iH, 'Quantity')]: item.quantity, 
-      [getH(iH, 'Minimum_Quantity')]: item.minQuantity, 
-      [getH(iH, 'Status')]: 'IN STOCK', 
+      [getH(iH, 'Quantity')]: quantity,
+      [getH(iH, 'Minimum_Quantity')]: minimumQuantity,
+      [getH(iH, 'Status')]: quantity === 0 ? 'OUT OF STOCK' : quantity <= minimumQuantity ? 'LOW STOCK' : 'IN STOCK',
       [getH(iH, 'Updated_At')]: timestamp
     });
 
@@ -564,7 +609,11 @@ exports.addInventory = async (req, res) => {
 
 exports.updateStock = async (req, res) => {
   try {
-    const { itemId, action, quantity, userName } = req.body; 
+    const { itemId, action, quantity, userName } = req.body || {};
+    const change = Number(quantity);
+    if (!itemId || !['IN', 'OUT'].includes(String(action || '').toUpperCase()) || !Number.isInteger(change) || change <= 0) {
+      return res.status(400).json({ success: false, message: 'Choose stock in/out and enter a positive whole-number quantity.' });
+    }
     
     // 🚨 STRICT MATCHER
     const invSheet = assetDoc.sheetsByIndex.find(s => {
@@ -580,11 +629,12 @@ exports.updateStock = async (req, res) => {
     });
     
     if (!itemRow) return res.status(404).json({ success: false, message: "Item not found." });
+    if (!canAccessAssetBranch(req, itemRow.get(getH(invSheet.headerValues, 'Branch')) || '')) return res.status(403).json({ success: false, message: 'This inventory item is outside your branch assignment.' });
 
     const iH = invSheet.headerValues;
     const currentQty = parseInt(itemRow.get(getH(iH, 'Quantity')) || 0);
-    const change = parseInt(quantity);
-    const newQty = action === 'IN' ? currentQty + change : currentQty - change;
+    const normalizedAction = String(action).toUpperCase();
+    const newQty = normalizedAction === 'IN' ? currentQty + change : currentQty - change;
 
     if (newQty < 0) return res.status(400).json({ success: false, message: "Stock cannot be negative." });
 
@@ -605,7 +655,7 @@ exports.updateStock = async (req, res) => {
       await txSheet.addRow({ 
         [getH(tH, 'Transaction_ID')]: `TX-${Date.now()}`, 
         [getH(tH, 'Item_ID')]: itemId, 
-        [getH(tH, 'Type')]: action === 'IN' ? 'STOCK_IN' : 'STOCK_OUT', 
+      [getH(tH, 'Type')]: normalizedAction === 'IN' ? 'STOCK_IN' : 'STOCK_OUT',
         [getH(tH, 'Quantity')]: change, 
         [getH(tH, 'Previous')]: currentQty, 
         [getH(tH, 'New')]: newQty, 
@@ -638,11 +688,16 @@ exports.getTransfers = async (req, res) => {
         fromBranch: getV('frombranch'), 
         toBranch: getV('tobranch'), 
         requestedBy: getV('requestedby'), 
+        approvedBy: getV('approvedby'),
+        receivedBy: getV('receivedby'),
         status: getV('status'), 
         date: getV('requestedat'), 
+        dispatchedAt: getV('approvedat') || getV('dispatchedat'),
+        receivedAt: getV('receivedat'),
+        remarks: getV('remarks'),
         assetId: getV('assetid') 
       };
-    }).filter(t => t.transferId !== '');
+    }).filter(t => t.transferId !== '' && (canAccessAssetBranch(req, t.fromBranch) || canAccessAssetBranch(req, t.toBranch)));
     
     res.json({ success: true, transfers: transfers.reverse() });
   } catch (err) { 
@@ -652,36 +707,58 @@ exports.getTransfers = async (req, res) => {
 
 exports.requestTransfer = async (req, res) => {
   try {
-    const { assetId, toBranch, remarks, userName, userBranch } = req.body;
+    const { assetId, toBranch, remarks, userName } = req.body || {};
+    if (!assetId || !toBranch) return res.status(400).json({ success: false, message: 'Asset and destination branch are required.' });
     const trfSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('transfers'));
+    if (!trfSheet) return res.status(503).json({ success: false, message: 'Transfer register is unavailable.' });
     const tH = trfSheet.headerValues;
-    
-    await trfSheet.addRow({
-      [getH(tH, 'Transfer_ID')]: `TRF-${Date.now()}`, 
-      [getH(tH, 'Asset_ID')]: assetId, 
-      [getH(tH, 'From_Branch')]: userBranch, 
-      [getH(tH, 'To_Branch')]: toBranch,
-      [getH(tH, 'Requested_By')]: userName, 
-      [getH(tH, 'Status')]: 'PENDING', 
-      [getH(tH, 'Requested_At')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), 
-      [getH(tH, 'Remarks')]: remarks
-    });
-
     const assetSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'));
+    if (!assetSheet) return res.status(503).json({ success: false, message: 'Asset register is unavailable.' });
     const rows = await assetSheet.getRows();
     const assetRow = rows.find(r => { 
       const rd = r.toObject(); 
       const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'assetid'); 
-      return (rd[k] || '').toString().trim().toLowerCase() === assetId.trim().toLowerCase(); 
+      return (rd[k] || '').toString().trim().toLowerCase() === String(assetId).trim().toLowerCase();
     });
-    
-    if(assetRow) { 
-      assetRow.assign({ [getH(assetSheet.headerValues, 'Status')]: 'TRANSFER_PENDING' }); 
-      await assetRow.save(); 
+    if (!assetRow) return res.status(404).json({ success: false, message: 'Asset not found.' });
+    const aH = assetSheet.headerValues;
+    const readAsset = target => { const header = getH(aH, target); return assetRow.get(header) || ''; };
+    const currentBranch = String(readAsset('Branch') || '').trim();
+    const currentStatus = String(readAsset('Status') || '').trim().toUpperCase();
+    if (!canAccessAssetBranch(req, currentBranch)) return res.status(403).json({ success: false, message: 'The asset is outside your branch assignment.' });
+    if (currentBranch.toLowerCase() === String(toBranch).trim().toLowerCase()) {
+      return res.status(400).json({ success: false, message: 'Choose a different destination branch.' });
     }
+    if (currentStatus !== 'AVAILABLE') {
+      return res.status(409).json({ success: false, message: 'Only available assets can be transferred. Return or resolve the asset first.' });
+    }
+    const existing = await trfSheet.getRows();
+    const activeTransfer = existing.find(row => {
+      const values = row.toObject();
+      const key = name => Object.keys(values).find(header => header.toLowerCase().replace(/[^a-z0-9]/g, '') === name);
+      const rowAsset = values[key('assetid')];
+      const rowStatus = String(values[key('status')] || '').toUpperCase();
+      return String(rowAsset || '').trim().toLowerCase() === String(assetId).trim().toLowerCase() && ['PENDING', 'IN_TRANSIT'].includes(rowStatus);
+    });
+    if (activeTransfer) return res.status(409).json({ success: false, message: 'This asset already has an open transfer.' });
+
+    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const transferId = `TRF-${Date.now()}`;
+    await trfSheet.addRow({
+      [getH(tH, 'Transfer_ID')]: transferId,
+      [getH(tH, 'Asset_ID')]: assetId,
+      [getH(tH, 'From_Branch')]: currentBranch,
+      [getH(tH, 'To_Branch')]: String(toBranch).trim(),
+      [getH(tH, 'Requested_By')]: userName || '',
+      [getH(tH, 'Status')]: 'PENDING',
+      [getH(tH, 'Requested_At')]: timestamp,
+      [getH(tH, 'Remarks')]: remarks || ''
+    });
+    assetRow.assign({ [getH(aH, 'Status')]: 'TRANSFER_PENDING' });
+    await assetRow.save();
     
     refreshAssetCache(); 
-    res.json({ success: true, message: "Transfer requested successfully!" });
+    res.status(201).json({ success: true, transferId, message: 'Transfer request submitted for approval.' });
   } catch (err) { 
     res.status(500).json({ success: false, message: err.message }); 
   }
@@ -689,8 +766,10 @@ exports.requestTransfer = async (req, res) => {
 
 exports.approveTransfer = async (req, res) => {
   try {
-    const { transferId, assetId, toBranch, userName } = req.body;
+    const { transferId, userName } = req.body || {};
+    if (!transferId) return res.status(400).json({ success: false, message: 'Transfer ID is required.' });
     const trfSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('transfers'));
+    if (!trfSheet) return res.status(503).json({ success: false, message: 'Transfer register is unavailable.' });
     const rows = await trfSheet.getRows();
     const tH = trfSheet.headerValues;
     
@@ -700,35 +779,112 @@ exports.approveTransfer = async (req, res) => {
       return (rd[k] || '').toString().trim().toLowerCase() === transferId.trim().toLowerCase(); 
     });
     
-    if(trfRow) {
-      trfRow.assign({ 
-        [getH(tH, 'Status')]: 'COMPLETED', 
-        [getH(tH, 'Approved_By')]: userName, 
-        [getH(tH, 'Completed_At')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) 
-      });
-      await trfRow.save();
+    if (!trfRow) return res.status(404).json({ success: false, message: 'Transfer request not found.' });
+    if (String(trfRow.get(getH(tH, 'Status')) || '').toUpperCase() !== 'PENDING') {
+      return res.status(409).json({ success: false, message: 'Only pending transfer requests can be approved.' });
     }
-
+    const transferValues = trfRow.toObject();
+    const readTransfer = target => {
+      const header = Object.keys(transferValues).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === target);
+      return header ? transferValues[header] : '';
+    };
+    const assetId = String(readTransfer('assetid') || '').trim();
     const assetSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'));
+    if (!assetSheet) return res.status(503).json({ success: false, message: 'Asset register is unavailable.' });
     const aRows = await assetSheet.getRows();
-    
-    const assetRow = aRows.find(r => { 
-      const rd = r.toObject(); 
-      const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'assetid'); 
-      return (rd[k] || '').toString().trim().toLowerCase() === assetId.trim().toLowerCase(); 
+    const assetRow = aRows.find(row => {
+      const values = row.toObject();
+      const header = Object.keys(values).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'assetid');
+      return String(values[header] || '').trim().toLowerCase() === assetId.toLowerCase();
     });
-    
-    if(assetRow) {
-      const aH = assetSheet.headerValues;
-      assetRow.assign({ [getH(aH, 'Status')]: 'AVAILABLE', [getH(aH, 'Branch')]: toBranch });
-      await assetRow.save();
+    if (!assetRow) return res.status(404).json({ success: false, message: 'Transfer asset no longer exists.' });
+    const assetStatusHeader = getH(assetSheet.headerValues, 'Status');
+    if (String(assetRow.get(assetStatusHeader) || '').toUpperCase() !== 'TRANSFER_PENDING') {
+      return res.status(409).json({ success: false, message: 'Asset is no longer awaiting transfer.' });
+    }
+    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const approvalUpdate = {
+      [getH(tH, 'Status')]: 'IN_TRANSIT',
+      [getH(tH, 'Approved_By')]: userName || ''
+    };
+    const approvedAtHeader = getOptionalH(tH, 'Approved_At') || getOptionalH(tH, 'Dispatched_At');
+    if (approvedAtHeader) approvalUpdate[approvedAtHeader] = timestamp;
+    trfRow.assign(approvalUpdate);
+    await trfRow.save();
+    const historySheet = assetDoc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('history'));
+    if (historySheet) {
+      const h = historySheet.headerValues;
+      await historySheet.addRow({
+        [getH(h, 'History_ID')]: `HIS-${Date.now()}`, [getH(h, 'Asset_ID')]: assetId,
+        [getH(h, 'Action')]: 'TRANSFER_DISPATCHED', [getH(h, 'Old_Value')]: readTransfer('frombranch'),
+        [getH(h, 'New_Value')]: readTransfer('tobranch'), [getH(h, 'Performed_By')]: userName || '',
+        [getH(h, 'Branch')]: readTransfer('frombranch'), [getH(h, 'Timestamp')]: timestamp,
+        [getH(h, 'Remarks')]: `Transfer ${transferId} approved; awaiting destination receipt.`
+      });
     }
 
     refreshAssetCache(); 
-    res.json({ success: true, message: "Transfer approved and branch updated!" });
+    res.json({ success: true, message: 'Transfer dispatched. The destination branch must confirm receipt.' });
   } catch (err) { 
     res.status(500).json({ success: false, message: err.message }); 
   }
+};
+
+exports.receiveTransfer = async (req, res) => {
+  try {
+    const { transferId, userName, condition, remarks } = req.body || {};
+    if (!transferId) return res.status(400).json({ success: false, message: 'Transfer ID is required.' });
+    const trfSheet = assetDoc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('transfers'));
+    const assetSheet = assetDoc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'));
+    if (!trfSheet || !assetSheet) return res.status(503).json({ success: false, message: 'Transfer or asset register is unavailable.' });
+    const tH = trfSheet.headerValues;
+    const transferRow = (await trfSheet.getRows()).find(row => String(row.get(getH(tH, 'Transfer_ID')) || '').trim().toLowerCase() === String(transferId).trim().toLowerCase());
+    if (!transferRow) return res.status(404).json({ success: false, message: 'Transfer request not found.' });
+    const transferStatus = String(transferRow.get(getH(tH, 'Status')) || '').toUpperCase();
+    if (transferStatus !== 'IN_TRANSIT') return res.status(409).json({ success: false, message: 'Only dispatched transfers can be received.' });
+    const destination = String(transferRow.get(getH(tH, 'To_Branch')) || '').trim();
+    if (!canAccessAssetBranch(req, destination)) {
+      return res.status(403).json({ success: false, message: 'Receipt must be confirmed by the destination branch.' });
+    }
+    const assetId = String(transferRow.get(getH(tH, 'Asset_ID')) || '').trim();
+    const aH = assetSheet.headerValues;
+    const assetRow = (await assetSheet.getRows()).find(row => String(row.get(getH(aH, 'Asset_ID')) || '').trim().toLowerCase() === assetId.toLowerCase());
+    if (!assetRow) return res.status(404).json({ success: false, message: 'Transfer asset not found.' });
+    if (String(assetRow.get(getH(aH, 'Status')) || '').toUpperCase() !== 'TRANSFER_PENDING') {
+      return res.status(409).json({ success: false, message: 'Asset is no longer in transfer.' });
+    }
+    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    assetRow.assign({
+      [getH(aH, 'Branch')]: destination,
+      [getH(aH, 'Status')]: 'AVAILABLE',
+      [getH(aH, 'Condition')]: condition || 'GOOD'
+    });
+    await assetRow.save();
+    const receiptUpdate = {
+      [getH(tH, 'Status')]: 'COMPLETED',
+      [getH(tH, 'Remarks')]: remarks ? `${transferRow.get(getH(tH, 'Remarks')) || ''} | Receipt: ${remarks}` : transferRow.get(getH(tH, 'Remarks')) || ''
+    };
+    const receivedByHeader = getOptionalH(tH, 'Received_By');
+    const receivedAtHeader = getOptionalH(tH, 'Received_At');
+    const completedAtHeader = getOptionalH(tH, 'Completed_At');
+    if (receivedByHeader) receiptUpdate[receivedByHeader] = userName || '';
+    if (receivedAtHeader) receiptUpdate[receivedAtHeader] = timestamp;
+    if (completedAtHeader) receiptUpdate[completedAtHeader] = timestamp;
+    transferRow.assign(receiptUpdate);
+    await transferRow.save();
+    const historySheet = assetDoc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('history'));
+    if (historySheet) {
+      const h = historySheet.headerValues;
+      await historySheet.addRow({
+        [getH(h, 'History_ID')]: `HIS-${Date.now()}`, [getH(h, 'Asset_ID')]: assetId,
+        [getH(h, 'Action')]: 'TRANSFER_RECEIVED', [getH(h, 'Old_Value')]: transferRow.get(getH(tH, 'From_Branch')) || '',
+        [getH(h, 'New_Value')]: destination, [getH(h, 'Performed_By')]: userName || '', [getH(h, 'Branch')]: destination,
+        [getH(h, 'Timestamp')]: timestamp, [getH(h, 'Remarks')]: `Transfer ${transferId} received. ${remarks || ''}`
+      });
+    }
+    refreshAssetCache();
+    res.json({ success: true, message: 'Receipt confirmed and asset branch updated.' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 // =========================================================
@@ -737,6 +893,7 @@ exports.approveTransfer = async (req, res) => {
 exports.getMaintenance = async (req, res) => {
   try {
     const cache = getAssetCache();
+    const scopedAssetIds = new Set((cache.assets || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'Branch'))).map(row => String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase()));
     const maintenance = (cache.maintenance || []).map(r => {
       const rd = r.toObject(); 
       const getV = (str) => { 
@@ -752,7 +909,7 @@ exports.getMaintenance = async (req, res) => {
         cost: getV('cost'), 
         date: getV('reporteddate') 
       };
-    }).filter(m => m.maintenanceId !== '');
+    }).filter(m => m.maintenanceId !== '' && scopedAssetIds.has(String(m.assetId || '').trim().toLowerCase()));
     
     res.json({ success: true, maintenance: maintenance.reverse() });
   } catch (err) { 
@@ -762,81 +919,85 @@ exports.getMaintenance = async (req, res) => {
 
 exports.reportMaintenance = async (req, res) => {
   try {
-    const { assetId, issue, userName } = req.body;
+    const { assetId, issue, userName } = req.body || {};
+    if (!assetId || !String(issue || '').trim()) return res.status(400).json({ success: false, message: 'Asset and issue description are required.' });
     const mSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('maintenance'));
-    const mH = mSheet.headerValues;
-    
-    await mSheet.addRow({
-      [getH(mH, 'Maintenance_ID')]: `MNT-${Date.now()}`, 
-      [getH(mH, 'Asset_ID')]: assetId, 
-      [getH(mH, 'Issue')]: issue,
-      [getH(mH, 'Reported_By')]: userName, 
-      [getH(mH, 'Status')]: 'OPEN', 
-      [getH(mH, 'Reported_Date')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
-    });
-
     const assetSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'));
-    const rows = await assetSheet.getRows();
-    
-    const assetRow = rows.find(r => { 
-      const rd = r.toObject(); 
-      const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'assetid'); 
-      return (rd[k] || '').toString().trim().toLowerCase() === assetId.trim().toLowerCase(); 
-    });
-    
-    if(assetRow) { 
-      assetRow.assign({ [getH(assetSheet.headerValues, 'Status')]: 'UNDER_MAINTENANCE' }); 
-      await assetRow.save(); 
-    }
-    
-    refreshAssetCache(); 
-    res.json({ success: true, message: "Maintenance reported successfully!" });
-  } catch (err) { 
-    res.status(500).json({ success: false, message: err.message }); 
+    if (!mSheet || !assetSheet) return res.status(503).json({ success: false, message: 'Asset or maintenance register is unavailable.' });
+    const assetRows = await assetSheet.getRows();
+    const aH = assetSheet.headerValues;
+    const assetRow = assetRows.find(r => String(r.get(getH(aH, 'Asset_ID')) || '').trim().toLowerCase() === String(assetId).trim().toLowerCase());
+    if (!assetRow) return res.status(404).json({ success: false, message: 'Asset not found.' });
+    if (!canAccessAssetBranch(req, assetRow.get(getH(aH, 'Branch')) || '')) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
+    const previousStatus = String(assetRow.get(getH(aH, 'Status')) || 'AVAILABLE').toUpperCase();
+    if (['DISPOSED', 'TRANSFER_PENDING'].includes(previousStatus)) return res.status(409).json({ success: false, message: 'Disposed or transferring assets cannot receive a maintenance ticket.' });
+    const mH = mSheet.headerValues;
+    const activeTickets = await mSheet.getRows();
+    const openTicket = activeTickets.find(row => String(row.get(getH(mH, 'Asset_ID')) || '').trim().toLowerCase() === String(assetId).trim().toLowerCase() && String(row.get(getH(mH, 'Status')) || '').toUpperCase() === 'OPEN');
+    if (openTicket) return res.status(409).json({ success: false, message: 'This asset already has an open maintenance ticket.' });
+    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const ticketValues = {
+      [getH(mH, 'Maintenance_ID')]: `MNT-${Date.now()}`,
+      [getH(mH, 'Asset_ID')]: assetId,
+      [getH(mH, 'Issue')]: String(issue).trim(),
+      [getH(mH, 'Reported_By')]: userName || '',
+      [getH(mH, 'Status')]: 'OPEN',
+      [getH(mH, 'Reported_Date')]: timestamp
+    };
+    const previousStatusHeader = getOptionalH(mH, 'Previous_Status');
+    if (previousStatusHeader) ticketValues[previousStatusHeader] = previousStatus;
+    const remarksHeader = getOptionalH(mH, 'Remarks');
+    if (remarksHeader && !previousStatusHeader) ticketValues[remarksHeader] = `Previous status: ${previousStatus}`;
+    await mSheet.addRow(ticketValues);
+    assetRow.assign({ [getH(aH, 'Status')]: 'UNDER_MAINTENANCE' });
+    await assetRow.save();
+
+    refreshAssetCache();
+    res.status(201).json({ success: true, message: 'Maintenance ticket created.' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
 exports.resolveMaintenance = async (req, res) => {
   try {
-    const { maintenanceId, assetId, cost, remarks } = req.body;
+    const { maintenanceId, assetId, cost, remarks } = req.body || {};
+    if (!maintenanceId || !assetId || !String(remarks || '').trim() || !Number.isFinite(Number(cost)) || Number(cost) < 0) {
+      return res.status(400).json({ success: false, message: 'Ticket, asset, non-negative repair cost, and corrective action are required.' });
+    }
     const mSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('maintenance'));
-    const rows = await mSheet.getRows();
-    const mH = mSheet.headerValues;
-    
-    const mRow = rows.find(r => { 
-      const rd = r.toObject(); 
-      const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'maintenanceid'); 
-      return (rd[k] || '').toString().trim().toLowerCase() === maintenanceId.trim().toLowerCase(); 
-    });
-    
-    if(mRow) {
-      mRow.assign({ 
-        [getH(mH, 'Status')]: 'COMPLETED', 
-        [getH(mH, 'Cost')]: cost, 
-        [getH(mH, 'Remarks')]: remarks, 
-        [getH(mH, 'Completed_Date')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) 
-      });
-      await mRow.save();
-    }
-
     const assetSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'));
-    const aRows = await assetSheet.getRows();
-    
-    const assetRow = aRows.find(r => { 
-      const rd = r.toObject(); 
-      const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'assetid'); 
-      return (rd[k] || '').toString().trim().toLowerCase() === assetId.trim().toLowerCase(); 
-    });
-    
-    if(assetRow) { 
-      assetRow.assign({ [getH(assetSheet.headerValues, 'Status')]: 'AVAILABLE' }); 
-      await assetRow.save(); 
-    }
+    if (!mSheet || !assetSheet) return res.status(503).json({ success: false, message: 'Asset or maintenance register is unavailable.' });
+    const mH = mSheet.headerValues;
+    const rows = await mSheet.getRows();
+    const mRow = rows.find(r => String(r.get(getH(mH, 'Maintenance_ID')) || '').trim().toLowerCase() === String(maintenanceId).trim().toLowerCase());
+    if (!mRow) return res.status(404).json({ success: false, message: 'Maintenance ticket not found.' });
+    if (String(mRow.get(getH(mH, 'Status')) || '').toUpperCase() !== 'OPEN') return res.status(409).json({ success: false, message: 'This ticket is already closed.' });
+    if (String(mRow.get(getH(mH, 'Asset_ID')) || '').trim().toLowerCase() !== String(assetId).trim().toLowerCase()) return res.status(400).json({ success: false, message: 'Ticket does not match the selected asset.' });
 
-    refreshAssetCache(); 
-    res.json({ success: true, message: "Asset resolved and available!" });
-  } catch (err) { 
-    res.status(500).json({ success: false, message: err.message }); 
+    const aH = assetSheet.headerValues;
+    const assetRow = (await assetSheet.getRows()).find(r => String(r.get(getH(aH, 'Asset_ID')) || '').trim().toLowerCase() === String(assetId).trim().toLowerCase());
+    if (!assetRow) return res.status(404).json({ success: false, message: 'Ticket asset no longer exists.' });
+    if (!canAccessAssetBranch(req, assetRow.get(getH(aH, 'Branch')) || '')) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
+    const prevStatusHeader = getOptionalH(mH, 'Previous_Status');
+    const savedRemarks = String(mRow.get(getH(mH, 'Remarks')) || '');
+    const previousStatus = String((prevStatusHeader && mRow.get(prevStatusHeader)) || savedRemarks.match(/Previous status:\s*([A-Z_]+)/i)?.[1] || 'AVAILABLE').toUpperCase();
+    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+
+    mRow.assign({
+      [getH(mH, 'Status')]: 'COMPLETED',
+      [getH(mH, 'Cost')]: Number(cost),
+      [getH(mH, 'Remarks')]: remarks,
+      [getH(mH, 'Completed_Date')]: timestamp
+    });
+    await mRow.save();
+    assetRow.assign({ [getH(aH, 'Status')]: previousStatus === 'ASSIGNED' ? 'ASSIGNED' : 'AVAILABLE' });
+    await assetRow.save();
+
+    refreshAssetCache();
+    res.json({ success: true, message: 'Maintenance completed and asset status restored.' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -948,8 +1109,13 @@ exports.addVendor = async (req, res) => {
 // =========================================================
 exports.uploadAssetDocument = async (req, res) => {
   try {
-    const { assetId, documentType, userName } = req.body;
+    const { assetId, documentType } = req.body || {};
     if (!req.file) return res.status(400).json({ success: false, message: "No file provided." });
+
+    const asset = (await assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'))?.getRows()) || [];
+    const assetRow = asset.find(row => String(row.get(getH(row._worksheet.headerValues, 'Asset_ID')) || '').trim().toLowerCase() === String(assetId || '').trim().toLowerCase());
+    if (!assetRow) return res.status(404).json({ success: false, message: 'Asset not found.' });
+    if (!canAccessAssetBranch(req, assetRow.get(getH(assetRow._worksheet.headerValues, 'Branch')) || '')) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
 
     // Upload to Google Drive using existing helper
     const fileUrl = await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || '');
@@ -964,7 +1130,7 @@ exports.uploadAssetDocument = async (req, res) => {
       [getH(h, 'Document_Type')]: documentType || 'PHOTO',
       [getH(h, 'File_Name')]: req.file.originalname,
       [getH(h, 'Drive_URL')]: fileUrl,
-      [getH(h, 'Uploaded_By')]: userName,
+      [getH(h, 'Uploaded_By')]: req.portalUser?.name || '',
       [getH(h, 'Uploaded_At')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
     });
 
@@ -978,56 +1144,67 @@ exports.uploadAssetDocument = async (req, res) => {
 // =========================================================
 exports.disposeAsset = async (req, res) => {
   try {
-    const { assetId, reason, method, value, userName } = req.body;
+    const { assetId, reason, method, value, userName } = req.body || {};
+    const cleanAssetId = String(assetId || '').trim();
+    const cleanReason = String(reason || '').trim();
+    const cleanMethod = String(method || '').trim();
+    const disposalValue = value === '' || value === undefined || value === null ? 0 : Number(value);
+    if (!cleanAssetId || !cleanReason || !cleanMethod || !Number.isFinite(disposalValue) || disposalValue < 0) {
+      return res.status(400).json({ success: false, message: 'Asset, disposal reason, method, and a non-negative value are required.' });
+    }
 
     const assetSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'));
     const dispSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('disposals'));
     const histSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('history'));
+    if (!assetSheet || !dispSheet || !histSheet) return res.status(503).json({ success: false, message: 'Asset disposal, register, or audit sheet is unavailable. No changes were made.' });
 
     const rows = await assetSheet.getRows();
-    const assetRow = rows.find(r => { 
-      const rd = r.toObject(); 
-      const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'assetid'); 
-      return (rd[k] || '').toString().trim().toLowerCase() === assetId.trim().toLowerCase(); 
+    const assetRow = rows.find(r => {
+      const rd = r.toObject();
+      const k = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'assetid');
+      return (rd[k] || '').toString().trim().toLowerCase() === cleanAssetId.toLowerCase();
     });
 
     if(!assetRow) return res.status(404).json({ success: false, message: "Asset not found." });
-
-    // 1. Change Status to DISPOSED
+    if (!canAccessAssetBranch(req, assetRow.get(getH(assetSheet.headerValues, 'Branch')) || '')) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
     const aH = assetSheet.headerValues;
+    const oldStatus = String(assetRow.get(getH(aH, 'Status')) || '').toUpperCase();
+    if (oldStatus !== 'AVAILABLE') return res.status(409).json({ success: false, message: 'Only available assets can be disposed. Return, complete maintenance, or finish transfers first.' });
+    const maintenanceSheet = assetDoc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('maintenance'));
+    if (maintenanceSheet) {
+      const openTicket = (await maintenanceSheet.getRows()).some(row => String(row.get(getH(maintenanceSheet.headerValues, 'Asset_ID')) || '').trim().toLowerCase() === cleanAssetId.toLowerCase() && String(row.get(getH(maintenanceSheet.headerValues, 'Status')) || '').toUpperCase() === 'OPEN');
+      if (openTicket) return res.status(409).json({ success: false, message: 'Resolve the open maintenance ticket before disposal.' });
+    }
+
+    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const disposalId = `DSP-${Date.now()}`;
+    const dH = dispSheet.headerValues;
+    await dispSheet.addRow({
+      [getH(dH, 'Disposal_ID')]: disposalId,
+      [getH(dH, 'Asset_ID')]: cleanAssetId,
+      [getH(dH, 'Reason')]: cleanReason,
+      [getH(dH, 'Disposal_Method')]: cleanMethod,
+      [getH(dH, 'Disposal_Value')]: disposalValue,
+      [getH(dH, 'Requested_By')]: userName || '',
+      [getH(dH, 'Approved_By')]: userName || '',
+      [getH(dH, 'Disposed_Date')]: timestamp,
+      [getH(dH, 'Remarks')]: 'Asset permanently retired.'
+    });
+
     assetRow.assign({ [getH(aH, 'Status')]: 'DISPOSED' });
     await assetRow.save();
 
-    // 2. Log in Disposals Sheet
-    if (dispSheet) {
-      const dH = dispSheet.headerValues;
-      await dispSheet.addRow({
-        [getH(dH, 'Disposal_ID')]: `DSP-${Date.now()}`,
-        [getH(dH, 'Asset_ID')]: assetId,
-        [getH(dH, 'Reason')]: reason,
-        [getH(dH, 'Disposal_Method')]: method,
-        [getH(dH, 'Disposal_Value')]: value || '0',
-        [getH(dH, 'Requested_By')]: userName,
-        [getH(dH, 'Approved_By')]: userName, // Assuming self-approval for BAM/Admin for now
-        [getH(dH, 'Disposed_Date')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
-        [getH(dH, 'Remarks')]: 'Asset permanently retired.'
-      });
-    }
-
-    // 3. Log in History
-    if (histSheet) {
-      const hH = histSheet.headerValues;
-      await histSheet.addRow({
-         [getH(hH, 'History_ID')]: `HIS-${Date.now()}`,
-         [getH(hH, 'Asset_ID')]: assetId,
-         [getH(hH, 'Action')]: 'ASSET_DISPOSED',
-         [getH(hH, 'Old_Value')]: 'VARIOUS',
-         [getH(hH, 'New_Value')]: 'DISPOSED',
-         [getH(hH, 'Performed_By')]: userName,
-         [getH(hH, 'Timestamp')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
-         [getH(hH, 'Remarks')]: `Method: ${method} | Reason: ${reason}`
-      });
-    }
+    const hH = histSheet.headerValues;
+    await histSheet.addRow({
+       [getH(hH, 'History_ID')]: `HIS-${Date.now()}`,
+       [getH(hH, 'Asset_ID')]: cleanAssetId,
+       [getH(hH, 'Action')]: 'ASSET_DISPOSED',
+       [getH(hH, 'Old_Value')]: oldStatus,
+       [getH(hH, 'New_Value')]: 'DISPOSED',
+       [getH(hH, 'Performed_By')]: userName || '',
+       [getH(hH, 'Timestamp')]: timestamp,
+       [getH(hH, 'Remarks')]: `Disposal ${disposalId}; method: ${cleanMethod} | reason: ${cleanReason}`
+    });
 
     refreshAssetCache();
     res.json({ success: true, message: "Asset has been permanently disposed." });

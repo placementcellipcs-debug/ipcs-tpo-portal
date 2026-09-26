@@ -40,7 +40,10 @@ export default function AssetSettings() {
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void fetchData(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const showToast = (text, type = 'success') => {
     setNotification({ text, type });

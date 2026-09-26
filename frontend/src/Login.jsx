@@ -1,191 +1,194 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { useNavigate } from 'react-router-dom';
-import { CircleNotch } from '@phosphor-icons/react';
-import { API_BASE } from './apiConfig'; 
+import { Link, useNavigate } from 'react-router-dom';
+import { AnimatePresence, motion } from 'framer-motion';
+import { ArrowLeft, ArrowRight, CircleNotch, Compass, List, UsersThree, X } from '@phosphor-icons/react';
+import { API_BASE } from './apiConfig';
+import ipcsLogo from './ipcs-logo.png';
+import './Login.css';
+import PublicSiteSections from './PublicSiteSections';
 
 export default function Login() {
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState('home');
+  const [menuOpen, setMenuOpen] = useState(false);
   const navigate = useNavigate();
 
-  // Video Intro State
   const [showIntro, setShowIntro] = useState(false);
   const [videoOpacity, setVideoOpacity] = useState(1);
 
-  // 🚨 AUTO-REDIRECT: If already logged in, skip the login page
   useEffect(() => {
     const tpoData = localStorage.getItem('tpoData');
-    if (tpoData) {
-      try {
-        const parsed = JSON.parse(tpoData);
-        const userRole = String(parsed.role || '').toUpperCase();
-        const isSuperAdmin = parsed.accessType === 'superadmin';
-        
-        // Route Branch Asset Managers to their silo
-        if (userRole === 'BRANCH ASSET MANAGER' && !isSuperAdmin) {
-          navigate('/assets/dashboard');
-        } else {
-          navigate('/dashboard');
-        }
-      } catch (e) {
-        localStorage.removeItem('tpoData');
-      }
+    if (!tpoData) return;
+    try {
+      const parsed = JSON.parse(tpoData);
+      const userRole = String(parsed.role || '').toUpperCase();
+      const isSuperAdmin = parsed.accessType === 'superadmin';
+      navigate(userRole === 'BRANCH ASSET MANAGER' && !isSuperAdmin ? '/assets/dashboard' : '/dashboard');
+    } catch {
+      localStorage.removeItem('tpoData');
     }
   }, [navigate]);
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
+  const openLogin = () => {
+    setError('');
+    setMenuOpen(false);
+    setActiveTab('login');
+  };
+
+  const showHomeSection = (sectionId) => {
+    setActiveTab('home');
+    setMenuOpen(false);
+    if (sectionId === 'home') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    window.setTimeout(() => document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 80);
+  };
+
+  const handleLogin = async (event) => {
+    event.preventDefault();
     setLoading(true);
     setError('');
-    
-    try {
-      const res = await axios.post(`${API_BASE}/api/auth/login`, { 
-        email: loginId, 
-        password: password 
-      });
-      
-      if (res.data.success) {
-        localStorage.setItem('tpoData', JSON.stringify(res.data.tpo || res.data.tpoData));
-        
-        const userRole = String((res.data.tpo || res.data.tpoData).role || '').toUpperCase();
-        const isSuperAdmin = (res.data.tpo || res.data.tpoData).accessType === 'superadmin';
 
-        // Bypass video for Branch Asset Managers and go straight to ERP
-        if (userRole === 'BRANCH ASSET MANAGER' && !isSuperAdmin) {
-          navigate('/assets/dashboard');
-        } else {
-          setShowIntro(true); // Trigger video intro for everyone else
-        }
-      } else {
+    try {
+      const res = await axios.post(`${API_BASE}/api/auth/login`, { email: loginId, password });
+      if (!res.data.success) {
         setError(res.data.message || 'Login failed. Please check your credentials.');
-        setLoading(false); 
+        setLoading(false);
+        return;
+      }
+
+      const account = res.data.tpo || res.data.tpoData;
+      localStorage.setItem('tpoData', JSON.stringify(account));
+      const userRole = String(account?.role || '').toUpperCase();
+      const isSuperAdmin = account?.accessType === 'superadmin';
+
+      if (userRole === 'BRANCH ASSET MANAGER' && !isSuperAdmin) {
+        navigate('/assets/dashboard');
+      } else {
+        setShowIntro(true);
       }
     } catch (err) {
-      console.error("Login Error:", err);
+      console.error('Login Error:', err);
       setError(err.response?.data?.message || 'Server connection failed. Please check your internet and try again.');
       setLoading(false);
     }
   };
 
-  // 🚨 CINEMATIC VIDEO INTRO
   if (showIntro) {
     return (
-      <div style={{ 
-        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', 
-        zIndex: 99999, backgroundColor: '#000000', display: 'flex', 
-        alignItems: 'center', justifyContent: 'center',
-        opacity: videoOpacity, 
-        transition: 'opacity 1s ease-in-out' 
-      }}>
-        <video 
-          src="/Intro.mp4" 
-          autoPlay 
-          playsInline 
-          onTimeUpdate={(e) => {
-            if (e.target.duration - e.target.currentTime <= 1) {
-              setVideoOpacity(0);
-            }
+      <div className="login-intro" style={{ opacity: videoOpacity }}>
+        <video
+          src="/Intro.mp4"
+          autoPlay
+          playsInline
+          onTimeUpdate={(event) => {
+            if (event.target.duration - event.target.currentTime <= 1) setVideoOpacity(0);
           }}
-          onEnded={() => navigate('/dashboard')} 
-          onError={(e) => {
-            console.error("Video failed to load. Skipping to dashboard.", e);
-            navigate('/dashboard'); 
-          }}
-          style={{ 
-            width: '100%', height: '100%', objectFit: 'cover',
-            transform: 'scale(1.08)' 
-          }}
+          onEnded={() => navigate('/dashboard')}
+          onError={() => navigate('/dashboard')}
         />
       </div>
     );
   }
 
-  // 🚨 ORIGINAL CYAN / BLUE UI RESTORED
   return (
-    <div style={{ width: '100vw', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#020617', fontFamily: 'Inter, sans-serif' }}>
-      
-      <header style={{ position: 'absolute', top: 0, left: 0, width: '100%', padding: '30px 40px' }}>
-        <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" style={{ height: '35px' }} />
+    <main className="public-portal">
+      <div className="portal-glow portal-glow-one" aria-hidden="true" />
+      <div className="portal-glow portal-glow-two" aria-hidden="true" />
+
+      <header className="portal-header">
+        <Link className="portal-brand" to="/" aria-label="IPCS Global home" onClick={() => { setActiveTab('home'); setMenuOpen(false); }}>
+          <img src={ipcsLogo} alt="IPCS Global" />
+        </Link>
+        <button className="portal-menu-toggle" type="button" aria-label={menuOpen ? 'Close navigation' : 'Open navigation'} aria-expanded={menuOpen} onClick={() => setMenuOpen(value => !value)}>
+          {menuOpen ? <X size={20} /> : <List size={21} />}
+        </button>
+        <nav className={`portal-nav${menuOpen ? ' is-open' : ''}`} aria-label="Main navigation">
+          <button className={activeTab === 'home' ? 'portal-nav-link active' : 'portal-nav-link'} onClick={() => showHomeSection('home')}>Home</button>
+          <a className="portal-nav-link" href="/recruiter?section=mou" target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)}>Recruiter</a>
+          <button className="portal-nav-link" onClick={() => showHomeSection('about')}>About Us</button>
+          <button className="portal-nav-link" onClick={() => showHomeSection('placement')}>Placements</button>
+          <button className="portal-nav-link" onClick={() => showHomeSection('partners')}>Partners</button>
+          <button className="portal-nav-link" onClick={() => showHomeSection('updates')}>Updates</button>
+        </nav>
+        <button className="portal-login-button" onClick={openLogin}>Login <ArrowRight size={17} weight="bold" /></button>
       </header>
 
-      <div style={{ width: '100%', maxWidth: '1200px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '60px', padding: '0 40px', alignItems: 'center' }}>
-        
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '5px' }}>
-            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#00d8ff', boxShadow: '0 0 10px #00d8ff' }}></div>
-            <h2 style={{ fontStyle: 'italic', fontWeight: 900, letterSpacing: '2px', fontSize: '1.8rem', margin: 0, color: '#fff' }}>
-              TALEN<span style={{ color: '#00d8ff' }}>Z</span>O
-            </h2>
-          </div>
-          <div style={{ fontSize: '0.7rem', color: '#00d8ff', marginBottom: '30px', letterSpacing: '1px', marginLeft: '18px', textTransform: 'uppercase', fontWeight: 'bold' }}>
-            Connecting talent with opportunity
-          </div>
-
-          <h1 style={{ fontSize: '3.5rem', fontWeight: 800, color: '#fff', lineHeight: '1.1', margin: '0 0 25px 0' }}>
-            Unlock Global Tech<br/>
-            <span style={{ color: '#00d8ff' }}>Careers with IPCS</span>
-          </h1>
-
-          <p style={{ color: '#94a3b8', fontSize: '1.05rem', lineHeight: '1.6', maxWidth: '90%' }}>
-            IPCS Global connects future-ready talent in Industrial Automation, Embedded Systems, IoT, and Digital Tech with leading blue-chip global firms. Experience zero-barrier career transitions.
-          </p>
-        </div>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <div style={{ width: '100%', maxWidth: '420px', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '24px', padding: '40px', boxShadow: '0 25px 50px rgba(0,0,0,0.5)' }}>
-            
-            <div style={{ textAlign: 'center', marginBottom: '30px' }}>
-              <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" style={{ height: '35px', marginBottom: '15px' }} />
-              <h2 style={{ margin: 0, color: '#fff', fontSize: '1.4rem' }}>Welcome Back</h2>
-              <p style={{ color: '#94a3b8', fontSize: '0.85rem', marginTop: '5px' }}>Sign in to the Placement Ecosystem</p>
+      <AnimatePresence mode="wait">
+        {activeTab === 'home' ? (
+          <motion.section
+            key="home"
+            id="home"
+            className="portal-home"
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -12 }}
+            transition={{ duration: 0.42, ease: 'easeOut' }}
+          >
+            <div className="portal-home-copy">
+              <div className="portal-eyebrow"><span /> IPCS Global · Placement Ecosystem</div>
+              <h1>Build skills.<br /><span>Shape what’s next.</span></h1>
+              <p>Connecting future-ready talent in industrial automation, embedded systems, IoT, and digital technology with opportunities around the world.</p>
+              <div className="portal-home-actions">
+                <button className="portal-primary-button" onClick={openLogin}>Enter the portal <ArrowRight size={19} weight="bold" /></button>
+                <a className="portal-secondary-button" href="/recruiter?section=mou" target="_blank" rel="noreferrer"><UsersThree size={19} /> Recruiter partnerships</a>
+              </div>
+              <div className="portal-trust-line"><span className="portal-trust-dot" /> Skills, academics, and career opportunities in one place</div>
             </div>
 
-            <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-              <div>
-                <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>OFFICIAL EMAIL</label>
-                <input 
-                  type="text" 
-                  value={loginId} 
-                  onChange={(e) => setLoginId(e.target.value)} 
-                  required 
-                  placeholder="name@ipcsglobal.com"
-                  style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', color: '#fff', padding: '14px', borderRadius: '10px', outline: 'none', fontSize: '0.9rem' }}
-                />
-              </div>
-
-              <div>
-                <label style={{ display: 'block', color: '#cbd5e1', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '8px' }}>PASSWORD</label>
-                <input 
-                  type="password" 
-                  value={password} 
-                  onChange={(e) => setPassword(e.target.value)} 
-                  required 
-                  placeholder="••••••••"
-                  style={{ width: '100%', background: '#1e293b', border: '1px solid #334155', color: '#fff', padding: '14px', borderRadius: '10px', outline: 'none', fontSize: '0.9rem' }}
-                />
-              </div>
-
-              {error && <div style={{ color: '#ef4444', fontSize: '0.85rem', textAlign: 'center', background: 'rgba(239, 68, 68, 0.1)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.3)' }}>{error}</div>}
-
-              <button 
-                type="submit" 
-                disabled={loading}
-                style={{ width: '100%', background: '#3b82f6', color: '#fff', border: 'none', padding: '14px', borderRadius: '10px', fontSize: '1rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '10px', marginTop: '10px' }}
-              >
-                {loading ? <><CircleNotch size={20} className="ph-spin" /> Authenticating...</> : 'Sign In'}
-              </button>
-            </form>
-
-            <div style={{ textAlign: 'center', marginTop: '25px', color: '#64748b', fontSize: '0.75rem' }}>
-              Secured by IPCS IT Infrastructure
+            <div className="portal-visual" aria-label="IPCS career and learning portal overview">
+              <div className="portal-visual-orbit orbit-a" />
+              <div className="portal-visual-orbit orbit-b" />
+              <div className="portal-visual-center"><Compass size={56} weight="thin" /><span>IPCS<br />GLOBAL</span></div>
+              <div className="portal-float-card float-learning"><span className="float-icon"><UsersThree size={19} /></span><span><b>Learning</b><small>Practical technical skills</small></span></div>
+              <div className="portal-float-card float-careers"><span className="float-icon"><ArrowRight size={19} /></span><span><b>Career pathways</b><small>Connected to opportunity</small></span></div>
+              <div className="portal-visual-caption">Learn · Prepare · Progress</div>
             </div>
-          </div>
-        </div>
+          </motion.section>
+        ) : (
+          <motion.section
+            key="login"
+            className="portal-login-view"
+            initial={{ opacity: 0, x: 22 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -16 }}
+            transition={{ duration: 0.32, ease: 'easeOut' }}
+          >
+            <div className="login-context">
+              <button className="login-back" type="button" onClick={() => setActiveTab('home')}><ArrowLeft size={18} /> Back to home</button>
+              <div className="portal-eyebrow"><span /> Secure workspace</div>
+              <h1>Your work<br /><span>starts here.</span></h1>
+              <p>Sign in to continue to IPCS Global’s placement, training, and operations workspace.</p>
+            </div>
+            <div className="portal-login-card">
+              <div className="login-card-heading">
+                <span className="login-card-icon"><UsersThree size={21} weight="duotone" /></span>
+                <div><h2>Welcome back</h2><p>Sign in to your IPCS account</p></div>
+              </div>
+              <form onSubmit={handleLogin}>
+                <label className="portal-field-label" htmlFor="portal-login-id">Official email</label>
+                <input id="portal-login-id" autoComplete="username" type="text" value={loginId} onChange={(event) => setLoginId(event.target.value)} required placeholder="name@ipcsglobal.com" />
+                <label className="portal-field-label" htmlFor="portal-password">Password</label>
+                <input id="portal-password" autoComplete="current-password" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required placeholder="Enter your password" />
+                {error && <div className="portal-login-error" role="alert">{error}</div>}
+                <button className="portal-primary-button login-submit" type="submit" disabled={loading}>
+                  {loading ? <><CircleNotch size={19} className="ph-spin" /> Signing in…</> : <>Sign in <ArrowRight size={18} weight="bold" /></>}
+                </button>
+              </form>
+              <div className="portal-login-note">Secure access for IPCS Global team members</div>
+            </div>
+          </motion.section>
+        )}
+      </AnimatePresence>
 
-      </div>
-    </div>
+      {activeTab === 'home' && <PublicSiteSections onLogin={openLogin} />}
+
+      <footer className="portal-footer"><span>© IPCS Global</span><span>Learn · Connect · Grow</span></footer>
+    </main>
   );
 }

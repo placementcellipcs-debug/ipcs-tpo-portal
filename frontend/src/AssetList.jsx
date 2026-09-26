@@ -13,7 +13,7 @@ export default function AssetList() {
   const accessType = String(tpoData?.accessType || '').toLowerCase();
   const myBranch = tpoData?.sittingBranch || '';
   
-  const isSuperAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD');
+  const isSuperAdmin = accessType === 'superadmin' || userRole.includes('SYSTEM ADMIN') || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
   const canManageAssets = isSuperAdmin || userRole.includes('ASSET');
 
   const [assets, setAssets] = useState([]);
@@ -65,7 +65,20 @@ export default function AssetList() {
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchAssetsAndData(); }, []);
+  useEffect(() => {
+    let active = true;
+    Promise.all([
+      axios.get(`${API_BASE}/api/v1/assets`),
+      axios.get(`${API_BASE}/api/v1/assets/form-data`)
+    ]).then(([assetRes, formRes]) => {
+      if (!active) return;
+      if (assetRes.data.success) setAssets(assetRes.data.assets || []);
+      if (formRes.data.success) setDbData({ branches: formRes.data.branches || [] });
+    }).catch(error => {
+      if (active) showToast(error.response?.data?.message || 'Could not load the asset registry.', 'error');
+    }).finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, []);
 
   const openDetails = async (asset) => {
     setDetailModal(asset);
@@ -76,7 +89,7 @@ export default function AssetList() {
       if (res.data.success) {
         setDetailData({ loading: false, customSpecs: res.data.customSpecs || [], assignments: res.data.assignments || [], history: res.data.history || [], documents: res.data.documents || [] });
       }
-    } catch (err) { setDetailData({ loading: false, customSpecs: [], assignments: [], history: [], documents: [] }); }
+    } catch { setDetailData({ loading: false, customSpecs: [], assignments: [], history: [], documents: [] }); showToast('Could not load asset details.', 'error'); }
   };
 
   // ================= ACTION SUBMISSIONS =================
@@ -131,7 +144,7 @@ export default function AssetList() {
         if(fileInputRef.current) fileInputRef.current.value = '';
         openDetails(detailModal); // Refresh details
       }
-    } catch (err) { showToast("Upload failed.", "error"); } finally { setIsSubmitting(false); }
+    } catch { showToast("Upload failed.", "error"); } finally { setIsSubmitting(false); }
   };
 
   // 🚨 NEW: DISPOSE ASSET
@@ -146,7 +159,7 @@ export default function AssetList() {
         setDetailModal(null);
         fetchAssetsAndData();
       }
-    } catch (err) { showToast("Disposal failed.", "error"); } finally { setIsSubmitting(false); }
+    } catch { showToast("Disposal failed.", "error"); } finally { setIsSubmitting(false); }
   };
 
   const availableLocations = ['All', ...new Set(assets.map(a => a.location).filter(Boolean))];
@@ -286,6 +299,7 @@ export default function AssetList() {
               {/* TABS */}
               <div style={{ display: 'flex', gap: '15px', marginTop: '20px' }}>
                 <button className={`tab-btn ${activeDetailTab === 'specs' ? 'active' : ''}`} onClick={() => setActiveDetailTab('specs')}>Specs & History</button>
+                <button className={`tab-btn ${activeDetailTab === 'assignments' ? 'active' : ''}`} onClick={() => setActiveDetailTab('assignments')}>Assignment Ledger</button>
                 <button className={`tab-btn ${activeDetailTab === 'documents' ? 'active' : ''}`} onClick={() => setActiveDetailTab('documents')}><Image size={16}/> Photos & Docs</button>
                 {canManageAssets && detailModal.status !== 'DISPOSED' && (
                   <button className={`tab-btn text-red ${activeDetailTab === 'disposal' ? 'active-red' : ''}`} onClick={() => setActiveDetailTab('disposal')}><Trash size={16}/> Discard Asset</button>
@@ -330,6 +344,19 @@ export default function AssetList() {
                       ))
                     )}
                   </div>
+                </>
+              )}
+
+              {activeDetailTab === 'assignments' && (
+                <>
+                  <h3 style={{ fontSize: '0.85rem', color: '#10b981', textTransform: 'uppercase', marginBottom: '15px' }}>Custody &amp; Return Ledger</h3>
+                  {detailData.loading ? <CircleNotch size={20} className="ph-spin" color="#10b981" /> : detailData.assignments.length === 0 ? (
+                    <span style={{ color: '#64748b', fontSize: '0.9rem' }}>No assignment records found.</span>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}><table className="modern-table"><thead><tr><th>Custodian</th><th>Assignment</th><th>Issued</th><th>Returned</th><th>Condition</th><th>Status</th></tr></thead><tbody>
+                      {detailData.assignments.map(item => <tr key={item.assignmentId}><td>{item.employeeName}</td><td>{item.assignmentId}</td><td>{item.assignedDate}</td><td>{item.returnedDate || '—'}</td><td>{item.conditionOnReturn || item.conditionOnIssue || '—'}</td><td>{item.status}</td></tr>)}
+                    </tbody></table></div>
+                  )}
                 </>
               )}
 
@@ -413,8 +440,6 @@ export default function AssetList() {
         </div>
       )}
 
-      {/* ... [Other Modals (Assign, Return, Maintenance, Transfer, QR) remain exactly identical to the previous code] ... */}
-      
       {/* 2. ASSIGN ASSET MODAL */}
       {assignModal && (
         <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setAssignModal(null); }}>
@@ -425,6 +450,7 @@ export default function AssetList() {
             </div>
             <form onSubmit={handleAssignSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '20px' }}>
               <div><label className="data-label">Employee Name *</label><input type="text" className="premium-input" style={{ width: '100%' }} value={assignForm.employeeName} onChange={e => setAssignForm({ ...assignForm, employeeName: e.target.value })} required /></div>
+              <div><label className="data-label">Employee ID</label><input type="text" className="premium-input" style={{ width: '100%' }} value={assignForm.employeeId} onChange={e => setAssignForm({ ...assignForm, employeeId: e.target.value })} /></div>
               <div><label className="data-label">Accessories Provided</label><input type="text" className="premium-input" style={{ width: '100%' }} value={assignForm.accessories} onChange={e => setAssignForm({ ...assignForm, accessories: e.target.value })} /></div>
               <div><label className="data-label">Remarks</label><input type="text" className="premium-input" style={{ width: '100%' }} value={assignForm.remarks} onChange={e => setAssignForm({ ...assignForm, remarks: e.target.value })} /></div>
               <button type="submit" className="premium-btn" style={{ background: '#10b981', color: '#0f172a', padding: '14px' }} disabled={isSubmitting}>{isSubmitting ? <CircleNotch className="ph-spin" /> : "Confirm Handover"}</button>
@@ -447,6 +473,44 @@ export default function AssetList() {
               <div><label className="data-label">Remarks</label><input type="text" className="premium-input" style={{ width: '100%' }} value={returnForm.remarks} onChange={e => setReturnForm({ ...returnForm, remarks: e.target.value })} /></div>
               <button type="submit" className="premium-btn" style={{ background: '#f59e0b', color: '#0f172a', padding: '14px' }} disabled={isSubmitting}>{isSubmitting ? <CircleNotch className="ph-spin" /> : "Confirm Return"}</button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {maintenanceReqModal && (
+        <div className="modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setMaintenanceReqModal(null); }}>
+          <div className="premium-modal glass-panel" style={{ maxWidth: '520px', padding: '26px' }}>
+            <div className="modal-header"><div><h2 style={{ color: '#ef4444', margin: 0 }}>Report an Issue</h2><div className="modal-subtitle">{maintenanceReqModal.assetId} · {maintenanceReqModal.name}</div></div><button className="close-btn" onClick={() => setMaintenanceReqModal(null)}><X size={24} /></button></div>
+            <form onSubmit={handleMaintenanceSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <label className="data-label">Issue description *<textarea className="premium-input" style={{ width: '100%', minHeight: '100px', marginTop: '7px' }} value={maintenanceForm.issue} onChange={event => setMaintenanceForm({ issue: event.target.value })} placeholder="Describe the fault or service required" required /></label>
+              <button type="submit" className="premium-btn" style={{ background: '#ef4444', color: '#fff', padding: '13px' }} disabled={isSubmitting}>{isSubmitting ? <CircleNotch size={18} className="ph-spin" /> : 'Create maintenance ticket'}</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {transferReqModal && (
+        <div className="modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setTransferReqModal(null); }}>
+          <div className="premium-modal glass-panel" style={{ maxWidth: '520px', padding: '26px' }}>
+            <div className="modal-header"><div><h2 style={{ color: '#a855f7', margin: 0 }}>Request Asset Transfer</h2><div className="modal-subtitle">{transferReqModal.assetId} · {transferReqModal.name}</div></div><button className="close-btn" onClick={() => setTransferReqModal(null)}><X size={24} /></button></div>
+            <form onSubmit={handleTransferSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+              <label className="data-label">Destination branch *<select className="premium-select" style={{ width: '100%', marginTop: '7px' }} value={transferForm.toBranch} onChange={event => setTransferForm({ ...transferForm, toBranch: event.target.value })} required><option value="">Select destination</option>{dbData.branches.filter(branch => branch !== myBranch).map(branch => <option key={branch} value={branch}>{branch}</option>)}</select></label>
+              <label className="data-label">Transfer reason<textarea className="premium-input" style={{ width: '100%', minHeight: '75px', marginTop: '7px' }} value={transferForm.remarks} onChange={event => setTransferForm({ ...transferForm, remarks: event.target.value })} /></label>
+              <button type="submit" className="premium-btn" style={{ background: '#a855f7', color: '#fff', padding: '13px' }} disabled={isSubmitting}>{isSubmitting ? <CircleNotch size={18} className="ph-spin" /> : 'Submit transfer request'}</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {qrModal && (
+        <div className="modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) setQrModal(null); }}>
+          <div className="premium-modal glass-panel asset-print-card" style={{ maxWidth: '380px', padding: '28px', textAlign: 'center' }}>
+            <button className="close-btn" style={{ marginLeft: 'auto' }} onClick={() => setQrModal(null)}><X size={22} /></button>
+            <h2 style={{ margin: '0 0 4px', color: '#fff' }}>{qrModal.name}</h2>
+            <div style={{ color: '#a855f7', fontFamily: 'monospace', fontWeight: 800 }}>{qrModal.assetId}</div>
+            <img src={`https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(qrModal.assetId)}`} alt={`QR code for ${qrModal.assetId}`} style={{ display: 'block', width: 220, height: 220, margin: '18px auto', background: '#fff', padding: 8, borderRadius: 10 }} />
+            <div style={{ color: '#94a3b8', fontSize: '.82rem', marginBottom: 16 }}>{qrModal.category} · {qrModal.branch}</div>
+            <button type="button" className="premium-btn primary" style={{ margin: '0 auto' }} onClick={() => window.print()}>Print asset label</button>
           </div>
         </div>
       )}
@@ -500,6 +564,7 @@ export default function AssetList() {
         .tab-btn.active { background: #3b82f6; color: #fff; }
         .tab-btn.active-red { background: #ef4444; color: #fff; }
         .text-red:hover { color: #ef4444; }
+        @media print { body * { visibility: hidden !important; } .asset-print-card, .asset-print-card * { visibility: visible !important; } .asset-print-card { position: fixed !important; inset: 10mm auto auto 10mm !important; width: 80mm !important; box-shadow: none !important; background: #fff !important; color: #111827 !important; } .asset-print-card h2, .asset-print-card div { color: #111827 !important; } .asset-print-card button { display: none !important; } }
       `}</style>
     </Layout>
   );

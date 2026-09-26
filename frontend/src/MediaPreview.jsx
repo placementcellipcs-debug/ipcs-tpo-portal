@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { CircleNotch, Eye, ImageSquare } from '@phosphor-icons/react';
 import Layout from './Layout';
@@ -7,20 +7,26 @@ import { API_BASE } from './apiConfig';
 
 export default function MediaPreview() {
   const [tasks, setTasks] = useState([]);
+  const [files, setFiles] = useState([]);
   const [socialCount, setSocialCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  const fetchData = async () => {
+    try {
+      const res = await axios.get(`${API_BASE}/api/design/tasks`);
+      if (!res.data.success) throw new Error(res.data.message || 'Could not load the preview gallery.');
+      setError('');
+      setTasks(res.data.tasks || []);
+      setFiles(res.data.files || []);
+      setSocialCount((res.data.social || []).length);
+    } catch (err) { setError(err.response?.data?.message || err.message || 'Could not load the preview gallery.'); }
+    finally { setLoading(false); }
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const res = await axios.get(`${API_BASE}/api/design/tasks`);
-        if (res.data.success) {
-          setTasks(res.data.tasks || []);
-          setSocialCount((res.data.social || []).length);
-        }
-      } catch (err) {} finally { setLoading(false); }
-    };
-    fetchData();
+    const timer = window.setTimeout(() => { void fetchData(); }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   const getDriveImage = (url) => {
@@ -44,17 +50,30 @@ export default function MediaPreview() {
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '100px' }}><CircleNotch size={50} className="ph-spin" color="#ec4899" /></div>
+        ) : error ? (
+          <div style={{ background: 'var(--card-bg)', padding: '45px', textAlign: 'center', borderRadius: '16px', border: '1px solid rgba(248,113,113,.25)' }}><p style={{ color: '#fca5a5', margin: '0 0 14px' }}>{error}</p><button type="button" onClick={() => { setLoading(true); fetchData(); }} style={{ padding: '9px 17px', border: 0, borderRadius: 9, background: '#ec4899', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>Retry</button></div>
         ) : completedTasks.length === 0 ? (
           <div style={{ background: 'var(--card-bg)', padding: '60px', textAlign: 'center', borderRadius: '16px', border: '1px dashed var(--card-border)' }}>
             <p style={{ color: 'var(--text-muted)', fontSize: '1.1rem', margin: 0 }}>No finalized creatives found. Complete tasks to see them appear here.</p>
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
-            {completedTasks.map((t, i) => (
-              <div key={i} className="hover-lift" style={{ background: 'var(--card-bg)', borderRadius: '16px', border: '1px solid var(--card-border)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {completedTasks.map((t, i) => {
+              const finalFile = files.find(file => file.designId === t.designId && String(file.session || '').toLowerCase().includes('2') && file.link === t.session2File);
+              const type = String(finalFile?.fileType || '').toLowerCase();
+              const fileName = String(finalFile?.fileName || t.session2File || '').toLowerCase();
+              const isVideo = type.startsWith('video/') || /\.(mp4|mov|webm|m4v)(?:$|\?)/.test(fileName);
+              const isImage = type.startsWith('image/') || /\.(png|jpe?g|gif|webp|svg)(?:$|\?)/.test(fileName);
+              const isPdf = type === 'application/pdf' || fileName.endsWith('.pdf');
+              return (
+              <div key={t.designId || i} className="hover-lift" style={{ background: 'var(--card-bg)', borderRadius: '16px', border: '1px solid var(--card-border)', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                 <div style={{ height: '220px', background: '#1e293b', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                   {t.session2File ? (
-                     <img src={getDriveImage(t.session2File) || getDriveImage(t.profilePhoto)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Creative Preview"/>
+                   {t.session2File && isVideo ? (
+                     <video src={t.session2File} controls preload="metadata" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+                   ) : t.session2File && isImage ? (
+                     <img src={getDriveImage(t.session2File)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Creative Preview" />
+                   ) : t.session2File && isPdf ? (
+                     <iframe title={`PDF preview for ${t.designId}`} src={t.session2File} style={{ width: '100%', height: '100%', border: 0, background: '#fff' }} />
                    ) : (
                      <ImageSquare size={48} color="#475569" />
                    )}
@@ -73,7 +92,8 @@ export default function MediaPreview() {
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>

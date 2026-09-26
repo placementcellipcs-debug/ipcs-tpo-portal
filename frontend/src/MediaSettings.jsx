@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { CircleNotch, ArrowsClockwise, ImageSquare, VideoCamera } from '@phosphor-icons/react';
 import Layout from './Layout';
@@ -10,29 +10,34 @@ export default function MediaSettings() {
   const [counts, setCounts] = useState({ pending: 0, social: 0 });
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
   const fetchData = async () => {
     try {
-      setLoading(true);
       const res = await axios.get(`${API_BASE}/api/design/tasks`);
       if (res.data.success) {
+        setError('');
         setSettings(res.data.settings || {});
         const pending = (res.data.tasks || []).filter(t => String(t.status).toLowerCase() !== 'completed').length;
         setCounts({ pending, social: (res.data.social || []).length });
       }
-    } catch (err) {} finally { setLoading(false); }
+    } catch (err) { setError(err.response?.data?.message || 'Could not load studio settings.'); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void fetchData(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const handleSyncExisting = async () => {
     if (!window.confirm("This will scan the placement sheet and generate tasks for existing placed students. Proceed?")) return;
     setSyncing(true);
     try {
       const res = await axios.post(`${API_BASE}/api/design/sync-existing`);
-      alert(res.data.message);
+      setNotice(res.data.message || 'Historical placements synced.');
       fetchData();
-    } catch (err) { alert("Sync failed. Check server connection."); } finally { setSyncing(false); }
+    } catch (err) { setNotice(err.response?.data?.message || 'Sync failed. Check the server connection.'); } finally { setSyncing(false); }
   };
 
   return (
@@ -42,7 +47,11 @@ export default function MediaSettings() {
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '100px' }}><CircleNotch size={50} className="ph-spin" color="#ec4899" /></div>
+        ) : error ? (
+          <div style={{ background: 'var(--card-bg)', padding: '45px', textAlign: 'center', borderRadius: '16px', border: '1px solid rgba(248,113,113,.25)' }}><p style={{ color: '#fca5a5', margin: '0 0 14px' }}>{error}</p><button type="button" onClick={() => { setLoading(true); fetchData(); }} style={{ padding: '9px 17px', border: 0, borderRadius: 9, background: '#ec4899', color: '#fff', fontWeight: 800, cursor: 'pointer' }}>Retry</button></div>
         ) : (
+          <>
+          {notice && <div role="status" style={{ marginBottom: 16, padding: '12px 16px', borderRadius: 10, border: '1px solid rgba(52,211,153,.3)', color: '#6ee7b7', background: 'rgba(6,78,59,.2)' }}>{notice}</div>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '30px' }}>
             
             <div style={{ background: 'var(--card-bg)', padding: '30px', borderRadius: '16px', border: '1px solid var(--card-border)' }}>
@@ -78,6 +87,7 @@ export default function MediaSettings() {
             </div>
 
           </div>
+          </>
         )}
       </div>
     </Layout>

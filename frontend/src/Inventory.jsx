@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, Plus, BoxArrowDown, BoxArrowUp, Package, X, CheckCircle } from '@phosphor-icons/react';
+import { CircleNotch, Plus, Package, X } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
 
@@ -22,14 +22,17 @@ export default function Inventory() {
     } catch (err) { console.error("Error loading inventory", err); } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchInventory(); }, []);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void fetchInventory(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const handleAddSubmit = async (e) => {
     e.preventDefault();
     try {
       await axios.post(`${API_BASE}/api/v1/assets/inventory/add`, { item: formData, userName: tpoData.name });
       setIsAddModalOpen(false); fetchInventory();
-    } catch (err) { alert("Failed to add item."); }
+    } catch { alert("Failed to add item."); }
   };
 
   const handleStockSubmit = async (e) => {
@@ -37,7 +40,7 @@ export default function Inventory() {
     try {
       await axios.post(`${API_BASE}/api/v1/assets/inventory/stock`, { itemId: stockModal.item.itemId, action: stockModal.action, quantity: stockAmount, userName: tpoData.name });
       setStockModal(null); setStockAmount(''); fetchInventory();
-    } catch (err) { alert("Failed to update stock."); }
+    } catch { alert("Failed to update stock."); }
   };
 
   return (

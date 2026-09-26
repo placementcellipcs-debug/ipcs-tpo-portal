@@ -11,12 +11,15 @@ export default function AssetTransfers() {
   const accessType = String(tpoData?.accessType || '').toLowerCase();
   
   // Only Super Admins should approve transfers
-  const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD');
+  const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('SYSTEM ADMIN') || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
+  const userBranch = String(tpoData?.sittingBranch || '').trim();
 
   const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [approvingId, setApprovingId] = useState(null);
   const [notification, setNotification] = useState(null);
+  const [receivingTransfer, setReceivingTransfer] = useState(null);
+  const [receiptForm, setReceiptForm] = useState({ condition: 'GOOD', remarks: '' });
 
   const showToast = (text, type = 'success') => {
     setNotification({ text, type });
@@ -30,15 +33,20 @@ export default function AssetTransfers() {
       if (res.data.success) {
         setTransfers(res.data.transfers || []);
       }
-    } catch (err) {
-      console.error("Error loading transfers", err);
+    } catch {
+      console.error("Error loading transfers");
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchTransfers();
+    let active = true;
+    axios.get(`${API_BASE}/api/v1/assets/transfers`)
+      .then(res => { if (active && res.data.success) setTransfers(res.data.transfers || []); })
+      .catch(() => { if (active) showToast('Could not load the transfer register.', 'error'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
   }, []);
 
   const handleApprove = async (transfer) => {
@@ -53,14 +61,36 @@ export default function AssetTransfers() {
         userName: tpoData.name 
       });
       if(res.data.success) {
-        showToast("Transfer approved and asset location updated!");
+        showToast("Transfer dispatched. The destination branch must confirm receipt.");
         fetchTransfers();
       }
-    } catch (err) {
+    } catch {
       showToast("Failed to approve transfer.", "error");
     } finally {
       setApprovingId(null);
     }
+  };
+
+  const handleReceive = async (event) => {
+    event.preventDefault();
+    if (!receivingTransfer) return;
+    setApprovingId(receivingTransfer.transferId);
+    try {
+      const res = await axios.post(`${API_BASE}/api/v1/assets/transfers/receive`, {
+        transferId: receivingTransfer.transferId,
+        userName: tpoData.name || tpoData.username,
+        userBranch,
+        ...receiptForm,
+      });
+      if (res.data.success) {
+        showToast(res.data.message || 'Receipt confirmed and asset location updated.');
+        setReceivingTransfer(null);
+        setReceiptForm({ condition: 'GOOD', remarks: '' });
+        fetchTransfers();
+      }
+    } catch (err) {
+      showToast(err.response?.data?.message || 'Failed to confirm receipt.', 'error');
+    } finally { setApprovingId(null); }
   };
 
   return (
@@ -93,11 +123,11 @@ export default function AssetTransfers() {
             <div className="empty-state-card"><span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🚚</span>No inter-branch transfers found.</div>
           ) : (
             transfers.map(t => (
-              <div key={t.transferId} className="clean-row glass-panel hover-lift" style={{ padding: '20px', borderLeft: t.status === 'PENDING' ? '4px solid #f59e0b' : '4px solid #10b981' }}>
+              <div key={t.transferId} className="clean-row glass-panel hover-lift" style={{ padding: '20px', borderLeft: t.status === 'PENDING' ? '4px solid #f59e0b' : t.status === 'IN_TRANSIT' ? '4px solid #3b82f6' : '4px solid #10b981' }}>
                 
                 <div className="cl-left" style={{ flex: 2, minWidth: '300px' }}>
-                  <div className="cl-icon" style={{ background: t.status === 'PENDING' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(16, 185, 129, 0.1)', color: t.status === 'PENDING' ? '#f59e0b' : '#10b981' }}>
-                    {t.status === 'PENDING' ? <ArrowsLeftRight size={24} weight="bold"/> : <CheckCircle size={24} weight="fill"/>}
+                  <div className="cl-icon" style={{ background: t.status === 'PENDING' ? 'rgba(245, 158, 11, 0.1)' : t.status === 'IN_TRANSIT' ? 'rgba(59,130,246,.12)' : 'rgba(16, 185, 129, 0.1)', color: t.status === 'PENDING' ? '#f59e0b' : t.status === 'IN_TRANSIT' ? '#3b82f6' : '#10b981' }}>
+                    {t.status === 'COMPLETED' ? <CheckCircle size={24} weight="fill"/> : <ArrowsLeftRight size={24} weight="bold"/>}
                   </div>
                   <div>
                     <div className="cl-title" style={{ fontSize: '1.1rem', color: '#fff', display: 'flex', alignItems: 'center', gap: '10px' }}>
@@ -112,8 +142,10 @@ export default function AssetTransfers() {
                 </div>
                 
                 <div className="cl-middle" style={{ flex: 1, minWidth: '150px' }}>
-                  <span className={`status-pill ${t.status === 'PENDING' ? 'orange' : 'green'}`}>{t.status}</span>
+                  <span className={`status-pill ${t.status === 'PENDING' ? 'orange' : t.status === 'IN_TRANSIT' ? 'blue' : 'green'}`}>{t.status}</span>
                   <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '6px' }}>Requested: <strong style={{ color: '#cbd5e1' }}>{t.date}</strong></div>
+                  {t.status === 'IN_TRANSIT' && <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>Approved by: <strong style={{ color: '#cbd5e1' }}>{t.approvedBy || 'Admin'}</strong></div>}
+                  {t.status === 'COMPLETED' && <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>Received by: <strong style={{ color: '#cbd5e1' }}>{t.receivedBy || 'Branch'}</strong></div>}
                 </div>
                 
                 <div className="cl-right" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', minWidth: '150px' }}>
@@ -126,15 +158,19 @@ export default function AssetTransfers() {
                     >
                       {approvingId === t.transferId ? <CircleNotch size={18} className="ph-spin" /> : <><CheckCircle size={18} weight="bold" /> Approve Transfer</>}
                     </button>
-                  ) : t.status !== 'PENDING' ? (
+                  ) : t.status === 'IN_TRANSIT' && (isSuperAdmin || userBranch.toLowerCase() === String(t.toBranch || '').toLowerCase()) ? (
+                    <button className="premium-btn" onClick={() => setReceivingTransfer(t)} style={{ background: '#3b82f6', color: '#fff', padding: '10px 16px' }}>
+                      <CheckCircle size={18} weight="bold" /> Confirm Receipt
+                    </button>
+                  ) : t.status === 'COMPLETED' ? (
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ color: '#10b981', fontSize: '1rem', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                        <CheckCircle size={16} weight="fill" /> Completed
+                        <CheckCircle size={16} weight="fill" /> Received
                       </div>
-                      <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 'bold', marginTop: '4px' }}>Logistics Updated</div>
+                      <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 'bold', marginTop: '4px' }}>{t.receivedAt || 'Branch confirmed'}</div>
                     </div>
                   ) : (
-                    <div style={{ color: '#64748b', fontSize: '0.85rem', fontStyle: 'italic' }}>Pending Admin Approval</div>
+                    <div style={{ color: '#64748b', fontSize: '0.85rem', fontStyle: 'italic' }}>{t.status === 'IN_TRANSIT' ? `Awaiting receipt at ${t.toBranch}` : 'Pending Admin Approval'}</div>
                   )}
                 </div>
 
@@ -143,6 +179,17 @@ export default function AssetTransfers() {
           )}
         </div>
       </div>
+
+      {receivingTransfer && <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setReceivingTransfer(null); }}>
+        <div className="premium-modal glass-panel" style={{ maxWidth: '500px', padding: '26px' }}>
+          <div className="modal-header"><div><h2 style={{ margin: 0, color: '#3b82f6' }}>Confirm Asset Receipt</h2><div className="modal-subtitle">{receivingTransfer.assetId} · {receivingTransfer.fromBranch} → {receivingTransfer.toBranch}</div></div><button className="close-btn" onClick={() => setReceivingTransfer(null)}>×</button></div>
+          <form onSubmit={handleReceive} style={{ display: 'grid', gap: 14 }}>
+            <label className="data-label">Condition on arrival<select className="premium-select" style={{ width: '100%', marginTop: 6 }} value={receiptForm.condition} onChange={event => setReceiptForm(current => ({ ...current, condition: event.target.value }))}><option>GOOD</option><option>FAIR</option><option>DAMAGED</option></select></label>
+            <label className="data-label">Receipt remarks<textarea className="premium-input" style={{ width: '100%', minHeight: 75, marginTop: 6 }} value={receiptForm.remarks} onChange={event => setReceiptForm(current => ({ ...current, remarks: event.target.value }))} placeholder="Record any damage or discrepancy" /></label>
+            <button className="premium-btn" type="submit" disabled={approvingId === receivingTransfer.transferId} style={{ background: '#3b82f6', color: '#fff', padding: '12px' }}>{approvingId === receivingTransfer.transferId ? <CircleNotch className="ph-spin" /> : 'Confirm Receipt'}</button>
+          </form>
+        </div>
+      </div>}
 
       {/* ---------------------------------------------------------
           🎨 PREMIUM CSS FOR TRANSFERS PAGE
@@ -176,6 +223,7 @@ export default function AssetTransfers() {
         .status-pill { padding: 6px 14px; border-radius: 20px; font-size: 0.75rem; font-weight: 800; display: inline-block; text-transform: uppercase; letter-spacing: 0.5px; width: max-content; }
         .status-pill.green { background: rgba(16, 185, 129, 0.15); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.3); }
         .status-pill.orange { background: rgba(245, 158, 11, 0.15); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .status-pill.blue { background: rgba(59, 130, 246, 0.15); color: #60a5fa; border: 1px solid rgba(59, 130, 246, 0.3); }
       `}</style>
     </Layout>
   );

@@ -92,6 +92,7 @@ exports.getDesignDashboardData = async (req, res) => {
       designId: r.get(getFuzzyHeader(fSheet.headerValues, 'designid')),
       session: r.get(getFuzzyHeader(fSheet.headerValues, 'session')),
       fileName: r.get(getFuzzyHeader(fSheet.headerValues, 'filename')),
+      fileType: r.get(getFuzzyHeader(fSheet.headerValues, 'filetype')),
       link: r.get(getFuzzyHeader(fSheet.headerValues, 'drivelink')),
       date: r.get(getFuzzyHeader(fSheet.headerValues, 'uploadeddate'))
     }));
@@ -135,8 +136,32 @@ exports.getDesignDashboardData = async (req, res) => {
 
 exports.uploadDesignFile = async (req, res) => {
   try {
-    const { designId, sessionLevel, status, user } = req.body;
+    const { designId, sessionLevel, status, user } = req.body || {};
+    const actor = req.portalUser?.name || user || 'Designer';
+    const cleanDesignId = String(designId || '').trim();
+    const cleanSessionLevel = String(sessionLevel || '').trim();
+    const cleanStatus = String(status || '').trim();
+    if (!cleanDesignId || !['Session 1', 'Session 2'].includes(cleanSessionLevel)) {
+      return res.status(400).json({ success: false, message: 'Choose a valid design task and session.' });
+    }
+    if (!['In Progress', 'Review', 'Completed'].includes(cleanStatus)) {
+      return res.status(400).json({ success: false, message: 'Choose a valid task status.' });
+    }
+    if (!req.file) return res.status(400).json({ success: false, message: 'Attach a design file before saving this update.' });
+    if (cleanStatus === 'Completed' && cleanSessionLevel !== 'Session 2') {
+      return res.status(400).json({ success: false, message: 'A task can only be completed with a final Session 2 file.' });
+    }
     await loadDesignDoc();
+
+    const tSheet = designDoc.sheetsByTitle['Design_Tasks'];
+    if (!tSheet) return res.status(503).json({ success: false, message: 'Design task register is unavailable.' });
+    const th = tSheet.headerValues;
+    const tRows = await tSheet.getRows();
+    const taskRow = tRows.find(row => String(row.get(getFuzzyHeader(th, 'designid')) || '').trim() === cleanDesignId);
+    if (!taskRow) return res.status(404).json({ success: false, message: 'Design task was not found.' });
+    if (String(taskRow.get(getFuzzyHeader(th, 'status')) || '').trim().toLowerCase() === 'completed') {
+      return res.status(409).json({ success: false, message: 'This task is already complete.' });
+    }
 
     // Dynamically pull the Folder ID from Settings, default to an empty string if missing
     let targetFolder = '';
@@ -145,41 +170,26 @@ exports.uploadDesignFile = async (req, res) => {
       const cRows = await cfgSheet.getRows();
       if (cRows.length > 0) {
         // Automatically put videos in the video folder, everything else in the poster folder
-        const isVideo = req.file && req.file.mimetype.includes('video');
+        const isVideo = req.file.mimetype.includes('video');
         targetFolder = isVideo 
           ? cRows[0].get(getFuzzyHeader(cfgSheet.headerValues, 'videofolder')) 
           : cRows[0].get(getFuzzyHeader(cfgSheet.headerValues, 'posterfolder'));
       }
     }
 
-    let fileLink = '';
-    if (req.file) {
-      // 🚨 Ensure you put a default Drive Folder ID here just in case settings is empty
-      fileLink = await uploadToDrive(req.file, targetFolder || '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5');
-    }
-
-    // 1. Update Design_Tasks
-    const tSheet = designDoc.sheetsByTitle["Design_Tasks"];
-    const tRows = await tSheet.getRows();
-    const th = tSheet.headerValues;
-    const taskRow = tRows.find(r => r.get(getFuzzyHeader(th, 'designid')) === designId);
-
-    if (taskRow) {
-      const updateData = { [getFuzzyHeader(th, 'status')]: status };
-      if (status === 'Completed') updateData[getFuzzyHeader(th, 'completeddate')] = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-
-      if (sessionLevel === 'Session 1') {
-        updateData[getFuzzyHeader(th, 'session1status')] = status;
-        if (fileLink) updateData[getFuzzyHeader(th, 'session1file')] = fileLink;
-        updateData[getFuzzyHeader(th, 'session1date')] = new Date().toLocaleString('en-IN');
-      } else {
-        updateData[getFuzzyHeader(th, 'session2status')] = status;
-        if (fileLink) updateData[getFuzzyHeader(th, 'session2file')] = fileLink;
-        updateData[getFuzzyHeader(th, 'session2date')] = new Date().toLocaleString('en-IN');
-      }
-      taskRow.assign(updateData);
-      await taskRow.save();
-    }
+    const fileLink = await uploadToDrive(req.file, targetFolder || '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5');
+    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const sessionNumber = cleanSessionLevel === 'Session 1' ? '1' : '2';
+    const overallStatus = cleanStatus === 'Completed' ? 'Completed' : cleanStatus;
+    const updateData = {
+      [getFuzzyHeader(th, `session${sessionNumber}status`)]: cleanStatus,
+      [getFuzzyHeader(th, `session${sessionNumber}file`)]: fileLink,
+      [getFuzzyHeader(th, `session${sessionNumber}date`)]: timestamp,
+      [getFuzzyHeader(th, 'status')]: overallStatus,
+    };
+    if (cleanStatus === 'Completed') updateData[getFuzzyHeader(th, 'completeddate')] = timestamp;
+    taskRow.assign(updateData);
+    await taskRow.save();
 
     // 2. Log to Design_Files
     if (fileLink) {
@@ -189,18 +199,18 @@ exports.uploadDesignFile = async (req, res) => {
             await fSheet.addRow({
                 [getFuzzyHeader(fh, 'fileid')]: `FIL-${Date.now().toString().slice(-6)}`,
                 [getFuzzyHeader(fh, 'designid')]: designId,
-                [getFuzzyHeader(fh, 'session')]: sessionLevel,
+                [getFuzzyHeader(fh, 'session')]: cleanSessionLevel,
                 [getFuzzyHeader(fh, 'filename')]: req.file.originalname,
                 [getFuzzyHeader(fh, 'filetype')]: req.file.mimetype,
                 [getFuzzyHeader(fh, 'drivelink')]: fileLink,
-                [getFuzzyHeader(fh, 'uploadedby')]: user || 'Designer',
-                [getFuzzyHeader(fh, 'uploadeddate')]: new Date().toLocaleString('en-IN')
+                [getFuzzyHeader(fh, 'uploadedby')]: actor,
+                [getFuzzyHeader(fh, 'uploadeddate')]: timestamp
             });
         }
     }
 
     // 3. Log to Design_Activity_Log
-    await logDesignActivity(user, designId, `Uploaded ${sessionLevel} File and set status to ${status}`);
+    await logDesignActivity(actor, cleanDesignId, `Uploaded ${cleanSessionLevel} file and set status to ${cleanStatus}`);
 
     res.json({ success: true, message: "File updated successfully", link: fileLink });
   } catch (err) {
@@ -211,6 +221,7 @@ exports.uploadDesignFile = async (req, res) => {
 exports.trackSocialMedia = async (req, res) => {
   try {
     const { designId, platform, postType, postLink, status, user } = req.body;
+    const actor = req.portalUser?.name || user || 'System';
     await loadDesignDoc();
     const sSheet = designDoc.sheetsByTitle["Design_Social_Media"];
     if (!sSheet) return res.status(404).json({ success: false });
@@ -223,11 +234,11 @@ exports.trackSocialMedia = async (req, res) => {
       [getFuzzyHeader(sh, 'posttype')]: postType,
       [getFuzzyHeader(sh, 'postlink')]: postLink,
       [getFuzzyHeader(sh, 'status')]: status || 'Published',
-      [getFuzzyHeader(sh, 'postedby')]: user || 'System',
+      [getFuzzyHeader(sh, 'postedby')]: actor,
       [getFuzzyHeader(sh, 'publisheddate')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
     });
 
-    await logDesignActivity(user, designId, `Published ${postType} on ${platform}`);
+    await logDesignActivity(actor, designId, `Published ${postType} on ${platform}`);
 
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -265,7 +276,7 @@ exports.autoCreateDesignTask = async (appData) => {
       }
     }
 
-    const designId = `DES-${Math.floor(10000 + Math.random() * 90000)}`;
+    const designId = `DES-${Date.now().toString().slice(-7)}-${Math.floor(100 + Math.random() * 900)}`;
 
     await sheet.addRow({
       [safeH('designid')]: designId,
@@ -312,6 +323,7 @@ exports.syncExistingPlacements = async (req, res) => {
     }
 
     const appRows = cache.applications;
+    const existingPlacements = new Set(dRows.map(row => `${String(row.get(getDH('rollnumber')) || '').trim().toLowerCase()}|${String(row.get(getDH('company')) || '').trim().toLowerCase()}`));
 
     for (let r of appRows) {
       const aH = r._worksheet.headerValues;
@@ -323,8 +335,8 @@ exports.syncExistingPlacements = async (req, res) => {
         const company = r.get(getAH('companyname')) || r.get(getAH('company')) || '';
         
         // Check if it already exists in the Design sheet to prevent duplicates
-        const exists = dRows.find(dr => dr.get(getDH('rollnumber')) === roll && dr.get(getDH('company')) === company);
-        if (!exists && roll && company) {
+        const placementKey = `${String(roll).trim().toLowerCase()}|${String(company).trim().toLowerCase()}`;
+        if (!existingPlacements.has(placementKey) && roll && company) {
            // Fetch photo from cache
            let photo = '';
            if (cache.students) {
@@ -339,7 +351,7 @@ exports.syncExistingPlacements = async (req, res) => {
              }
            }
 
-           const designId = `DES-${Math.floor(10000 + Math.random() * 90000)}`;
+           const designId = `DES-${Date.now().toString().slice(-7)}-${Math.floor(100 + Math.random() * 900)}`;
            await dSheet.addRow({
               [getDH('designid')]: designId,
               [getDH('createddate')]: r.get(getAH('timestamp')) || new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
@@ -358,6 +370,7 @@ exports.syncExistingPlacements = async (req, res) => {
               [getDH('designtype')]: 'Placement Poster',
               [getDH('status')]: 'Pending'
            });
+           existingPlacements.add(placementKey);
            addedCount++;
         }
       }
@@ -374,10 +387,16 @@ exports.syncExistingPlacements = async (req, res) => {
 // 🚨 CREATE MANUAL CATEGORY
 exports.addDesignCategory = async (req, res) => {
   try {
-    const { category, designType } = req.body;
+    const category = String(req.body?.category || '').trim();
+    const designType = String(req.body?.designType || '').trim();
+    if (!category || !designType) return res.status(400).json({ success: false, message: 'Category and design type are required.' });
     await loadDesignDoc();
     const sheet = designDoc.sheetsByTitle["Design_Categories"];
+    if (!sheet) return res.status(503).json({ success: false, message: 'Design categories are unavailable.' });
     const h = sheet.headerValues;
+    const rows = await sheet.getRows();
+    const duplicate = rows.some(row => String(row.get(getFuzzyHeader(h, 'category')) || '').trim().toLowerCase() === category.toLowerCase() && String(row.get(getFuzzyHeader(h, 'designtype')) || '').trim().toLowerCase() === designType.toLowerCase());
+    if (duplicate) return res.status(409).json({ success: false, message: 'That design type already exists in this category.' });
     await sheet.addRow({
       [getFuzzyHeader(h, 'category')]: category,
       [getFuzzyHeader(h, 'designtype')]: designType
@@ -389,26 +408,31 @@ exports.addDesignCategory = async (req, res) => {
 // 🚨 CREATE MANUAL DESIGN TASK (For Social Media, Visits, etc.)
 exports.createManualTask = async (req, res) => {
   try {
-    const { studentName, company, designCategory, designType, remarks, user } = req.body;
+    const { studentName, company, designCategory, designType, remarks, user } = req.body || {};
+    const cleanName = String(studentName || '').trim();
+    const cleanCategory = String(designCategory || '').trim();
+    const cleanType = String(designType || '').trim();
+    if (!cleanType) return res.status(400).json({ success: false, message: 'Select a design type before creating a task.' });
     await loadDesignDoc();
     const sheet = designDoc.sheetsByTitle["Design_Tasks"];
+    if (!sheet) return res.status(503).json({ success: false, message: 'Design task register is unavailable.' });
     const h = sheet.headerValues;
-    const designId = `DES-${Math.floor(10000 + Math.random() * 90000)}`;
+    const designId = `DES-${Date.now().toString().slice(-7)}-${Math.floor(100 + Math.random() * 900)}`;
 
     await sheet.addRow({
       [getFuzzyHeader(h, 'designid')]: designId,
       [getFuzzyHeader(h, 'createddate')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
       [getFuzzyHeader(h, 'source')]: 'Manual Request',
-      [getFuzzyHeader(h, 'studentname')]: studentName || '',
-      [getFuzzyHeader(h, 'company')]: company || '',
-      [getFuzzyHeader(h, 'designcategory')]: designCategory || 'Custom',
-      [getFuzzyHeader(h, 'designtype')]: designType || 'Custom Design',
+      [getFuzzyHeader(h, 'studentname')]: cleanName,
+      [getFuzzyHeader(h, 'company')]: String(company || '').trim(),
+      [getFuzzyHeader(h, 'designcategory')]: cleanCategory || 'Custom',
+      [getFuzzyHeader(h, 'designtype')]: cleanType,
       [getFuzzyHeader(h, 'remarks')]: remarks || '',
       [getFuzzyHeader(h, 'status')]: 'Pending',
-      [getFuzzyHeader(h, 'assignedto')]: user || ''
+      [getFuzzyHeader(h, 'assignedto')]: req.portalUser?.name || user || ''
     });
 
-    await logDesignActivity(user, designId, `Created custom task: ${designType}`);
+    await logDesignActivity(req.portalUser?.name || user || '', designId, `Created custom task: ${cleanType}`);
     res.json({ success: true, message: "Custom task added to Active Queue!" });
   } catch(e) { res.status(500).json({ success: false, message: e.message }); }
 };

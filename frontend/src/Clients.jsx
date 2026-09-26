@@ -33,34 +33,31 @@ const ClientLogo = ({ client, size = 70, noMargin = false }) => {
 };
 
 export default function Clients() {
-  const [tpoData, setTpoData] = useState(() => {
+  const [tpoData] = useState(() => {
     try {
       const data = localStorage.getItem('tpoData');
       return data ? JSON.parse(data) : {};
-    } catch (e) { return {}; }
+    } catch { return {}; }
   });
 
   const upperRole = String(tpoData?.role || '').toUpperCase().trim();
   const accessType = String(tpoData?.accessType || '').toLowerCase().trim();
   
   // ROLE COMPUTATIONS
-  const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole === 'GENERAL MANAGER';
+  const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('SYSTEM ADMIN') || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
   const isTpo = upperRole.includes('TPO') || upperRole.includes('PLACEMENT OFFICER');
   const canManageClients = isTpo && !isSuperAdmin;
+  const isBranchManager = upperRole === 'BM' || upperRole.includes('BRANCH MANAGER');
+  const isRestrictedTechnicalRole = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(upperRole) || upperRole.includes('REGIONAL TECHNICAL HEAD') || upperRole.includes('TECHNICAL LEAD') || /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(upperRole) || upperRole.includes('TRAINER');
+  const canViewClients = !isRestrictedTechnicalRole;
 
-  // RESTRICTED MANAGERS (BM, TM, RM, ZM)
-  const isRestrictedManager = !isSuperAdmin && !isTpo && (
-    upperRole.includes('MANAGER') || 
-    upperRole.includes('ZONAL') || 
-    upperRole.includes('TERRITORY') || 
-    upperRole.includes('REGIONAL') ||
-    upperRole === 'BM' || upperRole === 'TM' || upperRole === 'RM' || upperRole === 'ZM'
-  );
+  const isRestrictedManager = !isSuperAdmin && !isTpo && isBranchManager;
+  const clientCacheKey = `dash_clients:${String(tpoData?.email || tpoData?.name || upperRole).toLowerCase()}`;
 
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('Signed'); 
+  const [activeTab, setActiveTab] = useState('All');
 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState(null);
@@ -85,14 +82,14 @@ export default function Clients() {
       
       // Attempt cache
       try {
-        const cached = localStorage.getItem('dash_clients');
+        const cached = localStorage.getItem(clientCacheKey);
         if (cached && cached !== 'undefined' && cached !== 'null') { 
             const parsed = JSON.parse(cached);
             if (Array.isArray(parsed) && parsed.length > 0) {
                 if (isMounted) { setClients(parsed); setLoading(false); }
             }
         }
-      } catch(e) {}
+      } catch { console.error('Could not read the partner cache.'); }
 
       // Fetch fresh data
       try {
@@ -100,10 +97,10 @@ export default function Clients() {
         const res = await axios.post(`${API_BASE}/api/tpo/clients`, payload, { timeout: 10000 }); // 10s strict timeout
         if (res.data && res.data.success && isMounted) {
           setClients(res.data.clients || []);
-          localStorage.setItem('dash_clients', JSON.stringify(res.data.clients || [])); 
+          localStorage.setItem(clientCacheKey, JSON.stringify(res.data.clients || []));
         }
-      } catch (err) { 
-        console.error("Backend fetch failed"); 
+      } catch {
+        if (isMounted) showToast('Could not refresh partner records.', 'error');
       } finally { 
         if (isMounted) setLoading(false); // 🚨 GUARANTEED ANTI-FREEZE
       }
@@ -118,7 +115,7 @@ export default function Clients() {
       isMounted = false; 
       clearTimeout(failsafe); 
     };
-  }, []); 
+  }, [clientCacheKey, isRestrictedManager, isSuperAdmin, tpoData?.name]);
 
   const fetchClientsManual = async () => {
     try {
@@ -126,9 +123,9 @@ export default function Clients() {
       const res = await axios.post(`${API_BASE}/api/tpo/clients`, payload);
       if (res.data && res.data.success) {
         setClients(res.data.clients || []);
-        localStorage.setItem('dash_clients', JSON.stringify(res.data.clients || [])); 
+        localStorage.setItem(clientCacheKey, JSON.stringify(res.data.clients || []));
       }
-    } catch (err) {}
+    } catch (err) { showToast(err.response?.data?.message || 'Could not refresh partner records.', 'error'); }
   };
 
   const submitAddClient = async () => {
@@ -205,7 +202,7 @@ export default function Clients() {
     const matchSearch = String(c.companyName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                         String(c.location || '').toLowerCase().includes(searchQuery.toLowerCase());
     const isSigned = String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink);
-    const tabMatch = isRestrictedManager ? true : (activeTab === 'Signed' ? isSigned : !isSigned);
+    const tabMatch = activeTab === 'All' || (activeTab === 'Signed' ? isSigned : !isSigned);
     return matchSearch && tabMatch;
   });
 
@@ -213,6 +210,10 @@ export default function Clients() {
   const totalSigned = safeClients.filter(c => String(c.documentStatus || '').toLowerCase() === 'completed' || Boolean(c.mouLink)).length;
   const totalPending = totalPartners - totalSigned;
   const uniqueTPOs = new Set(safeClients.map(c => c.tpoName || 'Unknown').filter(n => n !== 'Unknown')).size;
+
+  if (!canViewClients) {
+    return <Layout><div className="empty-state-card" role="status">Clients &amp; Partners is not available for this role.</div></Layout>;
+  }
 
   return (
     <Layout>
@@ -263,12 +264,11 @@ export default function Clients() {
         )}
 
         <div className="glass-panel control-action-bar" style={{ flexDirection: 'row', justifyContent: isRestrictedManager ? 'center' : 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
-          {!isRestrictedManager && (
-            <div className="segmented-tabs">
-              <button className={`seg-tab ${activeTab === 'Signed' ? 'active-green' : ''}`} onClick={() => setActiveTab('Signed')}>Signed MOUs</button>
-              <button className={`seg-tab ${activeTab === 'Pending' ? 'active-orange' : ''}`} onClick={() => setActiveTab('Pending')}>Pending Signatures</button>
-            </div>
-          )}
+          <div className="segmented-tabs">
+            <button className={`seg-tab ${activeTab === 'All' ? 'active-blue' : ''}`} onClick={() => setActiveTab('All')}>All MOUs ({totalPartners})</button>
+            <button className={`seg-tab ${activeTab === 'Signed' ? 'active-green' : ''}`} onClick={() => setActiveTab('Signed')}>Signed ({totalSigned})</button>
+            <button className={`seg-tab ${activeTab === 'Pending' ? 'active-orange' : ''}`} onClick={() => setActiveTab('Pending')}>Pending ({totalPending})</button>
+          </div>
           <div className="filter-group" style={{ width: isRestrictedManager ? '100%' : 'auto', maxWidth: isRestrictedManager ? '600px' : 'none' }}>
             <div style={{ position: 'relative', flex: 1, minWidth: '300px' }}>
               <input type="text" className="premium-input" placeholder="Search company name..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} style={{ width: '100%', paddingLeft: '40px' }} />
@@ -449,6 +449,7 @@ export default function Clients() {
         .control-action-bar { border-radius: 16px; padding: 15px; margin-bottom: 30px; display: flex; gap: 15px; }
         .segmented-tabs { display: flex; background: rgba(0,0,0,0.3); padding: 5px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); }
         .seg-tab { background: transparent; border: none; padding: 10px 24px; color: #94a3b8; font-weight: bold; font-size: 0.95rem; border-radius: 8px; cursor: pointer; transition: 0.3s; }
+        .seg-tab.active-blue { background: #3b82f6; color: #fff; box-shadow: 0 4px 10px rgba(59,130,246,0.3); }
         .seg-tab.active-green { background: #10b981; color: #fff; box-shadow: 0 4px 10px rgba(16,185,129,0.3); }
         .seg-tab.active-orange { background: #f59e0b; color: #fff; box-shadow: 0 4px 10px rgba(245,158,11,0.3); }
         

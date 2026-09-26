@@ -1,4 +1,3 @@
-import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { GraduationCap, UsersFour, ChalkboardTeacher, CalendarCheck, Notebook, BookOpen } from '@phosphor-icons/react';
 

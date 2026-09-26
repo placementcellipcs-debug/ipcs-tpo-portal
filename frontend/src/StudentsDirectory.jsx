@@ -7,6 +7,7 @@ import {
   InstagramLogo, ArrowsClockwise
 } from '@phosphor-icons/react';
 import Layout from './Layout';
+import { API_BASE } from './apiConfig';
 
 const TILE_COLORS = ['#10b981', '#ef4444', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#0ea5e9', '#f43f5e'];
 
@@ -65,10 +66,11 @@ export default function StudentsDirectory() {
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
   const isTpo = upperRole === 'TPO' || upperRole.includes('PLACEMENT OFFICER');
-  const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
+  const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(upperRole) || upperRole.includes('REGIONAL TECHNICAL HEAD');
   const isTrainer = upperRole.includes('TRAINER');
   
-  const isManager = upperRole.includes('MANAGER') || upperRole.includes('ZONAL') || upperRole.includes('TERRITORY') || upperRole.includes('REGIONAL') || ['BM', 'TM', 'RM', 'ZM'].includes(upperRole);
+  const isBranchManager = upperRole === 'BM' || upperRole.includes('BRANCH MANAGER');
+  const isTechnicalLead = upperRole.includes('TECHNICAL LEAD') || /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(upperRole);
   const isCourseSpecific = isRth || upperRole.includes('TTH') || isTrainer || upperRole.includes('TECHNICAL LEAD');
   
   // 🚨 FIXED: Parse multiple assigned courses splitting by comma and newline
@@ -78,7 +80,7 @@ export default function StudentsDirectory() {
     : [...new Set(rawCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim())).filter(Boolean))];
 
   const canEditAll = isSuperAdmin || isTpo; 
-  const canEditAcademic = canEditAll || isRth || isTrainer; 
+  const canEditAcademic = canEditAll || isRth || isTrainer || isTechnicalLead;
   const canSave = canEditAll || canEditAcademic; 
 
   useEffect(() => {
@@ -96,8 +98,8 @@ export default function StudentsDirectory() {
         };
 
         const [stuRes, statRes] = await Promise.all([
-          axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/students', payload),
-          axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/dashboard-stats', payload)
+          axios.post(`${API_BASE}/api/tpo/students`, payload),
+          axios.post(`${API_BASE}/api/tpo/dashboard-stats`, payload)
         ]);
         
         if (stuRes.data.success) {
@@ -107,7 +109,7 @@ export default function StudentsDirectory() {
           setGlobalStats(statRes.data.stats);
         }
       } catch (error) { 
-        console.error("Failed to fetch students", error); 
+        console.error('Failed to fetch students', error);
       } finally { setLoading(false); }
     };
     fetchData();
@@ -184,7 +186,7 @@ export default function StudentsDirectory() {
         setRawStudents(updatedStudents);
         setIsModalOpen(false);
       }
-    } catch (error) { alert("Failed to update student data"); } finally { setSavingStatus(false); }
+    } catch { alert("Failed to update student data"); } finally { setSavingStatus(false); }
   };
 
   const scopedStudents = rawStudents.filter(s => {
@@ -547,7 +549,7 @@ export default function StudentsDirectory() {
                 })()}
              </div>
 
-             {isManager && (
+             {isBranchManager && (
                <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #1e293b' }}>
                  <h3 style={{ margin: '0 0 15px 0', color: '#8b5cf6', fontSize: '1.1rem' }}>Reference Contacts</h3>
                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
@@ -616,7 +618,7 @@ export default function StudentsDirectory() {
                </div>
              )}
 
-             {!isManager && (
+             {!isBranchManager && (
                <div style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid #1e293b', borderRadius: '16px', padding: '1.5rem', marginTop: '2.5rem' }}>
                   <h3 style={{ margin: '0 0 1.2rem 0', color: '#fff', fontSize: '1.1rem', borderBottom: '1px solid #1e293b', paddingBottom: '0.8rem' }}>Access & Permissions Control</h3>
                   

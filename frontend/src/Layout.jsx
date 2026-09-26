@@ -6,7 +6,7 @@ import {
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
   Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin,
   WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench, Plus,
-  Headset, SignOut, PaintBrush,
+  Headset, SignOut,
   Kanban, ImageSquare, ShareNetwork, CheckCircle, ClockCounterClockwise, SlidersHorizontal,
   GraduationCap, UsersFour, ChalkboardTeacher, CalendarCheck
 } from '@phosphor-icons/react';
@@ -31,7 +31,7 @@ export default function Layout({ children }) {
     try {
       const data = localStorage.getItem('tpoData');
       return data ? JSON.parse(data) : null;
-    } catch (error) { return null; }
+    } catch { return null; }
   });
   
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -77,7 +77,7 @@ export default function Layout({ children }) {
           alert("Security Notice: " + (res.data.message || "Your account was logged in on another device."));
           window.location.href = '/';
         }
-      } catch (err) {}
+      } catch (error) { console.error('Session verification failed.', error); }
     }, 30000);
 
     return () => {
@@ -136,15 +136,20 @@ export default function Layout({ children }) {
           return true;
         }).slice(0, 5); 
 
-        setNotifications(finalNotifs);
+        queueMicrotask(() => setNotifications(finalNotifs));
       }
-    } catch(e) { console.error("Error parsing notifications"); }
+    } catch { console.error('Error parsing notifications'); }
   }, [tpoData]);
 
   if (!tpoData) return <div style={{ minHeight: '100vh', background: '#020617' }}>{children}</div>;
 
   const userRole = (tpoData.role || '').toUpperCase();
   const sheetAccess = (tpoData.accessType || '').toLowerCase();
+
+  const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('REGIONAL TECHNICAL HEAD');
+  const isTrainer = userRole.includes('TRAINER');
+  const isTechnicalLead = userRole.includes('TECHNICAL LEAD') || userRole.includes('TTH');
+  const canViewClients = !(isRth || isTrainer || isTechnicalLead);
   
   const isAssetManager = userRole.includes('ASSET') || sheetAccess.includes('asset');
   const isDesigner = userRole.includes('DESIGN') || userRole.includes('MEDIA') || userRole.includes('CREATIVE');
@@ -153,8 +158,6 @@ export default function Layout({ children }) {
 
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
   const isTpo = userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER');
-  const isTrainer = userRole.includes('TRAINER');
-  const isRth = userRole.includes('RTH') || userRole.includes('REGIONAL TECHNICAL HEAD');
   const isTL = userRole.includes('TECHNICAL LEAD') || userRole.includes('TTH') || isRth || (userRole.includes('MANAGER') && showPlacementAndAcademic) || isSuperAdmin;
 
   // Role Checks
@@ -279,7 +282,7 @@ export default function Layout({ children }) {
                 {showStudentApps && <div className={`pd-nav-item ${isActive('/applications') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/applications')}><ListChecks size={22} weight={isActive('/applications') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Student Apps</span></div>}
                 <div className={`pd-nav-item ${isActive('/vacancies') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/vacancies')}><Briefcase size={22} weight={isActive('/vacancies') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Vacancies</span></div>
                 {!isTrainer && <div className={`pd-nav-item ${isActive('/placement-drives') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}><IdentificationCard size={22} weight={isActive('/placement-drives') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Placement Drives</span></div>}
-                {!isTrainer && <div className={`pd-nav-item ${isActive('/clients') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/clients')}><Handshake size={22} weight={isActive('/clients') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Clients & Partners</span></div>}
+                {canViewClients && <div className={`pd-nav-item ${isActive('/clients') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/clients')}><Handshake size={22} weight={isActive('/clients') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Clients & Partners</span></div>}
 
                 {/* 🚨 ACADEMIC & OPS (RESTORED) */}
                 <span className="pd-divider-label" style={{ marginTop: '15px' }}>Academic & Ops</span>

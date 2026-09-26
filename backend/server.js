@@ -13,7 +13,7 @@ const assetControllers = require('./src/assetControllers');
 
 // 🚨 IMPORT CACHES EXACTLY ONCE
 const { getCache } = require('./src/config');
-const { getAssetCache } = require('./src/assetConfig');
+const { isAssetCacheReady } = require('./src/assetConfig');
 
 const app = express();
 
@@ -35,11 +35,12 @@ app.use(cors({
       return callback(new Error('Blocked by CORS'));
     }
   },
-  credentials: true
+  credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-ipcs-email', 'x-ipcs-session-token']
 }));
 
 app.use(express.json());
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 // ---------------------------------------------------------
 // AUTHENTICATION ROUTES
@@ -49,11 +50,64 @@ app.post('/api/auth/verify-session', controllers.verifySession);
 
 // 🚨 GLOBAL CACHE MIDDLEWARE
 app.use('/api', (req, res, next) => {
-  // Checks if BOTH the Placement DB and Asset DB have finished loading
-  if (!getCache() || !getAssetCache()) {
+  if (!getCache()) {
     return res.status(503).json({ success: false, message: "Server is syncing data from Google Sheets... Please wait 5 seconds and refresh." });
   }
+  if (req.path.startsWith('/v1/assets') && !isAssetCacheReady()) {
+    return res.status(503).json({ success: false, message: "Asset data is still loading from Google Sheets. Please try again shortly." });
+  }
   next();
+});
+
+const getRole = user => String(user?.role || '').toUpperCase();
+const hasRoleToken = (role, token) => new RegExp(`(^|[^A-Z0-9])${token}([^A-Z0-9]|$)`).test(role);
+const isPortalAdmin = user => user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(getRole(user));
+const requireSession = (policy = 'portal') => (req, res, next) => {
+  const user = controllers.getSessionUser(req.get('x-ipcs-email'), req.get('x-ipcs-session-token'));
+  if (!user) return res.status(401).json({ success: false, message: 'Sign in again to continue.' });
+  const role = getRole(user);
+  const isAdmin = isPortalAdmin(user);
+
+  if (policy === 'assets' && !isAdmin && !role.includes('MANAGER') && !role.includes('ASSET')) {
+    return res.status(403).json({ success: false, message: 'Asset Management is not available for this role.' });
+  }
+  if (policy === 'asset-admin' && !isAdmin && !role.includes('ASSET')) {
+    return res.status(403).json({ success: false, message: 'Asset manager access is required for this action.' });
+  }
+  if (policy === 'portal-admin' && !isAdmin) {
+    return res.status(403).json({ success: false, message: 'System administrator access is required for this action.' });
+  }
+  if (policy === 'design' && !isAdmin && !['DESIGN', 'MEDIA', 'CREATIVE'].some(part => role.includes(part))) {
+    return res.status(403).json({ success: false, message: 'Media & Design Studio is not available for this role.' });
+  }
+  if (policy === 'academic' && (role.includes('ASSET') || role.includes('DESIGN') || role.includes('MEDIA') || role.includes('CREATIVE'))) {
+    return res.status(403).json({ success: false, message: 'Training & Academics is not available for this role.' });
+  }
+  if (policy === 'clients' && (hasRoleToken(role, 'RTH') || role.includes('REGIONAL TECHNICAL HEAD') || role.includes('TECHNICAL LEAD') || role.includes('TRAINER') || hasRoleToken(role, 'TTH'))) {
+    return res.status(403).json({ success: false, message: 'Clients & Partners is not available for this role.' });
+  }
+  req.portalUser = user;
+  if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
+    req.body = { ...req.body, userName: user.name, userEmail: user.email, currentUserEmail: user.email };
+    if (req.baseUrl === '/api/tpo/students' || req.baseUrl === '/api/tpo/dashboard-stats') {
+      req.body = { ...req.body, assignedBranchesArray: user.assignedBranchesArray, role: user.role, assignedCourse: user.assignedCourse };
+    }
+    if (req.baseUrl === '/api/tpo/clients') {
+      const canSeeAll = isAdmin || role.includes('MANAGER') || role === 'BM' || role.includes('BRANCH MANAGER');
+      req.body = { ...req.body, tpoName: canSeeAll ? '' : user.name };
+    }
+  }
+  next();
+};
+
+app.use('/api/v1/assets', requireSession('assets'));
+app.use('/api/design', requireSession('design'));
+app.use('/api/academic', requireSession('academic'));
+app.use('/api/tpo/students', requireSession('portal'));
+app.use('/api/tpo/dashboard-stats', requireSession('portal'));
+app.use('/api/tpo/clients', (req, res, next) => {
+  if ((req.method === 'GET' && /^\/\d+$/.test(req.path)) || (req.method === 'POST' && req.path === '/submit-mou')) return next();
+  return requireSession('clients')(req, res, next);
 });
 
 // ---------------------------------------------------------
@@ -73,6 +127,7 @@ app.post('/api/tpo/issues/update', controllers.updateIssue);
 app.post('/api/tpo/reports', controllers.getReports);
 app.post('/api/tpo/talentino', controllers.getTalentino);
 app.post('/api/tpo/clients', controllers.getClients);
+app.get('/api/public/partners', controllers.getPublicPartners);
 app.get('/api/tpo/clients/:id', controllers.getClientById);
 app.post('/api/tpo/clients/update', upload.single('logoFile'), controllers.updateClient);
 app.post('/api/tpo/clients/request-mou', controllers.requestMou);
@@ -142,7 +197,7 @@ app.post('/api/tpo/activity', controllers.updateTpoActivity);
 // 🚨 ASSET MANAGEMENT (ERP) ROUTES
 // ---------------------------------------------------------
 app.get('/api/v1/assets/form-data', assetControllers.getRegistrationData);
-app.post('/api/v1/assets/add', assetControllers.addAsset);
+app.post('/api/v1/assets/add', requireSession('asset-admin'), assetControllers.addAsset);
 app.get('/api/v1/assets', assetControllers.getAssets);
 app.get('/api/v1/assets/:assetId/details', assetControllers.getAssetDetails);
 app.post('/api/v1/assets/assign', assetControllers.assignAsset);
@@ -156,21 +211,22 @@ app.post('/api/v1/assets/inventory/stock', assetControllers.updateStock);
 
 app.get('/api/v1/assets/transfers', assetControllers.getTransfers);
 app.post('/api/v1/assets/transfers/request', assetControllers.requestTransfer);
-app.post('/api/v1/assets/transfers/approve', assetControllers.approveTransfer);
+app.post('/api/v1/assets/transfers/approve', requireSession('portal-admin'), assetControllers.approveTransfer);
+app.post('/api/v1/assets/transfers/receive', assetControllers.receiveTransfer);
 
 app.get('/api/v1/assets/maintenance', assetControllers.getMaintenance);
 app.post('/api/v1/assets/maintenance/report', assetControllers.reportMaintenance);
 app.post('/api/v1/assets/maintenance/resolve', assetControllers.resolveMaintenance);
 
 // 🚨 SYSTEM CONFIGURATION ROUTES (CATEGORIES, LOCATIONS, VENDORS)
-app.post('/api/v1/assets/config/category', assetControllers.addCategory);
-app.post('/api/v1/assets/config/subcategory', assetControllers.addSubcategory);
-app.post('/api/v1/assets/config/location', assetControllers.addLocation);
-app.post('/api/v1/assets/config/vendor', assetControllers.addVendor);
+app.post('/api/v1/assets/config/category', requireSession('asset-admin'), assetControllers.addCategory);
+app.post('/api/v1/assets/config/subcategory', requireSession('asset-admin'), assetControllers.addSubcategory);
+app.post('/api/v1/assets/config/location', requireSession('asset-admin'), assetControllers.addLocation);
+app.post('/api/v1/assets/config/vendor', requireSession('asset-admin'), assetControllers.addVendor);
 
 // 🚨 ASSET DOCUMENTS & DISPOSAL
 app.post('/api/v1/assets/documents/upload', upload.single('file'), assetControllers.uploadAssetDocument);
-app.post('/api/v1/assets/dispose', assetControllers.disposeAsset);
+app.post('/api/v1/assets/dispose', requireSession('asset-admin'), assetControllers.disposeAsset);
 
 // ---------------------------------------------------------
 // CREATIVE & DESIGN MANAGEMENT 
@@ -193,6 +249,14 @@ app.post('/api/design/task', designControllers.createManualTask);
 const academicControllers = require('./src/academicControllers');
 
 app.get('/api/academic/training', academicControllers.getTrainingData);
+app.get('/api/academic/data', academicControllers.getAcademicData);
+app.post('/api/academic/training/add', academicControllers.addTraining);
+app.post('/api/academic/training/update', academicControllers.updateTraining);
+app.post('/api/academic/batches/add', academicControllers.addBatch);
+app.post('/api/academic/batches/update', academicControllers.updateBatch);
+app.post('/api/academic/sessions/add', academicControllers.addSession);
+app.post('/api/academic/attendance/update', academicControllers.updateAttendance);
+app.post('/api/academic/diary/add', academicControllers.addDiaryEntry);
 
 // ---------------------------------------------------------
 // SERVER INITIALIZATION & SCHEDULED AUTOMATIONS

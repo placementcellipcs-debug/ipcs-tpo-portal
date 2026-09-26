@@ -1,4 +1,3 @@
-import React from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Kanban, Files, CheckCircle, ShareNetwork, ClockCounterClockwise, SlidersHorizontal, ImageSquare, PaintBrush } from '@phosphor-icons/react';
 

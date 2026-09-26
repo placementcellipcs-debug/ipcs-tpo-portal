@@ -1,60 +1,65 @@
+import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 import Login from './Login';
-import Dashboard from './Dashboard';
-import StudentsDirectory from './StudentsDirectory';
-import JobTracker from './JobTracker';
-import PlacedStudents from './PlacedStudents';
-import StudentApps from './StudentApps';
-import Vacancies from './Vacancies';
-import Events from './Events';
-import Issues from './Issues'; 
-import Reports from './Reports';
-import Talentino from './Talentino';
-import Settings from './Settings';
-import Clients from './Clients';
-import CertificateSign from './CertificateSign';
-import UserManagement from './UserManagement';
-import StudyMaterials from './StudyMaterials';
-import TechnicalExams from './TechnicalExams';
-import Aptitude from './Aptitude';
-import TalentinoExams from './TalentinoExams';
-import Courses from './Courses';
-import PlacementDrives from './PlacementDrives';
-import ExamsHub from './ExamsHub';
-import Branches from './Branches';
-import TrainerLog from './TrainerLog';
-import SecurityActivity from './SecurityActivity';
+
+const RecruiterMOU = lazy(() => import('./RecruiterMOU'));
+const Dashboard = lazy(() => import('./Dashboard'));
+const StudentsDirectory = lazy(() => import('./StudentsDirectory'));
+const JobTracker = lazy(() => import('./JobTracker'));
+const PlacedStudents = lazy(() => import('./PlacedStudents'));
+const StudentApps = lazy(() => import('./StudentApps'));
+const Vacancies = lazy(() => import('./Vacancies'));
+const Events = lazy(() => import('./Events'));
+const Issues = lazy(() => import('./Issues'));
+const Reports = lazy(() => import('./Reports'));
+const Talentino = lazy(() => import('./Talentino'));
+const Settings = lazy(() => import('./Settings'));
+const Clients = lazy(() => import('./Clients'));
+const CertificateSign = lazy(() => import('./CertificateSign'));
+const UserManagement = lazy(() => import('./UserManagement'));
+const StudyMaterials = lazy(() => import('./StudyMaterials'));
+const TechnicalExams = lazy(() => import('./TechnicalExams'));
+const Aptitude = lazy(() => import('./Aptitude'));
+const TalentinoExams = lazy(() => import('./TalentinoExams'));
+const Courses = lazy(() => import('./Courses'));
+const PlacementDrives = lazy(() => import('./PlacementDrives'));
+const ExamsHub = lazy(() => import('./ExamsHub'));
+const Branches = lazy(() => import('./Branches'));
+const TrainerLog = lazy(() => import('./TrainerLog'));
+const SecurityActivity = lazy(() => import('./SecurityActivity'));
 
 // ASSET MANAGEMENT (ERP)
-import AssetList from './AssetList';
-import AddAsset from './AddAsset';
-import Inventory from './Inventory';
-import AssetTransfers from './AssetTransfers';
-import AssetMaintenance from './AssetMaintenance';
-import AssetDashboard from './AssetDashboard';
-import AssetSettings from './AssetSettings';
+const AssetList = lazy(() => import('./AssetList'));
+const AddAsset = lazy(() => import('./AddAsset'));
+const Inventory = lazy(() => import('./Inventory'));
+const AssetTransfers = lazy(() => import('./AssetTransfers'));
+const AssetMaintenance = lazy(() => import('./AssetMaintenance'));
+const AssetDashboard = lazy(() => import('./AssetDashboard'));
+const AssetSettings = lazy(() => import('./AssetSettings'));
 
 // MEDIA & DESIGN PORTAL
-import MediaTasks from './MediaTasks';
-import MediaPreview from './MediaPreview';
-import MediaFiles from './MediaFiles';
-import MediaCategories from './MediaCategories';
-import MediaSocial from './MediaSocial';
-import MediaLogs from './MediaLogs';
-import MediaSettings from './MediaSettings';
+const MediaTasks = lazy(() => import('./MediaTasks'));
+const MediaPreview = lazy(() => import('./MediaPreview'));
+const MediaFiles = lazy(() => import('./MediaFiles'));
+const MediaCategories = lazy(() => import('./MediaCategories'));
+const MediaSocial = lazy(() => import('./MediaSocial'));
+const MediaLogs = lazy(() => import('./MediaLogs'));
+const MediaSettings = lazy(() => import('./MediaSettings'));
 
 // ACADEMIC & TRAINING ERP
-import AcademicTraining from './AcademicTraining';
-import AcademicBatches from './AcademicBatches';
-import AcademicSessions from './AcademicSessions';
-import AcademicAttendance from './AcademicAttendance';
-import AcademicDiary from './AcademicDiary';
+const AcademicTraining = lazy(() => import('./AcademicTraining'));
+const AcademicBatches = lazy(() => import('./AcademicBatches'));
+const AcademicSessions = lazy(() => import('./AcademicSessions'));
+const AcademicAttendance = lazy(() => import('./AcademicAttendance'));
+const AcademicDiary = lazy(() => import('./AcademicDiary'));
 
 function App() {
   return (
     <BrowserRouter>
+      <Suspense fallback={<div role="status" style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', background: '#f6f8fb', color: '#263746', fontFamily: 'Inter, sans-serif' }}>Loading IPCS workspace…</div>}>
       <Routes>
         <Route path="/" element={<Login />} />
+        <Route path="/recruiter" element={<RecruiterMOU />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/students" element={<StudentsDirectory />} />
         <Route path="/tracker" element={<JobTracker />} />
@@ -105,6 +110,7 @@ function App() {
         <Route path="/academic/attendance" element={<AcademicAttendance />} />
         <Route path="/academic/diary" element={<AcademicDiary />} />
       </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }
