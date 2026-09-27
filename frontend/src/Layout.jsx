@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
   Bell, X, SquaresFour, Trophy, ListChecks, ShieldCheck,
@@ -180,12 +180,12 @@ export default function Layout({ children }) {
   
   const isAssetManager = userRole.includes('ASSET') || sheetAccess.includes('asset');
   const isDesigner = userRole.includes('DESIGN') || userRole.includes('MEDIA') || userRole.includes('CREATIVE');
-  
-  // Every staff member can navigate to the modules available to their role.
-  // Asset and media roles used to get a reduced drawer that hid the rest of the portal.
-  const showPlacementAndAcademic = true;
-
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('SYSTEM ADMIN') || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
+  const isDesignerWorkspace = isDesigner && !isSuperAdmin;
+  
+  // Designers get a purpose-built workspace: Career Hub, Mind Gym, Events, and Media Studio.
+  const showPlacementAndAcademic = !isDesignerWorkspace;
+
   const canCollapseAdminNav = isSuperAdmin || userRole.includes('ADMIN');
   const isTpo = userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER');
   // Role Checks
@@ -227,6 +227,9 @@ export default function Layout({ children }) {
   const sectionTheme = location.pathname.startsWith('/assets') ? 'assets' : location.pathname.startsWith('/academic') ? 'academic' : location.pathname.startsWith('/media') ? 'media' : location.pathname.startsWith('/clients') ? 'partners' : 'placement';
   const dashboardPath = isTrainer ? '/trainer' : '/dashboard';
   const defaultBackPath = isAssetManager && !isSuperAdmin ? '/assets' : (isTrainer ? '/trainer' : '/dashboard');
+  const designerAllowedPath = ['/career-hub', '/academic/brain-gym', '/events', '/media/dashboard', '/media/preview', '/media/files', '/media/social', '/media/categories', '/media/logs', '/media/settings'].some(path => location.pathname === path || location.pathname.startsWith(`${path}/`));
+
+  if (isDesignerWorkspace && !designerAllowedPath) return <Navigate to="/career-hub" replace />;
 
   return (
     <div className={`app-layout app-section-${sectionTheme}`}>
@@ -306,12 +309,16 @@ export default function Layout({ children }) {
 
           <div className="pd-nav-list">
             <>
-            <div className={`pd-nav-item ${location.pathname === dashboardPath || location.pathname === '/dashboard' ? (isTrainer ? 'active-acad' : 'active') : ''}`} onClick={() => handleNav(dashboardPath)}><SquaresFour size={22} /><span>Dashboard</span></div>
+            {!isDesignerWorkspace && <div className={`pd-nav-item ${location.pathname === dashboardPath || location.pathname === '/dashboard' ? (isTrainer ? 'active-acad' : 'active') : ''}`} onClick={() => handleNav(dashboardPath)}><SquaresFour size={22} /><span>Dashboard</span></div>}
             {navSectionHeading('career', 'Industry &amp; Career Hub')}
             <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('career')}>
               <div className={`pd-nav-item ${location.pathname.startsWith('/career-hub') ? 'active' : ''}`} onClick={() => handleNav('/career-hub')}><Newspaper size={22} /><span>Career Hub</span></div>
               <div className={`pd-nav-item ${isActive('/academic/brain-gym') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/academic/brain-gym')}><Brain size={22} weight={isActive('/academic/brain-gym') === '#8b5cf6' ? 'fill' : 'regular'} /><span>Mind Gym</span></div>
             </div>
+            {isDesignerWorkspace && <>
+              {navSectionHeading('designer-events', 'Events', { marginTop: '15px' })}
+              <div className={`pd-nav-item ${isActive('/events') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} /><span>All Branch Events</span></div>
+            </>}
             
             {showPlacementAndAcademic && (
               <>
@@ -442,12 +449,14 @@ export default function Layout({ children }) {
               </>
             )}
 
-            {navSectionHeading('preferences', 'Preferences', { marginTop: '15px' })}
-            <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('preferences')}>
-            <div className={`pd-nav-item ${isActive('/settings') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/settings')}>
-              <Gear size={22} weight={isActive('/settings') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Settings</span>
-            </div>
-            </div>
+            {!isDesignerWorkspace && <>
+              {navSectionHeading('preferences', 'Preferences', { marginTop: '15px' })}
+              <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('preferences')}>
+              <div className={`pd-nav-item ${isActive('/settings') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/settings')}>
+                <Gear size={22} weight={isActive('/settings') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Settings</span>
+              </div>
+              </div>
+            </>}
             </>
           </div>
 

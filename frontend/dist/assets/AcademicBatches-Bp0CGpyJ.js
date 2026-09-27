@@ -1,1 +1,0 @@
-import{r as e}from"./apiConfig-D7zxq80z.js";import{t}from"./AcademicWorkspace-Dm5XX2hM.js";var n=e();function r(){return(0,n.jsx)(t,{module:`batches`})}export{r as default};

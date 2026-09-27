@@ -26,6 +26,9 @@ const parseDate = (dateStr) => {
 export default function Events() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  const eventRole = String(tpoData?.role || '').toUpperCase();
+  const isDesigner = ['DESIGN', 'MEDIA', 'CREATIVE'].some(part => eventRole.includes(part));
+  const canManageEvents = tpoData?.accessType === 'superadmin' || eventRole.includes('TPO') || eventRole.includes('PLACEMENT OFFICER');
   
   const [events, setEvents] = useState([]);
   const [branchList, setBranchList] = useState([]); 
@@ -75,7 +78,7 @@ export default function Events() {
 
   useEffect(() => {
     fetchEvents();
-    fetchBranches();
+    if (canManageEvents) fetchBranches();
   }, []);
 
   const handleSaveEvent = async () => {
@@ -128,6 +131,7 @@ export default function Events() {
   };
 
   const isVisibleEvent = (e) => {
+    if (isDesigner) return true;
     const userBranches = tpoData?.assignedBranchesArray || [];
     const isSuper = tpoData?.accessType === 'superadmin';
     
@@ -209,7 +213,7 @@ export default function Events() {
             <p style={{ color: '#94a3b8', margin: 0, fontSize: '1.05rem' }}>Here's what's on your agenda today.</p>
           </div>
           
-          {(tpoData?.accessType === 'superadmin' || (tpoData?.role || '').toUpperCase().includes('TPO')) && (
+          {canManageEvents && (
             <button className="btn-action" style={{ width: 'auto', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', background: '#8b5cf6', color: '#0f172a' }} onClick={() => setIsModalOpen(true)}>
               <Plus weight="bold" /> Add Event
             </button>

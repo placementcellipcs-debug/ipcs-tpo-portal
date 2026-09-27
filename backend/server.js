@@ -83,6 +83,9 @@ const requireSession = (policy = 'portal') => (req, res, next) => {
   if (policy === 'design' && !isAdmin && !['DESIGN', 'MEDIA', 'CREATIVE'].some(part => role.includes(part))) {
     return res.status(403).json({ success: false, message: 'Media & Design Studio is not available for this role.' });
   }
+  if (policy === 'events-write' && !isAdmin && !role.includes('TPO') && !role.includes('PLACEMENT OFFICER')) {
+    return res.status(403).json({ success: false, message: 'Event management is not available for this role.' });
+  }
   if (policy === 'academic' && (role.includes('ASSET') || role.includes('DESIGN') || role.includes('MEDIA') || role.includes('CREATIVE'))) {
     return res.status(403).json({ success: false, message: 'Training & Academics is not available for this role.' });
   }
@@ -102,6 +105,24 @@ const requireSession = (policy = 'portal') => (req, res, next) => {
   }
   next();
 };
+
+// Designer accounts have a restricted workspace. Enforce it at the API layer as
+// well as in navigation so hidden modules cannot be reached through direct requests.
+app.use('/api', (req, res, next) => {
+  const user = controllers.getSessionUser(req.get('x-ipcs-email'), req.get('x-ipcs-session-token'));
+  if (!user) return next(); // Preserve public endpoints and their existing auth behavior.
+  const role = getRole(user);
+  const isDesigner = ['DESIGN', 'MEDIA', 'CREATIVE'].some(part => role.includes(part));
+  if (!isDesigner || isPortalAdmin(user)) return next();
+
+  const path = String(req.originalUrl || '').split('?')[0].toLowerCase();
+  const allowedPublicRead = req.method === 'GET' && path.startsWith('/api/public/');
+  const allowedCareerFeed = req.method === 'GET' && path === '/api/career-hub';
+  const allowedEvents = req.method === 'GET' && path === '/api/tpo/events';
+  const allowedDesignStudio = path === '/api/design' || path.startsWith('/api/design/');
+  if (allowedPublicRead || allowedCareerFeed || allowedEvents || allowedDesignStudio) return next();
+  return res.status(403).json({ success: false, message: 'This module is not available for the Designer workspace.' });
+});
 
 app.get('/api/career-hub', requireSession('portal'), careerHubControllers.getCareerFeed);
 app.use('/api/v1/assets', requireSession('assets'));
@@ -124,8 +145,8 @@ app.post('/api/tpo/applications', controllers.getApplications);
 app.post('/api/tpo/applications/update', upload.single('offerLetterFile'), controllers.updateApplication);
 app.post('/api/tpo/applications/add', upload.single('offerLetterFile'), controllers.addApplication);
 app.get('/api/tpo/vacancies', controllers.getVacancies);
-app.get('/api/tpo/events', controllers.getEvents);
-app.post('/api/tpo/events/add', upload.single('posterFile'), controllers.addEvent);
+app.get('/api/tpo/events', requireSession('portal'), controllers.getEvents);
+app.post('/api/tpo/events/add', requireSession('events-write'), upload.single('posterFile'), controllers.addEvent);
 app.post('/api/tpo/issues', controllers.getIssues);
 app.post('/api/tpo/issues/update', controllers.updateIssue);
 app.post('/api/tpo/reports', controllers.getReports);

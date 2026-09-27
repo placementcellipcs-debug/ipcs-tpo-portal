@@ -10,9 +10,10 @@ import PublicSiteHeader from './PublicSiteHeader';
 const getLandingPath = account => {
   const role = String(account?.role || '').toUpperCase();
   const isSuperAdmin = String(account?.accessType || '').toLowerCase() === 'superadmin';
+  if (isSuperAdmin || role.includes('SYSTEM ADMIN') || role.includes('GENERAL MANAGER') || role.includes('ZONAL PLACEMENT HEAD') || role === 'TECHNICAL HEAD') return '/dashboard';
+  if (['DESIGN', 'MEDIA', 'CREATIVE'].some(part => role.includes(part))) return '/career-hub';
   if (role.includes('TRAINER')) return '/trainer';
   if (role === 'BRANCH ASSET MANAGER' && !isSuperAdmin) return '/assets';
-  if (isSuperAdmin || role.includes('SYSTEM ADMIN') || role.includes('GENERAL MANAGER') || role.includes('ZONAL PLACEMENT HEAD') || role === 'TECHNICAL HEAD') return '/dashboard';
   return '/dashboard';
 };
 
