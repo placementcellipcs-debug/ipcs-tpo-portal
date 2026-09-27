@@ -97,6 +97,10 @@ function App() {
         
         {/* ASSET MANAGEMENT ERP ROUTES */}
         <Route path="/assets" element={<AssetList />} />
+        <Route path="/assets/branches" element={<AssetList />} />
+        <Route path="/assets/register" element={<AssetList />} />
+        <Route path="/assets/assignments" element={<AssetList />} />
+        <Route path="/assets/retired" element={<AssetList />} />
         <Route path="/assets/add" element={<AddAsset />} />
         <Route path="/assets/inventory" element={<Inventory />} />
         <Route path="/assets/transfers" element={<AssetTransfers />} />

@@ -1,0 +1,1 @@
+import{r as e}from"./apiConfig-D7zxq80z.js";import{t}from"./AcademicWorkspace-C_RwmrQU.js";var n=e();function r(){return(0,n.jsx)(t,{module:`sessions`})}export{r as default};

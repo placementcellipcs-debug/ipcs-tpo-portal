@@ -3,6 +3,7 @@ import axios from 'axios';
 import { CircleNotch, Plus, Package, X } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
+import AssetWorkspaceNav from './AssetWorkspaceNav';
 
 export default function Inventory() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData') || '{}');
@@ -45,6 +46,7 @@ export default function Inventory() {
 
   return (
     <Layout>
+      <AssetWorkspaceNav />
       <div className="page-container" style={{ padding: 0 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
           <div>

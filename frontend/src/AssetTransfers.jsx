@@ -3,6 +3,7 @@ import axios from 'axios';
 import { CircleNotch, ArrowsLeftRight, CheckCircle, WarningCircle, Truck } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
+import AssetWorkspaceNav from './AssetWorkspaceNav';
 
 export default function AssetTransfers() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -95,6 +96,7 @@ export default function AssetTransfers() {
 
   return (
     <Layout>
+      <AssetWorkspaceNav />
       <div className="premium-dashboard-wrapper page-container" style={{ maxWidth: '1600px', margin: '0 auto', paddingBottom: '50px' }}>
         
         {/* TOAST NOTIFICATION */}

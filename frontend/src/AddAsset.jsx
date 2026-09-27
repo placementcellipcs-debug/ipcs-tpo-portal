@@ -6,6 +6,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
+import AssetWorkspaceNav from './AssetWorkspaceNav';
 
 const DYNAMIC_TEMPLATES = {
   'Laptop': ['Serial Number', 'MAC Address', 'Processor (CPU)', 'RAM', 'Storage', 'Operating System'],
@@ -148,6 +149,7 @@ export default function AddAsset() {
 
   return (
     <Layout>
+      <AssetWorkspaceNav />
       <div className="premium-dashboard-wrapper page-container" style={{ maxWidth: '900px', margin: '0 auto', paddingBottom: '50px' }}>
         
         {/* TOAST NOTIFICATION */}

@@ -6,6 +6,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
+import AssetWorkspaceNav from './AssetWorkspaceNav';
 
 export default function AssetSettings() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -84,6 +85,7 @@ export default function AssetSettings() {
 
   if (!isSuperAdmin) return (
     <Layout>
+      <AssetWorkspaceNav />
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', color: '#94a3b8', textAlign: 'center' }}>
         <Prohibit size={64} color="#ef4444" weight="fill" style={{ marginBottom: '20px' }} />
         <h2>Access Restricted</h2>
@@ -94,6 +96,7 @@ export default function AssetSettings() {
 
   return (
     <Layout>
+      <AssetWorkspaceNav />
       <div className="premium-dashboard-wrapper page-container" style={{ maxWidth: '1400px', margin: '0 auto', paddingBottom: '50px' }}>
         
         {notification && (

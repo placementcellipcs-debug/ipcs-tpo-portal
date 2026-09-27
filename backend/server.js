@@ -130,6 +130,8 @@ app.post('/api/tpo/clients', controllers.getClients);
 app.get('/api/public/partners', controllers.getPublicPartners);
 app.get('/api/public/placement-posters', controllers.getPublicPlacementPosters);
 app.get('/api/public/placement-posters/:fileId', controllers.streamPublicPlacementPoster);
+app.get('/api/public/team-photos', controllers.getPublicTeamPhotos);
+app.get('/api/public/team-photos/:fileId', controllers.streamPublicTeamPhoto);
 app.get('/api/tpo/clients/:id', controllers.getClientById);
 app.post('/api/tpo/clients/update', upload.single('logoFile'), controllers.updateClient);
 app.post('/api/tpo/clients/request-mou', controllers.requestMou);

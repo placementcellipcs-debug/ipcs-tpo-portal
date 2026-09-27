@@ -9,32 +9,32 @@ const team = [
   {
     name: 'Mr. Ajith Surendran',
     role: 'General Manager',
-    bio: 'Mr. Ajith Surendran is a Post Graduate Diploma holder in Marketing Management, with skills in digital marketing, WordPress website development, and design software. He brings a decade of experience in education management and working knowledge across sales, marketing, business development, franchise acquisition, human resources, institutional and corporate alliances, training, and placements. Ajith brings valuable skills to his role and meets challenges with professionalism and a calm, positive approach.'
+    bio: 'Mr. Ajith Surendran is a Post Graduate Diploma holder in Marketing Management with skills in digital marketing, WordPress website development, and design software. He has a decade of experience in education management, sales, marketing, business development, franchise acquisition, human resources, institutional and corporate alliances, training, and placements. Ajith brings valuable skills to his role and meets challenges with a calm smile and professionalism.'
   },
   {
     name: 'Mr. Rakesh K C',
     role: 'Technical Head',
-    bio: 'Mr. Rakesh has been a driving force at IPCS Global since 2014. With a B.Tech degree and PG Diploma from MG University, he brings deep technical knowledge and experience. His path from Project Engineer to Academic Head, Project Manager, Operations Manager, and Technical Head reflects his dedication and practical expertise. He previously worked at NIELIT, Kozhikode, and now oversees critical technical projects and operations.'
+    bio: 'Mr. Rakesh has been a driving force at IPCS Global since 2014. With a B.Tech degree and PG Diploma from MG University, he brings extensive technical knowledge. His journey from Project Engineer to Academic Head, Project Manager, Operations Manager, and Technical Head reflects his dedication. He previously worked at NIELIT, Kozhikode, and now oversees critical projects and operations.'
   },
   {
     name: 'Mr. Nair Vijin Rajan',
     role: 'Finance Manager',
-    bio: 'Mr. Vijin brings more than 13 years of experience in accounts management, financial reporting, client relationships, and operational coordination. He has worked across diagnostics, manufacturing, and project management. His expertise includes receivables and payables, payroll, compliance, and multi-branch finance. He is multilingual and brings a thoughtful, professional approach to the team.'
+    bio: 'Mr. Vijin brings more than 13 years of experience in accounts management, financial reporting, client relationships, and operational coordination across diagnostics, manufacturing, and project management. His expertise includes receivables and payables, payroll, compliance, and multi-branch finance. He is multilingual and highly professional in his role.'
   },
   {
     name: 'Ms. Rekha P',
     role: 'Human Resource Manager · South Zone',
-    bio: 'Ms. Rekha P is an HR and MSW professional with over seven years of experience and a passion for developing people and organizations. As Zonal HR Manager, she leads talent acquisition, employee engagement, leadership development, and performance management across multiple regions. She works with cross-functional teams to align HR initiatives with business goals and build a collaborative culture of continuous learning and innovation.'
+    bio: 'Ms. Rekha P is an accomplished HR and MSW professional with over seven years of experience. As Zonal HR Manager at IPCS Global Solutions, she leads talent acquisition, employee engagement, leadership development, and performance management across regions. She works with cross-functional teams to align HR initiatives with organizational goals while promoting collaboration, continuous learning, and innovation.'
   },
   {
     name: 'Ms. Gifty KP',
     role: 'Zonal Placement Manager',
-    bio: 'Ms. Gifty has over nine years of experience in the EdTech industry. She began as a Java Trainer, developed expertise in technical instruction and learning methodologies, and later specialized in training excellence and learning management systems. As Zonal Placement Manager, she connects aspiring professionals with career opportunities and helps shape future-ready talent.'
+    bio: 'Ms. Gifty has over nine years of experience in the EdTech industry. Starting as a Java Trainer, she built expertise in technical instruction and teaching methods, then specialized in training excellence and learning management systems. As Zonal Placement Manager, she connects aspiring professionals with career opportunities and helps shape future-ready talent.'
   },
   {
     name: 'Mr. Nowfal Ibrahim',
     role: 'Technical Operations Manager',
-    bio: 'Mr. Nowfal Ibrahim holds a Bachelor of Engineering in Electronics and Instrumentation Engineering from Anna University, Chennai, and brings over ten years of experience in smart home automation and technical training. His journey from Project Engineer to Technical Operations Manager reflects a commitment to innovation, leadership, and operational excellence. He is known for his strategic thinking and ability to deliver successful technical projects.'
+    bio: 'Mr. Nowfal Ibrahim holds a Bachelor of Engineering in Electronics and Instrumentation Engineering from Anna University, Chennai, and has over ten years of hands-on experience in smart home automation and technical training. His progression from Project Engineer to Technical Operations Manager reflects his commitment to innovation, leadership, and operational excellence.'
   }
 ];
 
@@ -84,11 +84,22 @@ const blogs = [
 ];
 
 const magazines = [48, 47, 46, 45, 44, 43, 36, 35, 34];
-
 const logoSource = value => {
   if (!value || typeof value !== 'string') return '';
   const match = value.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
   return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : value;
+};
+const videoThumbnail = item => item.thumbnailLink || `https://drive.google.com/thumbnail?id=${encodeURIComponent(item.id)}&sz=w640`;
+
+const profilePhotoFor = (person, photos) => {
+  const tokens = person.name.toLowerCase().replace(/\b(mr|ms|mrs)\.?\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(token => token.length > 1);
+  if (!tokens.length) return null;
+  const matches = photos.map(photo => {
+    const file = String(photo.name || '').toLowerCase().replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[^a-z0-9]+/g, ' ');
+    const matchedTokens = tokens.filter(token => file.includes(token)).length;
+    return { photo, matchedTokens, exact: tokens.every(token => file.includes(token)) };
+  }).filter(item => item.matchedTokens > 0).sort((a, b) => Number(b.exact) - Number(a.exact) || b.matchedTokens - a.matchedTokens);
+  return matches[0]?.photo || null;
 };
 
 function SectionHeading({ eyebrow, title, description, align = 'left' }) {
@@ -104,6 +115,7 @@ function SectionHeading({ eyebrow, title, description, align = 'left' }) {
 export default function PublicSiteSections({ page = 'all' }) {
   const location = useLocation();
   const [partners, setPartners] = useState([]);
+  const [teamPhotos, setTeamPhotos] = useState([]);
   const [partnersLoaded, setPartnersLoaded] = useState(false);
   const [partnersError, setPartnersError] = useState(false);
   const [partnerTotal, setPartnerTotal] = useState(0);
@@ -141,8 +153,12 @@ export default function PublicSiteSections({ page = 'all' }) {
   useEffect(() => {
     if (!['partners', 'partners-all', 'all'].includes(page)) return undefined;
     let active = true;
-    const limit = partnerListPage ? 100 : 8;
-    axios.get(`${API_BASE}/api/public/partners?limit=${limit}&offset=0`)
+    setPartnersLoaded(false);
+    setPartnersError(false);
+    setPartners([]);
+    const limit = partnerListPage ? 500 : 8;
+    const query = partnerListPage ? '&all=true' : '&random=true';
+    axios.get(`${API_BASE}/api/public/partners?limit=${limit}&offset=0${query}`)
       .then(response => {
         if (!active) return;
         if (!response.data?.success) throw new Error('Partner directory unavailable');
@@ -157,10 +173,23 @@ export default function PublicSiteSections({ page = 'all' }) {
   }, [page, partnerListPage]);
 
   useEffect(() => {
+    if (!['about', 'all'].includes(page)) return undefined;
+    let active = true;
+    axios.get(`${API_BASE}/api/public/team-photos`)
+      .then(response => { if (active && response.data?.success) setTeamPhotos(Array.isArray(response.data.photos) ? response.data.photos : []); })
+      .catch(() => { if (active) setTeamPhotos([]); });
+    return () => { active = false; };
+  }, [page]);
+
+  useEffect(() => {
     if (!['placement', 'placement-gallery', 'all'].includes(page)) return undefined;
     let active = true;
-    const limit = posterGalleryPage ? 24 : 6;
-    axios.get(`${API_BASE}/api/public/placement-posters?category=posters&limit=${limit}&offset=0`)
+    setPostersLoaded(false);
+    setPostersError(false);
+    setPosters([]);
+    const limit = posterGalleryPage ? 500 : 6;
+    const query = posterGalleryPage ? '&all=true' : '&random=true';
+    axios.get(`${API_BASE}/api/public/placement-posters?category=posters&limit=${limit}&offset=0${query}`)
       .then(response => {
         if (!active) return;
         if (!response.data?.success) throw new Error('Placement poster gallery unavailable');
@@ -177,7 +206,11 @@ export default function PublicSiteSections({ page = 'all' }) {
   useEffect(() => {
     if ((!placementPage && !partnerMediaPage) || (page === 'placement' && !mediaOpen)) return undefined;
     let active = true;
-    axios.get(`${API_BASE}/api/public/placement-posters?category=${encodeURIComponent(placementCategory)}&limit=${mediaPage ? 24 : 6}&offset=0`)
+    setMediaItems([]);
+    setMediaLoaded(false);
+    setMediaLoading(true);
+    const mediaQuery = mediaPage ? '&all=true' : '&random=true';
+    axios.get(`${API_BASE}/api/public/placement-posters?category=${encodeURIComponent(placementCategory)}&limit=${mediaPage ? 500 : 6}&offset=0${mediaQuery}`)
       .then(response => {
         if (!active) return;
         if (!response.data?.success) throw new Error('Placement media unavailable');
@@ -266,14 +299,19 @@ export default function PublicSiteSections({ page = 'all' }) {
         <div className="public-story-shell">
           <SectionHeading eyebrow="The people behind IPCS" title="Team IPCS" description="Meet the leaders bringing together technical expertise, education, operations, people, and career development." align="center" />
           <div className="public-team-grid">
-            {team.map((person, index) => (
-              <article className="public-team-card" key={person.name}>
-                <div className={`public-team-avatar avatar-${index + 1}`} aria-hidden="true">{person.name.split(' ').filter(part => /^[A-Z]/.test(part) && !['Mr.', 'Ms.'].includes(part)).slice(0, 2).map(part => part[0]).join('')}</div>
+            {team.map((person, index) => {
+              const photo = profilePhotoFor(person, teamPhotos);
+              const initials = person.name.split(' ').filter(part => /^[A-Z]/.test(part) && !['Mr.', 'Ms.'].includes(part)).slice(0, 2).map(part => part[0]).join('');
+              return <article className="public-team-card" key={person.name}>
+                <div className={`public-team-photo-wrap avatar-${index + 1}`}>
+                  <span className="public-team-photo-fallback" aria-hidden="true">{initials}</span>
+                  {photo?.imageUrl && <img src={`${API_BASE}${photo.imageUrl}`} alt={`${person.name} profile`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}
+                </div>
                 <span className="public-team-role">{person.role}</span>
                 <h3>{person.name}</h3>
                 <p>{person.bio}</p>
-              </article>
-            ))}
+              </article>;
+            })}
           </div>
         </div>
       </section>
@@ -367,11 +405,23 @@ export default function PublicSiteSections({ page = 'all' }) {
               : mediaError ? <div className="public-poster-empty" role="status">Placement media could not be loaded. Check the shared Drive folder connection and try again.</div>
                 : !mediaLoaded && !mediaPage ? <div className="public-poster-empty">Choose an album to load its placement media.</div>
                   : mediaLoaded && !mediaItems.length ? <div className="public-poster-empty">No media has been added to this album yet. Add files to a Drive folder named “{placementCategory === 'placement-drive' ? 'Placement Drive' : placementCategory === 'testimonials' ? 'Testimonials' : placementCategory === 'talentino' ? 'Talentino' : placementCategory === 'clients' ? 'Clients' : placementCategory === 'client-videos' ? 'Client Videos' : 'Videos'}” and it will appear here.</div>
-                    : <div className="public-poster-grid">{mediaItems.map(item => <article className="public-poster-card public-media-card" key={item.id}>
-                      {item.mediaType === 'video' ? <div className="public-poster-video"><video src={`${API_BASE}${item.imageUrl}`} controls preload="metadata" playsInline aria-label={item.name} /></div> : <a className="public-poster-image" href={`${API_BASE}${item.imageUrl}`} target="_blank" rel="noreferrer"><img src={`${API_BASE}${item.imageUrl}`} alt={item.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></a>}
+                    : page === 'placement' ? <div className="public-poster-marquee public-media-marquee" aria-label="Placement videos and activities">
+                      <div className="public-poster-marquee-track">{[...mediaItems, ...mediaItems].map((item, index) => <Link className="public-poster-card public-poster-marquee-card public-media-preview-card" key={`${item.id}-${index}`} to={`${mediaBasePath}?category=${placementCategory}`} aria-hidden={index >= mediaItems.length || undefined} tabIndex={index >= mediaItems.length ? -1 : undefined}>
+                        <div className="public-poster-image public-video-preview-thumb">
+                          <img src={item.mediaType === 'video' ? videoThumbnail(item) : `${API_BASE}${item.imageUrl}`} alt={item.mediaType === 'video' ? '' : item.name} loading="lazy" decoding="async" onError={event => {
+                            const fallback = `https://drive.google.com/thumbnail?id=${encodeURIComponent(item.id)}&sz=w640`;
+                            if (item.mediaType === 'video' && event.currentTarget.src !== fallback) event.currentTarget.src = fallback;
+                            else event.currentTarget.style.display = 'none';
+                          }} />
+                          <span className="public-video-play-badge"><PlayCircle size={39} weight="fill" /></span>
+                        </div>
+                        <div className="public-poster-meta"><span>{item.folder}</span><h4>{item.name}</h4></div>
+                      </Link>)}</div>
+                    </div> : <div className="public-poster-grid">{mediaItems.map(item => <article className="public-poster-card public-media-card" key={item.id}>
+                      {item.mediaType === 'video' ? <div className="public-poster-video"><video src={`${API_BASE}${item.imageUrl}`} poster={videoThumbnail(item)} controls preload="metadata" playsInline aria-label={item.name} /></div> : <a className="public-poster-image" href={`${API_BASE}${item.imageUrl}`} target="_blank" rel="noreferrer"><img src={`${API_BASE}${item.imageUrl}`} alt={item.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></a>}
                       <div className="public-poster-meta"><span>{item.folder}</span><h4>{item.name}</h4></div>
                     </article>)}</div>}
-            {mediaLoaded && mediaItems.length > 0 && !mediaPage && <div className="public-gallery-more"><span>Showing {mediaItems.length} of {mediaTotal} items</span><Link to={`${mediaBasePath}?category=${placementCategory}`}>See all {placementCategory === 'videos' ? 'videos' : 'media'} <ArrowRight size={16} /></Link></div>}
+            {mediaLoaded && mediaItems.length > 0 && !mediaPage && <div className="public-gallery-more"><span>Random preview · {mediaTotal} available</span><Link to={`${mediaBasePath}?category=${placementCategory}`}>See all {mediaItems.some(item => item.mediaType === 'video') ? 'videos' : 'media'} <ArrowRight size={16} /></Link></div>}
             {mediaPage && mediaLoaded && mediaItems.length > 0 && <div className="public-gallery-more"><span>Showing {mediaItems.length} of {mediaTotal} items</span>{mediaNextOffset !== null && <button type="button" onClick={() => loadMore('media')}>Load more <ArrowRight size={16} /></button>}</div>}
           </div>
         </div>
@@ -426,7 +476,7 @@ export default function PublicSiteSections({ page = 'all' }) {
             : mediaError ? <div className="public-poster-empty" role="status">Client media could not be loaded. Check the shared Drive folder connection and try again.</div>
               : !mediaItems.length ? <div className="public-poster-empty">No client media has been added yet. Add files to a folder named “{placementCategory === 'client-videos' ? 'Client Videos' : 'Clients'}” inside the shared IPCS creatives folder.</div>
                 : <div className="public-poster-grid">{mediaItems.map(item => <article className="public-poster-card public-media-card" key={item.id}>
-                  {item.mediaType === 'video' ? <div className="public-poster-video"><video src={`${API_BASE}${item.imageUrl}`} controls preload="metadata" playsInline aria-label={item.name} /></div> : <a className="public-poster-image" href={`${API_BASE}${item.imageUrl}`} target="_blank" rel="noreferrer"><img src={`${API_BASE}${item.imageUrl}`} alt={item.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></a>}
+                  {item.mediaType === 'video' ? <div className="public-poster-video"><video src={`${API_BASE}${item.imageUrl}`} poster={videoThumbnail(item)} controls preload="metadata" playsInline aria-label={item.name} /></div> : <a className="public-poster-image" href={`${API_BASE}${item.imageUrl}`} target="_blank" rel="noreferrer"><img src={`${API_BASE}${item.imageUrl}`} alt={item.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></a>}
                   <div className="public-poster-meta"><span>{item.folder}</span><h4>{item.name}</h4></div>
                 </article>)}</div>}
           {mediaLoaded && mediaItems.length > 0 && <div className="public-gallery-more"><span>Showing {mediaItems.length} of {mediaTotal} items</span>{mediaNextOffset !== null && <button type="button" onClick={() => loadMore('media')}>Load more <ArrowRight size={16} /></button>}</div>}

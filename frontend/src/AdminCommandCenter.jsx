@@ -89,13 +89,12 @@ export default function AdminCommandCenter() {
     <Layout>
       <main className="admin-command">
         <header className="admin-command-hero">
-          <div><span className="admin-command-eyebrow">IPCS GLOBAL · ADMIN OVERVIEW</span><h1>Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, {String(user.name || 'Admin').split(' ')[0]}.</h1><p>Your network at a glance. Choose a workspace to continue where you need to work.</p></div>
+          <div><span className="admin-command-eyebrow">IPCS GLOBAL · ADMIN OVERVIEW</span><h1>Good {new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, {String(user.name || 'Admin').split(' ')[0]}.</h1><p>Live operational status across IPCS Global.</p></div>
           <div className="admin-command-live"><span /> Live workspace summary</div>
         </header>
         <section className="admin-command-metrics" aria-label="Network summary">
           {topMetrics.map(({ label, value, icon: Icon }) => <article key={label}><span className="admin-metric-icon"><Icon size={20} weight="duotone" /></span><div><small>{label}</small><strong>{summary.loading ? <CircleNotch className="ph-spin" size={17} /> : number(value)}</strong></div></article>)}
         </section>
-        <div className="admin-command-section-title"><div><span>YOUR WORKSPACES</span><h2>Choose a module</h2></div><p>Each module opens its existing workspace and tools.</p></div>
         <section className="admin-module-grid" aria-label="Admin workspaces">
           {moduleRoutes.map(({ id, title, icon: Icon, path, color, description, links }) => (
             <article className={`admin-module-card module-${color}`} key={id}>

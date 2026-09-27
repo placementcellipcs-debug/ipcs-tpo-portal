@@ -1874,14 +1874,21 @@ exports.getPublicPartners = (req, res) => {
     });
 
     const total = partners.length;
-    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || total || 1));
     const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+    if (String(req.query.random || '').toLowerCase() === 'true') {
+      for (let index = partners.length - 1; index > 0; index -= 1) {
+        const swap = Math.floor(Math.random() * (index + 1));
+        [partners[index], partners[swap]] = [partners[swap], partners[index]];
+      }
+    }
+    const all = String(req.query.all || '').toLowerCase() === 'true';
+    const limit = all ? total : Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || total || 1));
     const items = partners.slice(offset, offset + limit);
     res.json({
       success: true,
       partners: items,
       total,
-      nextOffset: offset + items.length < total ? offset + items.length : null
+      nextOffset: !all && offset + items.length < total ? offset + items.length : null
     });
   } catch (err) {
     console.error('Error fetching public partners:', err.message);
@@ -1889,7 +1896,11 @@ exports.getPublicPartners = (req, res) => {
   }
 };
 
-const PLACEMENT_POSTER_FOLDER_ID = '1YwMEIp5Nyn3Hi9kLlBxHfxE2okK6Tqm4';
+const PUBLIC_MEDIA_FOLDERS = [
+  { id: '1YwMEIp5Nyn3Hi9kLlBxHfxE2okK6Tqm4', category: 'posters', label: 'Placement creatives' },
+  { id: '1gO0z2GEL9N08WMZnOQkmW3tQ3H7dDtgX', category: 'placement-drive', label: 'Placement drives & activities' },
+  { id: '1WeTrsn7oAGOtsq_3LWp_BLNlC-sy5DDk', category: 'testimonials', label: 'Student testimonials' }
+];
 let placementPosterCache = { expiresAt: 0, posters: [], byId: new Map() };
 let placementPosterLoading = null;
 
@@ -1900,7 +1911,7 @@ async function getPlacementPosterFiles(forceRefresh = false) {
   placementPosterLoading = (async () => {
   const posters = [];
   const visited = new Set();
-  const listFolder = async (folderId, folderPath = '', depth = 0) => {
+  const listFolder = async (folderId, folderPath = '', depth = 0, sourceCategory = 'posters') => {
     if (visited.has(folderId) || depth > 5) return;
     visited.add(folderId);
     let pageToken;
@@ -1911,7 +1922,7 @@ async function getPlacementPosterFiles(forceRefresh = false) {
         pageSize: 250,
         pageToken,
         orderBy: 'name',
-        fields: 'nextPageToken,files(id,name,mimeType,modifiedTime)',
+        fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,thumbnailLink)',
         supportsAllDrives: true,
         includeItemsFromAllDrives: true
       });
@@ -1922,7 +1933,7 @@ async function getPlacementPosterFiles(forceRefresh = false) {
     const folders = [];
     for (const file of children) {
       if (file.mimeType === 'application/vnd.google-apps.folder') {
-        folders.push({ id: file.id, path: folderPath ? `${folderPath} / ${file.name}` : file.name });
+        folders.push({ id: file.id, path: folderPath ? `${folderPath} / ${file.name}` : file.name, sourceCategory });
       } else if (String(file.mimeType || '').startsWith('image/') || String(file.mimeType || '').startsWith('video/')) {
         posters.push({
           id: file.id,
@@ -1930,16 +1941,18 @@ async function getPlacementPosterFiles(forceRefresh = false) {
           folder: folderPath || 'Placement creatives',
           mimeType: file.mimeType,
           mediaType: String(file.mimeType || '').startsWith('video/') ? 'video' : 'image',
+          sourceCategory,
+          thumbnailLink: file.thumbnailLink || '',
           modifiedTime: file.modifiedTime || ''
         });
       }
     }
     for (let index = 0; index < folders.length; index += 4) {
-      await Promise.all(folders.slice(index, index + 4).map(folder => listFolder(folder.id, folder.path, depth + 1)));
+      await Promise.all(folders.slice(index, index + 4).map(folder => listFolder(folder.id, folder.path, depth + 1, folder.sourceCategory)));
     }
   };
 
-  await listFolder(PLACEMENT_POSTER_FOLDER_ID);
+  for (const source of PUBLIC_MEDIA_FOLDERS) await listFolder(source.id, source.label, 0, source.category);
   posters.sort((a, b) => (b.modifiedTime || '').localeCompare(a.modifiedTime || '') || a.name.localeCompare(b.name));
   placementPosterCache = {
     expiresAt: Date.now() + 5 * 60 * 1000,
@@ -1960,7 +1973,7 @@ exports.getPublicPlacementPosters = async (req, res) => {
     const { posters } = await getPlacementPosterFiles();
     const category = String(req.query.category || 'posters').toLowerCase();
     const keywords = {
-      'placement-drive': /placement[\s_-]*drive|drive[\s_-]*placement/i,
+      'placement-drive': /placement[\s_-]*drive|drive[\s_-]*placement|activit/i,
       testimonials: /testimonial|student[\s_-]*story|success[\s_-]*story/i,
       talentino: /talentino/i,
       videos: /video|testimonial|talentino|drive|client|partner/i,
@@ -1969,17 +1982,26 @@ exports.getPublicPlacementPosters = async (req, res) => {
     };
     const matchesCategory = poster => {
       const content = `${poster.folder || ''} ${poster.name || ''}`;
-      if (category === 'posters') return poster.mediaType === 'image';
+      if (category === 'posters') return poster.sourceCategory === 'posters' && poster.mediaType === 'image';
       if (category === 'videos') return poster.mediaType === 'video';
+      if (category === 'placement-drive') return poster.sourceCategory === 'placement-drive';
+      if (category === 'testimonials') return poster.sourceCategory === 'testimonials';
       if (category === 'client-videos') return poster.mediaType === 'video' && keywords['client-videos'].test(content);
       const keyword = keywords[category];
       if (!keyword || !keyword.test(content)) return false;
       return true;
     };
     const filtered = posters.filter(matchesCategory);
+    if (String(req.query.random || '').toLowerCase() === 'true') {
+      for (let index = filtered.length - 1; index > 0; index -= 1) {
+        const swap = Math.floor(Math.random() * (index + 1));
+        [filtered[index], filtered[swap]] = [filtered[swap], filtered[index]];
+      }
+    }
     const total = filtered.length;
-    const limit = Math.min(48, Math.max(1, Number.parseInt(req.query.limit, 10) || 8));
     const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+    const all = String(req.query.all || '').toLowerCase() === 'true';
+    const limit = all ? total : Math.min(48, Math.max(1, Number.parseInt(req.query.limit, 10) || 8));
     const page = filtered.slice(offset, offset + limit);
     res.json({
       success: true,
@@ -1988,7 +2010,7 @@ exports.getPublicPlacementPosters = async (req, res) => {
         imageUrl: `/api/public/placement-posters/${encodeURIComponent(poster.id)}`
       })),
       total,
-      nextOffset: offset + page.length < total ? offset + page.length : null
+      nextOffset: !all && offset + page.length < total ? offset + page.length : null
     });
   } catch (err) {
     console.error('Error reading placement posters from Drive:', err.message);
@@ -2021,6 +2043,75 @@ exports.streamPublicPlacementPoster = async (req, res) => {
     response.data.pipe(res);
   } catch (err) {
     console.error('Error opening placement poster:', err.message);
+    res.status(502).end();
+  }
+};
+
+const PUBLIC_TEAM_PHOTO_FOLDER_ID = '1tGC8eC38Pe0YJCWnjZbTKEAxJzwosc1C';
+let publicTeamPhotoCache = { expiresAt: 0, photos: [], byId: new Map() };
+let publicTeamPhotoLoading = null;
+
+async function getPublicTeamPhotoFiles() {
+  if (publicTeamPhotoCache.expiresAt > Date.now()) return publicTeamPhotoCache;
+  if (publicTeamPhotoLoading) return publicTeamPhotoLoading;
+  publicTeamPhotoLoading = (async () => {
+    const photos = [];
+    const visited = new Set();
+    const listFolder = async (folderId, depth = 0) => {
+      if (visited.has(folderId) || depth > 4) return;
+      visited.add(folderId);
+      let pageToken;
+      do {
+        const response = await drive.files.list({
+          q: `'${folderId}' in parents and trashed = false`,
+          pageSize: 250,
+          pageToken,
+          orderBy: 'name',
+          fields: 'nextPageToken,files(id,name,mimeType,modifiedTime)',
+          supportsAllDrives: true,
+          includeItemsFromAllDrives: true
+        });
+        for (const file of response.data.files || []) {
+          if (file.mimeType === 'application/vnd.google-apps.folder') await listFolder(file.id, depth + 1);
+          else if (String(file.mimeType || '').startsWith('image/')) photos.push({ id: file.id, name: file.name, mimeType: file.mimeType, modifiedTime: file.modifiedTime || '' });
+        }
+        pageToken = response.data.nextPageToken;
+      } while (pageToken);
+    };
+    await listFolder(PUBLIC_TEAM_PHOTO_FOLDER_ID);
+    publicTeamPhotoCache = { expiresAt: Date.now() + 5 * 60 * 1000, photos, byId: new Map(photos.map(photo => [photo.id, photo])) };
+    return publicTeamPhotoCache;
+  })();
+  try { return await publicTeamPhotoLoading; }
+  finally { publicTeamPhotoLoading = null; }
+}
+
+exports.getPublicTeamPhotos = async (_req, res) => {
+  try {
+    const { photos } = await getPublicTeamPhotoFiles();
+    res.json({ success: true, photos: photos.map(photo => ({ ...photo, imageUrl: `/api/public/team-photos/${encodeURIComponent(photo.id)}` })) });
+  } catch (err) {
+    console.error('Error reading team profile photos from Drive:', err.message);
+    res.status(503).json({ success: false, photos: [], message: 'Team profile photos are temporarily unavailable.' });
+  }
+};
+
+exports.streamPublicTeamPhoto = async (req, res) => {
+  try {
+    const { byId } = await getPublicTeamPhotoFiles();
+    const photo = byId.get(String(req.params.fileId || ''));
+    if (!photo) return res.status(404).end();
+    const response = await drive.files.get({ fileId: photo.id, alt: 'media', supportsAllDrives: true }, { responseType: 'stream' });
+    res.set('Content-Type', photo.mimeType);
+    res.set('Cache-Control', 'public, max-age=3600');
+    response.data.on('error', error => {
+      console.error('Error streaming team profile photo:', error.message);
+      if (!res.headersSent) res.status(502).end();
+      else res.end();
+    });
+    response.data.pipe(res);
+  } catch (err) {
+    console.error('Error opening team profile photo:', err.message);
     res.status(502).end();
   }
 };
