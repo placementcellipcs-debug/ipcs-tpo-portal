@@ -43,7 +43,7 @@ export default function AssetList() {
   const user = useMemo(() => readUser(), []);
   const role = String(user.role || '').toUpperCase();
   const isGlobalAdmin = String(user.accessType || '').toLowerCase() === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
-  const canManage = isGlobalAdmin || role.includes('ASSET');
+  const canManage = isGlobalAdmin || role.includes('ASSET') || String(user.accessType || '').toLowerCase().includes('asset');
   const navigate = useNavigate();
   const location = useLocation();
   const assetView = ({ '/assets/register': 'register', '/assets/assignments': 'assignments', '/assets/retired': 'retired' })[location.pathname] || 'branches';
@@ -63,9 +63,18 @@ export default function AssetList() {
   const [disposeItem, setDisposeItem] = useState(null);
   const [qrItem, setQrItem] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [assignForm, setAssignForm] = useState({ employeeName: '', employeeId: '', conditionOnIssue: 'GOOD', accessories: '', remarks: '', photo: null });
+  const [assignForm, setAssignForm] = useState({ employeeName: '', employeeId: '', conditionOnIssue: 'GOOD', conditionOnReturn: 'GOOD', accessories: '', remarks: '', returnRemarks: '', photo: null, returnPhoto: null });
   const [returnForm, setReturnForm] = useState({ conditionOnReturn: 'GOOD', returnStatus: 'AVAILABLE', remarks: '', photo: null });
   const [disposalForm, setDisposalForm] = useState({ reason: '', method: 'Recycling', value: '', remarks: '' });
+
+  const openAssignment = item => {
+    setAssignForm({ employeeName: '', employeeId: '', conditionOnIssue: 'GOOD', conditionOnReturn: 'GOOD', accessories: '', remarks: '', returnRemarks: '', photo: null, returnPhoto: null });
+    setAssignItem(item);
+  };
+  const openReturn = item => {
+    setReturnForm({ conditionOnReturn: 'GOOD', returnStatus: 'AVAILABLE', remarks: '', photo: null });
+    setReturnItem(item);
+  };
 
   const loadData = useCallback(async () => {
     try {
@@ -139,16 +148,28 @@ export default function AssetList() {
     event.preventDefault();
     setBusy(true);
     const data = new FormData();
-    Object.entries(assignForm).forEach(([key, value]) => { if (key !== 'photo') data.append(key, value); });
+    Object.entries(assignForm).forEach(([key, value]) => { if (key !== 'photo' && key !== 'returnPhoto') data.append(key, value); });
     data.append('assetId', assignItem.assetId);
     data.append('userName', user.name || '');
     if (assignForm.photo) data.append('photo', assignForm.photo);
+    if (assignForm.returnPhoto) data.append('returnPhoto', assignForm.returnPhoto);
     try {
       const response = await axios.post(`${API_BASE}/api/v1/assets/assign`, data);
+      const handedOverItem = assignItem;
+      const handedOverEmployee = assignForm.employeeName.trim();
       setAssignItem(null);
-      setAssignForm({ employeeName: '', employeeId: '', conditionOnIssue: 'GOOD', accessories: '', remarks: '', photo: null });
+      setAssignForm({ employeeName: '', employeeId: '', conditionOnIssue: 'GOOD', conditionOnReturn: 'GOOD', accessories: '', remarks: '', returnRemarks: '', photo: null, returnPhoto: null });
+      setAssets(current => current.map(item => item.assetId === handedOverItem.assetId ? {
+        ...item,
+        status: 'ASSIGNED',
+        assignedTo: handedOverEmployee,
+        assignedEmployeeId: assignForm.employeeId,
+        condition: assignForm.conditionOnIssue
+      } : item));
       showToast(response.data.message || 'Asset assigned.');
-      await loadData();
+      // The shared sheet cache refresh is deliberately throttled across tabs;
+      // keep the workspace current immediately, then rehydrate after it settles.
+      window.setTimeout(() => { void loadData(); }, 22000);
     } catch (error) { showToast(error.response?.data?.message || 'Could not assign the asset.'); }
     finally { setBusy(false); }
   };
@@ -163,10 +184,18 @@ export default function AssetList() {
     if (returnForm.photo) data.append('photo', returnForm.photo);
     try {
       const response = await axios.post(`${API_BASE}/api/v1/assets/return`, data);
+      const returnedItem = returnItem;
       setReturnItem(null);
       setReturnForm({ conditionOnReturn: 'GOOD', returnStatus: 'AVAILABLE', remarks: '', photo: null });
+      setAssets(current => current.map(item => item.assetId === returnedItem.assetId ? {
+        ...item,
+        status: returnForm.returnStatus || (returnForm.conditionOnReturn === 'DAMAGED' ? 'UNDER_MAINTENANCE' : 'AVAILABLE'),
+        assignedTo: '',
+        assignedEmployeeId: '',
+        condition: returnForm.conditionOnReturn
+      } : item));
       showToast(response.data.message || 'Asset return recorded.');
-      await loadData();
+      window.setTimeout(() => { void loadData(); }, 22000);
     } catch (error) { showToast(error.response?.data?.message || 'Could not record the return.'); }
     finally { setBusy(false); }
   };
@@ -262,7 +291,7 @@ export default function AssetList() {
                 <td>{assetView === 'assignments' ? item.assignedTo || item.employeeName || item.custodian || 'Assigned' : item.vendor || '—'}</td>
                 <td>{item.condition || 'GOOD'}</td>
                 <td><span className={`asset-status status-${String(item.status || 'AVAILABLE').toLowerCase()}`}>{statusLabel(item.status)}</span></td>
-                <td><div className="asset-row-actions"><button type="button" className="asset-register-open" onClick={() => openDetails(item)}>History <ArrowRight size={15} /></button>{canManage && item.status === 'AVAILABLE' && <button type="button" className="asset-register-open asset-assign-inline" onClick={() => setAssignItem(item)}>Assign</button>}{canManage && item.status === 'ASSIGNED' && <button type="button" className="asset-register-open asset-return-inline" onClick={() => setReturnItem(item)}>Return item</button>}</div></td>
+                <td><div className="asset-row-actions"><button type="button" className="asset-register-open" onClick={() => openDetails(item)}>History <ArrowRight size={15} /></button>{canManage && item.status === 'AVAILABLE' && <button type="button" className="asset-register-open asset-assign-inline" onClick={() => openAssignment(item)}>Assign</button>}{canManage && item.status === 'ASSIGNED' && <><button type="button" className="asset-register-open asset-assign-inline" onClick={() => openAssignment(item)}>Reassign</button><button type="button" className="asset-register-open asset-return-inline" onClick={() => openReturn(item)}>Return item</button></>}</div></td>
               </tr>)}
             </tbody></table></div> : <div className="asset-state-card">{assetView === 'retired' ? 'No retired items match this search.' : 'No items match this search.'}</div>}
           </section>
@@ -312,8 +341,8 @@ export default function AssetList() {
                   <div className="asset-item-actions">
                     <button type="button" className="asset-icon-button" title="Item history and photos" onClick={() => openDetails(item)}><ImageIcon size={17} /></button>
                     <button type="button" className="asset-icon-button" title="Print asset QR" onClick={() => setQrItem(item)}><QrCode size={17} /></button>
-                    {canManage && item.status === 'AVAILABLE' && <button type="button" className="asset-small-action" onClick={() => setAssignItem(item)}><UserCheck size={16} /> Assign</button>}
-                    {canManage && item.status === 'ASSIGNED' && <button type="button" className="asset-small-action return-action" onClick={() => setReturnItem(item)}><ArrowLeft size={16} /> Return</button>}
+                    {canManage && item.status === 'AVAILABLE' && <button type="button" className="asset-small-action" onClick={() => openAssignment(item)}><UserCheck size={16} /> Assign</button>}
+                    {canManage && item.status === 'ASSIGNED' && <><button type="button" className="asset-small-action" onClick={() => openAssignment(item)}><ArrowsLeftRight size={16} /> Reassign</button><button type="button" className="asset-small-action return-action" onClick={() => openReturn(item)}><ArrowLeft size={16} /> Return</button></>}
                     {item.status === 'UNDER_MAINTENANCE' && <span className="asset-maintenance-tag"><Wrench size={14} /> Service</span>}
                   </div>
                 </article>
@@ -380,9 +409,24 @@ export default function AssetList() {
           </Modal>
         )}
 
-        {assignItem && <Modal title="Assign this item" subtitle={`${assignItem.name} · ${assignItem.assetId}`} onClose={() => setAssignItem(null)}><form className="asset-form" onSubmit={submitHandover}><label>Employee name<input value={assignForm.employeeName} onChange={event => setAssignForm({ ...assignForm, employeeName: event.target.value })} required /></label><label>Employee ID<input value={assignForm.employeeId} onChange={event => setAssignForm({ ...assignForm, employeeId: event.target.value })} /></label><label>Condition at handover<select value={assignForm.conditionOnIssue} onChange={event => setAssignForm({ ...assignForm, conditionOnIssue: event.target.value })}><option>NEW</option><option>EXCELLENT</option><option>GOOD</option><option>FAIR</option><option>DAMAGED</option></select></label><label>Accessories<input value={assignForm.accessories} onChange={event => setAssignForm({ ...assignForm, accessories: event.target.value })} placeholder="Charger, bag…" /></label><label>Notes<input value={assignForm.remarks} onChange={event => setAssignForm({ ...assignForm, remarks: event.target.value })} /></label><PhotoField label="Add handover photo" value={assignForm.photo} onChange={photo => setAssignForm({ ...assignForm, photo })} /><button className="asset-action-primary form-submit" type="submit" disabled={busy}>{busy ? <CircleNotch size={18} className="ph-spin" /> : <UserCheck size={18} />} Confirm handover</button></form></Modal>}
+        {assignItem && <Modal title={assignItem.status === 'ASSIGNED' ? 'Reassign this item' : 'Assign this item'} subtitle={`${assignItem.name} · ${assignItem.assetId}`} onClose={() => setAssignItem(null)}><form className="asset-form" onSubmit={submitHandover}>
+          {assignItem.status === 'ASSIGNED' && <>
+            <div className="asset-reassign-current"><span>CURRENT CUSTODY</span><b>{assignItem.assignedTo || assignItem.employeeName || assignItem.custodian || 'Current employee'}</b><small>The current handover is closed in the history before the new custody record is created.</small></div>
+            <label>Condition returned<select value={assignForm.conditionOnReturn} onChange={event => setAssignForm({ ...assignForm, conditionOnReturn: event.target.value })}><option>EXCELLENT</option><option>GOOD</option><option>FAIR</option><option>DAMAGED</option></select></label>
+            <label>Return notes<input value={assignForm.returnRemarks} onChange={event => setAssignForm({ ...assignForm, returnRemarks: event.target.value })} placeholder="Note wear, damage, or missing accessories" /></label>
+            <PhotoField label="Photo at return from current employee" value={assignForm.returnPhoto} onChange={returnPhoto => setAssignForm({ ...assignForm, returnPhoto })} required />
+            {assignForm.conditionOnReturn === 'DAMAGED' && <div className="asset-reassign-warning" role="status">Record this as a return and send it to maintenance before assigning it again.</div>}
+          </>}
+          <label>New employee name<input value={assignForm.employeeName} onChange={event => setAssignForm({ ...assignForm, employeeName: event.target.value })} required /></label>
+          <label>New employee ID<input value={assignForm.employeeId} onChange={event => setAssignForm({ ...assignForm, employeeId: event.target.value })} /></label>
+          <label>Condition at handover<select value={assignForm.conditionOnIssue} onChange={event => setAssignForm({ ...assignForm, conditionOnIssue: event.target.value })}><option>NEW</option><option>EXCELLENT</option><option>GOOD</option><option>FAIR</option><option>DAMAGED</option></select></label>
+          <label>Accessories<input value={assignForm.accessories} onChange={event => setAssignForm({ ...assignForm, accessories: event.target.value })} placeholder="Charger, bag…" /></label>
+          <label>Handover notes<input value={assignForm.remarks} onChange={event => setAssignForm({ ...assignForm, remarks: event.target.value })} /></label>
+          <PhotoField label="Photo at handover to new employee" value={assignForm.photo} onChange={photo => setAssignForm({ ...assignForm, photo })} />
+          <button className="asset-action-primary form-submit" type="submit" disabled={busy || (assignItem.status === 'ASSIGNED' && assignForm.conditionOnReturn === 'DAMAGED')}>{busy ? <CircleNotch size={18} className="ph-spin" /> : <UserCheck size={18} />} {assignItem.status === 'ASSIGNED' ? 'Record return & reassign' : 'Confirm handover'}</button>
+        </form></Modal>}
 
-        {returnItem && <Modal title="Return this item" subtitle={`${returnItem.name} · ${returnItem.assetId}`} onClose={() => setReturnItem(null)}><form className="asset-form" onSubmit={submitReturn}><label>Condition on return<select value={returnForm.conditionOnReturn} onChange={event => setReturnForm({ ...returnForm, conditionOnReturn: event.target.value, returnStatus: event.target.value === 'DAMAGED' ? 'UNDER_MAINTENANCE' : returnForm.returnStatus })}><option>NEW</option><option>EXCELLENT</option><option>GOOD</option><option>FAIR</option><option>DAMAGED</option></select></label><label>Next status<select value={returnForm.returnStatus} onChange={event => setReturnForm({ ...returnForm, returnStatus: event.target.value })}><option value="AVAILABLE">Available</option><option value="UNDER_MAINTENANCE">Maintenance</option></select></label><label>Return notes<input value={returnForm.remarks} onChange={event => setReturnForm({ ...returnForm, remarks: event.target.value })} placeholder="Note visible damage or missing parts" /></label><PhotoField label="Add current return photo" value={returnForm.photo} onChange={photo => setReturnForm({ ...returnForm, photo })} /><button className="asset-action-primary form-submit" type="submit" disabled={busy}>{busy ? <CircleNotch size={18} className="ph-spin" /> : <CheckCircle size={18} />} Record return</button></form></Modal>}
+        {returnItem && <Modal title="Return this item" subtitle={`${returnItem.name} · ${returnItem.assetId}`} onClose={() => setReturnItem(null)}><form className="asset-form" onSubmit={submitReturn}><label>Condition on return<select value={returnForm.conditionOnReturn} onChange={event => setReturnForm({ ...returnForm, conditionOnReturn: event.target.value, returnStatus: event.target.value === 'DAMAGED' ? 'UNDER_MAINTENANCE' : returnForm.returnStatus })}><option>NEW</option><option>EXCELLENT</option><option>GOOD</option><option>FAIR</option><option>DAMAGED</option></select></label><label>Next status<select value={returnForm.returnStatus} onChange={event => setReturnForm({ ...returnForm, returnStatus: event.target.value })}><option value="AVAILABLE">Available</option><option value="UNDER_MAINTENANCE">Maintenance</option></select></label><label>Return notes<input value={returnForm.remarks} onChange={event => setReturnForm({ ...returnForm, remarks: event.target.value })} placeholder="Note visible damage or missing parts" /></label><PhotoField label="Add current return photo" value={returnForm.photo} onChange={photo => setReturnForm({ ...returnForm, photo })} required /><button className="asset-action-primary form-submit" type="submit" disabled={busy}>{busy ? <CircleNotch size={18} className="ph-spin" /> : <CheckCircle size={18} />} Record return</button></form></Modal>}
 
         {disposeItem && <Modal title="Dispose of asset" subtitle={`${disposeItem.name} · ${disposeItem.assetId}`} onClose={() => setDisposeItem(null)}><form className="asset-form" onSubmit={submitDisposal}><div className="asset-permanent-note">This permanently retires the item and records who approved the disposal.</div><label>Reason for disposal<input value={disposalForm.reason} onChange={event => setDisposalForm({ ...disposalForm, reason: event.target.value })} placeholder="End of useful life, damaged beyond repair…" required /></label><label>Disposal method<select value={disposalForm.method} onChange={event => setDisposalForm({ ...disposalForm, method: event.target.value })}><option>Recycling</option><option>Sale</option><option>Donation</option><option>Secure destruction</option><option>Other</option></select></label><label>Recovery value<input type="number" min="0" step="0.01" value={disposalForm.value} onChange={event => setDisposalForm({ ...disposalForm, value: event.target.value })} placeholder="0" /></label><label>Disposal notes<textarea rows="3" value={disposalForm.remarks} onChange={event => setDisposalForm({ ...disposalForm, remarks: event.target.value })} placeholder="Add a reference number or handover details" /></label><button className="asset-dispose-button form-submit" type="submit" disabled={busy}>{busy ? <CircleNotch size={18} className="ph-spin" /> : 'Confirm permanent disposal'}</button></form></Modal>}
 

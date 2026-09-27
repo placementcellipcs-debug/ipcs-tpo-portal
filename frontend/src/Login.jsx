@@ -32,6 +32,7 @@ export default function Login() {
 
   const [showIntro, setShowIntro] = useState(false);
   const [videoOpacity, setVideoOpacity] = useState(1);
+  const [talenzoLogoError, setTalenzoLogoError] = useState(false);
 
   useEffect(() => {
     const tpoData = localStorage.getItem('tpoData');
@@ -121,7 +122,7 @@ export default function Login() {
                 <Link className="portal-primary-button" to="/placements">Explore placements <ArrowRight size={19} weight="bold" /></Link>
                 <Link className="portal-secondary-button" to="/placements#recruiter-partnerships"><UsersThree size={19} /> Recruiter partnerships</Link>
               </div>
-              <div className="portal-home-partner-brand"><span>Learning powered by</span><img src="https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J" alt="Talenzo" loading="lazy" /></div>
+              <div className="portal-home-partner-brand"><span>Learning powered by</span>{talenzoLogoError ? <b className="portal-talenzo-fallback">TALENZO</b> : <img src="https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J" alt="Talenzo" loading="lazy" onError={() => setTalenzoLogoError(true)} />}</div>
               <div className="portal-trust-line"><span className="portal-trust-dot" /> Skills, academics, and career opportunities in one place</div>
             </div>
 

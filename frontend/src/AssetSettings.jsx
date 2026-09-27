@@ -286,13 +286,15 @@ export default function AssetSettings() {
         .premium-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
         .bento-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
-        .config-card { border-radius: 16px; padding: 25px; display: flex; flexDirection: column; }
-        .cc-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px; }
+        .config-workspace .bento-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 16px; margin: 0; }
+        .config-card { min-width: 0; border-radius: 16px; padding: 25px; display: flex; flex-direction: column; overflow: hidden; }
+        .cc-header { min-width: 0; display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 15px; }
         .cc-icon { width: 42px; height: 42px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
-        .cc-title { margin: 0 0 5px 0; font-size: 1.2rem; color: #fff; font-weight: 800; }
-        .cc-desc { margin: 0 0 15px 0; color: #94a3b8; font-size: 0.85rem; }
+        .cc-title { margin: 0 0 5px 0; font-size: 1.2rem; color: #fff; font-weight: 800; overflow-wrap: anywhere; }
+        .cc-desc { margin: 0 0 15px 0; color: #94a3b8; font-size: 0.85rem; line-height: 1.5; overflow-wrap: anywhere; }
         .cc-tags { display: flex; flex-wrap: wrap; gap: 6px; }
         .small-tag { background: rgba(255,255,255,0.05); color: #cbd5e1; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; border: 1px solid rgba(255,255,255,0.1); }
+        .config-card .badge-blue, .config-card .badge-green, .config-card .badge-purple { flex: 0 0 auto; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         
         .badge-blue { background: rgba(56, 189, 248, 0.15); color: #8b5cf6; padding: 4px 10px; border-radius: 8px; font-size: 0.75rem; font-weight: bold; border: 1px solid rgba(56, 189, 248, 0.3); }
         .badge-green { background: rgba(16, 185, 129, 0.15); color: #10b981; padding: 4px 10px; border-radius: 8px; font-size: 0.75rem; font-weight: bold; border: 1px solid rgba(16, 185, 129, 0.3); }

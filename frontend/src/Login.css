@@ -74,6 +74,7 @@
 .portal-home-partner-brand { min-height: 50px; margin-top: 24px; display: inline-flex; align-items: center; gap: 12px; padding: 7px 12px; border: 1px solid #d9e5f1; border-radius: 12px; background: #edf4fb; }
 .portal-home-partner-brand span { color: #8290a2; font-size: .68rem; font-weight: 800; }
 .portal-home-partner-brand img { display: block; width: 132px; height: 38px; object-fit: contain; }
+.portal-home-partner-brand .portal-talenzo-fallback { color: #06b6d4; font-size: 1rem; font-style: italic; font-weight: 900; letter-spacing: .08em; }
 .portal-trust-line { display: flex; align-items: center; gap: 10px; margin-top: 47px; color: #748197; font-size: .82rem; font-weight: 700; }
 .portal-trust-dot { width: 7px; height: 7px; border-radius: 50%; background: #20b7a5; box-shadow: 0 0 0 5px rgba(32, 183, 165, .12); }
 

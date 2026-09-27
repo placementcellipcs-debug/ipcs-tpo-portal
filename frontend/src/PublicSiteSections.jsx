@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowRight, ArrowUpRight, BookOpenText, Briefcase, Buildings, CheckCircle, Compass, FilePdf, GlobeHemisphereWest, GraduationCap, Handshake, Lightbulb, Megaphone, PlayCircle, Star, Target, UsersThree, VideoCamera } from '@phosphor-icons/react';
+import { ArrowRight, ArrowUpRight, BookOpenText, Briefcase, Buildings, CheckCircle, Compass, FilePdf, GlobeHemisphereWest, GraduationCap, Handshake, Lightbulb, Megaphone, PlayCircle, Star, Target, UsersThree, VideoCamera, X } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
 import './PublicSiteSections.css';
 
@@ -84,6 +84,14 @@ const blogs = [
 ];
 
 const magazines = [48, 47, 46, 45, 44, 43, 36, 35, 34];
+const teamProfilePhotoIds = {
+  'Mr. Nowfal Ibrahim': '1ndgICIIBSUuND1lG2GWGntFWGXxvd1U_',
+  'Ms. Gifty KP': '1Cm1hmst2tQiYYWSOx-OQxiJAAuwXV8e_',
+  'Mr. Nair Vijin Rajan': '1LOdgTK_4zzpXjePAU7F5kNgUiDXDo5wD',
+  'Mr. Rakesh K C': '1ISdyiVhlMIum-DvsizL5sKQaYpOdDuEz',
+  'Mr. Ajith Surendran': '1JNiMYPK8JycQFaelaGZFMsuZKgLj8Gu0',
+  'Ms. Rekha P': '1EMsipJDZzoWkCDkrXKrDc5Fqw4qjDT8P'
+};
 const logoSource = value => {
   if (!value || typeof value !== 'string') return '';
   const match = value.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
@@ -127,10 +135,10 @@ export default function PublicSiteSections({ page = 'all' }) {
   const [posterNextOffset, setPosterNextOffset] = useState(null);
   const [mediaTab, setMediaTab] = useState('placement-drive');
   const [mediaItems, setMediaItems] = useState([]);
-  const [playingPreview, setPlayingPreview] = useState('');
+  const [selectedVideo, setSelectedVideo] = useState(null);
   const [mediaOpen, setMediaOpen] = useState(true);
   const [mediaLoaded, setMediaLoaded] = useState(false);
-  const [mediaLoading, setMediaLoading] = useState(false);
+  const [mediaLoading, setMediaLoading] = useState(true);
   const [mediaError, setMediaError] = useState(false);
   const [mediaNextOffset, setMediaNextOffset] = useState(null);
   const [mediaTotal, setMediaTotal] = useState(0);
@@ -154,9 +162,6 @@ export default function PublicSiteSections({ page = 'all' }) {
   useEffect(() => {
     if (!['partners', 'partners-all', 'all'].includes(page)) return undefined;
     let active = true;
-    setPartnersLoaded(false);
-    setPartnersError(false);
-    setPartners([]);
     const limit = partnerListPage ? 500 : 8;
     const query = partnerListPage ? '&all=true' : '&random=true';
     axios.get(`${API_BASE}/api/public/partners?limit=${limit}&offset=0${query}`)
@@ -185,9 +190,6 @@ export default function PublicSiteSections({ page = 'all' }) {
   useEffect(() => {
     if (!['placement', 'placement-gallery', 'all'].includes(page)) return undefined;
     let active = true;
-    setPostersLoaded(false);
-    setPostersError(false);
-    setPosters([]);
     const limit = posterGalleryPage ? 500 : 6;
     const query = posterGalleryPage ? '&all=true' : '&random=true';
     axios.get(`${API_BASE}/api/public/placement-posters?category=posters&limit=${limit}&offset=0${query}`)
@@ -207,9 +209,6 @@ export default function PublicSiteSections({ page = 'all' }) {
   useEffect(() => {
     if ((!placementPage && !partnerMediaPage) || (page === 'placement' && !mediaOpen)) return undefined;
     let active = true;
-    setMediaItems([]);
-    setMediaLoaded(false);
-    setMediaLoading(true);
     const mediaQuery = mediaPage ? '&all=true' : '&random=true';
     axios.get(`${API_BASE}/api/public/placement-posters?category=${encodeURIComponent(placementCategory)}&limit=${mediaPage ? 500 : 6}&offset=0${mediaQuery}`)
       .then(response => {
@@ -224,6 +223,18 @@ export default function PublicSiteSections({ page = 'all' }) {
       .finally(() => { if (active) { setMediaLoaded(true); setMediaLoading(false); } });
     return () => { active = false; };
   }, [page, placementCategory, placementPage, partnerMediaPage, mediaPage, mediaOpen]);
+
+  useEffect(() => {
+    if (!selectedVideo) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = event => { if (event.key === 'Escape') setSelectedVideo(null); };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [selectedVideo]);
 
   const loadMore = async (kind) => {
     const isPartner = kind === 'partners';
@@ -302,11 +313,22 @@ export default function PublicSiteSections({ page = 'all' }) {
           <div className="public-team-grid">
             {team.map((person, index) => {
               const photo = profilePhotoFor(person, teamPhotos);
+              const driveId = teamProfilePhotoIds[person.name];
+              const profilePhotoUrl = driveId
+                ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w900`
+                : photo?.imageUrl ? `${API_BASE}${photo.imageUrl}` : '';
               const initials = person.name.split(' ').filter(part => /^[A-Z]/.test(part) && !['Mr.', 'Ms.'].includes(part)).slice(0, 2).map(part => part[0]).join('');
               return <article className="public-team-card" key={person.name}>
                 <div className={`public-team-photo-wrap avatar-${index + 1}`}>
                   <span className="public-team-photo-fallback" aria-hidden="true">{initials}</span>
-                  {photo?.imageUrl && <img src={`${API_BASE}${photo.imageUrl}`} alt={`${person.name} profile`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}
+                  {profilePhotoUrl && <img src={profilePhotoUrl} alt={`${person.name} profile`} loading="lazy" onError={event => {
+                    const sources = driveId
+                      ? [`https://lh3.googleusercontent.com/d/${encodeURIComponent(driveId)}`, `https://drive.google.com/uc?export=view&id=${encodeURIComponent(driveId)}`, photo?.imageUrl ? `${API_BASE}${photo.imageUrl}` : '']
+                      : [photo?.imageUrl ? `${API_BASE}${photo.imageUrl}` : ''];
+                    const nextSource = sources.find(source => source && source !== event.currentTarget.src);
+                    if (nextSource) event.currentTarget.src = nextSource;
+                    else event.currentTarget.style.display = 'none';
+                  }} />}
                 </div>
                 <span className="public-team-role">{person.role}</span>
                 <h3>{person.name}</h3>
@@ -400,7 +422,7 @@ export default function PublicSiteSections({ page = 'all' }) {
             <div className="public-media-tabs" role="tablist" aria-label="Placement media albums">
               {mediaTabs.map(([key, label]) => mediaPage
                 ? <Link key={key} role="tab" aria-selected={placementCategory === key} className={`public-media-tab${placementCategory === key ? ' active' : ''}`} to={`${mediaBasePath}?category=${key}`}><VideoCamera size={16} />{label}</Link>
-                : <button key={key} type="button" role="tab" aria-selected={mediaTab === key} className={`public-media-tab${mediaTab === key ? ' active' : ''}`} onClick={() => { setPlayingPreview(''); setMediaTab(key); setMediaOpen(true); setMediaItems([]); setMediaLoaded(false); setMediaLoading(true); setMediaError(false); }}><VideoCamera size={16} />{label}</button>)}
+                : <button key={key} type="button" role="tab" aria-selected={mediaTab === key} className={`public-media-tab${mediaTab === key ? ' active' : ''}`} onClick={() => { setMediaTab(key); setMediaOpen(true); setMediaItems([]); setMediaLoaded(false); setMediaLoading(true); setMediaError(false); }}><VideoCamera size={16} />{label}</button>)}
             </div>
             {mediaLoading || ((mediaPage || mediaOpen) && !mediaLoaded) ? <div className="public-poster-grid">{[1, 2, 3].map(item => <div className="public-poster-skeleton" key={item} />)}</div>
               : mediaError ? <div className="public-poster-empty" role="status">Placement media could not be loaded. Check the shared Drive folder connection and try again.</div>
@@ -410,21 +432,21 @@ export default function PublicSiteSections({ page = 'all' }) {
                       <div className="public-poster-marquee-track">{[...mediaItems, ...mediaItems].map((item, index) => {
                         const duplicate = index >= mediaItems.length;
                         const preview = <><div className="public-poster-image public-video-preview-thumb">
-                          {item.mediaType === 'video' && playingPreview === item.id
-                            ? <video src={`${API_BASE}${item.imageUrl}`} poster={videoThumbnail(item)} controls autoPlay playsInline preload="metadata" aria-label={item.name} />
-                            : <img src={item.mediaType === 'video' ? videoThumbnail(item) : `${API_BASE}${item.imageUrl}`} alt={item.mediaType === 'video' ? '' : item.name} loading="lazy" decoding="async" onError={event => {
+                          {item.mediaType === 'video'
+                            ? <img src={videoThumbnail(item)} alt="" loading="lazy" decoding="async" onError={event => {
                               const fallback = `https://drive.google.com/thumbnail?id=${encodeURIComponent(item.id)}&sz=w640`;
-                              if (item.mediaType === 'video' && event.currentTarget.src !== fallback) event.currentTarget.src = fallback;
+                              if (event.currentTarget.src !== fallback) event.currentTarget.src = fallback;
                               else event.currentTarget.style.display = 'none';
-                            }} />}
-                          {item.mediaType === 'video' && playingPreview !== item.id && <span className="public-video-play-badge"><PlayCircle size={39} weight="fill" /></span>}
+                            }} />
+                            : <img src={`${API_BASE}${item.imageUrl}`} alt="" loading="lazy" decoding="async" />}
+                          {item.mediaType === 'video' && <span className="public-video-play-badge"><PlayCircle size={39} weight="fill" /></span>}
                         </div><div className="public-poster-meta"><span>{item.folder}</span><h4>{item.name}</h4></div></>;
                         return item.mediaType === 'video'
-                          ? <article className="public-poster-card public-poster-marquee-card public-media-preview-card" key={`${item.id}-${index}`} aria-hidden={duplicate || undefined}>{playingPreview === item.id && !duplicate ? preview : <button type="button" className="public-media-preview-button" onClick={() => !duplicate && setPlayingPreview(item.id)} aria-label={`Play ${item.name}`} tabIndex={duplicate ? -1 : undefined}>{preview}</button>}</article>
+                          ? <article className="public-poster-card public-poster-marquee-card public-media-preview-card" key={`${item.id}-${index}`} aria-hidden={duplicate || undefined}><button type="button" className="public-media-preview-button" onClick={() => !duplicate && setSelectedVideo(item)} aria-label={`Play ${item.name}`} tabIndex={duplicate ? -1 : undefined}>{preview}</button></article>
                           : <Link className="public-poster-card public-poster-marquee-card public-media-preview-card" key={`${item.id}-${index}`} to={`${mediaBasePath}?category=${placementCategory}`} aria-hidden={duplicate || undefined} tabIndex={duplicate ? -1 : undefined}>{preview}</Link>;
                       })}</div>
                     </div> : <div className="public-poster-grid">{mediaItems.map(item => <article className="public-poster-card public-media-card" key={item.id}>
-                      {item.mediaType === 'video' ? <div className="public-poster-video"><video src={`${API_BASE}${item.imageUrl}`} poster={videoThumbnail(item)} controls preload="metadata" playsInline aria-label={item.name} /></div> : <a className="public-poster-image" href={`${API_BASE}${item.imageUrl}`} target="_blank" rel="noreferrer"><img src={`${API_BASE}${item.imageUrl}`} alt={item.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></a>}
+                      {item.mediaType === 'video' ? <button type="button" className="public-poster-image public-video-open" onClick={() => setSelectedVideo(item)} aria-label={`Play ${item.name}`}><img src={videoThumbnail(item)} alt="" loading="lazy" /><span className="public-video-play-badge"><PlayCircle size={46} weight="fill" /></span></button> : <a className="public-poster-image" href={`${API_BASE}${item.imageUrl}`} target="_blank" rel="noreferrer"><img src={`${API_BASE}${item.imageUrl}`} alt={item.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></a>}
                       <div className="public-poster-meta"><span>{item.folder}</span><h4>{item.name}</h4></div>
                     </article>)}</div>}
             {mediaLoaded && mediaItems.length > 0 && !mediaPage && <div className="public-gallery-more"><span>Random preview · {mediaTotal} available</span><Link to={`${mediaBasePath}?category=${placementCategory}`}>See all {mediaItems.some(item => item.mediaType === 'video') ? 'videos' : 'media'} <ArrowRight size={16} /></Link></div>}
@@ -482,7 +504,7 @@ export default function PublicSiteSections({ page = 'all' }) {
             : mediaError ? <div className="public-poster-empty" role="status">Client media could not be loaded. Check the shared Drive folder connection and try again.</div>
               : !mediaItems.length ? <div className="public-poster-empty">No client media has been added yet. Add files to a folder named “{placementCategory === 'client-videos' ? 'Client Videos' : 'Clients'}” inside the shared IPCS creatives folder.</div>
                 : <div className="public-poster-grid">{mediaItems.map(item => <article className="public-poster-card public-media-card" key={item.id}>
-                  {item.mediaType === 'video' ? <div className="public-poster-video"><video src={`${API_BASE}${item.imageUrl}`} poster={videoThumbnail(item)} controls preload="metadata" playsInline aria-label={item.name} /></div> : <a className="public-poster-image" href={`${API_BASE}${item.imageUrl}`} target="_blank" rel="noreferrer"><img src={`${API_BASE}${item.imageUrl}`} alt={item.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></a>}
+                  {item.mediaType === 'video' ? <button type="button" className="public-poster-image public-video-open" onClick={() => setSelectedVideo(item)} aria-label={`Play ${item.name}`}><img src={videoThumbnail(item)} alt="" loading="lazy" /><span className="public-video-play-badge"><PlayCircle size={46} weight="fill" /></span></button> : <a className="public-poster-image" href={`${API_BASE}${item.imageUrl}`} target="_blank" rel="noreferrer"><img src={`${API_BASE}${item.imageUrl}`} alt={item.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></a>}
                   <div className="public-poster-meta"><span>{item.folder}</span><h4>{item.name}</h4></div>
                 </article>)}</div>}
           {mediaLoaded && mediaItems.length > 0 && <div className="public-gallery-more"><span>Showing {mediaItems.length} of {mediaTotal} items</span>{mediaNextOffset !== null && <button type="button" onClick={() => loadMore('media')}>Load more <ArrowRight size={16} /></button>}</div>}
@@ -515,6 +537,12 @@ export default function PublicSiteSections({ page = 'all' }) {
         <div className="public-story-shell"><span>YOUR NEXT STEP STARTS HERE</span><h2>Learn. Connect. Grow.</h2><p>Explore career programs, placement updates, and IPCS industry partnerships.</p><Link className="portal-primary-button" to="/placements">Explore placements <ArrowRight size={18} /></Link></div>
       </section>
       </>}
+      {selectedVideo && <div className="public-video-modal" role="presentation" onClick={event => { if (event.target === event.currentTarget) setSelectedVideo(null); }}>
+        <section className="public-video-dialog" role="dialog" aria-modal="true" aria-label={selectedVideo.name}>
+          <header><div><span>{selectedVideo.folder || 'IPCS MEDIA'}</span><h2>{selectedVideo.name}</h2></div><button type="button" onClick={() => setSelectedVideo(null)} aria-label="Close video"><X size={21} /></button></header>
+          <video src={`${API_BASE}${selectedVideo.imageUrl}`} poster={videoThumbnail(selectedVideo)} controls autoPlay playsInline preload="metadata" aria-label={selectedVideo.name} />
+        </section>
+      </div>}
     </div>
   );
 }

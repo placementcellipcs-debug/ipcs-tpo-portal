@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { Camera, ShieldCheck, User, LockKey, CircleNotch, CheckCircle, WarningCircle, PaintBrush } from '@phosphor-icons/react';
 import Layout from './Layout';
@@ -16,6 +16,10 @@ export default function Settings() {
   const [isUploading, setIsUploading] = useState(false);
 
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    document.body.setAttribute('data-accent', accent);
+  }, [accent]);
 
   const saveAppearance = nextAccent => {
     localStorage.setItem('ipcs-accent', nextAccent);

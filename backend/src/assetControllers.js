@@ -321,7 +321,7 @@ exports.getAssets = async (req, res) => {
       );
       const activeAssignment = (cache.assignments || []).find(assignment =>
         String(rowValue(assignment, 'Asset_ID') || '').trim().toLowerCase() === String(assetId).trim().toLowerCase() &&
-        String(rowValue(assignment, 'Status') || '').trim().toUpperCase() === 'ASSIGNED'
+        ['ACTIVE', 'ASSIGNED'].includes(String(rowValue(assignment, 'Status') || '').trim().toUpperCase())
       );
       return {
         rowNumber: r.rowNumber,
@@ -470,7 +470,9 @@ exports.getAssetDetails = async (req, res) => {
 // =========================================================
 exports.assignAsset = async (req, res) => {
   try {
-    const { assetId, employeeName, employeeId, conditionOnIssue, accessories, remarks, userName } = req.body;
+    const { assetId, employeeName, employeeId, conditionOnIssue, conditionOnReturn, accessories, remarks, returnRemarks, userName } = req.body;
+    const issuePhoto = req.files?.photo?.[0] || req.file || null;
+    const returnPhoto = req.files?.returnPhoto?.[0] || null;
     if (!assetId || !String(employeeName || '').trim()) return res.status(400).json({ success: false, message: 'Asset and employee name are required.' });
 
     const getSheet = (keyword) => assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes(keyword));
@@ -490,14 +492,38 @@ exports.assignAsset = async (req, res) => {
     const assetBranch = assetRow.get(getH(assetSheet.headerValues, 'Branch')) || '';
     if (!canAccessAssetBranch(req, assetBranch)) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
     const currentStatus = String(assetRow.get(getH(assetSheet.headerValues, 'Status')) || '').toUpperCase();
-    if (currentStatus !== 'AVAILABLE') return res.status(409).json({ success: false, message: 'Only available assets can be assigned.' });
-    if (req.file && !sheetByKey('documents')) return res.status(503).json({ success: false, message: 'Asset photo history is unavailable. No assignment was made.' });
-    const issuePhotoUrl = req.file ? await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || '') : '';
+    const isReassignment = currentStatus === 'ASSIGNED';
+    if (!['AVAILABLE', 'ASSIGNED'].includes(currentStatus)) return res.status(409).json({ success: false, message: 'Only available or currently assigned assets can be handed over.' });
+    if (!assignmentSheet) return res.status(503).json({ success: false, message: 'Assignment history is unavailable. No handover was made.' });
+    if (!historySheet) return res.status(503).json({ success: false, message: 'Asset audit history is unavailable. No handover was made.' });
+    if (isReassignment && !returnPhoto) return res.status(400).json({ success: false, message: 'Add a photo of the asset as it is returned from the current employee.' });
+    if (isReassignment && String(conditionOnReturn || '').toUpperCase() === 'DAMAGED') return res.status(409).json({ success: false, message: 'This item is marked damaged. Record the return and send it to maintenance before reassigning.' });
+    if ((issuePhoto || returnPhoto) && !sheetByKey('documents')) return res.status(503).json({ success: false, message: 'Asset photo history is unavailable. No handover was made.' });
+
+    const asgH = assignmentSheet?.headerValues || [];
+    const assignmentRows = assignmentSheet ? await assignmentSheet.getRows() : [];
+    const activeAssignment = assignmentRows.slice().reverse().find(row =>
+      String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase() === assetId.trim().toLowerCase() &&
+      ['ACTIVE', 'ASSIGNED'].includes(String(rowValue(row, 'Status') || '').trim().toUpperCase())
+    );
+    if (isReassignment && !activeAssignment) return res.status(409).json({ success: false, message: 'No active employee assignment was found. Record the return before assigning this item again.' });
 
     const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
     const assignmentId = `ASN-${Date.now()}`;
+    const issuePhotoUrl = issuePhoto ? await uploadToDrive(issuePhoto, process.env.DRIVE_FOLDER_ID || '') : '';
+    const returnPhotoUrl = returnPhoto ? await uploadToDrive(returnPhoto, process.env.DRIVE_FOLDER_ID || '') : '';
 
-    // 2. Update Status to ASSIGNED in 07_Assets
+    if (activeAssignment) {
+      activeAssignment.assign({
+        [getH(asgH, 'Returned_Date')]: timestamp,
+        [getH(asgH, 'Condition_On_Return')]: conditionOnReturn || assetRow.get(getH(assetSheet.headerValues, 'Condition')) || 'GOOD',
+        [getH(asgH, 'Status')]: 'RETURNED',
+        [getH(asgH, 'Remarks')]: `${activeAssignment.get(getH(asgH, 'Remarks')) || ''}${returnRemarks ? ` | Return: ${returnRemarks}` : ' | Returned during reassignment'}`
+      });
+      await activeAssignment.save();
+    }
+
+    // Keep the same asset record while closing the old custody period and opening a new one.
     const aH = assetSheet.headerValues;
     assetRow.assign({
       [getH(aH, 'Status')]: 'ASSIGNED',
@@ -505,9 +531,8 @@ exports.assignAsset = async (req, res) => {
     });
     await assetRow.save();
 
-    // 3. Append Row to 09_Assignments
+    // Append a separate custody record so the previous employee remains in the audit history.
     if (assignmentSheet) {
-      const asgH = assignmentSheet.headerValues;
       await assignmentSheet.addRow({
         [getH(asgH, 'Assignment_ID')]: assignmentId,
         [getH(asgH, 'Asset_ID')]: assetId,
@@ -525,26 +550,28 @@ exports.assignAsset = async (req, res) => {
       });
     }
 
-    if (req.file) await saveAssetPhoto(assetId, req.file, 'PHOTO_ISSUE', userName, issuePhotoUrl);
+    if (returnPhoto) await saveAssetPhoto(assetId, returnPhoto, 'PHOTO_RETURN', userName, returnPhotoUrl);
+    if (issuePhoto) await saveAssetPhoto(assetId, issuePhoto, 'PHOTO_ISSUE', userName, issuePhotoUrl);
 
-    // 4. Log in 17_History
+    // Log assignment and reassignment as distinct lifecycle events.
     if (historySheet) {
       const hH = historySheet.headerValues;
+      const previousHolder = activeAssignment?.get(getH(asgH, 'Employee_Name')) || '';
       await historySheet.addRow({
         [getH(hH, 'History_ID')]: `HIS-${Date.now()}`,
         [getH(hH, 'Asset_ID')]: assetId,
-        [getH(hH, 'Action')]: 'ASSET_ASSIGNED',
-        [getH(hH, 'Old_Value')]: 'AVAILABLE',
+        [getH(hH, 'Action')]: isReassignment ? 'ASSET_REASSIGNED' : 'ASSET_ASSIGNED',
+        [getH(hH, 'Old_Value')]: isReassignment ? `ASSIGNED to ${previousHolder}` : 'AVAILABLE',
         [getH(hH, 'New_Value')]: `ASSIGNED to ${employeeName}`,
         [getH(hH, 'Performed_By')]: userName,
         [getH(hH, 'Branch')]: assetBranch,
         [getH(hH, 'Timestamp')]: timestamp,
-        [getH(hH, 'Remarks')]: remarks || `Issued with: ${accessories || 'Standard Accessories'}`
+        [getH(hH, 'Remarks')]: `${remarks || `Issued with: ${accessories || 'Standard Accessories'}`}${isReassignment ? ` · returned in ${conditionOnReturn || 'GOOD'} condition` : ''}`
       });
     }
 
     refreshAssetCache();
-    res.json({ success: true, message: `Asset successfully assigned to ${employeeName}!` });
+    res.json({ success: true, message: `Asset successfully ${isReassignment ? 'reassigned' : 'assigned'} to ${employeeName}.` });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -574,6 +601,8 @@ exports.returnAsset = async (req, res) => {
     if (!assetRow) return res.status(404).json({ success: false, message: "Asset row not found." });
     const assetBranch = assetRow.get(getH(aH, 'Branch')) || '';
     if (!canAccessAssetBranch(req, assetBranch)) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
+    if (!assignmentSheet || !historySheet || !sheetByKey('documents')) return res.status(503).json({ success: false, message: 'Assignment, history, and photo records must be available before returning an asset.' });
+    if (!req.file) return res.status(400).json({ success: false, message: 'Upload a photo showing the item condition at return.' });
     if (String(assetRow.get(getH(aH, 'Status')) || '').toUpperCase() !== 'ASSIGNED') {
       return res.status(409).json({ success: false, message: 'This asset does not have an active assignment to return.' });
     }
@@ -598,7 +627,7 @@ exports.returnAsset = async (req, res) => {
         const rd = r.toObject();
         const kId = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'assetid');
         const kSt = Object.keys(rd).find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === 'status');
-        return (rd[kId] || '').toString().trim().toLowerCase() === assetId.trim().toLowerCase() && (rd[kSt] || '') === 'ACTIVE';
+        return (rd[kId] || '').toString().trim().toLowerCase() === assetId.trim().toLowerCase() && ['ACTIVE', 'ASSIGNED'].includes(String(rd[kSt] || '').trim().toUpperCase());
       });
 
       if (activeAsg) {

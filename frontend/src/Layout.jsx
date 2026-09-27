@@ -8,7 +8,7 @@ import {
   WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench, Plus,
   Headset, SignOut,
   Kanban, ImageSquare, ShareNetwork, CheckCircle, ClockCounterClockwise, SlidersHorizontal,
-  GraduationCap, UsersFour, ChalkboardTeacher, CalendarCheck, CaretDown, Brain
+  GraduationCap, UsersFour, ChalkboardTeacher, CalendarCheck, CaretDown, Brain, Newspaper
 } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
 
@@ -37,6 +37,7 @@ export default function Layout({ children }) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isNotifOpen, setIsNotifOpen] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const [talenzoLogoError, setTalenzoLogoError] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [adminNavSections, setAdminNavSections] = useState(() => {
     try { return JSON.parse(localStorage.getItem('ipcs-admin-nav-sections') || '{}'); }
@@ -234,7 +235,7 @@ export default function Layout({ children }) {
           <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" style={{ height: '35px', objectFit: 'contain' }} />
             <div style={{ width: '1px', height: '25px', backgroundColor: 'rgba(255, 255, 255, 0.15)' }}></div>
-            <img src="https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J" alt="Talenzo Logo" style={{ width: '132px', height: '42px', objectFit: 'contain', padding: '5px 9px', boxSizing: 'border-box', borderRadius: '9px', background: 'rgba(255,255,255,.07)' }} />
+            {talenzoLogoError ? <span className="header-talenzo-fallback">TALENZO</span> : <img className="header-talenzo-logo" src="https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J" alt="Talenzo Logo" onError={() => setTalenzoLogoError(true)} />}
           </div>
 
           <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
@@ -305,18 +306,21 @@ export default function Layout({ children }) {
           </div>
 
           <div className="pd-nav-list">
-            {(isSuperAdmin || isAssetManager) ? (
+            {isAssetManager && !isSuperAdmin ? (
               <>
                 <div className={`pd-nav-item ${location.pathname.startsWith('/dashboard') ? 'active' : ''}`} onClick={() => handleNav('/dashboard')}><SquaresFour size={22} /><span>Dashboard</span></div>
+                <div className={`pd-nav-item ${location.pathname.startsWith('/career-hub') ? 'active' : ''}`} onClick={() => handleNav('/career-hub')}><Newspaper size={22} /><span>Industry &amp; Career Hub</span></div>
                 <div className={`pd-nav-item ${location.pathname.startsWith('/assets') ? 'active' : ''}`} onClick={() => handleNav('/assets')}><Barcode size={22} /><span>Asset Management</span></div>
               </>
             ) : isTrainer ? (
               <>
                 <div className={`pd-nav-item ${location.pathname === '/trainer' ? 'active-acad' : ''}`} onClick={() => handleNav('/trainer')}><SquaresFour size={22} /><span>Dashboard</span></div>
+                <div className={`pd-nav-item ${location.pathname.startsWith('/career-hub') ? 'active' : ''}`} onClick={() => handleNav('/career-hub')}><Newspaper size={22} /><span>Industry &amp; Career Hub</span></div>
                 <div className={`pd-nav-item ${location.pathname.startsWith('/academic') ? 'active-acad' : ''}`} onClick={() => handleNav('/academic')}><GraduationCap size={22} /><span>Training &amp; Academics</span></div>
               </>
             ) : (
             <>
+            <div className={`pd-nav-item ${location.pathname.startsWith('/career-hub') ? 'active' : ''}`} onClick={() => handleNav('/career-hub')}><Newspaper size={22} /><span>Industry &amp; Career Hub</span></div>
             
             {showPlacementAndAcademic && (
               <>
@@ -369,6 +373,8 @@ export default function Layout({ children }) {
               </>
             )}
 
+            <div className={`pd-nav-item ${location.pathname.startsWith('/career-hub') ? 'active' : ''}`} onClick={() => handleNav('/career-hub')}><Newspaper size={22} weight={location.pathname.startsWith('/career-hub') ? 'fill' : 'regular'} /> <span>Industry &amp; Career Hub</span></div>
+
             {/* 🚨 MEDIA & DESIGN MANAGEMENT */}
             {(isSuperAdmin || isDesigner) && (
               <>
@@ -404,12 +410,14 @@ export default function Layout({ children }) {
               <>
                 {navSectionHeading('assets', 'Asset Management', showPlacementAndAcademic ? { marginTop: '15px' } : {})}
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('assets')}>
-                <div className={`pd-nav-item ${isActive('/assets') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets')}>
+                <div className={`pd-nav-item ${(location.pathname === '/assets' || location.pathname === '/assets/branches') ? 'active' : ''}`} onClick={() => handleNav('/assets/branches')}>
                   <ChartBar size={22} weight={isActive('/assets') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Branches &amp; Item Workspace</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/assets') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets')}>
-                  <Barcode size={22} weight={isActive('/assets') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Master Registry</span>
+                <div className={`pd-nav-item ${location.pathname === '/assets/register' ? 'active' : ''}`} onClick={() => handleNav('/assets/register')}>
+                  <Barcode size={22} weight={location.pathname === '/assets/register' ? 'fill' : 'regular'} /> <span>Master Registry</span>
                 </div>
+                <div className={`pd-nav-item ${location.pathname === '/assets/assignments' ? 'active' : ''}`} onClick={() => handleNav('/assets/assignments')}><UserCheck size={22} /><span>Assignments &amp; Reassignments</span></div>
+                <div className={`pd-nav-item ${location.pathname === '/assets/retired' ? 'active' : ''}`} onClick={() => handleNav('/assets/retired')}><ClockCounterClockwise size={22} /><span>Retired Assets</span></div>
                 <div className={`pd-nav-item ${isActive('/assets/add') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets/add')}>
                   <Plus size={22} weight={isActive('/assets/add') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Register Asset</span>
                 </div>
@@ -498,6 +506,9 @@ export default function Layout({ children }) {
         
         .pd-nav-item.active { background: linear-gradient(135deg, #6366f1, #a855f7); color: #ffffff; box-shadow: 0 8px 20px -6px rgba(99, 102, 241, 0.6); }
         .pd-nav-item.active-acad { background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; box-shadow: 0 8px 20px -6px rgba(16, 185, 129, 0.6); }
+        .header-talenzo-logo { display: block; width: 160px; height: 46px; object-fit: contain; object-position: left center; }
+        .header-talenzo-fallback { width: 160px; color: #22d3ee; font-size: 1rem; font-style: italic; font-weight: 900; letter-spacing: .08em; }
+        @media (max-width: 520px) { .header-talenzo-logo { width: 122px; height: 38px; } }
 
         .pd-footer { padding: 20px; background: rgba(0,0,0,0.1); }
         .pd-settings-btn { width:100%; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:10px; padding:10px; border:1px solid rgba(255,255,255,.1); border-radius:11px; color:#bac8d9; background:rgba(255,255,255,.035); font:inherit; font-size:.78rem; font-weight:750; cursor:pointer; }

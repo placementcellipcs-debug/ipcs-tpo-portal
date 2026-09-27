@@ -52,6 +52,7 @@ const AcademicAttendance = lazy(() => import('./AcademicAttendance'));
 const AcademicDiary = lazy(() => import('./AcademicDiary'));
 const AcademicOverview = lazy(() => import('./AcademicOverview'));
 const BrainGym = lazy(() => import('./BrainGym'));
+const CareerHub = lazy(() => import('./CareerHub'));
 
 function App() {
   return (
@@ -70,6 +71,7 @@ function App() {
         <Route path="/updates" element={<PublicSitePage page="updates" />} />
         <Route path="/recruiter" element={<Navigate to="/placements#recruiter-partnerships" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/career-hub" element={<CareerHub />} />
         <Route path="/admin-command" element={<Navigate to="/dashboard" replace />} />
         <Route path="/students" element={<StudentsDirectory />} />
         <Route path="/tracker" element={<JobTracker />} />

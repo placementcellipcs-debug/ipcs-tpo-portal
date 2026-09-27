@@ -10,6 +10,7 @@ const cron = require('node-cron');
 // 🚨 IMPORT CONTROLLERS EXACTLY ONCE
 const controllers = require('./src/controllers');
 const assetControllers = require('./src/assetControllers');
+const careerHubControllers = require('./src/careerHubControllers');
 
 // 🚨 IMPORT CACHES EXACTLY ONCE
 const { getCache } = require('./src/config');
@@ -67,11 +68,12 @@ const requireSession = (policy = 'portal') => (req, res, next) => {
   if (!user) return res.status(401).json({ success: false, message: 'Sign in again to continue.' });
   const role = getRole(user);
   const isAdmin = isPortalAdmin(user);
+  const hasAssetAccess = role.includes('ASSET') || String(user.accessType || '').toLowerCase().includes('asset');
 
-  if (policy === 'assets' && !isAdmin && !role.includes('MANAGER') && !role.includes('ASSET')) {
+  if (policy === 'assets' && !isAdmin && !role.includes('MANAGER') && !hasAssetAccess) {
     return res.status(403).json({ success: false, message: 'Asset Management is not available for this role.' });
   }
-  if (policy === 'asset-admin' && !isAdmin && !role.includes('ASSET')) {
+  if (policy === 'asset-admin' && !isAdmin && !hasAssetAccess) {
     return res.status(403).json({ success: false, message: 'Asset manager access is required for this action.' });
   }
   if (policy === 'portal-admin' && !isAdmin) {
@@ -100,6 +102,7 @@ const requireSession = (policy = 'portal') => (req, res, next) => {
   next();
 };
 
+app.get('/api/career-hub', requireSession('portal'), careerHubControllers.getCareerFeed);
 app.use('/api/v1/assets', requireSession('assets'));
 app.use('/api/design', requireSession('design'));
 app.use('/api/academic', requireSession('academic'));
@@ -204,8 +207,8 @@ app.get('/api/v1/assets/form-data', assetControllers.getRegistrationData);
 app.post('/api/v1/assets/add', requireSession('asset-admin'), upload.single('photo'), assetControllers.addAsset);
 app.get('/api/v1/assets', assetControllers.getAssets);
 app.get('/api/v1/assets/:assetId/details', assetControllers.getAssetDetails);
-app.post('/api/v1/assets/assign', upload.single('photo'), assetControllers.assignAsset);
-app.post('/api/v1/assets/return', upload.single('photo'), assetControllers.returnAsset);
+app.post('/api/v1/assets/assign', requireSession('asset-admin'), upload.fields([{ name: 'photo', maxCount: 1 }, { name: 'returnPhoto', maxCount: 1 }]), assetControllers.assignAsset);
+app.post('/api/v1/assets/return', requireSession('asset-admin'), upload.single('photo'), assetControllers.returnAsset);
 app.get('/api/v1/assets/dashboard', assetControllers.getAssetDashboardStats);
 
 // 🚨 INVENTORY, TRANSFERS, AND MAINTENANCE ROUTES
