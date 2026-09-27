@@ -629,12 +629,6 @@
   --accent-glow: rgba(2, 132, 199, 0.15);
 }
 
-/* Custom Accent Color Overrides */
-[data-accent="emerald"] { --accent-primary: #10b981; --accent-glow: rgba(16, 185, 129, 0.15); }
-[data-accent="purple"]  { --accent-primary: #a855f7; --accent-glow: rgba(168, 85, 247, 0.15); }
-[data-accent="amber"]   { --accent-primary: #f59e0b; --accent-glow: rgba(245, 158, 11, 0.15); }
-[data-accent="rose"]    { --accent-primary: #f43f5e; --accent-glow: rgba(244, 63, 94, 0.15); }
-
 /* Shimmer Keyframe */
 @keyframes shimmerPulse {
   0% { background-position: -200% 0; }

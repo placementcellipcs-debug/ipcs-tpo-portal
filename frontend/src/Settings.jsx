@@ -1,6 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef } from 'react';
 import axios from 'axios';
-import { Camera, ShieldCheck, User, LockKey, CircleNotch, CheckCircle, WarningCircle, PaintBrush } from '@phosphor-icons/react';
+import { Camera, ShieldCheck, User, LockKey, CircleNotch, CheckCircle, WarningCircle } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig'; // 🚨 Imports your smart URL!
 
@@ -9,23 +9,12 @@ export default function Settings() {
   const [tpoData, setTpoData] = useState(tpoDataStr ? JSON.parse(tpoDataStr) : null);
   
   const [activeTab, setActiveTab] = useState('profile');
-  const [accent, setAccent] = useState(() => localStorage.getItem('ipcs-accent') || 'purple');
   const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
   const [message, setMessage] = useState({ text: '', type: '' });
   const [isUpdating, setIsUpdating] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
 
   const fileInputRef = useRef(null);
-
-  useEffect(() => {
-    document.body.setAttribute('data-accent', accent);
-  }, [accent]);
-
-  const saveAppearance = nextAccent => {
-    localStorage.setItem('ipcs-accent', nextAccent);
-    setAccent(nextAccent);
-    document.body.setAttribute('data-accent', nextAccent);
-  };
 
   if (!tpoData) return null;
 
@@ -116,8 +105,6 @@ export default function Settings() {
               <User size={20} weight={activeTab === 'profile' ? "fill" : "regular"} /> Account Profile
             </button>
 
-            <button onClick={() => { setActiveTab('appearance'); setMessage({ text: '', type: '' }); }} style={{ padding: '15px 20px', borderRadius: '12px', border: 'none', background: activeTab === 'appearance' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'appearance' ? 'var(--accent-primary)' : 'var(--text-muted)', textAlign: 'left', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', transition: '0.2s', borderLeft: activeTab === 'appearance' ? '3px solid var(--accent-primary)' : '3px solid transparent' }}><PaintBrush size={20} /> Appearance</button>
-
             {/* 🚨 ONLY VISIBLE TO SUPER ADMINS */}
             {isSuperAdmin && (
               <button 
@@ -199,14 +186,6 @@ export default function Settings() {
                     * To update core details like your name or assigned branch, please contact the System Administrator.
                   </p>
                 </div>
-              </div>
-            )}
-
-            {activeTab === 'appearance' && (
-              <div className="fade-in">
-                <h2 style={{ fontSize: '1.4rem', margin: '0 0 10px' }}>Appearance</h2>
-                <p style={{ color: 'var(--text-muted)', margin: '0 0 24px' }}>Choose an accent palette. Each workspace keeps its own identity color while shared controls use your selected hue.</p>
-                <div><label style={{ display: 'block', marginBottom: 10, color: 'var(--text-muted)', fontWeight: 800, fontSize: '.75rem', textTransform: 'uppercase' }}>Accent palette</label><div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>{[['purple', '#a855f7', 'Violet'], ['emerald', '#10b981', 'Emerald'], ['amber', '#f59e0b', 'Amber'], ['rose', '#f43f5e', 'Rose']].map(([value, color, label]) => <button type="button" key={value} onClick={() => saveAppearance(value)} aria-pressed={accent === value} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderRadius: 10, color: 'var(--text-main)', border: `1px solid ${accent === value ? color : 'var(--card-border)'}`, background: 'var(--bg-surface)', cursor: 'pointer', fontWeight: 800 }}><span style={{ width: 12, height: 12, borderRadius: '50%', background: color }} />{label}</button>)}</div></div>
               </div>
             )}
 

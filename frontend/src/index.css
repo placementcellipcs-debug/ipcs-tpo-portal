@@ -15,26 +15,6 @@
 * { box-sizing: border-box; font-family: 'Plus Jakarta Sans', sans-serif; margin: 0; padding: 0; }
 body { background-color: var(--bg-dark); color: var(--text-main); min-height: 100vh; overflow-x: hidden; }
 
-/* Appearance palettes are applied to the document body so the selected accent
-   reaches the app shell as well as controls rendered deep inside each module. */
-body[data-accent="purple"] { --accent-primary: #a855f7; --accent-glow: rgba(168,85,247,.2); }
-body[data-accent="emerald"] { --accent-primary: #10b981; --accent-glow: rgba(16,185,129,.2); }
-body[data-accent="amber"] { --accent-primary: #f59e0b; --accent-glow: rgba(245,158,11,.2); }
-body[data-accent="rose"] { --accent-primary: #f43f5e; --accent-glow: rgba(244,63,94,.2); }
-body[data-accent] .pd-nav-item.active,
-body[data-accent] .pd-nav-item.active-acad { background: var(--accent-primary) !important; box-shadow: 0 8px 20px -6px var(--accent-glow) !important; }
-body[data-accent] .pd-nav-item.active { color: #fff !important; }
-body[data-accent] .btn-action { background: var(--accent-primary) !important; border-color: var(--accent-primary) !important; }
-body[data-accent] .asset-action-primary,
-body[data-accent] .premium-tab.active,
-body[data-accent] .premium-btn.primary,
-body[data-accent] .career-hub-chips button.active { background: var(--accent-primary) !important; border-color: var(--accent-primary) !important; }
-body[data-accent] .header-avatar,
-body[data-accent] .pd-avatar-ring { border-color: var(--accent-primary) !important; }
-body[data-accent] .asset-back-button:hover,
-body[data-accent] .asset-register-open:hover,
-body[data-accent] .asset-small-action:hover { border-color: var(--accent-primary) !important; color: var(--accent-primary) !important; }
-
 /* AUTH SCREEN */
 .auth-wrapper { display: flex; justify-content: center; align-items: center; min-height: 100vh; width: 100vw; padding: 20px; }
 .auth-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 20px; padding: 2.5rem 2rem; width: 100%; max-width: 420px; box-shadow: 0 20px 40px rgba(0,0,0,0.4); }
@@ -60,7 +40,7 @@ input:focus { border-color: var(--accent-primary); }
 /* APP LAYOUT & HEADER */
 .app-layout { display: flex; width: 100vw; min-height: 100vh; }
 .main-content { flex: 1; display: flex; flex-direction: column; width: 100%; }
-.top-header { height: 75px; background: var(--bg-dark); border-bottom: 1px solid var(--card-border); display: flex; align-items: center; justify-content: space-between; padding: 0 2rem; position: sticky; top: 0; z-index: 90; }
+.top-header { height: 75px; background: var(--bg-dark); border: 0; display: flex; align-items: center; justify-content: space-between; padding: 0 2rem; position: sticky; top: 0; z-index: 90; }
 .header-actions { display: flex; align-items: center; gap: 15px; margin-left: auto;}
 .icon-btn { background: none; border: none; color: var(--text-muted); font-size: 1.4rem; cursor: pointer; display: flex; align-items: center; justify-content: center; position: relative;}
 .icon-btn:hover { color: var(--accent-primary); }

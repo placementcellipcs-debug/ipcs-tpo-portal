@@ -2029,7 +2029,7 @@ exports.streamPublicPlacementPoster = async (req, res) => {
       { fileId: poster.id, alt: 'media', supportsAllDrives: true },
       { responseType: 'stream', ...(requestedRange ? { headers: { Range: requestedRange } } : {}) }
     );
-    if (response.status === 206) res.status(206);
+    res.status(response.status || 200);
     res.set('Content-Type', poster.mimeType);
     res.set('Cache-Control', 'public, max-age=3600');
     res.set('Accept-Ranges', 'bytes');

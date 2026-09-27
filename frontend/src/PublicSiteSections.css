@@ -65,8 +65,8 @@
 .public-team-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px; }
 .public-team-card { min-height: 310px; padding: 25px; transition: transform .2s ease, box-shadow .2s ease; }
 .public-team-card:hover { transform: translateY(-4px); box-shadow: 0 22px 52px rgba(26, 63, 103, .11); }
-.public-team-photo-wrap { position: relative; width: 100%; height: 190px; margin-bottom: 18px; overflow: hidden; border: 1px solid #e2ebf4; border-radius: 15px; background: linear-gradient(145deg, #dceeff, #c5e3fb); box-shadow: 0 7px 18px rgba(29, 93, 150, .08); }
-.public-team-photo-wrap img { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center 32%; }
+.public-team-photo-wrap { position: relative; width: 100%; height: 190px; margin-bottom: 18px; overflow: hidden; border: 1px solid #e2ebf4; border-radius: 15px; background: #087f8a; box-shadow: 0 7px 18px rgba(29, 93, 150, .08); }
+.public-team-photo-wrap img { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center; }
 .public-team-photo-fallback { position: absolute; inset: 0; display: grid; place-items: center; color: #174c82; font-size: 1.4rem; font-weight: 900; }
 .avatar-2, .avatar-5 { color: #26685b; background: linear-gradient(145deg, #d8f5eb, #c6ebde); }
 .avatar-3, .avatar-6 { color: #7c4b3c; background: linear-gradient(145deg, #ffeadf, #f8d7c8); }
@@ -136,6 +136,7 @@
 .public-video-dialog > header h2 { overflow: hidden; margin: 4px 0 0; font-size: .97rem; text-overflow: ellipsis; white-space: nowrap; }
 .public-video-dialog > header button { width: 36px; height: 36px; flex: 0 0 auto; display: grid; place-items: center; border: 1px solid rgba(255,255,255,.14); border-radius: 10px; color: #dce9f7; background: rgba(255,255,255,.06); cursor: pointer; }
 .public-video-dialog > video { display: block; width: 100%; max-height: min(76dvh,740px); aspect-ratio: 16 / 9; background: #05080d; object-fit: contain; }
+.public-video-dialog > iframe { display: block; width: 100%; height: min(76dvh,740px); min-height: 260px; border: 0; background: #05080d; }
 .public-media-preview-card { color: inherit; text-decoration: none; }
 .public-video-preview-thumb { background: linear-gradient(145deg, #14263d, #273b55); }
 .public-video-preview-thumb > img { object-fit: cover; }

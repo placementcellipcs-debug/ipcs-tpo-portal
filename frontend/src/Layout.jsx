@@ -40,7 +40,7 @@ export default function Layout({ children }) {
   const [talenzoLogoError, setTalenzoLogoError] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [adminNavSections, setAdminNavSections] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('ipcs-admin-nav-sections') || '{}'); }
+    try { return JSON.parse(localStorage.getItem('ipcs-admin-nav-sections-v2') || '{}'); }
     catch { return {}; }
   });
 
@@ -94,10 +94,7 @@ export default function Layout({ children }) {
 
   useEffect(() => {
     if (!tpoData) return;
-    const savedAccent = localStorage.getItem('ipcs-accent') || 'purple';
-    // The portal uses the dark shell. Appearance settings customize accents only.
     document.body.setAttribute('data-theme', 'dark');
-    document.body.setAttribute('data-accent', savedAccent);
     
     const userRole = (tpoData?.role || '').toUpperCase();
     const isSuperAdmin = tpoData?.accessType === 'superadmin' || userRole.includes('SYSTEM ADMIN') || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
@@ -184,7 +181,9 @@ export default function Layout({ children }) {
   const isAssetManager = userRole.includes('ASSET') || sheetAccess.includes('asset');
   const isDesigner = userRole.includes('DESIGN') || userRole.includes('MEDIA') || userRole.includes('CREATIVE');
   
-  const showPlacementAndAcademic = !isAssetManager && !isDesigner;
+  // Every staff member can navigate to the modules available to their role.
+  // Asset and media roles used to get a reduced drawer that hid the rest of the portal.
+  const showPlacementAndAcademic = true;
 
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('SYSTEM ADMIN') || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
   const canCollapseAdminNav = isSuperAdmin || userRole.includes('ADMIN');
@@ -212,7 +211,7 @@ export default function Layout({ children }) {
   const isAdminSectionOpen = key => !canCollapseAdminNav || adminNavSections[key] !== false;
   const toggleAdminSection = key => setAdminNavSections(current => {
     const next = { ...current, [key]: current[key] === false };
-    try { localStorage.setItem('ipcs-admin-nav-sections', JSON.stringify(next)); } catch { /* State remains for this session. */ }
+    try { localStorage.setItem('ipcs-admin-nav-sections-v2', JSON.stringify(next)); } catch { /* State remains for this session. */ }
     return next;
   });
   const navSectionHeading = (key, label, style = {}) => canCollapseAdminNav
@@ -226,15 +225,15 @@ export default function Layout({ children }) {
   };
 
   const sectionTheme = location.pathname.startsWith('/assets') ? 'assets' : location.pathname.startsWith('/academic') ? 'academic' : location.pathname.startsWith('/media') ? 'media' : location.pathname.startsWith('/clients') ? 'partners' : 'placement';
+  const dashboardPath = isTrainer ? '/trainer' : '/dashboard';
   const defaultBackPath = isAssetManager && !isSuperAdmin ? '/assets' : (isTrainer ? '/trainer' : '/dashboard');
 
   return (
     <div className={`app-layout app-section-${sectionTheme}`}>
       <main className="main-content">
-        <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px' }}>
+        <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px', border: 'none' }}>
           <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" style={{ height: '35px', objectFit: 'contain' }} />
-            <div style={{ width: '1px', height: '25px', backgroundColor: 'rgba(255, 255, 255, 0.15)' }}></div>
             {talenzoLogoError ? <span className="header-talenzo-fallback">TALENZO</span> : <img className="header-talenzo-logo" src="https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J" alt="Talenzo Logo" onError={() => setTalenzoLogoError(true)} />}
           </div>
 
@@ -306,20 +305,8 @@ export default function Layout({ children }) {
           </div>
 
           <div className="pd-nav-list">
-            {isAssetManager && !isSuperAdmin ? (
-              <>
-                <div className={`pd-nav-item ${location.pathname.startsWith('/dashboard') ? 'active' : ''}`} onClick={() => handleNav('/dashboard')}><SquaresFour size={22} /><span>Dashboard</span></div>
-                <div className={`pd-nav-item ${location.pathname.startsWith('/career-hub') ? 'active' : ''}`} onClick={() => handleNav('/career-hub')}><Newspaper size={22} /><span>Industry &amp; Career Hub</span></div>
-                <div className={`pd-nav-item ${location.pathname.startsWith('/assets') ? 'active' : ''}`} onClick={() => handleNav('/assets')}><Barcode size={22} /><span>Asset Management</span></div>
-              </>
-            ) : isTrainer ? (
-              <>
-                <div className={`pd-nav-item ${location.pathname === '/trainer' ? 'active-acad' : ''}`} onClick={() => handleNav('/trainer')}><SquaresFour size={22} /><span>Dashboard</span></div>
-                <div className={`pd-nav-item ${location.pathname.startsWith('/career-hub') ? 'active' : ''}`} onClick={() => handleNav('/career-hub')}><Newspaper size={22} /><span>Industry &amp; Career Hub</span></div>
-                <div className={`pd-nav-item ${location.pathname.startsWith('/academic') ? 'active-acad' : ''}`} onClick={() => handleNav('/academic')}><GraduationCap size={22} /><span>Training &amp; Academics</span></div>
-              </>
-            ) : (
             <>
+            <div className={`pd-nav-item ${location.pathname === dashboardPath || location.pathname === '/dashboard' ? (isTrainer ? 'active-acad' : 'active') : ''}`} onClick={() => handleNav(dashboardPath)}><SquaresFour size={22} /><span>Dashboard</span></div>
             <div className={`pd-nav-item ${location.pathname.startsWith('/career-hub') ? 'active' : ''}`} onClick={() => handleNav('/career-hub')}><Newspaper size={22} /><span>Industry &amp; Career Hub</span></div>
             
             {showPlacementAndAcademic && (
@@ -327,7 +314,6 @@ export default function Layout({ children }) {
                 {/* 🚨 PLACEMENT MENU */}
                 {navSectionHeading('placement', 'Main Menu')}
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('placement')}>
-                <div className={`pd-nav-item ${isActive('/dashboard') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/dashboard')}><SquaresFour size={22} weight={isActive('/dashboard') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Dashboard</span></div>
                 <div className={`pd-nav-item ${isActive('/students') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/students')}><Users size={22} weight={isActive('/students') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Students Directory</span></div>
                 {showIssues && <div className={`pd-nav-item ${isActive('/issues') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/issues')}><Headset size={22} weight={isActive('/issues') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Issue Resolution</span></div>}
                 {showTracker && <div className={`pd-nav-item ${isActive('/tracker') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/tracker')}><Files size={22} weight={isActive('/tracker') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Job Tracker</span></div>}
@@ -372,8 +358,6 @@ export default function Layout({ children }) {
                 </div>
               </>
             )}
-
-            <div className={`pd-nav-item ${location.pathname.startsWith('/career-hub') ? 'active' : ''}`} onClick={() => handleNav('/career-hub')}><Newspaper size={22} weight={location.pathname.startsWith('/career-hub') ? 'fill' : 'regular'} /> <span>Industry &amp; Career Hub</span></div>
 
             {/* 🚨 MEDIA & DESIGN MANAGEMENT */}
             {(isSuperAdmin || isDesigner) && (
@@ -464,11 +448,10 @@ export default function Layout({ children }) {
             </div>
             </div>
             </>
-            )}
           </div>
 
           <div className="pd-footer">
-            {(isSuperAdmin || isAssetManager || isTrainer) && <button type="button" className="pd-settings-btn" onClick={() => handleNav('/settings')}><Gear size={17} /> Settings &amp; appearance</button>}
+            <button type="button" className="pd-settings-btn" onClick={() => handleNav('/settings')}><Gear size={17} /> Settings</button>
             <button className="pd-logout-btn hover-lift" onClick={handleLogout}>
               <SignOut size={20} weight="bold" /> Logout
             </button>
@@ -506,7 +489,7 @@ export default function Layout({ children }) {
         
         .pd-nav-item.active { background: linear-gradient(135deg, #6366f1, #a855f7); color: #ffffff; box-shadow: 0 8px 20px -6px rgba(99, 102, 241, 0.6); }
         .pd-nav-item.active-acad { background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; box-shadow: 0 8px 20px -6px rgba(16, 185, 129, 0.6); }
-        .header-talenzo-logo { display: block; width: 160px; height: 46px; object-fit: contain; object-position: left center; }
+        .header-talenzo-logo { display: block; width: 160px; height: 46px; object-fit: contain; object-position: left center; filter: brightness(1.16) contrast(1.8); mix-blend-mode: screen; }
         .header-talenzo-fallback { width: 160px; color: #22d3ee; font-size: 1rem; font-style: italic; font-weight: 900; letter-spacing: .08em; }
         @media (max-width: 520px) { .header-talenzo-logo { width: 122px; height: 38px; } }
 

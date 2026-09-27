@@ -136,6 +136,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   const [mediaTab, setMediaTab] = useState('placement-drive');
   const [mediaItems, setMediaItems] = useState([]);
   const [selectedVideo, setSelectedVideo] = useState(null);
+  const [videoPlaybackError, setVideoPlaybackError] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(true);
   const [mediaLoaded, setMediaLoaded] = useState(false);
   const [mediaLoading, setMediaLoading] = useState(true);
@@ -145,6 +146,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   const partnerListPage = page === 'partners-all';
   const posterGalleryPage = page === 'placement-gallery';
   const partnerMediaPage = page === 'partners-media';
+  const openVideo = item => { setVideoPlaybackError(false); setSelectedVideo(item); };
   const mediaPage = ['placement-media', 'partners-media'].includes(page);
   const placementPage = ['placement', 'placement-gallery', 'placement-media', 'all'].includes(page);
   const placementCategory = mediaPage
@@ -442,11 +444,11 @@ export default function PublicSiteSections({ page = 'all' }) {
                           {item.mediaType === 'video' && <span className="public-video-play-badge"><PlayCircle size={39} weight="fill" /></span>}
                         </div><div className="public-poster-meta"><span>{item.folder}</span><h4>{item.name}</h4></div></>;
                         return item.mediaType === 'video'
-                          ? <article className="public-poster-card public-poster-marquee-card public-media-preview-card" key={`${item.id}-${index}`} aria-hidden={duplicate || undefined}><button type="button" className="public-media-preview-button" onClick={() => !duplicate && setSelectedVideo(item)} aria-label={`Play ${item.name}`} tabIndex={duplicate ? -1 : undefined}>{preview}</button></article>
+                          ? <article className="public-poster-card public-poster-marquee-card public-media-preview-card" key={`${item.id}-${index}`} aria-hidden={duplicate || undefined}><button type="button" className="public-media-preview-button" onClick={() => !duplicate && openVideo(item)} aria-label={`Play ${item.name}`} tabIndex={duplicate ? -1 : undefined}>{preview}</button></article>
                           : <Link className="public-poster-card public-poster-marquee-card public-media-preview-card" key={`${item.id}-${index}`} to={`${mediaBasePath}?category=${placementCategory}`} aria-hidden={duplicate || undefined} tabIndex={duplicate ? -1 : undefined}>{preview}</Link>;
                       })}</div>
                     </div> : <div className="public-poster-grid">{mediaItems.map(item => <article className="public-poster-card public-media-card" key={item.id}>
-                      {item.mediaType === 'video' ? <button type="button" className="public-poster-image public-video-open" onClick={() => setSelectedVideo(item)} aria-label={`Play ${item.name}`}><img src={videoThumbnail(item)} alt="" loading="lazy" /><span className="public-video-play-badge"><PlayCircle size={46} weight="fill" /></span></button> : <a className="public-poster-image" href={`${API_BASE}${item.imageUrl}`} target="_blank" rel="noreferrer"><img src={`${API_BASE}${item.imageUrl}`} alt={item.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></a>}
+                      {item.mediaType === 'video' ? <button type="button" className="public-poster-image public-video-open" onClick={() => openVideo(item)} aria-label={`Play ${item.name}`}><img src={videoThumbnail(item)} alt="" loading="lazy" /><span className="public-video-play-badge"><PlayCircle size={46} weight="fill" /></span></button> : <a className="public-poster-image" href={`${API_BASE}${item.imageUrl}`} target="_blank" rel="noreferrer"><img src={`${API_BASE}${item.imageUrl}`} alt={item.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></a>}
                       <div className="public-poster-meta"><span>{item.folder}</span><h4>{item.name}</h4></div>
                     </article>)}</div>}
             {mediaLoaded && mediaItems.length > 0 && !mediaPage && <div className="public-gallery-more"><span>Random preview · {mediaTotal} available</span><Link to={`${mediaBasePath}?category=${placementCategory}`}>See all {mediaItems.some(item => item.mediaType === 'video') ? 'videos' : 'media'} <ArrowRight size={16} /></Link></div>}
@@ -540,7 +542,7 @@ export default function PublicSiteSections({ page = 'all' }) {
       {selectedVideo && <div className="public-video-modal" role="presentation" onClick={event => { if (event.target === event.currentTarget) setSelectedVideo(null); }}>
         <section className="public-video-dialog" role="dialog" aria-modal="true" aria-label={selectedVideo.name}>
           <header><div><span>{selectedVideo.folder || 'IPCS MEDIA'}</span><h2>{selectedVideo.name}</h2></div><button type="button" onClick={() => setSelectedVideo(null)} aria-label="Close video"><X size={21} /></button></header>
-          <video src={`${API_BASE}${selectedVideo.imageUrl}`} poster={videoThumbnail(selectedVideo)} controls autoPlay playsInline preload="metadata" aria-label={selectedVideo.name} />
+          {videoPlaybackError ? <iframe src={`https://drive.google.com/file/d/${encodeURIComponent(selectedVideo.id)}/preview`} title={selectedVideo.name} allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen /> : <video src={`${API_BASE}${selectedVideo.imageUrl}`} poster={videoThumbnail(selectedVideo)} controls playsInline preload="metadata" aria-label={selectedVideo.name} onError={() => setVideoPlaybackError(true)} />}
         </section>
       </div>}
     </div>

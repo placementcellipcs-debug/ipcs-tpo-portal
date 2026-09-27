@@ -37,7 +37,8 @@ app.use(cors({
     }
   },
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-ipcs-email', 'x-ipcs-session-token']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Range', 'x-ipcs-email', 'x-ipcs-session-token'],
+  exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length']
 }));
 
 app.use(express.json());
