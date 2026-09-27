@@ -3,7 +3,6 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './Login';
 
 const Dashboard = lazy(() => import('./Dashboard'));
-const AdminCommandCenter = lazy(() => import('./AdminCommandCenter'));
 const StudentsDirectory = lazy(() => import('./StudentsDirectory'));
 const JobTracker = lazy(() => import('./JobTracker'));
 const PlacedStudents = lazy(() => import('./PlacedStudents'));
@@ -25,7 +24,6 @@ const Courses = lazy(() => import('./Courses'));
 const PlacementDrives = lazy(() => import('./PlacementDrives'));
 const ExamsHub = lazy(() => import('./ExamsHub'));
 const Branches = lazy(() => import('./Branches'));
-const TrainerLog = lazy(() => import('./TrainerLog'));
 const SecurityActivity = lazy(() => import('./SecurityActivity'));
 const PublicSitePage = lazy(() => import('./PublicSitePage'));
 
@@ -52,6 +50,8 @@ const AcademicBatches = lazy(() => import('./AcademicBatches'));
 const AcademicSessions = lazy(() => import('./AcademicSessions'));
 const AcademicAttendance = lazy(() => import('./AcademicAttendance'));
 const AcademicDiary = lazy(() => import('./AcademicDiary'));
+const AcademicOverview = lazy(() => import('./AcademicOverview'));
+const BrainGym = lazy(() => import('./BrainGym'));
 
 function App() {
   return (
@@ -70,7 +70,7 @@ function App() {
         <Route path="/updates" element={<PublicSitePage page="updates" />} />
         <Route path="/recruiter" element={<Navigate to="/placements#recruiter-partnerships" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
-        <Route path="/admin-command" element={<AdminCommandCenter />} />
+        <Route path="/admin-command" element={<Navigate to="/dashboard" replace />} />
         <Route path="/students" element={<StudentsDirectory />} />
         <Route path="/tracker" element={<JobTracker />} />
         <Route path="/placed" element={<PlacedStudents />} />
@@ -88,7 +88,6 @@ function App() {
         <Route path="/courses" element={<Courses />} />
         <Route path="/placement-drives" element={<PlacementDrives />} />
         <Route path="/branches" element={<Branches />} />
-        <Route path="/trainer-logs" element={<TrainerLog />} />
         <Route path="/exams" element={<ExamsHub />} />
         <Route path="/exams/technical" element={<TechnicalExams />} />
         <Route path="/exams/aptitude" element={<Aptitude />} />
@@ -118,6 +117,11 @@ function App() {
         <Route path="/media/settings" element={<MediaSettings />} />
 
         {/* MODULAR ACADEMIC & TRAINING ROUTES */}
+        <Route path="/academic" element={<AcademicOverview />} />
+        <Route path="/academic/brain-gym" element={<BrainGym />} />
+        <Route path="/academic/branches" element={<AcademicOverview />} />
+        <Route path="/academic/leaves" element={<AcademicOverview />} />
+        <Route path="/trainer" element={<AcademicOverview trainerMode />} />
         <Route path="/academic/training" element={<AcademicTraining />} />
         <Route path="/academic/batches" element={<AcademicBatches />} />
         <Route path="/academic/sessions" element={<AcademicSessions />} />

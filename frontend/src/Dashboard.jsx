@@ -4,7 +4,7 @@ import axios from 'axios';
 import { 
   Users, Briefcase, Trophy, CalendarCheck, CircleNotch, 
   BookOpen, NotePencil, FolderOpen, ListChecks, Buildings,
-  ChartBar, Clock, CheckCircle, ArrowRight, CaretLeft, CaretRight
+  ChartBar, Clock, CheckCircle, CaretLeft, CaretRight
 } from '@phosphor-icons/react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -30,8 +30,6 @@ export default function Dashboard() {
   const isSuperAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
   const showReports = isSuperAdmin || userRole === 'TPO';
   const isTpo = userRole.includes('TPO') || isSuperAdmin; 
-  const isTrainer = userRole.includes('TRAINER') || userRole.includes('TTH') || isSuperAdmin;
-  
   const [stats, setStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0, totalCompanies: 0 });
   const [events, setEvents] = useState([]);
   const [recentPlacements, setRecentPlacements] = useState([]);
@@ -50,7 +48,6 @@ export default function Dashboard() {
   // Raw Data Storage for Re-Filtering
   const [rawChartData, setRawChartData] = useState({ students: [], logs: [] });
 
-  const [trainerLogs, setTrainerLogs] = useState([]);
   const [calendarDate, setCalendarDate] = useState(new Date());
 
   const DOMAIN_COLORS = ['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#ec4899', '#0ea5e9'];
@@ -235,19 +232,6 @@ export default function Dashboard() {
           
           setRawChartData({ students, logs });
           processChartData(students, logs, selectedYear);
-        }
-
-        if ((localTpo.role || '').toUpperCase().includes('TRAINER') || localTpo.accessType === 'superadmin') {
-          try {
-            const trRes = await axios.get(`${API_BASE}/api/admin/trainer-logs`);
-            if (trRes.data && trRes.data.success) {
-              let myLogs = trRes.data.logs || [];
-              if (localTpo.accessType !== 'superadmin') {
-                 myLogs = myLogs.filter(l => l.trainerName === localTpo.name);
-              }
-              setTrainerLogs(myLogs.slice(0, 5));
-            }
-          } catch (e) { console.error("Failed to load trainer logs"); }
         }
 
       } catch (err) { console.error("Dashboard Fetch Error:", err); } finally { setLoading(false); }

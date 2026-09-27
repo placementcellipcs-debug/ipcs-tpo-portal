@@ -1,0 +1,47 @@
+.academic-overview { max-width: 1450px; margin: 0 auto; color: #e5edf7; }
+.academic-overview .academic-top-nav { border-color: rgba(16,185,129,.2); }
+.academic-overview-metrics { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin:18px 0 34px; }
+.academic-overview-metrics article { min-height:94px; padding:17px 18px; display:flex; flex-direction:column; justify-content:space-between; border:1px solid #254439; border-radius:15px; background:linear-gradient(145deg,#122b2c,#112238); }
+.academic-overview-metrics article span { display:flex; align-items:center; gap:8px; color:#a7c5bd; font-size:.75rem; font-weight:800; }
+.academic-overview-metrics article span svg { color:#40c5a0; }
+.academic-overview-metrics article strong { color:#effaf6; font-size:1.65rem; letter-spacing:-.04em; }
+.academic-overview-section-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:18px; margin-bottom:15px; }
+.academic-overview-section-heading > div > span { color:#4ad0a9; font-size:.65rem; font-weight:900; letter-spacing:.16em; }
+.academic-overview-section-heading h2 { margin:6px 0 5px; color:#f2faf7; font-size:1.35rem; letter-spacing:-.035em; }
+.academic-overview-section-heading p { margin:0; color:#9baebd; font-size:.78rem; }
+.academic-overview-section-heading > button, .academic-overview-shortcuts button { display:inline-flex; align-items:center; gap:8px; min-height:38px; padding:8px 12px; border:1px solid #2b5148; border-radius:10px; color:#a8e4d1; background:#122b2c; font:inherit; font-size:.72rem; font-weight:800; cursor:pointer; }
+.academic-branch-cards { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.academic-branch-cards > button { min-height:145px; padding:17px; display:flex; flex-direction:column; align-items:flex-start; gap:8px; border:1px solid #283b4d; border-radius:15px; color:#e8f1fa; text-align:left; background:linear-gradient(145deg,#14253a,#101c2c); cursor:pointer; transition:transform .18s ease,border-color .18s ease; }
+.academic-branch-cards > button:hover { transform:translateY(-2px); border-color:#168c70; }
+.academic-branch-cards > button > span { width:37px; height:37px; display:grid; place-items:center; border:1px solid #235b4f; border-radius:11px; color:#64d8b4; background:#12352f; }
+.academic-branch-cards > button b { font-size:.94rem; }
+.academic-branch-cards > button small { color:#9badbb; font-size:.7rem; }
+.academic-branch-cards > button i { display:inline-flex; align-items:center; gap:5px; margin-top:auto; color:#7bd9ba; font-size:.69rem; font-style:normal; font-weight:800; }
+.academic-overview-shortcuts { display:flex; flex-wrap:wrap; gap:9px; margin-top:19px; }
+.academic-overview-error, .academic-overview-empty, .academic-overview-loading { padding:22px; border:1px solid #2a3d51; border-radius:13px; color:#a9bacb; background:#111e2f; }
+.academic-overview-error { border-color:#753c43; color:#ffc0c0; background:#311d27; }
+.academic-overview-loading { display:flex; align-items:center; justify-content:center; gap:10px; min-height:120px; }
+.academic-branch-list-heading { margin-top:18px; }
+.academic-overview-search { min-width:min(365px,100%); display:flex; align-items:center; gap:9px; padding:0 12px; border:1px solid #30465d; border-radius:10px; color:#91a7b9; background:#0e1a29; }
+.academic-overview-search input { width:100%; min-height:40px; border:0; outline:0; color:#e9f1f8; background:transparent; font:inherit; font-size:.76rem; }
+.academic-overview-table-wrap { overflow:auto; border:1px solid #26394e; border-radius:14px; background:#101c2c; }
+.academic-overview-table-wrap table { width:100%; min-width:690px; border-collapse:collapse; }
+.academic-overview-table-wrap th, .academic-overview-table-wrap td { padding:12px 14px; border-bottom:1px solid #233448; text-align:left; color:#c0cddb; font-size:.75rem; }
+.academic-overview-table-wrap th { color:#9db2c6; background:#15253a; text-transform:uppercase; font-size:.63rem; letter-spacing:.08em; }
+.academic-overview-table-wrap td b, .academic-overview-table-wrap td small { display:block; }
+.academic-overview-table-wrap td b { color:#eef4fa; }
+.academic-overview-table-wrap td small { margin-top:3px; color:#91a3b5; }
+.academic-overview-status { padding:4px 8px; border:1px solid #27644f; border-radius:20px; color:#a9efd6; background:#12372e; font-size:.66rem; font-weight:800; }
+.academic-overview-no-rows { padding:35px !important; color:#9bacbf !important; text-align:center !important; }
+.academic-overview-notice { margin:0 0 13px; padding:11px 13px; border:1px solid #2d5c4d; border-radius:10px; color:#b6f0d7; background:#123127; font-size:.78rem; }
+.academic-overview-status.rejected { color:#ffc2c2; border-color:#71424b; background:#351e27; }
+.academic-overview-status.approved { color:#a9efd6; }
+.academic-overview-status.pending { color:#f3d99b; border-color:#715a2d; background:#352b18; }
+.academic-leave-reason { min-width:160px; white-space:pre-wrap; }
+.academic-leave-review { min-width:270px; display:flex; align-items:center; flex-wrap:wrap; gap:6px; }
+.academic-leave-review input { flex:1 1 100%; min-width:140px; min-height:32px; box-sizing:border-box; padding:6px 8px; border:1px solid #31465b; border-radius:8px; color:#e7eef7; background:#0d1928; font:inherit; font-size:.7rem; }
+.academic-leave-review button { padding:7px 9px; border:1px solid #2c6a54; border-radius:8px; color:#b8f0db; background:#12372e; font-size:.67rem; font-weight:800; cursor:pointer; }
+.academic-leave-review button.reject { border-color:#70414a; color:#ffc5c5; background:#351f27; }
+.academic-leave-review button:disabled { opacity:.6; cursor:wait; }
+@media(max-width:900px) { .academic-overview-metrics { grid-template-columns:repeat(2,minmax(0,1fr)); } .academic-branch-cards { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media(max-width:620px) { .academic-overview-metrics { gap:8px; } .academic-overview-metrics article { min-height:80px; padding:12px; } .academic-overview-section-heading { align-items:flex-start; flex-direction:column; } .academic-overview-section-heading > button { width:100%; justify-content:center; } .academic-branch-cards { grid-template-columns:1fr; } .academic-overview-shortcuts { display:grid; grid-template-columns:1fr 1fr; } .academic-overview-search { box-sizing:border-box; width:100%; min-width:0; } }

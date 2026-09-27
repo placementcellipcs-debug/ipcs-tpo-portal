@@ -71,9 +71,9 @@
 .portal-home h1 span, .login-context h1 span { color: #155eef; }
 .portal-home-copy > p, .login-context > p { max-width: 570px; margin: 0; color: var(--portal-muted); font-size: 1.05rem; line-height: 1.85; }
 .portal-home-actions { display: flex; flex-wrap: wrap; gap: 13px; margin-top: 34px; }
-.portal-home-partner-brand { min-height: 42px; margin-top: 24px; display: inline-flex; align-items: center; gap: 12px; padding: 7px 12px; border: 1px solid rgba(33, 76, 122, .09); border-radius: 12px; background: rgba(255,255,255,.68); }
+.portal-home-partner-brand { min-height: 50px; margin-top: 24px; display: inline-flex; align-items: center; gap: 12px; padding: 7px 12px; border: 1px solid #d9e5f1; border-radius: 12px; background: #edf4fb; }
 .portal-home-partner-brand span { color: #8290a2; font-size: .68rem; font-weight: 800; }
-.portal-home-partner-brand img { display: block; width: 94px; height: 27px; object-fit: contain; }
+.portal-home-partner-brand img { display: block; width: 132px; height: 38px; object-fit: contain; }
 .portal-trust-line { display: flex; align-items: center; gap: 10px; margin-top: 47px; color: #748197; font-size: .82rem; font-weight: 700; }
 .portal-trust-dot { width: 7px; height: 7px; border-radius: 50%; background: #20b7a5; box-shadow: 0 0 0 5px rgba(32, 183, 165, .12); }
 

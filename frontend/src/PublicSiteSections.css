@@ -2,7 +2,7 @@
 .public-story-shell { width: min(1180px, calc(100% - 72px)); margin: 0 auto; }
 .public-story section[id] { scroll-margin-top: 30px; }
 .public-about-section, .public-team-section, .public-placement-section, .public-partners-section, .public-updates-section { padding: 96px 0; }
-.public-about-section { background: linear-gradient(180deg, #fff 0%, #f8fbff 100%); }
+.public-about-section { background: linear-gradient(180deg, #f2f6fa 0%, #edf3f8 100%); }
 .public-section-heading { max-width: 735px; margin-bottom: 38px; }
 .public-section-heading.align-center { margin-right: auto; margin-left: auto; text-align: center; }
 .public-section-eyebrow, .public-card-kicker, .public-subheading > span { display: block; color: #187ba3; font-size: .69rem; font-weight: 900; letter-spacing: .16em; text-transform: uppercase; }
@@ -38,7 +38,7 @@
 .public-milestone strong { color: #fff; font-size: clamp(1.8rem, 3.3vw, 2.55rem); font-weight: 900; letter-spacing: -.07em; }
 .public-milestone span { margin-top: 6px; color: #bdd1e8; font-size: .72rem; font-weight: 700; }
 
-.public-team-section { background: #f7f9fc; }
+.public-team-section { background: #edf2f7; }
 .public-poster-gallery { margin-top: 58px; }
 .public-poster-marquee { overflow: hidden; margin: 18px -1px 0; padding: 7px 1px 18px; mask-image: linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent); }
 .public-poster-marquee-track { width: max-content; display: flex; gap: 16px; animation: poster-marquee-drift 48s linear infinite; }
@@ -75,7 +75,7 @@
 .public-team-card h3 { margin: 7px 0 10px; color: #172e49; font-size: 1.05rem; letter-spacing: -.025em; }
 .public-team-card p { margin: 0; color: #6a7a8e; font-size: .75rem; line-height: 1.68; }
 
-.public-placement-section { background: #fff; }
+.public-placement-section { background: #f2f6fa; }
 .public-recruiter-panel { margin-top: 28px; padding: 25px 27px; display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.1fr); gap: 28px; border: 1px solid #dce9f4; border-radius: 19px; background: linear-gradient(120deg,#f5faff,#f7fcfc); }
 .public-recruiter-intro h3 { margin: 9px 0 8px; color: #173451; font-size: 1.14rem; letter-spacing: -.025em; }
 .public-recruiter-intro p { margin: 0; color: #708198; font-size: .74rem; line-height: 1.65; }
@@ -129,10 +129,14 @@
 .public-media-preview-card { color: inherit; text-decoration: none; }
 .public-video-preview-thumb { background: linear-gradient(145deg, #14263d, #273b55); }
 .public-video-preview-thumb > img { object-fit: cover; }
+.public-media-preview-button { display:block; width:100%; padding:0; border:0; color:inherit; background:transparent; font:inherit; text-align:left; cursor:pointer; }
+.public-media-preview-button:focus-visible { outline:3px solid #1782d1; outline-offset:-3px; border-radius:inherit; }
+.public-media-preview-button .public-poster-image { position:relative; }
+.public-media-preview-button .public-poster-image video { position:absolute; inset:0; width:100%; height:100%; object-fit:contain; background:#0c1524; }
 .public-video-play-badge { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; filter: drop-shadow(0 3px 12px rgba(0,0,0,.35)); transition: transform .2s ease; }
 .public-media-preview-card:hover .public-video-play-badge { transform: scale(1.1); }
 
-.public-partners-section { background: #f7f9fc; }
+.public-partners-section { background: #edf2f7; }
 .public-partners-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 22px; }
 .public-partners-heading .public-section-heading { margin-bottom: 27px; }
 .public-partner-actions { margin-bottom: 31px; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
@@ -153,7 +157,7 @@
 .public-partners-empty { padding: 28px; border: 1px dashed #d5e0eb; border-radius: 15px; color: #758499; background: rgba(255,255,255,.65); text-align: center; font-size: .8rem; }
 @keyframes public-shimmer { to { background-position-x: -220%; } }
 
-.public-updates-section { background: #fff; }
+.public-updates-section { background: #f2f6fa; }
 .public-updates-columns { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); gap: 42px; align-items: start; }
 .public-blog-list { display: grid; gap: 9px; }
 .public-blog-card { min-height: 69px; padding: 11px 13px; display: grid; grid-template-columns: 36px 1fr 20px; align-items: center; gap: 12px; border: 1px solid #e9eef4; border-radius: 12px; background: #fff; transition: border-color .18s ease, transform .18s ease; }

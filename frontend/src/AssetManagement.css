@@ -317,3 +317,39 @@
   .asset-module-content { padding: 13px; }
   .asset-route-nav { width: calc(100% - 28px); margin: 12px auto; overflow-x: auto; flex-wrap: nowrap; }
 }
+
+/* Dark workspace surfaces keep the asset area legible alongside the portal shell. */
+.asset-module-sidebar, .asset-module-content, .asset-route-nav, .asset-register-panel, .asset-item-card, .asset-branch-card, .asset-space-card, .asset-modal, .asset-modal-head { color:#e5edf7 !important; border-color:#293b52 !important; background:#111d2d !important; box-shadow:0 10px 30px rgba(0,0,0,.17) !important; }
+.asset-module-sidebar { background:#0f1a29 !important; }
+.asset-branch-card, .asset-space-card, .asset-item-card { background:linear-gradient(145deg,#132238,#101c2c) !important; }
+.asset-branch-card h2, .asset-space-card h3, .asset-item-info h3, .asset-modal-head h2, .asset-step-heading h2, .asset-registry-intro b { color:#f0f5fb !important; }
+.asset-branch-card p, .asset-space-title > span, .asset-space-metrics, .asset-item-info p, .asset-condition span, .asset-register-table td, .asset-detail-overview span, .asset-spec-grid span { color:#a9b8ca !important; }
+.asset-card-kicker, .asset-step-heading > div:first-child > span, .asset-space-title > span, .asset-sidebar-label { color:#e8b64f !important; }
+.asset-space-metrics, .asset-condition, .asset-detail-tabs, .asset-detail-actions { border-color:#293b52 !important; }
+.asset-branch-glyph, .asset-space-glyph, .asset-item-photo, .asset-state-card, .asset-detail-overview > div, .asset-spec-grid > div, .asset-history-list article > div, .asset-assignment-list article, .asset-condition-photo, .asset-current-holder { color:#cbd8e7 !important; border-color:#293b52 !important; background:#15243a !important; }
+.asset-branch-counts span { color:#b4c2d3 !important; border-color:#2b3d53 !important; background:#132238 !important; }
+.asset-branch-counts b, .asset-space-metrics b, .asset-condition b, .asset-detail-overview b, .asset-spec-grid b, .asset-condition-photo > div b, .asset-history-title b, .asset-assignment-list b { color:#edf4fb !important; }
+.asset-primary-tabs { background:transparent !important; }
+.asset-primary-tabs button { color:#acbbce !important; }
+.asset-primary-tabs button:hover, .asset-primary-tabs button.active { color:#f5f8fc !important; background:rgba(61,123,186,.23) !important; border-color:#365878 !important; }
+.asset-primary-tabs button.asset-route-tab, .asset-icon-button, .asset-register-open, .asset-back-button { color:#c5d2e1 !important; border-color:#324960 !important; background:#182a40 !important; }
+.asset-primary-tabs button.asset-create-tab, .asset-small-action { color:#f3d391 !important; border-color:#75602c !important; background:rgba(171,126,28,.17) !important; }
+.asset-register-table th { color:#b4c5d8 !important; border-color:#293b52 !important; background:#17273b !important; }
+.asset-register-table td { border-color:#26384e !important; }
+.asset-register-table tbody tr:hover { background:#17283d !important; }
+.asset-register-item b { color:#f0f5fb !important; }
+.asset-register-item span, .asset-item-code { color:#f1c45b !important; }
+.asset-status { filter:brightness(.88); }
+.asset-search { color:#9fb0c4 !important; border-color:#2e435b !important; background:#111e2f !important; }
+.asset-search input { color:#edf3fa !important; }
+.asset-form > label:not(.asset-photo-field) { color:#c1cede !important; }
+.asset-form input:not([type=file]), .asset-form select, .asset-form textarea { color:#eef4fb !important; border-color:#344960 !important; background:#0c1726 !important; }
+.asset-form option { color:#eef4fb !important; background:#0c1726 !important; }
+.asset-photo-field { color:#c2dbf4 !important; border-color:#3a5978 !important; background:#172a40 !important; }
+.asset-photo-field b { color:#eff5fc !important; }
+.asset-photo-field small, .asset-modal-head p, .asset-history-list p, .asset-condition-photo > div span { color:#a9bbcf !important; }
+.asset-disposal-records article { border-color:#684334 !important; background:#30241f !important; }
+.asset-toast { color:#eff5fb !important; border-color:#3c536b !important; background:#14243a !important; }
+.asset-route-link { color:#adbed0 !important; }
+.asset-route-link.active { color:#f4d58b !important; border-color:#75602c !important; background:rgba(171,126,28,.17) !important; }
+@media (max-width: 700px) { .asset-depreciation-grid { grid-template-columns:1fr !important; } }

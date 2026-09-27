@@ -11,6 +11,17 @@ const getOptionalH = (headers, target) => {
   const cleanTarget = target.toLowerCase().replace(/[^a-z0-9]/g, '');
   return headers.find(h => (h || '').toLowerCase().replace(/[^a-z0-9]/g, '') === cleanTarget) || null;
 };
+async function ensureAssetHeaders(sheet, requiredHeaders) {
+  await sheet.loadHeaderRow();
+  let headers = [...(sheet.headerValues || [])];
+  const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const missing = requiredHeaders.filter(header => !headers.some(existing => normalized(existing) === normalized(header)));
+  if (missing.length) {
+    headers = [...headers, ...missing];
+    await sheet.setHeaderRow(headers);
+  }
+  return headers;
+}
 const normalize = value => String(value || '').trim().toLowerCase().replace(/\s*branch\s*/g, ' ').replace(/[^a-z0-9]/g, '');
 const rowValue = (row, field) => {
   const values = row?.toObject?.() || {};
@@ -212,6 +223,7 @@ exports.addAsset = async (req, res) => {
 
     if (!assetSheet) return res.status(404).json({ success: false, message: "Asset sheet missing in database." });
     if (req.file && !documentsSheet) return res.status(503).json({ success: false, message: 'Asset photo history is unavailable. No asset was registered.' });
+    const assetHeaders = await ensureAssetHeaders(assetSheet, ['Depreciation_Method', 'Useful_Life_Years', 'Salvage_Value']);
 
     // Generate Unique IDs
     const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
@@ -223,7 +235,7 @@ exports.addAsset = async (req, res) => {
     const photoUrl = req.file ? await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || '') : '';
 
     // 1. Write to Main Assets Sheet
-    const aH = assetSheet.headerValues;
+    const aH = assetHeaders;
     await assetSheet.addRow({
       [getH(aH, 'Asset_ID')]: assetId,
       [getH(aH, 'Asset_Name')]: asset.name,
@@ -240,6 +252,9 @@ exports.addAsset = async (req, res) => {
       [getH(aH, 'Vendor')]: asset.vendor || '',
       [getH(aH, 'Invoice_Number')]: asset.invoice || '',
       [getH(aH, 'Warranty_End')]: asset.warrantyEnd || '',
+      [getH(aH, 'Depreciation_Method')]: asset.depreciationMethod || 'STRAIGHT_LINE',
+      [getH(aH, 'Useful_Life_Years')]: asset.usefulLifeYears || '',
+      [getH(aH, 'Salvage_Value')]: asset.salvageValue || '',
       [getH(aH, 'Created_By')]: userName,
       [getH(aH, 'Timestamp')]: timestamp,
     });
@@ -323,10 +338,16 @@ exports.getAssets = async (req, res) => {
         brand: getVal('brand'),
         model: getVal('model'),
         purchaseDate: getVal('purchasedate'),
+        depreciationMethod: getVal('depreciationmethod') || 'STRAIGHT_LINE',
+        usefulLifeYears: getVal('usefullifeyears'),
+        salvageValue: isAssetAdmin(req) ? getVal('salvagevalue') : '',
         purchaseCost: isAssetAdmin(req) ? getVal('purchasecost') : '',
         vendor: getVal('vendor'),
         invoice: getVal('invoicenumber'),
         warrantyEnd: getVal('warrantyend'),
+        depreciationMethod: getVal('depreciationmethod') || 'STRAIGHT_LINE',
+        usefulLifeYears: getVal('usefullifeyears'),
+        salvageValue: isAssetAdmin(req) ? getVal('salvagevalue') : '',
         createdBy: getVal('createdby'),
         timestamp: getVal('timestamp'),
         photoUrl: photos.length ? rowValue(photos[photos.length - 1], 'Drive_URL') : ''
@@ -424,6 +445,8 @@ exports.getAssetDetails = async (req, res) => {
     const asset = {
       vendor: readAssetValue('vendor'), invoice: readAssetValue('invoicenumber'), purchaseDate: readAssetValue('purchasedate'),
       purchaseCost: isAssetAdmin(req) ? readAssetValue('purchasecost') : '', warrantyEnd: readAssetValue('warrantyend'),
+      depreciationMethod: readAssetValue('depreciationmethod') || 'STRAIGHT_LINE', usefulLifeYears: readAssetValue('usefullifeyears'),
+      salvageValue: isAssetAdmin(req) ? readAssetValue('salvagevalue') : '',
       createdBy: readAssetValue('createdby'), registeredAt: readAssetValue('timestamp')
     };
     const vendorKey = String(asset.vendor || '').trim().toLowerCase();

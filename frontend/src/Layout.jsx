@@ -8,7 +8,7 @@ import {
   WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench, Plus,
   Headset, SignOut,
   Kanban, ImageSquare, ShareNetwork, CheckCircle, ClockCounterClockwise, SlidersHorizontal,
-  GraduationCap, UsersFour, ChalkboardTeacher, CalendarCheck, CaretDown
+  GraduationCap, UsersFour, ChalkboardTeacher, CalendarCheck, CaretDown, Brain
 } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
 
@@ -93,17 +93,20 @@ export default function Layout({ children }) {
 
   useEffect(() => {
     if (!tpoData) return;
+    const savedAccent = localStorage.getItem('ipcs-accent') || 'purple';
+    // The portal uses the dark shell. Appearance settings customize accents only.
     document.body.setAttribute('data-theme', 'dark');
+    document.body.setAttribute('data-accent', savedAccent);
     
     const userRole = (tpoData?.role || '').toUpperCase();
-    const isSuperAdmin = tpoData?.accessType === 'superadmin' || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
+    const isSuperAdmin = tpoData?.accessType === 'superadmin' || userRole.includes('SYSTEM ADMIN') || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
     const isCourseSpecific = userRole.includes('RTH') || userRole.includes('TTH') || userRole.includes('TRAINER') || userRole.includes('TECHNICAL LEAD');
     const myCourse = getStandardCourse(tpoData?.assignedCourse);
 
     try {
       const logsStr = localStorage.getItem('dash_logs');
       if (logsStr) {
-        const logs = JSON.parse(logsStr);
+      const logs = JSON.parse(logsStr);
         const sorted = logs.sort((a,b) => new Date(b.TimeStamp || b.Timestamp || b['Time Stamp'] || 0) - new Date(a.TimeStamp || a.Timestamp || a['Time Stamp'] || 0)).slice(0, 20); 
         
         const mappedNotifs = sorted.map(log => {
@@ -115,6 +118,9 @@ export default function Layout({ children }) {
           const company = getVal('company');
           const status = (getVal('status') || '').toLowerCase();
           const courseRaw = getVal('course');
+          const branchRaw = getVal('branch');
+          const targetRole = getVal('target role') || getVal('recipient role') || getVal('assigned role');
+          const targetUser = getVal('recipient email') || getVal('assigned email') || getVal('target email') || getVal('assigned user');
           
           let title = "Application Updated";
           let desc = `${name}'s status updated to ${getVal('status') || 'Applied'} at ${company}.`;
@@ -131,12 +137,31 @@ export default function Layout({ children }) {
              title = "Action Alert"; desc = `Status changed to '${getVal('status')}' for ${name}.`;
              icon = <WarningCircle size={18} weight="bold" />; color = "#ef4444"; bg = "rgba(239, 68, 68, 0.1)";
           }
-          return { title, desc, icon, color, bg, time: getVal('timestamp') || 'Recently', courseRaw };
+          return { title, desc, icon, color, bg, time: getVal('timestamp') || 'Recently', courseRaw, branchRaw, targetRole, targetUser };
         });
 
         const finalNotifs = mappedNotifs.filter(n => {
-          if (isSuperAdmin || userRole.includes('TPO') || userRole.includes('MANAGER')) return true;
-          if (isCourseSpecific) return getStandardCourse(n.courseRaw) === myCourse;
+          const roleAliases = [userRole];
+          if (userRole.includes('RTH') || userRole.includes('REGIONAL TECHNICAL HEAD')) roleAliases.push('RTH', 'REGIONAL TECHNICAL HEAD');
+          if (userRole.includes('TRAINER')) roleAliases.push('TRAINER');
+          if (userRole.includes('TECHNICAL LEAD') || userRole.includes('TTH')) roleAliases.push('TECHNICAL LEAD', 'TTH');
+          const roleMatches = value => String(value || '').toUpperCase().split(/[,;|]+/).some(role => roleAliases.some(alias => alias.includes(role.trim()) || role.trim().includes(alias)) || role.trim() === 'ALL');
+          const norm = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+          if (n.targetRole && !roleMatches(n.targetRole)) return false;
+          if (n.targetUser) {
+            const target = norm(n.targetUser);
+            if (![tpoData?.email, tpoData?.name, tpoData?.loginId, tpoData?.empId].some(value => norm(value) === target)) return false;
+          }
+          // Activity records without a named role or user recipient are not notifications.
+          if (!n.targetRole && !n.targetUser) return false;
+          if (isSuperAdmin) return true;
+          const allowedBranches = [
+            ...(Array.isArray(tpoData?.assignedBranchesArray) ? tpoData.assignedBranchesArray : String(tpoData?.assignedBranchesArray || '').split(/[,;]+/)),
+            tpoData?.sittingBranch
+          ].map(norm).filter(Boolean);
+          if (n.branchRaw && !allowedBranches.some(branch => ['all', 'all branches'].includes(branch)) && !allowedBranches.some(branch => norm(n.branchRaw) === branch)) return false;
+          if (isCourseSpecific && n.courseRaw && getStandardCourse(n.courseRaw) !== myCourse) return false;
+          // Untargeted events need an explicit branch or course scope. This avoids broadcasting private activity to every role.
           return true;
         }).slice(0, 5); 
 
@@ -163,14 +188,11 @@ export default function Layout({ children }) {
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('SYSTEM ADMIN') || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
   const canCollapseAdminNav = isSuperAdmin || userRole.includes('ADMIN');
   const isTpo = userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER');
-  const isTL = userRole.includes('TECHNICAL LEAD') || userRole.includes('TTH') || isRth || (userRole.includes('MANAGER') && showPlacementAndAcademic) || isSuperAdmin;
-
   // Role Checks
   const showTracker = isTpo && !isSuperAdmin && showPlacementAndAcademic; 
   const showReports = (isSuperAdmin || isTpo) && showPlacementAndAcademic; 
   const showManageAdmin = isSuperAdmin;
   const showStudyMaterials = (isSuperAdmin || isRth || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD') || isTrainer) && showPlacementAndAcademic; 
-  const showTrainerLogs = (isTrainer || isTL) && showPlacementAndAcademic;
   const showStudentApps = isTpo && !isSuperAdmin && showPlacementAndAcademic;
   const showIssues = (isTpo || isSuperAdmin || (userRole.includes('MANAGER') && showPlacementAndAcademic) || userRole.includes('ZONAL')) && showPlacementAndAcademic;
 
@@ -202,16 +224,17 @@ export default function Layout({ children }) {
     return <img src={profilePhotoUrl} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} onError={() => setImgError(true)} />;
   };
 
-  const defaultBackPath = isAssetManager && !isSuperAdmin ? '/assets' : (isSuperAdmin ? '/admin-command' : (isDesigner ? '/media/dashboard' : '/dashboard'));
+  const sectionTheme = location.pathname.startsWith('/assets') ? 'assets' : location.pathname.startsWith('/academic') ? 'academic' : location.pathname.startsWith('/media') ? 'media' : location.pathname.startsWith('/clients') ? 'partners' : 'placement';
+  const defaultBackPath = isAssetManager && !isSuperAdmin ? '/assets' : (isTrainer ? '/trainer' : '/dashboard');
 
   return (
-    <div className="app-layout">
+    <div className={`app-layout app-section-${sectionTheme}`}>
       <main className="main-content">
         <header className="top-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 30px' }}>
           <div className="header-left" style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
             <img src="https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN" alt="IPCS Logo" style={{ height: '35px', objectFit: 'contain' }} />
             <div style={{ width: '1px', height: '25px', backgroundColor: 'rgba(255, 255, 255, 0.15)' }}></div>
-            <img src="https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J" alt="Talenzo Logo" style={{ height: '30px', objectFit: 'contain' }} />
+            <img src="https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J" alt="Talenzo Logo" style={{ width: '132px', height: '42px', objectFit: 'contain', padding: '5px 9px', boxSizing: 'border-box', borderRadius: '9px', background: 'rgba(255,255,255,.07)' }} />
           </div>
 
           <div className="header-actions" style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
@@ -254,7 +277,7 @@ export default function Layout({ children }) {
         </header>
 
         <div className="page-container" style={{ padding: '20px 30px', position: 'relative' }} onClick={() => setIsNotifOpen(false)}>
-          {location.pathname !== '/dashboard' && location.pathname !== '/assets/dashboard' && location.pathname !== '/media/dashboard' && !location.pathname.includes('/academic/') && (
+          {!location.pathname.startsWith('/assets') && !['/dashboard', '/trainer', '/academic'].includes(location.pathname) && location.pathname !== '/media/dashboard' && !location.pathname.includes('/academic/') && (
             <div style={{ marginBottom: '25px' }}>
               <button onClick={() => navigate(defaultBackPath)} style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-muted)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 'bold', transition: '0.2s' }}>
                 <CaretLeft weight="bold" size={16} /> Back to Dashboard
@@ -282,13 +305,25 @@ export default function Layout({ children }) {
           </div>
 
           <div className="pd-nav-list">
+            {(isSuperAdmin || isAssetManager) ? (
+              <>
+                <div className={`pd-nav-item ${location.pathname.startsWith('/dashboard') ? 'active' : ''}`} onClick={() => handleNav('/dashboard')}><SquaresFour size={22} /><span>Dashboard</span></div>
+                <div className={`pd-nav-item ${location.pathname.startsWith('/assets') ? 'active' : ''}`} onClick={() => handleNav('/assets')}><Barcode size={22} /><span>Asset Management</span></div>
+              </>
+            ) : isTrainer ? (
+              <>
+                <div className={`pd-nav-item ${location.pathname === '/trainer' ? 'active-acad' : ''}`} onClick={() => handleNav('/trainer')}><SquaresFour size={22} /><span>Dashboard</span></div>
+                <div className={`pd-nav-item ${location.pathname.startsWith('/academic') ? 'active-acad' : ''}`} onClick={() => handleNav('/academic')}><GraduationCap size={22} /><span>Training &amp; Academics</span></div>
+              </>
+            ) : (
+            <>
             
             {showPlacementAndAcademic && (
               <>
                 {/* 🚨 PLACEMENT MENU */}
                 {navSectionHeading('placement', 'Main Menu')}
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('placement')}>
-                <div className={`pd-nav-item ${isActive(isSuperAdmin ? '/admin-command' : '/dashboard') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav(isSuperAdmin ? '/admin-command' : '/dashboard')}><SquaresFour size={22} weight={isActive(isSuperAdmin ? '/admin-command' : '/dashboard') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>{isSuperAdmin ? 'Admin Overview' : 'Dashboard'}</span></div>
+                <div className={`pd-nav-item ${isActive('/dashboard') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/dashboard')}><SquaresFour size={22} weight={isActive('/dashboard') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Dashboard</span></div>
                 <div className={`pd-nav-item ${isActive('/students') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/students')}><Users size={22} weight={isActive('/students') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Students Directory</span></div>
                 {showIssues && <div className={`pd-nav-item ${isActive('/issues') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/issues')}><Headset size={22} weight={isActive('/issues') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Issue Resolution</span></div>}
                 {showTracker && <div className={`pd-nav-item ${isActive('/tracker') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/tracker')}><Files size={22} weight={isActive('/tracker') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Job Tracker</span></div>}
@@ -306,7 +341,6 @@ export default function Layout({ children }) {
                 <div className={`pd-nav-item ${isActive('/events') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} weight={isActive('/events') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Events</span></div>
                 <div className={`pd-nav-item ${isActive('/talentino') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/talentino')}><UserCheck size={22} weight={isActive('/talentino') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Talentino</span></div>
                 {showStudyMaterials && <div className={`pd-nav-item ${isActive('/study-materials') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/study-materials')}><Book size={22} weight={isActive('/study-materials') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Study Materials</span></div>}
-                {showTrainerLogs && <div className={`pd-nav-item ${isActive('/trainer-logs') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/trainer-logs')}><Notebook size={22} weight={isActive('/trainer-logs') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Daily Log Report</span></div>}
                 {!userRole.includes('MANAGER') && !isTpo && <div className={`pd-nav-item ${isActive('/exams') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/exams')}><FileText size={22} weight={isActive('/exams') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Exams Hub</span></div>}
                 </div>
 
@@ -315,6 +349,9 @@ export default function Layout({ children }) {
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('training')}>
                 <div className={`pd-nav-item ${isAcadActive('/academic/training') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/training')}>
                   <GraduationCap size={22} weight={isAcadActive('/academic/training') === '#10b981' ? 'fill' : 'regular'} /> <span>Student Training</span>
+                </div>
+                <div className={`pd-nav-item ${isAcadActive('/academic/brain-gym') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/brain-gym')}>
+                  <Brain size={22} weight={isAcadActive('/academic/brain-gym') === '#10b981' ? 'fill' : 'regular'} /> <span>Mind Gym</span>
                 </div>
                 <div className={`pd-nav-item ${isAcadActive('/academic/batches') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/batches')}>
                   <UsersFour size={22} weight={isAcadActive('/academic/batches') === '#10b981' ? 'fill' : 'regular'} /> <span>Batch Management</span>
@@ -418,9 +455,12 @@ export default function Layout({ children }) {
               <Gear size={22} weight={isActive('/settings') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Settings</span>
             </div>
             </div>
+            </>
+            )}
           </div>
 
           <div className="pd-footer">
+            {(isSuperAdmin || isAssetManager || isTrainer) && <button type="button" className="pd-settings-btn" onClick={() => handleNav('/settings')}><Gear size={17} /> Settings &amp; appearance</button>}
             <button className="pd-logout-btn hover-lift" onClick={handleLogout}>
               <SignOut size={20} weight="bold" /> Logout
             </button>
@@ -460,6 +500,8 @@ export default function Layout({ children }) {
         .pd-nav-item.active-acad { background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; box-shadow: 0 8px 20px -6px rgba(16, 185, 129, 0.6); }
 
         .pd-footer { padding: 20px; background: rgba(0,0,0,0.1); }
+        .pd-settings-btn { width:100%; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:10px; padding:10px; border:1px solid rgba(255,255,255,.1); border-radius:11px; color:#bac8d9; background:rgba(255,255,255,.035); font:inherit; font-size:.78rem; font-weight:750; cursor:pointer; }
+        .pd-settings-btn:hover { color:#fff; border-color:rgba(255,255,255,.2); background:rgba(255,255,255,.07); }
         .pd-logout-btn { width: 100%; background: #fff; color: #0f172a; border: none; padding: 14px; border-radius: 14px; font-weight: 800; font-size: 0.95rem; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; transition: 0.2s ease; }
         .pd-logout-btn:hover { background: #ef4444; color: #fff; box-shadow: 0 8px 20px -6px rgba(239, 68, 68, 0.5); }
       `}</style>

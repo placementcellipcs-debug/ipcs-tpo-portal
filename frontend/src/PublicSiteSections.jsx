@@ -127,6 +127,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   const [posterNextOffset, setPosterNextOffset] = useState(null);
   const [mediaTab, setMediaTab] = useState('placement-drive');
   const [mediaItems, setMediaItems] = useState([]);
+  const [playingPreview, setPlayingPreview] = useState('');
   const [mediaOpen, setMediaOpen] = useState(true);
   const [mediaLoaded, setMediaLoaded] = useState(false);
   const [mediaLoading, setMediaLoading] = useState(false);
@@ -399,24 +400,29 @@ export default function PublicSiteSections({ page = 'all' }) {
             <div className="public-media-tabs" role="tablist" aria-label="Placement media albums">
               {mediaTabs.map(([key, label]) => mediaPage
                 ? <Link key={key} role="tab" aria-selected={placementCategory === key} className={`public-media-tab${placementCategory === key ? ' active' : ''}`} to={`${mediaBasePath}?category=${key}`}><VideoCamera size={16} />{label}</Link>
-                : <button key={key} type="button" role="tab" aria-selected={mediaTab === key} className={`public-media-tab${mediaTab === key ? ' active' : ''}`} onClick={() => { setMediaTab(key); setMediaOpen(true); setMediaItems([]); setMediaLoaded(false); setMediaLoading(true); setMediaError(false); }}><VideoCamera size={16} />{label}</button>)}
+                : <button key={key} type="button" role="tab" aria-selected={mediaTab === key} className={`public-media-tab${mediaTab === key ? ' active' : ''}`} onClick={() => { setPlayingPreview(''); setMediaTab(key); setMediaOpen(true); setMediaItems([]); setMediaLoaded(false); setMediaLoading(true); setMediaError(false); }}><VideoCamera size={16} />{label}</button>)}
             </div>
             {mediaLoading || ((mediaPage || mediaOpen) && !mediaLoaded) ? <div className="public-poster-grid">{[1, 2, 3].map(item => <div className="public-poster-skeleton" key={item} />)}</div>
               : mediaError ? <div className="public-poster-empty" role="status">Placement media could not be loaded. Check the shared Drive folder connection and try again.</div>
                 : !mediaLoaded && !mediaPage ? <div className="public-poster-empty">Choose an album to load its placement media.</div>
                   : mediaLoaded && !mediaItems.length ? <div className="public-poster-empty">No media has been added to this album yet. Add files to a Drive folder named “{placementCategory === 'placement-drive' ? 'Placement Drive' : placementCategory === 'testimonials' ? 'Testimonials' : placementCategory === 'talentino' ? 'Talentino' : placementCategory === 'clients' ? 'Clients' : placementCategory === 'client-videos' ? 'Client Videos' : 'Videos'}” and it will appear here.</div>
                     : page === 'placement' ? <div className="public-poster-marquee public-media-marquee" aria-label="Placement videos and activities">
-                      <div className="public-poster-marquee-track">{[...mediaItems, ...mediaItems].map((item, index) => <Link className="public-poster-card public-poster-marquee-card public-media-preview-card" key={`${item.id}-${index}`} to={`${mediaBasePath}?category=${placementCategory}`} aria-hidden={index >= mediaItems.length || undefined} tabIndex={index >= mediaItems.length ? -1 : undefined}>
-                        <div className="public-poster-image public-video-preview-thumb">
-                          <img src={item.mediaType === 'video' ? videoThumbnail(item) : `${API_BASE}${item.imageUrl}`} alt={item.mediaType === 'video' ? '' : item.name} loading="lazy" decoding="async" onError={event => {
-                            const fallback = `https://drive.google.com/thumbnail?id=${encodeURIComponent(item.id)}&sz=w640`;
-                            if (item.mediaType === 'video' && event.currentTarget.src !== fallback) event.currentTarget.src = fallback;
-                            else event.currentTarget.style.display = 'none';
-                          }} />
-                          <span className="public-video-play-badge"><PlayCircle size={39} weight="fill" /></span>
-                        </div>
-                        <div className="public-poster-meta"><span>{item.folder}</span><h4>{item.name}</h4></div>
-                      </Link>)}</div>
+                      <div className="public-poster-marquee-track">{[...mediaItems, ...mediaItems].map((item, index) => {
+                        const duplicate = index >= mediaItems.length;
+                        const preview = <><div className="public-poster-image public-video-preview-thumb">
+                          {item.mediaType === 'video' && playingPreview === item.id
+                            ? <video src={`${API_BASE}${item.imageUrl}`} poster={videoThumbnail(item)} controls autoPlay playsInline preload="metadata" aria-label={item.name} />
+                            : <img src={item.mediaType === 'video' ? videoThumbnail(item) : `${API_BASE}${item.imageUrl}`} alt={item.mediaType === 'video' ? '' : item.name} loading="lazy" decoding="async" onError={event => {
+                              const fallback = `https://drive.google.com/thumbnail?id=${encodeURIComponent(item.id)}&sz=w640`;
+                              if (item.mediaType === 'video' && event.currentTarget.src !== fallback) event.currentTarget.src = fallback;
+                              else event.currentTarget.style.display = 'none';
+                            }} />}
+                          {item.mediaType === 'video' && playingPreview !== item.id && <span className="public-video-play-badge"><PlayCircle size={39} weight="fill" /></span>}
+                        </div><div className="public-poster-meta"><span>{item.folder}</span><h4>{item.name}</h4></div></>;
+                        return item.mediaType === 'video'
+                          ? <article className="public-poster-card public-poster-marquee-card public-media-preview-card" key={`${item.id}-${index}`} aria-hidden={duplicate || undefined}>{playingPreview === item.id && !duplicate ? preview : <button type="button" className="public-media-preview-button" onClick={() => !duplicate && setPlayingPreview(item.id)} aria-label={`Play ${item.name}`} tabIndex={duplicate ? -1 : undefined}>{preview}</button>}</article>
+                          : <Link className="public-poster-card public-poster-marquee-card public-media-preview-card" key={`${item.id}-${index}`} to={`${mediaBasePath}?category=${placementCategory}`} aria-hidden={duplicate || undefined} tabIndex={duplicate ? -1 : undefined}>{preview}</Link>;
+                      })}</div>
                     </div> : <div className="public-poster-grid">{mediaItems.map(item => <article className="public-poster-card public-media-card" key={item.id}>
                       {item.mediaType === 'video' ? <div className="public-poster-video"><video src={`${API_BASE}${item.imageUrl}`} poster={videoThumbnail(item)} controls preload="metadata" playsInline aria-label={item.name} /></div> : <a className="public-poster-image" href={`${API_BASE}${item.imageUrl}`} target="_blank" rel="noreferrer"><img src={`${API_BASE}${item.imageUrl}`} alt={item.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></a>}
                       <div className="public-poster-meta"><span>{item.folder}</span><h4>{item.name}</h4></div>

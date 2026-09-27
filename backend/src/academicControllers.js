@@ -23,6 +23,7 @@ const SHEET_TITLES = {
   attendance: ['05_Attendance', 'attendance'],
   topicProgress: ['06_Topic_Progress', 'topicprogress'],
   diary: ['07_Diary', 'diary'],
+  leaveRequests: ['08_Leave_Requests', 'Leave Requests', 'Student Leaves', 'Student Leave Requests', 'Leave Form Responses', 'Form Responses 1', 'Form Responses 2', 'leave requests', 'leaves'],
 };
 
 const FIELD_HEADERS = {
@@ -46,6 +47,13 @@ const FIELD_HEADERS = {
   verifiedBy: ['verifiedby', 'verifierid'], diaryId: ['diaryid'], eventType: ['eventtype', 'type'],
   title: ['title'], description: ['description', 'notes'], createdBy: ['createdby', 'trainername'],
   comprehension: ['comprehension', 'understanding'], completed: ['completed', 'topicstatus'],
+  leaveId: ['leaveid', 'requestid', 'applicationid'],
+  leaveStatus: ['leavestatus', 'approvalstatus', 'requeststatus', 'status'],
+  fromDate: ['fromdate', 'startdate', 'leavefrom'], toDate: ['todate', 'enddate', 'leaveto'],
+  reason: ['leavereason', 'reason', 'notes'],
+  requestedAt: ['requestedat', 'submittedat', 'requestdate', 'createdat'],
+  approvedBy: ['approvedby', 'reviewedby', 'decidedby', 'reviewer'], decisionDate: ['decisiondate', 'reviewedat', 'approvedat'],
+  approvalNotes: ['approvalnotes', 'reviewremarks', 'decisionremarks', 'adminremarks'],
 };
 
 const normalize = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -100,6 +108,25 @@ function makeRow(sheet, values) {
   return row;
 }
 
+async function ensureLeaveReviewHeaders(sheet) {
+  await sheet.loadHeaderRow();
+  const headers = [...(sheet.headerValues || [])];
+  const required = [
+    ['leaveStatus', 'Leave Status'],
+    ['approvedBy', 'Reviewed By'],
+    ['decisionDate', 'Decision Date'],
+    ['approvalNotes', 'Approval Notes'],
+  ];
+  let changed = false;
+  for (const [field, label] of required) {
+    if (!getFieldHeader(headers, field)) { headers.push(label); changed = true; }
+  }
+  if (changed) {
+    await sheet.setHeaderRow(headers);
+    await sheet.loadHeaderRow();
+  }
+}
+
 function mapRow(row, fields) {
   return Object.fromEntries(fields.map(field => [field, readField(row, field)]));
 }
@@ -126,6 +153,7 @@ function mapStudent(row) {
     mainCourse: read(['course', 'maincourse']),
     subCourse: read(['subcourse']),
     branch: read(['branch']),
+    status: read(['studentstatus', 'enrollmentstatus', 'coursestatus', 'status']),
   };
 }
 
@@ -138,9 +166,10 @@ async function readAllAcademicData(force = false) {
   if (dataPromise) return dataPromise;
   dataPromise = (async () => {
     await loadAcademicDoc();
-    const keys = ['training', 'batches', 'topics', 'sessions', 'attendance', 'topicProgress', 'diary'];
-    const [trainingRows, batchRows, topicRows, sessionRows, attendanceRows, progressRows, diaryRows] = await Promise.all(
-      keys.map(key => readRows(findSheet(key)))
+    const keys = ['training', 'batches', 'topics', 'sessions', 'attendance', 'topicProgress', 'diary', 'leaveRequests'];
+    const leaveSheet = findSheet('leaveRequests');
+    const [trainingRows, batchRows, topicRows, sessionRows, attendanceRows, progressRows, diaryRows, leaveRows] = await Promise.all(
+      keys.map(key => readRows(key === 'leaveRequests' ? leaveSheet : findSheet(key)))
     );
     const masterStudents = getCache()?.students || [];
     const students = masterStudents.map(mapStudent).filter(student => student.studentId);
@@ -176,8 +205,13 @@ async function readAllAcademicData(force = false) {
     const topicProgress = mapRecords(progressRows, ['trainingId', 'studentId', 'topicId', 'topic', 'completed', 'comprehension', 'remarks']);
     const diary = mapRecords(diaryRows, ['diaryId', 'studentId', 'trainingId', 'date', 'eventType', 'title', 'description', 'createdBy'])
       .map(record => ({ ...record, studentName: studentMap.get(String(record.studentId).trim().toLowerCase())?.studentName || '' }));
+    const leaveRequests = mapRecords(leaveRows, ['leaveId', 'studentId', 'studentName', 'mainCourse', 'branch', 'fromDate', 'toDate', 'reason', 'leaveStatus', 'requestedAt', 'approvedBy', 'decisionDate', 'approvalNotes'])
+      .map(record => {
+        const student = studentMap.get(String(record.studentId).trim().toLowerCase()) || {};
+        return { ...record, leaveId: record.leaveId || `ROW-${record.rowNumber}`, studentName: record.studentName || student.studentName || '', mainCourse: record.mainCourse || student.mainCourse || '', branch: record.branch || student.branch || '' };
+      });
 
-    cachedData = { training, batches, topics, sessions, attendance, topicProgress, diary, students };
+    cachedData = { training, batches, topics, sessions, attendance, topicProgress, diary, leaveRequests, leaveRequestsAvailable: Boolean(leaveSheet), students };
     cachedAt = Date.now();
     return cachedData;
   })();
@@ -256,6 +290,8 @@ function scopeAcademicData(data, user) {
     topics,
     sessions,
     attendance,
+    leaveRequests: data.leaveRequests.filter(record => canAccessAcademicRecord(user, record)),
+    leaveRequestsAvailable: data.leaveRequestsAvailable,
     topicProgress: data.topicProgress.filter(record => trainingIds.has(cleanText(record.trainingId)) || studentIds.has(cleanText(record.studentId).toLowerCase())),
     diary: data.diary.filter(record => trainingIds.has(cleanText(record.trainingId)) || studentIds.has(cleanText(record.studentId).toLowerCase())),
     students,
@@ -271,6 +307,37 @@ exports.getAcademicData = async (req, res) => {
   try {
     const data = scopeAcademicData(await readAllAcademicData(), req.portalUser);
     res.json({ success: true, ...data });
+  } catch (error) { respondError(res, error); }
+};
+
+exports.reviewLeaveRequest = async (req, res) => {
+  try {
+    const body = req.body || {};
+    const role = String(req.portalUser?.role || '').toUpperCase();
+    const canReview = req.portalUser?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD'].some(value => role.includes(value)) || ['BRANCH MANAGER', 'MANAGER', 'RTH', 'REGIONAL TECHNICAL HEAD', 'TECHNICAL LEAD', 'TTH', 'TRAINER'].some(value => role.includes(value));
+    if (!canReview) return res.status(403).json({ success: false, message: 'Your role cannot review leave requests.' });
+    const leaveId = cleanText(body.leaveId);
+    const decision = cleanText(body.status);
+    if (!leaveId || !['Approved', 'Rejected'].includes(decision)) return res.status(400).json({ success: false, message: 'Choose a leave request and approve or reject it.' });
+    const sheet = requireSheet('leaveRequests', res);
+    if (!sheet) return;
+    await ensureLeaveReviewHeaders(sheet);
+    const rows = await readRows(sheet);
+    const row = leaveId.startsWith('ROW-')
+      ? rows.find(item => Number(item.rowNumber) === Number(leaveId.slice(4)))
+      : rows.find(item => cleanText(readField(item, 'leaveId')).toLowerCase() === leaveId.toLowerCase());
+    if (!row) return res.status(404).json({ success: false, message: 'Leave request not found.' });
+    const scoped = scopeAcademicData(await readAllAcademicData(true), req.portalUser);
+    if (!scoped.leaveRequests.some(record => cleanText(record.leaveId) === leaveId)) return res.status(403).json({ success: false, message: 'This leave request is outside your branch or course assignment.' });
+    row.assign(makeRow(sheet, {
+      leaveStatus: decision,
+      approvedBy: cleanText(req.portalUser?.name),
+      decisionDate: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      approvalNotes: cleanText(body.notes),
+    }));
+    await row.save();
+    invalidateAcademicCache();
+    res.json({ success: true, message: `Leave request ${decision.toLowerCase()}.` });
   } catch (error) { respondError(res, error); }
 };
 

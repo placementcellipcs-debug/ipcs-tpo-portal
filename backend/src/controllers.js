@@ -3033,7 +3033,9 @@ exports.getBranches = (req, res) => {
       return { 
         no: index + 1, 
         region: regionName || '', 
-        branch: branchName || '' 
+        branch: branchName || '',
+        latitude: typeof row.get === 'function' ? (row.get('Latitude') || row.get('Lat') || '') : '',
+        longitude: typeof row.get === 'function' ? (row.get('Longitude') || row.get('Lng') || row.get('Lon') || '') : ''
       };
     }).filter(b => b.branch !== '');
 
@@ -3056,23 +3058,61 @@ exports.getBranches = (req, res) => {
 
 exports.addBranch = async (req, res) => {
   try {
-    const { no, region, branch } = req.body;
+    const { no, region, branch, latitude, longitude } = req.body;
+    if (latitude !== '' && latitude !== undefined && (!Number.isFinite(Number(latitude)) || Number(latitude) < -90 || Number(latitude) > 90)) return res.status(400).json({ success: false, message: 'Latitude must be between -90 and 90.' });
+    if (longitude !== '' && longitude !== undefined && (!Number.isFinite(Number(longitude)) || Number(longitude) < -180 || Number(longitude) > 180)) return res.status(400).json({ success: false, message: 'Longitude must be between -180 and 180.' });
     const sheet = doc.sheetsByTitle["Branches"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
-    await sheet.addRow([no, region, branch]);
+    await sheet.loadHeaderRow();
+    let headers = sheet.headerValues || [];
+    const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const find = names => headers.find(header => names.includes(normalized(header)));
+    if (!find(['latitude', 'lat']) || !find(['longitude', 'long', 'lng', 'lon'])) {
+      headers = [...headers];
+      if (!find(['latitude', 'lat'])) headers.push('Latitude');
+      if (!find(['longitude', 'long', 'lng', 'lon'])) headers.push('Longitude');
+      await sheet.setHeaderRow(headers);
+    }
+    const header = names => headers.find(value => names.includes(normalized(value)));
+    const newRow = {
+      [header(['no', 'number', 'index']) || headers[0]]: no,
+      [header(['regionstate', 'region', 'state']) || headers[1]]: region,
+      [header(['branch', 'branchname', 'branchlocation']) || headers[2]]: branch,
+      [header(['latitude', 'lat'])]: latitude || '',
+      [header(['longitude', 'long', 'lng', 'lon'])]: longitude || ''
+    };
+    await sheet.addRow(newRow);
     refreshCache(); res.json({ success: true, message: "Branch saved" });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 exports.updateBranch = async (req, res) => {
   try {
-    const { oldBranch, no, region, branch } = req.body;
+    const { oldBranch, no, region, branch, latitude, longitude } = req.body;
+    if (latitude !== '' && latitude !== undefined && (!Number.isFinite(Number(latitude)) || Number(latitude) < -90 || Number(latitude) > 90)) return res.status(400).json({ success: false, message: 'Latitude must be between -90 and 90.' });
+    if (longitude !== '' && longitude !== undefined && (!Number.isFinite(Number(longitude)) || Number(longitude) < -180 || Number(longitude) > 180)) return res.status(400).json({ success: false, message: 'Longitude must be between -180 and 180.' });
     const sheet = doc.sheetsByTitle["Branches"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
+    await sheet.loadHeaderRow();
+    let headers = sheet.headerValues || [];
+    const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const find = names => headers.find(header => names.includes(normalized(header)));
+    if (!find(['latitude', 'lat']) || !find(['longitude', 'long', 'lng', 'lon'])) {
+      headers = [...headers];
+      if (!find(['latitude', 'lat'])) headers.push('Latitude');
+      if (!find(['longitude', 'long', 'lng', 'lon'])) headers.push('Longitude');
+      await sheet.setHeaderRow(headers);
+    }
+    const header = names => headers.find(value => names.includes(normalized(value)));
     const rows = await sheet.getRows();
-    const rowToUpdate = rows.find(r => r._rawData[2] === oldBranch);
+    const branchHeader = header(['branch', 'branchname', 'branchlocation']) || headers[2];
+    const rowToUpdate = rows.find(r => String(r.get(branchHeader) || '').trim() === String(oldBranch || '').trim());
     if (rowToUpdate) {
-      rowToUpdate._rawData[0] = no; rowToUpdate._rawData[1] = region; rowToUpdate._rawData[2] = branch;
+      rowToUpdate.set(header(['no', 'number', 'index']) || headers[0], no);
+      rowToUpdate.set(header(['regionstate', 'region', 'state']) || headers[1], region);
+      rowToUpdate.set(branchHeader, branch);
+      rowToUpdate.set(header(['latitude', 'lat']), latitude || '');
+      rowToUpdate.set(header(['longitude', 'long', 'lng', 'lon']), longitude || '');
       await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Branch updated" });
     } else { res.status(404).json({ success: false, message: "Branch not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }

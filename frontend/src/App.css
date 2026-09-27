@@ -619,10 +619,10 @@
 
 /* Light Mode Overrides */
 [data-theme="light"] {
-  --bg-dark: #f8fafc;
-  --bg-surface: #ffffff;
-  --card-bg: #ffffff;
-  --card-border: #e2e8f0;
+  --bg-dark: #edf2f7;
+  --bg-surface: #f5f8fc;
+  --card-bg: #f5f8fc;
+  --card-border: #d5dfeb;
   --text-main: #0f172a;
   --text-muted: #64748b;
   --accent-primary: #0284c7;
@@ -652,6 +652,25 @@
   background: linear-gradient(90deg, #f1f5f9 25%, #e2e8f0 50%, #f1f5f9 75%);
   background-size: 200% 100%;
   animation: shimmerPulse 1.6s infinite ease-in-out;
+}
+
+.pd-nav-item.active { background: var(--accent-primary) !important; box-shadow: 0 8px 20px -6px var(--accent-glow) !important; }
+.app-section-assets .pd-nav-item.active { background: linear-gradient(135deg,#b7791f,#d69e2e) !important; }
+.app-section-academic .pd-nav-item.active, .pd-nav-item.active-acad { background: linear-gradient(135deg,#07866c,#10b981) !important; }
+.app-section-media .pd-nav-item.active { background: linear-gradient(135deg,#7046c5,#9668eb) !important; }
+.app-section-partners .pd-nav-item.active { background: linear-gradient(135deg,#c04e6f,#e06b86) !important; }
+.pd-nav-preference { display:flex; align-items:center; gap:9px; margin: auto 0 8px; padding: 10px 18px; border-radius: 11px; color:#9baac0; font-size:.8rem; font-weight:750; cursor:pointer; }
+.pd-nav-preference:hover { color:#e8f1fc; background:rgba(255,255,255,.05); }
+@media (max-width: 700px) {
+  .top-header { padding: 10px 14px !important; }
+  .header-left { gap: 8px !important; }
+  .header-left > img:first-child { max-width: 75px; height: 30px !important; }
+  .header-left > img:last-child { width: 104px !important; height: 36px !important; }
+  .header-actions { gap: 12px !important; }
+  .page-container { padding: 14px !important; }
+  .settings-layout { grid-template-columns: 1fr !important; gap: 14px !important; }
+  .settings-layout > div:first-child { flex-direction: row !important; flex-wrap: wrap; }
+  .settings-layout > div:last-child { padding: 18px !important; }
 }
 
 /* Pagination Bar Styles */

@@ -38,7 +38,7 @@ export default function AddAsset() {
   
   const [asset, setAsset] = useState({
     name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', location: '', 
-    condition: 'NEW', brand: '', model: '', purchaseDate: '', purchaseCost: '', vendor: '', invoice: '', warrantyEnd: ''
+    condition: 'NEW', brand: '', model: '', purchaseDate: '', purchaseCost: '', vendor: '', invoice: '', warrantyEnd: '', depreciationMethod: 'STRAIGHT_LINE', usefulLifeYears: '', salvageValue: ''
   });
 
   const [customFields, setCustomFields] = useState([]);
@@ -127,7 +127,7 @@ export default function AddAsset() {
       if(res.data.success) {
         setNotification({ type: 'success', text: `Asset ${res.data.assetId} successfully registered!` });
         // Reset form
-        setAsset({ name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', location: '', condition: 'NEW', brand: '', model: '', purchaseDate: '', purchaseCost: '', vendor: '', invoice: '', warrantyEnd: '' });
+        setAsset({ name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', location: '', condition: 'NEW', brand: '', model: '', purchaseDate: '', purchaseCost: '', vendor: '', invoice: '', warrantyEnd: '', depreciationMethod: 'STRAIGHT_LINE', usefulLifeYears: '', salvageValue: '' });
         setCustomLocation('');
         setCustomFields([]);
         if (assetPhotoPreviewRef.current) URL.revokeObjectURL(assetPhotoPreviewRef.current);
@@ -310,6 +310,15 @@ export default function AddAsset() {
                 <div>
                   <label className="data-label">Warranty End Date</label>
                   <input type="date" className="premium-input" style={{ width: '100%' }} value={asset.warrantyEnd} onChange={e => setAsset({...asset, warrantyEnd: e.target.value})} />
+                </div>
+              </div>
+              <div style={{ marginTop: '20px', padding: '17px', border: '1px solid rgba(245,158,11,.25)', borderRadius: '13px', background: 'rgba(245,158,11,.055)' }}>
+                <h3 style={{ margin: '0 0 6px', color: '#fbbf24', fontSize: '.96rem' }}>Depreciation settings</h3>
+                <p style={{ margin: '0 0 14px', color: '#aab8c8', fontSize: '.76rem', lineHeight: 1.5 }}>Use for durable assets with a purchase cost and service life. Paper, stationery, and other stock consumed over time belong in <b>Consumables</b>, where quantities are tracked instead.</p>
+                <div className="asset-depreciation-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: '14px' }}>
+                  <label className="data-label">Method<select className="premium-select" style={{ width: '100%', marginTop: 6 }} value={asset.depreciationMethod} onChange={e => setAsset({ ...asset, depreciationMethod: e.target.value })}><option value="STRAIGHT_LINE">Straight line</option><option value="DECLINING_BALANCE">Declining balance</option><option value="NONE">Do not depreciate</option></select></label>
+                  <label className="data-label">Useful life (years)<input type="number" min="0" step="0.5" className="premium-input" style={{ width: '100%', marginTop: 6 }} value={asset.usefulLifeYears} onChange={e => setAsset({ ...asset, usefulLifeYears: e.target.value })} placeholder="e.g. 5" /></label>
+                  <label className="data-label">Salvage value (₹)<input type="number" min="0" step="0.01" className="premium-input" style={{ width: '100%', marginTop: 6 }} value={asset.salvageValue} onChange={e => setAsset({ ...asset, salvageValue: e.target.value })} placeholder="e.g. 5000" /></label>
                 </div>
               </div>
             </div>

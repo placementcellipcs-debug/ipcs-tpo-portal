@@ -20,7 +20,7 @@ export default function Branches() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  const [formData, setFormData] = useState({ oldBranch: '', no: '', region: '', branch: '' });
+  const [formData, setFormData] = useState({ oldBranch: '', no: '', region: '', branch: '', latitude: '', longitude: '' });
 
   const fetchBranches = async () => {
     try {
@@ -47,19 +47,21 @@ export default function Branches() {
   const openAddModal = () => {
     setIsEditMode(false);
     // 🚨 Auto-generates the next index number based on the list length
-    setFormData({ oldBranch: '', no: (branches.length + 1).toString(), region: '', branch: '' });
+    setFormData({ oldBranch: '', no: (branches.length + 1).toString(), region: '', branch: '', latitude: '', longitude: '' });
     setIsModalOpen(true);
   };
 
   const openEditModal = (b) => {
     setIsEditMode(true);
-    setFormData({ oldBranch: b.branch, no: b.no, region: b.region, branch: b.branch });
+    setFormData({ oldBranch: b.branch, no: b.no, region: b.region, branch: b.branch, latitude: b.latitude || '', longitude: b.longitude || '' });
     setIsModalOpen(true);
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.branch || !formData.region) return alert("Region and Branch are required");
+    if (formData.latitude !== '' && (Number(formData.latitude) < -90 || Number(formData.latitude) > 90)) return alert('Latitude must be between -90 and 90.');
+    if (formData.longitude !== '' && (Number(formData.longitude) < -180 || Number(formData.longitude) > 180)) return alert('Longitude must be between -180 and 180.');
     setIsSubmitting(true);
 
     const endpoint = isEditMode ? `${API_BASE}/api/admin/branches/update` : `${API_BASE}/api/admin/branches/add`;
@@ -70,7 +72,7 @@ export default function Branches() {
         setIsModalOpen(false);
         fetchBranches();
       }
-    } catch (err) {
+    } catch {
       alert(`Failed to ${isEditMode ? 'update' : 'add'} branch`);
     } finally {
       setIsSubmitting(false);
@@ -84,7 +86,7 @@ export default function Branches() {
       if (res.data.success) {
         setBranches(branches.filter(b => b.branch !== branchName));
       }
-    } catch (err) {
+    } catch {
       alert("Failed to delete branch");
     }
   };
@@ -111,22 +113,23 @@ export default function Branches() {
           <table className="modern-table">
             <thead>
               <tr>
-                <th style={{ width: '10%' }}>No.</th>
-                <th style={{ width: '40%' }}>Region / State</th>
-                <th style={{ width: '35%' }}>Branch Location</th>
-                <th style={{ width: '15%', textAlign: 'center' }}>Actions</th>
+                <th style={{ width: '8%' }}>No.</th>
+                <th style={{ width: '26%' }}>Region / State</th>
+                <th style={{ width: '22%' }}>Branch Location</th>
+                <th style={{ width: '25%' }}>Latitude / Longitude</th>
+                <th style={{ width: '19%', textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="4" style={{ textAlign: 'center', padding: '3rem' }}>
+                  <td colSpan="5" style={{ textAlign: 'center', padding: '3rem' }}>
                     <CircleNotch size={32} className="ph-spin" color="var(--accent-primary)" />
                   </td>
                 </tr>
               ) : branches.length === 0 ? (
                 <tr>
-                  <td colSpan="4" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  <td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
                     No branches found. Add a branch to get started.
                   </td>
                 </tr>
@@ -136,6 +139,7 @@ export default function Branches() {
                     <td style={{ color: 'var(--text-muted)' }}>{b.no || i + 1}</td>
                     <td><strong style={{ color: 'var(--text-main)' }}>{b.region}</strong></td>
                     <td><strong style={{ color: '#8b5cf6' }}>{b.branch}</strong></td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '.82rem' }}>{b.latitude || b.longitude ? `${b.latitude || '—'}, ${b.longitude || '—'}` : 'Not set'}</td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
                         <button onClick={() => openEditModal(b)} style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Edit">
@@ -181,6 +185,11 @@ export default function Branches() {
               <div className="form-group" style={{ marginBottom: '25px' }}>
                 <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Branch Name *</label>
                 <input type="text" className="sleek-input" style={{ width: '100%' }} value={formData.branch} onChange={e => setFormData({...formData, branch: e.target.value})} placeholder="e.g. Calicut" required />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '22px' }}>
+                <div className="form-group"><label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Latitude</label><input type="number" step="any" min="-90" max="90" className="sleek-input" style={{ width: '100%' }} value={formData.latitude} onChange={e => setFormData({ ...formData, latitude: e.target.value })} placeholder="e.g. 8.5241" /></div>
+                <div className="form-group"><label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Longitude</label><input type="number" step="any" min="-180" max="180" className="sleek-input" style={{ width: '100%' }} value={formData.longitude} onChange={e => setFormData({ ...formData, longitude: e.target.value })} placeholder="e.g. 76.9366" /></div>
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '1.5rem' }}>

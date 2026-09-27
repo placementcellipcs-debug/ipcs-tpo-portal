@@ -260,6 +260,7 @@ app.post('/api/academic/batches/add', academicControllers.addBatch);
 app.post('/api/academic/batches/update', academicControllers.updateBatch);
 app.post('/api/academic/sessions/add', academicControllers.addSession);
 app.post('/api/academic/attendance/update', academicControllers.updateAttendance);
+app.post('/api/academic/leaves/review', academicControllers.reviewLeaveRequest);
 app.post('/api/academic/diary/add', academicControllers.addDiaryEntry);
 
 // ---------------------------------------------------------

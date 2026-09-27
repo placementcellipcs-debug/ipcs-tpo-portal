@@ -10,6 +10,7 @@ const readUser = () => {
   try { return JSON.parse(localStorage.getItem('tpoData') || '{}'); } catch { return {}; }
 };
 const clean = value => String(value || '').trim().toLowerCase();
+const branchKey = value => clean(value).replace(/\b(branch|office)\b/g, '').replace(/[^a-z0-9]/g, '');
 const fileImage = value => {
   if (!value) return '';
   const match = String(value).match(/(?:file\/d\/|[?&]id=|\/d\/)([\w-]{20,})/);
@@ -97,13 +98,13 @@ export default function AssetList() {
     return () => window.clearTimeout(timeout);
   }, [message]);
 
-  const branchAssets = useMemo(() => assets.filter(asset => clean(asset.branch) === clean(selectedBranch)), [assets, selectedBranch]);
+  const branchAssets = useMemo(() => assets.filter(asset => branchKey(asset.branch) === branchKey(selectedBranch)), [assets, selectedBranch]);
   const spaces = useMemo(() => {
     const names = new Set(branchAssets.map(asset => asset.location?.trim() || 'Unassigned space'));
     dbData.locations.forEach(location => {
       const name = location.locationname || location.name || location.location || '';
       const branch = location.branch || location.branchname || '';
-      if (name && (!branch || clean(branch) === clean(selectedBranch))) names.add(name);
+      if (name && (!branch || branchKey(branch) === branchKey(selectedBranch))) names.add(name);
     });
     return [...names].sort((a, b) => a.localeCompare(b));
   }, [branchAssets, dbData.locations, selectedBranch]);
@@ -261,14 +262,14 @@ export default function AssetList() {
                 <td>{assetView === 'assignments' ? item.assignedTo || item.employeeName || item.custodian || 'Assigned' : item.vendor || '—'}</td>
                 <td>{item.condition || 'GOOD'}</td>
                 <td><span className={`asset-status status-${String(item.status || 'AVAILABLE').toLowerCase()}`}>{statusLabel(item.status)}</span></td>
-                <td><div className="asset-row-actions"><button type="button" className="asset-register-open" onClick={() => openDetails(item)}>History <ArrowRight size={15} /></button>{canManage && assetView === 'assignments' && <button type="button" className="asset-register-open asset-return-inline" onClick={() => setReturnItem(item)}>Return item</button>}</div></td>
+                <td><div className="asset-row-actions"><button type="button" className="asset-register-open" onClick={() => openDetails(item)}>History <ArrowRight size={15} /></button>{canManage && item.status === 'AVAILABLE' && <button type="button" className="asset-register-open asset-assign-inline" onClick={() => setAssignItem(item)}>Assign</button>}{canManage && item.status === 'ASSIGNED' && <button type="button" className="asset-register-open asset-return-inline" onClick={() => setReturnItem(item)}>Return item</button>}</div></td>
               </tr>)}
             </tbody></table></div> : <div className="asset-state-card">{assetView === 'retired' ? 'No retired items match this search.' : 'No items match this search.'}</div>}
           </section>
         ) : !selectedBranch ? (
           <section className="asset-branch-grid" aria-label="Branches">
             {dbData.branches.map(branch => {
-              const list = assets.filter(item => clean(item.branch) === clean(branch));
+              const list = assets.filter(item => branchKey(item.branch) === branchKey(branch));
               const roomCount = new Set(list.map(item => item.location?.trim() || 'Unassigned space')).size;
               return (
                 <button className="asset-branch-card" type="button" key={branch} onClick={() => openBranch(branch)}>
@@ -344,6 +345,9 @@ export default function AssetList() {
                 <div><span>Invoice</span><b>{detailData.asset.invoice || details.invoice || '—'}</b></div>
                 <div><span>Purchased</span><b>{detailData.asset.purchaseDate || details.purchaseDate || '—'}</b></div>
                 <div><span>Warranty through</span><b>{detailData.asset.warrantyEnd || details.warrantyEnd || '—'}</b></div>
+                <div><span>Depreciation method</span><b>{String(detailData.asset.depreciationMethod || 'STRAIGHT_LINE').replaceAll('_', ' ')}</b></div>
+                <div><span>Useful life</span><b>{detailData.asset.usefulLifeYears ? `${detailData.asset.usefulLifeYears} years` : 'Not set'}</b></div>
+                <div><span>Salvage value</span><b>{detailData.asset.salvageValue || '—'}</b></div>
                 {detailData.asset.purchaseCost !== '' && detailData.asset.purchaseCost !== undefined && <div><span>Purchase cost</span><b>{detailData.asset.purchaseCost}</b></div>}
               </div>
               <h3>Condition photos</h3>
