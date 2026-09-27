@@ -317,7 +317,7 @@ export default function PublicSiteSections({ page = 'all' }) {
               const photo = profilePhotoFor(person, teamPhotos);
               const driveId = teamProfilePhotoIds[person.name];
               const profilePhotoUrl = driveId
-                ? `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w900`
+                ? `${API_BASE}/api/public/team-photos/${encodeURIComponent(driveId)}`
                 : photo?.imageUrl ? `${API_BASE}${photo.imageUrl}` : '';
               const initials = person.name.split(' ').filter(part => /^[A-Z]/.test(part) && !['Mr.', 'Ms.'].includes(part)).slice(0, 2).map(part => part[0]).join('');
               return <article className="public-team-card" key={person.name}>
@@ -325,10 +325,13 @@ export default function PublicSiteSections({ page = 'all' }) {
                   <span className="public-team-photo-fallback" aria-hidden="true">{initials}</span>
                   {profilePhotoUrl && <img src={profilePhotoUrl} alt={`${person.name} profile`} loading="lazy" onError={event => {
                     const sources = driveId
-                      ? [`https://lh3.googleusercontent.com/d/${encodeURIComponent(driveId)}`, `https://drive.google.com/uc?export=view&id=${encodeURIComponent(driveId)}`, photo?.imageUrl ? `${API_BASE}${photo.imageUrl}` : '']
-                      : [photo?.imageUrl ? `${API_BASE}${photo.imageUrl}` : ''];
-                    const nextSource = sources.find(source => source && source !== event.currentTarget.src);
-                    if (nextSource) event.currentTarget.src = nextSource;
+                      ? [`https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w1200`, `https://lh3.googleusercontent.com/d/${encodeURIComponent(driveId)}`, `https://drive.google.com/uc?export=view&id=${encodeURIComponent(driveId)}`, photo?.imageUrl ? `${API_BASE}${photo.imageUrl}` : '']
+                      : [];
+                    const nextSource = sources[Number(event.currentTarget.dataset.fallbackIndex || 0)];
+                    if (nextSource) {
+                      event.currentTarget.dataset.fallbackIndex = String(Number(event.currentTarget.dataset.fallbackIndex || 0) + 1);
+                      event.currentTarget.src = nextSource;
+                    }
                     else event.currentTarget.style.display = 'none';
                   }} />}
                 </div>
@@ -399,9 +402,8 @@ export default function PublicSiteSections({ page = 'all' }) {
               <div className="public-poster-marquee" aria-label="Recent placement posters">
                 <div className="public-poster-marquee-track">
                   {[...posters, ...posters].map((poster, index) => (
-                    <a className="public-poster-card public-poster-marquee-card" key={`${poster.id}-${index}`} href={`${API_BASE}${poster.imageUrl}`} target="_blank" rel="noreferrer" aria-hidden={index >= posters.length || undefined} tabIndex={index >= posters.length ? -1 : undefined}>
-                      <div className="public-poster-image"><img src={`${API_BASE}${poster.imageUrl}`} alt={poster.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></div>
-                      <div className="public-poster-meta"><span>{poster.folder}</span><h4>{poster.name}</h4></div>
+                    <a className="public-poster-card public-poster-marquee-card" key={`${poster.id}-${index}`} href={`${API_BASE}${poster.imageUrl}`} target="_blank" rel="noreferrer" aria-label={poster.name} aria-hidden={index >= posters.length || undefined} tabIndex={index >= posters.length ? -1 : undefined}>
+                      <div className="public-poster-image"><img src={`${API_BASE}${poster.imageUrl}`} alt={poster.name} loading="lazy" decoding="async" /></div>
                     </a>
                   ))}
                 </div>
@@ -409,9 +411,8 @@ export default function PublicSiteSections({ page = 'all' }) {
             ) : (
               <div className="public-poster-grid">
                 {posters.map(poster => (
-                  <a className="public-poster-card" key={poster.id} href={`${API_BASE}${poster.imageUrl}`} target="_blank" rel="noreferrer">
-                    <div className="public-poster-image"><img src={`${API_BASE}${poster.imageUrl}`} alt={poster.name} loading="lazy" decoding="async" /><span className="public-poster-open"><ArrowUpRight size={17} /></span></div>
-                    <div className="public-poster-meta"><span>{poster.folder}</span><h4>{poster.name}</h4></div>
+                  <a className="public-poster-card" key={poster.id} href={`${API_BASE}${poster.imageUrl}`} target="_blank" rel="noreferrer" aria-label={poster.name}>
+                    <div className="public-poster-image"><img src={`${API_BASE}${poster.imageUrl}`} alt={poster.name} loading="lazy" decoding="async" /></div>
                   </a>
                 ))}
               </div>

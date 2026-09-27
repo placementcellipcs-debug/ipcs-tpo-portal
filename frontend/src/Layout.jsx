@@ -307,7 +307,11 @@ export default function Layout({ children }) {
           <div className="pd-nav-list">
             <>
             <div className={`pd-nav-item ${location.pathname === dashboardPath || location.pathname === '/dashboard' ? (isTrainer ? 'active-acad' : 'active') : ''}`} onClick={() => handleNav(dashboardPath)}><SquaresFour size={22} /><span>Dashboard</span></div>
-            <div className={`pd-nav-item ${location.pathname.startsWith('/career-hub') ? 'active' : ''}`} onClick={() => handleNav('/career-hub')}><Newspaper size={22} /><span>Industry &amp; Career Hub</span></div>
+            {navSectionHeading('career', 'Industry &amp; Career Hub')}
+            <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('career')}>
+              <div className={`pd-nav-item ${location.pathname.startsWith('/career-hub') ? 'active' : ''}`} onClick={() => handleNav('/career-hub')}><Newspaper size={22} /><span>Career Hub</span></div>
+              <div className={`pd-nav-item ${isActive('/academic/brain-gym') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/academic/brain-gym')}><Brain size={22} weight={isActive('/academic/brain-gym') === '#8b5cf6' ? 'fill' : 'regular'} /><span>Mind Gym</span></div>
+            </div>
             
             {showPlacementAndAcademic && (
               <>
@@ -339,9 +343,6 @@ export default function Layout({ children }) {
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('training')}>
                 <div className={`pd-nav-item ${isAcadActive('/academic/training') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/training')}>
                   <GraduationCap size={22} weight={isAcadActive('/academic/training') === '#10b981' ? 'fill' : 'regular'} /> <span>Student Training</span>
-                </div>
-                <div className={`pd-nav-item ${isAcadActive('/academic/brain-gym') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/brain-gym')}>
-                  <Brain size={22} weight={isAcadActive('/academic/brain-gym') === '#10b981' ? 'fill' : 'regular'} /> <span>Mind Gym</span>
                 </div>
                 <div className={`pd-nav-item ${isAcadActive('/academic/batches') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/batches')}>
                   <UsersFour size={22} weight={isAcadActive('/academic/batches') === '#10b981' ? 'fill' : 'regular'} /> <span>Batch Management</span>
@@ -451,7 +452,6 @@ export default function Layout({ children }) {
           </div>
 
           <div className="pd-footer">
-            <button type="button" className="pd-settings-btn" onClick={() => handleNav('/settings')}><Gear size={17} /> Settings</button>
             <button className="pd-logout-btn hover-lift" onClick={handleLogout}>
               <SignOut size={20} weight="bold" /> Logout
             </button>
@@ -480,7 +480,7 @@ export default function Layout({ children }) {
         .pd-section-toggle svg { transition: transform .2s ease; }
         .pd-section-toggle svg.collapsed { transform: rotate(-90deg); }
         .pd-nav-section-content[hidden] { display: none !important; }
-        .pd-nav-list { flex: 1; overflow-y: auto; padding: 0 15px; display: flex; flex-direction: column; gap: 6px; }
+        .pd-nav-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 15px; display: flex; flex-direction: column; gap: 6px; scrollbar-width: thin; }
         .pd-nav-list::-webkit-scrollbar { width: 4px; }
         .pd-nav-list::-webkit-scrollbar-track { background: transparent; }
         .pd-nav-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
@@ -494,8 +494,6 @@ export default function Layout({ children }) {
         @media (max-width: 520px) { .header-talenzo-logo { width: 122px; height: 38px; } }
 
         .pd-footer { padding: 20px; background: rgba(0,0,0,0.1); }
-        .pd-settings-btn { width:100%; display:flex; align-items:center; justify-content:center; gap:8px; margin-bottom:10px; padding:10px; border:1px solid rgba(255,255,255,.1); border-radius:11px; color:#bac8d9; background:rgba(255,255,255,.035); font:inherit; font-size:.78rem; font-weight:750; cursor:pointer; }
-        .pd-settings-btn:hover { color:#fff; border-color:rgba(255,255,255,.2); background:rgba(255,255,255,.07); }
         .pd-logout-btn { width: 100%; background: #fff; color: #0f172a; border: none; padding: 14px; border-radius: 14px; font-weight: 800; font-size: 0.95rem; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer; transition: 0.2s ease; }
         .pd-logout-btn:hover { background: #ef4444; color: #fff; box-shadow: 0 8px 20px -6px rgba(239, 68, 68, 0.5); }
       `}</style>

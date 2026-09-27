@@ -2048,6 +2048,14 @@ exports.streamPublicPlacementPoster = async (req, res) => {
 };
 
 const PUBLIC_TEAM_PHOTO_FOLDER_ID = '1tGC8eC38Pe0YJCWnjZbTKEAxJzwosc1C';
+const PUBLIC_TEAM_PHOTO_FILE_IDS = new Set([
+  '1ndgICIIBSUuND1lG2GWGntFWGXxvd1U_',
+  '1Cm1hmst2tQiYYWSOx-OQxiJAAuwXV8e_',
+  '1LOdgTK_4zzpXjePAU7F5kNgUiDXDo5wD',
+  '1ISdyiVhlMIum-DvsizL5sKQaYpOdDuEz',
+  '1JNiMYPK8JQycFaelaGZFMsuZKgLj8Gu0',
+  '1EMsipJDZzoWkCDkrXKrDc5Fqw4qjDT8P'
+]);
 let publicTeamPhotoCache = { expiresAt: 0, photos: [], byId: new Map() };
 let publicTeamPhotoLoading = null;
 
@@ -2098,8 +2106,16 @@ exports.getPublicTeamPhotos = async (_req, res) => {
 
 exports.streamPublicTeamPhoto = async (req, res) => {
   try {
-    const { byId } = await getPublicTeamPhotoFiles();
-    const photo = byId.get(String(req.params.fileId || ''));
+    const fileId = String(req.params.fileId || '');
+    let photo;
+    if (PUBLIC_TEAM_PHOTO_FILE_IDS.has(fileId)) {
+      const metadata = await drive.files.get({ fileId, fields: 'id,mimeType', supportsAllDrives: true });
+      if (!String(metadata.data.mimeType || '').startsWith('image/')) return res.status(404).end();
+      photo = { id: fileId, mimeType: metadata.data.mimeType };
+    } else {
+      const { byId } = await getPublicTeamPhotoFiles();
+      photo = byId.get(fileId);
+    }
     if (!photo) return res.status(404).end();
     const response = await drive.files.get({ fileId: photo.id, alt: 'media', supportsAllDrives: true }, { responseType: 'stream' });
     res.set('Content-Type', photo.mimeType);
