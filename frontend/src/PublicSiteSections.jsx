@@ -98,6 +98,19 @@ const logoSource = value => {
   return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : value;
 };
 const videoThumbnail = item => item.thumbnailLink || `https://drive.google.com/thumbnail?id=${encodeURIComponent(item.id)}&sz=w640`;
+const publicGet = async (url) => {
+  let lastError;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      return await axios.get(url);
+    } catch (error) {
+      lastError = error;
+      if (attempt === 2 || (error.response && error.response.status < 500)) throw error;
+      await new Promise(resolve => window.setTimeout(resolve, 800 * (attempt + 1)));
+    }
+  }
+  throw lastError;
+};
 
 const profilePhotoFor = (person, photos) => {
   const tokens = person.name.toLowerCase().replace(/\b(mr|ms|mrs)\.?\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(token => token.length > 1);
@@ -166,7 +179,7 @@ export default function PublicSiteSections({ page = 'all' }) {
     let active = true;
     const limit = partnerListPage ? 500 : 8;
     const query = partnerListPage ? '&all=true' : '&random=true';
-    axios.get(`${API_BASE}/api/public/partners?limit=${limit}&offset=0${query}`)
+    publicGet(`${API_BASE}/api/public/partners?limit=${limit}&offset=0${query}`)
       .then(response => {
         if (!active) return;
         if (!response.data?.success) throw new Error('Partner directory unavailable');
@@ -183,7 +196,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   useEffect(() => {
     if (!['about', 'all'].includes(page)) return undefined;
     let active = true;
-    axios.get(`${API_BASE}/api/public/team-photos`)
+    publicGet(`${API_BASE}/api/public/team-photos`)
       .then(response => { if (active && response.data?.success) setTeamPhotos(Array.isArray(response.data.photos) ? response.data.photos : []); })
       .catch(() => { if (active) setTeamPhotos([]); });
     return () => { active = false; };
@@ -194,7 +207,7 @@ export default function PublicSiteSections({ page = 'all' }) {
     let active = true;
     const limit = posterGalleryPage ? 500 : 6;
     const query = posterGalleryPage ? '&all=true' : '&random=true';
-    axios.get(`${API_BASE}/api/public/placement-posters?category=posters&limit=${limit}&offset=0${query}`)
+    publicGet(`${API_BASE}/api/public/placement-posters?category=posters&limit=${limit}&offset=0${query}`)
       .then(response => {
         if (!active) return;
         if (!response.data?.success) throw new Error('Placement poster gallery unavailable');
@@ -212,7 +225,7 @@ export default function PublicSiteSections({ page = 'all' }) {
     if ((!placementPage && !partnerMediaPage) || (page === 'placement' && !mediaOpen)) return undefined;
     let active = true;
     const mediaQuery = mediaPage ? '&all=true' : '&random=true';
-    axios.get(`${API_BASE}/api/public/placement-posters?category=${encodeURIComponent(placementCategory)}&limit=${mediaPage ? 500 : 6}&offset=0${mediaQuery}`)
+    publicGet(`${API_BASE}/api/public/placement-posters?category=${encodeURIComponent(placementCategory)}&limit=${mediaPage ? 500 : 6}&offset=0${mediaQuery}`)
       .then(response => {
         if (!active) return;
         if (!response.data?.success) throw new Error('Placement media unavailable');
@@ -245,7 +258,7 @@ export default function PublicSiteSections({ page = 'all' }) {
     if (offset === null) return;
     try {
       const category = isPoster ? 'posters' : placementCategory;
-      const response = await axios.get(isPartner
+      const response = await publicGet(isPartner
         ? `${API_BASE}/api/public/partners?limit=100&offset=${offset}`
         : `${API_BASE}/api/public/placement-posters?category=${encodeURIComponent(category)}&limit=24&offset=${offset}`);
       if (isPartner) {

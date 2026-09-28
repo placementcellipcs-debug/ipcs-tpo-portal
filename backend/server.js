@@ -53,6 +53,9 @@ app.post('/api/auth/verify-session', controllers.verifySession);
 
 // 🚨 GLOBAL CACHE MIDDLEWARE
 app.use('/api', (req, res, next) => {
+  // Public site data has its own Drive/Sheets readiness checks. Keep it available
+  // while the larger staff data cache is warming up after a server restart.
+  if (req.originalUrl.split('?')[0].startsWith('/api/public/')) return next();
   if (!getCache()) {
     return res.status(503).json({ success: false, message: "Server is syncing data from Google Sheets... Please wait 5 seconds and refresh." });
   }

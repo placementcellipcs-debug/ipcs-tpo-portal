@@ -26,7 +26,7 @@ function parseUserAgent(ua = '') {
 }
 
 const { 
-  doc, drive, getCache, refreshCache, hasAccess, getFuzzyHeader,
+  doc, drive, getCache, refreshCache, loadDocInfo, hasAccess, getFuzzyHeader,
   sendIPCSMail, uploadToDrive
 } = require('./config');
 
@@ -1851,10 +1851,33 @@ exports.getClients = (req, res) => {
   }
 };
 
-exports.getPublicPartners = (req, res) => {
+let publicPartnerRowsCache = { expiresAt: 0, rows: [] };
+let publicPartnerRowsLoading = null;
+
+async function getPublicPartnerRows() {
+  const cachedRows = getCache()?.clients;
+  if (Array.isArray(cachedRows)) return cachedRows;
+  if (publicPartnerRowsCache.expiresAt > Date.now()) return publicPartnerRowsCache.rows;
+  if (!publicPartnerRowsLoading) {
+    publicPartnerRowsLoading = (async () => {
+      await loadDocInfo();
+      const clientSheet = doc.sheetsByTitle['Clients'] || doc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('clients'));
+      if (!clientSheet) throw new Error('Clients sheet was not found.');
+      const rows = await clientSheet.getRows();
+      publicPartnerRowsCache = { expiresAt: Date.now() + 60 * 1000, rows };
+      return rows;
+    })();
+  }
   try {
-    const cache = getCache();
-    const rows = Array.isArray(cache?.clients) ? cache.clients : [];
+    return await publicPartnerRowsLoading;
+  } finally {
+    publicPartnerRowsLoading = null;
+  }
+}
+
+exports.getPublicPartners = async (req, res) => {
+  try {
+    const rows = await getPublicPartnerRows();
     const partners = [];
 
     rows.forEach(row => {

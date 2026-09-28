@@ -16,8 +16,17 @@ const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 
 let globalCache = null;
 let isFetching = false;
+let docInfoLoading = null;
 
 const getCache = () => globalCache;
+async function loadDocInfo() {
+  if (!docInfoLoading) docInfoLoading = doc.loadInfo();
+  try {
+    return await docInfoLoading;
+  } finally {
+    docInfoLoading = null;
+  }
+}
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchSheetWithRetry(sheet, retries = 3) {
@@ -43,7 +52,7 @@ async function refreshCache() {
   if (isFetching) return;
   isFetching = true;
   try {
-    await doc.loadInfo();
+    await loadDocInfo();
     
     const getSheetFuzzy = (keyword) => {
       const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -375,7 +384,7 @@ async function uploadToDrive(file, folderId) {
 }
 
 module.exports = { 
-  doc, drive, getCache, refreshCache, hasAccess, getFuzzyHeader,
+  doc, drive, getCache, refreshCache, loadDocInfo, hasAccess, getFuzzyHeader,
   sendIPCSMail, uploadToDrive,
   getTpoEmail, getBranchManagerEmail, getAllTpoEmails, getAllBranchManagerEmails, getSuperAdminEmails,
   getUserEmailById
