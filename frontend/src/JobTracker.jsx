@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { 
   CircleNotch, CaretDown, FloppyDisk, CheckCircle, WarningCircle,
@@ -7,8 +8,11 @@ import {
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
 import { getStatusTone } from './StatusBadge';
+import PlacementDriveTracker from './PlacementDriveTracker';
 
 export default function JobTracker() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') === 'drives' ? 'drives' : 'jobs';
   const [interviewModal, setInterviewModal] = useState({
     isOpen: false,
     appRowNumber: null,
@@ -25,7 +29,7 @@ export default function JobTracker() {
   const accessType = String(tpoData?.accessType || '').toLowerCase();
   const isSuperAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
   
-  const isStrictTpo = userRole.includes('TPO') && !isSuperAdmin;
+  const isStrictTpo = (userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER')) && !isSuperAdmin;
 
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -168,11 +172,13 @@ export default function JobTracker() {
 
   const statusOptions = [
     "Applied", 
+    "Shortlisted",
     "Interview Scheduled", 
     "Interview Not Attended", 
     "No Response from Student", 
     "Got Offer", 
     "Placed", 
+    "Student Not Interested",
     "Student Rejected Offer", 
     "Company Rejected"
   ];
@@ -185,9 +191,16 @@ export default function JobTracker() {
         
         {/* PREMIUM HEADER */}
         <div className="jt-hero-section">
-          <h1 className="jt-title">Job Tracker (Action)</h1>
-          <p className="jt-subtitle">Search, sort, and track interview statuses across your active jobs.</p>
+          <h1 className="jt-title">Placement workspace</h1>
+          <p className="jt-subtitle">Manage job applications and placement drive registrations from one place.</p>
         </div>
+
+        <div className="jt-workspace-tabs" role="tablist" aria-label="Placement tracking">
+          <button type="button" role="tab" aria-selected={activeTab === 'jobs'} className={activeTab === 'jobs' ? 'active' : ''} onClick={() => setSearchParams({})}>Job Tracker<span>{applications.length}</span></button>
+          <button type="button" role="tab" aria-selected={activeTab === 'drives'} className={activeTab === 'drives' ? 'active' : ''} onClick={() => setSearchParams({ tab: 'drives' })}>Placement Drives</button>
+        </div>
+
+        {activeTab === 'drives' ? <PlacementDriveTracker /> : <>
         
         {/* PREMIUM FILTERS */}
         <div className="jt-filter-bar">
@@ -367,6 +380,7 @@ export default function JobTracker() {
             })
           )}
         </div>
+        </>}
       </div>
 
       {/* INTERVIEW MODAL REMAINS FUNCTIONAL */}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
   CircleNotch, CalendarCheck, Users, 
@@ -28,7 +29,9 @@ const parseDate = (dStr) => {
 export default function PlacementDrives() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
-  const isSuperAdmin = tpoData?.accessType === 'superadmin';
+  const userRole = String(tpoData?.role || '').toUpperCase();
+  const isSuperAdmin = tpoData?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(userRole) || userRole.includes('MANAGER');
+  const isTpo = userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER');
 
   const [drives, setDrives] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -51,7 +54,7 @@ export default function PlacementDrives() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchDrives(); }, []);
+  useEffect(() => { if (!isTpo || isSuperAdmin) fetchDrives(); }, []);
 
   const canEditDrive = (drive) => {
     if (isSuperAdmin) return true;
@@ -146,6 +149,8 @@ export default function PlacementDrives() {
     if (match) window.open(`https://drive.google.com/file/d/${match[1]}/view`, '_blank');
     else window.open(url, '_blank');
   };
+
+  if (isTpo && !isSuperAdmin) return <Navigate to="/tracker?tab=drives" replace />;
 
   return (
     <Layout>

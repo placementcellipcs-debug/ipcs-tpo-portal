@@ -1813,19 +1813,17 @@ const canManageClientRow = (user, row) => {
   return Boolean(assignedTo && signedInName && assignedTo === signedInName);
 };
 
-exports.getClients = (req, res) => {
+exports.getClients = async (req, res) => {
   try {
-    const cleanTpoName = (req.body.tpoName || '').toString().toLowerCase().trim();
     let clients = [];
-    const cache = getCache();
-
-    // 🚨 Extreme Crash Protection: Check if cache and clients sheet exists
-    if (cache && cache.clients && Array.isArray(cache.clients)) {
-      cache.clients.forEach(row => {
+    await loadDocInfo();
+    const clientSheet = doc.sheetsByTitle['Clients'];
+    if (!clientSheet) return res.status(503).json({ success: false, message: 'Client register is unavailable.' });
+    const rows = await clientSheet.getRows();
+    if (Array.isArray(rows)) {
+      rows.forEach(row => {
         const officer = getValByHeader(row, ['placementofficer', 'tponame']);
-        const officerClean = (officer || '').toLowerCase().trim();
-        
-        if (cleanTpoName === '' || officerClean.includes(cleanTpoName) || (officerClean && cleanTpoName.includes(officerClean))) {
+        if (canManageClientRow(req.portalUser, row)) {
           clients.push({ 
             rowNumber: row.rowNumber, 
             companyName: getValByHeader(row, ['companyname', 'company']) || 'Unknown', 
@@ -2172,7 +2170,9 @@ exports.updateClient = async (req, res) => {
     let logoLink = existingLogo;
     if (req.file) { logoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); }
     
-    const sheet = doc.sheetsByTitle["Clients"]; 
+    await loadDocInfo();
+    const sheet = doc.sheetsByTitle["Clients"];
+    if (!sheet) return res.status(503).json({ success: false, message: 'Client register is unavailable.' });
     const numericRow = Number(rowNumber);
     if (!Number.isInteger(numericRow) || numericRow < 2) return res.status(400).json({ success: false, message: 'A valid client record is required.' });
     const rows = await sheet.getRows({ offset: numericRow - 2, limit: 1 });
@@ -2182,15 +2182,16 @@ exports.updateClient = async (req, res) => {
       const headers = sheet.headerValues;
       const updateObj = {};
       
+      const normalizeHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const getSafeH = (searchStrs) => {
         for (let s of searchStrs) {
-          const clean = s.toLowerCase().replace(/\s/g, '');
-          const exact = headers.find(h => h.toLowerCase().replace(/\s/g, '') === clean);
+          const clean = normalizeHeader(s);
+          const exact = headers.find(h => normalizeHeader(h) === clean);
           if (exact) return exact;
         }
         for (let s of searchStrs) {
-          const clean = s.toLowerCase().replace(/\s/g, '');
-          const partial = headers.find(h => h.toLowerCase().replace(/\s/g, '').includes(clean));
+          const clean = normalizeHeader(s);
+          const partial = headers.find(h => normalizeHeader(h).includes(clean));
           if (partial) return partial;
         }
         return null;
@@ -2202,6 +2203,7 @@ exports.updateClient = async (req, res) => {
       const hPerson = getSafeH(['companycontactperson', 'contactperson', 'person']); if(hPerson && contactPerson !== undefined) updateObj[hPerson] = contactPerson;
       const hLogo = getSafeH(['companylogo', 'logo']); if(hLogo && logoLink) updateObj[hLogo] = logoLink;
 
+      if (Object.keys(updateObj).length === 0) return res.status(400).json({ success: false, message: 'No editable client columns were found in the Clients sheet.' });
       rows[0].assign(updateObj); 
       await rows[0].save(); 
       refreshCache(); 
@@ -2965,19 +2967,31 @@ exports.deleteTalExamQuestion = async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-exports.getDrives = (req, res) => {
+exports.getDrives = async (req, res) => {
   try {
+    const user = req.portalUser;
+    const role = String(user?.role || '').toUpperCase();
+    const canSeeAll = canManageEveryClient(user);
+    const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
+    if (!canSeeAll && !isTpo) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
+
+    await loadDocInfo();
+    const registrationSheet = doc.sheetsByTitle['Drive_Registration'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('driveregistration'));
+    if (!registrationSheet) return res.status(503).json({ success: false, message: 'The Drive Registration sheet is unavailable.' });
+    const registrationRows = await registrationSheet.getRows();
+    const normalizeName = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    const signedInName = normalizeName(user?.name);
     const cache = getCache();
     const eventsMap = {};
     
     // 1. SMART EVENT MAPPING: Grab ALL Placement Drives so even empty ones exist
-    (cache.events || []).forEach(row => {
+    (cache?.events || []).forEach(row => {
        const type = getValByHeader(row, ['event', 'type', 'event_type']) || '';
        const dId = getValByHeader(row, ['driveid', 'drive id', 'drive_id']) || getValByHeader(row, ['event_id', 'eventid', 'id']) || '';
        
        if (dId && type.toLowerCase().includes('drive')) {
          eventsMap[dId.toUpperCase().trim()] = { 
-           tpo: getValByHeader(row, ['tpo', 'placementofficer']) || '', 
+           tpo: getValByHeader(row, ['tpo', 'tponame', 'placementofficer', 'createdby']) || '',
            date: getValByHeader(row, ['dateoftheevent', 'date']) || '', 
            location: getValByHeader(row, ['eventhappeningin', 'location', 'branch']) || '',
            hasApplicants: false
@@ -2987,9 +3001,10 @@ exports.getDrives = (req, res) => {
 
     // 2. Map actual registrations
     const drivesData = [];
-    (cache.drives || []).forEach(row => {
+    (registrationRows || []).forEach(row => {
       const dId = (getValByHeader(row, ['driveid', 'drive id']) || '').toUpperCase().trim();
       const eventInfo = eventsMap[dId] || {};
+      if (!canSeeAll && (!eventInfo.tpo || normalizeName(eventInfo.tpo) !== signedInName)) return;
       
       // Mark that this drive has at least one student
       if (eventsMap[dId]) eventsMap[dId].hasApplicants = true;
@@ -2998,6 +3013,7 @@ exports.getDrives = (req, res) => {
         rowNumber: row.rowNumber, 
         driveId: dId, 
         name: getValByHeader(row, ['name', 'studentname']) || '', 
+        roll: getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']) || '',
         phone: getValByHeader(row, ['contact', 'phone']) || '',
         email: getValByHeader(row, ['mailid', 'email']) || '', 
         course: getValByHeader(row, ['course']) || '', 
@@ -3007,6 +3023,7 @@ exports.getDrives = (req, res) => {
         regStatus: getValByHeader(row, ['status']) || '',
         regDate: getValByHeader(row, ['registeddate', 'timestamp', 'date']) || '', 
         studentStatus: getValByHeader(row, ['studentstatus']) || '',
+        remarks: getValByHeader(row, ['studentremarks', 'remarks', 'remark', 'tpo remarks']) || '',
         driveTpo: eventInfo.tpo || '',
         driveDate: eventInfo.date || '',
         driveLocation: eventInfo.location || ''
@@ -3015,6 +3032,7 @@ exports.getDrives = (req, res) => {
 
     // 3. 🚨 INJECT EMPTY DRIVES: If a drive has 0 students, send a "Dummy" row so it still shows up!
     Object.keys(eventsMap).forEach(dId => {
+      if (!canSeeAll && normalizeName(eventsMap[dId].tpo) !== signedInName) return;
       if (!eventsMap[dId].hasApplicants) {
         drivesData.push({
           rowNumber: `empty-${dId}`,
@@ -3034,15 +3052,71 @@ exports.getDrives = (req, res) => {
 };
 
 exports.updateDriveStatus = async (req, res) => {
-  const { rowNumber, studentStatus } = req.body;
+  const { rowNumber, studentStatus, remarks } = req.body;
   try {
-    const sheet = doc.sheetsByTitle["Drive_Registration"];
-    const rows = await sheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    if(rows.length > 0) {
-      const statHead = getFuzzyHeader(sheet.headerValues, 'studentstatus');
-      rows[0].assign({ [statHead]: studentStatus }); await rows[0].save();
-      refreshCache(); res.json({ success: true });
+    const numericRow = Number(rowNumber);
+    if (!Number.isInteger(numericRow) || numericRow < 2) return res.status(400).json({ success: false, message: 'A valid registration row is required.' });
+    await loadDocInfo();
+    const sheet = doc.sheetsByTitle['Drive_Registration'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('driveregistration'));
+    if (!sheet) return res.status(503).json({ success: false, message: 'The Drive Registration sheet is unavailable.' });
+    const rows = await sheet.getRows({ offset: numericRow - 2, limit: 1 });
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Registration row was not found.' });
+
+    const user = req.portalUser;
+    const role = String(user?.role || '').toUpperCase();
+    const canSeeAll = canManageEveryClient(user);
+    const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
+    if (!canSeeAll && !isTpo) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
+    if (!canSeeAll) {
+      const driveId = getValByHeader(rows[0], ['driveid', 'drive id']).toUpperCase().trim();
+      const ownedDrive = (getCache()?.events || []).some(event => {
+        const type = getValByHeader(event, ['event', 'type', 'event_type']).toLowerCase();
+        const eventDriveId = (getValByHeader(event, ['driveid', 'drive id', 'drive_id']) || getValByHeader(event, ['event_id', 'eventid', 'id'])).toUpperCase().trim();
+        const owner = getValByHeader(event, ['tpo', 'tponame', 'placementofficer', 'createdby']).trim().toLowerCase().replace(/\s+/g, ' ');
+        return type.includes('drive') && eventDriveId === driveId && owner && owner === String(user?.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+      });
+      if (!ownedDrive) return res.status(403).json({ success: false, message: 'You can only update registrations for your own placement drives.' });
     }
+
+    let headers = sheet.headerValues || [];
+    const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const findHeader = aliases => {
+      for (const alias of aliases) {
+        const header = headers.find(item => normalize(item) === normalize(alias));
+        if (header) return header;
+      }
+      for (const alias of aliases) {
+        const key = normalize(alias);
+        const header = headers.find(item => key.length >= 6 && normalize(item).includes(key));
+        if (header) return header;
+      }
+      return null;
+    };
+    const update = {};
+    if (studentStatus !== undefined) {
+      let statusHeader = findHeader(['studentstatus', 'student status']);
+      if (!statusHeader) {
+        statusHeader = 'Student Status';
+        await sheet.setHeaderRow([...headers, statusHeader]);
+        headers = [...headers, statusHeader];
+      }
+      update[statusHeader] = studentStatus;
+    }
+    if (remarks !== undefined) {
+      let remarksHeader = findHeader(['studentremarks', 'tpo remarks', 'remarks', 'remark']);
+      if (!remarksHeader) {
+        remarksHeader = 'Student Remarks';
+        await sheet.setHeaderRow([...headers, remarksHeader]);
+        headers = [...headers, remarksHeader];
+      }
+      update[remarksHeader] = remarks;
+    }
+    if (!Object.keys(update).length) return res.status(400).json({ success: false, message: 'There are no placement drive changes to save.' });
+
+    rows[0].assign(update);
+    await rows[0].save();
+    refreshCache();
+    res.json({ success: true, studentStatus: studentStatus ?? getValByHeader(rows[0], ['studentstatus']), remarks: remarks ?? getValByHeader(rows[0], ['studentremarks', 'remarks', 'remark']) });
   } catch(err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -3320,33 +3394,59 @@ exports.addClient = async (req, res) => {
   try {
     const { companyName, website, location, phone, email, contactPerson } = req.body;
     const tpoName = req.portalUser?.name || '';
-    const clientSheet = doc.sheetsByTitle["Clients"]; 
+    if (!String(companyName || '').trim()) return res.status(400).json({ success: false, message: 'Company name is required.' });
+    if (!tpoName) return res.status(401).json({ success: false, message: 'Your session could not be verified. Sign in again and retry.' });
+    await loadDocInfo();
+    const clientSheet = doc.sheetsByTitle["Clients"];
+    if (!clientSheet) return res.status(503).json({ success: false, message: 'Client register is unavailable.' });
     
     let logoUrl = '';
     if (req.file) {
-      // Re-using your existing Google Drive upload function
-      logoUrl = await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || ''); 
+      logoUrl = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS);
     }
 
-    const h = clientSheet.headerValues;
-    const safeH = (target) => getFuzzyHeader(h, target);
+    const headers = clientSheet.headerValues || [];
+    const normalizeHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const resolveHeader = aliases => {
+      const normalizedAliases = aliases.map(normalizeHeader);
+      const exact = headers.find(header => normalizedAliases.includes(normalizeHeader(header)));
+      if (exact) return exact;
+      return headers.find(header => normalizedAliases.some(alias => alias.length >= 6 && normalizeHeader(header).includes(alias))) || null;
+    };
+    const ownerHeader = resolveHeader(['placementofficer', 'tponame', 'assignedtpo']);
+    const companyHeader = resolveHeader(['companyname', 'company']);
+    if (!ownerHeader || !companyHeader) {
+      return res.status(500).json({ success: false, message: 'The Clients sheet needs Placement Officer/TPO and Company Name columns before a client can be added.' });
+    }
 
-    await clientSheet.addRow({
-      [safeH('placementofficer')]: tpoName || '',
-      [safeH('companyname')]: companyName || '',
-      [safeH('companywebsite')]: website || '',
-      [safeH('companylocation')]: location || '',
-      [safeH('companycontact')]: phone || '',
-      [safeH('companymailid')]: email || '',
-      [safeH('companycontactperson')]: contactPerson || '',
-      [safeH('companylogo')]: logoUrl || '',
-      [safeH('mailstatus')]: 'Pending',
-      [safeH('documentstatus')]: 'Pending',
-      [safeH('mou')]: ''
-    });
+    const values = [
+      [['placementofficer', 'tponame', 'assignedtpo'], tpoName],
+      [['companyname', 'company'], String(companyName).trim()],
+      [['companywebsite', 'website'], website || ''],
+      [['companylocation', 'location'], location || ''],
+      [['companycontact', 'contactnumber', 'phone'], phone || ''],
+      [['companymailid', 'companyemail', 'mailid', 'email'], email || ''],
+      [['companycontactperson', 'contactperson', 'person'], contactPerson || ''],
+      [['companylogo', 'logo'], logoUrl],
+      [['mailstatus'], 'Pending'],
+      [['documentstatus', 'docstatus'], 'Pending'],
+      [['mou', 'moulink'], '']
+    ];
+    const rowData = {};
+    for (const [aliases, value] of values) {
+      const header = resolveHeader(aliases);
+      if (header) rowData[header] = value;
+    }
+
+    const addedRow = await clientSheet.addRow(rowData);
 
     refreshCache();
-    res.json({ success: true, message: "Client added successfully" });
+    res.json({ success: true, message: "Client added successfully", client: {
+      rowNumber: addedRow.rowNumber,
+      companyName: String(companyName).trim(), website: website || '', location: location || '', contact: phone || '',
+      email: email || '', contactPerson: contactPerson || '', logo: logoUrl, mailStatus: 'Pending', documentStatus: 'Pending',
+      mouLink: '', tpoName
+    } });
   } catch (error) {
     console.error("Add Client Error:", error);
     res.status(500).json({ success: false, message: error.message });

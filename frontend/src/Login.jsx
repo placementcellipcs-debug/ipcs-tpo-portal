@@ -4,6 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowLeft, ArrowRight, CircleNotch, Compass, UsersThree } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
+import introVideo from './assets/Intro.mp4';
 import './Login.css';
 import PublicSiteHeader from './PublicSiteHeader';
 
@@ -80,7 +81,7 @@ export default function Login() {
     return (
       <div className="login-intro" style={{ opacity: videoOpacity }}>
         <video
-          src="/Intro.mp4"
+          src={introVideo}
           className="login-intro-video"
           autoPlay
           playsInline

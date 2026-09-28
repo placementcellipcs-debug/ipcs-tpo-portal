@@ -243,7 +243,7 @@ export default function StudentApps() {
                         <td>
                           <StatusBadge status={app.status || 'Applied'} />
                         </td>
-                        <td style={{ fontSize: '0.85rem', color: '#cbd5e1', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={app.remarks}>
+                        <td className="student-app-remarks" title={app.remarks}>
                           {app.remarks || '-'}
                         </td>
                       </tr>

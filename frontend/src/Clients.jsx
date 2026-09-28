@@ -142,13 +142,14 @@ export default function Clients() {
       formData.append('contactPerson', addForm.contactPerson);
       if (addForm.logoFile) formData.append('logoFile', addForm.logoFile);
 
-      const res = await axios.post(`${API_BASE}/api/tpo/clients/add`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
-      if(res.data.success) {
-        setIsAddModalOpen(false);
-        setAddForm({ companyName: '', website: '', location: '', phone: '', email: '', contactPerson: '', logoFile: null });
-        showToast("New Hiring Partner added successfully!");
-        fetchClientsManual();
-      }
+      const res = await axios.post(`${API_BASE}/api/tpo/clients/add`, formData);
+      if (!res.data?.success) throw new Error(res.data?.message || 'The client could not be added.');
+      const newClient = res.data.client || { ...addForm, contact: addForm.phone, logo: '', rowNumber: Date.now(), tpoName: tpoData.name };
+      setClients(current => [newClient, ...current]);
+      localStorage.setItem(clientCacheKey, JSON.stringify([newClient, ...safeClients]));
+      setIsAddModalOpen(false);
+      setAddForm({ companyName: '', website: '', location: '', phone: '', email: '', contactPerson: '', logoFile: null });
+      showToast("New Hiring Partner added successfully!");
     } catch (error) { showToast(`Failed to add: ${error.response?.data?.message || error.message}`, 'error'); } 
     finally { setSavingStatus(false); }
   };
@@ -171,12 +172,13 @@ export default function Clients() {
       formData.append('logo', selectedClient.logo);
       if (editForm.logoFile) formData.append('logoFile', editForm.logoFile);
 
-      const res = await axios.post(`${API_BASE}/api/tpo/clients/update`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
-      if(res.data.success) {
-        setIsEditModalOpen(false);
-        showToast("Company details updated successfully!");
-        fetchClientsManual();
-      }
+      const res = await axios.post(`${API_BASE}/api/tpo/clients/update`, formData);
+      if (!res.data?.success) throw new Error(res.data?.message || 'The client could not be updated.');
+      const updatedClient = { ...selectedClient, email: editForm.email, contact: editForm.phone, location: editForm.location, contactPerson: editForm.contactPerson, logo: res.data.logoLink || selectedClient.logo };
+      setClients(current => current.map(client => String(client.rowNumber) === String(selectedClient.rowNumber) ? updatedClient : client));
+      localStorage.setItem(clientCacheKey, JSON.stringify(safeClients.map(client => String(client.rowNumber) === String(selectedClient.rowNumber) ? updatedClient : client)));
+      setIsEditModalOpen(false);
+      showToast("Company details updated successfully!");
     } catch (error) { showToast(`Failed to update: ${error.response?.data?.message || error.message}`, 'error'); } 
     finally { setSavingStatus(false); }
   };

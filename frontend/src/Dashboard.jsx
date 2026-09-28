@@ -4,7 +4,7 @@ import axios from 'axios';
 import { 
   Users, Briefcase, Trophy, CalendarCheck, CircleNotch, 
   BookOpen, NotePencil, FolderOpen, ListChecks, Buildings,
-  ChartBar, Clock, CheckCircle, CaretLeft, CaretRight
+  ChartBar, CheckCircle, CaretLeft, CaretRight
 } from '@phosphor-icons/react';
 import { 
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -30,11 +30,13 @@ export default function Dashboard() {
   const isSuperAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
   const showReports = isSuperAdmin || userRole === 'TPO';
   const isTpo = userRole.includes('TPO') || isSuperAdmin; 
+  const isPlacementOfficer = userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER');
   const [stats, setStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0, totalCompanies: 0 });
   const [events, setEvents] = useState([]);
   const [recentPlacements, setRecentPlacements] = useState([]);
   const [loading, setLoading] = useState(true);
   const [greetingTime, setGreetingTime] = useState(() => new Date());
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
   // Charting Data
   const [trendData, setTrendData] = useState(Array(12).fill({ m: '', Applications: 0, Placed: 0 }));
@@ -57,6 +59,12 @@ export default function Dashboard() {
     return () => clearInterval(timer);
   }, []);
   const greeting = greetingTime.getHours() < 12 ? 'Good Morning' : greetingTime.getHours() < 17 ? 'Good Afternoon' : 'Good Evening';
+  const firstName = String(tpoData?.name || '').trim().split(/\s+/)[0] || 'there';
+  const profilePhoto = (() => {
+    const raw = String(tpoData?.photo || '');
+    const match = raw.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+    return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : raw;
+  })();
 
   // 🚨 FIXED DATE PARSER: Now handles MM/DD/YYYY directly from Google Sheets
   const parseDateRobust = (dStr) => {
@@ -297,16 +305,21 @@ export default function Dashboard() {
     <Layout>
       <div className="db-wrapper" style={{ paddingBottom: '40px', maxWidth: '1600px', margin: '0 auto' }}>
         
-        {/* HEADER SECTION */}
-        <div className="dashboard-header">
-          <div>
-            <h1 className="dash-title">{greeting}, {String(tpoData?.name || 'Officer').split(' ')[0]} 👋</h1>
-            <p className="dash-subtitle">Here's what's happening across the network today.</p>
+        {/* WELCOME CARD */}
+        <section className="dash-welcome-card">
+          <div className="dash-welcome-copy">
+            <span className="dash-welcome-date">{greetingTime.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}</span>
+            <h1>{greeting}, <em>{firstName}</em></h1>
+            <p>Your placement journey, upcoming events, and student resources are all in one place.</p>
+            <div className="dash-welcome-actions">
+              <button type="button" onClick={() => navigate('/events')}>Explore events <span aria-hidden="true">→</span></button>
+              <button type="button" className="dash-profile-link" onClick={() => navigate('/settings')}>View profile</button>
+            </div>
           </div>
-          <div className="date-badge">
-            <Clock size={16} /> {today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}
+          <div className="dash-welcome-avatar" role="img" aria-label={`${firstName}'s profile`}>
+            {profilePhoto && !avatarFailed ? <img src={profilePhoto} alt="" onError={() => setAvatarFailed(true)} /> : <span>{firstName.charAt(0).toUpperCase()}</span>}
           </div>
-        </div>
+        </section>
 
         {/* KPI CARDS */}
         <div className="kpi-grid">
@@ -486,7 +499,7 @@ export default function Dashboard() {
             <div className="qa-box" onClick={()=>navigate('/study-materials')}><div className="qa-icon pink"><BookOpen weight="fill"/></div>Material</div>
             <div className="qa-box" onClick={()=>navigate('/clients')}><div className="qa-icon teal"><FolderOpen weight="fill"/></div>Documents</div>
             
-            {isTpo && <div className="qa-box" onClick={()=>navigate('/placement-drives')}><div className="qa-icon purple"><CalendarCheck weight="fill"/></div>Drives</div>}
+            {isTpo && <div className="qa-box" onClick={()=>navigate(isPlacementOfficer && !isSuperAdmin ? '/tracker?tab=drives' : '/placement-drives')}><div className="qa-icon purple"><CalendarCheck weight="fill"/></div>Drives</div>}
             {isTpo && <div className="qa-box" onClick={()=>navigate('/tracker')}><div className="qa-icon green"><ListChecks weight="fill"/></div>Tracker</div>}
             {isTpo && <div className="qa-box" onClick={()=>navigate('/talentino')}><div className="qa-icon yellow"><Users weight="fill"/></div>Talentino</div>}
             {showReports && <div className="qa-box" onClick={()=>navigate('/reports')}><div className="qa-icon blue"><ChartBar weight="fill"/></div>Reports</div>}
@@ -510,6 +523,20 @@ export default function Dashboard() {
           .dash-title { font-size: 2rem; margin: 0 0 5px 0; color: #fff; }
           .dash-subtitle { color: var(--text-muted); margin: 0; }
           .date-badge { background: var(--card-bg); border: 1px solid var(--card-border); padding: 10px 20px; border-radius: 30px; color: var(--text-muted); font-size: 0.85rem; display: flex; align-items: center; gap: 10px; }
+
+          .dash-welcome-card { display: flex; justify-content: space-between; align-items: center; gap: 28px; min-height: 250px; margin-bottom: 24px; padding: clamp(28px, 4vw, 48px); color: #f8fafc; background: radial-gradient(ellipse at 78% 12%, rgba(16,185,129,.2), transparent 43%), linear-gradient(112deg, #101b2b 0%, #102d31 100%); border: 1px solid rgba(45,212,191,.26); border-radius: 26px; box-shadow: 0 22px 55px rgba(2,8,23,.2); }
+          .dash-welcome-copy { min-width: 0; max-width: 760px; }
+          .dash-welcome-date { display: block; color: #34d399; font-size: .76rem; font-weight: 800; letter-spacing: .12em; margin-bottom: 13px; }
+          .dash-welcome-copy h1 { margin: 0; font-size: clamp(2rem, 4vw, 3rem); letter-spacing: -.045em; line-height: 1.08; color: #f8fafc; }
+          .dash-welcome-copy h1 em { color: #34d399; font-style: normal; }
+          .dash-welcome-copy p { max-width: 590px; margin: 12px 0 20px; color: #b5c9d8; font-size: 1rem; line-height: 1.6; }
+          .dash-welcome-actions { display: flex; align-items: center; gap: 15px; flex-wrap: wrap; }
+          .dash-welcome-actions button { display: inline-flex; align-items: center; gap: 12px; border: 0; border-radius: 11px; padding: 13px 20px; background: #059669; color: #fff; font: inherit; font-weight: 750; cursor: pointer; transition: transform .18s, background .18s; }
+          .dash-welcome-actions button:hover { background: #10b981; transform: translateY(-1px); }
+          .dash-welcome-actions .dash-profile-link { padding: 12px 3px; background: transparent; color: #f8fafc; }
+          .dash-welcome-actions .dash-profile-link:hover { background: transparent; color: #6ee7b7; }
+          .dash-welcome-avatar { width: 118px; height: 118px; flex: 0 0 118px; display: grid; place-items: center; overflow: hidden; border: 3px solid #34d399; border-radius: 50%; background: rgba(255,255,255,.08); color: #d1fae5; font-size: 2.8rem; font-weight: 750; box-shadow: 0 0 0 8px rgba(52,211,153,.08); }
+          .dash-welcome-avatar img { width: 100%; height: 100%; object-fit: cover; }
 
           /* KPI Styling */
           .kpi-header { display: flex; align-items: center; gap: 15px; }
@@ -599,6 +626,8 @@ export default function Dashboard() {
           @media (max-width: 768px) {
             .dashboard-header { flex-direction: column; align-items: flex-start; gap: 10px; }
             .dash-title { font-size: 1.5rem; }
+            .dash-welcome-card { min-height: 0; align-items: flex-start; padding: 26px 22px; border-radius: 20px; }
+            .dash-welcome-avatar { width: 70px; height: 70px; flex-basis: 70px; font-size: 1.8rem; }
             
             .kpi-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
             .kpi-header { gap: 10px; }
@@ -611,6 +640,12 @@ export default function Dashboard() {
           
           /* 📱 TINY MOBILE */
           @media (max-width: 480px) {
+            .dash-welcome-card { gap: 14px; }
+            .dash-welcome-avatar { width: 50px; height: 50px; flex-basis: 50px; border-width: 2px; font-size: 1.35rem; }
+            .dash-welcome-copy h1 { font-size: 1.75rem; }
+            .dash-welcome-copy p { font-size: .9rem; margin: 10px 0 16px; }
+            .dash-welcome-actions { gap: 10px; }
+            .dash-welcome-actions button { padding: 11px 13px; font-size: .9rem; }
             .kpi-grid { grid-template-columns: 1fr; }
           }
 

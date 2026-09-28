@@ -168,8 +168,8 @@ app.post('/api/tpo/clients/submit-mou', upload.any(), controllers.submitMou);
 app.post('/api/tpo/clients/add', upload.single('logoFile'), controllers.addClient);
 app.post('/api/tpo/profile/update-photo', upload.single('photo'), controllers.updatePhoto);
 app.post('/api/tpo/profile/update-password', controllers.updatePassword);
-app.get('/api/tpo/drives', controllers.getDrives);
-app.post('/api/tpo/drives/update', controllers.updateDriveStatus);
+app.get('/api/tpo/drives', requireSession('portal'), controllers.getDrives);
+app.post('/api/tpo/drives/update', requireSession('portal'), controllers.updateDriveStatus);
 app.get('/api/tpo/trigger-resumes', controllers.triggerDailyCron);
 
 // 🚨 INSTANT TEST ROUTE: Trigger both daily tasks manually anytime
