@@ -23,7 +23,7 @@
 @keyframes career-rotate { to { transform: rotate(360deg); } }
 .career-hub-chips { display: flex; gap: 7px; overflow-x: auto; margin-bottom: 19px; padding: 2px 1px 9px; scrollbar-width: thin; }
 .career-hub-chips button { flex: 0 0 auto; min-height: 34px; padding: 0 12px; border: 1px solid var(--card-border,#26344a); border-radius: 30px; color: var(--text-muted,#9aa9bd); background: var(--card-bg,#121b2c); font: inherit; font-size: .68rem; font-weight: 750; cursor: pointer; }
-.career-hub-chips button.active { border-color: var(--accent-primary,#8b5cf6); color: white; background: var(--accent-primary,#8b5cf6); }
+.career-hub-chips button.active { border-color: var(--accent-primary,var(--accent-primary)); color: white; background: var(--accent-primary,var(--accent-primary)); }
 .career-hub-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 14px; }
 .career-post-card { min-width: 0; min-height: 242px; display: flex; flex-direction: column; padding: 18px; border: 1px solid var(--card-border,#26344a); border-radius: 16px; color: var(--text-main,#eef4fd); background: var(--card-bg,#111a2a); box-shadow: 0 10px 26px rgba(0,0,0,.1); }
 .career-post-meta { display: flex; justify-content: space-between; align-items: center; gap: 9px; }
@@ -43,7 +43,7 @@
 .career-hub-message { min-height: 82px; flex-direction: row; padding: 14px; color: #ffb5b8; }
 .career-hub-message button { margin-left: 8px; border: 0; color: #c6d7ff; background: transparent; font: inherit; font-weight: 850; cursor: pointer; }
 .career-hub-loading { flex-direction: row; }
-.career-hub-loading span { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-primary,#8b5cf6); animation: career-dot 1s infinite alternate; }
+.career-hub-loading span { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-primary,var(--accent-primary)); animation: career-dot 1s infinite alternate; }
 .career-hub-loading span:nth-child(2) { animation-delay: .18s; }.career-hub-loading span:nth-child(3) { animation-delay: .36s; }
 @keyframes career-dot { to { opacity: .25; transform: translateY(-4px); } }
 .career-hub-footnote { margin-top: 15px; color: var(--text-muted,#8293aa); text-align: center; font-size: .64rem; }

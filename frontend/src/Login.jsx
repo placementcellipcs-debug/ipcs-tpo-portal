@@ -12,7 +12,7 @@ const getLandingPath = account => {
   const isSuperAdmin = String(account?.accessType || '').toLowerCase() === 'superadmin';
   if (isSuperAdmin || role.includes('SYSTEM ADMIN') || role.includes('GENERAL MANAGER') || role.includes('ZONAL PLACEMENT HEAD') || role === 'TECHNICAL HEAD') return '/dashboard';
   if (['DESIGN', 'MEDIA', 'CREATIVE'].some(part => role.includes(part))) return '/career-hub';
-  if (role.includes('TRAINER')) return '/trainer';
+  if (role.includes('TRAINER')) return '/dashboard';
   if (role === 'BRANCH ASSET MANAGER' && !isSuperAdmin) return '/assets';
   return '/dashboard';
 };
@@ -116,14 +116,15 @@ export default function Login() {
             transition={{ duration: 0.42, ease: 'easeOut' }}
           >
             <div className="portal-home-copy">
-              <div className="portal-eyebrow"><span /> IPCS Global · Ecosystem</div>
+              <div className="portal-talenzo-brand">
+                {talenzoLogoError ? <b className="portal-talenzo-fallback">TALENZO</b> : <img src="https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J" alt="Talenzo" onError={() => setTalenzoLogoError(true)} />}
+              </div>
               <h1>Build skills.<br /><span>Shape what’s next.</span></h1>
               <p>Connecting future-ready talent in industrial automation, embedded systems, IoT, and digital technology with opportunities around the world.</p>
               <div className="portal-home-actions">
                 <Link className="portal-primary-button" to="/placements">Explore placements <ArrowRight size={19} weight="bold" /></Link>
                 <Link className="portal-secondary-button" to="/placements#recruiter-partnerships"><UsersThree size={19} /> Recruiter partnerships</Link>
               </div>
-              <div className="portal-home-partner-brand"><span>Learning powered by</span>{talenzoLogoError ? <b className="portal-talenzo-fallback">TALENZO</b> : <img src="https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J" alt="Talenzo" loading="lazy" onError={() => setTalenzoLogoError(true)} />}</div>
               <div className="portal-trust-line"><span className="portal-trust-dot" /> Skills, academics, and career opportunities in one place</div>
             </div>
 

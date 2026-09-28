@@ -86,8 +86,8 @@ const requireSession = (policy = 'portal') => (req, res, next) => {
   if (policy === 'events-write' && !isAdmin && !role.includes('TPO') && !role.includes('PLACEMENT OFFICER')) {
     return res.status(403).json({ success: false, message: 'Event management is not available for this role.' });
   }
-  if (policy === 'academic' && (role.includes('ASSET') || role.includes('DESIGN') || role.includes('MEDIA') || role.includes('CREATIVE'))) {
-    return res.status(403).json({ success: false, message: 'Training & Academics is not available for this role.' });
+  if (policy === 'academic') {
+    return res.status(404).json({ success: false, message: 'Training & Academics is temporarily unavailable.' });
   }
   if (policy === 'clients' && (hasRoleToken(role, 'RTH') || role.includes('REGIONAL TECHNICAL HEAD') || role.includes('TECHNICAL LEAD') || role.includes('TRAINER') || hasRoleToken(role, 'TTH'))) {
     return res.status(403).json({ success: false, message: 'Clients & Partners is not available for this role.' });

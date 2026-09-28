@@ -4,6 +4,7 @@ import { CircleNotch, FloppyDisk, CheckCircle, Headset, CaretLeft, User, Warning
 import Layout from './Layout';
 
 import { API_BASE } from './apiConfig';
+import { getStatusTone } from './StatusBadge';
 
 export default function Issues() {
   // 🚨 SAFE PARSING: Prevents crash if localStorage is empty
@@ -71,11 +72,14 @@ export default function Issues() {
         
         // Update local state to reflect successful save
         setIssues((prevIssues) => prevIssues.map(i => i.rowNumber === rowNum ? { ...i, status: newStatus, remarks: newRemarks } : i));
+      } else {
+        setSavingStatus(prev => ({ ...prev, [rowNum]: 'error' }));
+        setTimeout(() => setSavingStatus(prev => ({ ...prev, [rowNum]: null })), 4500);
       }
     } catch (error) {
       console.error("Save failed", error);
       setSavingStatus(prev => ({ ...prev, [rowNum]: 'error' }));
-      alert("Failed to save. Check server logs.");
+      setTimeout(() => setSavingStatus(prev => ({ ...prev, [rowNum]: null })), 4500);
     }
   };
 
@@ -128,7 +132,7 @@ export default function Issues() {
           </div>
           
           {loading ? (
-            <div style={{ textAlign: 'center', marginTop: '4rem', color: '#8b5cf6' }}><CircleNotch size={50} className="ph-spin" /></div>
+            <div style={{ textAlign: 'center', marginTop: '4rem', color: 'var(--accent-primary)' }}><CircleNotch size={50} className="ph-spin" /></div>
           ) : branchList.length === 0 ? (
             <div className="empty-state">
               <Headset size={56} weight="thin" />
@@ -194,9 +198,9 @@ export default function Issues() {
           }
           .branch-tile:hover {
             background: #161e2e;
-            border-color: #8b5cf6;
+            border-color: var(--accent-primary);
             transform: translateY(-5px);
-            box-shadow: 0 15px 35px -10px rgba(139, 92, 246, 0.4);
+            box-shadow: 0 15px 35px -10px color-mix(in srgb, var(--accent-primary) 40%, transparent);
           }
 
           .pending-indicator {
@@ -222,7 +226,7 @@ export default function Issues() {
           }
 
           .branch-stats {
-            background: rgba(139, 92, 246, 0.1);
+            background: color-mix(in srgb, var(--accent-primary) 10%, transparent);
             color: #a855f7;
             padding: 8px 16px;
             border-radius: 30px;
@@ -231,7 +235,7 @@ export default function Issues() {
             gap: 8px;
             font-weight: bold;
             font-size: 0.95rem;
-            border: 1px solid rgba(139, 92, 246, 0.2);
+            border: 1px solid color-mix(in srgb, var(--accent-primary) 20%, transparent);
           }
         `}</style>
       </Layout>
@@ -289,7 +293,7 @@ export default function Issues() {
                     {/* COL 1: Student Details */}
                     <div className="col-student">
                       <div className="stu-name">
-                        <User size={16} color="#8b5cf6" weight="bold" /> {issue.name}
+                        <User size={16} color="var(--accent-primary)" weight="bold" /> {issue.name}
                       </div>
                       <div className="stu-branch">{issue.branch}</div>
                     </div>
@@ -302,7 +306,7 @@ export default function Issues() {
                     {/* COL 3: Status Dropdown */}
                     <div className="col-status">
                       <select 
-                        className="issue-select" 
+                        className={`issue-select status-${getStatusTone(currentStatus)}`} 
                         value={currentStatus}
                         onChange={(e) => handleEditChange(issue.rowNumber, 'status', e.target.value)}
                       >
@@ -325,14 +329,17 @@ export default function Issues() {
                     {/* COL 5: Save Action */}
                     <div className="col-action">
                       <button 
-                        className={`issue-save-btn ${btnStatus === 'success' ? 'success' : ''}`}
+                        className={`issue-save-btn ${btnStatus === 'success' ? 'success' : btnStatus === 'error' ? 'error' : ''}`}
                         onClick={() => saveIssue(issue)}
                         disabled={btnStatus === 'saving'}
                       >
                         {btnStatus === 'saving' ? <CircleNotch size={18} className="ph-spin" /> : 
-                         btnStatus === 'success' ? <CheckCircle size={18} weight="bold" /> : 
+                         btnStatus === 'success' ? <CheckCircle size={18} weight="bold" /> :
+                         btnStatus === 'error' ? <WarningCircle size={18} weight="bold" /> :
                          <><FloppyDisk size={18} weight="bold" /> Save</>}
                       </button>
+                      {btnStatus === 'success' && <span className="save-status-text success" role="status"><CheckCircle size={14} weight="fill" /> Saved</span>}
+                      {btnStatus === 'error' && <span className="save-status-text error" role="alert"><WarningCircle size={14} weight="fill" /> Could not save</span>}
                     </div>
 
                   </div>
@@ -392,7 +399,7 @@ export default function Issues() {
           transition: 0.2s ease;
         }
         .issue-card.hover-lift:hover {
-          border-color: rgba(139, 92, 246, 0.4);
+          border-color: color-mix(in srgb, var(--accent-primary) 40%, transparent);
           transform: translateY(-2px);
           box-shadow: 0 10px 20px -10px rgba(0,0,0,0.5);
         }
@@ -433,13 +440,13 @@ export default function Issues() {
           box-sizing: border-box;
         }
         .issue-input:focus, .issue-select:focus {
-          border-color: #8b5cf6;
-          box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.15);
+          border-color: var(--accent-primary);
+          box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent-primary) 15%, transparent);
         }
 
         .issue-save-btn {
           width: 100%;
-          background: #8b5cf6;
+          background: var(--accent-primary);
           color: #ffffff;
           border: none;
           padding: 10px 16px;
@@ -454,12 +461,17 @@ export default function Issues() {
           transition: all 0.2s;
         }
         .issue-save-btn:hover:not(:disabled) {
-          background: #7c3aed;
+          background: color-mix(in srgb, var(--accent-primary) 82%, #0f172a);
           transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(139, 92, 246, 0.4);
+          box-shadow: 0 4px 12px color-mix(in srgb, var(--accent-primary) 40%, transparent);
         }
+        .col-action { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
         .issue-save-btn:disabled { opacity: 0.7; cursor: not-allowed; }
         .issue-save-btn.success { background: #10b981; color: #fff; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4); }
+        .issue-save-btn.error { background: #ef4444; color: #fff; }
+        .issue-select.status-success { border-color: rgba(16,185,129,.65); color: #10b981; }
+        .issue-select.status-danger { border-color: rgba(239,68,68,.65); color: #ef4444; }
+        .issue-select.status-warning { border-color: rgba(245,158,11,.65); color: #f59e0b; }
 
         /* Responsive Breakpoints */
         @media (max-width: 1024px) {

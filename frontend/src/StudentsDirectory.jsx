@@ -8,8 +8,9 @@ import {
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
+import StatusBadge from './StatusBadge';
 
-const TILE_COLORS = ['#10b981', '#ef4444', '#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#0ea5e9', '#f43f5e'];
+const TILE_COLORS = ['#10b981', '#ef4444', '#3b82f6', 'var(--accent-primary)', '#f59e0b', '#ec4899', '#0ea5e9', '#f43f5e'];
 
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
@@ -245,7 +246,7 @@ export default function StudentsDirectory() {
         
         {!selectedBranch && (
           <div className="universal-kpi-bar" style={{ marginBottom: '2.5rem' }}>
-            <div className="kpi-card"><div><div className="kpi-val">{globallyFiltered.length}</div><div className="kpi-label">{isCourseSpecific ? `Assigned Students` : 'Filtered Students'}</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6' }}><UsersThree weight="fill"/></div></div>
+            <div className="kpi-card"><div><div className="kpi-val">{globallyFiltered.length}</div><div className="kpi-label">{isCourseSpecific ? `Assigned Students` : 'Filtered Students'}</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)' }}><UsersThree weight="fill"/></div></div>
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.activeVacancies}</div><div className="kpi-label">Active Vacancies</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><Briefcase weight="fill"/></div></div>
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.pendingApps}</div><div className="kpi-label">Pending Apps</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><Files weight="fill"/></div></div>
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.placed}</div><div className="kpi-label">Total Hired</div></div><div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}><Confetti weight="fill"/></div></div>
@@ -385,7 +386,7 @@ export default function StudentsDirectory() {
                   <div className="sc-detail-row"><span>Branch</span><strong style={{ color: 'var(--text-main)' }}>{st.branch}</strong></div>
                   <div className="sc-detail-row"><span>Course</span><strong style={{ color: 'var(--text-main)' }}>{st.course}</strong></div>
                   <div className="sc-detail-row"><span>Contact</span><strong style={{ color: 'var(--text-main)' }}>{st.phone}</strong></div>
-                  <div className="sc-detail-row"><span>Status</span><strong style={{ color: st.status.toLowerCase().includes('completed') ? '#10b981' : '#8b5cf6' }}>{st.status}</strong></div>
+                  <div className="sc-detail-row"><span>Status</span><strong style={{ color: st.status.toLowerCase().includes('completed') ? '#10b981' : 'var(--accent-primary)' }}>{st.status}</strong></div>
                 </div>
                 <button className="btn-secondary" style={{ width: '100%', padding: '0.5rem' }} onClick={() => openStudentModal(st)}>View Profile</button>
               </div>
@@ -424,7 +425,7 @@ export default function StudentsDirectory() {
                       <span className="sub-text">{st.stream}</span>
                     </td>
                     <td>
-                      <span className={`badge ${st.status.toLowerCase().includes('completed') ? 'badge-green' : 'badge-blue'}`}>{st.status}</span>
+                      <StatusBadge status={st.status} />
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <button className="btn-secondary" onClick={() => openStudentModal(st)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}>
@@ -447,12 +448,12 @@ export default function StudentsDirectory() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '15px' }}>
               
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
-                <div style={{ width: '65px', height: '65px', borderRadius: '50%', overflow: 'hidden', border: '2px solid #8b5cf6', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)', flexShrink: 0 }}>
+                <div style={{ width: '65px', height: '65px', borderRadius: '50%', overflow: 'hidden', border: '2px solid var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)', flexShrink: 0 }}>
                   {renderAvatar(selectedStudent.photo, selectedStudent.name)}
                 </div>
                 <div>
                   <h2 style={{ margin: '0 0 4px 0', fontSize: '1.4rem', color: '#fff' }}>{selectedStudent.name}</h2>
-                  <span style={{ fontSize: '0.85rem', color: '#8b5cf6', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{selectedStudent.roll}</span>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{selectedStudent.roll}</span>
                   
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {(() => {
@@ -500,7 +501,7 @@ export default function StudentsDirectory() {
                   </button>
                 )}
                 {selectedStudent.certificate && selectedStudent.certificate !== 'N/A' && (
-                  <button className="btn-secondary" onClick={() => window.open(getDrivePdf(selectedStudent.certificate) || selectedStudent.certificate, '_blank')} style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', border: '1px solid #8b5cf6', margin: 0, padding: '0.5rem 0.8rem' }}>
+                  <button className="btn-secondary" onClick={() => window.open(getDrivePdf(selectedStudent.certificate) || selectedStudent.certificate, '_blank')} style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)', border: '1px solid var(--accent-primary)', margin: 0, padding: '0.5rem 0.8rem' }}>
                     <GraduationCap size={18} weight="fill" /> Certificate
                   </button>
                 )}
@@ -551,7 +552,7 @@ export default function StudentsDirectory() {
 
              {isBranchManager && (
                <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #1e293b' }}>
-                 <h3 style={{ margin: '0 0 15px 0', color: '#8b5cf6', fontSize: '1.1rem' }}>Reference Contacts</h3>
+                 <h3 style={{ margin: '0 0 15px 0', color: 'var(--accent-primary)', fontSize: '1.1rem' }}>Reference Contacts</h3>
                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
                    {(() => {
                       const raw = selectedStudent.rawData || {};
@@ -672,7 +673,7 @@ export default function StudentsDirectory() {
 
                   <div style={{ display: 'flex', justifyContent: !canSave ? 'space-between' : 'flex-end', alignItems: 'center', marginTop: '1.5rem' }}>
                      {!canSave && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission for Toggles</span>}
-                     <button className="btn-action" style={{ width: 'auto', background: !canSave ? '#1e293b' : '#8b5cf6', color: !canSave ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: !canSave ? 'not-allowed' : 'pointer', opacity: canSave ? 1 : 0.5 }} onClick={saveStudentUpdates} disabled={savingStatus || !canSave}>
+                     <button className="btn-action" style={{ width: 'auto', background: !canSave ? '#1e293b' : 'var(--accent-primary)', color: !canSave ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: !canSave ? 'not-allowed' : 'pointer', opacity: canSave ? 1 : 0.5 }} onClick={saveStudentUpdates} disabled={savingStatus || !canSave}>
                         {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> {!canSave ? 'Locked' : 'Save Changes'}</>}
                       </button>
                   </div>

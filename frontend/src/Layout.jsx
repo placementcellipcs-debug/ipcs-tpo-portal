@@ -8,9 +8,10 @@ import {
   WarningCircle, Notebook, Barcode, Package, ArrowsLeftRight, Wrench, Plus,
   Headset, SignOut,
   Kanban, ImageSquare, ShareNetwork, CheckCircle, ClockCounterClockwise, SlidersHorizontal,
-  GraduationCap, UsersFour, ChalkboardTeacher, CalendarCheck, CaretDown, Brain, Newspaper
+  CaretDown, Brain, Newspaper
 } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
+import { applyAppearance, readAppearance } from './appearance';
 
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
@@ -94,7 +95,7 @@ export default function Layout({ children }) {
 
   useEffect(() => {
     if (!tpoData) return;
-    document.body.setAttribute('data-theme', 'dark');
+    applyAppearance(readAppearance());
     
     const userRole = (tpoData?.role || '').toUpperCase();
     const isSuperAdmin = tpoData?.accessType === 'superadmin' || userRole.includes('SYSTEM ADMIN') || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
@@ -123,7 +124,7 @@ export default function Layout({ children }) {
           let title = "Application Updated";
           let desc = `${name}'s status updated to ${getVal('status') || 'Applied'} at ${company}.`;
           let icon = <ListChecks size={18} weight="bold" />;
-          let color = "#8b5cf6"; let bg = "rgba(56, 189, 248, 0.1)";
+          let color = "var(--accent-primary)"; let bg = "rgba(56, 189, 248, 0.1)";
 
           if (status.includes('placed') || status.includes('offer')) {
              title = "Placement Confirmed! 🎉"; desc = `${name} has been successfully placed at ${company}!`;
@@ -183,7 +184,7 @@ export default function Layout({ children }) {
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('SYSTEM ADMIN') || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
   const isDesignerWorkspace = isDesigner && !isSuperAdmin;
   
-  // Designers get a purpose-built workspace: Career Hub, Mind Gym, Events, and Media Studio.
+  // Designers get a focused workspace with news, games, events, and media tools.
   const showPlacementAndAcademic = !isDesignerWorkspace;
 
   const canCollapseAdminNav = isSuperAdmin || userRole.includes('ADMIN');
@@ -203,8 +204,7 @@ export default function Layout({ children }) {
   };
   
   const profilePhotoUrl = getDriveImage(tpoData.photo);
-  const isActive = (path) => location.pathname.startsWith(path) ? '#8b5cf6' : '#94a3b8';
-  const isAcadActive = (path) => location.pathname.startsWith(path) ? '#10b981' : '#94a3b8';
+  const isActive = (path) => location.pathname.startsWith(path) ? 'var(--accent-primary)' : '#94a3b8';
 
   const handleLogout = () => { localStorage.removeItem('tpoData'); navigate('/'); };
   const handleNav = (path) => { setIsDrawerOpen(false); navigate(path); };
@@ -225,9 +225,9 @@ export default function Layout({ children }) {
   };
 
   const sectionTheme = location.pathname.startsWith('/assets') ? 'assets' : location.pathname.startsWith('/academic') ? 'academic' : location.pathname.startsWith('/media') ? 'media' : location.pathname.startsWith('/clients') ? 'partners' : 'placement';
-  const dashboardPath = isTrainer ? '/trainer' : '/dashboard';
-  const defaultBackPath = isAssetManager && !isSuperAdmin ? '/assets' : (isTrainer ? '/trainer' : '/dashboard');
-  const designerAllowedPath = ['/career-hub', '/academic/brain-gym', '/events', '/media/dashboard', '/media/preview', '/media/files', '/media/social', '/media/categories', '/media/logs', '/media/settings'].some(path => location.pathname === path || location.pathname.startsWith(`${path}/`));
+  const dashboardPath = '/dashboard';
+  const defaultBackPath = isAssetManager && !isSuperAdmin ? '/assets' : '/dashboard';
+  const designerAllowedPath = ['/career-hub', '/game-pal', '/events', '/media/dashboard', '/media/preview', '/media/files', '/media/social', '/media/categories', '/media/logs', '/media/settings'].some(path => location.pathname === path || location.pathname.startsWith(`${path}/`));
 
   if (isDesignerWorkspace && !designerAllowedPath) return <Navigate to="/career-hub" replace />;
 
@@ -248,10 +248,10 @@ export default function Layout({ children }) {
               </button>
 
               {isNotifOpen && (
-                <div style={{ position: 'absolute', top: '40px', right: '0', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '12px', width: '350px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', zIndex: 9999, overflow: 'hidden' }}>
+                <div className="notification-panel" style={{ position: 'absolute', top: '40px', right: '0', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '12px', width: '350px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', zIndex: 9999, overflow: 'hidden' }}>
                   <div style={{ padding: '15px', borderBottom: '1px solid #1e293b', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#fff' }}>
                     Activity Notifications
-                    <span style={{ fontSize: '0.7rem', background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', padding: '3px 8px', borderRadius: '10px' }}>Live Updates</span>
+                    <span style={{ fontSize: '0.7rem', background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)', padding: '3px 8px', borderRadius: '10px' }}>Live Updates</span>
                   </div>
                   <div style={{ padding: '0', maxHeight: '350px', overflowY: 'auto' }}>
                     {notifications.length === 0 ? (
@@ -309,15 +309,10 @@ export default function Layout({ children }) {
 
           <div className="pd-nav-list">
             <>
-            {!isDesignerWorkspace && <div className={`pd-nav-item ${location.pathname === dashboardPath || location.pathname === '/dashboard' ? (isTrainer ? 'active-acad' : 'active') : ''}`} onClick={() => handleNav(dashboardPath)}><SquaresFour size={22} /><span>Dashboard</span></div>}
-            {navSectionHeading('career', 'Industry &amp; Career Hub')}
-            <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('career')}>
-              <div className={`pd-nav-item ${location.pathname.startsWith('/career-hub') ? 'active' : ''}`} onClick={() => handleNav('/career-hub')}><Newspaper size={22} /><span>Career Hub</span></div>
-              <div className={`pd-nav-item ${isActive('/academic/brain-gym') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/academic/brain-gym')}><Brain size={22} weight={isActive('/academic/brain-gym') === '#8b5cf6' ? 'fill' : 'regular'} /><span>Mind Gym</span></div>
-            </div>
+            {!isDesignerWorkspace && <div className={`pd-nav-item ${location.pathname === dashboardPath || location.pathname === '/dashboard' ? 'active' : ''}`} onClick={() => handleNav(dashboardPath)}><SquaresFour size={22} /><span>Dashboard</span></div>}
             {isDesignerWorkspace && <>
               {navSectionHeading('designer-events', 'Events', { marginTop: '15px' })}
-              <div className={`pd-nav-item ${isActive('/events') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} /><span>All Branch Events</span></div>
+              <div className={`pd-nav-item ${isActive('/events') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} /><span>All Branch Events</span></div>
             </>}
             
             {showPlacementAndAcademic && (
@@ -325,45 +320,26 @@ export default function Layout({ children }) {
                 {/* 🚨 PLACEMENT MENU */}
                 {navSectionHeading('placement', 'Main Menu')}
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('placement')}>
-                <div className={`pd-nav-item ${isActive('/students') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/students')}><Users size={22} weight={isActive('/students') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Students Directory</span></div>
-                {showIssues && <div className={`pd-nav-item ${isActive('/issues') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/issues')}><Headset size={22} weight={isActive('/issues') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Issue Resolution</span></div>}
-                {showTracker && <div className={`pd-nav-item ${isActive('/tracker') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/tracker')}><Files size={22} weight={isActive('/tracker') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Job Tracker</span></div>}
-                {showReports && <div className={`pd-nav-item ${isActive('/reports') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/reports')}><ChartBar size={22} weight={isActive('/reports') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Reports</span></div>}
-                <div className={`pd-nav-item ${isActive('/placed') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/placed')}><Trophy size={22} weight={isActive('/placed') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Placed Students</span></div>
-                {showStudentApps && <div className={`pd-nav-item ${isActive('/applications') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/applications')}><ListChecks size={22} weight={isActive('/applications') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Student Apps</span></div>}
-                <div className={`pd-nav-item ${isActive('/vacancies') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/vacancies')}><Briefcase size={22} weight={isActive('/vacancies') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Vacancies</span></div>
-                {!isTrainer && <div className={`pd-nav-item ${isActive('/placement-drives') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}><IdentificationCard size={22} weight={isActive('/placement-drives') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Placement Drives</span></div>}
-                {canViewClients && <div className={`pd-nav-item ${isActive('/clients') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/clients')}><Handshake size={22} weight={isActive('/clients') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Clients & Partners</span></div>}
+                <div className={`pd-nav-item ${isActive('/students') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/students')}><Users size={22} weight={isActive('/students') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Students Directory</span></div>
+                {showIssues && <div className={`pd-nav-item ${isActive('/issues') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/issues')}><Headset size={22} weight={isActive('/issues') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Issue Resolution</span></div>}
+                {showTracker && <div className={`pd-nav-item ${isActive('/tracker') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/tracker')}><Files size={22} weight={isActive('/tracker') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Job Tracker</span></div>}
+                {showReports && <div className={`pd-nav-item ${isActive('/reports') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/reports')}><ChartBar size={22} weight={isActive('/reports') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Reports</span></div>}
+                <div className={`pd-nav-item ${isActive('/placed') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/placed')}><Trophy size={22} weight={isActive('/placed') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Placed Students</span></div>
+                {showStudentApps && <div className={`pd-nav-item ${isActive('/applications') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/applications')}><ListChecks size={22} weight={isActive('/applications') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Student Apps</span></div>}
+                <div className={`pd-nav-item ${isActive('/vacancies') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/vacancies')}><Briefcase size={22} weight={isActive('/vacancies') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Vacancies</span></div>
+                {!isTrainer && <div className={`pd-nav-item ${isActive('/placement-drives') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}><IdentificationCard size={22} weight={isActive('/placement-drives') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Placement Drives</span></div>}
+                {canViewClients && <div className={`pd-nav-item ${isActive('/clients') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/clients')}><Handshake size={22} weight={isActive('/clients') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Clients & Partners</span></div>}
                 </div>
 
                 {/* 🚨 ACADEMIC & OPS (RESTORED) */}
                 {navSectionHeading('ops', 'Academic & Ops', { marginTop: '15px' })}
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('ops')}>
-                <div className={`pd-nav-item ${isActive('/events') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} weight={isActive('/events') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Events</span></div>
-                <div className={`pd-nav-item ${isActive('/talentino') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/talentino')}><UserCheck size={22} weight={isActive('/talentino') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Talentino</span></div>
-                {showStudyMaterials && <div className={`pd-nav-item ${isActive('/study-materials') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/study-materials')}><Book size={22} weight={isActive('/study-materials') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Study Materials</span></div>}
-                {!userRole.includes('MANAGER') && !isTpo && <div className={`pd-nav-item ${isActive('/exams') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/exams')}><FileText size={22} weight={isActive('/exams') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Exams Hub</span></div>}
+                <div className={`pd-nav-item ${isActive('/events') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} weight={isActive('/events') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Events</span></div>
+                <div className={`pd-nav-item ${isActive('/talentino') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/talentino')}><UserCheck size={22} weight={isActive('/talentino') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Talentino</span></div>
+                {showStudyMaterials && <div className={`pd-nav-item ${isActive('/study-materials') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/study-materials')}><Book size={22} weight={isActive('/study-materials') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Study Materials</span></div>}
+                {!userRole.includes('MANAGER') && !isTpo && <div className={`pd-nav-item ${isActive('/exams') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/exams')}><FileText size={22} weight={isActive('/exams') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Exams Hub</span></div>}
                 </div>
 
-                {/* 🚨 NEW TRAINING & ACADEMICS */}
-                {navSectionHeading('training', 'Training & Academics', { marginTop: '15px' })}
-                <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('training')}>
-                <div className={`pd-nav-item ${isAcadActive('/academic/training') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/training')}>
-                  <GraduationCap size={22} weight={isAcadActive('/academic/training') === '#10b981' ? 'fill' : 'regular'} /> <span>Student Training</span>
-                </div>
-                <div className={`pd-nav-item ${isAcadActive('/academic/batches') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/batches')}>
-                  <UsersFour size={22} weight={isAcadActive('/academic/batches') === '#10b981' ? 'fill' : 'regular'} /> <span>Batch Management</span>
-                </div>
-                <div className={`pd-nav-item ${isAcadActive('/academic/sessions') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/sessions')}>
-                  <ChalkboardTeacher size={22} weight={isAcadActive('/academic/sessions') === '#10b981' ? 'fill' : 'regular'} /> <span>Live Sessions</span>
-                </div>
-                <div className={`pd-nav-item ${isAcadActive('/academic/attendance') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/attendance')}>
-                  <CalendarCheck size={22} weight={isAcadActive('/academic/attendance') === '#10b981' ? 'fill' : 'regular'} /> <span>Attendance Register</span>
-                </div>
-                <div className={`pd-nav-item ${isAcadActive('/academic/diary') === '#10b981' ? 'active-acad' : ''}`} onClick={() => handleNav('/academic/diary')}>
-                  <Notebook size={22} weight={isAcadActive('/academic/diary') === '#10b981' ? 'fill' : 'regular'} /> <span>Student Diary</span>
-                </div>
-                </div>
               </>
             )}
 
@@ -372,26 +348,26 @@ export default function Layout({ children }) {
               <>
                 {navSectionHeading('media', 'Media & Design Studio', isSuperAdmin ? { marginTop: '15px' } : {})}
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('media')}>
-                <div className={`pd-nav-item ${isActive('/media/dashboard') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/dashboard')}>
-                  <Kanban size={22} weight={isActive('/media/dashboard') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Active Queues</span>
+                <div className={`pd-nav-item ${isActive('/media/dashboard') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/media/dashboard')}>
+                  <Kanban size={22} weight={isActive('/media/dashboard') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Active Queues</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/media/preview') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/preview')}>
-                  <ImageSquare size={22} weight={isActive('/media/preview') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Preview Gallery</span>
+                <div className={`pd-nav-item ${isActive('/media/preview') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/media/preview')}>
+                  <ImageSquare size={22} weight={isActive('/media/preview') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Preview Gallery</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/media/files') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/files')}>
-                  <Files size={22} weight={isActive('/media/files') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>File Vault</span>
+                <div className={`pd-nav-item ${isActive('/media/files') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/media/files')}>
+                  <Files size={22} weight={isActive('/media/files') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>File Vault</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/media/social') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/social')}>
-                  <ShareNetwork size={22} weight={isActive('/media/social') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Social Media</span>
+                <div className={`pd-nav-item ${isActive('/media/social') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/media/social')}>
+                  <ShareNetwork size={22} weight={isActive('/media/social') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Social Media</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/media/categories') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/categories')}>
-                  <CheckCircle size={22} weight={isActive('/media/categories') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Categories</span>
+                <div className={`pd-nav-item ${isActive('/media/categories') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/media/categories')}>
+                  <CheckCircle size={22} weight={isActive('/media/categories') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Categories</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/media/logs') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/logs')}>
-                  <ClockCounterClockwise size={22} weight={isActive('/media/logs') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Activity Logs</span>
+                <div className={`pd-nav-item ${isActive('/media/logs') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/media/logs')}>
+                  <ClockCounterClockwise size={22} weight={isActive('/media/logs') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Activity Logs</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/media/settings') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/media/settings')}>
-                  <SlidersHorizontal size={22} weight={isActive('/media/settings') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Studio Settings</span>
+                <div className={`pd-nav-item ${isActive('/media/settings') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/media/settings')}>
+                  <SlidersHorizontal size={22} weight={isActive('/media/settings') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Studio Settings</span>
                 </div>
                 </div>
               </>
@@ -403,27 +379,27 @@ export default function Layout({ children }) {
                 {navSectionHeading('assets', 'Asset Management', showPlacementAndAcademic ? { marginTop: '15px' } : {})}
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('assets')}>
                 <div className={`pd-nav-item ${(location.pathname === '/assets' || location.pathname === '/assets/branches') ? 'active' : ''}`} onClick={() => handleNav('/assets/branches')}>
-                  <ChartBar size={22} weight={isActive('/assets') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Branches &amp; Item Workspace</span>
+                  <ChartBar size={22} weight={isActive('/assets') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Branches &amp; Item Workspace</span>
                 </div>
                 <div className={`pd-nav-item ${location.pathname === '/assets/register' ? 'active' : ''}`} onClick={() => handleNav('/assets/register')}>
                   <Barcode size={22} weight={location.pathname === '/assets/register' ? 'fill' : 'regular'} /> <span>Master Registry</span>
                 </div>
                 <div className={`pd-nav-item ${location.pathname === '/assets/assignments' ? 'active' : ''}`} onClick={() => handleNav('/assets/assignments')}><UserCheck size={22} /><span>Assignments &amp; Reassignments</span></div>
                 <div className={`pd-nav-item ${location.pathname === '/assets/retired' ? 'active' : ''}`} onClick={() => handleNav('/assets/retired')}><ClockCounterClockwise size={22} /><span>Retired Assets</span></div>
-                <div className={`pd-nav-item ${isActive('/assets/add') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets/add')}>
-                  <Plus size={22} weight={isActive('/assets/add') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Register Asset</span>
+                <div className={`pd-nav-item ${isActive('/assets/add') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/add')}>
+                  <Plus size={22} weight={isActive('/assets/add') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Register Asset</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/assets/inventory') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets/inventory')}>
-                  <Package size={22} weight={isActive('/assets/inventory') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Consumables</span>
+                <div className={`pd-nav-item ${isActive('/assets/inventory') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/inventory')}>
+                  <Package size={22} weight={isActive('/assets/inventory') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Consumables</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/assets/transfers') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets/transfers')}>
-                  <ArrowsLeftRight size={22} weight={isActive('/assets/transfers') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Transfers</span>
+                <div className={`pd-nav-item ${isActive('/assets/transfers') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/transfers')}>
+                  <ArrowsLeftRight size={22} weight={isActive('/assets/transfers') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Transfers</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/assets/maintenance') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets/maintenance')}>
-                  <Wrench size={22} weight={isActive('/assets/maintenance') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Maintenance</span>
+                <div className={`pd-nav-item ${isActive('/assets/maintenance') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/maintenance')}>
+                  <Wrench size={22} weight={isActive('/assets/maintenance') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Maintenance</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/assets/settings') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/assets/settings')}>
-                  <Gear size={22} weight={isActive('/assets/settings') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Vendors &amp; Settings</span>
+                <div className={`pd-nav-item ${isActive('/assets/settings') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/settings')}>
+                  <Gear size={22} weight={isActive('/assets/settings') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Vendors &amp; Settings</span>
                 </div>
                 </div>
               </>
@@ -433,27 +409,32 @@ export default function Layout({ children }) {
               <>
                 {navSectionHeading('system', 'System Admin', { marginTop: '15px' })}
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('system')}>
-                <div className={`pd-nav-item ${isActive('/branches') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/branches')}>
-                  <MapPin size={22} weight={isActive('/branches') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Manage Branches</span>
+                <div className={`pd-nav-item ${isActive('/branches') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/branches')}>
+                  <MapPin size={22} weight={isActive('/branches') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Manage Branches</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/courses') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/courses')}>
-                  <Bookmarks size={22} weight={isActive('/courses') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Manage Courses</span>
+                <div className={`pd-nav-item ${isActive('/courses') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/courses')}>
+                  <Bookmarks size={22} weight={isActive('/courses') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Manage Courses</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/users') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/users')}>
-                  <ShieldCheck size={22} weight={isActive('/users') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>User Management</span>
+                <div className={`pd-nav-item ${isActive('/users') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/users')}>
+                  <ShieldCheck size={22} weight={isActive('/users') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>User Management</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/security-logs') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/security-logs')}>
-                  <ShieldCheck size={22} weight={isActive('/security-logs') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Security Logs</span>
+                <div className={`pd-nav-item ${isActive('/security-logs') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/security-logs')}>
+                  <ShieldCheck size={22} weight={isActive('/security-logs') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Security Logs</span>
                 </div>
                 </div>
               </>
             )}
 
+            {navSectionHeading('career', 'News & Games', { marginTop: '15px' })}
+            <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('career')}>
+              <div className={`pd-nav-item ${location.pathname.startsWith('/career-hub') ? 'active' : ''}`} onClick={() => handleNav('/career-hub')}><Newspaper size={22} /><span>News &amp; Blog</span></div>
+              <div className={`pd-nav-item ${location.pathname.startsWith('/game-pal') ? 'active' : ''}`} onClick={() => handleNav('/game-pal')}><Brain size={22} weight={location.pathname.startsWith('/game-pal') ? 'fill' : 'regular'} /><span>GamePal</span></div>
+            </div>
             {!isDesignerWorkspace && <>
               {navSectionHeading('preferences', 'Preferences', { marginTop: '15px' })}
               <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('preferences')}>
-              <div className={`pd-nav-item ${isActive('/settings') === '#8b5cf6' ? 'active' : ''}`} onClick={() => handleNav('/settings')}>
-                <Gear size={22} weight={isActive('/settings') === '#8b5cf6' ? 'fill' : 'regular'} /> <span>Settings</span>
+              <div className={`pd-nav-item ${isActive('/settings') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/settings')}>
+                <Gear size={22} weight={isActive('/settings') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Settings</span>
               </div>
               </div>
             </>}
@@ -478,7 +459,7 @@ export default function Layout({ children }) {
         .pd-close-btn { position: absolute; top: 20px; right: 20px; width: 32px; height: 32px; background: rgba(255,255,255,0.05); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #94a3b8; cursor: pointer; transition: 0.2s; }
         .pd-close-btn:hover { background: rgba(239, 68, 68, 0.1); color: #ef4444; transform: rotate(90deg); }
         .pd-profile-group { display: flex; flex-direction: column; align-items: center; text-align: center; }
-        .pd-avatar-ring { width: 76px; height: 76px; border-radius: 50%; background: linear-gradient(135deg, #8b5cf6, #8b5cf6); padding: 3px; margin-bottom: 12px; box-shadow: 0 4px 15px rgba(56, 189, 248, 0.3); }
+        .pd-avatar-ring { width: 76px; height: 76px; border-radius: 50%; background: linear-gradient(135deg, var(--accent-primary), var(--accent-primary)); padding: 3px; margin-bottom: 12px; box-shadow: 0 4px 15px rgba(56, 189, 248, 0.3); }
         .pd-avatar-inner { width: 100%; height: 100%; border-radius: 50%; background: #0f1523; overflow: hidden; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; font-size: 1.5rem; }
         .pd-avatar-inner img { width: 100%; height: 100%; object-fit: cover; }
         .pd-name { margin: 0 0 4px 0; color: #f8fafc; font-size: 1.2rem; font-weight: 700; letter-spacing: -0.5px; }
@@ -496,7 +477,7 @@ export default function Layout({ children }) {
         .pd-nav-item { display: flex; align-items: center; gap: 15px; padding: 12px 18px; border-radius: 16px; color: #94a3b8; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
         .pd-nav-item:hover { background: rgba(255,255,255,0.03); color: #e2e8f0; transform: translateX(4px); }
         
-        .pd-nav-item.active { background: linear-gradient(135deg, #6366f1, #a855f7); color: #ffffff; box-shadow: 0 8px 20px -6px rgba(99, 102, 241, 0.6); }
+        .pd-nav-item.active { background: linear-gradient(135deg, var(--accent-primary), color-mix(in srgb, var(--accent-primary) 72%, #111827)); color: #ffffff; box-shadow: 0 8px 20px -6px var(--accent-glow); }
         .pd-nav-item.active-acad { background: linear-gradient(135deg, #10b981, #059669); color: #ffffff; box-shadow: 0 8px 20px -6px rgba(16, 185, 129, 0.6); }
         .header-talenzo-logo { display: block; width: 160px; height: 46px; object-fit: contain; object-position: left center; filter: brightness(1.16) contrast(1.8); mix-blend-mode: screen; }
         .header-talenzo-fallback { width: 160px; color: #22d3ee; font-size: 1rem; font-style: italic; font-weight: 900; letter-spacing: .08em; }

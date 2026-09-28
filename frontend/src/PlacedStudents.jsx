@@ -6,8 +6,9 @@ import {
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
+import StatusBadge from './StatusBadge';
 
-const TILE_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
+const TILE_COLORS = ['#3b82f6', 'var(--accent-primary)', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
@@ -412,10 +413,8 @@ export default function PlacedStudents() {
                       <span style={{ color: '#10b981', fontSize: '0.85rem', fontWeight: 600 }}>{app.packageLpa ? `${app.packageLpa} LPA` : 'N/A LPA'}</span>
                     </div>
                     <div>
-                      <span style={{ border: '1px solid #10b981', color: '#10b981', padding: '2px 10px', borderRadius: '20px', fontSize: '0.7rem', fontWeight: 700, letterSpacing: '0.5px' }}>
-                        {(app.status || 'Placed').toUpperCase()}
-                      </span>
-                      <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '6px' }}>{app.joiningStatus || 'Joined'}</span>
+                      <StatusBadge status={app.status || 'Placed'} />
+                      <div style={{ marginTop: '6px' }}><StatusBadge status={app.joiningStatus || 'Joined'} /></div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'center' }}>
                       {canEditPlacement ? (
@@ -424,7 +423,7 @@ export default function PlacedStudents() {
                         </button>
                       ) : (
                         (app.offerLetter && app.offerLetter !== 'N/A') ? (
-                          <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.75rem', background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', borderColor: '#8b5cf6', display: 'flex', alignItems: 'center', gap: '5px' }} onClick={() => window.open(getDrivePdf(app.offerLetter) || app.offerLetter, '_blank')}>
+                          <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.75rem', background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)', borderColor: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '5px' }} onClick={() => window.open(getDrivePdf(app.offerLetter) || app.offerLetter, '_blank')}>
                             <FilePdf weight="fill" size={14} /> Offer Letter
                           </button>
                         ) : (
@@ -494,7 +493,7 @@ export default function PlacedStudents() {
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsAddModalOpen(false)} />
             </div>
             
-            <h3 style={{ fontSize: '0.85rem', color: '#8b5cf6', textTransform: 'uppercase', marginBottom: '10px' }}>Student Details</h3>
+            <h3 style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', textTransform: 'uppercase', marginBottom: '10px' }}>Student Details</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', marginBottom: '20px' }}>
               <div><label className="data-label">Student Name *</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.name} onChange={e=>setAddForm({...addForm, name: e.target.value})} /></div>
               <div><label className="data-label">Roll Number *</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.roll} onChange={e=>setAddForm({...addForm, roll: e.target.value})} /></div>
@@ -513,7 +512,7 @@ export default function PlacedStudents() {
               <div><label className="data-label">Branch</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.branch} onChange={e=>setAddForm({...addForm, branch: e.target.value})} /></div>
             </div>
 
-            <h3 style={{ fontSize: '0.85rem', color: '#8b5cf6', textTransform: 'uppercase', marginBottom: '10px' }}>Placement Details</h3>
+            <h3 style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', textTransform: 'uppercase', marginBottom: '10px' }}>Placement Details</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
               <div><label className="data-label">Company Name *</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.company} onChange={e=>setAddForm({...addForm, company: e.target.value})} /></div>
               <div><label className="data-label">Position / Role</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.position} onChange={e=>setAddForm({...addForm, position: e.target.value})} /></div>

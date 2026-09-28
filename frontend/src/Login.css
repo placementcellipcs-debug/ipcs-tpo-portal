@@ -71,10 +71,9 @@
 .portal-home h1 span, .login-context h1 span { color: #155eef; }
 .portal-home-copy > p, .login-context > p { max-width: 570px; margin: 0; color: var(--portal-muted); font-size: 1.05rem; line-height: 1.85; }
 .portal-home-actions { display: flex; flex-wrap: wrap; gap: 13px; margin-top: 34px; }
-.portal-home-partner-brand { min-height: 50px; margin-top: 24px; display: inline-flex; align-items: center; gap: 12px; padding: 7px 12px; border: 1px solid #d9e5f1; border-radius: 12px; background: #edf4fb; }
-.portal-home-partner-brand span { color: #8290a2; font-size: .68rem; font-weight: 800; }
-.portal-home-partner-brand img { display: block; width: 132px; height: 38px; object-fit: contain; }
-.portal-home-partner-brand .portal-talenzo-fallback { color: #06b6d4; font-size: 1rem; font-style: italic; font-weight: 900; letter-spacing: .08em; }
+.portal-talenzo-brand { min-height: 34px; margin-bottom: 23px; display: flex; align-items: center; }
+.portal-talenzo-brand img { display: block; width: 160px; height: 42px; object-fit: contain; object-position: left center; }
+.portal-talenzo-fallback { color: #06b6d4; font-size: 1.05rem; font-style: italic; font-weight: 900; letter-spacing: .08em; }
 .portal-trust-line { display: flex; align-items: center; gap: 10px; margin-top: 47px; color: #748197; font-size: .82rem; font-weight: 700; }
 .portal-trust-dot { width: 7px; height: 7px; border-radius: 50%; background: #20b7a5; box-shadow: 0 0 0 5px rgba(32, 183, 165, .12); }
 
@@ -116,9 +115,7 @@
 .portal-login-note { margin-top: 23px; padding-top: 17px; border-top: 1px solid #edf0f5; color: #8a96a7; text-align: center; font-size: .72rem; }
 .portal-footer { width: min(1280px, calc(100% - 72px)); min-height: 60px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(15, 35, 64, .08); color: #8895a7; font-size: .72rem; font-weight: 700; letter-spacing: .03em; }
 .login-intro { position: fixed; inset: 0; z-index: 99999; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; transition: opacity 1s ease-in-out; }
-.login-intro video { display: block; width: 100%; height: 100%; min-width: 100vw; min-height: 100dvh; object-fit: cover; object-position: center; background: transparent; }
-@media (orientation: portrait) { .login-intro video { width: 100vw; height: 100dvh; object-fit: cover; object-position: center; } }
-@media (orientation: landscape) { .login-intro video { width: 100vw; height: 100dvh; object-fit: cover; object-position: center; } }
+.login-intro video { display: block; width: 100%; height: 100%; min-width: 0; min-height: 0; object-fit: contain; object-position: center; background: #000; }
 
 @keyframes portal-rise { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes portal-card-in { from { opacity: 0; transform: translateY(13px) scale(.99); } to { opacity: 1; transform: translateY(0) scale(1); } }
@@ -160,7 +157,8 @@
   .portal-home-actions { align-items: stretch; flex-direction: column; margin-top: 25px; }
   .portal-home-actions a, .portal-home-actions button { width: 100%; }
   .portal-trust-line { align-items: flex-start; margin-top: 28px; font-size: .73rem; line-height: 1.5; }
-  .portal-home-partner-brand { margin-top: 19px; }
+  .portal-talenzo-brand { margin-bottom: 21px; }
+  .portal-talenzo-brand img { width: 145px; height: 39px; }
   .portal-visual { min-height: 335px; margin: 1px -10px 0; transform: scale(.88); }
   .portal-visual-orbit { width: 295px; height: 295px; }
   .portal-visual-orbit.orbit-b { width: 230px; height: 340px; }

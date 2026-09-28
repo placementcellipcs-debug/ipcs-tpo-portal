@@ -75,7 +75,7 @@ export default function AssetDashboard() {
   
   // Allocation Data for the Half-Doughnut Gauge
   const statusData = [
-    { name: 'Assigned', value: data.assigned || 0, color: '#8b5cf6' },
+    { name: 'Assigned', value: data.assigned || 0, color: 'var(--accent-primary)' },
     { name: 'Available', value: data.available || 0, color: '#10b981' },
     { name: 'Maintenance', value: data.underMaintenance || 0, color: '#ef4444' }
   ].filter(d => d.value > 0);
@@ -128,7 +128,7 @@ export default function AssetDashboard() {
         <div className="kpi-grid-premium">
           <div className="kpi-card-v2">
             <div className="kpi-v2-header">
-              <div className="kpi-v2-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: '#8b5cf6' }}><Laptop weight="fill" size={24}/></div>
+              <div className="kpi-v2-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-primary)' }}><Laptop weight="fill" size={24}/></div>
               <span className="kpi-v2-title">Total Assets</span>
             </div>
             <div className="kpi-v2-body">
@@ -188,7 +188,7 @@ export default function AssetDashboard() {
                     <defs>
                       <linearGradient id="colorBar" x1="0" y1="0" x2="1" y2="0">
                         <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.8}/>
-                        <stop offset="100%" stopColor="#8b5cf6" stopOpacity={1}/>
+                        <stop offset="100%" stopColor="var(--accent-primary)" stopOpacity={1}/>
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="rgba(255,255,255,0.05)" />

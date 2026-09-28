@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
-  CircleNotch, CaretDown, FloppyDisk, CheckCircle, 
+  CircleNotch, CaretDown, FloppyDisk, CheckCircle, WarningCircle,
   WhatsappLogo, EnvelopeSimple, FilePdf, X 
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
+import { getStatusTone } from './StatusBadge';
 
 export default function JobTracker() {
   const [interviewModal, setInterviewModal] = useState({
@@ -113,11 +114,14 @@ export default function JobTracker() {
           setInterviewModal({ isOpen: false, appRowNumber: null, status: '', date: '', time: '', venue: '' });
         }
 
-        setTimeout(() => setSavingStatus(prev => ({ ...prev, [rowNum]: null })), 2000);
+        setTimeout(() => setSavingStatus(prev => ({ ...prev, [rowNum]: null })), 2500);
+      } else {
+        setSavingStatus(prev => ({ ...prev, [rowNum]: 'error' }));
+        setTimeout(() => setSavingStatus(prev => ({ ...prev, [rowNum]: null })), 4500);
       }
     } catch (error) {
       setSavingStatus(prev => ({ ...prev, [rowNum]: 'error' }));
-      alert("Failed to save. Check server logs.");
+      setTimeout(() => setSavingStatus(prev => ({ ...prev, [rowNum]: null })), 4500);
     }
   };
 
@@ -311,7 +315,7 @@ export default function JobTracker() {
                               {/* COL 3: Status Dropdown */}
                               <div className="jt-col-status">
                                 <select 
-                                  className="jt-select" 
+                                  className={`jt-select status-${getStatusTone(currentStatus)}`} 
                                   value={currentStatus} 
                                   onChange={(e) => {
                                     const newStat = e.target.value;
@@ -339,14 +343,17 @@ export default function JobTracker() {
                               {/* COL 5: Action Save */}
                               <div className="jt-col-save">
                                 <button 
-                                  className={`jt-save-btn ${btnStatus === 'success' ? 'success' : ''}`} 
+                                  className={`jt-save-btn ${btnStatus === 'success' ? 'success' : btnStatus === 'error' ? 'error' : ''}`} 
                                   onClick={() => saveApplication(app)} 
                                   disabled={btnStatus === 'saving'}
                                 >
                                   {btnStatus === 'saving' ? <CircleNotch size={18} className="ph-spin" /> : 
-                                   btnStatus === 'success' ? <CheckCircle size={18} weight="bold" /> : 
+                                   btnStatus === 'success' ? <CheckCircle size={18} weight="bold" /> :
+                                   btnStatus === 'error' ? <WarningCircle size={18} weight="bold" /> :
                                    <><FloppyDisk size={18} weight="bold" /> Save</>}
                                 </button>
+                                {btnStatus === 'success' && <span className="save-status-text success" role="status"><CheckCircle size={14} weight="fill" /> Saved</span>}
+                                {btnStatus === 'error' && <span className="save-status-text error" role="alert"><WarningCircle size={14} weight="fill" /> Could not save</span>}
                               </div>
 
                             </div>
@@ -369,7 +376,7 @@ export default function JobTracker() {
             
             <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
-                <h2 style={{ margin: 0, color: '#8b5cf6', fontSize: '1.4rem' }}>Schedule Interview</h2>
+                <h2 style={{ margin: 0, color: 'var(--accent-primary)', fontSize: '1.4rem' }}>Schedule Interview</h2>
                 <p style={{ margin: '5px 0 0 0', color: '#94a3b8', fontSize: '0.85rem' }}>
                   These details will be emailed to the student and recorded.
                 </p>
@@ -454,7 +461,7 @@ export default function JobTracker() {
           transition: all 0.2s ease;
         }
         .jt-input:focus, .jt-select:focus {
-          border-color: #8b5cf6;
+          border-color: var(--accent-primary);
           box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
         }
         .jt-input::placeholder { color: #475569; }
@@ -464,7 +471,7 @@ export default function JobTracker() {
         .jt-loading, .jt-empty-state {
           text-align: center;
           padding: 4rem 0;
-          color: #8b5cf6;
+          color: var(--accent-primary);
         }
         .jt-empty-state {
           color: #64748b;
@@ -500,7 +507,7 @@ export default function JobTracker() {
         
         .jt-acc-title {
           font-size: 1.1rem;
-          color: #8b5cf6; /* Vibrant Cyan */
+          color: var(--accent-primary); /* Vibrant Cyan */
           display: block;
           margin-bottom: 4px;
         }
@@ -607,7 +614,7 @@ export default function JobTracker() {
         .jt-badge.chat { color: #10b981; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); }
         .jt-badge.chat:hover { background: rgba(16, 185, 129, 0.25); }
         
-        .jt-badge.mail { color: #8b5cf6; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); }
+        .jt-badge.mail { color: var(--accent-primary); background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); }
         .jt-badge.mail:hover { background: rgba(56, 189, 248, 0.25); }
         
         .jt-badge.cv { color: #f59e0b; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); }
@@ -618,8 +625,8 @@ export default function JobTracker() {
         /* Save & Cancel Buttons */
         .jt-save-btn {
           width: 100%;
-          background: #8b5cf6; /* The signature Cyan from mockup */
-          color: #020617;
+          background: var(--accent-primary); /* The signature Cyan from mockup */
+          color: #ffffff;
           border: none;
           padding: 10px 16px;
           border-radius: 8px;
@@ -633,13 +640,19 @@ export default function JobTracker() {
           transition: all 0.2s;
         }
         .jt-save-btn:hover:not(:disabled) {
-          background: #0284c7;
+          background: color-mix(in srgb, var(--accent-primary) 82%, #0f172a);
           color: #fff;
           transform: translateY(-2px);
-          box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+          box-shadow: 0 4px 12px color-mix(in srgb, var(--accent-primary) 35%, transparent);
         }
+        .jt-col-save { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
         .jt-save-btn:disabled { opacity: 0.7; cursor: not-allowed; }
         .jt-save-btn.success { background: #10b981; color: #fff; }
+        .jt-save-btn.error { background: #ef4444; color: #fff; }
+        .jt-select.status-success { border-color: rgba(16,185,129,.65); color: #10b981; }
+        .jt-select.status-danger { border-color: rgba(239,68,68,.65); color: #ef4444; }
+        .jt-select.status-warning { border-color: rgba(245,158,11,.65); color: #f59e0b; }
+        .jt-select.status-info { border-color: rgba(59,130,246,.65); color: #60a5fa; }
         
         .jt-btn-cancel {
           background: transparent;

@@ -7,7 +7,7 @@ import {
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
 
-const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', '#8b5cf6', '#0ea5e9'];
+const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', 'var(--accent-primary)', '#0ea5e9'];
 
 const DEFAULT_COURSES = {
   'BMS AND CCTV': ['Diploma In Building Management System', 'Certified BMS Engineer', 'CCTV & Security Systems', 'CCTV Training'],
@@ -204,7 +204,7 @@ export default function Courses() {
                       <tr key={i}>
                         <td>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                            <div style={{ width: '35px', height: '35px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <div style={{ width: '35px', height: '35px', borderRadius: '8px', background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                               <BookBookmark size={20} weight="fill" />
                             </div>
                             <span className="primary-text" style={{ fontSize: '1.05rem' }}>{sub}</span>

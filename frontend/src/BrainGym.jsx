@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, Brain, Check, CheckCircle, Clock, Fire, Lightbulb, Sparkle, Trophy, X } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import Layout from './Layout';
-import AcademicTopNav from './AcademicTopNav';
 import './BrainGym.css';
 
 const STORE_KEY = 'ipcs-mind-gym-v1';
@@ -163,7 +162,7 @@ export default function BrainGym() {
   return (
     <Layout>
       <main className="mind-gym page-container">
-        <AcademicTopNav title="Mind Gym" subtitle="A five-minute daily reset for focus, recall, language, and logic." />
+        <header className="gamepal-page-header"><span>DAILY BRAIN GAMES</span><h1>GamePal</h1><p>A five-minute reset for focus, recall, language, and logic.</p></header>
         {activeGame ? <GameSession key={activeGame} game={game} level={gameLevel} onExit={exitGame} onResult={recordResult} onNext={() => {
           if (!circuit) { exitGame(); return; }
           const next = circuitIndex + 1;
@@ -182,7 +181,7 @@ export default function BrainGym() {
           </section>
           <section className="mind-gym-pillar-panel"><div className="mind-gym-section-heading"><div><span>YOUR PERSONAL PROFILE</span><h3>Seven ways to train</h3></div><p>Scores are private to this device and reflect your practice here.</p></div><div className="mind-pillar-grid">{PILLARS.map((pillar, index) => { const stats = profile.pillars[pillar] || { attempts: 0, wins: 0, points: 0 }; const score = stats.attempts ? Math.round((stats.wins / stats.attempts) * 100) : 0; return <article key={pillar} className={`pillar-card pillar-${index + 1}`}><span>{String(index + 1).padStart(2, '0')} / PILLAR</span><b>{pillar}</b><div><i style={{ width: `${score}%` }} /></div><small>{stats.attempts ? `${score}% personal round success` : 'Ready to explore'}</small></article>; })}</div></section>
           <section className="mind-game-section"><div className="mind-gym-section-heading"><div><span>THE GAME LIBRARY</span><h3>Pick your next challenge</h3></div><p>Short rounds; your level adjusts after three wins in a row.</p></div><div className="mind-game-grid">{GAMES.map(item => { const stats = profile.games[item.id]; const level = clamp(Math.max(weekdayLevel(today), stats?.level || 1), 1, 5); const inCircuit = circuitGames.includes(item.id); return <button key={item.id} className={`mind-game-card game-${item.color}`} onClick={() => playGame(item.id)}><div className="mind-game-card-top"><span className="mind-game-icon">{item.icon}</span><span className="mind-game-level">LEVEL {level}</span></div><span className="mind-game-kind">{item.kind} · {item.pillar}</span><b>{item.title}</b><p>{item.description}</p><span className="mind-game-card-bottom">{inCircuit ? 'In today’s circuit' : stats ? `${stats.plays} rounds · ${stats.wins} wins` : 'Ready when you are'}<ArrowRight size={16} /></span></button>; })}</div></section>
-          <section className="mind-gym-badge-panel"><div className="mind-badge-heading"><Trophy size={21} /><span><b>Practice badges</b><small>Milestones earned through your personal practice.</small></span></div><div className="mind-badge-list">{badges.map(badge => <div key={badge.name} className={badge.earned ? 'earned' : ''}><span>{badge.earned ? <CheckCircle size={17} weight="fill" /> : <Sparkle size={16} />}</span><b>{badge.name}</b><small>{badge.hint}</small></div>)}</div><div className="mind-badge-footer"><Lightbulb size={18} /> Your game progress stays on this device. Game levels adjust after streaks; this is a personal practice score, not a clinical assessment.<button onClick={() => navigate('/academic')}>Training &amp; Academics <ArrowRight size={15} /></button></div></section>
+          <section className="mind-gym-badge-panel"><div className="mind-badge-heading"><Trophy size={21} /><span><b>Practice badges</b><small>Milestones earned through your personal practice.</small></span></div><div className="mind-badge-list">{badges.map(badge => <div key={badge.name} className={badge.earned ? 'earned' : ''}><span>{badge.earned ? <CheckCircle size={17} weight="fill" /> : <Sparkle size={16} />}</span><b>{badge.name}</b><small>{badge.hint}</small></div>)}</div><div className="mind-badge-footer"><Lightbulb size={18} /> Your game progress stays on this device. Game levels adjust after streaks; this is a personal practice score, not a clinical assessment.<button onClick={() => navigate('/career-hub')}>News &amp; Blog <ArrowRight size={15} /></button></div></section>
         </>}
       </main>
     </Layout>
@@ -199,9 +198,9 @@ function GameSession({ game, level, onExit, onResult, onNext, circuitStep, circu
   };
   if (!game) return null;
   return <section className="mind-play-shell">
-    <div className="mind-play-header"><button onClick={onExit} className="mind-back-button"><ArrowLeft size={17} /> Mind Gym</button><div>{circuitTotal > 0 && <span className="mind-circuit-step">CHALLENGE {circuitStep} / {circuitTotal}</span>}<h2>{game.title}</h2><p>{game.description}</p></div><span className="mind-level-pill">LEVEL {level}</span></div>
+    <div className="mind-play-header"><button onClick={onExit} className="mind-back-button"><ArrowLeft size={17} /> GamePal</button><div>{circuitTotal > 0 && <span className="mind-circuit-step">CHALLENGE {circuitStep} / {circuitTotal}</span>}<h2>{game.title}</h2><p>{game.description}</p></div><span className="mind-level-pill">LEVEL {level}</span></div>
     {circuitTotal > 0 && <div className="mind-circuit-progress"><span style={{ width: `${((circuitStep - 1) / circuitTotal) * 100}%` }} /><small><Clock size={14} /> {Math.floor(Math.max(0, 300 - elapsed) / 60)}:{String(Math.max(0, 300 - elapsed) % 60).padStart(2, '0')} left in your five-minute warm-up</small></div>}
-    {result ? <div className={`mind-round-result ${result.won ? 'is-win' : 'is-try-again'}`}><span className="mind-result-icon">{result.won ? <CheckCircle size={34} weight="fill" /> : <Sparkle size={33} weight="fill" />}</span><div><span>{result.won ? 'ROUND COMPLETE' : 'GOOD PRACTICE'}</span><h3>{result.won ? 'Nice work.' : 'Keep building your skill.'}</h3><p>{result.message || (result.won ? 'Your score has been added to your personal profile.' : 'Your round is recorded. The next puzzle will give you another try.')}</p></div><strong>+{Math.max(5, result.score || 0) + (result.won ? 15 : 0)} XP</strong><button className="mind-primary-button" onClick={onNext}>{circuitTotal && circuitStep < circuitTotal ? 'Next challenge' : 'Back to Mind Gym'}<ArrowRight size={17} /></button></div> : <div className="mind-game-stage"><GameEngine gameId={game.id} level={level} finish={finish} /></div>}
+    {result ? <div className={`mind-round-result ${result.won ? 'is-win' : 'is-try-again'}`}><span className="mind-result-icon">{result.won ? <CheckCircle size={34} weight="fill" /> : <Sparkle size={33} weight="fill" />}</span><div><span>{result.won ? 'ROUND COMPLETE' : 'GOOD PRACTICE'}</span><h3>{result.won ? 'Nice work.' : 'Keep building your skill.'}</h3><p>{result.message || (result.won ? 'Your score has been added to your personal profile.' : 'Your round is recorded. The next puzzle will give you another try.')}</p></div><strong>+{Math.max(5, result.score || 0) + (result.won ? 15 : 0)} XP</strong><button className="mind-primary-button" onClick={onNext}>{circuitTotal && circuitStep < circuitTotal ? 'Next challenge' : 'Back to GamePal'}<ArrowRight size={17} /></button></div> : <div className="mind-game-stage"><GameEngine gameId={game.id} level={level} finish={finish} /></div>}
   </section>;
 }
 
@@ -354,7 +353,7 @@ function PatchesGame({ finish }) {
   const [placed, setPlaced] = useState({});
   const [selectedPiece, setSelectedPiece] = useState(0);
   const [feedback, setFeedback] = useState('Choose a patch, then tap the board cell where its top-left square begins. Patches do not rotate.');
-  const colors = ['#8b5cf6', '#22d3ee', '#f472b6', '#fbbf24', '#34d399', '#fb7185', '#60a5fa', '#a3e635'];
+  const colors = ['var(--accent-primary)', '#22d3ee', '#f472b6', '#fbbf24', '#34d399', '#fb7185', '#60a5fa', '#a3e635'];
   const cells = useMemo(() => {
     const grid = Array(16).fill(null);
     Object.entries(placed).forEach(([piece, placement]) => placement.forEach(cell => { grid[cell] = Number(piece); }));

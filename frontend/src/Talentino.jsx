@@ -5,7 +5,7 @@ import Layout from './Layout';
 
 import { API_BASE } from './apiConfig';
 
-const TILE_COLORS = ['#8b5cf6', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
+const TILE_COLORS = ['var(--accent-primary)', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 
 export default function Talentino() {
   // 🚨 FIX: Safe parsing
@@ -71,7 +71,7 @@ export default function Talentino() {
           <p style={{ color: 'var(--text-muted)', marginBottom: '3rem', textAlign: 'center' }}>Select an assigned branch to view student attendance and performance records.</p>
           
           {loading ? (
-            <div style={{ textAlign: 'center', marginTop: '4rem', color: '#8b5cf6' }}><CircleNotch size={50} className="ph-spin" /></div>
+            <div style={{ textAlign: 'center', marginTop: '4rem', color: 'var(--accent-primary)' }}><CircleNotch size={50} className="ph-spin" /></div>
           ) : branchList.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '2rem' }}>No Talentino records found in your assigned branches.</div>
           ) : (
@@ -115,7 +115,7 @@ export default function Talentino() {
         </div>
 
         <h1 style={{ fontSize: '2rem', marginBottom: '5px', color: '#fff' }}>Talentino Tracker</h1>
-        <p style={{ color: '#8b5cf6', background: 'rgba(139, 92, 246, 0.15)', padding: '4px 12px', borderRadius: '4px', display: 'inline-block', marginBottom: '2rem', fontWeight: 'bold' }}>
+        <p style={{ color: 'var(--accent-primary)', background: 'color-mix(in srgb, var(--accent-primary) 15%, transparent)', padding: '4px 12px', borderRadius: '4px', display: 'inline-block', marginBottom: '2rem', fontWeight: 'bold' }}>
           Viewing student performance records for {selectedBranch}.
         </p>
 

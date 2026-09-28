@@ -63,13 +63,13 @@ export default function CareerHub() {
     <main className="career-hub-page">
       <section className="career-hub-hero">
         <div className="career-hub-orbit career-hub-orbit-one" aria-hidden="true" /><div className="career-hub-orbit career-hub-orbit-two" aria-hidden="true" />
-        <span className="career-hub-eyebrow"><Newspaper size={15} weight="fill" /> IPCS GLOBAL · INDUSTRY &amp; CAREERS</span>
-        <h1>Your workday, <em>informed.</em></h1>
+        <span className="career-hub-eyebrow"><Newspaper size={15} weight="fill" /> NEWS &amp; BLOG</span>
+        <h1>News &amp; Blog</h1>
         <p>Practical reads across technology, industry, careers, workplace culture, and the evolving world of work.</p>
         <div className="career-hub-meta"><span>{items.length} updates</span><span>Updated {refreshedAt ? new Date(refreshedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'when you open the hub'}</span></div>
       </section>
 
-      <section className="career-hub-feed" aria-label="Industry and career updates">
+      <section className="career-hub-feed" aria-label="News and blog updates">
         <div className="career-hub-toolbar">
           <div className="career-hub-heading"><span>THE LATEST</span><h2>Explore the feed</h2></div>
           <label className="career-hub-search"><MagnifyingGlass size={18} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search topics, companies, and skills" aria-label="Search industry updates" /></label>

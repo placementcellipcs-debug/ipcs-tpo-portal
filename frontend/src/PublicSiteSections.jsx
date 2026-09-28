@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowRight, ArrowUpRight, BookOpenText, Briefcase, Buildings, CheckCircle, Compass, FilePdf, GlobeHemisphereWest, GraduationCap, Handshake, Lightbulb, Megaphone, PlayCircle, Star, Target, UsersThree, VideoCamera, X } from '@phosphor-icons/react';
+import { ArrowRight, ArrowUpRight, BookOpenText, Briefcase, Buildings, CheckCircle, Compass, GlobeHemisphereWest, GraduationCap, Handshake, Lightbulb, Megaphone, PlayCircle, Star, Target, UsersThree, VideoCamera, X } from '@phosphor-icons/react';
 import { API_BASE } from './apiConfig';
 import './PublicSiteSections.css';
 
@@ -366,7 +366,7 @@ export default function PublicSiteSections({ page = 'all' }) {
             </article>
           </div>
           {page === 'placement' && <section className="public-recruiter-panel" id="recruiter-partnerships">
-            <div className="public-recruiter-intro"><span className="public-card-kicker">RECRUITER PARTNERSHIPS · OPEN ACCESS</span><h3>Work with IPCS to meet career-ready talent.</h3><p>Explore the placement program and partnership process here. Recruiters can review public information without creating an account; private MOU signing links are issued directly by IPCS.</p><Link className="public-recruiter-link" to="/partners">Meet our signed partners <ArrowRight size={16} /></Link></div>
+            <div className="public-recruiter-intro"><span className="public-card-kicker">RECRUITER PARTNERSHIPS · OPEN ACCESS</span><h3>Work with IPCS to meet career-ready talent.</h3><p>Explore the placement program and partnership process here. Recruiters can review public information without creating an account; private MOU signing links are issued directly by IPCS.</p><Link className="public-recruiter-link" to="/partners">Meet our hiring partners <ArrowRight size={16} /></Link></div>
             <div className="public-recruiter-steps">{[
               ['01', 'Align on hiring needs', 'Discuss candidate profiles, roles, and the recruitment plan.'],
               ['02', 'Review the agreement', 'IPCS sends an authorized representative a private MOU link.'],
@@ -463,7 +463,7 @@ export default function PublicSiteSections({ page = 'all' }) {
       <section className="public-partners-section" id="partners">
         <div className="public-story-shell">
           <div className="public-partners-heading">
-            <SectionHeading eyebrow="Corporate relationships" title={partnerListPage ? 'Our complete signed partner directory.' : 'Partners who move opportunity forward.'} description="Our corporate relationships help connect technical learning with real workplace needs." />
+            <SectionHeading eyebrow="Hiring Partners" title={partnerListPage ? 'All hiring partners.' : 'Hiring partners who move opportunity forward.'} description="Our corporate relationships help connect technical learning with real workplace needs." />
             <div className="public-partner-actions"><Link className="public-partner-cta" to="/partners/media?category=clients">Client stories <VideoCamera size={16} /></Link><Link className="public-partner-cta" to="/placements#recruiter-partnerships">Become a partner <ArrowUpRight size={17} /></Link></div>
           </div>
           {partnerListPage && <Link className="public-gallery-back" to="/partners">← Back to partners</Link>}
@@ -483,15 +483,12 @@ export default function PublicSiteSections({ page = 'all' }) {
                   </div>
                   <h3>{partner.companyName}</h3>
                   {partner.location && <p>{partner.location}</p>}
-                  <span className="public-partner-status"><CheckCircle size={14} weight="fill" /> Signed MOU</span>
-                  {partner.mouLink && <a className="public-mou-link" href={partner.mouLink} target="_blank" rel="noopener noreferrer"><FilePdf size={16} weight="fill" /> View signed MOU <ArrowUpRight size={14} /></a>}
                 </article>
               ))}
             </div>
           )}
-          <p className="public-partners-footnote">Signed MOU PDFs linked here are publicly available. Pending agreements remain in the staff portal.</p>
-          {!partnerListPage && partnerTotal > partners.length && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} signed partners</span><Link to="/partners/all">See all partners <ArrowRight size={16} /></Link></div>}
-          {partnerListPage && partnerNextOffset !== null && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} signed partners</span><button type="button" onClick={() => loadMore('partners')}>Load more partners <ArrowRight size={16} /></button></div>}
+          {!partnerListPage && partnerTotal > partners.length && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} hiring partners</span><Link to="/partners/all">See all hiring partners <ArrowRight size={16} /></Link></div>}
+          {partnerListPage && partnerNextOffset !== null && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} hiring partners</span><button type="button" onClick={() => loadMore('partners')}>Load more partners <ArrowRight size={16} /></button></div>}
         </div>
       </section>
       </>}
@@ -499,7 +496,7 @@ export default function PublicSiteSections({ page = 'all' }) {
       {partnerMediaPage && <section className="public-partners-section public-client-media-section">
         <div className="public-story-shell">
           <SectionHeading eyebrow="Clients &amp; partners" title="People and projects behind the partnership." description="Client stories, testimonials, and videos shared from the IPCS creatives Drive folder." />
-          <Link className="public-gallery-back" to="/partners">← Back to signed partners</Link>
+          <Link className="public-gallery-back" to="/partners">← Back to hiring partners</Link>
           <div className="public-media-tabs" role="tablist" aria-label="Client media albums">
             {mediaTabs.map(([key, label]) => <Link key={key} role="tab" aria-selected={placementCategory === key} className={`public-media-tab${placementCategory === key ? ' active' : ''}`} to={`/partners/media?category=${key}`}><VideoCamera size={16} />{label}</Link>)}
           </div>

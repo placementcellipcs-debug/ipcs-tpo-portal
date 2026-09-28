@@ -3,8 +3,9 @@ import axios from 'axios';
 import { CircleNotch, CaretLeft, Files, ArrowsClockwise } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
+import StatusBadge from './StatusBadge';
 
-const TILE_COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
+const TILE_COLORS = ['#3b82f6', 'var(--accent-primary)', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
@@ -223,12 +224,6 @@ export default function StudentApps() {
                   </tr>
                 ) : (
                   filteredApps.map((app, i) => {
-                    let statClass = 'badge-blue';
-                    let s = (app.status || '').toLowerCase();
-                    if(s.includes('interview')) statClass = 'badge-purple';
-                    if(s.includes('offer') || s.includes('placed') || s.includes('join')) statClass = 'badge-green';
-                    if(s.includes('reject') || s.includes('not attended')) statClass = 'badge-gray';
-
                     return (
                       <tr key={app.rowNumber || i}>
                         <td>
@@ -246,7 +241,7 @@ export default function StudentApps() {
                           <strong style={{ color: 'var(--text-main)', fontSize: '0.8rem' }}>{app.tpoName || 'N/A'}</strong>
                         </td>
                         <td>
-                          <span className={`badge ${statClass}`}>{app.status || 'Applied'}</span>
+                          <StatusBadge status={app.status || 'Applied'} />
                         </td>
                         <td style={{ fontSize: '0.85rem', color: '#cbd5e1', maxWidth: '200px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={app.remarks}>
                           {app.remarks || '-'}

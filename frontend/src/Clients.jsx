@@ -223,7 +223,7 @@ export default function Clients() {
         <div className="top-hero-section">
           <div className="hero-text">
             <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <Handshake color="#8b5cf6" weight="fill" /> 
+              <Handshake color="var(--accent-primary)" weight="fill" /> 
               {isRestrictedManager ? 'Corporate MOUs & Agreements' : 'Hiring Partners & MOUs'}
             </h1>
             <p>
@@ -462,7 +462,7 @@ export default function Clients() {
         .client-header { display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 20px; }
         .client-logo-box { width: 80px; height: 80px; border-radius: 20px; background: #0f1523; border: 2px solid #1e293b; margin-bottom: 15px; display: flex; align-items: center; justify-content: center; overflow: hidden; box-shadow: 0 4px 10px rgba(0,0,0,0.3); }
         .client-logo-box img { width: 100%; height: 100%; object-fit: contain; }
-        .client-fallback { font-size: 2.2rem; font-weight: 900; color: #fff; background: linear-gradient(135deg, #3b82f6, #8b5cf6); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
+        .client-fallback { font-size: 2.2rem; font-weight: 900; color: #fff; background: linear-gradient(135deg, #3b82f6, var(--accent-primary)); width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
         .client-name { margin: 0 0 5px 0; font-size: 1.15rem; color: #fff; font-weight: 800; line-height: 1.3; }
         .client-loc { color: #94a3b8; font-size: 0.85rem; display: flex; align-items: center; justify-content: center; gap: 5px; }
 
@@ -493,7 +493,7 @@ export default function Clients() {
         .premium-modal { width: 100%; max-height: 90vh; overflow-y: auto; border-radius: 24px; padding: 30px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
         .modal-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px; margin-bottom: 20px; }
         .modal-header h2 { margin: 0 0 5px 0; font-size: 1.6rem; color: #fff; font-weight: 800; }
-        .modal-subtitle { color: #8b5cf6; font-weight: bold; font-size: 1.1rem; }
+        .modal-subtitle { color: var(--accent-primary); font-weight: bold; font-size: 1.1rem; }
         .close-btn { background: none; border: none; color: #64748b; cursor: pointer; transition: 0.2s; display: flex; }
         .close-btn:hover { color: #ef4444; transform: scale(1.1); }
       `}</style>

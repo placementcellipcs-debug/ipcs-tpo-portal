@@ -7,6 +7,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from './Layout';
 import { API_BASE } from './apiConfig';
+import StatusBadge from './StatusBadge';
 
 // 🚨 ERROR BOUNDARY: Intercepts fatal crashes and prevents the "Black Screen of Death"
 class VacanciesErrorBoundary extends React.Component {
@@ -46,7 +47,7 @@ class VacanciesErrorBoundary extends React.Component {
 
 const DetailBox = ({ label, value, icon }) => (
   <div style={{ background: 'rgba(255,255,255,0.02)', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-    <div style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', padding: '8px', borderRadius: '8px' }}>
+    <div style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)', padding: '8px', borderRadius: '8px' }}>
       {icon}
     </div>
     <div>
@@ -497,12 +498,6 @@ function VacanciesContent() {
                 {appsMap[String(selectedJob.id || '').trim()] && appsMap[String(selectedJob.id || '').trim()].length > 0 ? (
                   appsMap[String(selectedJob.id || '').trim()].map((app, i) => {
                     if (!app) return null;
-                    let statClass = 'blue';
-                    let s = String(app.status || '').toLowerCase();
-                    if(s.includes('interview')) statClass = 'purple';
-                    if(s.includes('offer') || s.includes('placed') || s.includes('joined')) statClass = 'green';
-                    if(s.includes('reject') || s.includes('not attended')) statClass = 'red';
-
                     return (
                       <div key={i} className="clean-row hover-bg">
                         <div className="cl-left">
@@ -510,7 +505,7 @@ function VacanciesContent() {
                           <div><div className="cl-title">{String(app.name || 'N/A')}</div><div className="cl-sub">{String(app.roll || 'N/A')} • {String(app.branch || 'N/A')}</div></div>
                         </div>
                         <div className="cl-middle">
-                           <span className={`status-pill ${statClass}`}>{String(app.status || 'Applied')}</span>
+                           <StatusBadge status={String(app.status || 'Applied')} />
                         </div>
                         <div className="cl-right" style={{ display: 'flex', gap: '10px' }}>
                           {app.phone && (
@@ -584,7 +579,7 @@ function VacanciesContent() {
         .jc-hover-actions { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(4px); display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; opacity: 0; transition: 0.3s ease; border-radius: 20px; }
         .job-card:hover .jc-hover-actions { opacity: 1; }
         .jc-header { display: flex; align-items: center; gap: 15px; margin-bottom: 15px; }
-        .jc-company-logo { width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #3b82f6, #8b5cf6); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 900; color: #fff; flex-shrink: 0; box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3); }
+        .jc-company-logo { width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #3b82f6, var(--accent-primary)); display: flex; align-items: center; justify-content: center; font-size: 1.4rem; font-weight: 900; color: #fff; flex-shrink: 0; box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3); }
         .jc-company-info { flex: 1; min-width: 0; }
         .jc-company-info h3 { margin: 0 0 2px 0; font-size: 1.05rem; font-weight: 800; color: #fff; }
         .jc-company-info p { margin: 0; font-size: 0.8rem; color: #94a3b8; font-weight: 500; }
@@ -607,7 +602,7 @@ function VacanciesContent() {
         .premium-modal { width: 100%; max-width: 800px; max-height: 90vh; overflow-y: auto; border-radius: 24px; padding: 30px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
         .modal-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px; margin-bottom: 20px; }
         .modal-header h2 { margin: 0 0 5px 0; font-size: 1.6rem; color: #fff; font-weight: 800; }
-        .modal-subtitle { color: #8b5cf6; font-weight: bold; font-size: 1.1rem; }
+        .modal-subtitle { color: var(--accent-primary); font-weight: bold; font-size: 1.1rem; }
         .close-btn { background: none; border: none; color: #64748b; cursor: pointer; transition: 0.2s; display: flex; }
         .close-btn:hover { color: #ef4444; transform: scale(1.1); }
         .modal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px; }
@@ -619,7 +614,7 @@ function VacanciesContent() {
         .clean-row { display: flex; justify-content: space-between; align-items: center; padding: 15px; background: rgba(0, 0, 0, 0.2); border-radius: 12px; border: 1px solid rgba(255,255,255,0.02); transition: 0.2s; }
         .hover-bg:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.1); }
         .cl-left { display: flex; align-items: center; gap: 15px; flex: 1; min-width: 0; }
-        .cl-avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #3b82f6, #8b5cf6); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.1rem; flex-shrink: 0; box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3); }
+        .cl-avatar { width: 42px; height: 42px; border-radius: 50%; background: linear-gradient(135deg, #3b82f6, var(--accent-primary)); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 1.1rem; flex-shrink: 0; box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3); }
         .cl-title { font-size: 1rem; font-weight: 700; color: #fff; margin-bottom: 3px; }
         .cl-sub { font-size: 0.8rem; color: #94a3b8; }
         .action-circle { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; transition: 0.2s; }

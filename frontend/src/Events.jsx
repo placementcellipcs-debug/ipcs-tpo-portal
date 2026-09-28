@@ -111,7 +111,7 @@ export default function Events() {
   };
 
   const getEventColor = (type) => {
-    if (!type) return '#8b5cf6';
+    if (!type) return 'var(--accent-primary)';
     const safeType = String(type).toLowerCase();
     if (safeType.includes('talentino')) return '#a855f7';
     if (safeType.includes('placement drive')) return '#ef4444';
@@ -214,7 +214,7 @@ export default function Events() {
           </div>
           
           {canManageEvents && (
-            <button className="btn-action" style={{ width: 'auto', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', background: '#8b5cf6', color: '#0f172a' }} onClick={() => setIsModalOpen(true)}>
+            <button className="btn-action" style={{ width: 'auto', borderRadius: '12px', display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 20px', background: 'var(--accent-primary)', color: '#0f172a' }} onClick={() => setIsModalOpen(true)}>
               <Plus weight="bold" /> Add Event
             </button>
           )}
@@ -243,7 +243,7 @@ export default function Events() {
 
             <div className="neo-grid">
               {loading ? (
-                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '5rem', color: '#8b5cf6' }}>
+                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '5rem', color: 'var(--accent-primary)' }}>
                   <CircleNotch size={48} className="ph-spin" />
                 </div>
               ) : (
@@ -361,15 +361,15 @@ export default function Events() {
             </div>
 
             {newEvent.type === 'Placement Drive' && (
-              <div className="form-group" style={{ marginBottom: '25px', background: 'rgba(56, 189, 248, 0.05)', padding: '15px', borderRadius: '12px', border: '1px dashed #8b5cf6' }}>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: '#8b5cf6', marginBottom: '8px', fontWeight: 'bold' }}>Upload Drive Poster (Optional)</label>
+              <div className="form-group" style={{ marginBottom: '25px', background: 'rgba(56, 189, 248, 0.05)', padding: '15px', borderRadius: '12px', border: '1px dashed var(--accent-primary)' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--accent-primary)', marginBottom: '8px', fontWeight: 'bold' }}>Upload Drive Poster (Optional)</label>
                 <input type="file" accept="image/*" className="sleek-input" style={{ width: '100%', padding: '8px' }} onChange={e => setPosterFile(e.target.files[0])} />
               </div>
             )}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '1.5rem' }}>
               <button className="btn-secondary" style={{ background: 'transparent', border: '1px solid #334155', color: '#f8fafc', padding: '10px 20px', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold' }} onClick={() => setIsModalOpen(false)}>Cancel</button>
-              <button className="btn-action" style={{ background: '#8b5cf6', color: '#0f172a', padding: '10px 20px', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold', border: 'none' }} onClick={handleSaveEvent} disabled={isSaving}>
+              <button className="btn-action" style={{ background: 'var(--accent-primary)', color: '#0f172a', padding: '10px 20px', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold', border: 'none' }} onClick={handleSaveEvent} disabled={isSaving}>
                 {isSaving ? <CircleNotch size={18} className="ph-spin" /> : "Save Event"}
               </button>
             </div>
@@ -389,7 +389,7 @@ export default function Events() {
                   {String(viewEventModal.type || 'Event')}
                 </span>
                 <h2 style={{ margin: '0 0 5px 0', fontSize: '1.6rem', color: '#fff' }}>{String(viewEventModal.title || 'Untitled Event')}</h2>
-                {viewEventModal.eventId && <div style={{ color: '#8b5cf6', fontSize: '0.85rem', fontWeight: 'bold' }}>Event ID: {String(viewEventModal.eventId)}</div>}
+                {viewEventModal.eventId && <div style={{ color: 'var(--accent-primary)', fontSize: '0.85rem', fontWeight: 'bold' }}>Event ID: {String(viewEventModal.eventId)}</div>}
               </div>
               <button style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', padding: '8px', borderRadius: '50%', cursor: 'pointer', display: 'flex', transition: '0.2s' }} onClick={() => setViewEventModal(null)} title="Close">
                 <X size={20} weight="bold"/>
@@ -400,7 +400,7 @@ export default function Events() {
               <div style={{ background: '#1e293b', padding: '15px', borderRadius: '12px' }}>
                 <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '5px' }}>Date & Time</div>
                 <div style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Clock size={16} color="#8b5cf6" /> {String(viewEventModal.date || 'TBD')} • {String(viewEventModal.time || 'TBD')}
+                  <Clock size={16} color="var(--accent-primary)" /> {String(viewEventModal.date || 'TBD')} • {String(viewEventModal.time || 'TBD')}
                 </div>
               </div>
               <div style={{ background: '#1e293b', padding: '15px', borderRadius: '12px' }}>
@@ -424,7 +424,7 @@ export default function Events() {
             {viewEventModal.poster && viewEventModal.poster !== 'N/A' && (
               <div style={{ marginTop: '20px' }}>
                 <div style={{ fontSize: '0.75rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '10px' }}>Event Poster Attached</div>
-                <button className="btn-secondary hover-lift" style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', color: '#8b5cf6', width: '100%', padding: '15px', borderRadius: '12px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '1rem', transition: '0.2s' }} onClick={() => window.open(viewEventModal.poster, '_blank')}>
+                <button className="btn-secondary hover-lift" style={{ background: 'rgba(56, 189, 248, 0.1)', border: '1px solid rgba(56, 189, 248, 0.3)', color: 'var(--accent-primary)', width: '100%', padding: '15px', borderRadius: '12px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '1rem', transition: '0.2s' }} onClick={() => window.open(viewEventModal.poster, '_blank')}>
                   <Image size={22} weight="fill" /> View Full Event Poster
                 </button>
               </div>
@@ -554,7 +554,7 @@ export default function Events() {
           margin-bottom: 10px;
         }
         .neo-date-num.today {
-          color: #8b5cf6;
+          color: var(--accent-primary);
           font-weight: 900;
         }
         .neo-cell.selected .neo-date-num { color: #fff; }
@@ -716,7 +716,7 @@ export default function Events() {
           height: 28px;
           border-radius: 50%;
           background: rgba(56, 189, 248, 0.1);
-          color: #8b5cf6;
+          color: var(--accent-primary);
           display: flex;
           align-items: center;
           justify-content: center;

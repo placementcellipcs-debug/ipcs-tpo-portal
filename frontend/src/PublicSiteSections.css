@@ -160,10 +160,6 @@
 .public-partner-logo-wrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; padding: 7px; background: #fff; }
 .public-partner-card h3 { margin: 0; color: #193450; font-size: .82rem; line-height: 1.4; }
 .public-partner-card > p { margin: 5px 0 8px; color: #8794a5; font-size: .65rem; }
-.public-partner-status { margin: 9px 0 8px; display: inline-flex; align-items: center; gap: 5px; color: #168269; font-size: .62rem; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
-.public-mou-link { margin-top: auto; padding: 7px 10px; display: inline-flex; align-items: center; gap: 6px; border-radius: 8px; color: #155eef; background: #eff5ff; font-size: .65rem; font-weight: 900; text-decoration: none; }
-.public-mou-link:hover { background: #e2edff; }
-.public-partners-footnote { margin: 16px 0 0; color: #8b98a9; text-align: center; font-size: .65rem; }
 .public-partner-skeleton { min-height: 225px; border: 1px solid #e5ebf2; border-radius: 17px; background: linear-gradient(100deg, #fff 30%, #f0f4f8 50%, #fff 70%); background-size: 220% 100%; animation: public-shimmer 1.4s ease-in-out infinite; }
 .public-partners-empty { padding: 28px; border: 1px dashed #d5e0eb; border-radius: 15px; color: #758499; background: rgba(255,255,255,.65); text-align: center; font-size: .8rem; }
 @keyframes public-shimmer { to { background-position-x: -220%; } }

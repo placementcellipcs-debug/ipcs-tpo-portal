@@ -44,13 +44,6 @@ const MediaSocial = lazy(() => import('./MediaSocial'));
 const MediaLogs = lazy(() => import('./MediaLogs'));
 const MediaSettings = lazy(() => import('./MediaSettings'));
 
-// ACADEMIC & TRAINING ERP
-const AcademicTraining = lazy(() => import('./AcademicTraining'));
-const AcademicBatches = lazy(() => import('./AcademicBatches'));
-const AcademicSessions = lazy(() => import('./AcademicSessions'));
-const AcademicAttendance = lazy(() => import('./AcademicAttendance'));
-const AcademicDiary = lazy(() => import('./AcademicDiary'));
-const AcademicOverview = lazy(() => import('./AcademicOverview'));
 const BrainGym = lazy(() => import('./BrainGym'));
 const CareerHub = lazy(() => import('./CareerHub'));
 
@@ -118,17 +111,12 @@ function App() {
         <Route path="/media/logs" element={<MediaLogs />} />
         <Route path="/media/settings" element={<MediaSettings />} />
 
-        {/* MODULAR ACADEMIC & TRAINING ROUTES */}
-        <Route path="/academic" element={<AcademicOverview />} />
-        <Route path="/academic/brain-gym" element={<BrainGym />} />
-        <Route path="/academic/branches" element={<AcademicOverview />} />
-        <Route path="/academic/leaves" element={<AcademicOverview />} />
-        <Route path="/trainer" element={<AcademicOverview trainerMode />} />
-        <Route path="/academic/training" element={<AcademicTraining />} />
-        <Route path="/academic/batches" element={<AcademicBatches />} />
-        <Route path="/academic/sessions" element={<AcademicSessions />} />
-        <Route path="/academic/attendance" element={<AcademicAttendance />} />
-        <Route path="/academic/diary" element={<AcademicDiary />} />
+        {/* Training & Academics is temporarily hidden for every role. */}
+        <Route path="/trainer" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/academic/brain-gym" element={<Navigate to="/game-pal" replace />} />
+        <Route path="/academic" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/academic/*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/game-pal" element={<BrainGym />} />
       </Routes>
       </Suspense>
     </BrowserRouter>

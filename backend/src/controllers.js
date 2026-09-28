@@ -1858,18 +1858,12 @@ exports.getPublicPartners = (req, res) => {
     const partners = [];
 
     rows.forEach(row => {
-      const documentStatus = getValByHeader(row, ['documentstatus', 'docstatus']).toLowerCase().trim();
-      const mouLink = getValByHeader(row, ['mou', 'moulink']).trim();
-      if (documentStatus !== 'completed') return;
-
       const companyName = getValByHeader(row, ['companyname', 'company']).trim();
       if (!companyName) return;
       partners.push({
         companyName,
         logo: getValByHeader(row, ['companylogo', 'logo']).trim(),
-        website: getValByHeader(row, ['companywebsite', 'website']).trim(),
-        location: getValByHeader(row, ['companylocation', 'location']).trim(),
-        mouLink
+        location: getValByHeader(row, ['companylocation', 'location']).trim()
       });
     });
 

@@ -352,14 +352,14 @@ export default function Dashboard() {
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                   <defs>
-                    <linearGradient id="colorApps" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#8b5cf6" stopOpacity={0.3}/><stop offset="95%" stopColor="#8b5cf6" stopOpacity={0}/></linearGradient>
+                    <linearGradient id="colorApps" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.3}/><stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0}/></linearGradient>
                     <linearGradient id="colorPl" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
                   <XAxis dataKey="m" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
                   <Tooltip content={<CustomTooltip />} />
-                  <Area type="monotone" dataKey="Applications" stroke="#8b5cf6" strokeWidth={2} fillOpacity={1} fill="url(#colorApps)" activeDot={{ r: 5, fill: '#8b5cf6', strokeWidth: 0 }} />
+                  <Area type="monotone" dataKey="Applications" stroke="var(--accent-primary)" strokeWidth={2} fillOpacity={1} fill="url(#colorApps)" activeDot={{ r: 5, fill: 'var(--accent-primary)', strokeWidth: 0 }} />
                   <Area type="monotone" dataKey="Placed" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorPl)" activeDot={{ r: 5, fill: '#10b981', strokeWidth: 0 }} />
                 </AreaChart>
               </ResponsiveContainer>
@@ -416,7 +416,7 @@ export default function Dashboard() {
                   {recentPlacements.length > 0 ? recentPlacements.map((p, i) => (
                     <tr key={i} style={{ animation: 'fadeInReveal 0.5s ease' }}>
                       <td><div style={{display:'flex', alignItems:'center', gap:'8px'}}><div className="tiny-avatar">{String(p.name||'U').charAt(0).toUpperCase()}</div> <span style={{color:'#fff'}}>{p.name}</span></div></td>
-                      <td><span style={{color:'#8b5cf6', fontWeight:'bold'}}>{p.company}</span></td>
+                      <td><span style={{color:'var(--accent-primary)', fontWeight:'bold'}}>{p.company}</span></td>
                       <td>{p.course}</td>
                       <td style={{textAlign:'right', fontWeight:'bold', color:'#fff'}}>
                         {p.packageLpa ? `${String(p.packageLpa).toUpperCase().replace('LPA', '').trim()} LPA` : '-'}
@@ -544,16 +544,16 @@ export default function Dashboard() {
           .mini-table th { border-bottom: 1px solid #1e1e2f; color: #8b949e; font-size: 0.75rem; padding-bottom: 10px; font-weight: normal; text-align: left; white-space: nowrap; }
           .mini-table td { padding: 12px 0; border-bottom: 1px solid #1e1e2f; font-size: 0.85rem; color: #cbd5e1; white-space: nowrap; }
           
-          .tiny-avatar { width: 24px; height: 24px; border-radius: 50%; background: #8b5cf6; color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; flex-shrink: 0; }
+          .tiny-avatar { width: 24px; height: 24px; border-radius: 50%; background: var(--accent-primary); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: bold; flex-shrink: 0; }
           .status-badge.green { background: rgba(16, 185, 129, 0.1); color: #10b981; padding: 4px 10px; border-radius: 12px; font-size: 0.7rem; font-weight: bold; }
-          .text-link { background: transparent; border: none; color: #8b5cf6; font-size: 0.8rem; cursor: pointer; font-weight: bold; }
+          .text-link { background: transparent; border: none; color: var(--accent-primary); font-size: 0.8rem; cursor: pointer; font-weight: bold; }
           .text-link:hover { text-decoration: underline; }
 
           /* Quick Access Boxes */
           .qa-box { background: #09090e; border-radius: 12px; border: 1px solid #1e1e2f; padding: 15px; display: flex; flex-direction: column; align-items: center; gap: 8px; cursor: pointer; font-size: 0.7rem; color: #cbd5e1; font-weight: bold; transition: 0.2s;}
           .qa-icon { width: 36px; height: 36px; border-radius: 10px; border: 1px solid #1e1e2f; display: flex; align-items: center; justify-content: center; font-size: 1.2rem; transition: 0.2s; }
-          .qa-box:hover { border-color: #8b5cf6; transform: translateY(-3px); }
-          .qa-box:hover .qa-icon { border-color: #8b5cf6; }
+          .qa-box:hover { border-color: var(--accent-primary); transform: translateY(-3px); }
+          .qa-box:hover .qa-icon { border-color: var(--accent-primary); }
           .qa-icon.blue { color: #3b82f6; } .qa-icon.green { color: #10b981; } .qa-icon.orange { color: #f59e0b; } .qa-icon.pink { color: #ec4899; } .qa-icon.teal { color: #0ea5e9; } .qa-icon.purple { color: #a855f7; } .qa-icon.yellow { color: #eab308; }
 
           /* Calendar & Schedule */
@@ -565,13 +565,13 @@ export default function Dashboard() {
           .calendar-widget { background: #12121f; border-radius: 12px; padding: 15px; border: 1px solid #1e1e2f; }
           .cal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; color: #fff; font-weight: bold; font-size: 0.9rem; }
           .cal-header button { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: #8b949e; cursor: pointer; transition: 0.2s; display: flex; align-items: center; justify-content: center; padding: 6px; border-radius: 6px; }
-          .cal-header button:hover { background: rgba(255,255,255,0.1); color: #fff; border-color: #8b5cf6; }
+          .cal-header button:hover { background: rgba(255,255,255,0.1); color: #fff; border-color: var(--accent-primary); }
           .cal-days { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; text-align: center; }
           .cal-day-name { font-size: 0.7rem; color: #8b949e; font-weight: bold; margin-bottom: 5px; }
           .cal-day { position: relative; font-size: 0.85rem; color: #cbd5e1; padding: 8px 0; border-radius: 6px; display: flex; align-items: center; justify-content: center; flex-direction: column; transition: 0.2s; }
           .cal-day.blank { background: transparent; }
           .cal-day:not(.blank):hover { background: rgba(255,255,255,0.05); cursor: pointer; color: #fff; }
-          .cal-day.today { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; font-weight: bold; border: 1px solid rgba(139, 92, 246, 0.3); }
+          .cal-day.today { background: color-mix(in srgb, var(--accent-primary) 15%, transparent); color: var(--accent-primary); font-weight: bold; border: 1px solid color-mix(in srgb, var(--accent-primary) 30%, transparent); }
           .cal-day.has-event { color: #fff; font-weight: bold; }
           .event-dot { width: 4px; height: 4px; background: #f59e0b; border-radius: 50%; margin-top: 2px; }
 

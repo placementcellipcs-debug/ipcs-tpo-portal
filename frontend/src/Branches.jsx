@@ -138,11 +138,11 @@ export default function Branches() {
                   <tr key={i}>
                     <td style={{ color: 'var(--text-muted)' }}>{b.no || i + 1}</td>
                     <td><strong style={{ color: 'var(--text-main)' }}>{b.region}</strong></td>
-                    <td><strong style={{ color: '#8b5cf6' }}>{b.branch}</strong></td>
+                    <td><strong style={{ color: 'var(--accent-primary)' }}>{b.branch}</strong></td>
                     <td style={{ color: 'var(--text-muted)', fontSize: '.82rem' }}>{b.latitude || b.longitude ? `${b.latitude || '—'}, ${b.longitude || '—'}` : 'Not set'}</td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                        <button onClick={() => openEditModal(b)} style={{ background: 'rgba(56, 189, 248, 0.1)', color: '#8b5cf6', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Edit">
+                        <button onClick={() => openEditModal(b)} style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Edit">
                           <PencilSimple size={18} weight="bold" />
                         </button>
                         <button onClick={() => handleDelete(b.branch)} style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Delete Branch">
