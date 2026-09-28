@@ -1,5 +1,10 @@
 {
-  "appId": "talenzo.ipcsglobal.info",
-  "appName": "Talenzo",
-  "webDir": "dist"
+  "appId": "com.talenzo.staff",
+  "appName": "Talenzo Staff",
+  "webDir": "dist",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://talenzo.ipcsglobal.info",
+    "cleartext": true
+  }
 }

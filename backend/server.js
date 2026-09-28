@@ -24,7 +24,8 @@ const allowedOrigins = [
   'https://api-talenzo.ipcsglobal.info',
   'https://ipcs-tpo-portal.vercel.app',
   'http://localhost:5173',
-  'http://localhost:3000'
+  'http://localhost:3000',
+  'capacitor://localhost'
 ];
 
 app.use(cors({
