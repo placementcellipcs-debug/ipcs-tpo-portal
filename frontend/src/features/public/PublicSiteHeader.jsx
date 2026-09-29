@@ -8,7 +8,8 @@ const links = [
   { label: 'About Us', to: '/about' },
   { label: 'Placements', to: '/placements' },
   { label: 'Hiring Partners', to: '/partners' },
-  { label: 'Updates', to: '/updates' }
+  { label: 'Updates', to: '/updates' },
+  { label: 'Vacancies', to: '/openings' }
 ];
 
 export default function PublicSiteHeader() {

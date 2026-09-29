@@ -31,6 +31,7 @@ const {
 } = require('./config');
 
 const { autoCreateDesignTask } = require('./designControllers');
+const { normalizePlacementText, placementIdentity, latestPlacementRows } = require('./placementRecords');
 
 const FOLDER_OFFER_LETTERS = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5';
 const FOLDER_CLIENT_LOGOS = '11M8jGi1ISWP2mOpWRZncHhThHLoc7cDi'; 
@@ -57,6 +58,19 @@ const getValByHeader = (row, headerOptions) => {
 };
 
 const normalizeBranch = (branch) => (branch || '').toLowerCase().replace(/branch/g, '').trim();
+const getAssignedBranchKeys = user => {
+  const values = [
+    ...(Array.isArray(user?.assignedBranchesArray) ? user.assignedBranchesArray : []),
+    ...String(user?.assignedBranches || '').split(/[\n,;]+/),
+    user?.sittingBranch
+  ];
+  return [...new Set(values.map(normalizePlacementText).filter(Boolean))];
+};
+const userHasBranch = (user, branch) => {
+  const rowBranch = normalizePlacementText(branch);
+  const assigned = getAssignedBranchKeys(user);
+  return Boolean(rowBranch && assigned.some(value => value === 'all' || value === 'allbranches' || rowBranch === value || rowBranch.includes(value) || value.includes(rowBranch)));
+};
 
 // 🚨 NEW: SMART DATE PARSER FOR GOOGLE SHEETS
 const safeParseDate = (dateStr) => {
@@ -573,7 +587,7 @@ exports.login = async (req, res) => {
   }
 };
 
-exports.getDashboardStats = (req, res) => {
+exports.getDashboardStats = async (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
   
   // 🚨 DASHBOARD VIEW RULE: If not a TPO, view ALL data globally.
@@ -583,7 +597,14 @@ exports.getDashboardStats = (req, res) => {
 
   const cache = getCache();
   let studentCount = 0, pendingApps = 0, placedCount = 0, activeVacs = 0;
-  const totalCompanies = (cache.clients || []).reduce((count, row) => {
+  let clientRows = cache.clients || [];
+  try {
+    const clientsSheet = doc.sheetsByTitle['Clients'] || doc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('clients'));
+    if (clientsSheet && clientsSheet.rowCount - 1 > clientRows.length) clientRows = await clientsSheet.getRows();
+  } catch (error) {
+    console.warn('Using cached client records for the dashboard company total:', error.message);
+  }
+  const totalCompanies = clientRows.reduce((count, row) => {
     const companyName = getValByHeader(row, ['companyname', 'company']).trim();
     return count + (companyName ? 1 : 0);
   }, 0);
@@ -595,28 +616,9 @@ exports.getDashboardStats = (req, res) => {
   });
   
   const logsSource = cache.tpoLogs || [];
-  const dedupedLogs = {};
-  
-  logsSource.forEach(row => {
-    const roll = getValByHeader(row, ['roll', 'rollnumber']);
-    const name = getValByHeader(row, ['name', 'studentname']);
-    const company = getValByHeader(row, ['company', 'companyname']);
-    const key = `${roll || name}_${company}`.toLowerCase();
-    
-    // Strict Deduplication to prevent double counting
-    if (!dedupedLogs[key]) {
-      dedupedLogs[key] = row;
-    } else {
-      const existingStatus = getValByHeader(dedupedLogs[key], ['status']).toLowerCase();
-      const newStatus = getValByHeader(row, ['status']).toLowerCase();
-      // Prioritize placed/offer status over applied/interview
-      if (newStatus.includes('placed') || newStatus.includes('offer')) {
-        dedupedLogs[key] = row;
-      }
-    }
-  });
+  const dedupedLogs = latestPlacementRows(logsSource, getValByHeader);
 
-  Object.values(dedupedLogs).forEach(row => {
+  dedupedLogs.forEach(row => {
     const branch = getValByHeader(row, ['branch']);
     const course = getValByHeader(row, ['course']);
     
@@ -972,9 +974,18 @@ exports.updateApplication = async (req, res) => {
         setLogH('intervewtime', interviewTime || ''); 
         setLogH('interviewvenue', interviewVenue || '');
 
-        await logSheet.addRow(logObj);
+        const identity = `${normalizePlacementText(sRoll) || normalizePlacementText(sName)}|${normalizePlacementText(sCompany)}`;
+        const existingLogs = identity
+          ? latestPlacementRows((await logSheet.getRows()).filter(row => placementIdentity(row, getValByHeader) === identity), getValByHeader)
+          : [];
+        if (existingLogs.length) {
+          existingLogs[0].assign(logObj);
+          await existingLogs[0].save();
+        } else {
+          await logSheet.addRow(logObj);
+        }
       }
-    } catch(e) {}
+    } catch(e) { console.error('Placement log sync failed:', e.message); }
     
     if (oldStatus !== (status || '').toLowerCase()) {
        checkAndSendStudentMails({
@@ -1005,13 +1016,15 @@ exports.addApplication = async (req, res) => {
     appData = req.body.appData;
   }
   
-  const tpoName = req.body.tpoName;
+  const tpoName = req.body.tpoName || req.portalUser?.name || '';
   try {
     let offerLetterLink = '';
     if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
     
     const appSheet = doc.sheetsByTitle["Opening_Applied"];
     const logSheet = doc.sheetsByTitle["TPO_Log"];
+
+    if (!appSheet) return res.status(503).json({ success: false, message: 'The applications sheet is unavailable.' });
 
     const newRowObj = {
       'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), 
@@ -1025,15 +1038,39 @@ exports.addApplication = async (req, res) => {
       'Joining Status': appData.joiningStatus || '' 
     };
 
-    if (appSheet) await appSheet.addRow(newRowObj);
-    if (logSheet) await logSheet.addRow({ ...newRowObj, 'Offer Letter Status': offerLetterLink });
+    const identity = `${normalizePlacementText(appData.roll) || normalizePlacementText(appData.name)}|${normalizePlacementText(appData.company)}`;
+    const applicationRows = await appSheet.getRows();
+    const existingApplications = identity
+      ? latestPlacementRows(applicationRows.filter(row => placementIdentity(row, getValByHeader) === identity), getValByHeader)
+      : [];
+    const existingApplication = existingApplications[0] || null;
+    if (existingApplication) {
+      existingApplication.assign(newRowObj);
+      await existingApplication.save();
+    } else {
+      await appSheet.addRow(newRowObj);
+    }
+
+    if (logSheet) {
+      const logData = { ...newRowObj, 'Offer Letter Status': offerLetterLink };
+      delete logData['Offer Letter'];
+      const existingLogs = identity
+        ? latestPlacementRows((await logSheet.getRows()).filter(row => placementIdentity(row, getValByHeader) === identity), getValByHeader)
+        : [];
+      if (existingLogs.length) {
+        existingLogs[0].assign(logData);
+        await existingLogs[0].save();
+      } else {
+        await logSheet.addRow(logData);
+      }
+    }
     
     checkAndSendStudentMails({ ...appData, tpoName: tpoName }, appData.status || 'Placed', {}, req.body.currentUserEmail);
 
     // 🚨 DESIGN PORTAL AUTO-TRIGGER: Sends the manual addition to the Media Team
     await autoCreateDesignTask({ ...appData, status: appData.status || 'Placed' });
 
-    refreshCache(); res.json({ success: true, message: "Placement added manually." });
+    refreshCache(); res.json({ success: true, updated: Boolean(existingApplication), rowNumber: existingApplication?.rowNumber || null, message: existingApplication ? 'Existing placement updated.' : 'Placement added manually.' });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
@@ -1177,6 +1214,20 @@ exports.getReports = (req, res) => {
       } catch(e) {}
     });
   }
+  tpoLogs = latestPlacementRows(tpoLogs, (row, aliases) => {
+    const keys = Object.keys(row || {});
+    const clean = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const alias of (Array.isArray(aliases) ? aliases : [aliases])) {
+      const key = keys.find(candidate => clean(candidate) === clean(alias));
+      if (key && row[key] !== undefined && row[key] !== null) return String(row[key]).trim();
+    }
+    for (const alias of (Array.isArray(aliases) ? aliases : [aliases])) {
+      const target = clean(alias);
+      const key = keys.find(candidate => target.length >= 5 && clean(candidate).includes(target));
+      if (key && row[key] !== undefined && row[key] !== null) return String(row[key]).trim();
+    }
+    return '';
+  });
 
   // 🚨 EXPORT TPO STATS FOR FRONTEND
   let tpoStatsList = [];
@@ -1915,6 +1966,87 @@ exports.getPublicPartners = async (req, res) => {
   } catch (err) {
     console.error('Error fetching public partners:', err.message);
     res.status(500).json({ success: false, message: 'Partner directory is temporarily unavailable.' });
+  }
+};
+
+exports.getPublicPlacementTeam = async (_req, res) => {
+  try {
+    let rows = getCache()?.contacts;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      await loadDocInfo();
+      const contactSheet = doc.sheetsByTitle['Contact'] || doc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('contact'));
+      if (!contactSheet) return res.status(503).json({ success: false, team: [], message: 'Placement team details are unavailable.' });
+      rows = await contactSheet.getRows();
+    }
+
+    const seen = new Set();
+    const team = rows.map(row => {
+      const name = getValByHeader(row, ['name', 'tponame', 'placementofficer']).trim();
+      const role = getValByHeader(row, ['role', 'designation', 'position']).trim() || 'Placement Officer';
+      return {
+        name,
+        role,
+        branches: getValByHeader(row, ['assignedbranches', 'assignedbranch', 'sittingbranch', 'branch']).trim(),
+        photo: getValByHeader(row, ['profilephotourl', 'profilephoto', 'profileimage', 'photo', 'imageurl']).trim()
+      };
+    }).filter(member => {
+      const key = normalizePlacementText(member.name).replace(/^(mrs|miss|mr|ms|dr)/, '');
+      if (!key || seen.has(key) || !/(tpo|placement|career guidance)/i.test(member.role)) return false;
+      seen.add(key);
+      return true;
+    });
+
+    res.json({ success: true, team });
+  } catch (err) {
+    console.error('Error reading placement team from Contact sheet:', err.message);
+    res.status(503).json({ success: false, team: [], message: 'Placement team details are temporarily unavailable.' });
+  }
+};
+
+exports.getPublicOpenings = async (_req, res) => {
+  try {
+    let rows = getCache()?.vacancies;
+    if (!Array.isArray(rows) || rows.length === 0) {
+      await loadDocInfo();
+      const vacancySheet = doc.sheetsByTitle['NewsLetter'] || doc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('newsletter'));
+      if (!vacancySheet) return res.status(503).json({ success: false, openings: [], message: 'Vacancies are temporarily unavailable.' });
+      rows = await vacancySheet.getRows();
+    }
+
+    const companyLogos = new Map((getCache()?.clients || []).map(row => [
+      normalizePlacementText(getValByHeader(row, ['companyname', 'company'])),
+      getValByHeader(row, ['companylogo', 'logo']).trim()
+    ]).filter(([name, logo]) => name && logo));
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const uniqueOpenings = new Map();
+
+    rows.forEach(row => {
+      const company = getValByHeader(row, ['companyname', 'company']).trim();
+      const position = getValByHeader(row, ['position', 'role', 'jobtitle']).trim();
+      const location = getValByHeader(row, ['openingat(location)', 'location', 'city']).trim();
+      const status = getValByHeader(row, ['status']).trim() || 'Open';
+      const lastDate = getValByHeader(row, ['lastdate', 'applicationdeadline']).trim();
+      const deadline = safeParseDate(lastDate);
+      if (!company || !position || !/(open|active|yes)/i.test(status) || /(closed|filled|expired|inactive|no)/i.test(status)) return;
+      if (deadline && deadline < today) return;
+      const key = [company, position, location].map(normalizePlacementText).join('|');
+      if (uniqueOpenings.has(key)) return;
+      uniqueOpenings.set(key, {
+        id: getValByHeader(row, ['jobid', 'id']).trim(),
+        company,
+        companyLogo: getValByHeader(row, ['companylogo', 'logo']).trim() || companyLogos.get(normalizePlacementText(company)) || '',
+        position,
+        location,
+        mode: getValByHeader(row, ['workmode', 'mode']).trim(),
+        lastDate
+      });
+    });
+
+    res.json({ success: true, openings: [...uniqueOpenings.values()] });
+  } catch (err) {
+    console.error('Error reading public openings:', err.message);
+    res.status(503).json({ success: false, openings: [], message: 'Vacancies are temporarily unavailable.' });
   }
 };
 
@@ -2986,35 +3118,42 @@ exports.getDrives = async (req, res) => {
     const registrationSheet = doc.sheetsByTitle['Drive_Registration'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('driveregistration'));
     if (!registrationSheet) return res.status(503).json({ success: false, message: 'The Drive Registration sheet is unavailable.' });
     const registrationRows = await registrationSheet.getRows();
-    const normalizeName = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-    const signedInName = normalizeName(user?.name);
-    const cache = getCache();
-    const eventsMap = {};
+    const signedInName = normalizePlacementText(user?.name);
+    const cache = getCache() || {};
+    const eventsMap = new Map();
     
     // 1. SMART EVENT MAPPING: Grab ALL Placement Drives so even empty ones exist
     (cache?.events || []).forEach(row => {
        const type = getValByHeader(row, ['event', 'type', 'event_type']) || '';
-       const dId = getValByHeader(row, ['driveid', 'drive id', 'drive_id']) || getValByHeader(row, ['event_id', 'eventid', 'id']) || '';
+       const dId = getValByHeader(row, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(row, ['event_id', 'eventid', 'id', 'title']) || '';
        
        if (dId && type.toLowerCase().includes('drive')) {
-         eventsMap[dId.toUpperCase().trim()] = { 
+         eventsMap.set(normalizePlacementText(dId), {
+           driveId: dId.trim(),
            tpo: getValByHeader(row, ['tpo', 'tponame', 'placementofficer', 'createdby']) || '',
            date: getValByHeader(row, ['dateoftheevent', 'date']) || '', 
-           location: getValByHeader(row, ['eventhappeningin', 'location', 'branch']) || '',
+           location: getValByHeader(row, ['eventhappeningin', 'location']) || '',
+           branch: getValByHeader(row, ['branch', 'sittingbranch']) || '',
            hasApplicants: false
-         };
+         });
        }
     });
 
     // 2. Map actual registrations
     const drivesData = [];
     (registrationRows || []).forEach(row => {
-      const dId = (getValByHeader(row, ['driveid', 'drive id']) || '').toUpperCase().trim();
-      const eventInfo = eventsMap[dId] || {};
-      if (!canSeeAll && (!eventInfo.tpo || normalizeName(eventInfo.tpo) !== signedInName)) return;
+      const dId = getValByHeader(row, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(row, ['eventid', 'event_id', 'companyname']) || '';
+      const eventInfo = eventsMap.get(normalizePlacementText(dId)) || {};
+      const registrationOwner = getValByHeader(row, ['placementofficer', 'tponame', 'createdby', 'tpo']);
+      const driveOwner = registrationOwner || eventInfo.tpo || '';
+      if (!canSeeAll && driveOwner && normalizePlacementText(driveOwner) !== signedInName) return;
+      if (!canSeeAll && !driveOwner) {
+        const rowBranch = getValByHeader(row, ['branch', 'sittingbranch']) || eventInfo.branch || eventInfo.location;
+        if (!userHasBranch(user, rowBranch)) return;
+      }
       
       // Mark that this drive has at least one student
-      if (eventsMap[dId]) eventsMap[dId].hasApplicants = true;
+      if (eventInfo.hasApplicants !== undefined) eventInfo.hasApplicants = true;
 
       drivesData.push({
         rowNumber: row.rowNumber, 
@@ -3031,23 +3170,26 @@ exports.getDrives = async (req, res) => {
         regDate: getValByHeader(row, ['registeddate', 'timestamp', 'date']) || '', 
         studentStatus: getValByHeader(row, ['studentstatus']) || '',
         remarks: getValByHeader(row, ['studentremarks', 'remarks', 'remark', 'tpo remarks']) || '',
-        driveTpo: eventInfo.tpo || '',
-        driveDate: eventInfo.date || '',
-        driveLocation: eventInfo.location || ''
+        driveTpo: driveOwner,
+        driveDate: eventInfo.date || getValByHeader(row, ['dateofthedrive', 'drivedate', 'eventdate']) || '',
+        driveLocation: eventInfo.location || getValByHeader(row, ['drivelocation', 'eventhappeningin', 'location']) || eventInfo.branch || ''
       });
     });
 
     // 3. 🚨 INJECT EMPTY DRIVES: If a drive has 0 students, send a "Dummy" row so it still shows up!
-    Object.keys(eventsMap).forEach(dId => {
-      if (!canSeeAll && normalizeName(eventsMap[dId].tpo) !== signedInName) return;
-      if (!eventsMap[dId].hasApplicants) {
+    eventsMap.forEach((eventInfo, dId) => {
+      if (!canSeeAll && eventInfo.tpo && normalizePlacementText(eventInfo.tpo) !== signedInName) return;
+      if (!canSeeAll && !eventInfo.tpo) {
+        if (!userHasBranch(user, eventInfo.branch || eventInfo.location)) return;
+      }
+      if (!eventInfo.hasApplicants) {
         drivesData.push({
           rowNumber: `empty-${dId}`,
-          driveId: dId,
+          driveId: eventInfo.driveId || dId,
           name: 'NO_APPLICANTS',
-          driveTpo: eventsMap[dId].tpo,
-          driveDate: eventsMap[dId].date,
-          driveLocation: eventsMap[dId].location
+          driveTpo: eventInfo.tpo,
+          driveDate: eventInfo.date,
+          driveLocation: eventInfo.location || eventInfo.branch
         });
       }
     });
@@ -3075,14 +3217,27 @@ exports.updateDriveStatus = async (req, res) => {
     const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
     if (!canSeeAll && !isTpo) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
     if (!canSeeAll) {
-      const driveId = getValByHeader(rows[0], ['driveid', 'drive id']).toUpperCase().trim();
-      const ownedDrive = (getCache()?.events || []).some(event => {
+      const driveId = normalizePlacementText(getValByHeader(rows[0], ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(rows[0], ['eventid', 'event_id', 'companyname']));
+      const registrationOwner = getValByHeader(rows[0], ['placementofficer', 'tponame', 'createdby', 'tpo']);
+      if (registrationOwner && normalizePlacementText(registrationOwner) !== normalizePlacementText(user?.name)) {
+        return res.status(403).json({ success: false, message: 'You can only update registrations for your own placement drives.' });
+      }
+      const matchingDrive = (getCache()?.events || []).find(event => {
         const type = getValByHeader(event, ['event', 'type', 'event_type']).toLowerCase();
-        const eventDriveId = (getValByHeader(event, ['driveid', 'drive id', 'drive_id']) || getValByHeader(event, ['event_id', 'eventid', 'id'])).toUpperCase().trim();
-        const owner = getValByHeader(event, ['tpo', 'tponame', 'placementofficer', 'createdby']).trim().toLowerCase().replace(/\s+/g, ' ');
-        return type.includes('drive') && eventDriveId === driveId && owner && owner === String(user?.name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+        const eventDriveId = normalizePlacementText(getValByHeader(event, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(event, ['event_id', 'eventid', 'id', 'title']));
+        return type.includes('drive') && eventDriveId === driveId;
       });
-      if (!ownedDrive) return res.status(403).json({ success: false, message: 'You can only update registrations for your own placement drives.' });
+      const driveOwner = getValByHeader(matchingDrive, ['tpo', 'tponame', 'placementofficer', 'createdby']);
+      if (!registrationOwner && driveOwner && normalizePlacementText(driveOwner) !== normalizePlacementText(user?.name)) {
+        return res.status(403).json({ success: false, message: 'You can only update registrations for your own placement drives.' });
+      }
+      if (!registrationOwner && !driveOwner) {
+        const registrationBranch = getValByHeader(rows[0], ['branch', 'sittingbranch']);
+        const eventBranch = getValByHeader(matchingDrive, ['branch', 'sittingbranch', 'eventhappeningin', 'location']);
+        if (!userHasBranch(user, registrationBranch || eventBranch)) {
+          return res.status(403).json({ success: false, message: 'You can only update registrations for placement drives assigned to your branch.' });
+        }
+      }
     }
 
     let headers = sheet.headerValues || [];

@@ -62,6 +62,7 @@ function App() {
         <Route path="/partners/all" element={<PublicSitePage page="partners-all" />} />
         <Route path="/partners/media" element={<PublicSitePage page="partners-media" />} />
         <Route path="/updates" element={<PublicSitePage page="updates" />} />
+        <Route path="/openings" element={<PublicSitePage page="vacancies" />} />
         <Route path="/recruiter" element={<Navigate to="/placements#recruiter-partnerships" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/career-hub" element={<CareerHub />} />

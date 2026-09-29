@@ -4,51 +4,14 @@ import axios from 'axios';
 import { ArrowRight, ArrowUpRight, BookOpenText, Briefcase, Buildings, CheckCircle, Compass, GlobeHemisphereWest, GraduationCap, Handshake, Lightbulb, Megaphone, PlayCircle, Star, Target, UsersThree, VideoCamera, X } from '@phosphor-icons/react';
 import { API_BASE } from '../../services/apiConfig';
 import './PublicSiteSections.css';
-import ajithPhoto from '../../assets/Team IPCS/Mr. Ajith Surendran.jpg';
-import vijinPhoto from '../../assets/Team IPCS/Mr. Nair Vijin Rajan.jpeg';
-import nowfalPhoto from '../../assets/Team IPCS/Mr. Nowfal Ibrahim.jpg';
-import rakeshPhoto from '../../assets/Team IPCS/Mr. Rakesh K C.jpg';
 import giftyPhoto from '../../assets/Team IPCS/Ms. Gifty KP.png';
-import rekhaPhoto from '../../assets/Team IPCS/Ms. Rekha P.jpg';
 
-const team = [
-  {
-    name: 'Mr. Ajith Surendran',
-    role: 'General Manager',
-    image: ajithPhoto,
-    bio: 'Mr. Ajith Surendran is a Post Graduate Diploma holder in Marketing Management with skills in digital marketing, WordPress website development, and design software. He has a decade of experience in education management, sales, marketing, business development, franchise acquisition, human resources, institutional and corporate alliances, training, and placements. Ajith brings valuable skills to his role and meets challenges with a calm smile and professionalism.'
-  },
-  {
-    name: 'Mr. Rakesh K C',
-    role: 'Technical Head',
-    image: rakeshPhoto,
-    bio: 'Mr. Rakesh has been a driving force at IPCS Global since 2014. With a B.Tech degree and PG Diploma from MG University, he brings extensive technical knowledge. His journey from Project Engineer to Academic Head, Project Manager, Operations Manager, and Technical Head reflects his dedication. He previously worked at NIELIT, Kozhikode, and now oversees critical projects and operations.'
-  },
-  {
-    name: 'Mr. Nair Vijin Rajan',
-    role: 'Finance Manager',
-    image: vijinPhoto,
-    bio: 'Mr. Vijin brings more than 13 years of experience in accounts management, financial reporting, client relationships, and operational coordination across diagnostics, manufacturing, and project management. His expertise includes receivables and payables, payroll, compliance, and multi-branch finance. He is multilingual and highly professional in his role.'
-  },
-  {
-    name: 'Ms. Rekha P',
-    role: 'Human Resource Manager · South Zone',
-    image: rekhaPhoto,
-    bio: 'Ms. Rekha P is an accomplished HR and MSW professional with over seven years of experience. As Zonal HR Manager at IPCS Global Solutions, she leads talent acquisition, employee engagement, leadership development, and performance management across regions. She works with cross-functional teams to align HR initiatives with organizational goals while promoting collaboration, continuous learning, and innovation.'
-  },
-  {
-    name: 'Ms. Gifty KP',
-    role: 'Zonal Placement Manager',
-    image: giftyPhoto,
-    bio: 'Ms. Gifty has over nine years of experience in the EdTech industry. Starting as a Java Trainer, she built expertise in technical instruction and teaching methods, then specialized in training excellence and learning management systems. As Zonal Placement Manager, she connects aspiring professionals with career opportunities and helps shape future-ready talent.'
-  },
-  {
-    name: 'Mr. Nowfal Ibrahim',
-    role: 'Technical Operations Manager',
-    image: nowfalPhoto,
-    bio: 'Mr. Nowfal Ibrahim holds a Bachelor of Engineering in Electronics and Instrumentation Engineering from Anna University, Chennai, and has over ten years of hands-on experience in smart home automation and technical training. His progression from Project Engineer to Technical Operations Manager reflects his commitment to innovation, leadership, and operational excellence.'
-  }
-];
+const placementTeamLead = {
+  name: 'Ms. Gifty KP',
+  role: 'Zonal Head of Placement',
+  image: giftyPhoto,
+  bio: 'Ms. Gifty has over nine years of experience in the EdTech industry. Starting as a Java Trainer, she built expertise in technical instruction and teaching methods, then specialized in training excellence and learning management systems. As Zonal Head of Placement, she connects aspiring professionals with career opportunities and helps shape future-ready talent.'
+};
 
 const milestones = [
   { value: '1.5M+', label: 'Trained professionals' },
@@ -96,20 +59,13 @@ const blogs = [
 ];
 
 const magazines = [48, 47, 46, 45, 44, 43, 36, 35, 34];
-const teamProfilePhotoIds = {
-  'Mr. Nowfal Ibrahim': '1ndgICIIBSUuND1lG2GWGntFWGXxvd1U_',
-  'Ms. Gifty KP': '1Cm1hmst2tQiYYWSOx-OQxiJAAuwXV8e_',
-  'Mr. Nair Vijin Rajan': '1LOdgTK_4zzpXjePAU7F5kNgUiDXDo5wD',
-  'Mr. Rakesh K C': '1ISdyiVhlMIum-DvsizL5sKQaYpOdDuEz',
-  'Mr. Ajith Surendran': '1JNiMYPK8JycQFaelaGZFMsuZKgLj8Gu0',
-  'Ms. Rekha P': '1EMsipJDZzoWkCDkrXKrDc5Fqw4qjDT8P'
-};
 const logoSource = value => {
   if (!value || typeof value !== 'string') return '';
   const match = value.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
   return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : value;
 };
 const videoThumbnail = item => item.thumbnailLink || `https://drive.google.com/thumbnail?id=${encodeURIComponent(item.id)}&sz=w640`;
+const normalizeTeamName = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(mrs|miss|mr|ms|dr)/, '');
 const publicGet = async (url) => {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -122,17 +78,6 @@ const publicGet = async (url) => {
     }
   }
   throw lastError;
-};
-
-const profilePhotoFor = (person, photos) => {
-  const tokens = person.name.toLowerCase().replace(/\b(mr|ms|mrs)\.?\b/g, '').replace(/[^a-z0-9]+/g, ' ').trim().split(/\s+/).filter(token => token.length > 1);
-  if (!tokens.length) return null;
-  const matches = photos.map(photo => {
-    const file = String(photo.name || '').toLowerCase().replace(/\.[a-z0-9]{2,5}$/i, '').replace(/[^a-z0-9]+/g, ' ');
-    const matchedTokens = tokens.filter(token => file.includes(token)).length;
-    return { photo, matchedTokens, exact: tokens.every(token => file.includes(token)) };
-  }).filter(item => item.matchedTokens > 0).sort((a, b) => Number(b.exact) - Number(a.exact) || b.matchedTokens - a.matchedTokens);
-  return matches[0]?.photo || null;
 };
 
 function SectionHeading({ eyebrow, title, description, align = 'left' }) {
@@ -148,7 +93,12 @@ function SectionHeading({ eyebrow, title, description, align = 'left' }) {
 export default function PublicSiteSections({ page = 'all' }) {
   const location = useLocation();
   const [partners, setPartners] = useState([]);
-  const [teamPhotos, setTeamPhotos] = useState([]);
+  const [placementOfficers, setPlacementOfficers] = useState([]);
+  const [placementTeamLoading, setPlacementTeamLoading] = useState(false);
+  const [placementTeamError, setPlacementTeamError] = useState(false);
+  const [vacancies, setVacancies] = useState([]);
+  const [vacanciesLoading, setVacanciesLoading] = useState(false);
+  const [vacanciesError, setVacanciesError] = useState(false);
   const [partnersLoaded, setPartnersLoaded] = useState(false);
   const [partnersError, setPartnersError] = useState(false);
   const [partnerTotal, setPartnerTotal] = useState(0);
@@ -185,6 +135,9 @@ export default function PublicSiteSections({ page = 'all' }) {
   const mediaBasePath = partnerMediaPage ? '/partners/media' : '/placements/media';
   const partnersLoading = ['partners', 'partners-all', 'all'].includes(page) && !partnersLoaded;
   const postersLoading = ['placement', 'placement-gallery', 'all'].includes(page) && !postersLoaded;
+  const placementTeam = [placementTeamLead, ...placementOfficers.filter(member =>
+    normalizeTeamName(member.name) !== normalizeTeamName(placementTeamLead.name)
+  )];
 
   useEffect(() => {
     if (!['partners', 'partners-all', 'all'].includes(page)) return undefined;
@@ -208,9 +161,32 @@ export default function PublicSiteSections({ page = 'all' }) {
   useEffect(() => {
     if (!['about', 'all'].includes(page)) return undefined;
     let active = true;
-    publicGet(`${API_BASE}/api/public/team-photos`)
-      .then(response => { if (active && response.data?.success) setTeamPhotos(Array.isArray(response.data.photos) ? response.data.photos : []); })
-      .catch(() => { if (active) setTeamPhotos([]); });
+    setPlacementTeamLoading(true);
+    publicGet(`${API_BASE}/api/public/placement-team`)
+      .then(response => {
+        if (!active) return;
+        if (!response.data?.success) throw new Error('Placement team unavailable');
+        setPlacementOfficers(Array.isArray(response.data.team) ? response.data.team : []);
+        setPlacementTeamError(false);
+      })
+      .catch(() => { if (active) setPlacementTeamError(true); })
+      .finally(() => { if (active) setPlacementTeamLoading(false); });
+    return () => { active = false; };
+  }, [page]);
+
+  useEffect(() => {
+    if (page !== 'vacancies') return undefined;
+    let active = true;
+    setVacanciesLoading(true);
+    publicGet(`${API_BASE}/api/public/openings`)
+      .then(response => {
+        if (!active) return;
+        if (!response.data?.success) throw new Error('Vacancies unavailable');
+        setVacancies(Array.isArray(response.data.openings) ? response.data.openings : []);
+        setVacanciesError(false);
+      })
+      .catch(() => { if (active) setVacanciesError(true); })
+      .finally(() => { if (active) setVacanciesLoading(false); });
     return () => { active = false; };
   }, [page]);
 
@@ -339,36 +315,29 @@ export default function PublicSiteSections({ page = 'all' }) {
 
       <section className="public-team-section" id="team">
         <div className="public-story-shell">
-          <SectionHeading eyebrow="The people behind IPCS" title="Team IPCS" description="Meet the leaders bringing together technical expertise, education, operations, people, and career development." align="center" />
-          <div className="public-team-grid">
-            {team.map((person, index) => {
-              const photo = profilePhotoFor(person, teamPhotos);
-              const driveId = teamProfilePhotoIds[person.name];
-              const profilePhotoUrl = person.image || (driveId
-                ? `${API_BASE}/api/public/team-photos/${encodeURIComponent(driveId)}`
-                : photo?.imageUrl ? `${API_BASE}${photo.imageUrl}` : '');
-              const initials = person.name.split(' ').filter(part => /^[A-Z]/.test(part) && !['Mr.', 'Ms.'].includes(part)).slice(0, 2).map(part => part[0]).join('');
-              return <article className="public-team-card" key={person.name}>
-                <div className={`public-team-photo-wrap avatar-${index + 1}`}>
-                  <span className="public-team-photo-fallback" aria-hidden="true">{initials}</span>
-                  {profilePhotoUrl && <img src={profilePhotoUrl} alt={`${person.name} profile`} loading="lazy" onError={event => {
-                    const sources = driveId
-                      ? [`https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w1200`, `https://lh3.googleusercontent.com/d/${encodeURIComponent(driveId)}`, `https://drive.google.com/uc?export=view&id=${encodeURIComponent(driveId)}`, photo?.imageUrl ? `${API_BASE}${photo.imageUrl}` : '']
-                      : [];
-                    const nextSource = sources[Number(event.currentTarget.dataset.fallbackIndex || 0)];
-                    if (nextSource) {
-                      event.currentTarget.dataset.fallbackIndex = String(Number(event.currentTarget.dataset.fallbackIndex || 0) + 1);
-                      event.currentTarget.src = nextSource;
-                    }
-                    else event.currentTarget.style.display = 'none';
-                  }} />}
-                </div>
-                <span className="public-team-role">{person.role}</span>
-                <h3>{person.name}</h3>
-                <p>{person.bio}</p>
-              </article>;
-            })}
-          </div>
+          <SectionHeading eyebrow="Career guidance & placement" title="IPCS Placement Team" description="Meet the people helping students prepare for careers and connect with employers." align="center" />
+          {placementTeamError && <div className="public-team-status" role="status">Placement team details are temporarily unavailable. Please check back soon.</div>}
+          {placementTeamLoading ? <div className="public-team-grid" aria-label="Loading placement team">{[1, 2, 3].map(item => <div className="public-team-skeleton" key={item} />)}</div> : (
+            <div className="public-team-grid">
+              {placementTeam.map((person, index) => {
+                const initials = String(person.name || '?').split(' ').filter(part => /^[A-Z]/i.test(part) && !['Mr.', 'Ms.', 'Mrs.'].includes(part)).slice(0, 2).map(part => part[0].toUpperCase()).join('');
+                const profilePhotoUrl = person.image || logoSource(person.photo);
+                const bio = person.bio || (person.branches
+                  ? `Supporting student placements and employer connections across ${person.branches}.`
+                  : 'Supporting students with placement preparation and connections to career opportunities.');
+                return <article className="public-team-card" key={`${person.name}-${index}`}>
+                  <div className={`public-team-photo-wrap avatar-${index + 1}`}>
+                    <span className="public-team-photo-fallback" aria-hidden="true">{initials}</span>
+                    {profilePhotoUrl && <img src={profilePhotoUrl} alt={`${person.name} profile`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}
+                  </div>
+                  <span className="public-team-role">{person.role || 'Placement Officer'}</span>
+                  <h3>{person.name}</h3>
+                  {person.branches && <span className="public-team-branches">{person.branches}</span>}
+                  <p>{bio}</p>
+                </article>;
+              })}
+            </div>
+          )}
         </div>
       </section>
       </>}
@@ -565,6 +534,31 @@ export default function PublicSiteSections({ page = 'all' }) {
         <div className="public-story-shell"><span>YOUR NEXT STEP STARTS HERE</span><h2>Learn. Connect. Grow.</h2><p>Explore career programs, placement updates, and IPCS industry partnerships.</p><Link className="portal-primary-button" to="/placements">Explore placements <ArrowRight size={18} /></Link></div>
       </section>
       </>}
+
+      {page === 'vacancies' && <section className="public-vacancies-section" id="vacancies">
+        <div className="public-story-shell">
+          <SectionHeading eyebrow="Career opportunities" title="Current Vacancies" description="Explore active openings shared with IPCS Global. Find the role, company, and location that match your next step." />
+          {vacanciesLoading ? <div className="public-vacancy-grid" aria-label="Loading vacancies">{[1, 2, 3, 4].map(item => <div className="public-vacancy-skeleton" key={item} />)}</div>
+            : vacanciesError ? <div className="public-vacancy-empty" role="status">Current vacancies are temporarily unavailable. Please check back soon.</div>
+              : vacancies.length === 0 ? <div className="public-vacancy-empty">There are no active openings at the moment. New opportunities will appear here as they are shared.</div>
+                : <div className="public-vacancy-grid">{vacancies.map((vacancy, index) => {
+                  const logo = logoSource(vacancy.companyLogo);
+                  const companyInitials = String(vacancy.company || 'IP').trim().split(/\s+/).slice(0, 2).map(word => word[0]?.toUpperCase()).join('');
+                  return <article className="public-vacancy-card" key={`${vacancy.id || 'opening'}-${index}`}>
+                    <div className="public-vacancy-company">
+                      <div className="public-vacancy-logo"><span>{companyInitials || 'IP'}</span>{logo && <img src={logo} alt={`${vacancy.company} logo`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}</div>
+                      <div><span className="public-vacancy-label">Hiring Company</span><h3>{vacancy.company}</h3></div>
+                    </div>
+                    <h4>{vacancy.position}</h4>
+                    <div className="public-vacancy-details">
+                      {vacancy.location && <span><Buildings size={16} />{vacancy.location}</span>}
+                      {vacancy.mode && <span><Briefcase size={16} />{vacancy.mode}</span>}
+                    </div>
+                    {vacancy.lastDate && <div className="public-vacancy-deadline">Apply by <strong>{vacancy.lastDate}</strong></div>}
+                  </article>;
+                })}</div>}
+        </div>
+      </section>}
       {selectedVideo && <div className="public-video-modal" role="presentation" onClick={event => { if (event.target === event.currentTarget) setSelectedVideo(null); }}>
         <section className="public-video-dialog" role="dialog" aria-modal="true" aria-label={selectedVideo.name}>
           <header><div><span>{selectedVideo.folder || 'IPCS MEDIA'}</span><h2>{selectedVideo.name}</h2></div><button type="button" onClick={() => setSelectedVideo(null)} aria-label="Close video"><X size={21} /></button></header>

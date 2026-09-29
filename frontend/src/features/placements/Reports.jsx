@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
+import { latestPlacementRecords, normalizePlacementText } from '../../utils/placementRecords';
 
 export default function Reports() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -18,6 +19,7 @@ export default function Reports() {
   const [students, setStudents] = useState([]);
   const [events, setEvents] = useState([]);
   const [tpoLogs, setTpoLogs] = useState([]); 
+  const placementLogs = useMemo(() => latestPlacementRecords(tpoLogs), [tpoLogs]);
   
   const [tpoList, setTpoList] = useState([]);
   const [allBranchesList, setAllBranchesList] = useState([]);
@@ -161,7 +163,7 @@ export default function Reports() {
     mainCourses.forEach(c => branchPlaces[b][c] = 0);
   });
 
-  tpoLogs.forEach(log => {
+  placementLogs.forEach(log => {
     const b = getVal(log, 'branch');
     const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
     const logTpo = getVal(log, 'placementofficer').toLowerCase().trim();
@@ -196,7 +198,7 @@ export default function Reports() {
     displayTpos.forEach(tName => branchTPO[b][tName] = 0);
   });
 
-  tpoLogs.forEach(log => {
+  placementLogs.forEach(log => {
     const b = getVal(log, 'branch');
     const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
     const logTpoRaw = getVal(log, 'placementofficer');
@@ -224,7 +226,7 @@ export default function Reports() {
   const pipeline = {};
   mainCourses.concat(['Others']).forEach(c => pipeline[c] = { placed: 0, joined: 0, notJoined: 0 });
 
-  tpoLogs.forEach(log => {
+  placementLogs.forEach(log => {
     const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
     const logTpo = getVal(log, 'placementofficer').toLowerCase().trim();
     const hasAccessToLog = isSuperAdmin || (logTpo === myName || logTpo.includes(myName) || myName.includes(logTpo));
@@ -286,7 +288,7 @@ export default function Reports() {
     });
 
     // Total Applications & Joining Status from TPO Logs
-    const logs = tpoLogs.filter(log => {
+    const logs = placementLogs.filter(log => {
        const logTpo = getVal(log, 'placementofficer').toLowerCase().trim();
        const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
        return checkMonth(dStr) && (logTpo === targetName || logTpo.includes(targetName) || targetName.includes(logTpo));
@@ -294,7 +296,7 @@ export default function Reports() {
     
     const joined = logs.filter(log => (getVal(log, 'status') || '').toLowerCase().includes('join')).length;
     const notJoined = logs.filter(log => (getVal(log, 'status') || '').toLowerCase().includes('reject') || (getVal(log, 'status') || '').toLowerCase().includes('not attend')).length;
-    const autoUniqueCompanies = new Set(logs.map(log => getVal(log, 'companyname') || getVal(log, 'company')).filter(Boolean)).size;
+    const autoUniqueCompanies = new Set(logs.map(log => normalizePlacementText(getVal(log, 'companyname') || getVal(log, 'company'))).filter(Boolean)).size;
 
     // Drives Conducted from Event Sheet
     const tpoEvents = events.filter(e => checkMonth(e.date) && ((e.tpo || '').toLowerCase().includes(targetName) || targetName.includes((e.tpo || '').toLowerCase())));
@@ -412,7 +414,7 @@ export default function Reports() {
             {tpoList.map((tpo, idx) => {
               const targetTpoName = (tpo.userName || tpo.name || '').toLowerCase().trim();
               
-              const placedStudentsLog = tpoLogs.filter(log => {
+              const placedStudentsLog = placementLogs.filter(log => {
                 const logTpo = getVal(log, 'placementofficer').toLowerCase().trim();
                 const isMatch = logTpo === targetTpoName || logTpo.includes(targetTpoName) || targetTpoName.includes(logTpo);
                 if (!isMatch) return false;

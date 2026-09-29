@@ -327,11 +327,11 @@ export default function Dashboard() {
 
         {/* KPI CARDS */}
         <div className="kpi-grid">
-          <div className="dash-card" title="Company records in the Clients sheet">
+          <div className="dash-card">
             <div className="kpi-header"><div className="icon-c blue"><Users weight="fill" size={20}/></div><div><div className="kpi-title">Total Students</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.totalStudents}</div></div></div>
             <div className="kpi-trend green">↑ Live Database</div>{makeSparkline('#3b82f6')}
           </div>
-          <div className="dash-card">
+          <div className="dash-card" title="Company records in the Clients sheet">
             <div className="kpi-header"><div className="icon-c teal"><Buildings weight="fill" size={20}/></div><div><div className="kpi-title">Total Companies</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.totalCompanies}</div></div></div>
             <div className="kpi-trend green">↑ Active Network</div>{makeSparkline('#0ea5e9')}
           </div>

@@ -120,7 +120,7 @@ export default function Login() {
               <div className="portal-talenzo-brand">
                 {talenzoLogoError ? <b className="portal-talenzo-fallback">TALENZO</b> : <img src="https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J" alt="Talenzo" onError={() => setTalenzoLogoError(true)} />}
               </div>
-              <h1>Build  Skills.<br /><span>Shape  What’s  Next</span></h1>
+              <h1>Build Skills.<br /><span>Shape What’s Next</span></h1>
               <p>Connecting future-ready talent in industrial automation, embedded systems, IoT, and digital technology with opportunities around the world.</p>
               <div className="portal-home-actions">
                 <Link className="portal-primary-button" to="/placements">Explore placements <ArrowRight size={19} weight="bold" /></Link>

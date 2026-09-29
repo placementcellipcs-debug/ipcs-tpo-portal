@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { 
   CircleNotch, SquaresFour, List, PencilSimple, X, FloppyDisk, 
@@ -63,6 +64,18 @@ export default function StudentsDirectory() {
   const [localExamAccess, setLocalExamAccess] = useState('');
   const [localCourseStatus, setLocalCourseStatus] = useState(''); 
   const [localCoursePercentage, setLocalCoursePercentage] = useState('');
+
+  useEffect(() => {
+    if (!isModalOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = event => { if (event.key === 'Escape') setIsModalOpen(false); };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isModalOpen]);
 
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
@@ -440,9 +453,9 @@ export default function StudentsDirectory() {
         )}
       </div>
 
-      {isModalOpen && selectedStudent && (
+      {isModalOpen && selectedStudent && createPortal((
       <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '15px', overflow: 'hidden' }} onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
-        <div className="modal-card" style={{ maxWidth: '950px', width: '100%', maxHeight: '95vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
+        <div className="modal-card" style={{ maxWidth: '950px', width: '100%', maxHeight: 'min(95dvh, 95vh)', overflowY: 'auto', overscrollBehavior: 'contain', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
           
           <div style={{ position: 'sticky', top: 0, background: '#0f1523', zIndex: 10, padding: '1.5rem 2rem', borderBottom: '1px solid #1e293b' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '15px' }}>
@@ -682,7 +695,7 @@ export default function StudentsDirectory() {
           </div>
         </div>
       </div>
-      )}
+      ), document.body)}
     </Layout>
   );
 }

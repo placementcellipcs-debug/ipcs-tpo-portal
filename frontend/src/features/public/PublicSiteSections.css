@@ -2,6 +2,7 @@
 .public-story-shell { width: min(1180px, calc(100% - 72px)); margin: 0 auto; }
 .public-story section[id] { scroll-margin-top: 30px; }
 .public-about-section, .public-team-section, .public-placement-section, .public-partners-section, .public-updates-section { padding: 96px 0; }
+.public-vacancies-section { min-height: 65vh; padding: 96px 0; background: linear-gradient(180deg, #f2f6fa 0%, #fff 100%); }
 .public-about-section { background: linear-gradient(180deg, #f2f6fa 0%, #edf3f8 100%); }
 .public-section-heading { max-width: 735px; margin-bottom: 38px; }
 .public-section-heading.align-center { margin-right: auto; margin-left: auto; text-align: center; }
@@ -76,6 +77,24 @@
 .public-team-role { color: #187ba3; font-size: .64rem; font-weight: 900; letter-spacing: .11em; text-transform: uppercase; }
 .public-team-card h3 { margin: 7px 0 10px; color: #172e49; font-size: 1.05rem; letter-spacing: -.025em; }
 .public-team-card p { margin: 0; color: #6a7a8e; font-size: .75rem; line-height: 1.68; }
+.public-team-branches { display: block; margin: -3px 0 9px; color: #71849a; font-size: .66rem; font-weight: 750; line-height: 1.5; }
+.public-team-status { margin: 0 0 16px; padding: 14px 16px; border: 1px solid #dce8f1; border-radius: 12px; color: #65798d; background: rgba(255,255,255,.75); font-size: .78rem; }
+.public-team-skeleton, .public-vacancy-skeleton { min-height: 310px; border: 1px solid #e6edf5; border-radius: 21px; background: linear-gradient(100deg, #f0f4f8 25%, #fafbfd 40%, #f0f4f8 60%); background-size: 220% 100%; animation: poster-shimmer 1.3s ease-in-out infinite; }
+.public-vacancy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: 16px; }
+.public-vacancy-card { min-width: 0; padding: 22px; border: 1px solid #e1eaf2; border-radius: 18px; background: rgba(255,255,255,.94); box-shadow: 0 14px 35px rgba(26,63,103,.06); transition: transform .2s ease, box-shadow .2s ease; }
+.public-vacancy-card:hover { transform: translateY(-4px); box-shadow: 0 20px 44px rgba(26,63,103,.12); }
+.public-vacancy-company { display: flex; align-items: center; gap: 12px; margin-bottom: 19px; }
+.public-vacancy-logo { position: relative; width: 54px; height: 54px; flex: 0 0 54px; display: grid; place-items: center; overflow: hidden; border: 1px solid #e3ebf3; border-radius: 14px; color: #176d8a; background: #eff8fb; font-size: .9rem; font-weight: 900; }
+.public-vacancy-logo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; }
+.public-vacancy-label { display: block; margin-bottom: 4px; color: #8291a3; font-size: .59rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
+.public-vacancy-company h3 { overflow: hidden; margin: 0; color: #193451; font-size: .9rem; text-overflow: ellipsis; white-space: nowrap; }
+.public-vacancy-card > h4 { margin: 0 0 16px; color: #132b48; font-size: 1.04rem; line-height: 1.4; }
+.public-vacancy-details { display: grid; gap: 8px; color: #6b7d91; font-size: .72rem; }
+.public-vacancy-details span { display: flex; align-items: center; gap: 8px; }
+.public-vacancy-details svg { flex: 0 0 auto; color: #1686a3; }
+.public-vacancy-deadline { margin-top: 18px; padding-top: 12px; border-top: 1px solid #edf1f5; color: #718198; font-size: .68rem; }
+.public-vacancy-deadline strong { color: #254766; }
+.public-vacancy-empty { padding: 25px; border: 1px dashed #cedbe8; border-radius: 16px; color: #6d7d91; background: #f8fbfe; font-size: .88rem; line-height: 1.7; }
 
 .public-placement-section { background: #f2f6fa; }
 .public-recruiter-panel { margin-top: 28px; padding: 25px 27px; display: grid; grid-template-columns: minmax(0,.9fr) minmax(0,1.1fr); gap: 28px; border: 1px solid #dce9f4; border-radius: 19px; background: linear-gradient(120deg,#f5faff,#f7fcfc); }
@@ -203,7 +222,7 @@
 }
 @media (max-width: 720px) {
   .public-story-shell { width: min(100% - 40px, 600px); }
-  .public-about-section, .public-team-section, .public-placement-section, .public-partners-section, .public-updates-section { padding: 66px 0; }
+  .public-about-section, .public-team-section, .public-placement-section, .public-partners-section, .public-updates-section, .public-vacancies-section { padding: 66px 0; }
   .public-about-grid, .public-placement-copy-grid, .public-updates-columns { grid-template-columns: 1fr; }
   .public-recruiter-panel { grid-template-columns: 1fr; gap: 20px; padding: 20px; }
   .public-about-main { min-height: 0; padding: 26px; }

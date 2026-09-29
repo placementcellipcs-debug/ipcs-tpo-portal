@@ -7,6 +7,7 @@ import {
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
 import StatusBadge from '../../components/StatusBadge';
+import { getPlacementIdentity, latestPlacementRecords, normalizePlacementText } from '../../utils/placementRecords';
 
 const TILE_COLORS = ['#3b82f6', 'var(--accent-primary)', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 
@@ -46,6 +47,7 @@ export default function PlacedStudents() {
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   
   const [applications, setApplications] = useState([]);
+  const [existingApplications, setExistingApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   
   const upperRole = (tpoData?.role || '').toUpperCase();
@@ -97,6 +99,9 @@ export default function PlacedStudents() {
         axios.post(`${API_BASE}/api/tpo/reports`, payload)
       ]);
 
+      const sheetApplications = appRes.data?.success && Array.isArray(appRes.data.applications) ? appRes.data.applications : [];
+      setExistingApplications(sheetApplications);
+
       if (repRes.data.success) {
         let logs = repRes.data.tpoLogs || [];
 
@@ -137,28 +142,17 @@ export default function PlacedStudents() {
           tpoName: getVal(row, ['placementofficer', 'tpo'])
         }));
 
-        mappedLogs = mappedLogs.filter(a => {
+        mappedLogs = latestPlacementRecords(mappedLogs).filter(a => {
           const s = (a.status || '').toLowerCase();
           const j = (a.joiningStatus || '').toLowerCase();
           return s.includes('placed') || s.includes('got offer') || s.includes('join') || s.includes('offer') || j.includes('join');
         });
 
-        const deduped = {};
-        mappedLogs.forEach(log => {
-          const key = `${log.roll || log.name}_${log.company}`.toLowerCase();
-          deduped[key] = log; 
+        const finalApps = mappedLogs.map(logApp => {
+          const identity = getPlacementIdentity(logApp);
+          const match = identity ? sheetApplications.find(application => getPlacementIdentity(application) === identity) : null;
+          return { ...logApp, rowNumber: match ? match.rowNumber : null };
         });
-
-        let finalApps = Object.values(deduped);
-
-        if (appRes.data.success) {
-          finalApps = finalApps.map(logApp => {
-            const match = appRes.data.applications.find(a => 
-              (a.roll === logApp.roll || a.name === logApp.name) && a.company === logApp.company
-            );
-            return { ...logApp, rowNumber: match ? match.rowNumber : null };
-          });
-        }
 
         setApplications(finalApps);
       }
@@ -253,6 +247,16 @@ export default function PlacedStudents() {
 
   const submitAdd = async () => {
     if (!addForm.roll || !addForm.name || !addForm.company) return alert("Student Name, Roll Number, and Company Name are required.");
+    const targetRoll = normalizePlacementText(addForm.roll);
+    const targetName = normalizePlacementText(addForm.name);
+    const targetCompany = normalizePlacementText(addForm.company);
+    const duplicateExists = [...applications, ...existingApplications].some(application => {
+      const company = normalizePlacementText(application.company || application.companyName);
+      if (!targetCompany || company !== targetCompany) return false;
+      const existingRoll = normalizePlacementText(application.roll || application.rollNumber || application.ipcsRollNumber);
+      return targetRoll && existingRoll ? targetRoll === existingRoll : targetName === normalizePlacementText(application.name || application.studentName);
+    });
+    if (duplicateExists) return alert('This student is already recorded for this company. Please find their name on the list and use the Edit button instead.');
     setSavingStatus(true);
     try {
       const formData = new FormData();
