@@ -84,7 +84,7 @@ export default function Inventory() {
 
         {/* MODALS */}
         {isAddModalOpen && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setIsAddModalOpen(false); }}>
             <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 style={{ margin: 0, color: 'var(--accent-primary)' }}>New Inventory Item</h2><X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsAddModalOpen(false)} /></div>
               <form onSubmit={handleAddSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -100,7 +100,7 @@ export default function Inventory() {
         )}
 
         {stockModal && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setStockModal(null); }}>
             <div className="modal-card" style={{ maxWidth: '400px', width: '100%', background: '#0f1523', border: `1px solid ${stockModal.action === 'IN' ? '#10b981' : '#ef4444'}`, borderRadius: '16px', padding: '2rem' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 style={{ margin: 0, color: stockModal.action === 'IN' ? '#10b981' : '#ef4444' }}>{stockModal.action === 'IN' ? 'Add Stock' : 'Consume Item'}</h2><X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setStockModal(null)} /></div>
               <form onSubmit={handleStockSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>

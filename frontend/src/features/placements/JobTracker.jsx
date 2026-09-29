@@ -30,6 +30,8 @@ export default function JobTracker() {
   const isSuperAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
   
   const isStrictTpo = (userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER')) && !isSuperAdmin;
+  const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('REGIONAL TECHNICAL HEAD');
+  const canUseDriveTracker = isStrictTpo || isRth;
 
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -46,8 +48,12 @@ export default function JobTracker() {
   useEffect(() => {
     if (!tpoData) return;
 
-    if (!isStrictTpo) {
+    if (!isStrictTpo && !isRth) {
       window.location.href = '/dashboard';
+      return;
+    }
+    if (isRth) {
+      if (activeTab !== 'drives') setSearchParams({ tab: 'drives' }, { replace: true });
       return;
     }
 
@@ -75,7 +81,7 @@ export default function JobTracker() {
       }
     };
     fetchData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- Load the account-scoped tracker snapshot once per page mount.
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps -- Load the account-scoped tracker snapshot once per page mount.
 
   const toggleGroup = (groupKey) => setOpenGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
 
@@ -183,7 +189,7 @@ export default function JobTracker() {
     "Company Rejected"
   ];
 
-  if (!isStrictTpo) return <></>;
+  if (!canUseDriveTracker) return <></>;
 
   return (
     <Layout>
@@ -196,7 +202,7 @@ export default function JobTracker() {
         </div>
 
         <div className="jt-workspace-tabs" role="tablist" aria-label="Placement tracking">
-          <button type="button" role="tab" aria-selected={activeTab === 'jobs'} className={activeTab === 'jobs' ? 'active' : ''} onClick={() => setSearchParams({})}>Job Tracker<span>{applications.length}</span></button>
+          {isStrictTpo && <button type="button" role="tab" aria-selected={activeTab === 'jobs'} className={activeTab === 'jobs' ? 'active' : ''} onClick={() => setSearchParams({})}>Job Tracker<span>{applications.length}</span></button>}
           <button type="button" role="tab" aria-selected={activeTab === 'drives'} className={activeTab === 'drives' ? 'active' : ''} onClick={() => setSearchParams({ tab: 'drives' })}>Placement Drives</button>
         </div>
 
@@ -385,7 +391,7 @@ export default function JobTracker() {
 
       {/* INTERVIEW MODAL REMAINS FUNCTIONAL */}
       {interviewModal.isOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setInterviewModal(current => ({ ...current, isOpen: false })); }}>
           <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '16px', padding: '2rem' }}>
             
             <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>

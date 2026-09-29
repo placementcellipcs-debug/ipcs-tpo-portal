@@ -39,7 +39,66 @@ body { background-color: var(--bg-dark); color: var(--text-main); min-height: 10
 button, a, [role="button"] { transition-property: color, background-color, border-color, box-shadow, transform; transition-duration: .18s; transition-timing-function: ease; }
 button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent-primary) 65%, transparent); outline-offset: 3px; }
 .page-container, .db-wrapper, .public-story { animation: route-content-enter .32s ease both; }
-@keyframes route-content-enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+/* Keep the route transition from creating a containing block for fixed dialogs. */
+@keyframes route-content-enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+
+/* Shared, viewport-safe liquid-glass treatment for portal dialogs. */
+.modal-card {
+  max-height: min(90dvh, 900px) !important;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: linear-gradient(145deg, rgba(26, 39, 63, .88), rgba(13, 21, 38, .92)) !important;
+  border: 1px solid rgba(196, 218, 255, .2) !important;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .48), inset 0 1px 0 rgba(255, 255, 255, .08) !important;
+  backdrop-filter: blur(28px) saturate(155%);
+  -webkit-backdrop-filter: blur(28px) saturate(155%);
+}
+.modal-backdrop { background: rgba(3, 8, 18, .58) !important; backdrop-filter: blur(18px) saturate(135%); -webkit-backdrop-filter: blur(18px) saturate(135%); }
+div[style*="z-index: 99999"] { background-color: rgba(3, 8, 18, .62) !important; backdrop-filter: blur(18px) saturate(135%); -webkit-backdrop-filter: blur(18px) saturate(135%); overflow-y: auto; }
+div[style*="z-index: 99999"] > div, div[style*="z-index: 9999"] > div, div[style*="z-index: 1000"] > div {
+  max-height: min(90dvh, 900px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid rgba(196, 218, 255, .2) !important;
+  border-radius: 20px !important;
+  background: linear-gradient(145deg, rgba(26, 39, 63, .88), rgba(13, 21, 38, .92)) !important;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, .48), inset 0 1px 0 rgba(255, 255, 255, .08) !important;
+  backdrop-filter: blur(28px) saturate(155%);
+  -webkit-backdrop-filter: blur(28px) saturate(155%);
+}
+body[data-theme="light"] .modal-card { background: linear-gradient(145deg, rgba(255,255,255,.94), rgba(235,242,251,.94)) !important; border-color: rgba(75, 103, 143, .24) !important; }
+body[data-theme="light"] div[style*="z-index: 99999"] > div, body[data-theme="light"] div[style*="z-index: 9999"] > div, body[data-theme="light"] div[style*="z-index: 1000"] > div { background: linear-gradient(145deg, rgba(255,255,255,.94), rgba(235,242,251,.94)) !important; border-color: rgba(75, 103, 143, .24) !important; }
+.placed-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; margin: 0 0 18px; }
+.placed-overview > div { min-width: 0; display: grid; gap: 5px; padding: 17px 19px; border: 1px solid var(--card-border); border-radius: 15px; background: linear-gradient(145deg, color-mix(in srgb, var(--accent-primary) 9%, var(--card-bg)), var(--card-bg)); box-shadow: 0 12px 30px rgba(0,0,0,.12); }
+.placed-overview span { color: var(--text-muted); font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .045em; }
+.placed-overview strong { color: var(--text-main); font-size: 1.65rem; letter-spacing: -.04em; }
+.placed-overview small { color: var(--text-muted); font-size: .69rem; }
+.talentino-dashboard { margin: 20px 0 30px; padding: clamp(18px, 3vw, 28px); border: 1px solid var(--card-border); border-radius: 20px; background: radial-gradient(circle at 4% 0%, color-mix(in srgb, var(--accent-primary) 16%, transparent), transparent 35%), var(--card-bg); box-shadow: 0 18px 50px rgba(0,0,0,.18); }
+.talentino-dashboard-head { display: flex; justify-content: space-between; align-items: center; gap: 18px; margin-bottom: 18px; }
+.talentino-dashboard-head > div > span { color: var(--accent-primary); font-size: .65rem; font-weight: 900; letter-spacing: .16em; }
+.talentino-dashboard-head h2 { margin-top: 5px; color: var(--text-main); font-size: 1.4rem; }
+.talentino-dashboard-head label { display: flex; align-items: center; gap: 10px; color: var(--text-muted); font-size: .78rem; font-weight: 700; }
+.talentino-dashboard-head select { min-width: 175px; background: var(--bg-dark); }
+.talentino-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.talentino-metrics article { display: grid; gap: 8px; min-width: 0; padding: 15px 17px; border: 1px solid color-mix(in srgb, var(--accent-primary) 18%, var(--card-border)); border-radius: 14px; background: color-mix(in srgb, var(--bg-dark) 62%, transparent); }
+.talentino-metrics article > span { color: var(--text-muted); font-size: .69rem; font-weight: 800; text-transform: uppercase; }
+.talentino-metrics strong { color: var(--text-main); font-size: 1.55rem; }
+.talentino-metrics small { margin-left: 4px; color: var(--text-muted); font-size: .75rem; }
+.talentino-officer-table { overflow: hidden; border: 1px solid var(--card-border); border-radius: 13px; }
+.talentino-officer-row { display: grid; grid-template-columns: 1.4fr .65fr .9fr 1.4fr; gap: 12px; align-items: center; padding: 12px 15px; border-top: 1px solid var(--card-border); color: var(--text-main); font-size: .8rem; }
+.talentino-officer-header { border-top: 0; color: var(--text-muted); background: color-mix(in srgb, var(--accent-primary) 8%, var(--bg-dark)); font-size: .66rem; font-weight: 900; letter-spacing: .04em; text-transform: uppercase; }
+.talentino-officer-row > * { min-width: 0; overflow-wrap: anywhere; }
+.talentino-officer-row strong { color: var(--text-main); }
+.talentino-empty { padding: 18px; color: var(--text-muted); text-align: center; font-size: .82rem; }
+.talentino-branch-heading { margin: 20px 20px 12px; color: var(--text-main); font-size: 1.1rem; }
+@media (max-width: 640px) {
+  .modal-card { width: 100% !important; max-width: 100% !important; max-height: 92dvh !important; padding: 1.25rem !important; }
+  .placed-overview, .talentino-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .talentino-dashboard-head { align-items: stretch; flex-direction: column; }
+  .talentino-officer-header { display: none; }
+  .talentino-officer-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .talentino-officer-row > span:last-child { grid-column: 1 / -1; color: var(--text-muted); }
+}
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }

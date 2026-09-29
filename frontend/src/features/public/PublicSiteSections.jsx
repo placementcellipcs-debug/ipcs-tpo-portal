@@ -44,6 +44,14 @@ const careerPrograms = [
   'Interactive communication activities'
 ];
 
+const companyRoadmap = [
+  { date: '2008', phase: 'The Modest Beginnings', title: 'Industrial automation starts in Kochi', copy: 'IPCS began as a system integrator and automation service provider, helping local industries adopt advanced manufacturing processes while building relationships with global technology companies.' },
+  { date: '2009', phase: 'Bridging the Skills Gap', title: 'Practical technical training begins', copy: 'Seeing the shortage of industry-ready engineers and technicians, IPCS opened its first training centre in Kozhikode with hands-on PLC, SCADA, HMI, and DCS programs.' },
+  { date: '2014+', phase: 'Standards & Global Growth', title: 'ISO certification and international centres', copy: 'After expanding training centres across Calicut, Trivandrum, Madurai, Hyderabad, and Pune, IPCS achieved ISO certification in 2014. It later established training and corporate service centres in the UAE and the Kingdom of Saudi Arabia.' },
+  { date: 'Digital Age', phase: 'A Broader Technology Portfolio', title: 'From smart buildings to emerging technology', copy: 'IPCS expanded into Building Management Systems and CCTV, alongside Python, data science, artificial intelligence, embedded systems, IoT, and digital marketing.' },
+  { date: 'Today', phase: 'IPCS Global', title: 'Connecting skills, industry, and opportunity', copy: 'IPCS Global is a self-sustaining, unfunded organization with over 1,000 employees. It brings technical education, automation solutions, and career pathways together, while alumni contribute to global enterprises across manufacturing, Oil & Gas, IT, and infrastructure.' }
+];
+
 const blogs = [
   'Digital Marketing Strategies for E-commerce',
   'Content Writing in Digital Marketing',
@@ -99,6 +107,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   const [vacancies, setVacancies] = useState([]);
   const [vacanciesLoading, setVacanciesLoading] = useState(false);
   const [vacanciesError, setVacanciesError] = useState(false);
+  const [openVacancyId, setOpenVacancyId] = useState(null);
   const [partnersLoaded, setPartnersLoaded] = useState(false);
   const [partnersError, setPartnersError] = useState(false);
   const [partnerTotal, setPartnerTotal] = useState(0);
@@ -283,11 +292,9 @@ export default function PublicSiteSections({ page = 'all' }) {
             <article className="public-about-card public-about-main">
               <div className="public-card-icon"><Compass size={23} weight="duotone" /></div>
               <span className="public-card-kicker">Who We Are</span>
-              <h3>Technology expertise with practical impact.</h3>
-              <p>Established in Kochi in 2008, IPCS began with industrial automation projects for leading clients. We opened our first training centre in Kozhikode in 2009 to help meet the growing need for skilled professionals. Today, our centres serve learners across India, the UAE, and Saudi Arabia, including official university training partnerships.</p>
-              <p>Our research-oriented teams deliver process, factory, and machine automation; CNC solutions; building management systems; energy management; IoT; robotics; industrial calibration; and testing. From proposing and installing systems to commissioning them, we work to established industry standards.</p>
-              <p>Our solutions include HMI systems, PLCs, DCS, SCADA, drives, and sensors. We also provide corporate and professional training in PLC, SCADA, DCS, HMI, drives, panel design, process and electrical controls, embedded systems, robotics, industrial networking, IoT, IT, and digital marketing.</p>
-              <p>Our ISO certification, achieved in 2014, reflects our commitment to technical standards and organizational integrity. Thousands of IPCS-trained professionals now contribute to leading organizations around the world.</p>
+              <h3>Industry experience. Practical learning. Global reach.</h3>
+              <p>IPCS (Ingenious Power and Control Systems) was founded in Kochi in 2008, first delivering industrial automation projects. As demand for skilled technical professionals grew, we extended that experience into hands-on technical education.</p>
+              <p>Today, IPCS Global combines automation services with professional training across industrial systems, smart infrastructure, IT, emerging technologies, and digital marketing. Our work spans India, the UAE, and Saudi Arabia, and our alumni contribute to organizations worldwide.</p>
               <a className="public-about-team-link" href="#team">Learn more about our Team <ArrowRight size={17} weight="bold" /></a>
             </article>
             <div className="public-about-facts">
@@ -295,6 +302,19 @@ export default function PublicSiteSections({ page = 'all' }) {
               <article className="public-fact-card"><span className="public-fact-number">2009</span><span>First training centre opened in Kozhikode</span></article>
               <article className="public-fact-card"><span className="public-fact-number">2014</span><span>ISO certification milestone</span></article>
             </div>
+          </div>
+          <div className="public-roadmap" aria-label="IPCS Global company history">
+            <div className="public-roadmap-heading"><span>OUR JOURNEY</span><h3>From a Kochi office to a global learning network.</h3><p>Key milestones in the growth of IPCS Global.</p></div>
+            <ol className="public-roadmap-list">
+              {companyRoadmap.map((item, index) => <li className="public-roadmap-item" key={item.date}>
+                <div className="public-roadmap-marker"><span>{String(index + 1).padStart(2, '0')}</span></div>
+                <div className="public-roadmap-card"><div className="public-roadmap-meta"><span>{item.date}</span><span>{item.phase}</span></div><h4>{item.title}</h4><p>{item.copy}</p></div>
+              </li>)}
+            </ol>
+          </div>
+          <div className="public-capability-grid">
+            <article><span>INDUSTRY SOLUTIONS</span><h3>Automation, from design through commissioning.</h3><p>Process, factory, and machine automation; CNC solutions; building and energy management; IoT and robotics; industrial calibration and testing.</p><div>{['HMI', 'PLCs', 'DCS', 'SCADA', 'Drives', 'Sensors'].map(item => <b key={item}>{item}</b>)}</div></article>
+            <article><span>PROFESSIONAL TRAINING</span><h3>Skills built around real systems and industry needs.</h3><p>Corporate and professional programs span automation, controls, digital technology, and career-ready skills.</p><div>{['PLC & SCADA', 'DCS & HMI', 'Panel Design', 'Process & Electrical Controls', 'Embedded Systems', 'Robotics', 'Industrial Networking', 'IoT', 'IT', 'Digital Marketing'].map(item => <b key={item}>{item}</b>)}</div></article>
           </div>
           <div className="public-values-row">
             <div><span className="public-value-icon"><Star size={17} weight="fill" /></span><span><b>Our Values</b><small>Professional ethics, mutual respect, teamwork, and complete client satisfaction.</small></span></div>
@@ -544,17 +564,24 @@ export default function PublicSiteSections({ page = 'all' }) {
                 : <div className="public-vacancy-grid">{vacancies.map((vacancy, index) => {
                   const logo = logoSource(vacancy.companyLogo);
                   const companyInitials = String(vacancy.company || 'IP').trim().split(/\s+/).slice(0, 2).map(word => word[0]?.toUpperCase()).join('');
+                  const vacancyKey = `${vacancy.id || vacancy.company}-${vacancy.position}-${vacancy.location}-${index}`;
+                  const isExpanded = openVacancyId === vacancyKey;
                   return <article className="public-vacancy-card" key={`${vacancy.id || 'opening'}-${index}`}>
                     <div className="public-vacancy-company">
                       <div className="public-vacancy-logo"><span>{companyInitials || 'IP'}</span>{logo && <img src={logo} alt={`${vacancy.company} logo`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}</div>
-                      <div><span className="public-vacancy-label">Hiring Company</span><h3>{vacancy.company}</h3></div>
+                      <div className="public-vacancy-company-copy"><span className="public-vacancy-label">Hiring Company</span><h3 title={vacancy.company}>{vacancy.company}</h3></div>
                     </div>
                     <h4>{vacancy.position}</h4>
                     <div className="public-vacancy-details">
-                      {vacancy.location && <span><Buildings size={16} />{vacancy.location}</span>}
-                      {vacancy.mode && <span><Briefcase size={16} />{vacancy.mode}</span>}
+                      {vacancy.location && <span><Buildings size={16} /><span>{vacancy.location}</span></span>}
+                      {vacancy.mode && <span><Briefcase size={16} /><span>{vacancy.mode}</span></span>}
                     </div>
                     {vacancy.lastDate && <div className="public-vacancy-deadline">Apply by <strong>{vacancy.lastDate}</strong></div>}
+                    <button className="public-vacancy-more" type="button" aria-expanded={isExpanded} onClick={() => setOpenVacancyId(isExpanded ? null : vacancyKey)}>{isExpanded ? 'Less details' : 'More details'} <ArrowRight size={15} /></button>
+                    {isExpanded && <div className="public-vacancy-expanded">
+                      {vacancy.description && <p>{vacancy.description}</p>}
+                      <dl>{vacancy.course && <div><dt>Course</dt><dd>{vacancy.course}</dd></div>}{vacancy.qualification && <div><dt>Qualification</dt><dd>{vacancy.qualification}</dd></div>}{vacancy.experience && <div><dt>Experience</dt><dd>{vacancy.experience}</dd></div>}{vacancy.salary && <div><dt>Compensation</dt><dd>{vacancy.salary}</dd></div>}</dl>
+                    </div>}
                   </article>;
                 })}</div>}
         </div>

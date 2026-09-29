@@ -46,6 +46,14 @@ export default function StudentsDirectory() {
   const [globalStats, setGlobalStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0 });
   const [loading, setLoading] = useState(true);
   
+  const assignedBranchesArray = Array.isArray(tpoData?.assignedBranchesArray)
+    ? tpoData.assignedBranchesArray.map(branch => String(branch).trim().toLowerCase()).filter(Boolean)
+    : String(tpoData?.assignedBranchesArray || '').split(/[\n,]+/).map(branch => branch.trim().toLowerCase()).filter(Boolean);
+  const hasAssignedBranch = branch => assignedBranchesArray.includes('all') || assignedBranchesArray.some(assigned => {
+    const rowBranch = String(branch || '').trim().toLowerCase();
+    return rowBranch && (rowBranch === assigned || rowBranch.includes(assigned) || assigned.includes(rowBranch));
+  });
+
   const [selectedBranch, setSelectedBranch] = useState(null); 
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
@@ -205,9 +213,9 @@ export default function StudentsDirectory() {
 
   const scopedStudents = rawStudents.filter(s => {
     if (isCourseSpecific && assignedCoursesArray[0] !== 'All') {
-      return assignedCoursesArray.some(ac => getStandardCourse(s.course) === ac);
+      if (!assignedCoursesArray.some(ac => getStandardCourse(s.course) === ac)) return false;
     }
-    return true;
+    return !isCourseSpecific || hasAssignedBranch(s.branch);
   });
 
   const globallyFiltered = scopedStudents.filter(s => {

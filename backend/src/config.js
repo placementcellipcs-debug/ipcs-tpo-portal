@@ -146,7 +146,8 @@ function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCo
   const stdRowCourse = getStandardCourse(rowCourse);
   
   // 🚨 BULLETPROOF SPLITTER: Detects both commas and Google Sheets newlines (\n)
-  let assignedCoursesArray = ['All'];
+  const isRth = hasRoleToken('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD';
+  let assignedCoursesArray = isRth ? [] : ['All'];
   if (assignedCourse && assignedCourse !== 'All' && assignedCourse !== 'All Courses') {
      assignedCoursesArray = assignedCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim()));
   }
@@ -155,7 +156,7 @@ function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCo
   
   const matchBranch = checkBranchMatch(rowBranch, assignedBranchesArray);
 
-  if (hasRoleToken('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD') return matchCourse;
+  if (isRth) return matchBranch && matchCourse;
   if (hasRoleToken('TTH') || upperRole === 'TERRITORY TECHNICAL HEAD' || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD')) return matchBranch && matchCourse;
   return matchBranch; 
 }

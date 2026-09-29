@@ -37,7 +37,7 @@ export default function StudyMaterials() {
      if (rawCourse.includes('automation') || rawCourse.includes('plc') || rawCourse.includes('scada')) assignedCoursesArray.push('Industrial Automation');
      if (rawCourse.includes('embed') || rawCourse.includes('iot')) assignedCoursesArray.push('Embedded and IoT');
      if (rawCourse.includes('digital') || rawCourse.includes('dm') || rawCourse.includes('marketing')) assignedCoursesArray.push('Digital Marketing');
-     if (rawCourse.includes('it') || rawCourse.includes('python') || rawCourse.includes('software') || rawCourse.includes('data')) assignedCoursesArray.push('Information technology (IT)');
+     if (rawCourse.includes('information technology') || /(^|[^a-z])it([^a-z]|$)/.test(rawCourse) || rawCourse.includes('python') || rawCourse.includes('software') || rawCourse.includes('data science') || rawCourse.includes('data analytics')) assignedCoursesArray.push('Information technology (IT)');
      if (assignedCoursesArray.length === 0) assignedCoursesArray = ['Others'];
   }
 
@@ -291,7 +291,7 @@ export default function StudyMaterials() {
       </div>
 
       {isModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setIsModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
               <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><BookOpenText color="var(--accent-primary)" /> {isEditMode ? 'Edit Study Material' : 'Upload Study Material'}</h2>

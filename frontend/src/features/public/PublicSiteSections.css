@@ -83,17 +83,49 @@
 .public-vacancy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: 16px; }
 .public-vacancy-card { min-width: 0; padding: 22px; border: 1px solid #e1eaf2; border-radius: 18px; background: rgba(255,255,255,.94); box-shadow: 0 14px 35px rgba(26,63,103,.06); transition: transform .2s ease, box-shadow .2s ease; }
 .public-vacancy-card:hover { transform: translateY(-4px); box-shadow: 0 20px 44px rgba(26,63,103,.12); }
-.public-vacancy-company { display: flex; align-items: center; gap: 12px; margin-bottom: 19px; }
+.public-vacancy-company { display: flex; align-items: center; gap: 12px; margin-bottom: 19px; min-width: 0; }
+.public-vacancy-company-copy { min-width: 0; flex: 1; }
 .public-vacancy-logo { position: relative; width: 54px; height: 54px; flex: 0 0 54px; display: grid; place-items: center; overflow: hidden; border: 1px solid #e3ebf3; border-radius: 14px; color: #176d8a; background: #eff8fb; font-size: .9rem; font-weight: 900; }
 .public-vacancy-logo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; }
 .public-vacancy-label { display: block; margin-bottom: 4px; color: #8291a3; font-size: .59rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
-.public-vacancy-company h3 { overflow: hidden; margin: 0; color: #193451; font-size: .9rem; text-overflow: ellipsis; white-space: nowrap; }
-.public-vacancy-card > h4 { margin: 0 0 16px; color: #132b48; font-size: 1.04rem; line-height: 1.4; }
+.public-vacancy-company h3 { overflow: hidden; margin: 0; color: #193451; font-size: .9rem; line-height: 1.4; text-overflow: ellipsis; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.public-vacancy-card > h4 { margin: 0 0 16px; color: #132b48; font-size: 1.04rem; line-height: 1.4; overflow-wrap: anywhere; }
 .public-vacancy-details { display: grid; gap: 8px; color: #6b7d91; font-size: .72rem; }
-.public-vacancy-details span { display: flex; align-items: center; gap: 8px; }
+.public-vacancy-details > span { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.public-vacancy-details > span > span { min-width: 0; overflow-wrap: anywhere; }
 .public-vacancy-details svg { flex: 0 0 auto; color: #1686a3; }
 .public-vacancy-deadline { margin-top: 18px; padding-top: 12px; border-top: 1px solid #edf1f5; color: #718198; font-size: .68rem; }
 .public-vacancy-deadline strong { color: #254766; }
+.public-vacancy-more { display: inline-flex; align-items: center; gap: 7px; margin-top: 14px; padding: 7px 0; border: 0; color: #087b9d; background: transparent; font-size: .76rem; font-weight: 800; cursor: pointer; }
+.public-vacancy-more svg { transition: transform .18s ease; }
+.public-vacancy-more[aria-expanded="true"] svg { transform: rotate(90deg); }
+.public-vacancy-expanded { margin-top: 8px; padding-top: 12px; border-top: 1px solid #e8eef4; color: #5f7288; font-size: .75rem; line-height: 1.6; overflow-wrap: anywhere; }
+.public-vacancy-expanded dl { display: grid; gap: 8px; margin-top: 8px; }
+.public-vacancy-expanded dl > div { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 8px; }
+.public-vacancy-expanded dt { color: #8291a3; font-weight: 800; }
+.public-vacancy-expanded dd { color: #294762; }
+.public-roadmap { display: grid; grid-template-columns: minmax(230px, .7fr) minmax(0, 1.3fr); gap: clamp(24px, 5vw, 72px); margin: 54px 0 44px; padding: clamp(22px, 4vw, 48px); border: 1px solid #dce8f1; border-radius: 26px; background: radial-gradient(circle at 10% 8%, rgba(37, 151, 177, .12), transparent 36%), linear-gradient(145deg, #fff, #f7fafd); box-shadow: 0 24px 65px rgba(20, 53, 87, .08); }
+.public-roadmap-heading { position: sticky; top: 28px; align-self: start; }
+.public-roadmap-heading > span { color: #0984a4; font-size: .68rem; font-weight: 900; letter-spacing: .17em; }
+.public-roadmap-heading h3 { margin: 14px 0; color: #142d49; font-size: clamp(1.7rem, 3vw, 2.55rem); line-height: 1.13; letter-spacing: -.045em; }
+.public-roadmap-heading p { color: #71849a; font-size: .9rem; line-height: 1.7; }
+.public-roadmap-list { position: relative; display: grid; gap: 13px; list-style: none; }
+.public-roadmap-list::before { position: absolute; top: 25px; bottom: 25px; left: 20px; width: 1px; background: linear-gradient(#27b8c5, #b8cee0); content: ''; }
+.public-roadmap-item { position: relative; display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 15px; align-items: start; }
+.public-roadmap-marker { position: relative; z-index: 1; display: grid; place-items: center; width: 42px; height: 42px; border: 1px solid rgba(17, 143, 163, .22); border-radius: 14px; color: #087b96; background: #e9f8fa; font-size: .69rem; font-weight: 900; }
+.public-roadmap-card { padding: 18px 20px; border: 1px solid #e4ebf2; border-radius: 17px; background: rgba(255,255,255,.86); transition: transform .2s ease, box-shadow .2s ease; }
+.public-roadmap-card:hover { transform: translateY(-2px); box-shadow: 0 14px 32px rgba(20, 53, 87, .09); }
+.public-roadmap-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: #698198; font-size: .63rem; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.public-roadmap-meta span:first-child { padding: 4px 8px; border-radius: 999px; color: #087b96; background: #e8f7f8; }
+.public-roadmap-card h4 { margin: 8px 0 6px; color: #1c3652; font-size: .98rem; }
+.public-roadmap-card p { color: #71849a; font-size: .77rem; line-height: 1.65; }
+.public-capability-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 17px; margin: 0 0 38px; }
+.public-capability-grid article { min-width: 0; padding: 25px; border: 1px solid #e1eaf2; border-radius: 19px; background: linear-gradient(145deg, #fff, #f8fbfd); box-shadow: 0 13px 35px rgba(26, 63, 103, .055); }
+.public-capability-grid article > span { color: #0a86a3; font-size: .62rem; font-weight: 900; letter-spacing: .15em; }
+.public-capability-grid h3 { margin: 9px 0; color: #1c3652; font-size: 1.16rem; line-height: 1.35; }
+.public-capability-grid p { margin: 0 0 15px; color: #71849a; font-size: .78rem; line-height: 1.7; }
+.public-capability-grid article > div { display: flex; flex-wrap: wrap; gap: 7px; }
+.public-capability-grid b { padding: 6px 9px; border: 1px solid #e1ebf2; border-radius: 999px; color: #4f6a83; background: #f7fafc; font-size: .63rem; }
 .public-vacancy-empty { padding: 25px; border: 1px dashed #cedbe8; border-radius: 16px; color: #6d7d91; background: #f8fbfe; font-size: .88rem; line-height: 1.7; }
 
 .public-placement-section { background: #f2f6fa; }
@@ -218,12 +250,20 @@
   .public-team-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .public-placement-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .public-partner-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .public-roadmap { grid-template-columns: 1fr; }
+  .public-roadmap-heading { position: static; }
   .public-updates-columns { gap: 25px; }
 }
 @media (max-width: 720px) {
+  .public-roadmap { margin: 36px 0 30px; padding: 20px 14px; border-radius: 19px; }
+  .public-roadmap-item { grid-template-columns: 34px minmax(0, 1fr); gap: 10px; }
+  .public-roadmap-marker { width: 34px; height: 34px; border-radius: 11px; font-size: .61rem; }
+  .public-roadmap-list::before { left: 16px; }
+  .public-roadmap-card { padding: 14px; }
   .public-story-shell { width: min(100% - 40px, 600px); }
   .public-about-section, .public-team-section, .public-placement-section, .public-partners-section, .public-updates-section, .public-vacancies-section { padding: 66px 0; }
   .public-about-grid, .public-placement-copy-grid, .public-updates-columns { grid-template-columns: 1fr; }
+  .public-capability-grid { grid-template-columns: 1fr; }
   .public-recruiter-panel { grid-template-columns: 1fr; gap: 20px; padding: 20px; }
   .public-about-main { min-height: 0; padding: 26px; }
   .public-about-facts { grid-template-columns: repeat(3, 1fr); }

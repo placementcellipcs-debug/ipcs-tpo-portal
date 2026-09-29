@@ -190,7 +190,7 @@ export default function SecurityActivity() {
         </div>
 
         {selectedUser && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }}>
+          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setSelectedUser(null); }}>
             <div className="modal-card" style={{ maxWidth: '650px', width: '100%', maxHeight: '85vh', background: '#0f1523', border: '1px solid var(--accent-primary)', borderRadius: '16px', padding: '2rem', overflowY: 'auto' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '12px', marginBottom: '20px' }}>
                 <div>

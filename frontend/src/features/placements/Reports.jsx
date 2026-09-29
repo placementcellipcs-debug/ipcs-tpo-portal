@@ -765,7 +765,7 @@ export default function Reports() {
 
       {/* 🚨 TPO ACTIVITY MODAL */}
       {showActivityModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+        <div className="modal-backdrop" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setShowActivityModal(false); }}>
           <div style={{ background: '#0f1523', padding: '30px', borderRadius: '12px', border: '1px solid #1e293b', width: '400px', maxWidth: '90%' }}>
             <h2 style={{ marginTop: 0, color: '#fff', borderBottom: '1px solid #1e293b', paddingBottom: '15px' }}>Update Monthly Stats</h2>
             <form onSubmit={submitActivityStats}>

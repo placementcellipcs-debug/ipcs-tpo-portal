@@ -9,12 +9,13 @@ const TILE_COLORS = ['var(--accent-primary)', '#3b82f6', '#10b981', '#f59e0b', '
 
 export default function Talentino() {
   // 🚨 FIX: Safe parsing
-  const [data, setData] = useState({ dates: [], records: [] });
+  const [data, setData] = useState({ dates: [], records: [], sessions: [] });
   const [loading, setLoading] = useState(true);
   
   const [selectedBranch, setSelectedBranch] = useState(null);
 
   const [dateFilter, setDateFilter] = useState('All Dates');
+  const [monthFilter, setMonthFilter] = useState('All Months');
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
@@ -26,10 +27,12 @@ export default function Talentino() {
       
       try {
         const response = await axios.post(`${API_BASE}/api/tpo/talentino`, {
-          assignedBranchesArray: localTpo.assignedBranchesArray
+          assignedBranchesArray: localTpo.assignedBranchesArray,
+          role: localTpo.role,
+          assignedCourse: localTpo.assignedCourse
         });
         if (response.data.success) {
-          setData({ dates: response.data.dates, records: response.data.records });
+          setData({ dates: response.data.dates || [], records: response.data.records || [], sessions: response.data.sessions || [] });
         }
       } catch (error) { 
         console.error("Failed to fetch talentino records", error); 
@@ -40,18 +43,72 @@ export default function Talentino() {
     fetchTalentino();
   }, []); // 🚨 CRITICAL FIX: Stops the loop!
 
+  const getMonthKey = value => {
+    const text = String(value || '').trim();
+    const iso = text.match(/^(\d{4})[-/](\d{1,2})/);
+    if (iso) return `${iso[1]}-${String(iso[2]).padStart(2, '0')}`;
+    const local = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+    if (local) {
+      const first = Number(local[1]);
+      const second = Number(local[2]);
+      const month = first > 12 ? second : second > 12 ? first : second;
+      return `${local[3]}-${String(month).padStart(2, '0')}`;
+    }
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? '' : `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
+  };
+  const monthLabel = key => {
+    const [year, month] = key.split('-').map(Number);
+    return new Date(year, month - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  };
+  const months = [...new Set([...data.records, ...data.sessions].map(record => getMonthKey(record.date)).filter(Boolean))].sort().reverse();
+  const monthRecords = monthFilter === 'All Months' ? data.records : data.records.filter(record => getMonthKey(record.date) === monthFilter);
+  const monthSessions = monthFilter === 'All Months' ? data.sessions : data.sessions.filter(session => getMonthKey(session.date) === monthFilter);
+
   const branchData = {};
-  data.records.forEach(r => {
+  monthRecords.forEach(r => {
     const b = r.branch || 'Unknown Branch';
     if (!branchData[b]) branchData[b] = 0;
     branchData[b]++;
   });
   
   const branchList = Object.keys(branchData).sort();
+  const officerStats = new Map();
+  const sessionKeys = new Set();
+  const getOfficerStats = tpoName => {
+    const name = String(tpoName || 'Placement Team').trim() || 'Placement Team';
+    if (!officerStats.has(name)) officerStats.set(name, { sessions: 0, ratings: [], branches: new Set() });
+    return officerStats.get(name);
+  };
+  monthSessions.forEach(session => {
+    const tpo = String(session.tpo || 'Placement Team').trim() || 'Placement Team';
+    const stats = getOfficerStats(tpo);
+    const day = String(session.date || '').trim().split(/[ T]/)[0];
+    const sessionKey = session.sessionId || `${session.branch || ''}|${getMonthKey(session.date)}|${day}`;
+    const uniqueSessionKey = `${tpo}|${sessionKey}`;
+    if (!sessionKeys.has(uniqueSessionKey)) { sessionKeys.add(uniqueSessionKey); stats.sessions += 1; }
+    if (session.branch) stats.branches.add(session.branch);
+  });
+  monthRecords.forEach(record => {
+    const tpo = String(record.tpo || 'Placement Team').trim() || 'Placement Team';
+    const stats = getOfficerStats(tpo);
+    if (monthSessions.length === 0) {
+      const day = String(record.date || '').trim().split(/[ T]/)[0];
+      const sessionKey = record.sessionId || `${record.branch || ''}|${getMonthKey(record.date)}|${day}`;
+      const uniqueSessionKey = `${tpo}|${sessionKey}`;
+      if (!sessionKeys.has(uniqueSessionKey)) { sessionKeys.add(uniqueSessionKey); stats.sessions += 1; }
+    }
+    const rating = Number(String(record.rating || '').match(/[\d.]+/)?.[0]);
+    if (Number.isFinite(rating) && rating > 0) stats.ratings.push(rating);
+    if (record.branch) stats.branches.add(record.branch);
+    officerStats.set(tpo, stats);
+  });
+  const ratingValues = monthRecords.map(record => Number(String(record.rating || '').match(/[\d.]+/)?.[0])).filter(value => Number.isFinite(value) && value > 0);
+  const averageRating = ratingValues.length ? (ratingValues.reduce((sum, value) => sum + value, 0) / ratingValues.length).toFixed(1) : '—';
 
-  const activeRecords = selectedBranch ? data.records.filter(r => r.branch === selectedBranch) : [];
+  const activeRecords = selectedBranch ? monthRecords.filter(r => r.branch === selectedBranch) : [];
   
-  const uniqueDates = ['All Dates', ...data.dates];
+  const uniqueDates = ['All Dates', ...[...new Set(monthRecords.map(record => (record.date || '').split(' ')[0].trim()).filter(Boolean))].sort().reverse()];
 
   const filteredRecords = activeRecords.filter(r => {
     const matchDate = dateFilter === 'All Dates' || (r.date || '').includes(dateFilter);
@@ -65,13 +122,20 @@ export default function Talentino() {
       <Layout>
         <div className="page-container" style={{ padding: 0 }}>
           <h1 style={{ fontSize: '2.2rem', marginBottom: '5px', textAlign: 'center', marginTop: '20px' }}>Talentino Tracker</h1>
-          <p style={{ color: 'var(--text-muted)', marginBottom: '3rem', textAlign: 'center' }}>Select an assigned branch to view student attendance and performance records.</p>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem', textAlign: 'center' }}>Review sessions, participation, and ratings across your assigned branches.</p>
           
           {loading ? (
             <div style={{ textAlign: 'center', marginTop: '4rem', color: 'var(--accent-primary)' }}><CircleNotch size={50} className="ph-spin" /></div>
-          ) : branchList.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: '2rem' }}>No Talentino records found in your assigned branches.</div>
-          ) : (
+          ) : <>
+            <section className="talentino-dashboard" aria-label="Talentino overview">
+              <div className="talentino-dashboard-head"><div><span>SESSION INSIGHTS</span><h2>Talentino Dashboard</h2></div><label>Month <select className="sleek-input" value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="All Months">All Months</option>{months.map(month => <option key={month} value={month}>{monthLabel(month)}</option>)}</select></label></div>
+              <div className="talentino-metrics"><article><span>Sessions Conducted</span><strong>{[...officerStats.values()].reduce((total, item) => total + item.sessions, 0)}</strong></article><article><span>Placement Officers</span><strong>{officerStats.size}</strong></article><article><span>Average Rating</span><strong>{averageRating}<small>{averageRating === '—' ? '' : ' / 5'}</small></strong></article><article><span>Attendance Records</span><strong>{monthRecords.length}</strong></article></div>
+              <div className="talentino-officer-table"><div className="talentino-officer-row talentino-officer-header"><span>Placement Officer</span><span>Sessions</span><span>Average Rating</span><span>Branches</span></div>{[...officerStats.entries()].sort((a, b) => b[1].sessions - a[1].sessions).map(([name, stats]) => { const score = stats.ratings.length ? (stats.ratings.reduce((sum, item) => sum + item, 0) / stats.ratings.length).toFixed(1) : '—'; return <div className="talentino-officer-row" key={name}><strong>{name}</strong><span>{stats.sessions}</span><span>{score}{score === '—' ? '' : ' / 5'}</span><span>{[...stats.branches].join(', ') || '—'}</span></div>; })}{officerStats.size === 0 && <p className="talentino-empty">No session records are available for this month.</p>}</div>
+            </section>
+            <h2 className="talentino-branch-heading">Branch Activity</h2>
+            {branchList.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '2rem' }}>No Talentino records found in your assigned branches for this month.</div>
+            ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '30px', padding: '0 20px' }}>
               {branchList.map((branch, index) => {
                 const color = TILE_COLORS[index % TILE_COLORS.length];
@@ -92,7 +156,8 @@ export default function Talentino() {
                 );
               })}
             </div>
-          )}
+            )}
+          </>}
         </div>
       </Layout>
     );

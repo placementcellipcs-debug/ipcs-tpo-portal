@@ -530,7 +530,8 @@ exports.login = async (req, res) => {
       accessType = 'edit';
     }
 
-    if (accessType === 'superadmin' || upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD' || assignedArray.length === 0) {
+    const isRth = upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD';
+    if (accessType === 'superadmin' || (assignedArray.length === 0 && !isRth)) {
       assignedArray = ['all'];
     }
 
@@ -1241,19 +1242,50 @@ exports.getReports = (req, res) => {
 };
 
 exports.getTalentino = (req, res) => {
-  const { assignedBranchesArray, role, assignedCourse } = req.body;
+  const actor = req.portalUser || {};
+  const { assignedBranchesArray: requestedBranches, role: requestedRole, assignedCourse: requestedCourse } = req.body;
+  const assignedBranchesArray = Array.isArray(actor.assignedBranchesArray) ? actor.assignedBranchesArray : requestedBranches;
+  const role = actor.role || requestedRole;
+  const assignedCourse = actor.assignedCourse || requestedCourse;
   let records = getCache().tAtt.filter(row => {
     const rowBranch = getValByHeader(row, ['branch']);
     const studentName = getValByHeader(row, ['name', 'student']) || '';
-    const studentData = getCache().students.find(s => (getValByHeader(s, ['name']) || '').toLowerCase().trim() === studentName.toLowerCase().trim());
-    const sCourse = studentData ? getValByHeader(studentData, ['course']) : 'Unknown';
+    const studentRoll = normalizePlacementText(getValByHeader(row, ['roll', 'rollno', 'rollnumber', 'ipcsrollnumber']));
+    const studentData = getCache().students.find(s => {
+      const sheetRoll = normalizePlacementText(getValByHeader(s, ['roll', 'rollno', 'rollnumber', 'ipcsrollnumber']));
+      return (studentRoll && sheetRoll === studentRoll) || normalizePlacementText(getValByHeader(s, ['name', 'studentname'])) === normalizePlacementText(studentName);
+    });
+    const sCourse = getValByHeader(row, ['course', 'program']) || (studentData ? getValByHeader(studentData, ['course']) : 'Unknown');
     return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
   }).map(row => {
-    return { name: getValByHeader(row, ['name', 'student']), branch: getValByHeader(row, ['branch']), date: getValByHeader(row, ['timestamp', 'date', 'time', 'present check-ins date']), rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes', 'remark']) };
+    const date = getValByHeader(row, ['timestamp', 'date', 'time', 'present check-ins date']);
+    const branch = getValByHeader(row, ['branch']);
+    const schedule = (getCache().tSched || []).find(item => {
+      const scheduleDate = getValByHeader(item, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']);
+      const parsedScheduleDate = safeParseDate(scheduleDate);
+      const parsedAttendanceDate = safeParseDate(date);
+      const sameDate = Boolean(parsedScheduleDate && parsedAttendanceDate && parsedScheduleDate.toDateString() === parsedAttendanceDate.toDateString());
+      return sameDate && normalizePlacementText(getValByHeader(item, ['branch', 'sittingbranch'])) === normalizePlacementText(branch);
+    });
+    return { name: getValByHeader(row, ['name', 'student']), branch, date, rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes', 'remark']), tpo: getValByHeader(row, ['tpo', 'placementofficer', 'conductedby', 'createdby']) || getValByHeader(schedule, ['tpo', 'placementofficer', 'conductedby', 'createdby']), sessionId: getValByHeader(row, ['sessionid', 'eventid', 'event id']) || getValByHeader(schedule, ['sessionid', 'eventid', 'event id']) };
   });
-  let dates = new Set();
-  records.forEach(r => { const cleanDate = (r.date || '').split(' ')[0].trim(); if (cleanDate && cleanDate !== 'N/A') dates.add(cleanDate); });
-  res.json({ success: true, dates: Array.from(dates).sort().reverse(), records: records.reverse() });
+  const upperRole = String(role || '').toUpperCase();
+  const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(upperRole) || upperRole.includes('REGIONAL TECHNICAL HEAD');
+  const sessions = (getCache().tSched || []).map(row => {
+    const branch = getValByHeader(row, ['branch', 'sittingbranch']);
+    const course = getValByHeader(row, ['course', 'program', 'assignedcourse']);
+    const date = getValByHeader(row, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']);
+    const tpo = getValByHeader(row, ['tpo', 'placementofficer', 'conductedby', 'createdby']);
+    const sessionId = getValByHeader(row, ['sessionid', 'eventid', 'event id', 'id']);
+    return { branch, course, date, tpo, sessionId };
+  }).filter(session => {
+    if (!session.branch || !session.date) return false;
+    if (!session.course && isRth) return userHasBranch(actor, session.branch);
+    return hasAccess(session.branch, session.course || 'Unknown', role, assignedBranchesArray, assignedCourse);
+  });
+  const dates = new Set();
+  [...records, ...sessions].forEach(record => { const cleanDate = (record.date || '').split(' ')[0].trim(); if (cleanDate && cleanDate !== 'N/A') dates.add(cleanDate); });
+  res.json({ success: true, dates: Array.from(dates).sort().reverse(), records: records.reverse(), sessions: sessions.reverse() });
 };
 
 exports.getEvents = (req, res) => {
@@ -2039,7 +2071,12 @@ exports.getPublicOpenings = async (_req, res) => {
         position,
         location,
         mode: getValByHeader(row, ['workmode', 'mode']).trim(),
-        lastDate
+        lastDate,
+        course: getValByHeader(row, ['course', 'program']).trim(),
+        description: getValByHeader(row, ['description', 'jobdescription', 'roleoverview']).trim(),
+        qualification: getValByHeader(row, ['qualification', 'eligibility', 'educationalqualification']).trim(),
+        experience: getValByHeader(row, ['experience', 'yearsofexperience']).trim(),
+        salary: getValByHeader(row, ['salary', 'package', 'ctc', 'compensation']).trim()
       });
     });
 
@@ -3112,7 +3149,8 @@ exports.getDrives = async (req, res) => {
     const role = String(user?.role || '').toUpperCase();
     const canSeeAll = canManageEveryClient(user);
     const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
-    if (!canSeeAll && !isTpo) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
+    const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(role) || role.includes('REGIONAL TECHNICAL HEAD');
+    if (!canSeeAll && !isTpo && !isRth) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
 
     await loadDocInfo();
     const registrationSheet = doc.sheetsByTitle['Drive_Registration'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('driveregistration'));
@@ -3134,6 +3172,7 @@ exports.getDrives = async (req, res) => {
            date: getValByHeader(row, ['dateoftheevent', 'date']) || '', 
            location: getValByHeader(row, ['eventhappeningin', 'location']) || '',
            branch: getValByHeader(row, ['branch', 'sittingbranch']) || '',
+           course: getValByHeader(row, ['course', 'assignedcourse']) || '',
            hasApplicants: false
          });
        }
@@ -3144,11 +3183,20 @@ exports.getDrives = async (req, res) => {
     (registrationRows || []).forEach(row => {
       const dId = getValByHeader(row, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(row, ['eventid', 'event_id', 'companyname']) || '';
       const eventInfo = eventsMap.get(normalizePlacementText(dId)) || {};
+      const studentName = getValByHeader(row, ['name', 'studentname']);
+      const studentRoll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+      const registrationStudent = (cache.students || []).find(student => {
+        const sourceRoll = normalizePlacementText(getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+        const sourceName = normalizePlacementText(getValByHeader(student, ['name', 'studentname']));
+        return (studentRoll && sourceRoll === studentRoll) || (studentName && sourceName === normalizePlacementText(studentName));
+      });
       const registrationOwner = getValByHeader(row, ['placementofficer', 'tponame', 'createdby', 'tpo']);
       const driveOwner = registrationOwner || eventInfo.tpo || '';
-      if (!canSeeAll && driveOwner && normalizePlacementText(driveOwner) !== signedInName) return;
-      if (!canSeeAll && !driveOwner) {
-        const rowBranch = getValByHeader(row, ['branch', 'sittingbranch']) || eventInfo.branch || eventInfo.location;
+      const rowBranch = getValByHeader(row, ['branch', 'sittingbranch']) || (registrationStudent && getValByHeader(registrationStudent, ['branch', 'sittingbranch'])) || eventInfo.branch || eventInfo.location;
+      const rowCourse = getValByHeader(row, ['course']) || (registrationStudent && getValByHeader(registrationStudent, ['course', 'program'])) || eventInfo.course;
+      if (isRth && !hasAccess(rowBranch, rowCourse, user.role, user.assignedBranchesArray, user.assignedCourse)) return;
+      if (!canSeeAll && !isRth && driveOwner && normalizePlacementText(driveOwner) !== signedInName) return;
+      if (!canSeeAll && !isRth && !driveOwner) {
         if (!userHasBranch(user, rowBranch)) return;
       }
       
@@ -3156,18 +3204,18 @@ exports.getDrives = async (req, res) => {
       if (eventInfo.hasApplicants !== undefined) eventInfo.hasApplicants = true;
 
       drivesData.push({
-        rowNumber: row.rowNumber, 
-        driveId: dId, 
-        name: getValByHeader(row, ['name', 'studentname']) || '', 
+        rowNumber: row.rowNumber,
+        driveId: dId,
+        name: studentName || '',
         roll: getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']) || '',
         phone: getValByHeader(row, ['contact', 'phone']) || '',
-        email: getValByHeader(row, ['mailid', 'email']) || '', 
-        course: getValByHeader(row, ['course']) || '', 
-        branch: getValByHeader(row, ['branch']) || '',
-        resume: getValByHeader(row, ['resume']) || '', 
-        qual: getValByHeader(row, ['qualification']) || '', 
+        email: getValByHeader(row, ['mailid', 'email']) || '',
+        course: rowCourse || '',
+        branch: rowBranch || '',
+        resume: getValByHeader(row, ['resume']) || '',
+        qual: getValByHeader(row, ['qualification']) || '',
         regStatus: getValByHeader(row, ['status']) || '',
-        regDate: getValByHeader(row, ['registeddate', 'timestamp', 'date']) || '', 
+        regDate: getValByHeader(row, ['registeddate', 'timestamp', 'date']) || '',
         studentStatus: getValByHeader(row, ['studentstatus']) || '',
         remarks: getValByHeader(row, ['studentremarks', 'remarks', 'remark', 'tpo remarks']) || '',
         driveTpo: driveOwner,
@@ -3178,8 +3226,9 @@ exports.getDrives = async (req, res) => {
 
     // 3. 🚨 INJECT EMPTY DRIVES: If a drive has 0 students, send a "Dummy" row so it still shows up!
     eventsMap.forEach((eventInfo, dId) => {
-      if (!canSeeAll && eventInfo.tpo && normalizePlacementText(eventInfo.tpo) !== signedInName) return;
-      if (!canSeeAll && !eventInfo.tpo) {
+      if (isRth && (!userHasBranch(user, eventInfo.branch || eventInfo.location) || (eventInfo.course && !hasAccess(eventInfo.branch || eventInfo.location, eventInfo.course, user.role, user.assignedBranchesArray, user.assignedCourse)))) return;
+      if (!canSeeAll && !isRth && eventInfo.tpo && normalizePlacementText(eventInfo.tpo) !== signedInName) return;
+      if (!canSeeAll && !isRth && !eventInfo.tpo) {
         if (!userHasBranch(user, eventInfo.branch || eventInfo.location)) return;
       }
       if (!eventInfo.hasApplicants) {
@@ -3215,8 +3264,28 @@ exports.updateDriveStatus = async (req, res) => {
     const role = String(user?.role || '').toUpperCase();
     const canSeeAll = canManageEveryClient(user);
     const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
-    if (!canSeeAll && !isTpo) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
-    if (!canSeeAll) {
+    const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(role) || role.includes('REGIONAL TECHNICAL HEAD');
+    if (!canSeeAll && !isTpo && !isRth) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
+    if (isRth) {
+      const driveId = normalizePlacementText(getValByHeader(rows[0], ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(rows[0], ['eventid', 'event_id', 'companyname']));
+      const matchingDrive = (getCache()?.events || []).find(event => {
+        const type = getValByHeader(event, ['event', 'type', 'event_type']).toLowerCase();
+        const eventDriveId = normalizePlacementText(getValByHeader(event, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(event, ['event_id', 'eventid', 'id', 'title']));
+        return type.includes('drive') && eventDriveId === driveId;
+      });
+      const studentName = getValByHeader(rows[0], ['name', 'studentname']);
+      const studentRoll = normalizePlacementText(getValByHeader(rows[0], ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+      const registrationStudent = (getCache()?.students || []).find(student => {
+        const sourceRoll = normalizePlacementText(getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+        const sourceName = normalizePlacementText(getValByHeader(student, ['name', 'studentname']));
+        return (studentRoll && sourceRoll === studentRoll) || (studentName && sourceName === normalizePlacementText(studentName));
+      });
+      const registrationBranch = getValByHeader(rows[0], ['branch', 'sittingbranch']) || (registrationStudent && getValByHeader(registrationStudent, ['branch', 'sittingbranch'])) || getValByHeader(matchingDrive, ['branch', 'sittingbranch', 'eventhappeningin', 'location']);
+      const registrationCourse = getValByHeader(rows[0], ['course']) || (registrationStudent && getValByHeader(registrationStudent, ['course', 'program'])) || getValByHeader(matchingDrive, ['course', 'assignedcourse']);
+      if (!hasAccess(registrationBranch, registrationCourse, user.role, user.assignedBranchesArray, user.assignedCourse)) {
+        return res.status(403).json({ success: false, message: 'This registration is outside your assigned branch or course.' });
+      }
+    } else if (!canSeeAll) {
       const driveId = normalizePlacementText(getValByHeader(rows[0], ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(rows[0], ['eventid', 'event_id', 'companyname']));
       const registrationOwner = getValByHeader(rows[0], ['placementofficer', 'tponame', 'createdby', 'tpo']);
       if (registrationOwner && normalizePlacementText(registrationOwner) !== normalizePlacementText(user?.name)) {

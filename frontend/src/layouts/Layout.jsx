@@ -190,7 +190,7 @@ export default function Layout({ children }) {
   const canCollapseAdminNav = isSuperAdmin || userRole.includes('ADMIN');
   const isTpo = userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER');
   // Role Checks
-  const showTracker = isTpo && !isSuperAdmin && showPlacementAndAcademic; 
+  const showTracker = ((isTpo && !isSuperAdmin) || isRth) && showPlacementAndAcademic;
   const showReports = (isSuperAdmin || isTpo) && showPlacementAndAcademic; 
   const showManageAdmin = isSuperAdmin;
   const showStudyMaterials = (isSuperAdmin || isRth || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD') || isTrainer) && showPlacementAndAcademic; 
@@ -322,7 +322,7 @@ export default function Layout({ children }) {
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('placement')}>
                 <div className={`pd-nav-item ${isActive('/students') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/students')}><Users size={22} weight={isActive('/students') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Students Directory</span></div>
                 {showIssues && <div className={`pd-nav-item ${isActive('/issues') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/issues')}><Headset size={22} weight={isActive('/issues') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Issue Resolution</span></div>}
-                {showTracker && <div className={`pd-nav-item ${isActive('/tracker') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/tracker')}><Files size={22} weight={isActive('/tracker') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Job Tracker</span></div>}
+                {showTracker && <div className={`pd-nav-item ${isActive('/tracker') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav(isRth ? '/tracker?tab=drives' : '/tracker')}><Files size={22} weight={isActive('/tracker') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>{isRth ? 'Placement Drive Tracker' : 'Job Tracker'}</span></div>}
                 {showReports && <div className={`pd-nav-item ${isActive('/reports') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/reports')}><ChartBar size={22} weight={isActive('/reports') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Reports</span></div>}
                 <div className={`pd-nav-item ${isActive('/placed') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/placed')}><Trophy size={22} weight={isActive('/placed') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Placed Students</span></div>
                 {showStudentApps && <div className={`pd-nav-item ${isActive('/applications') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/applications')}><ListChecks size={22} weight={isActive('/applications') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Student Apps</span></div>}

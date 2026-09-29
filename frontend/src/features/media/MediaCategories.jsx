@@ -91,7 +91,7 @@ export default function MediaCategories() {
       </div>
 
       {isModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <div className="modal-backdrop" style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setIsModalOpen(false); }}>
           <div style={{ background: '#0f1523', width: '100%', maxWidth: '500px', borderRadius: '20px', padding: '30px', border: '1px solid var(--card-border)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ margin: 0, color: '#fff' }}>New Design Type</h2>

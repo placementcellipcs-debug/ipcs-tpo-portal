@@ -51,7 +51,9 @@ export default function PlacedStudents() {
   const [loading, setLoading] = useState(true);
   
   const upperRole = (tpoData?.role || '').toUpperCase();
-  const isTpo = upperRole.includes('TPO');
+  const isTpo = upperRole.includes('TPO') || upperRole.includes('PLACEMENT OFFICER');
+  const isAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
+  const canViewPlacementDashboard = isAdmin || isTpo;
   const canEditPlacement = isTpo; 
 
   const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
@@ -62,6 +64,14 @@ export default function PlacedStudents() {
     ? ['All'] 
     : [...new Set(rawCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim())).filter(Boolean))];
   
+  const assignedBranchesArray = Array.isArray(tpoData?.assignedBranchesArray)
+    ? tpoData.assignedBranchesArray.map(branch => String(branch).trim().toLowerCase()).filter(Boolean)
+    : String(tpoData?.assignedBranchesArray || '').split(/[\n,]+/).map(branch => branch.trim().toLowerCase()).filter(Boolean);
+  const hasAssignedBranch = branch => assignedBranchesArray.includes('all') || assignedBranchesArray.some(assigned => {
+    const rowBranch = String(branch || '').trim().toLowerCase();
+    return rowBranch && (rowBranch === assigned || rowBranch.includes(assigned) || assigned.includes(rowBranch));
+  });
+
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
@@ -170,9 +180,9 @@ export default function PlacedStudents() {
   // 🚨 MULTI-COURSE SCOPING
   const scopedApps = applications.filter(a => {
     if (isCourseSpecific && assignedCoursesArray[0] !== 'All') {
-      return assignedCoursesArray.some(ac => getStandardCourse(a.course) === ac);
+      if (!assignedCoursesArray.some(ac => getStandardCourse(a.course) === ac)) return false;
     }
-    return true;
+    return !isCourseSpecific || hasAssignedBranch(a.branch);
   });
 
   const globallyFiltered = scopedApps.filter(a => {
@@ -301,6 +311,15 @@ export default function PlacedStudents() {
             </button>
           )}
         </div>
+
+        {!selectedBranch && !loading && canViewPlacementDashboard && (
+          <section className="placed-overview" aria-label="Placement overview">
+            <div><span>Students Placed</span><strong>{globallyFiltered.length}</strong><small>Current filtered view</small></div>
+            <div><span>Hiring Companies</span><strong>{new Set(globallyFiltered.map(item => (item.company || '').trim().toLowerCase()).filter(Boolean)).size}</strong><small>Unique employers</small></div>
+            <div><span>Branches</span><strong>{branchList.length}</strong><small>With placement records</small></div>
+            <div><span>Average Package</span><strong>{(() => { const values = globallyFiltered.map(item => Number.parseFloat(String(item.packageLpa || '').replace(/[^\d.]/g, ''))).filter(value => Number.isFinite(value) && value > 0); return values.length ? `${(values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1)} LPA` : '—'; })()}</strong><small>Where reported</small></div>
+          </section>
+        )}
 
         <div className="header-controls" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '1.5rem', alignItems: 'center', background: 'var(--card-bg)', padding: '14px 18px', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
           {selectedBranch && (

@@ -38,7 +38,7 @@ export default function PublicSiteHeader() {
         })}
       </nav>
       <div className="portal-header-actions">
-        <Link className="portal-login-button" to="/login" onClick={() => setMenuOpen(false)}>Staff access <ArrowRight size={17} weight="bold" /></Link>
+        <Link className="portal-login-button" to="/login" onClick={() => setMenuOpen(false)}>Employee Login <ArrowRight size={17} weight="bold" /></Link>
       </div>
     </header>
   );
