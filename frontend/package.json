@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "eslint .",
+    "lint": "eslint src vite.config.js eslint.config.js",
     "preview": "vite preview",
     "start-desktop": "electron .",
     "build-desktop": "electron-builder"

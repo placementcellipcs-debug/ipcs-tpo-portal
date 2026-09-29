@@ -1,16 +1,30 @@
-# React + Vite
+# IPCS TPO Portal — Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The frontend is organized by responsibility so routes, feature pages, shared UI, and assets are easy to find.
 
-Currently, two official plugins are available:
+## Source map
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- `src/app/` — application routes and lazy-loaded pages.
+- `src/features/placements/` — dashboard, students, hiring partners, vacancies, drives, and placement reports.
+- `src/features/learning/` — academics, courses, exams, and study materials.
+- `src/features/assets/` — asset register, inventory, transfers, and maintenance.
+- `src/features/media/` — media and design workspace.
+- `src/features/admin/` — account settings, users, security, and administration.
+- `src/features/public/` — public pages, about content, and sign-in experience.
+- `src/components/` — shared interface components.
+- `src/layouts/` — authenticated application shells.
+- `src/services/` — API configuration and appearance preferences.
+- `src/styles/` — global styles and design tokens.
+- `src/assets/brand/` — IPCS brand images.
+- `src/assets/media/` — video and other media files.
+- `src/assets/Team IPCS/` — team profile photos used on the About page.
 
-## React Compiler
+The backend is under `../backend`; its Express routes are in `server.js` and Google Sheets/data handlers are in `src/`.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Local commands
 
-## Expanding the ESLint configuration
+Run these from this directory:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- `npm run dev` — start the Vite development server.
+- `npm run lint` — lint application source and Vite/ESLint configuration.
+- `npm run build` — create the production frontend bundle.

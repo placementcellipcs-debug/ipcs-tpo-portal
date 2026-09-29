@@ -583,7 +583,10 @@ exports.getDashboardStats = (req, res) => {
 
   const cache = getCache();
   let studentCount = 0, pendingApps = 0, placedCount = 0, activeVacs = 0;
-  const uniqueCompanies = new Set();
+  const totalCompanies = (cache.clients || []).reduce((count, row) => {
+    const companyName = getValByHeader(row, ['companyname', 'company']).trim();
+    return count + (companyName ? 1 : 0);
+  }, 0);
 
   cache.students.forEach(row => { 
     const branch = getValByHeader(row, ['branch']);
@@ -632,11 +635,7 @@ exports.getDashboardStats = (req, res) => {
   const todayStart = new Date();
   todayStart.setHours(0,0,0,0);
 
-  cache.vacancies.forEach(row => {
-    // Collect Unique Companies
-    const compName = getValByHeader(row, ['companyname', 'company']);
-    if (compName && compName.trim() !== '') uniqueCompanies.add(compName.toLowerCase().trim());
-
+  (cache.vacancies || []).forEach(row => {
     const status = getValByHeader(row, ['status']).toLowerCase() || 'open';
     const lastDateStr = getValByHeader(row, ['lastdate']);
     let isExpired = false;
@@ -660,7 +659,7 @@ exports.getDashboardStats = (req, res) => {
       pendingApps, 
       placed: placedCount, 
       activeVacancies: activeVacs,
-      totalCompanies: uniqueCompanies.size // 🚨 NEW: Unique Companies Count
+      totalCompanies
     }, 
     events: eventsList.reverse() 
   });
@@ -1050,10 +1049,18 @@ exports.getVacancies = (req, res) => {
       return res.json({ success: true, vacancies: [] });
     }
 
+    const companyLogos = new Map((cache.clients || []).map(row => {
+      const name = getValByHeader(row, ['companyname', 'company']).trim().toLowerCase();
+      const logo = getValByHeader(row, ['companylogo', 'logo']).trim();
+      return [name, logo];
+    }).filter(([name, logo]) => name && logo));
+
     let vacs = cache.vacancies.map((row, i) => {
+      const company = getValByHeader(row, ['companyname', 'company']);
       return {
         id: getValByHeader(row, ['jobid', 'id']) || `JOB-${i+1}`, 
-        company: getValByHeader(row, ['companyname', 'company']), 
+        company,
+        companyLogo: getValByHeader(row, ['companylogo', 'logo']).trim() || companyLogos.get(company.trim().toLowerCase()) || '',
         position: getValByHeader(row, ['position', 'role']), 
         location: getValByHeader(row, ['openingat(location)', 'location']), 
         state: getValByHeader(row, ['state']), 

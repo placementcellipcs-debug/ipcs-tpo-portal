@@ -1,0 +1,688 @@
+import { useEffect, useState } from 'react';
+import axios from 'axios';
+import { 
+  CircleNotch, SquaresFour, List, PencilSimple, X, FloppyDisk, 
+  UserMinus, ClockClockwise, Prohibit, UsersThree, Briefcase, Files, Confetti, 
+  FilePdf, GraduationCap, CaretLeft, Phone, WhatsappLogo, EnvelopeSimple, LinkedinLogo,
+  InstagramLogo, ArrowsClockwise
+} from '@phosphor-icons/react';
+import Layout from '../../layouts/Layout';
+import { API_BASE } from '../../services/apiConfig';
+import StatusBadge from '../../components/StatusBadge';
+
+const TILE_COLORS = ['#10b981', '#ef4444', '#3b82f6', 'var(--accent-primary)', '#f59e0b', '#ec4899', '#0ea5e9', '#f43f5e'];
+
+const getStandardCourse = (c) => {
+  if (!c) return 'Others';
+  const lower = c.toLowerCase().trim();
+  if (lower.includes('bms') || lower.includes('cctv')) return 'BMS AND CCTV';
+  if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
+  if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
+  if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
+  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
+  return 'Others';
+};
+
+const parseDate = (dStr) => {
+  if (!dStr) return null;
+  let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dStr;
+  if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
+    const parts = cleanStr.split(/[/-]/);
+    if (parts.length === 3) {
+      if (parts[2].length === 4) return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
+      if (parts[0].length === 4) return new Date(`${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`);
+    }
+  }
+  const d = new Date(cleanStr);
+  return isNaN(d) ? null : d;
+};
+
+export default function StudentsDirectory() {
+  const tpoDataStr = localStorage.getItem('tpoData');
+  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  
+  const [rawStudents, setRawStudents] = useState([]);
+  const [globalStats, setGlobalStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0 });
+  const [loading, setLoading] = useState(true);
+  
+  const [selectedBranch, setSelectedBranch] = useState(null); 
+  const [searchQuery, setSearchQuery] = useState('');
+  const [courseFilter, setCourseFilter] = useState('All');
+  const [monthFilter, setMonthFilter] = useState('');
+  const [placementStatusFilter, setPlacementStatusFilter] = useState('All'); 
+  const [sortOrder, setSortOrder] = useState('newest'); 
+  const [viewType, setViewType] = useState('list');
+
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [savingStatus, setSavingStatus] = useState(false);
+  
+  const [localVacState, setLocalVacState] = useState('');
+  const [localPlacementState, setLocalPlacementState] = useState('');
+  const [localStudyAccess, setLocalStudyAccess] = useState('');
+  const [localExamAccess, setLocalExamAccess] = useState('');
+  const [localCourseStatus, setLocalCourseStatus] = useState(''); 
+  const [localCoursePercentage, setLocalCoursePercentage] = useState('');
+
+  const upperRole = (tpoData?.role || '').toUpperCase();
+  const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
+  const isTpo = upperRole === 'TPO' || upperRole.includes('PLACEMENT OFFICER');
+  const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(upperRole) || upperRole.includes('REGIONAL TECHNICAL HEAD');
+  const isTrainer = upperRole.includes('TRAINER');
+  
+  const isBranchManager = upperRole === 'BM' || upperRole.includes('BRANCH MANAGER');
+  const isTechnicalLead = upperRole.includes('TECHNICAL LEAD') || /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(upperRole);
+  const isCourseSpecific = isRth || upperRole.includes('TTH') || isTrainer || upperRole.includes('TECHNICAL LEAD');
+  
+  // 🚨 FIXED: Parse multiple assigned courses splitting by comma and newline
+  const rawCourse = tpoData?.assignedCourse || 'All';
+  const assignedCoursesArray = (rawCourse === 'All' || rawCourse === 'All Courses') 
+    ? ['All'] 
+    : [...new Set(rawCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim())).filter(Boolean))];
+
+  const canEditAll = isSuperAdmin || isTpo; 
+  const canEditAcademic = canEditAll || isRth || isTrainer || isTechnicalLead;
+  const canSave = canEditAll || canEditAcademic; 
+
+  useEffect(() => {
+    const fetchData = async () => {
+      const localTpoStr = localStorage.getItem('tpoData');
+      if (!localTpoStr) return;
+      const localTpo = JSON.parse(localTpoStr);
+
+      try {
+        setLoading(true);
+        const payload = { 
+          assignedBranchesArray: localTpo.assignedBranchesArray,
+          role: localTpo.role,
+          assignedCourse: localTpo.assignedCourse
+        };
+
+        const [stuRes, statRes] = await Promise.all([
+          axios.post(`${API_BASE}/api/tpo/students`, payload),
+          axios.post(`${API_BASE}/api/tpo/dashboard-stats`, payload)
+        ]);
+        
+        if (stuRes.data.success) {
+          setRawStudents(stuRes.data.students);
+        }
+        if (statRes.data.success) {
+          setGlobalStats(statRes.data.stats);
+        }
+      } catch (error) { 
+        console.error('Failed to fetch students', error);
+      } finally { setLoading(false); }
+    };
+    fetchData();
+  }, []);
+
+  const resetFilters = () => {
+    setSearchQuery(''); setCourseFilter('All'); setMonthFilter(''); setPlacementStatusFilter('All'); setSortOrder('newest');
+  };
+
+  const getDriveImage = (url) => {
+    if (!url || typeof url !== 'string') return null;
+    const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+    return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : url;
+  };
+
+  const getDrivePdf = (url) => {
+    if (!url || typeof url !== 'string') return null;
+    const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+    return match ? `https://drive.google.com/file/d/${match[1]}/view` : url;
+  };
+
+  const renderAvatar = (url, name) => {
+    const fixedUrl = getDriveImage(url);
+    const initial = name ? name.charAt(0).toUpperCase() : '?';
+    if (!fixedUrl || fixedUrl === 'N/A') return <span style={{ fontSize: '1.4rem', fontWeight: 'bold' }}>{initial}</span>;
+    return (
+      <img src={fixedUrl} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+        onError={(e) => { e.target.style.display='none'; e.target.parentNode.innerHTML = `<span style="font-size: 1.4rem; font-weight: bold;">${initial}</span>`; }} 
+      />
+    );
+  };
+
+  const openStudentModal = (student) => {
+    setSelectedStudent(student);
+    setLocalVacState(student.vacOpen || 'Yes');
+    setLocalPlacementState(student.placementStatus || 'Pending');
+    setLocalStudyAccess(student.studyAccess || 'No');
+    setLocalExamAccess(student.examAccess || 'No');
+    
+    const cStatKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().replace(/\s/g, '') === 'coursestatus' || k.toLowerCase().replace(/\s/g, '').includes('status(currently'));
+    setLocalCourseStatus(cStatKey && student.rawData[cStatKey] && student.rawData[cStatKey] !== 'N/A' ? student.rawData[cStatKey] : 'Currently Studying');
+
+    const cPercKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().replace(/\s/g, '') === 'coursepercentage');
+    setLocalCoursePercentage(cPercKey && student.rawData[cPercKey] && student.rawData[cPercKey] !== 'N/A' ? student.rawData[cPercKey] : '50% completed');
+
+    setIsModalOpen(true);
+  };
+
+  const handleCoursePercentageChange = (e) => {
+    const val = e.target.value;
+    setLocalCoursePercentage(val);
+    if (val === '100% completed' || val === '100%') {
+      setLocalCourseStatus('Completed Course');
+    }
+  };
+
+  const saveStudentUpdates = async () => {
+    setSavingStatus(true);
+    try {
+      const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/students/update-student', {
+        rowNumber: selectedStudent.rowIdx,
+        vacOpen: localVacState, 
+        placementStatus: localPlacementState,
+        studyAccess: localStudyAccess, 
+        examAccess: localExamAccess,
+        courseStatus: localCourseStatus,
+        coursePercentage: localCoursePercentage
+      });
+      
+      if (response.data.success) {
+        const updatedStudents = rawStudents.map(s => s.rowIdx === selectedStudent.rowIdx ? { 
+          ...s, vacOpen: localVacState, placementStatus: localPlacementState, studyAccess: localStudyAccess, examAccess: localExamAccess, status: localCourseStatus
+        } : s);
+        setRawStudents(updatedStudents);
+        setIsModalOpen(false);
+      }
+    } catch { alert("Failed to update student data"); } finally { setSavingStatus(false); }
+  };
+
+  const scopedStudents = rawStudents.filter(s => {
+    if (isCourseSpecific && assignedCoursesArray[0] !== 'All') {
+      return assignedCoursesArray.some(ac => getStandardCourse(s.course) === ac);
+    }
+    return true;
+  });
+
+  const globallyFiltered = scopedStudents.filter(s => {
+    let cMatch = courseFilter === 'All' || getStandardCourse(s.course) === getStandardCourse(courseFilter);
+    const dateKey = Object.keys(s.rawData || {}).find(k => k.toLowerCase().includes('timestamp') || k.toLowerCase().includes('date'));
+    const dateVal = dateKey ? s.rawData[dateKey] : null;
+    const dateObj = parseDate(dateVal);
+    const monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
+    let mMatch = monthFilter === '' || monthKey === monthFilter;
+    
+    const pStat = (s.placementStatus || 'Pending').toLowerCase();
+    let pMatch = true;
+    if (placementStatusFilter !== 'All') {
+      if (placementStatusFilter === 'Pending') pMatch = pStat.includes('pending') || pStat === '';
+      else pMatch = pStat.includes(placementStatusFilter.toLowerCase());
+    }
+    
+    return cMatch && mMatch && pMatch;
+  });
+
+  const branchData = {};
+  globallyFiltered.forEach(s => {
+    const b = s.branch || 'Unknown';
+    branchData[b] = (branchData[b] || 0) + 1;
+  });
+  const branchList = Object.keys(branchData).sort();
+
+  const activeStudents = selectedBranch ? globallyFiltered.filter(s => s.branch === selectedBranch) : [];
+
+  const branchStats = {
+    pending: activeStudents.filter(s => s.placementStatus?.toLowerCase().includes('pending') || !s.placementStatus).length,
+    notResponding: activeStudents.filter(s => s.placementStatus?.toLowerCase().includes('not responding')).length,
+    noNeed: activeStudents.filter(s => s.placementStatus?.toLowerCase().includes('no need')).length
+  };
+
+  let filteredAndSorted = activeStudents.filter(s => {
+    const safeSearch = (searchQuery || '').toLowerCase();
+    const safeName = (s.name || '').toString().toLowerCase();
+    const safeRoll = (s.roll || '').toString().toLowerCase();
+    return safeName.includes(safeSearch) || safeRoll.includes(safeSearch);
+  });
+
+  if (sortOrder === 'az') filteredAndSorted.sort((a, b) => (a.name || '').toString().localeCompare((b.name || '').toString()));
+  if (sortOrder === 'za') filteredAndSorted.sort((a, b) => (b.name || '').toString().localeCompare((a.name || '').toString()));
+
+  return (
+    <Layout>
+      <div className="page-container" style={{ padding: 0 }}>
+        
+        {!selectedBranch && (
+          <div className="universal-kpi-bar" style={{ marginBottom: '2.5rem' }}>
+            <div className="kpi-card"><div><div className="kpi-val">{globallyFiltered.length}</div><div className="kpi-label">{isCourseSpecific ? `Assigned Students` : 'Filtered Students'}</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)' }}><UsersThree weight="fill"/></div></div>
+            <div className="kpi-card"><div><div className="kpi-val">{globalStats.activeVacancies}</div><div className="kpi-label">Active Vacancies</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><Briefcase weight="fill"/></div></div>
+            <div className="kpi-card"><div><div className="kpi-val">{globalStats.pendingApps}</div><div className="kpi-label">Pending Apps</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><Files weight="fill"/></div></div>
+            <div className="kpi-card"><div><div className="kpi-val">{globalStats.placed}</div><div className="kpi-label">Total Hired</div></div><div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}><Confetti weight="fill"/></div></div>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px', gap: '15px' }}>
+          {selectedBranch && (
+            <button onClick={() => setSelectedBranch(null)} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <CaretLeft weight="bold" size={18} /> Back to Branches
+            </button>
+          )}
+          <div>
+            <h1 style={{ fontSize: '1.8rem', margin: 0 }}>
+              {selectedBranch ? `${selectedBranch} Student Directory` : (isCourseSpecific ? `Branches with My Students` : 'Student Directory')}
+            </h1>
+            <p style={{ color: 'var(--text-muted)', margin: 0 }}>
+              {selectedBranch ? (!canSave ? 'View student profiles, resumes, and vacancy statuses.' : 'Manage student profiles, view resumes, and control access levels.') : 'Select an assigned branch to view its registered students and placement statistics.'}
+            </p>
+          </div>
+        </div>
+
+        {selectedBranch && (
+          <div className="universal-kpi-bar" style={{ marginBottom: '1.5rem', gridTemplateColumns: 'repeat(3, 1fr)' }}>
+            <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{branchStats.pending}</div><div className="kpi-label">Placement Pending</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}><ClockClockwise weight="fill"/></div></div>
+            <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{branchStats.notResponding}</div><div className="kpi-label">Not Responding</div></div><div className="kpi-icon" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' }}><UserMinus weight="fill"/></div></div>
+            <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{branchStats.noNeed}</div><div className="kpi-label">Placement Not Needed</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#a855f7' }}><Prohibit weight="fill"/></div></div>
+          </div>
+        )}
+
+        <div className="header-controls" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '1.5rem', alignItems: 'center', background: 'var(--card-bg)', padding: '14px 18px', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
+          {selectedBranch && (
+            <input type="text" className="sleek-input" placeholder="Search name or roll..." style={{ minWidth: '200px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+          )}
+
+          {(!isCourseSpecific || assignedCoursesArray.length > 1 || !selectedBranch) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Course:</span>
+              <select className="sleek-select" style={{ minWidth: '190px' }} value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
+                {isCourseSpecific ? (
+                  <>
+                    <option value="All">All My Courses</option>
+                    {assignedCoursesArray.map(c => <option key={c} value={c}>{c}</option>)}
+                  </>
+                ) : (
+                  <>
+                    <option value="All">All Main Courses</option>
+                    <option value="Industrial Automation">Industrial Automation</option>
+                    <option value="BMS AND CCTV">BMS AND CCTV</option>
+                    <option value="Embedded and IoT">Embedded and IoT</option>
+                    <option value="Digital Marketing">Digital Marketing</option>
+                    <option value="Information technology (IT)">Information technology (IT)</option>
+                  </>
+                )}
+              </select>
+            </div>
+          )}
+
+          {!selectedBranch && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Month/Year:</span>
+              <input type="month" className="sleek-input" style={{ minWidth: '150px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
+            </div>
+          )}
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Placement:</span>
+            <select className="sleek-select" style={{ minWidth: '150px' }} value={placementStatusFilter} onChange={(e) => setPlacementStatusFilter(e.target.value)}>
+              <option value="All">All Statuses</option>
+              <option value="Pending">Pending</option>
+              <option value="Placed">Placed</option>
+              <option value="Not Responding">Not Responding</option>
+              <option value="No Need of Placement">No Need</option>
+            </select>
+          </div>
+
+          {selectedBranch && (
+            <>
+              <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
+                <option value="newest">Sort: Newest</option>
+                <option value="az">Sort: A-Z</option>
+                <option value="za">Sort: Z-A</option>
+              </select>
+
+              <div className="view-toggles" style={{ marginLeft: 'auto' }}>
+                <button className={`view-btn ${viewType === 'grid' ? 'active' : ''}`} onClick={() => setViewType('grid')}><SquaresFour weight="fill" /></button>
+                <button className={`view-btn ${viewType === 'list' ? 'active' : ''}`} onClick={() => setViewType('list')}><List weight="bold" /></button>
+              </div>
+            </>
+          )}
+
+          {(courseFilter !== 'All' || monthFilter !== '' || placementStatusFilter !== 'All' || searchQuery !== '') && (
+            <button onClick={resetFilters} style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem' }}>
+              <ArrowsClockwise size={14} /> Reset
+            </button>
+          )}
+        </div>
+
+        {loading ? (
+          <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--accent-primary)' }}>
+            <CircleNotch size={40} className="ph-spin" />
+            <p>Fetching registered students...</p>
+          </div>
+        ) : !selectedBranch ? (
+          branchList.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
+              No students found. If you just loaded the portal, wait 10 seconds and refresh while Google Sheets syncs.
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '25px' }}>
+              {branchList.map((branch, index) => {
+                const color = TILE_COLORS[index % TILE_COLORS.length];
+                return (
+                  <div key={branch} onClick={() => setSelectedBranch(branch)} style={{ backgroundColor: color, borderRadius: '20px', padding: '35px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+                    <h2 style={{ color: '#ffffff', fontSize: '2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>{branch}</h2>
+                    <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <UsersThree size={20} color="#ffffff" weight="bold" />
+                      <span style={{ color: '#ffffff', fontSize: '1.05rem', fontWeight: 'bold' }}>{branchData[branch]} Students</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )
+        ) : filteredAndSorted.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
+            No students found matching your criteria.
+          </div>
+        ) : viewType === 'grid' ? (
+          <div className="student-grid">
+            {filteredAndSorted.map((st, i) => (
+              <div className="student-card" key={st.rowIdx || i}>
+                <div className="sc-avatar">{renderAvatar(st.photo, st.name)}</div>
+                <div className="sc-name">{st.name}</div>
+                <div className="sc-roll">{st.roll !== 'N/A' ? st.roll : 'No Roll #'}</div>
+                <div className="sc-details">
+                  <div className="sc-detail-row"><span>Branch</span><strong style={{ color: 'var(--text-main)' }}>{st.branch}</strong></div>
+                  <div className="sc-detail-row"><span>Course</span><strong style={{ color: 'var(--text-main)' }}>{st.course}</strong></div>
+                  <div className="sc-detail-row"><span>Contact</span><strong style={{ color: 'var(--text-main)' }}>{st.phone}</strong></div>
+                  <div className="sc-detail-row"><span>Status</span><strong style={{ color: st.status.toLowerCase().includes('completed') ? '#10b981' : 'var(--accent-primary)' }}>{st.status}</strong></div>
+                </div>
+                <button className="btn-secondary" style={{ width: '100%', padding: '0.5rem' }} onClick={() => openStudentModal(st)}>View Profile</button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="table-container">
+            <table className="modern-table">
+              <thead>
+                <tr>
+                  <th>Student Details</th>
+                  <th>Branch & Course</th>
+                  <th>Qualification</th>
+                  <th>Status</th>
+                  <th style={{ textAlign: 'center' }}>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAndSorted.map((st, i) => (
+                  <tr key={st.rowIdx || i}>
+                    <td>
+                      <div className="avatar-cell">
+                        <div className="avatar">{renderAvatar(st.photo, st.name)}</div>
+                        <div>
+                          <span className="primary-text">{st.name}</span>
+                          <span className="sub-text">{st.roll}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span className="primary-text">{st.branch}</span>
+                      <span className="sub-text">{st.course}</span>
+                    </td>
+                    <td>
+                      <span className="primary-text">{st.qual}</span>
+                      <span className="sub-text">{st.stream}</span>
+                    </td>
+                    <td>
+                      <StatusBadge status={st.status} />
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button className="btn-secondary" onClick={() => openStudentModal(st)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}>
+                        <PencilSimple weight="bold" /> View
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {isModalOpen && selectedStudent && (
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '15px', overflow: 'hidden' }} onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
+        <div className="modal-card" style={{ maxWidth: '950px', width: '100%', maxHeight: '95vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)' }}>
+          
+          <div style={{ position: 'sticky', top: 0, background: '#0f1523', zIndex: 10, padding: '1.5rem 2rem', borderBottom: '1px solid #1e293b' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '15px' }}>
+              
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flexWrap: 'wrap' }}>
+                <div style={{ width: '65px', height: '65px', borderRadius: '50%', overflow: 'hidden', border: '2px solid var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-dark)', flexShrink: 0 }}>
+                  {renderAvatar(selectedStudent.photo, selectedStudent.name)}
+                </div>
+                <div>
+                  <h2 style={{ margin: '0 0 4px 0', fontSize: '1.4rem', color: '#fff' }}>{selectedStudent.name}</h2>
+                  <span style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{selectedStudent.roll}</span>
+                  
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {(() => {
+                       const raw = selectedStudent.rawData || {};
+                       const getF = (keys) => {
+                         const fK = Object.keys(raw).find(k => keys.some(search => k.toLowerCase().replace(/\s/g, '').includes(search.toLowerCase().replace(/\s/g, ''))));
+                         return fK && raw[fK] && raw[fK] !== 'N/A' ? raw[fK] : null;
+                       };
+                       const linkedInUrl = getF(['linkedin']);
+                       let instaUrl = getF(['instagram', 'insta']);
+                       if (instaUrl && !instaUrl.includes('instagram.com')) instaUrl = `https://instagram.com/${instaUrl.replace('@', '')}`;
+                       
+                       return (
+                         <>
+                           <a href={`tel:${selectedStudent.phone}`} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(14, 165, 233, 0.15)', color: '#0ea5e9', padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', textDecoration: 'none', transition: 'all 0.2s' }}>
+                             <Phone size={14} weight="fill" /> Call
+                           </a>
+                           <a href={`https://api.whatsapp.com/send?phone=${selectedStudent.phone ? (selectedStudent.phone.replace(/\D/g, '').length === 10 ? '91' + selectedStudent.phone.replace(/\D/g, '') : selectedStudent.phone.replace(/\D/g, '')) : ''}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(37, 211, 102, 0.15)', color: '#25D366', padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', textDecoration: 'none', transition: 'all 0.2s' }}>
+                             <WhatsappLogo size={14} weight="fill" /> WhatsApp
+                           </a>
+                           <a href={`mailto:${selectedStudent.email}`} style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(234, 67, 53, 0.15)', color: '#ea4335', padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', textDecoration: 'none', transition: 'all 0.2s' }}>
+                             <EnvelopeSimple size={14} weight="fill" /> Mail
+                           </a>
+                           {linkedInUrl && (
+                             <a href={linkedInUrl.startsWith('http') ? linkedInUrl : `https://${linkedInUrl}`} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(10, 102, 194, 0.15)', color: '#4facfe', padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', textDecoration: 'none', transition: 'all 0.2s' }}>
+                               <LinkedinLogo size={14} weight="fill" /> LinkedIn
+                             </a>
+                           )}
+                           {instaUrl && (
+                             <a href={instaUrl} target="_blank" rel="noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '5px', background: 'rgba(225, 48, 108, 0.15)', color: '#e1306c', padding: '6px 12px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', textDecoration: 'none', transition: 'all 0.2s' }}>
+                               <InstagramLogo size={14} weight="fill" /> Instagram
+                             </a>
+                           )}
+                         </>
+                       );
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                {selectedStudent.resume && selectedStudent.resume !== 'N/A' && (
+                  <button className="btn-secondary" onClick={() => window.open(getDrivePdf(selectedStudent.resume) || selectedStudent.resume, '_blank')} style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b', border: '1px solid #f59e0b', margin: 0, padding: '0.5rem 0.8rem' }}>
+                    <FilePdf size={18} weight="fill" /> Resume
+                  </button>
+                )}
+                {selectedStudent.certificate && selectedStudent.certificate !== 'N/A' && (
+                  <button className="btn-secondary" onClick={() => window.open(getDrivePdf(selectedStudent.certificate) || selectedStudent.certificate, '_blank')} style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)', border: '1px solid var(--accent-primary)', margin: 0, padding: '0.5rem 0.8rem' }}>
+                    <GraduationCap size={18} weight="fill" /> Certificate
+                  </button>
+                )}
+                <X size={28} style={{ cursor: 'pointer', color: 'var(--text-muted)', marginLeft: 'auto' }} onClick={() => setIsModalOpen(false)} />
+              </div>
+            </div>
+          </div>
+
+          <div style={{ padding: '2rem' }}>
+             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px', marginBottom: '2.5rem' }}>
+                {(() => {
+                   const raw = selectedStudent.rawData || {};
+                   const getF = (keys) => {
+                     const fK = Object.keys(raw).find(k => keys.some(search => k.toLowerCase().replace(/\s/g, '').includes(search.toLowerCase().replace(/\s/g, ''))));
+                     return fK && raw[fK] && raw[fK] !== 'N/A' ? raw[fK] : null;
+                   };
+                   
+                   const specificFields = [
+                     { label: 'Name', val: getF(['name', 'studentname']) || selectedStudent.name },
+                     { label: 'Phone No.', val: getF(['phone']) || selectedStudent.phone },
+                     { label: 'Mail ID', val: getF(['mail', 'email']) || selectedStudent.email },
+                     { label: 'IPCS Roll Number', val: getF(['ipcsroll', 'rollnumber', 'roll']) || selectedStudent.roll },
+                     { label: 'Joining Date', val: getF(['joiningdate']) },
+                     { label: 'Course', val: getF(['course']) || selectedStudent.course },
+                     { label: 'Branch', val: getF(['branch']) || selectedStudent.branch },
+                     { label: 'Home Town', val: getF(['hometown', 'town', 'city']) },
+                     { label: 'Qualification', val: getF(['qual']) || selectedStudent.qual },
+                     { label: 'Stream', val: getF(['stream']) || selectedStudent.stream },
+                     { label: 'Experience Status', val: getF(['fresher', 'experience', 'status(fresher']) },
+                     { label: 'Specific Requirement', val: getF(['specificrequirement', 'requirement']) },
+                     { label: 'Parent Name', val: getF(['parentname', 'father', 'mother']) },
+                     { label: 'Parent Contact', val: getF(['parentcontact', 'parentphone']) },
+                     { label: 'Course Status', val: getF(['status(currently', 'coursestatus']) || localCourseStatus },
+                     { label: 'Course Percentage', val: getF(['coursepercentage']) || localCoursePercentage },
+                     { label: 'IPCS Course Completed Date', val: getF(['coursecompleteddate', 'completeddate']) },
+                     { label: 'Age', val: getF(['age', 'dob']) },
+                     { label: 'Gender', val: getF(['gender', 'sex']) }
+                   ].filter(f => f.val);
+
+                   return specificFields.map((field, idx) => (
+                      <div key={idx} style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '10px', border: '1px solid #1e293b' }}>
+                        <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>{field.label}</span>
+                        <span style={{ fontSize: '0.95rem', color: '#fff', fontWeight: 700, wordBreak: 'break-word' }}>{field.val}</span>
+                      </div>
+                   ));
+                })()}
+             </div>
+
+             {isBranchManager && (
+               <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #1e293b' }}>
+                 <h3 style={{ margin: '0 0 15px 0', color: 'var(--accent-primary)', fontSize: '1.1rem' }}>Reference Contacts</h3>
+                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+                   {(() => {
+                      const raw = selectedStudent.rawData || {};
+                      
+                      const getRefField = (searchKeywords) => {
+                        for (let keyword of searchKeywords) {
+                          const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
+                          const foundKey = Object.keys(raw).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === cleanKeyword);
+                          if (foundKey && raw[foundKey] && raw[foundKey] !== 'N/A') return raw[foundKey];
+                        }
+                        for (let keyword of searchKeywords) {
+                          const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
+                          const foundKey = Object.keys(raw).find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanKeyword));
+                          
+                          if (foundKey && foundKey.toLowerCase().replace(/[^a-z0-9]/g, '') === 'contactnumber') continue;
+                          if (foundKey && foundKey.toLowerCase().replace(/[^a-z0-9]/g, '') === 'phone') continue;
+
+                          if (foundKey && raw[foundKey] && raw[foundKey] !== 'N/A') return raw[foundKey];
+                        }
+                        return null;
+                      };
+
+                      const f1Name = getRefField(['name(friend1)', 'friend1name', 'namefriend1', 'reference1name']);
+                      const f1Cont = getRefField(['contactnumber', 'friend1contact', 'contactnumber1', 'contactnumberfriend1', 'friend1phone']);
+                      const f2Name = getRefField(['name(friend2)', 'friend2name', 'namefriend2', 'reference2name']);
+                      const f2Cont = getRefField(['contactnumber2', 'friend2contact', 'contactnumberfriend2', 'friend2phone']);
+
+                      const hasRefs = f1Name || f1Cont || f2Name || f2Cont;
+
+                      if (!hasRefs) {
+                        return <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>No reference contacts provided by this student.</div>;
+                      }
+
+                      return (
+                        <>
+                          {f1Name && (
+                            <div style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '10px', border: '1px solid #1e293b' }}>
+                              <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>Friend 1 Name</span>
+                              <span style={{ fontSize: '0.95rem', color: '#fff', fontWeight: 700 }}>{f1Name}</span>
+                            </div>
+                          )}
+                          {f1Cont && (
+                            <div style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '10px', border: '1px solid #1e293b' }}>
+                              <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>Contact Number 1</span>
+                              <span style={{ fontSize: '0.95rem', color: '#fff', fontWeight: 700 }}>{f1Cont}</span>
+                            </div>
+                          )}
+                          {f2Name && (
+                            <div style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '10px', border: '1px solid #1e293b' }}>
+                              <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>Friend 2 Name</span>
+                              <span style={{ fontSize: '0.95rem', color: '#fff', fontWeight: 700 }}>{f2Name}</span>
+                            </div>
+                          )}
+                          {f2Cont && (
+                            <div style={{ background: '#161e2e', padding: '12px 16px', borderRadius: '10px', border: '1px solid #1e293b' }}>
+                              <span style={{ display: 'block', fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', marginBottom: '6px', fontWeight: 600 }}>Contact Number 2</span>
+                              <span style={{ fontSize: '0.95rem', color: '#fff', fontWeight: 700 }}>{f2Cont}</span>
+                            </div>
+                          )}
+                        </>
+                      );
+                   })()}
+                 </div>
+               </div>
+             )}
+
+             {!isBranchManager && (
+               <div style={{ background: 'rgba(15, 23, 42, 0.5)', border: '1px solid #1e293b', borderRadius: '16px', padding: '1.5rem', marginTop: '2.5rem' }}>
+                  <h3 style={{ margin: '0 0 1.2rem 0', color: '#fff', fontSize: '1.1rem', borderBottom: '1px solid #1e293b', paddingBottom: '0.8rem' }}>Access & Permissions Control</h3>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+                    <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                      <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Course Percentage</span>
+                      <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localCoursePercentage} onChange={handleCoursePercentageChange} disabled={!canEditAcademic}>
+                        <option value="50% completed">50% completed</option>
+                        <option value="80% completed">80% completed</option>
+                        <option value="90% completed">90% completed</option>
+                        <option value="100% completed">100% completed</option>
+                      </select>
+                    </div>
+
+                    <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                      <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Course Status</span>
+                      <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localCourseStatus} onChange={(e) => setLocalCourseStatus(e.target.value)} disabled={!canEditAcademic}>
+                        <option value="Currently Studying">Currently Studying</option>
+                        <option value="Completed Course">Completed Course</option>
+                      </select>
+                    </div>
+
+                    <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                      <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Study Material Access</span>
+                      <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localStudyAccess} onChange={(e) => setLocalStudyAccess(e.target.value)} disabled={!canEditAcademic}>
+                        <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                      </select>
+                    </div>
+
+                    <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                      <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Technical Exam Access</span>
+                      <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localExamAccess} onChange={(e) => setLocalExamAccess(e.target.value)} disabled={!canEditAcademic}>
+                        <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                      </select>
+                    </div>
+
+                    <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                      <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Vacancy Open</span>
+                      <select className="sleek-select" style={{ width: '100%', cursor: !canEditAll ? 'not-allowed' : 'pointer', opacity: !canEditAll ? 0.7 : 1, background: '#161e2e' }} value={localVacState} onChange={(e) => setLocalVacState(e.target.value)} disabled={!canEditAll}>
+                        <option value="Yes">Yes (Allowed)</option><option value="No">No (Restricted)</option>
+                      </select>
+                    </div>
+
+                    <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
+                      <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Placement Status</span>
+                      <select className="sleek-select" style={{ width: '100%', cursor: !canEditAll ? 'not-allowed' : 'pointer', opacity: !canEditAll ? 0.7 : 1, background: '#161e2e' }} value={localPlacementState} onChange={(e) => setLocalPlacementState(e.target.value)} disabled={!canEditAll}>
+                        <option value="Pending">Pending</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: !canSave ? 'space-between' : 'flex-end', alignItems: 'center', marginTop: '1.5rem' }}>
+                     {!canSave && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission for Toggles</span>}
+                     <button className="btn-action" style={{ width: 'auto', background: !canSave ? '#1e293b' : 'var(--accent-primary)', color: !canSave ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: !canSave ? 'not-allowed' : 'pointer', opacity: canSave ? 1 : 0.5 }} onClick={saveStudentUpdates} disabled={savingStatus || !canSave}>
+                        {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> {!canSave ? 'Locked' : 'Save Changes'}</>}
+                      </button>
+                  </div>
+               </div>
+             )}
+          </div>
+        </div>
+      </div>
+      )}
+    </Layout>
+  );
+}
