@@ -24,7 +24,9 @@ export default function TechnicalExams() {
   const isSuperAdmin = tpoData?.accessType === 'superadmin';
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
+  const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(upperRole) || /(^|[^A-Z0-9])TL([^A-Z0-9]|$)/.test(upperRole);
   const isTrainer = upperRole.includes('TRAINER');
+  const isResultsOnly = isTechnicalLead;
   
   const canManage = isSuperAdmin || isRth;
 
@@ -47,11 +49,11 @@ export default function TechnicalExams() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   
-  const [viewLevel, setViewLevel] = useState('main_courses');
+  const [viewLevel, setViewLevel] = useState(isResultsOnly ? 'exam_dashboard' : 'main_courses');
   const [selectedMainCourse, setSelectedMainCourse] = useState(null);
   const [selectedSubCourse, setSelectedSubCourse] = useState(null);
   
-  const [activeTab, setActiveTab] = useState(isTrainer ? 'results' : 'questions'); 
+  const [activeTab, setActiveTab] = useState(isTrainer || isResultsOnly ? 'results' : 'questions');
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -65,9 +67,9 @@ export default function TechnicalExams() {
   const fetchData = async () => {
     try {
       const [qRes, rRes, courseRes] = await Promise.all([
-        axios.get(`${API_BASE}/api/exams/questions`), 
+        isResultsOnly ? Promise.resolve({ data: { success: true, questions: [] } }) : axios.get(`${API_BASE}/api/exams/questions`),
         axios.get(`${API_BASE}/api/exams/results`),
-        axios.get(`${API_BASE}/api/admin/courses`)
+        isResultsOnly ? Promise.resolve({ data: { success: true, courses: {} } }) : axios.get(`${API_BASE}/api/courses`)
       ]);
       
       if (qRes.data.success) setQuestions(qRes.data.questions || []);
@@ -88,7 +90,12 @@ export default function TechnicalExams() {
         allowedDomains = Object.keys(cDict).filter(domain => assignedCoursesArray.includes(domain));
       }
 
-      if (allowedDomains.length === 1) {
+      if (isResultsOnly) {
+        setViewLevel('exam_dashboard');
+        setSelectedMainCourse(null);
+        setSelectedSubCourse(null);
+        setActiveTab('results');
+      } else if (allowedDomains.length === 1) {
         setSelectedMainCourse(allowedDomains[0]);
         setViewLevel('sub_courses'); 
       } else {
@@ -192,7 +199,7 @@ export default function TechnicalExams() {
   const filteredResults = results.filter(r => {
     const rCourse = (r.course || '').trim();
     const selCourse = (selectedSubCourse || '').trim();
-    return rCourse === selCourse && 
+    return (isResultsOnly || rCourse === selCourse) &&
            ((r.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
             (r.rollNo || '').toLowerCase().includes(searchQuery.toLowerCase()));
   });
@@ -202,12 +209,12 @@ export default function TechnicalExams() {
       <div className="page-container" style={{ padding: 0 }}>
         
         <div style={{ marginBottom: '20px' }}>
-          <button 
+            {!isResultsOnly && <button
             onClick={() => window.location.href = '/exams'}
             style={{ background: 'transparent', border: '1px solid var(--card-border)', color: 'var(--text-muted)', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', fontWeight: 'bold' }}
           >
             <CaretLeft weight="bold" size={16} /> Back to Exams Hub
-          </button>
+            </button>}
         </div>
 
         {viewLevel === 'main_courses' && (
@@ -291,8 +298,8 @@ export default function TechnicalExams() {
                   <CaretLeft weight="bold" size={18} /> Programs
                 </button>
                 <div>
-                  <h1 style={{ fontSize: '1.6rem', margin: 0 }}>{selectedSubCourse}</h1>
-                  <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>Assessment question bank and student scores.</p>
+                  <h1 style={{ fontSize: '1.6rem', margin: 0 }}>{isResultsOnly ? 'Technical Exam Results' : selectedSubCourse}</h1>
+                  <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>{isResultsOnly ? 'Technical exam results for your assigned branch.' : 'Assessment question bank and student scores.'}</p>
                 </div>
               </div>
               {activeTab === 'questions' && canManage && !isTrainer && (
@@ -303,7 +310,7 @@ export default function TechnicalExams() {
             </div>
 
             <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', borderBottom: '1px solid var(--card-border)', paddingBottom: '10px' }}>
-              {!isTrainer && (
+              {!isTrainer && !isResultsOnly && (
                 <button 
                   onClick={() => setActiveTab('questions')} 
                   style={{ background: activeTab === 'questions' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'questions' ? 'var(--accent-primary)' : 'var(--text-muted)', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -330,7 +337,7 @@ export default function TechnicalExams() {
               />
             </div>
 
-            {activeTab === 'questions' && !isTrainer && (
+            {activeTab === 'questions' && !isTrainer && !isResultsOnly && (
               <div className="table-container">
                 <table className="modern-table">
                   <thead>

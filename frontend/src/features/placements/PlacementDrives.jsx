@@ -30,7 +30,8 @@ export default function PlacementDrives() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   const userRole = String(tpoData?.role || '').toUpperCase();
-  const isSuperAdmin = tpoData?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(userRole) || userRole.includes('MANAGER');
+  const isSuperAdmin = tpoData?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(userRole);
+  const isBranchManager = userRole === 'BM' || userRole.includes('BRANCH MANAGER');
   const isTpo = userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER');
 
   const [drives, setDrives] = useState([]);
@@ -58,6 +59,7 @@ export default function PlacementDrives() {
 
   const canEditDrive = (drive) => {
     if (isSuperAdmin) return true;
+    if (isBranchManager) return true;
     if (!tpoData || !tpoData.name) return false;
     if (!drive.driveTpo) return false;
     
@@ -178,7 +180,7 @@ export default function PlacementDrives() {
                 }}>
                 Upcoming & Active Drives
               </button>
-              <button 
+              {expiredDrives.length > 0 && <button
                 onClick={() => setActiveMasterTab('expired')}
                 style={{ 
                   background: activeMasterTab === 'expired' ? 'rgba(239, 68, 68, 0.1)' : 'transparent',
@@ -187,7 +189,7 @@ export default function PlacementDrives() {
                   padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s'
                 }}>
                 Expired / Past Drives
-              </button>
+              </button>}
             </div>
 
             {loading ? (

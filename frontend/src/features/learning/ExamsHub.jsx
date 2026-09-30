@@ -1,5 +1,5 @@
 import { useNavigate } from 'react-router-dom';
-import { FileText, Brain, PencilSimple, FolderOpen } from '@phosphor-icons/react';
+import { FileText, Brain, FolderOpen, UserCheck } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 
 export default function ExamsHub() {
@@ -8,8 +8,9 @@ export default function ExamsHub() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   
-  // 🚨 FIXED: Uses .includes() to protect against trailing spaces in the DB
-  const isTrainer = (tpoData?.role || '').toUpperCase().includes('TRAINER');
+  const role = (tpoData?.role || '').toUpperCase();
+  const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(role) || /(^|[^A-Z0-9])TL([^A-Z0-9]|$)/.test(role);
+  const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(role) || role.includes('REGIONAL TECHNICAL HEAD');
 
   return (
     <Layout>
@@ -24,20 +25,20 @@ export default function ExamsHub() {
           </p>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '30px', padding: '0 20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isTechnicalLead ? 'minmax(300px, 680px)' : 'repeat(auto-fit, minmax(280px, 1fr))', justifyContent: 'center', gap: '30px', padding: '0 20px' }}>
           
           <div 
-            onClick={() => navigate('/exams/technical')}
+            onClick={() => navigate(isTechnicalLead ? '/exams/technical?view=results' : '/exams/technical')}
             style={{ backgroundColor: '#3b82f6', borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '240px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
             onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
             onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
           >
             <FileText size={56} color="#ffffff" weight="fill" style={{ marginBottom: '15px' }} />
             <h2 style={{ color: '#ffffff', fontSize: '2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>Technical Exams</h2>
-            <div style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 14px', borderRadius: '20px', fontSize: '0.9rem', color: '#fff', fontWeight: 'bold' }}>Domain specific tests</div>
+            <div style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 14px', borderRadius: '20px', fontSize: '0.9rem', color: '#fff', fontWeight: 'bold' }}>{isTechnicalLead ? 'View branch technical exam results' : 'Domain specific tests'}</div>
           </div>
 
-          <div 
+          {!isTechnicalLead && <div
             onClick={() => navigate('/exams/aptitude')}
             style={{ backgroundColor: '#f59e0b', borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '240px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
             onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
@@ -46,21 +47,18 @@ export default function ExamsHub() {
             <Brain size={56} color="#ffffff" weight="fill" style={{ marginBottom: '15px' }} />
             <h2 style={{ color: '#ffffff', fontSize: '2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>Aptitude Exams</h2>
             <div style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 14px', borderRadius: '20px', fontSize: '0.9rem', color: '#fff', fontWeight: 'bold' }}>Quant, Logical, Verbal</div>
-          </div>
+          </div>}
 
-          {/* 🚨 HIDDEN FOR TRAINERS */}
-          {!isTrainer && (
-            <div 
-              onClick={() => navigate('/exams/talentino')}
-              style={{ backgroundColor: '#a855f7', borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '240px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
-            >
-              <PencilSimple size={56} color="#ffffff" weight="fill" style={{ marginBottom: '15px' }} />
-              <h2 style={{ color: '#ffffff', fontSize: '2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>Talentino Exams</h2>
-              <div style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 14px', borderRadius: '20px', fontSize: '0.9rem', color: '#fff', fontWeight: 'bold' }}>Soft skills & development</div>
-            </div>
-          )}
+          {!isTechnicalLead && !isRth && <div
+            onClick={() => navigate('/exams/talentino')}
+            style={{ backgroundColor: '#8b5cf6', borderRadius: '24px', padding: '40px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '240px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', transition: 'transform 0.2s ease, box-shadow 0.2s ease' }}
+            onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-5px)'; e.currentTarget.style.boxShadow = '0 15px 35px rgba(0,0,0,0.3)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 10px 25px rgba(0,0,0,0.2)'; }}
+          >
+            <UserCheck size={56} color="#ffffff" weight="fill" style={{ marginBottom: '15px' }} />
+            <h2 style={{ color: '#ffffff', fontSize: '2rem', margin: '0 0 10px 0' }}>Talentino Assessments</h2>
+            <div style={{ background: 'rgba(255,255,255,0.2)', padding: '6px 14px', borderRadius: '20px', fontSize: '0.9rem', color: '#fff', fontWeight: 'bold' }}>Career readiness assessments</div>
+          </div>}
 
         </div>
       </div>

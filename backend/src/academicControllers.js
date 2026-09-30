@@ -252,7 +252,7 @@ function cleanText(value) {
 function canAccessAcademicRecord(user, record = {}) {
   if (!user) return false;
   if (user.accessType === 'superadmin') return true;
-  return hasAccess(record.branch || '', record.mainCourse || record.course || '', user.role, user.assignedBranchesArray, user.assignedCourse);
+  return hasAccess(record.branch || '', record.mainCourse || record.course || '', user.role, user.assignedBranchesArray, user.assignedCourse, user.department);
 }
 
 function canAccessAcademicRow(user, row) {
@@ -273,7 +273,7 @@ function scopeAcademicData(data, user) {
   const batchIds = new Set(batches.map(batch => cleanText(batch.batchId)));
   const topics = data.topics.filter(topic => {
     const branch = user?.assignedBranchesArray?.find(value => String(value).toLowerCase() !== 'all') || user?.sittingBranch || '';
-    return user?.accessType === 'superadmin' || hasAccess(branch, topic.mainCourse, user?.role, user?.assignedBranchesArray, user?.assignedCourse);
+    return user?.accessType === 'superadmin' || hasAccess(branch, topic.mainCourse, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department);
   });
   const sessions = data.sessions.filter(session =>
     (session.trainingId && trainingIds.has(cleanText(session.trainingId))) ||

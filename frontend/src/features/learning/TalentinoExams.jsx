@@ -66,7 +66,7 @@ export default function TechnicalExams() {
       const [qRes, rRes, courseRes] = await Promise.all([
         axios.get(`${API_BASE}/api/exams/questions`), 
         axios.get(`${API_BASE}/api/exams/results`),
-        axios.get(`${API_BASE}/api/admin/courses`)
+        axios.get(`${API_BASE}/api/courses`)
       ]);
       
       if (qRes.data.success) setQuestions(qRes.data.questions || []);

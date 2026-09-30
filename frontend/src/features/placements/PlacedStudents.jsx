@@ -18,7 +18,7 @@ const getStandardCourse = (c) => {
   if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
   if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
   if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
-  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
+  if (lower.includes('information technology') || /(^|[^a-z])it([^a-z]|$)/.test(lower) || lower.includes('python') || lower.includes('software') || lower.includes('data science') || lower.includes('data analytics') || lower.includes('artificial intelligence') || lower.includes('cyber security') || lower.includes('web development') || lower.includes('java') || lower.includes('php')) return 'Information technology (IT)';
   return 'Others';
 };
 
@@ -56,21 +56,26 @@ export default function PlacedStudents() {
   const canViewPlacementDashboard = isAdmin || isTpo;
   const canEditPlacement = isTpo; 
 
-  const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
+  const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
+  const isTth = upperRole.includes('TTH') || upperRole.includes('TERRITORY TECHNICAL HEAD');
+  const isTrainer = upperRole.includes('TRAINER');
+  const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(upperRole) || /(^|[^A-Z0-9])TL([^A-Z0-9]|$)/.test(upperRole);
+  const isBranchManager = upperRole === 'BM' || upperRole.includes('BRANCH MANAGER');
+  const isCourseSpecific = isRth || isTth || isTrainer;
   
   // 🚨 FIXED: Parse multiple assigned courses splitting by comma and newline
   const rawCourse = tpoData?.assignedCourse || 'All';
-  const assignedCoursesArray = (rawCourse === 'All' || rawCourse === 'All Courses') 
-    ? ['All'] 
-    : [...new Set(rawCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim())).filter(Boolean))];
+  const courseValues = (Array.isArray(rawCourse) ? rawCourse : String(rawCourse).split(/[\n,;]+/)).map(course => String(course).trim()).filter(Boolean);
+  const assignedCoursesArray = courseValues.some(course => /^all( courses)?$/i.test(course)) ? ['All'] : [...new Set(courseValues.map(getStandardCourse).filter(Boolean))];
   
   const assignedBranchesArray = Array.isArray(tpoData?.assignedBranchesArray)
     ? tpoData.assignedBranchesArray.map(branch => String(branch).trim().toLowerCase()).filter(Boolean)
-    : String(tpoData?.assignedBranchesArray || '').split(/[\n,]+/).map(branch => branch.trim().toLowerCase()).filter(Boolean);
+    : String(tpoData?.assignedBranchesArray || '').split(/[\n,;]+/).map(branch => branch.trim().replace(/^\d+\.\s*/, '').toLowerCase()).filter(Boolean);
   const hasAssignedBranch = branch => assignedBranchesArray.includes('all') || assignedBranchesArray.some(assigned => {
     const rowBranch = String(branch || '').trim().toLowerCase();
     return rowBranch && (rowBranch === assigned || rowBranch.includes(assigned) || assigned.includes(rowBranch));
   });
+  const isDirectBranchRole = (isTechnicalLead || isTrainer || isBranchManager) && assignedBranchesArray.length === 1 && !['all', 'all branches'].includes(assignedBranchesArray[0]);
 
   const [selectedBranch, setSelectedBranch] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -95,6 +100,11 @@ export default function PlacedStudents() {
     const localTpoStr = localStorage.getItem('tpoData');
     if (!localTpoStr) return;
     const localTpo = JSON.parse(localTpoStr);
+    if (isDirectBranchRole) {
+      const assigned = Array.isArray(localTpo.assignedBranchesArray) ? localTpo.assignedBranchesArray : String(localTpo.assignedBranchesArray || '').split(/[\n,;]+/);
+      const directBranch = assigned.find(branch => !['all', 'all branches'].includes(String(branch).trim().toLowerCase()));
+      if (directBranch) setSelectedBranch(String(directBranch).trim());
+    }
     const payload = { 
       assignedBranchesArray: localTpo.assignedBranchesArray, 
       tpoName: localTpo.name, 
@@ -124,14 +134,6 @@ export default function PlacedStudents() {
           }
           return '';
         };
-
-        const isSuperUser = localTpo.accessType === 'superadmin' || localTpo.assignedBranchesArray.includes('all');
-        if (!isSuperUser) {
-          logs = logs.filter(log => {
-            const b = getVal(log, ['branch']).toLowerCase();
-            return localTpo.assignedBranchesArray.some(assigned => b.includes(assigned) || assigned.includes(b));
-          });
-        }
 
         let mappedLogs = logs.map(row => ({
           name: getVal(row, ['studentname', 'name']),
@@ -165,13 +167,19 @@ export default function PlacedStudents() {
         });
 
         setApplications(finalApps);
+        if (isDirectBranchRole) {
+          const assigned = Array.isArray(localTpo.assignedBranchesArray) ? localTpo.assignedBranchesArray : String(localTpo.assignedBranchesArray || '').split(/[\n,;]+/);
+          const directBranch = finalApps.find(app => hasAssignedBranch(app.branch))?.branch || assigned.find(branch => !['all', 'all branches'].includes(String(branch).trim().toLowerCase()));
+          if (directBranch) setSelectedBranch(directBranch);
+        }
       }
     } catch (error) { 
       console.error("Failed to load placed applications", error); 
     } finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  // This page loads once from the account stored at login; role assignments stay fixed for the session.
+  useEffect(() => { fetchData(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resetFilters = () => {
     setSearchQuery(''); setCourseFilter('All'); setMonthFilter(''); setStatusFilter('All'); setSortOrder('newest');
@@ -182,7 +190,7 @@ export default function PlacedStudents() {
     if (isCourseSpecific && assignedCoursesArray[0] !== 'All') {
       if (!assignedCoursesArray.some(ac => getStandardCourse(a.course) === ac)) return false;
     }
-    return !isCourseSpecific || hasAssignedBranch(a.branch);
+    return hasAssignedBranch(a.branch);
   });
 
   const globallyFiltered = scopedApps.filter(a => {
@@ -212,7 +220,7 @@ export default function PlacedStudents() {
   });
   const branchList = Object.keys(branchData).sort();
 
-  const activePlacedApps = selectedBranch ? globallyFiltered.filter(a => a.branch === selectedBranch) : [];
+  const activePlacedApps = selectedBranch ? globallyFiltered.filter(a => String(a.branch || '').trim().toLowerCase() === String(selectedBranch || '').trim().toLowerCase()) : [];
 
   const filteredApps = activePlacedApps.filter(a => {
     return searchQuery === '' || 
@@ -289,9 +297,9 @@ export default function PlacedStudents() {
           <div>
             {selectedBranch ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                <button onClick={() => setSelectedBranch(null)} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                {!isDirectBranchRole && <button onClick={() => setSelectedBranch(null)} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <CaretLeft weight="bold" size={18} /> Back to Branches
-                </button>
+                </button>}
                 <div>
                   <h1 style={{ fontSize: '1.8rem', margin: 0 }}>{selectedBranch} Placements</h1>
                   <p style={{ color: 'var(--text-muted)', margin: 0 }}>Data sourced directly from TPO_Log</p>

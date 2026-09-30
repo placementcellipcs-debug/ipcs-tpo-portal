@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { ArrowRight, ArrowUpRight, BookOpenText, Briefcase, Buildings, CheckCircle, Compass, GlobeHemisphereWest, GraduationCap, Handshake, Lightbulb, Megaphone, PlayCircle, Star, Target, UsersThree, VideoCamera, X } from '@phosphor-icons/react';
@@ -8,17 +8,27 @@ import giftyPhoto from '../../assets/Team IPCS/Ms. Gifty KP.png';
 
 const placementTeamLead = {
   name: 'Ms. Gifty KP',
-  role: 'Zonal Head of Placement',
+  role: 'Zonal Manager - Placements',
   image: giftyPhoto,
-  bio: 'Ms. Gifty has over nine years of experience in the EdTech industry. Starting as a Java Trainer, she built expertise in technical instruction and teaching methods, then specialized in training excellence and learning management systems. As Zonal Head of Placement, she connects aspiring professionals with career opportunities and helps shape future-ready talent.'
+  bio: 'Ms. Gifty KP serves as the Zonal Manager of Placements at IPCS Global, overseeing end-to-end placement operations across 23 branches in the South Zone, including Kerala, Karnataka, and Tamil Nadu. Backed by 10 years of experience in the EdTech and IT industries, she is a dynamic training leader dedicated to fostering talent and propelling teams toward excellence. Holding a BCA in Computer Science, Gifty excels in organizing on-campus and virtual placement drives, building strategic hiring pipelines, and executing MOUs with industry partners. She is also highly adept at designing skill enhancement sessions to boost student employability, making her instrumental in bridging the gap between student capabilities and corporate requirements.'
 };
 
 const milestones = [
-  { value: '1.5M+', label: 'Trained professionals' },
-  { value: '25K+', label: 'Placed professionals' },
-  { value: '1,200+', label: 'Industrial projects' },
-  { value: '50+', label: 'Presence across countries' },
-  { value: '120+', label: 'Corporate partners' }
+  { value: 3, suffix: 'M+', label: 'Trained professionals' },
+  { value: 50, suffix: 'K+', label: 'Placed professionals' },
+  { value: 2400, suffix: '+', label: 'Industrial projects' },
+  { value: 100, suffix: '+', label: 'Presence across countries' },
+  { value: 240, suffix: '+', label: 'Corporate partners' }
+];
+
+const placementTeamProfiles = [
+  { name: 'Mr. Amarnath SR', aliases: ['Amarnath SR', 'Amarnath S R'], role: 'Corporate Relation Officer', bio: 'Mr. Amarnath SR is a dedicated Corporate Relation Officer at IPCS Global with a strong foundation in technology. He holds a Master’s degree in Information Technology and a Bachelor of Science in Computer Technology. As a multifaceted Placement and Training professional, he brings extensive experience in student coordination, career development, and institutional engagement. Amarnath combines business operations knowledge with technology expertise, excelling in client handling, digital marketing, Python development, and cybersecurity. Passionate about automation and creating effective digital solutions, his diverse skill set makes him highly effective in guiding students toward successful technical careers.' },
+  { name: 'Ms. Bincy Bindhuraj', aliases: ['Bincy Bindhuraj'], role: 'Senior Corporate Relationship Officer', bio: 'Ms. Bincy Bindhuraj is an accomplished Senior Corporate Relationship Officer at IPCS Global. She is currently pursuing a Master of Business Administration in Human Resources Management and Services. With a robust background in talent acquisition and HR coordination, Bincy excels in developing strategic partnerships with corporate clients and overseeing the end-to-end recruitment lifecycle. She is highly skilled in career counseling, utilizing life coaching techniques to support candidates through resume optimization and interview preparation. Her dedication to streamlining recruitment processes, mentoring junior team members, and aligning customized recruitment solutions with business objectives drives both client engagement and student placement success.' },
+  { name: 'Ms. Gifty KP', aliases: ['Gifty KP'], role: placementTeamLead.role, bio: placementTeamLead.bio, image: giftyPhoto },
+  { name: 'Mr. Pranav V S', aliases: ['Pranav V S', 'Pranav V.S.'], role: 'Corporate Relations Officer', bio: 'Mr. Pranav V S is a driven Corporate Relations Officer at IPCS Global, specializing in building industry partnerships and managing placement operations. He holds a Bachelor of Computer Application degree with a focus on Cloud Computing and Cyber Security. Passionate about connecting candidates with real career opportunities, Pranav has successfully contributed to over 500 placements. He excels in coordinating campus hiring activities, conducting candidate screening, and providing comprehensive job readiness support, including resume building and interview preparation. His dedication ensures that students are well-prepared to get hired while helping companies find the right talent efficiently.' },
+  { name: 'Ms. Thana Anjana', aliases: ['Thana Anjana'], role: 'Placement Officer', bio: 'Ms. Thana Anjana is a proactive Placement Officer at IPCS Global. Holding a Master of Business Administration in HR and Finance, she specializes in Placement and Corporate Coordination. Thana consistently connects skilled candidates with the right job opportunities across technical domains like IT, Digital Marketing, Data Science, and AI. She is highly adept at identifying companies with active job openings, building comprehensive HR contact databases, and reaching out to organizations for placement tie-ups. Her strong networking and communication skills ensure a seamless hiring process, coordinating interviews and guiding candidates successfully through their hiring journeys.' },
+  { name: 'Mr. Visakh S', aliases: ['Visakh S'], role: 'Senior Corporate Relation Officer', bio: 'Mr. Visakh S is a highly skilled Senior Corporate Relation Officer at IPCS Global, dedicated to connecting the dots between talent, business, and success. Bringing valuable experience from his previous roles as a Talent Acquisition Specialist and a Documentation Specialist, he possesses deep expertise in global talent acquisition, technical recruiting, and people management. Visakh leverages his strong professional background to bridge the gap between skilled candidates and corporate hiring needs, facilitating successful placements and fostering long-term industry connections.' },
+  { name: 'Ms. Yashi Gupta', aliases: ['Yashi Gupta'], role: 'Placement Officer', bio: 'Ms. Yashi Gupta is a dedicated professional serving as a Placement Officer at IPCS Global. Based in Mumbai, Maharashtra, she operates within the organization’s placement division to connect job seekers with industry opportunities. Her role is essential in supporting the broader corporate relations team and contributing to the successful career development of candidates.' }
 ];
 
 const placementHighlights = [
@@ -98,6 +108,46 @@ function SectionHeading({ eyebrow, title, description, align = 'left' }) {
   );
 }
 
+function AnimatedMilestone({ value, suffix, label }) {
+  const node = useRef(null);
+  const [started, setStarted] = useState(false);
+  const [count, setCount] = useState(0);
+
+  useEffect(() => {
+    if (!node.current) return undefined;
+    if (!('IntersectionObserver' in window)) {
+      setStarted(true);
+      return undefined;
+    }
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) {
+        setStarted(true);
+        observer.disconnect();
+      }
+    }, { threshold: 0.35 });
+    observer.observe(node.current);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    if (!started) return undefined;
+    const startTime = performance.now();
+    const duration = 1500;
+    let frame;
+    const update = now => {
+      const progress = Math.min(1, (now - startTime) / duration);
+      const eased = 1 - Math.pow(1 - progress, 3);
+      setCount(value * eased);
+      if (progress < 1) frame = requestAnimationFrame(update);
+    };
+    frame = requestAnimationFrame(update);
+    return () => cancelAnimationFrame(frame);
+  }, [started, value]);
+
+  const displayValue = value < 10 ? count.toFixed(1).replace(/\.0$/, '') : Math.round(count).toLocaleString('en-US');
+  return <article className="public-milestone" ref={node}><strong>{displayValue}{suffix}</strong><span>{label}</span></article>;
+}
+
 export default function PublicSiteSections({ page = 'all' }) {
   const location = useLocation();
   const [partners, setPartners] = useState([]);
@@ -107,7 +157,6 @@ export default function PublicSiteSections({ page = 'all' }) {
   const [vacancies, setVacancies] = useState([]);
   const [vacanciesLoading, setVacanciesLoading] = useState(false);
   const [vacanciesError, setVacanciesError] = useState(false);
-  const [openVacancyId, setOpenVacancyId] = useState(null);
   const [partnersLoaded, setPartnersLoaded] = useState(false);
   const [partnersError, setPartnersError] = useState(false);
   const [partnerTotal, setPartnerTotal] = useState(0);
@@ -144,9 +193,10 @@ export default function PublicSiteSections({ page = 'all' }) {
   const mediaBasePath = partnerMediaPage ? '/partners/media' : '/placements/media';
   const partnersLoading = ['partners', 'partners-all', 'all'].includes(page) && !partnersLoaded;
   const postersLoading = ['placement', 'placement-gallery', 'all'].includes(page) && !postersLoaded;
-  const placementTeam = [placementTeamLead, ...placementOfficers.filter(member =>
-    normalizeTeamName(member.name) !== normalizeTeamName(placementTeamLead.name)
-  )];
+  const placementTeam = placementTeamProfiles.map(profile => {
+    const match = placementOfficers.find(member => profile.aliases.some(alias => normalizeTeamName(alias) === normalizeTeamName(member.name)));
+    return { ...profile, photo: profile.image ? '' : match?.photo || '', branches: match?.branches || '' };
+  });
 
   useEffect(() => {
     if (!['partners', 'partners-all', 'all'].includes(page)) return undefined;
@@ -321,15 +371,12 @@ export default function PublicSiteSections({ page = 'all' }) {
             <div><span className="public-value-icon"><Target size={17} weight="fill" /></span><span><b>Our Goal</b><small>Exceed customer expectations and deliver excellent automation solutions across sectors.</small></span></div>
             <div><span className="public-value-icon"><GlobeHemisphereWest size={17} weight="fill" /></span><span><b>Our reach</b><small>Learning and industry relationships across regions.</small></span></div>
           </div>
-        </div>
-      </section>
-
-      <section className="public-milestones-section" id="milestones" aria-label="IPCS Global milestones">
-        <div className="public-story-shell">
-          <div className="public-milestones-intro"><span>IPCS GLOBAL IN NUMBERS</span><h2>Progress built together.</h2></div>
-          <div className="public-milestone-grid">
-            {milestones.map(item => <article className="public-milestone" key={item.label}><strong>{item.value}</strong><span>{item.label}</span></article>)}
-          </div>
+          <section className="public-milestones-section" id="milestones" aria-label="IPCS Global milestones">
+            <div className="public-milestones-intro"><span>IPCS GLOBAL IN NUMBERS</span><h2>Progress built together.</h2></div>
+            <div className="public-milestone-grid">
+              {milestones.map(item => <AnimatedMilestone key={item.label} {...item} />)}
+            </div>
+          </section>
         </div>
       </section>
 
@@ -557,31 +604,26 @@ export default function PublicSiteSections({ page = 'all' }) {
 
       {page === 'vacancies' && <section className="public-vacancies-section" id="vacancies">
         <div className="public-story-shell">
-          <SectionHeading eyebrow="Career opportunities" title="Current Vacancies" description="Explore active openings shared with IPCS Global. Find the role, company, and location that match your next step." />
+          <SectionHeading eyebrow="Career opportunities" title="Current Vacancies" description="Browse open and expired opportunities shared with IPCS Global, with each role’s company and location in one place." />
           {vacanciesLoading ? <div className="public-vacancy-grid" aria-label="Loading vacancies">{[1, 2, 3, 4].map(item => <div className="public-vacancy-skeleton" key={item} />)}</div>
             : vacanciesError ? <div className="public-vacancy-empty" role="status">Current vacancies are temporarily unavailable. Please check back soon.</div>
               : vacancies.length === 0 ? <div className="public-vacancy-empty">There are no active openings at the moment. New opportunities will appear here as they are shared.</div>
                 : <div className="public-vacancy-grid">{vacancies.map((vacancy, index) => {
                   const logo = logoSource(vacancy.companyLogo);
                   const companyInitials = String(vacancy.company || 'IP').trim().split(/\s+/).slice(0, 2).map(word => word[0]?.toUpperCase()).join('');
-                  const vacancyKey = `${vacancy.id || vacancy.company}-${vacancy.position}-${vacancy.location}-${index}`;
-                  const isExpanded = openVacancyId === vacancyKey;
+                  const isExpired = String(vacancy.status || '').toLowerCase() === 'expired';
                   return <article className="public-vacancy-card" key={`${vacancy.id || 'opening'}-${index}`}>
                     <div className="public-vacancy-company">
                       <div className="public-vacancy-logo"><span>{companyInitials || 'IP'}</span>{logo && <img src={logo} alt={`${vacancy.company} logo`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}</div>
                       <div className="public-vacancy-company-copy"><span className="public-vacancy-label">Hiring Company</span><h3 title={vacancy.company}>{vacancy.company}</h3></div>
+                      <span className={`public-vacancy-status ${isExpired ? 'expired' : 'open'}`}>{isExpired ? 'Expired' : 'Open'}</span>
                     </div>
                     <h4>{vacancy.position}</h4>
                     <div className="public-vacancy-details">
                       {vacancy.location && <span><Buildings size={16} /><span>{vacancy.location}</span></span>}
                       {vacancy.mode && <span><Briefcase size={16} /><span>{vacancy.mode}</span></span>}
                     </div>
-                    {vacancy.lastDate && <div className="public-vacancy-deadline">Apply by <strong>{vacancy.lastDate}</strong></div>}
-                    <button className="public-vacancy-more" type="button" aria-expanded={isExpanded} onClick={() => setOpenVacancyId(isExpanded ? null : vacancyKey)}>{isExpanded ? 'Less details' : 'More details'} <ArrowRight size={15} /></button>
-                    {isExpanded && <div className="public-vacancy-expanded">
-                      {vacancy.description && <p>{vacancy.description}</p>}
-                      <dl>{vacancy.course && <div><dt>Course</dt><dd>{vacancy.course}</dd></div>}{vacancy.qualification && <div><dt>Qualification</dt><dd>{vacancy.qualification}</dd></div>}{vacancy.experience && <div><dt>Experience</dt><dd>{vacancy.experience}</dd></div>}{vacancy.salary && <div><dt>Compensation</dt><dd>{vacancy.salary}</dd></div>}</dl>
-                    </div>}
+                    {vacancy.lastDate && <div className="public-vacancy-deadline">{isExpired ? 'Closed on' : 'Apply by'} <strong>{vacancy.lastDate}</strong></div>}
                   </article>;
                 })}</div>}
         </div>

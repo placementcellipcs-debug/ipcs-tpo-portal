@@ -54,20 +54,8 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
   -webkit-backdrop-filter: blur(28px) saturate(155%);
 }
 .modal-backdrop { background: rgba(3, 8, 18, .58) !important; backdrop-filter: blur(18px) saturate(135%); -webkit-backdrop-filter: blur(18px) saturate(135%); }
-div[style*="z-index: 99999"] { background-color: rgba(3, 8, 18, .62) !important; backdrop-filter: blur(18px) saturate(135%); -webkit-backdrop-filter: blur(18px) saturate(135%); overflow-y: auto; }
-div[style*="z-index: 99999"] > div, div[style*="z-index: 9999"] > div, div[style*="z-index: 1000"] > div {
-  max-height: min(90dvh, 900px);
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border: 1px solid rgba(196, 218, 255, .2) !important;
-  border-radius: 20px !important;
-  background: linear-gradient(145deg, rgba(26, 39, 63, .88), rgba(13, 21, 38, .92)) !important;
-  box-shadow: 0 30px 90px rgba(0, 0, 0, .48), inset 0 1px 0 rgba(255, 255, 255, .08) !important;
-  backdrop-filter: blur(28px) saturate(155%);
-  -webkit-backdrop-filter: blur(28px) saturate(155%);
-}
+div[style*="z-index: 99999"]:has(> .modal-card) { background-color: rgba(3, 8, 18, .62) !important; backdrop-filter: blur(18px) saturate(135%); -webkit-backdrop-filter: blur(18px) saturate(135%); overflow-y: auto; }
 body[data-theme="light"] .modal-card { background: linear-gradient(145deg, rgba(255,255,255,.94), rgba(235,242,251,.94)) !important; border-color: rgba(75, 103, 143, .24) !important; }
-body[data-theme="light"] div[style*="z-index: 99999"] > div, body[data-theme="light"] div[style*="z-index: 9999"] > div, body[data-theme="light"] div[style*="z-index: 1000"] > div { background: linear-gradient(145deg, rgba(255,255,255,.94), rgba(235,242,251,.94)) !important; border-color: rgba(75, 103, 143, .24) !important; }
 .placed-overview { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; margin: 0 0 18px; }
 .placed-overview > div { min-width: 0; display: grid; gap: 5px; padding: 17px 19px; border: 1px solid var(--card-border); border-radius: 15px; background: linear-gradient(145deg, color-mix(in srgb, var(--accent-primary) 9%, var(--card-bg)), var(--card-bg)); box-shadow: 0 12px 30px rgba(0,0,0,.12); }
 .placed-overview span { color: var(--text-muted); font-size: .72rem; font-weight: 800; text-transform: uppercase; letter-spacing: .045em; }

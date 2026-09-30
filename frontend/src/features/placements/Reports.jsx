@@ -39,7 +39,7 @@ export default function Reports() {
           axios.post(`${API_BASE}/api/tpo/reports`, { assignedBranchesArray: ['all'] }),
           axios.get(`${API_BASE}/api/admin/users`),
           axios.get(`${API_BASE}/api/admin/branches`),
-          axios.get(`${API_BASE}/api/admin/courses`).catch(() => ({ data: { success: false } })) // Graceful fail if endpoint missing
+          axios.get(`${API_BASE}/api/courses`).catch(() => ({ data: { success: false } })) // Graceful fail if endpoint missing
         ]);
         
         if (res.data.success) {

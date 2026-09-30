@@ -28,17 +28,17 @@
 .public-values-row b { margin-bottom: 3px; color: #193451; font-size: .79rem; }
 .public-values-row small { color: #74849a; font-size: .68rem; line-height: 1.45; }
 
-.public-milestones-section { position: relative; overflow: hidden; padding: 48px 0 53px; color: #fff; background: #102b54; }
+.public-milestones-section { position: relative; overflow: hidden; margin-top: 38px; padding: 42px clamp(18px, 3vw, 34px) 36px; border-radius: 26px; color: #fff; background: radial-gradient(circle at 18% 20%, rgba(15, 154, 177, .45), transparent 40%), linear-gradient(125deg, #102b54, #0a2942 55%, #102b54); box-shadow: 0 22px 54px rgba(15, 43, 73, .18); isolation: isolate; }
 .public-milestones-section::before, .public-milestones-section::after { content: ''; position: absolute; width: 460px; height: 460px; border: 1px solid rgba(255,255,255,.075); border-radius: 50%; pointer-events: none; }
-.public-milestones-section::before { top: -330px; right: -130px; box-shadow: 0 0 0 38px rgba(255,255,255,.025), 0 0 0 80px rgba(255,255,255,.018); }
-.public-milestones-section::after { bottom: -410px; left: -170px; }
+.public-milestones-section::before { top: -330px; right: -130px; box-shadow: 0 0 0 38px rgba(255,255,255,.025), 0 0 0 80px rgba(255,255,255,.018); animation: milestone-orbit 22s linear infinite; }
+.public-milestones-section::after { bottom: -410px; left: -170px; animation: milestone-orbit 28s linear infinite reverse; }
 .public-milestones-intro { position: relative; z-index: 1; margin-bottom: 25px; }
 .public-milestones-intro > span { color: #92c6f3; font-size: .66rem; font-weight: 900; letter-spacing: .18em; }
 .public-milestones-intro h2 { margin: 8px 0 0; font-size: 1.45rem; letter-spacing: -.04em; }
 .public-milestone-grid { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(5, 1fr); }
 .public-milestone { min-height: 95px; padding: 5px 20px; display: flex; flex-direction: column; justify-content: center; border-left: 1px solid rgba(255,255,255,.15); }
 .public-milestone:first-child { padding-left: 0; border-left: 0; }
-.public-milestone strong { color: #fff; font-size: clamp(1.8rem, 3.3vw, 2.55rem); font-weight: 900; letter-spacing: -.07em; }
+.public-milestone strong { color: #fff; font-size: clamp(1.8rem, 3.3vw, 2.55rem); font-weight: 900; letter-spacing: -.07em; font-variant-numeric: tabular-nums; }
 .public-milestone span { margin-top: 6px; color: #bdd1e8; font-size: .72rem; font-weight: 700; }
 
 .public-team-section { background: #edf2f7; }
@@ -49,6 +49,7 @@
 .public-poster-marquee-card { width: 218px; flex: 0 0 218px; }
 .public-poster-marquee-card .public-poster-image { height: 274px; }
 @keyframes poster-marquee-drift { to { transform: translateX(-50%); } }
+@keyframes milestone-orbit { to { transform: rotate(360deg); } }
 .public-poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(205px, 1fr)); gap: 16px; }
 .public-poster-card { min-width: 0; overflow: hidden; border: 1px solid #e3eaf2; border-radius: 18px; color: inherit; background: #fff; box-shadow: 0 14px 35px rgba(26, 63, 103, .065); text-decoration: none; transition: transform .2s ease, box-shadow .2s ease; }
 .public-poster-card:hover { transform: translateY(-4px); box-shadow: 0 20px 44px rgba(26, 63, 103, .13); }
@@ -68,8 +69,8 @@
 .public-team-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 17px; }
 .public-team-card { min-height: 310px; padding: 25px; transition: transform .2s ease, box-shadow .2s ease; }
 .public-team-card:hover { transform: translateY(-4px); box-shadow: 0 22px 52px rgba(26, 63, 103, .11); }
-.public-team-photo-wrap { position: relative; width: min(100%, 190px); aspect-ratio: 1; height: auto; margin: 0 auto 18px; overflow: hidden; border: 1px solid #e2ebf4; border-radius: 15px; background: #087f8a; box-shadow: 0 7px 18px rgba(29, 93, 150, .08); }
-.public-team-photo-wrap img { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+.public-team-photo-wrap { position: relative; width: min(100%, 190px); aspect-ratio: 4 / 5; height: auto; margin: 0 auto 18px; overflow: hidden; border: 1px solid #e2ebf4; border-radius: 15px; background: linear-gradient(145deg, #e9f5f5, #dceaf2); box-shadow: 0 7px 18px rgba(29, 93, 150, .08); }
+.public-team-photo-wrap img { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center bottom; }
 .public-team-photo-fallback { position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 1.4rem; font-weight: 900; }
 .avatar-2, .avatar-5 { color: #26685b; }
 .avatar-3, .avatar-6 { color: #7c4b3c; }
@@ -80,22 +81,26 @@
 .public-team-branches { display: block; margin: -3px 0 9px; color: #71849a; font-size: .66rem; font-weight: 750; line-height: 1.5; }
 .public-team-status { margin: 0 0 16px; padding: 14px 16px; border: 1px solid #dce8f1; border-radius: 12px; color: #65798d; background: rgba(255,255,255,.75); font-size: .78rem; }
 .public-team-skeleton, .public-vacancy-skeleton { min-height: 310px; border: 1px solid #e6edf5; border-radius: 21px; background: linear-gradient(100deg, #f0f4f8 25%, #fafbfd 40%, #f0f4f8 60%); background-size: 220% 100%; animation: poster-shimmer 1.3s ease-in-out infinite; }
-.public-vacancy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(255px, 1fr)); gap: 16px; }
-.public-vacancy-card { min-width: 0; padding: 22px; border: 1px solid #e1eaf2; border-radius: 18px; background: rgba(255,255,255,.94); box-shadow: 0 14px 35px rgba(26,63,103,.06); transition: transform .2s ease, box-shadow .2s ease; }
+.public-vacancy-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); gap: 16px; align-items: stretch; }
+.public-vacancy-card { min-width: 0; min-height: 244px; display: flex; flex-direction: column; padding: 20px; border: 1px solid #e1eaf2; border-radius: 18px; background: rgba(255,255,255,.94); box-shadow: 0 14px 35px rgba(26,63,103,.06); transition: transform .2s ease, box-shadow .2s ease; }
 .public-vacancy-card:hover { transform: translateY(-4px); box-shadow: 0 20px 44px rgba(26,63,103,.12); }
 .public-vacancy-company { display: flex; align-items: center; gap: 12px; margin-bottom: 19px; min-width: 0; }
 .public-vacancy-company-copy { min-width: 0; flex: 1; }
+.public-vacancy-status { flex: 0 0 auto; padding: 5px 8px; border-radius: 999px; font-size: .58rem; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; }
+.public-vacancy-status.open { color: #087b52; background: #e6f7ef; }
+.public-vacancy-status.expired { color: #8b4351; background: #f9e9ed; }
 .public-vacancy-logo { position: relative; width: 54px; height: 54px; flex: 0 0 54px; display: grid; place-items: center; overflow: hidden; border: 1px solid #e3ebf3; border-radius: 14px; color: #176d8a; background: #eff8fb; font-size: .9rem; font-weight: 900; }
 .public-vacancy-logo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #fff; }
 .public-vacancy-label { display: block; margin-bottom: 4px; color: #8291a3; font-size: .59rem; font-weight: 900; letter-spacing: .12em; text-transform: uppercase; }
 .public-vacancy-company h3 { overflow: hidden; margin: 0; color: #193451; font-size: .9rem; line-height: 1.4; text-overflow: ellipsis; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.public-vacancy-card > h4 { margin: 0 0 16px; color: #132b48; font-size: 1.04rem; line-height: 1.4; overflow-wrap: anywhere; }
+.public-vacancy-card > h4 { min-height: 2.8em; margin: 0 0 16px; color: #132b48; font-size: 1.04rem; line-height: 1.4; overflow-wrap: anywhere; }
 .public-vacancy-details { display: grid; gap: 8px; color: #6b7d91; font-size: .72rem; }
 .public-vacancy-details > span { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
 .public-vacancy-details > span > span { min-width: 0; overflow-wrap: anywhere; }
 .public-vacancy-details svg { flex: 0 0 auto; color: #1686a3; }
 .public-vacancy-deadline { margin-top: 18px; padding-top: 12px; border-top: 1px solid #edf1f5; color: #718198; font-size: .68rem; }
 .public-vacancy-deadline strong { color: #254766; }
+.public-vacancy-deadline { margin-top: auto; }
 .public-vacancy-more { display: inline-flex; align-items: center; gap: 7px; margin-top: 14px; padding: 7px 0; border: 0; color: #087b9d; background: transparent; font-size: .76rem; font-weight: 800; cursor: pointer; }
 .public-vacancy-more svg { transition: transform .18s ease; }
 .public-vacancy-more[aria-expanded="true"] svg { transform: rotate(90deg); }

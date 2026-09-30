@@ -68,14 +68,22 @@ app.use('/api', (req, res, next) => {
 const getRole = user => String(user?.role || '').toUpperCase();
 const hasRoleToken = (role, token) => new RegExp(`(^|[^A-Z0-9])${token}([^A-Z0-9]|$)`).test(role);
 const isPortalAdmin = user => user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(getRole(user));
+const isBranchManager = role => role === 'BM' || role.includes('BRANCH MANAGER');
+const isTechnicalScoped = user => {
+  const role = getRole(user);
+  const technicalRole = hasRoleToken(role, 'RTH') || role.includes('REGIONAL TECHNICAL HEAD') || hasRoleToken(role, 'TTH') || role.includes('TERRITORY TECHNICAL HEAD') || /TECH(?:NICAL)?\s+LEAD/.test(role) || hasRoleToken(role, 'TL');
+  const academicTrainer = role.includes('TRAINER') && (!String(user?.department || '').trim() || String(user.department).trim().toUpperCase() === 'ACADEMIC');
+  return technicalRole || academicTrainer;
+};
 const requireSession = (policy = 'portal') => (req, res, next) => {
   const user = controllers.getSessionUser(req.get('x-ipcs-email'), req.get('x-ipcs-session-token'));
   if (!user) return res.status(401).json({ success: false, message: 'Sign in again to continue.' });
   const role = getRole(user);
   const isAdmin = isPortalAdmin(user);
   const hasAssetAccess = role.includes('ASSET') || String(user.accessType || '').toLowerCase().includes('asset');
+  const isTl = /TECH(?:NICAL)?\s+LEAD/.test(role) || hasRoleToken(role, 'TL');
 
-  if (policy === 'assets' && !isAdmin && !role.includes('MANAGER') && !hasAssetAccess) {
+  if (policy === 'assets' && !isAdmin && !isBranchManager(role) && !hasAssetAccess) {
     return res.status(403).json({ success: false, message: 'Asset Management is not available for this role.' });
   }
   if (policy === 'asset-admin' && !isAdmin && !hasAssetAccess) {
@@ -93,14 +101,29 @@ const requireSession = (policy = 'portal') => (req, res, next) => {
   if (policy === 'academic') {
     return res.status(404).json({ success: false, message: 'Training & Academics is temporarily unavailable.' });
   }
-  if (policy === 'clients' && (hasRoleToken(role, 'RTH') || role.includes('REGIONAL TECHNICAL HEAD') || role.includes('TECHNICAL LEAD') || role.includes('TRAINER') || hasRoleToken(role, 'TTH'))) {
+  if (policy === 'clients' && (hasRoleToken(role, 'RTH') || role.includes('REGIONAL TECHNICAL HEAD') || /TECH(?:NICAL)?\s+LEAD/.test(role) || hasRoleToken(role, 'TL') || role.includes('TRAINER') || hasRoleToken(role, 'TTH'))) {
     return res.status(403).json({ success: false, message: 'Clients & Partners is not available for this role.' });
+  }
+  if (policy === 'learning' && !isAdmin && !isTechnicalScoped(user)) {
+    return res.status(403).json({ success: false, message: 'Study materials are not available for this role.' });
+  }
+  if (policy === 'learning-write' && !isAdmin) {
+    return res.status(403).json({ success: false, message: 'Administrator access is required to manage study materials.' });
+  }
+  if (policy === 'exam-manager' && !isAdmin && !(hasRoleToken(role, 'RTH') || role.includes('REGIONAL TECHNICAL HEAD'))) {
+    return res.status(403).json({ success: false, message: 'Regional Technical Head or administrator access is required to manage technical questions.' });
+  }
+  if (policy === 'exams' && !isAdmin && isTl && !(req.method === 'GET' && req.path === '/results' && req.baseUrl === '/api/exams')) {
+    return res.status(403).json({ success: false, message: 'Technical Leads can view technical exam results only.' });
+  }
+  if (policy === 'exams' && !isAdmin && !isTechnicalScoped(user) && !role.includes('TPO') && !role.includes('PLACEMENT OFFICER')) {
+    return res.status(403).json({ success: false, message: 'Exam access is not available for this role.' });
   }
   req.portalUser = user;
   if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
     req.body = { ...req.body, userName: user.name, userEmail: user.email, currentUserEmail: user.email };
-    if (req.baseUrl === '/api/tpo/students' || req.baseUrl === '/api/tpo/dashboard-stats') {
-      req.body = { ...req.body, assignedBranchesArray: user.assignedBranchesArray, role: user.role, assignedCourse: user.assignedCourse };
+    if (req.baseUrl.startsWith('/api/tpo/')) {
+      req.body = { ...req.body, assignedBranchesArray: user.assignedBranchesArray, role: user.role, assignedCourse: user.assignedCourse, department: user.department };
     }
     if (req.baseUrl === '/api/tpo/clients') {
       const canSeeAll = isAdmin || role.includes('MANAGER') || role === 'BM' || role.includes('BRANCH MANAGER');
@@ -129,13 +152,20 @@ app.use('/api', (req, res, next) => {
 });
 
 app.get('/api/career-hub', requireSession('portal'), careerHubControllers.getCareerFeed);
+app.get('/api/courses', requireSession('portal'), controllers.getCourses);
 app.use('/api/v1/assets', requireSession('assets'));
 app.use('/api/design', requireSession('design'));
 app.use('/api/academic', requireSession('academic'));
 app.use('/api/tpo/students', requireSession('portal'));
 app.use('/api/tpo/dashboard-stats', requireSession('portal'));
+app.use('/api/tpo/applications', requireSession('portal'));
+app.use('/api/tpo/reports', requireSession('portal'));
+app.use('/api/tpo/talentino', requireSession('portal'));
+app.use('/api/tpo/issues', requireSession('portal'));
+app.use('/api/tpo/vacancies', requireSession('portal'));
 app.use('/api/tpo/clients', (req, res, next) => {
-  if ((req.method === 'GET' && /^\/\d+$/.test(req.path)) || (req.method === 'POST' && req.path === '/submit-mou')) return next();
+  if (req.method === 'GET' && /^\/\d+$/.test(req.path)) return requireSession('clients')(req, res, next);
+  if (req.method === 'POST' && req.path === '/submit-mou') return next();
   return requireSession('clients')(req, res, next);
 });
 
@@ -188,6 +218,7 @@ app.get('/api/tpo/test-daily-mail', async (req, res) => {
 // ---------------------------------------------------------
 // ADMIN ROUTES
 // ---------------------------------------------------------
+app.use('/api/admin', requireSession('portal-admin'));
 app.get('/api/admin/users', controllers.getAdminUsers);
 app.post('/api/admin/users/add', controllers.addAdminUser);
 app.post('/api/admin/users/update', controllers.updateAdminUser);
@@ -207,25 +238,35 @@ app.post('/api/admin/trainer-logs/update', controllers.updateTrainerLog);
 // ---------------------------------------------------------
 // STUDY MATERIAL & EXAMS ROUTES
 // ---------------------------------------------------------
+app.use('/api/lms/materials', requireSession('learning'));
 app.get('/api/lms/materials', controllers.getMaterials);
-app.post('/api/lms/materials/add', controllers.addMaterial);
-app.post('/api/lms/materials/update', controllers.updateMaterial);
-app.post('/api/lms/materials/delete', controllers.deleteMaterial);
+app.get('/api/lms/materials/:materialId/view', controllers.getMaterialViewLink);
+app.post('/api/lms/materials/add', requireSession('learning-write'), controllers.addMaterial);
+app.post('/api/lms/materials/update', requireSession('learning-write'), controllers.updateMaterial);
+app.post('/api/lms/materials/delete', requireSession('learning-write'), controllers.deleteMaterial);
+app.use('/api/exams', requireSession('exams'));
+app.use('/api/aptitude', requireSession('exams'));
 app.get('/api/exams/questions', controllers.getQuestions);
-app.post('/api/exams/questions/add', controllers.addQuestion);
-app.post('/api/exams/questions/update', controllers.updateQuestion);
-app.post('/api/exams/questions/delete', controllers.deleteQuestion); 
+app.post('/api/exams/questions/add', requireSession('exam-manager'), controllers.addQuestion);
+app.post('/api/exams/questions/update', requireSession('exam-manager'), controllers.updateQuestion);
+app.post('/api/exams/questions/delete', requireSession('exam-manager'), controllers.deleteQuestion);
 app.get('/api/exams/results', controllers.getResults);
 app.get('/api/aptitude/questions', controllers.getAptQuestions);
 app.get('/api/aptitude/results', controllers.getAptResults);
-app.post('/api/aptitude/questions/add', controllers.addAptQuestion); 
-app.post('/api/aptitude/questions/update', controllers.updateAptQuestion);
-app.post('/api/aptitude/questions/delete', controllers.deleteAptQuestion); 
+app.post('/api/aptitude/questions/add', requireSession('portal-admin'), controllers.addAptQuestion);
+app.post('/api/aptitude/questions/update', requireSession('portal-admin'), controllers.updateAptQuestion);
+app.post('/api/aptitude/questions/delete', requireSession('portal-admin'), controllers.deleteAptQuestion);
+app.use('/api/talentino-exams', (req, res, next) => requireSession('exams')(req, res, () => {
+  if (hasRoleToken(getRole(req.portalUser), 'RTH') || getRole(req.portalUser).includes('REGIONAL TECHNICAL HEAD')) {
+    return res.status(403).json({ success: false, message: 'Talentino assessments are not available in the Regional Technical Head Exams Hub.' });
+  }
+  next();
+}));
 app.get('/api/talentino-exams/questions', controllers.getTalExamQuestions);
 app.get('/api/talentino-exams/results', controllers.getTalExamResults);
-app.post('/api/talentino-exams/questions/add', controllers.addTalExamQuestion); 
-app.post('/api/talentino-exams/questions/update', controllers.updateTalExamQuestion);
-app.post('/api/talentino-exams/questions/delete', controllers.deleteTalExamQuestion); 
+app.post('/api/talentino-exams/questions/add', requireSession('portal-admin'), controllers.addTalExamQuestion);
+app.post('/api/talentino-exams/questions/update', requireSession('portal-admin'), controllers.updateTalExamQuestion);
+app.post('/api/talentino-exams/questions/delete', requireSession('portal-admin'), controllers.deleteTalExamQuestion);
 app.post('/api/tpo/activity', controllers.updateTpoActivity);
 
 // ---------------------------------------------------------

@@ -463,6 +463,7 @@ exports.login = async (req, res) => {
     let role = 'TPO'; 
     let course = 'All'; 
     let userName = '';
+    let department = '';
 
     for (let row of cache.contacts) {
       const sheetMail = getValByHeader(row, ['mailid', 'email']).toLowerCase();
@@ -473,6 +474,8 @@ exports.login = async (req, res) => {
           email: getValByHeader(row, ['mailid', 'email']) || cleanInput,
           sittingbranch: getValByHeader(row, ['sittingbranch']),
           assignedbranches: getValByHeader(row, ['assignedbranches']),
+          assignedcourses: getValByHeader(row, ['assignedcourses', 'assignedcourse', 'course']),
+          department: getValByHeader(row, ['department']),
           access: getValByHeader(row, ['access', 'accesstype']),
           profilephoto: getValByHeader(row, ['profilephoto', 'profilephotourl', 'photo']),
           contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno']),
@@ -480,7 +483,8 @@ exports.login = async (req, res) => {
           target: getValByHeader(row, ['target', 'targetofthemonth'])
         };
         role = 'TPO';
-        course = 'All Courses';
+        course = foundUser.assignedcourses || 'All Courses';
+        department = foundUser.department;
         userName = getValByHeader(row, ['tponame', 'name']) || 'TPO User';
         break;
       }
@@ -498,6 +502,8 @@ exports.login = async (req, res) => {
             email: getValByHeader(row, ['mailid', 'email']) || cleanInput,
             sittingbranch: getValByHeader(row, ['sittingbranch']),
             assignedbranches: getValByHeader(row, ['assignedbranches']),
+          assignedcourses: getValByHeader(row, ['assignedcourses', 'assignedcourse', 'course']),
+          department: getValByHeader(row, ['department']),
             access: getValByHeader(row, ['access', 'accesstype']),
             profilephoto: getValByHeader(row, ['profilephoto', 'profilephotourl', 'photo']),
             contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno']),
@@ -505,7 +511,8 @@ exports.login = async (req, res) => {
             target: getValByHeader(row, ['target', 'targetofthemonth'])
           };
           role = getValByHeader(row, ['role']) || 'RTH';
-          course = getValByHeader(row, ['course', 'assignedcourses']) || 'All';
+          course = foundUser.assignedcourses || 'All';
+          department = foundUser.department;
           userName = getValByHeader(row, ['username', 'name']) || 'User';
           break;
         }
@@ -516,8 +523,9 @@ exports.login = async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid Login ID or Password." });
     }
 
-    const assignedRaw = foundUser['assignedbranches'] || foundUser['sittingbranch'] || '';
-    let assignedArray = assignedRaw.replace(/[0-9.]/g, '').split(/[\n,]/).map(b => b.trim().toLowerCase()).filter(b => b !== '');
+    const parseAssignments = value => String(value || '').split(/[\n,;]+/).map(item => item.trim().replace(/^\d+\.\s*/, '').toLowerCase()).filter(item => item && !/^(?:[-–—]|n\/a|none)$/i.test(item));
+    let assignedArray = parseAssignments(foundUser.assignedbranches);
+    if (!assignedArray.length) assignedArray = parseAssignments(foundUser.sittingbranch);
     const upperRole = role.toUpperCase();
     let accessType = 'edit';
     const sheetAccess = (foundUser['access'] || '').toString().toUpperCase();
@@ -530,8 +538,7 @@ exports.login = async (req, res) => {
       accessType = 'edit';
     }
 
-    const isRth = upperRole.includes('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD';
-    if (accessType === 'superadmin' || (assignedArray.length === 0 && !isRth)) {
+    if (accessType === 'superadmin') {
       assignedArray = ['all'];
     }
 
@@ -546,6 +553,7 @@ exports.login = async (req, res) => {
       photo: foundUser['profilephoto'] || '',
       phone: foundUser['contactnumber'] || 'Not Provided',
       role,
+      department,
       assignedCourse: course,
       accessType,
       empId: foundUser.empId || '',
@@ -589,12 +597,8 @@ exports.login = async (req, res) => {
 };
 
 exports.getDashboardStats = async (req, res) => {
-  const { assignedBranchesArray, role, assignedCourse } = req.body;
-  
-  // 🚨 DASHBOARD VIEW RULE: If not a TPO, view ALL data globally.
-  const isTpo = (role || '').toUpperCase() === 'TPO' || (role || '').toUpperCase() === 'PLACEMENT OFFICER';
-  const bypassFilter = !isTpo;
-  const checkAccess = (rBranch, rCourse) => bypassFilter || hasAccess(rBranch, rCourse, role, assignedBranchesArray, assignedCourse);
+  const { assignedBranchesArray, role, assignedCourse, department } = req.body;
+  const checkAccess = (rBranch, rCourse) => hasAccess(rBranch, rCourse, role, assignedBranchesArray, assignedCourse, department);
 
   const cache = getCache();
   let studentCount = 0, pendingApps = 0, placedCount = 0, activeVacs = 0;
@@ -648,12 +652,14 @@ exports.getDashboardStats = async (req, res) => {
       if (parsedDate && parsedDate < todayStart) isExpired = true;
     }
 
-    if ((status.includes('open') || status.includes('yes')) && !isExpired) {
+    if ((status.includes('open') || status.includes('yes')) && !isExpired && checkAccess('All', getValByHeader(row, ['course', 'program']))) {
       activeVacs++;
     }
   });
 
-  let eventsList = cache.events.slice(-8).map(row => ({ title: getValByHeader(row, ['title']) || 'Event', date: getValByHeader(row, ['date']) || '', time: getValByHeader(row, ['time']) || '', type: getValByHeader(row, ['type', 'event']) || 'Placement Drive', location: getValByHeader(row, ['location', 'eventhappeningin']) || '' }));
+  let eventsList = cache.events.filter(row => checkAccess(getValByHeader(row, ['branch', 'sittingbranch']), getValByHeader(row, ['course', 'assignedcourse'])))
+    .slice(-8)
+    .map(row => ({ title: getValByHeader(row, ['title']) || 'Event', date: getValByHeader(row, ['date']) || '', time: getValByHeader(row, ['time']) || '', type: getValByHeader(row, ['type', 'event']) || 'Placement Drive', location: getValByHeader(row, ['location', 'eventhappeningin']) || '' }));
   
   res.json({ 
     success: true, 
@@ -677,7 +683,7 @@ exports.getStudents = (req, res) => {
     const branch = getValByHeader(row, ['branch']) || 'Unknown';
     const course = getValByHeader(row, ['course']) || 'Unknown';
 
-    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse)) {
+    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse, req.portalUser?.department)) {
       stats.total++;
       
       const pStatus = (getValByHeader(row, ['placementstat', 'placementstatus']) || 'Pending').toString().trim();
@@ -722,7 +728,11 @@ exports.updateStudent = async (req, res) => {
   const role = String(user?.role || '').toUpperCase();
   const isAdmin = user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
   const isPlacementEditor = isAdmin || role === 'TPO' || role.includes('PLACEMENT OFFICER');
-  const isAcademicEditor = isAdmin || ['RTH', 'REGIONAL TECHNICAL HEAD', 'TRAINER', 'TECHNICAL LEAD', 'TTH'].some(part => role.includes(part));
+  const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(role) || /(^|[^A-Z0-9])TL([^A-Z0-9]|$)/.test(role);
+  const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(role) || role === 'REGIONAL TECHNICAL HEAD';
+  const isTth = /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(role) || role === 'TERRITORY TECHNICAL HEAD';
+  const isTrainer = role.includes('TRAINER') && (!String(user?.department || '').trim() || String(user.department).toUpperCase() === 'ACADEMIC');
+  const isAcademicEditor = isAdmin || isRth || isTth || isTrainer || isTechnicalLead;
   if (!Number.isInteger(rowIndex) || rowIndex < 2) return res.status(400).json({ success: false, message: 'A valid student record is required.' });
   if (!isPlacementEditor && !isAcademicEditor) return res.status(403).json({ success: false, message: 'Your role cannot update this student record.' });
   if (studyAccess !== undefined && !['yes', 'no'].includes(String(studyAccess).toLowerCase())) return res.status(400).json({ success: false, message: 'Study access must be Yes or No.' });
@@ -734,7 +744,7 @@ exports.updateStudent = async (req, res) => {
     if (rows.length > 0) {
       const studentBranch = getValByHeader(rows[0], ['branch']) || '';
       const studentCourse = getValByHeader(rows[0], ['course']) || '';
-      if (!hasAccess(studentBranch, studentCourse, user.role, user.assignedBranchesArray, user.assignedCourse)) {
+      if (!hasAccess(studentBranch, studentCourse, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) {
         return res.status(403).json({ success: false, message: 'This student is outside your branch or course assignment.' });
       }
       const headers = stuSheet.headerValues.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
@@ -815,9 +825,8 @@ exports.updateStudent = async (req, res) => {
 };
 
 exports.getApplications = (req, res) => {
-  const { assignedBranchesArray, role, assignedCourse, tpoName } = req.body;
+  const { assignedBranchesArray, role, assignedCourse, department } = req.body;
   let appsList = []; 
-  const cleanTpoName = (tpoName || '').toString().toLowerCase().trim();
   const cache = getCache();
   
   const sourceData = cache.applications || [];
@@ -825,11 +834,7 @@ exports.getApplications = (req, res) => {
   sourceData.forEach((row) => {
     const branch = getValByHeader(row, ['branch']) || 'Unknown';
     const course = getValByHeader(row, ['course']) || 'Unknown';
-    const officerName = (getValByHeader(row, ['placementofficer']) || '').toLowerCase().trim();
-
-    const tpoMatch = (!role || role === 'TPO') && (cleanTpoName !== '' && officerName === cleanTpoName);
-
-    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse) || tpoMatch) {
+    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse, department)) {
       const roll = getValByHeader(row, ['roll']) || ''; 
       const jobId = getValByHeader(row, ['jobid']) || '';
       let phone = getValByHeader(row, ['contact', 'phone']) || '';
@@ -877,8 +882,6 @@ exports.updateApplication = async (req, res) => {
   let offerLetterLink = req.body.offerLetter || fullApp.offerLetter || '';
 
   try {
-    if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
-    
     const appSheet = doc.sheetsByTitle["Opening_Applied"];
     if (!appSheet || isNaN(rowNumber)) return res.status(400).json({ success: false, message: "Invalid payload or sheet missing." });
 
@@ -887,6 +890,15 @@ exports.updateApplication = async (req, res) => {
     if (!rows || rows.length === 0) {
       return res.status(404).json({ success: false, message: "Application record not found in Google Sheets." });
     }
+
+    const user = req.portalUser;
+    const sourceRow = rows[0];
+    const sourceBranch = getValByHeader(sourceRow, ['branch']);
+    const sourceCourse = getValByHeader(sourceRow, ['course']);
+    if (!hasAccess(sourceBranch, sourceCourse, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department)) {
+      return res.status(403).json({ success: false, message: 'This application is outside your branch or course assignment.' });
+    }
+    if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
     
     const headers = appSheet.headerValues;
     const getSafeH = (searchStrs) => {
@@ -906,18 +918,20 @@ exports.updateApplication = async (req, res) => {
     const oldStatusH = getSafeH(['status']);
     const oldStatus = oldStatusH && rows[0]._rawData[headers.indexOf(oldStatusH)] ? rows[0]._rawData[headers.indexOf(oldStatusH)].toString().toLowerCase() : '';
 
-    const sName = fullApp.name || '';
-    const sContact = fullApp.phone || '';
-    const sMail = fullApp.email || '';
-    const sRoll = fullApp.roll || '';
-    const sCourse = fullApp.course || '';
-    const sBranch = fullApp.branch || '';
-    const sQual = fullApp.qual || '';
-    const sResume = fullApp.resume || '';
-    const sJobId = fullApp.jobId || '';
-    const sCompany = fullApp.company || '';
-    const sPosition = fullApp.position || '';
-    const sTpo = fullApp.tpoName || '';
+    // Treat the selected sheet row as the source of placement identity; the
+    // browser's fullApp payload is only presentation data and is not trusted.
+    const sName = getValByHeader(sourceRow, ['name', 'studentname']) || fullApp.name || '';
+    const sContact = getValByHeader(sourceRow, ['contact', 'phone']) || fullApp.phone || '';
+    const sMail = getValByHeader(sourceRow, ['mailid', 'email']) || fullApp.email || '';
+    const sRoll = getValByHeader(sourceRow, ['rollnumber', 'rollno']) || fullApp.roll || '';
+    const sCourse = sourceCourse || fullApp.course || '';
+    const sBranch = sourceBranch || fullApp.branch || '';
+    const sQual = getValByHeader(sourceRow, ['qualification', 'qual']) || fullApp.qual || '';
+    const sResume = getValByHeader(sourceRow, ['resume', 'cv']) || fullApp.resume || '';
+    const sJobId = getValByHeader(sourceRow, ['jobid']) || fullApp.jobId || '';
+    const sCompany = getValByHeader(sourceRow, ['companyname', 'company']) || fullApp.company || '';
+    const sPosition = getValByHeader(sourceRow, ['position', 'role']) || fullApp.position || '';
+    const sTpo = getValByHeader(sourceRow, ['placementofficer', 'tponame']) || user?.name || '';
 
     const updateObj = {};
     if (oldStatusH) updateObj[oldStatusH] = status;
@@ -997,7 +1011,7 @@ exports.updateApplication = async (req, res) => {
     }
 
     // 🚨 DESIGN PORTAL AUTO-TRIGGER: Sends the student to Media Team if Placed/Joined
-    await autoCreateDesignTask({ ...fullApp, status: status });
+    await autoCreateDesignTask({ ...fullApp, name: sName, roll: sRoll, email: sMail, course: sCourse, branch: sBranch, company: sCompany, position: sPosition, status });
 
     refreshCache(); 
     res.json({ success: true, message: "Updated!" });
@@ -1017,7 +1031,11 @@ exports.addApplication = async (req, res) => {
     appData = req.body.appData;
   }
   
-  const tpoName = req.body.tpoName || req.portalUser?.name || '';
+  const user = req.portalUser;
+  const tpoName = user?.name || '';
+  if (!hasAccess(appData.branch, appData.course, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department)) {
+    return res.status(403).json({ success: false, message: 'This student is outside your branch or course assignment.' });
+  }
   try {
     let offerLetterLink = '';
     if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
@@ -1114,6 +1132,10 @@ exports.getVacancies = (req, res) => {
         tpoName: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || 'Unknown',
         datePosted: getValByHeader(row, ['timestamp', 'date', 'posteddate']) || ''
       };
+    }).filter(vacancy => {
+      const user = req.portalUser;
+      if (!user) return false;
+      return hasAccess('All', vacancy.course, user.role, user.assignedBranchesArray, user.assignedCourse, user.department);
     });
     res.json({ success: true, vacancies: vacs.reverse() });
   } catch (err) {
@@ -1137,7 +1159,7 @@ exports.getIssues = (req, res) => {
       const studentName = getValByHeader(row, ['name']) || '';
       const studentData = (cache.students || []).find(s => (getValByHeader(s, ['name']) || '').toLowerCase().trim() === studentName.toLowerCase().trim());
       const sCourse = studentData ? getValByHeader(studentData, ['course']) : 'Unknown';
-      return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
+      return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse, req.portalUser?.department);
     }).map(row => ({ 
       rowNumber: row.rowNumber, 
       name: getValByHeader(row, ['name']) || 'Student', 
@@ -1158,19 +1180,26 @@ exports.updateIssue = async (req, res) => {
   const { rowNumber, status, remarks } = req.body;
   try {
     const issueSheet = doc.sheetsByTitle["Issues"];
+    if (!issueSheet) return res.status(503).json({ success: false, message: 'Issues register is unavailable.' });
     const rows = await issueSheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    if (rows.length > 0) { rows[0].assign({ 'Status': status, 'Remarks': remarks }); await rows[0].save(); refreshCache(); res.json({ success: true, message: "Issue updated!" }); } 
+    if (rows.length > 0) {
+      const user = req.portalUser;
+      const issueBranch = getValByHeader(rows[0], ['branch']);
+      const studentName = getValByHeader(rows[0], ['name', 'studentname']);
+      const student = (getCache()?.students || []).find(row => normalizePlacementText(getValByHeader(row, ['name', 'studentname'])) === normalizePlacementText(studentName));
+      const issueCourse = getValByHeader(rows[0], ['course']) || (student && getValByHeader(student, ['course'])) || '';
+      if (!hasAccess(issueBranch, issueCourse, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department)) {
+        return res.status(403).json({ success: false, message: 'This issue is outside your branch or course assignment.' });
+      }
+      rows[0].assign({ 'Status': status, 'Remarks': remarks }); await rows[0].save(); refreshCache(); res.json({ success: true, message: "Issue updated!" });
+    }
     else { res.status(404).json({ success: false, message: "Row not found." }); }
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
 exports.getReports = (req, res) => {
-  const { assignedBranchesArray, role, assignedCourse, isDashboard } = req.body;
-  
-  // 🚨 DASHBOARD VIEW RULE: If not a TPO, bypass the filter for global dashboard stats.
-  const isTpo = (role || '').toUpperCase() === 'TPO' || (role || '').toUpperCase() === 'PLACEMENT OFFICER';
-  const bypassFilter = isDashboard && !isTpo; 
-  const checkAccess = (rBranch, rCourse) => bypassFilter || hasAccess(rBranch, rCourse, role, assignedBranchesArray, assignedCourse);
+  const { assignedBranchesArray, role, assignedCourse, department } = req.body;
+  const checkAccess = (rBranch, rCourse) => hasAccess(rBranch, rCourse, role, assignedBranchesArray, assignedCourse, department);
 
   let students = [], applications = [], issues = [], talentino = [], tpoLogs = [];
   const cache = getCache();
@@ -1256,7 +1285,7 @@ exports.getTalentino = (req, res) => {
       return (studentRoll && sheetRoll === studentRoll) || normalizePlacementText(getValByHeader(s, ['name', 'studentname'])) === normalizePlacementText(studentName);
     });
     const sCourse = getValByHeader(row, ['course', 'program']) || (studentData ? getValByHeader(studentData, ['course']) : 'Unknown');
-    return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse);
+    return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse, actor.department);
   }).map(row => {
     const date = getValByHeader(row, ['timestamp', 'date', 'time', 'present check-ins date']);
     const branch = getValByHeader(row, ['branch']);
@@ -1281,7 +1310,7 @@ exports.getTalentino = (req, res) => {
   }).filter(session => {
     if (!session.branch || !session.date) return false;
     if (!session.course && isRth) return userHasBranch(actor, session.branch);
-    return hasAccess(session.branch, session.course || 'Unknown', role, assignedBranchesArray, assignedCourse);
+    return hasAccess(session.branch, session.course || 'Unknown', role, assignedBranchesArray, assignedCourse, actor.department);
   });
   const dates = new Set();
   [...records, ...sessions].forEach(record => { const cleanDate = (record.date || '').split(' ')[0].trim(); if (cleanDate && cleanDate !== 'N/A') dates.add(cleanDate); });
@@ -1895,6 +1924,14 @@ const canManageEveryClient = (user) => {
   const role = String(user?.role || '').toUpperCase();
   return user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role) || role === 'BM' || role.includes('BRANCH MANAGER') || role.includes('MANAGER');
 };
+const canManageEveryDrive = user => {
+  const role = String(user?.role || '').toUpperCase();
+  return user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
+};
+const isBranchManagerUser = user => {
+  const role = String(user?.role || '').toUpperCase();
+  return role === 'BM' || role.includes('BRANCH MANAGER');
+};
 
 const canManageClientRow = (user, row) => {
   if (canManageEveryClient(user)) return true;
@@ -2057,13 +2094,15 @@ exports.getPublicOpenings = async (_req, res) => {
       const company = getValByHeader(row, ['companyname', 'company']).trim();
       const position = getValByHeader(row, ['position', 'role', 'jobtitle']).trim();
       const location = getValByHeader(row, ['openingat(location)', 'location', 'city']).trim();
-      const status = getValByHeader(row, ['status']).trim() || 'Open';
+      const sourceStatus = getValByHeader(row, ['status']).trim() || 'Open';
       const lastDate = getValByHeader(row, ['lastdate', 'applicationdeadline']).trim();
       const deadline = safeParseDate(lastDate);
-      if (!company || !position || !/(open|active|yes)/i.test(status) || /(closed|filled|expired|inactive|no)/i.test(status)) return;
-      if (deadline && deadline < today) return;
+      if (!company || !position || /(inactive|cancelled|canceled|withdrawn|deleted|no longer available)/i.test(sourceStatus)) return;
       const key = [company, position, location].map(normalizePlacementText).join('|');
-      if (uniqueOpenings.has(key)) return;
+      const isExpired = /(closed|filled|expired)/i.test(sourceStatus) || Boolean(deadline && deadline < today);
+      const status = isExpired ? 'Expired' : 'Open';
+      const existing = uniqueOpenings.get(key);
+      if (existing && (existing.status === 'Open' || status === 'Expired')) return;
       uniqueOpenings.set(key, {
         id: getValByHeader(row, ['jobid', 'id']).trim(),
         company,
@@ -2072,6 +2111,7 @@ exports.getPublicOpenings = async (_req, res) => {
         location,
         mode: getValByHeader(row, ['workmode', 'mode']).trim(),
         lastDate,
+        status,
         course: getValByHeader(row, ['course', 'program']).trim(),
         description: getValByHeader(row, ['description', 'jobdescription', 'roleoverview']).trim(),
         qualification: getValByHeader(row, ['qualification', 'eligibility', 'educationalqualification']).trim(),
@@ -2804,21 +2844,66 @@ exports.updatePhoto = async (req, res) => {
 // ---------------------------------------------------------
 // 🚨 L M S  -  S T U D Y   M A T E R I A L S
 // ---------------------------------------------------------
+const isLearningAdmin = user => user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(String(user?.role || '').toUpperCase());
+const canReadMaterial = (user, course) => isLearningAdmin(user) || hasAccess('All', course, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department);
+const makeMaterialPreviewUrl = rawLink => {
+  try {
+    const source = new URL(String(rawLink || '').trim());
+    if (source.protocol !== 'https:') return '';
+    const host = source.hostname.toLowerCase();
+    const driveFile = source.pathname.match(/\/file\/d\/([\w-]+)/) || source.pathname.match(/^\/open$/) && source.searchParams.get('id')?.match(/^([\w-]+)/);
+    if (host === 'drive.google.com' && driveFile) return `https://drive.google.com/file/d/${driveFile[1]}/preview`;
+    if (host === 'docs.google.com' && /\/(document|presentation|spreadsheets)\/d\//.test(source.pathname)) {
+      source.pathname = source.pathname.replace(/\/(edit|view|preview)\/?$/, '/preview');
+      source.search = '?rm=minimal';
+      return source.toString();
+    }
+    if (host === '1drv.ms' || host.endsWith('onedrive.live.com') || host.endsWith('.sharepoint.com')) {
+      source.searchParams.set('web', '1');
+      return source.toString();
+    }
+    return '';
+  } catch {
+    return '';
+  }
+};
+
 exports.getMaterials = (req, res) => {
   try {
-    let materials = getCache().materials.map(row => {
+    const user = req.portalUser;
+    if (!user) return res.status(401).json({ success: false, message: 'Sign in again to view study materials.' });
+    const showInactive = isLearningAdmin(user);
+    let materials = (getCache().materials || []).map(row => {
+      const course = getValByHeader(row, ['course']) || '';
+      const status = getValByHeader(row, ['status']) || 'Active';
+      if ((!showInactive && status.trim().toLowerCase() !== 'active') || !canReadMaterial(user, course)) return null;
       return { 
         id: getValByHeader(row, ['materialid']) || '', 
-        course: getValByHeader(row, ['course']) || '', 
+        course,
         module: getValByHeader(row, ['moduletopic', 'module', 'topic']) || '', 
         title: getValByHeader(row, ['title']) || '', 
         fileType: getValByHeader(row, ['filetype']) || '', 
-        link: getValByHeader(row, ['onedrivelink', 'link']) || '', 
-        status: getValByHeader(row, ['status']) || 'Active' 
+        ...(showInactive ? { link: getValByHeader(row, ['onedrivelink', 'link']) || '' } : {}),
+        status
       };
-    });
-    res.json({ success: true, materials: materials.reverse() });
+    }).filter(Boolean);
+    res.json({ success: true, materials: materials.reverse(), access: 'allowed' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.getMaterialViewLink = (req, res) => {
+  const user = req.portalUser;
+  if (!user) return res.status(401).json({ success: false, message: 'Sign in again to view study materials.' });
+  const materialId = String(req.params.materialId || '').trim();
+  const row = (getCache().materials || []).find(item => getValByHeader(item, ['materialid']).trim() === materialId);
+  if (!row || String(getValByHeader(row, ['status']) || 'Active').trim().toLowerCase() !== 'active') {
+    return res.status(404).json({ success: false, message: 'This study material is unavailable.' });
+  }
+  const course = getValByHeader(row, ['course']);
+  if (!canReadMaterial(user, course)) return res.status(403).json({ success: false, message: 'Access denied for this course.' });
+  const previewUrl = makeMaterialPreviewUrl(getValByHeader(row, ['onedrivelink', 'link']));
+  if (!previewUrl) return res.status(422).json({ success: false, message: 'This file provider does not offer an in-app preview link.' });
+  res.json({ success: true, previewUrl });
 };
 
 exports.addMaterial = async (req, res) => {
@@ -2909,7 +2994,8 @@ exports.deleteMaterial = async (req, res) => {
 // ---------------------------------------------------------
 exports.getQuestions = (req, res) => {
   try {
-    let questions = getCache().techQuestions.map(row => {
+    const user = req.portalUser;
+    let questions = (getCache().techQuestions || []).filter(row => canReadMaterial(user, getValByHeader(row, ['course']))).map(row => {
       return { id: getValByHeader(row, ['questionid']) || '', course: getValByHeader(row, ['course']) || '', question: getValByHeader(row, ['question']) || '', optA: getValByHeader(row, ['optiona']) || '', optB: getValByHeader(row, ['optionb']) || '', optC: getValByHeader(row, ['optionc']) || '', optD: getValByHeader(row, ['optiond']) || '', correct: getValByHeader(row, ['correctoption']) || '', explanation: getValByHeader(row, ['explanation']) || '', status: getValByHeader(row, ['status']) || 'Active' };
     });
     res.json({ success: true, questions: questions.reverse() });
@@ -2919,6 +3005,10 @@ exports.getQuestions = (req, res) => {
 exports.addQuestion = async (req, res) => {
   try {
     const { id, course, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
+    const user = req.portalUser;
+    if (!hasAccess('All', course, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department)) {
+      return res.status(403).json({ success: false, message: 'This course is outside your assignment.' });
+    }
     const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('techquestions'));
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const h = sheet.headerValues;
@@ -2951,6 +3041,11 @@ exports.updateQuestion = async (req, res) => {
     
     const rowToUpdate = rows.find(r => (r.get(idHeader) || '').toString().trim() === id.toString().trim());
     if (rowToUpdate) {
+      const user = req.portalUser;
+      const storedCourse = getValByHeader(rowToUpdate, ['course']);
+      if (!hasAccess('All', storedCourse, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department) || !hasAccess('All', course, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department)) {
+        return res.status(403).json({ success: false, message: 'This course is outside your assignment.' });
+      }
       rowToUpdate.assign({ 
         [getFuzzyHeader(h, 'questionid')]: id, 
         [getFuzzyHeader(h, 'course')]: course, 
@@ -2979,6 +3074,11 @@ exports.deleteQuestion = async (req, res) => {
     
     const rowToDelete = rows.find(r => (r.get(idHeader) || '').toString().trim() === id.toString().trim());
     if (rowToDelete) { 
+      const user = req.portalUser;
+      const storedCourse = getValByHeader(rowToDelete, ['course']);
+      if (!hasAccess('All', storedCourse, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department)) {
+        return res.status(403).json({ success: false, message: 'This course is outside your assignment.' });
+      }
       await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Question deleted" }); 
     } else { res.status(404).json({ success: false, message: "Question not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -2986,9 +3086,10 @@ exports.deleteQuestion = async (req, res) => {
 
 exports.getResults = (req, res) => {
   try {
-    let results = getCache().techResults.map(row => {
+    const user = req.portalUser;
+    let results = (getCache().techResults || []).map(row => {
       return { timestamp: getValByHeader(row, ['timestamp']) || '', rollNo: getValByHeader(row, ['rollno']) || '', name: getValByHeader(row, ['name']) || '', email: getValByHeader(row, ['mailid']) || '', branch: getValByHeader(row, ['branch']) || '', course: getValByHeader(row, ['course']) || '', score: getValByHeader(row, ['score']) || '', total: getValByHeader(row, ['totalquestions']) || '', percentage: getValByHeader(row, ['percentage']) || '', timeTaken: getValByHeader(row, ['timetaken']) || '' };
-    });
+    }).filter(result => isLearningAdmin(user) || hasAccess(result.branch, result.course, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department));
     res.json({ success: true, results: results.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
@@ -3032,9 +3133,10 @@ exports.getAptQuestions = (req, res) => {
 
 exports.getAptResults = (req, res) => {
   try {
-    let results = getCache().aptResults.map(row => {
+    const user = req.portalUser;
+    let results = (getCache().aptResults || []).map(row => {
       return { timestamp: getValByHeader(row, ['timestamp']) || '', rollNo: getValByHeader(row, ['rollno']) || '', name: getValByHeader(row, ['name']) || '', email: getValByHeader(row, ['email', 'mailid']) || '', branch: getValByHeader(row, ['branch']) || '', score: getValByHeader(row, ['score']) || '', total: getValByHeader(row, ['total', 'totalquestions']) || '', percentage: getValByHeader(row, ['percentage']) || '', timeTaken: getValByHeader(row, ['timetaken']) || '', categoryBreakdown: getValByHeader(row, ['categorybreakdown']) || '' };
-    });
+    }).filter(result => isLearningAdmin(user) || userHasBranch(user, result.branch));
     res.json({ success: true, results: results.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
@@ -3093,9 +3195,10 @@ exports.getTalExamQuestions = (req, res) => {
 
 exports.getTalExamResults = (req, res) => {
   try {
-    let results = getCache().talResults.map(row => {
+    const user = req.portalUser;
+    let results = (getCache().talResults || []).map(row => {
       return { timestamp: getValByHeader(row, ['timestamp']) || '', rollNo: getValByHeader(row, ['rollno']) || '', name: getValByHeader(row, ['name']) || '', email: getValByHeader(row, ['mailid', 'email']) || '', branch: getValByHeader(row, ['branch']) || '', testNumber: getValByHeader(row, ['testnumbercompleted']) || '', score: getValByHeader(row, ['score']) || '', total: getValByHeader(row, ['totalquestions']) || '', percentage: getValByHeader(row, ['percentage']) || '', timeTaken: getValByHeader(row, ['timetaken']) || '' };
-    });
+    }).filter(result => isLearningAdmin(user) || userHasBranch(user, result.branch));
     res.json({ success: true, results: results.reverse() });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
@@ -3147,10 +3250,13 @@ exports.getDrives = async (req, res) => {
   try {
     const user = req.portalUser;
     const role = String(user?.role || '').toUpperCase();
-    const canSeeAll = canManageEveryClient(user);
+    const canSeeAll = canManageEveryDrive(user);
+    const isBranchManager = isBranchManagerUser(user);
     const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
     const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(role) || role.includes('REGIONAL TECHNICAL HEAD');
-    if (!canSeeAll && !isTpo && !isRth) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
+    const isTth = /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(role) || role.includes('TERRITORY TECHNICAL HEAD');
+    const isTechnicalScoped = isRth || isTth;
+    if (!canSeeAll && !isTpo && !isTechnicalScoped && !isBranchManager) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
 
     await loadDocInfo();
     const registrationSheet = doc.sheetsByTitle['Drive_Registration'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('driveregistration'));
@@ -3194,9 +3300,9 @@ exports.getDrives = async (req, res) => {
       const driveOwner = registrationOwner || eventInfo.tpo || '';
       const rowBranch = getValByHeader(row, ['branch', 'sittingbranch']) || (registrationStudent && getValByHeader(registrationStudent, ['branch', 'sittingbranch'])) || eventInfo.branch || eventInfo.location;
       const rowCourse = getValByHeader(row, ['course']) || (registrationStudent && getValByHeader(registrationStudent, ['course', 'program'])) || eventInfo.course;
-      if (isRth && !hasAccess(rowBranch, rowCourse, user.role, user.assignedBranchesArray, user.assignedCourse)) return;
-      if (!canSeeAll && !isRth && driveOwner && normalizePlacementText(driveOwner) !== signedInName) return;
-      if (!canSeeAll && !isRth && !driveOwner) {
+      if ((isTechnicalScoped || isBranchManager) && !hasAccess(rowBranch, rowCourse, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) return;
+      if (!canSeeAll && !isTechnicalScoped && !isBranchManager && driveOwner && normalizePlacementText(driveOwner) !== signedInName) return;
+      if (!canSeeAll && !isTechnicalScoped && !isBranchManager && !driveOwner) {
         if (!userHasBranch(user, rowBranch)) return;
       }
       
@@ -3226,9 +3332,10 @@ exports.getDrives = async (req, res) => {
 
     // 3. 🚨 INJECT EMPTY DRIVES: If a drive has 0 students, send a "Dummy" row so it still shows up!
     eventsMap.forEach((eventInfo, dId) => {
-      if (isRth && (!userHasBranch(user, eventInfo.branch || eventInfo.location) || (eventInfo.course && !hasAccess(eventInfo.branch || eventInfo.location, eventInfo.course, user.role, user.assignedBranchesArray, user.assignedCourse)))) return;
-      if (!canSeeAll && !isRth && eventInfo.tpo && normalizePlacementText(eventInfo.tpo) !== signedInName) return;
-      if (!canSeeAll && !isRth && !eventInfo.tpo) {
+      if (isTechnicalScoped && (!eventInfo.course || !hasAccess(eventInfo.branch || eventInfo.location, eventInfo.course, user.role, user.assignedBranchesArray, user.assignedCourse, user.department))) return;
+      if (isBranchManager && !userHasBranch(user, eventInfo.branch || eventInfo.location)) return;
+      if (!canSeeAll && !isTechnicalScoped && !isBranchManager && eventInfo.tpo && normalizePlacementText(eventInfo.tpo) !== signedInName) return;
+      if (!canSeeAll && !isTechnicalScoped && !isBranchManager && !eventInfo.tpo) {
         if (!userHasBranch(user, eventInfo.branch || eventInfo.location)) return;
       }
       if (!eventInfo.hasApplicants) {
@@ -3262,11 +3369,13 @@ exports.updateDriveStatus = async (req, res) => {
 
     const user = req.portalUser;
     const role = String(user?.role || '').toUpperCase();
-    const canSeeAll = canManageEveryClient(user);
+    const canSeeAll = canManageEveryDrive(user);
+    const isBranchManager = isBranchManagerUser(user);
     const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
     const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(role) || role.includes('REGIONAL TECHNICAL HEAD');
-    if (!canSeeAll && !isTpo && !isRth) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
-    if (isRth) {
+    const isTth = /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(role) || role.includes('TERRITORY TECHNICAL HEAD');
+    if (!canSeeAll && !isTpo && !isRth && !isTth && !isBranchManager) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
+    if (isRth || isTth || isBranchManager) {
       const driveId = normalizePlacementText(getValByHeader(rows[0], ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(rows[0], ['eventid', 'event_id', 'companyname']));
       const matchingDrive = (getCache()?.events || []).find(event => {
         const type = getValByHeader(event, ['event', 'type', 'event_type']).toLowerCase();
@@ -3282,7 +3391,7 @@ exports.updateDriveStatus = async (req, res) => {
       });
       const registrationBranch = getValByHeader(rows[0], ['branch', 'sittingbranch']) || (registrationStudent && getValByHeader(registrationStudent, ['branch', 'sittingbranch'])) || getValByHeader(matchingDrive, ['branch', 'sittingbranch', 'eventhappeningin', 'location']);
       const registrationCourse = getValByHeader(rows[0], ['course']) || (registrationStudent && getValByHeader(registrationStudent, ['course', 'program'])) || getValByHeader(matchingDrive, ['course', 'assignedcourse']);
-      if (!hasAccess(registrationBranch, registrationCourse, user.role, user.assignedBranchesArray, user.assignedCourse)) {
+      if (!hasAccess(registrationBranch, registrationCourse, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) {
         return res.status(403).json({ success: false, message: 'This registration is outside your assigned branch or course.' });
       }
     } else if (!canSeeAll) {

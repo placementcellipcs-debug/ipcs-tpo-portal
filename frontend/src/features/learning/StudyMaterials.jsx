@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { 
-  CircleNotch, BookOpenText, Plus, CaretLeft, Link as LinkIcon, 
-  FilePdf, FileImage, FileText, FileVideo, CheckCircle, WarningCircle, X,
+  CircleNotch, BookOpenText, Plus, CaretLeft,
+  FilePdf, FileImage, FileText, FileVideo, WarningCircle, X, Eye,
   FolderOpen, BookBookmark, PencilSimple, Trash
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
@@ -18,32 +18,32 @@ const DEFAULT_COURSES = {
   'Information technology (IT)': ['PHP AND MYSQL', 'JAVA Full Stack', 'Web Designing and Development', 'Python & Data Science', 'Python Programming', 'Data Science & Analytics', 'Android App Development', 'Python Full Stack Development', 'Artificial Intelligence', 'Diploma in Artificial Intelligence', 'AI & Machine Learning with Python', 'Software Testing', 'Basics of Software Testing', 'Advanced QA Automation Testing', 'Cyber Security', 'Cyber Security & Network Security Essentials', 'MERN Stack', 'Data Analytics']
 };
 
+const getStandardCourse = value => {
+  const text = String(value || '').toLowerCase().trim();
+  if (text.includes('bms') || text.includes('cctv')) return 'BMS AND CCTV';
+  if (text.includes('automation') || text.includes('plc') || text.includes('scada')) return 'Industrial Automation';
+  if (text.includes('embed') || text.includes('iot')) return 'Embedded and IoT';
+  if (text.includes('digital') || text.includes('dm') || text.includes('marketing')) return 'Digital Marketing';
+  if (text.includes('information technology') || /(^|[^a-z])it([^a-z]|$)/.test(text) || ['python', 'software', 'data science', 'data analytics', 'artificial intelligence', 'cyber security', 'web development', 'java', 'php'].some(term => text.includes(term))) return 'Information technology (IT)';
+  return 'Others';
+};
+
 export default function StudyMaterials() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   
   const upperRole = (tpoData?.role || '').toUpperCase();
-  const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
-  const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
-  
-  const canManage = isSuperAdmin || isRth;
-
-  // 🚨 BULLETPROOF KEYWORD SCANNER (Never crashes, ignores formatting errors)
-  const rawCourse = String(tpoData?.assignedCourse || 'All').toLowerCase();
-  let assignedCoursesArray = ['All'];
-  if (rawCourse !== 'all' && rawCourse !== 'all courses') {
-     assignedCoursesArray = [];
-     if (rawCourse.includes('bms') || rawCourse.includes('cctv')) assignedCoursesArray.push('BMS AND CCTV');
-     if (rawCourse.includes('automation') || rawCourse.includes('plc') || rawCourse.includes('scada')) assignedCoursesArray.push('Industrial Automation');
-     if (rawCourse.includes('embed') || rawCourse.includes('iot')) assignedCoursesArray.push('Embedded and IoT');
-     if (rawCourse.includes('digital') || rawCourse.includes('dm') || rawCourse.includes('marketing')) assignedCoursesArray.push('Digital Marketing');
-     if (rawCourse.includes('information technology') || /(^|[^a-z])it([^a-z]|$)/.test(rawCourse) || rawCourse.includes('python') || rawCourse.includes('software') || rawCourse.includes('data science') || rawCourse.includes('data analytics')) assignedCoursesArray.push('Information technology (IT)');
-     if (assignedCoursesArray.length === 0) assignedCoursesArray = ['Others'];
-  }
+  const isSuperAdmin = tpoData?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(upperRole);
+  const canManage = isSuperAdmin;
+  const rawCourse = tpoData?.assignedCourse || 'All';
+  const courseValues = (Array.isArray(rawCourse) ? rawCourse : String(rawCourse).split(/[\n,;]+/)).map(course => String(course).trim()).filter(Boolean);
+  const assignedCoursesArray = courseValues.some(course => /^all( courses)?$/i.test(course)) ? ['All'] : [...new Set(courseValues.map(getStandardCourse))];
 
   const [courseDict, setCourseDict] = useState(DEFAULT_COURSES);
   const [materials, setMaterials] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [accessDenied, setAccessDenied] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
   const [viewLevel, setViewLevel] = useState('main_courses');
@@ -54,16 +54,37 @@ export default function StudyMaterials() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [selectedMaterial, setSelectedMaterial] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState('');
   
   const [formData, setFormData] = useState({
     id: '', course: '', module: '', title: '', fileType: 'pdf', link: '', status: 'Active'
   });
 
+  useEffect(() => {
+    if (!isModalOpen && !selectedMaterial) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = event => {
+      if (event.key !== 'Escape') return;
+      setIsModalOpen(false);
+      setSelectedMaterial(null);
+      setPreviewUrl('');
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isModalOpen, selectedMaterial]);
+
   const fetchData = async () => {
     try {
       const [matRes, courseRes] = await Promise.all([
         axios.get(`${API_BASE}/api/lms/materials`),
-        axios.get(`${API_BASE}/api/admin/courses`)
+        axios.get(`${API_BASE}/api/courses`)
       ]);
       
       if (matRes.data.success) {
@@ -81,9 +102,7 @@ export default function StudyMaterials() {
       setCourseDict(cDict);
 
       let allowedDomains = Object.keys(cDict);
-      if (!isSuperAdmin && !assignedCoursesArray.includes('All')) {
-        allowedDomains = Object.keys(cDict).filter(domain => assignedCoursesArray.includes(domain));
-      }
+      if (!isSuperAdmin && !assignedCoursesArray.includes('All')) allowedDomains = allowedDomains.filter(domain => assignedCoursesArray.includes(getStandardCourse(domain)));
 
       if (allowedDomains.length === 1) {
         setSelectedMainCourse(allowedDomains[0]);
@@ -94,6 +113,8 @@ export default function StudyMaterials() {
 
     } catch (err) {
       console.error("Failed to load data", err);
+      setAccessDenied(err.response?.status === 403);
+      setLoadError(err.response?.status === 403 ? 'Your account is not assigned to study materials.' : (err.response?.data?.message || 'Study materials could not be loaded.'));
     } finally {
       setLoading(false);
     }
@@ -105,7 +126,7 @@ export default function StudyMaterials() {
 
   let MAIN_COURSES = Object.keys(courseDict);
   if (!isSuperAdmin && !assignedCoursesArray.includes('All')) {
-    MAIN_COURSES = MAIN_COURSES.filter(domain => assignedCoursesArray.includes(domain));
+    MAIN_COURSES = MAIN_COURSES.filter(domain => assignedCoursesArray.includes(getStandardCourse(domain)));
   }
 
   const subCoursesList = courseDict[selectedMainCourse] || [selectedMainCourse] || [];
@@ -185,16 +206,34 @@ export default function StudyMaterials() {
     return <FileImage size={24} color="#10b981" weight="fill" />;
   };
 
+  const openMaterialPreview = async material => {
+    setSelectedMaterial(material);
+    setPreviewUrl('');
+    setPreviewError('');
+    setPreviewLoading(true);
+    try {
+      const response = await axios.get(`${API_BASE}/api/lms/materials/${encodeURIComponent(material.id)}/view`);
+      if (!response.data?.success || !response.data.previewUrl) throw new Error('An in-app preview is unavailable for this file.');
+      setPreviewUrl(response.data.previewUrl);
+    } catch (err) {
+      setPreviewError(err.response?.data?.message || err.message || 'This file could not be opened in the preview.');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
-        {viewLevel === 'main_courses' && (
+        {loading && <div style={{ minHeight: '40vh', display: 'grid', placeItems: 'center', color: 'var(--accent-primary)' }}><div style={{ textAlign: 'center' }}><CircleNotch size={42} className="ph-spin" /><p style={{ color: 'var(--text-muted)' }}>Loading assigned study materials…</p></div></div>}
+        {!loading && loadError && <div role="alert" style={{ padding: '22px', borderRadius: '14px', border: '1px solid rgba(239,68,68,.45)', background: 'rgba(127,29,29,.16)', color: '#fca5a5' }}><strong>{accessDenied ? 'Access Denied' : 'Study Materials Unavailable'}</strong><p style={{ margin: '8px 0 0' }}>{loadError}</p></div>}
+        {!loading && !loadError && viewLevel === 'main_courses' && (
           <>
             <div style={{ marginBottom: '30px' }}>
               <h1 style={{ fontSize: '2rem', margin: '0 0 5px 0', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <FolderOpen color="var(--accent-primary)" weight="fill" /> Study Materials Management
+                <FolderOpen color="var(--accent-primary)" weight="fill" /> Study Materials
               </h1>
-              <p style={{ color: 'var(--text-muted)', margin: 0 }}>{isSuperAdmin ? 'Select a domain fetched directly from the Courses sheet.' : 'Select one of your assigned domains to manage.'}</p>
+              <p style={{ color: 'var(--text-muted)', margin: 0 }}>{isSuperAdmin ? 'Select a course to view or manage its learning resources.' : 'Select an assigned course to explore its programs and materials.'}</p>
             </div>
             
             {MAIN_COURSES.length === 0 ? (
@@ -217,7 +256,7 @@ export default function StudyMaterials() {
           </>
         )}
 
-        {viewLevel === 'sub_courses' && (
+        {!loading && !loadError && viewLevel === 'sub_courses' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', marginBottom: '30px', gap: '15px', flexWrap: 'wrap' }}>
               {/* 🚨 ALLOW RTH WITH MULTIPLE DOMAINS TO GO BACK */}
@@ -226,7 +265,7 @@ export default function StudyMaterials() {
                   <CaretLeft weight="bold" size={18} /> Back to Domains
                 </button>
               )}
-              <div><h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedMainCourse} Programs</h1><p style={{ color: 'var(--text-muted)', margin: 0 }}>Select a specific program to view and manage its materials.</p></div>
+              <div><h1 style={{ fontSize: '1.8rem', margin: '0 0 5px 0' }}>{selectedMainCourse} Programs</h1><p style={{ color: 'var(--text-muted)', margin: 0 }}>Choose a program to view its study materials.</p></div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '20px' }}>
@@ -240,14 +279,14 @@ export default function StudyMaterials() {
           </>
         )}
 
-        {viewLevel === 'materials' && (
+        {!loading && !loadError && viewLevel === 'materials' && (
           <>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '25px', flexWrap: 'wrap', gap: '15px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                 <button onClick={() => { setViewLevel('sub_courses'); setSelectedSubCourse(null); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <CaretLeft weight="bold" size={18} /> Programs
                 </button>
-                <div><h1 style={{ fontSize: '1.6rem', margin: 0 }}>{selectedSubCourse} Materials</h1><p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>Upload presentations, PDFs, and notes for student access.</p></div>
+                <div><h1 style={{ fontSize: '1.6rem', margin: 0 }}>{selectedSubCourse} Materials</h1><p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '0.85rem' }}>{canManage ? 'Review and manage the materials available to assigned learners.' : 'Materials open in the secure preview in this workspace.'}</p></div>
               </div>
               {canManage && <button className="btn-action" onClick={openAddModal} style={{ width: 'auto', padding: '0.8rem 1.5rem' }}><Plus size={20} weight="bold" /> Upload Material</button>}
             </div>
@@ -256,43 +295,39 @@ export default function StudyMaterials() {
               <input type="text" placeholder="Search by topic or title..." className="sleek-input" style={{ width: '100%' }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
             </div>
 
-            <div className="table-container">
-              <table className="modern-table">
-                <thead><tr><th>Module / Topic</th><th>Document Title</th><th>Format</th><th>Drive Link</th><th style={{ textAlign: 'center' }}>Status</th>{canManage && <th style={{ textAlign: 'center' }}>Actions</th>}</tr></thead>
-                <tbody>
-                  {loading ? (
-                    <tr><td colSpan={canManage ? 6 : 5} style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="var(--accent-primary)" /></td></tr>
-                  ) : filteredMaterials.length === 0 ? (
-                    <tr><td colSpan={canManage ? 6 : 5} style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No study materials uploaded for this program yet.</td></tr>
-                  ) : (
-                    filteredMaterials.map((mat, i) => (
-                      <tr key={i}>
-                        <td><span className="primary-text">{mat.module || 'General'}</span><span className="sub-text">ID: {mat.id}</span></td>
-                        <td><strong style={{ color: 'var(--text-main)' }}>{mat.title}</strong></td>
-                        <td><div style={{ display: 'flex', alignItems: 'center', gap: '8px', textTransform: 'uppercase', fontSize: '0.8rem', fontWeight: 'bold', color: 'var(--text-muted)' }}>{getFileIcon(mat.fileType)} {mat.fileType}</div></td>
-                        <td><a href={mat.link} target="_blank" rel="noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)', padding: '6px 12px', borderRadius: '6px', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 'bold' }}><LinkIcon size={16} /> Open Resource</a></td>
-                        <td style={{ textAlign: 'center' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: mat.status.toLowerCase() === 'active' ? '#10b981' : '#ef4444', fontWeight: 'bold', fontSize: '0.8rem' }}>{mat.status.toLowerCase() === 'active' ? <CheckCircle size={16} weight="fill" /> : <WarningCircle size={16} weight="fill" />} {mat.status}</span></td>
-                        {canManage && (
-                          <td style={{ textAlign: 'center' }}>
-                            <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-                              <button onClick={() => openEditModal(mat)} style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Edit"><PencilSimple size={18} weight="bold" /></button>
-                              <button onClick={() => handleDeleteMaterial(mat.id)} style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Delete"><Trash size={18} weight="bold" /></button>
-                            </div>
-                          </td>
-                        )}
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+            {filteredMaterials.length === 0 ? <div style={{ padding: '3rem', textAlign: 'center', color: 'var(--text-muted)', background: 'var(--card-bg)', borderRadius: '16px', border: '1px solid var(--card-border)' }}>No study materials have been uploaded for this program yet.</div> : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '16px' }}>
+                {filteredMaterials.map(mat => <article key={mat.id} style={{ minWidth: 0, padding: '20px', borderRadius: '16px', border: '1px solid var(--card-border)', background: 'linear-gradient(145deg, rgba(30,41,59,.72), rgba(15,23,42,.82))', boxShadow: '0 12px 30px rgba(0,0,0,.18)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '14px' }}><span>{getFileIcon(mat.fileType)}</span><span style={{ color: 'var(--text-muted)', fontSize: '.72rem', textTransform: 'uppercase', fontWeight: 800 }}>{mat.fileType || 'File'}</span></div>
+                  <span style={{ color: 'var(--accent-primary)', fontSize: '.75rem', fontWeight: 800 }}>{mat.module || 'General'}</span>
+                  <h3 style={{ margin: '7px 0 16px', color: 'var(--text-main)', fontSize: '1rem', lineHeight: 1.45, overflowWrap: 'anywhere' }}>{mat.title || 'Study Material'}</h3>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+                    <button type="button" onClick={() => openMaterialPreview(mat)} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', border: '1px solid rgba(56,189,248,.45)', borderRadius: '9px', padding: '8px 12px', color: 'var(--accent-primary)', background: 'rgba(56,189,248,.1)', fontWeight: 800, cursor: 'pointer' }}><Eye size={17} /> View</button>
+                    {canManage && <div style={{ display: 'flex', gap: '7px' }}><button onClick={() => openEditModal(mat)} style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)', border: '1px solid #0284c7', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Edit"><PencilSimple size={17} /></button><button onClick={() => handleDeleteMaterial(mat.id)} style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer' }} title="Delete"><Trash size={17} /></button></div>}
+                  </div>
+                </article>)}
+              </div>
+            )}
           </>
         )}
       </div>
 
+      {selectedMaterial && (
+        <div role="presentation" onContextMenu={event => event.preventDefault()} onClick={event => { if (event.target === event.currentTarget) { setSelectedMaterial(null); setPreviewUrl(''); } }} style={{ position: 'fixed', inset: 0, zIndex: 100000, display: 'grid', placeItems: 'center', padding: 'clamp(8px, 2vw, 24px)', background: 'rgba(2,6,23,.78)', backdropFilter: 'blur(18px) saturate(145%)' }}>
+          <section role="dialog" aria-modal="true" aria-label={selectedMaterial.title} style={{ width: 'min(1200px, 100%)', height: 'min(820px, 92dvh)', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '22px', border: '1px solid rgba(255,255,255,.18)', background: 'rgba(15,23,42,.88)', boxShadow: '0 30px 90px rgba(0,0,0,.55)', backdropFilter: 'blur(28px) saturate(155%)', userSelect: 'none', WebkitUserSelect: 'none' }}>
+            <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '16px 20px', borderBottom: '1px solid rgba(148,163,184,.18)' }}><div style={{ minWidth: 0 }}><span style={{ color: 'var(--accent-primary)', fontSize: '.72rem', fontWeight: 800 }}>{selectedMaterial.module || 'Study Material'}</span><h2 style={{ margin: '3px 0 0', fontSize: '1rem', overflowWrap: 'anywhere' }}>{selectedMaterial.title}</h2></div><button type="button" aria-label="Close preview" onClick={() => { setSelectedMaterial(null); setPreviewUrl(''); }} style={{ flex: '0 0 auto', border: 0, borderRadius: '50%', width: '38px', height: '38px', color: '#cbd5e1', background: 'rgba(148,163,184,.14)', cursor: 'pointer' }}><X size={19} /></button></header>
+            <div style={{ flex: 1, minHeight: 0, position: 'relative', background: '#080d18' }} onContextMenu={event => event.preventDefault()}>
+              {previewLoading && <div style={{ position: 'absolute', inset: 0, zIndex: 1, display: 'grid', placeItems: 'center', color: 'var(--accent-primary)' }}><div style={{ textAlign: 'center' }}><CircleNotch size={38} className="ph-spin" /><p style={{ color: '#cbd5e1' }}>Preparing preview…</p></div></div>}
+              {previewError && <div role="alert" style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', padding: '24px', textAlign: 'center', color: '#fca5a5' }}>{previewError}</div>}
+              {previewUrl && <iframe src={previewUrl} title={`${selectedMaterial.title} preview`} referrerPolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" onContextMenu={event => event.preventDefault()} style={{ width: '100%', height: '100%', border: 0, userSelect: 'none' }} />}
+            </div>
+          </section>
+        </div>
+      )}
+
       {isModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setIsModalOpen(false); }}>
-          <div className="modal-card" style={{ maxWidth: '600px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(2,6,23,.78)', backdropFilter: 'blur(18px) saturate(145%)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 'clamp(8px, 2vw, 24px)' }} onClick={event => { if (event.target === event.currentTarget) setIsModalOpen(false); }}>
+          <div className="modal-card" style={{ maxWidth: '600px', maxHeight: '92dvh', overflowY: 'auto', width: '100%', background: 'rgba(15,23,42,.94)', border: '1px solid rgba(255,255,255,.18)', borderRadius: '20px', padding: 'clamp(16px, 3vw, 30px)', backdropFilter: 'blur(26px) saturate(155%)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
               <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><BookOpenText color="var(--accent-primary)" /> {isEditMode ? 'Edit Study Material' : 'Upload Study Material'}</h2>
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsModalOpen(false)} />

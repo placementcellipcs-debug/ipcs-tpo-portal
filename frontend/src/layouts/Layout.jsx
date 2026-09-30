@@ -175,14 +175,18 @@ export default function Layout({ children }) {
   const sheetAccess = (tpoData.accessType || '').toLowerCase();
 
   const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('REGIONAL TECHNICAL HEAD');
+  const isTth = /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('TERRITORY TECHNICAL HEAD');
   const isTrainer = userRole.includes('TRAINER');
-  const isTechnicalLead = userRole.includes('TECHNICAL LEAD') || userRole.includes('TTH');
-  const canViewClients = !(isRth || isTrainer || isTechnicalLead);
+  const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(userRole) || /(^|[^A-Z0-9])TL([^A-Z0-9]|$)/.test(userRole);
+  const isBranchManager = userRole === 'BM' || userRole.includes('BRANCH MANAGER');
+  const isTerritoryManager = userRole.includes('TERRITORY MANAGER') || /(^|[^A-Z0-9])TM([^A-Z0-9]|$)/.test(userRole);
+  const canViewClients = !(isRth || isTth || isTrainer || isTechnicalLead);
   
   const isAssetManager = userRole.includes('ASSET') || sheetAccess.includes('asset');
   const isDesigner = userRole.includes('DESIGN') || userRole.includes('MEDIA') || userRole.includes('CREATIVE');
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('SYSTEM ADMIN') || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
   const isDesignerWorkspace = isDesigner && !isSuperAdmin;
+  const isAssetWorkspace = isAssetManager && !isSuperAdmin;
   
   // Designers get a focused workspace with news, games, events, and media tools.
   const showPlacementAndAcademic = !isDesignerWorkspace;
@@ -193,9 +197,9 @@ export default function Layout({ children }) {
   const showTracker = ((isTpo && !isSuperAdmin) || isRth) && showPlacementAndAcademic;
   const showReports = (isSuperAdmin || isTpo) && showPlacementAndAcademic; 
   const showManageAdmin = isSuperAdmin;
-  const showStudyMaterials = (isSuperAdmin || isRth || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD') || isTrainer) && showPlacementAndAcademic; 
+  const showStudyMaterials = (isSuperAdmin || isRth || isTth || isTechnicalLead || isTrainer) && showPlacementAndAcademic;
   const showStudentApps = isTpo && !isSuperAdmin && showPlacementAndAcademic;
-  const showIssues = (isTpo || isSuperAdmin || (userRole.includes('MANAGER') && showPlacementAndAcademic) || userRole.includes('ZONAL')) && showPlacementAndAcademic;
+  const showIssues = (isTpo || isSuperAdmin || ((isBranchManager || isRth) && showPlacementAndAcademic) || userRole.includes('ZONAL')) && showPlacementAndAcademic;
 
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
@@ -226,10 +230,16 @@ export default function Layout({ children }) {
 
   const sectionTheme = location.pathname.startsWith('/assets') ? 'assets' : location.pathname.startsWith('/academic') ? 'academic' : location.pathname.startsWith('/media') ? 'media' : location.pathname.startsWith('/clients') ? 'partners' : 'placement';
   const dashboardPath = '/dashboard';
-  const defaultBackPath = isAssetManager && !isSuperAdmin ? '/assets' : '/dashboard';
+  const defaultBackPath = isAssetWorkspace ? '/assets' : '/dashboard';
   const designerAllowedPath = ['/career-hub', '/game-pal', '/events', '/media/dashboard', '/media/preview', '/media/files', '/media/social', '/media/categories', '/media/logs', '/media/settings'].some(path => location.pathname === path || location.pathname.startsWith(`${path}/`));
 
   if (isDesignerWorkspace && !designerAllowedPath) return <Navigate to="/career-hub" replace />;
+  if (isAssetWorkspace && !location.pathname.startsWith('/assets')) return <Navigate to="/assets/branches" replace />;
+  if (isTerritoryManager && location.pathname.startsWith('/assets')) return <Navigate to="/dashboard" replace />;
+  if (!canViewClients && location.pathname.startsWith('/clients')) return <Navigate to="/students" replace />;
+  if ((isTechnicalLead || isTrainer) && location.pathname.startsWith('/placement-drives')) return <Navigate to="/students" replace />;
+  if (isTechnicalLead && location.pathname.startsWith('/exams/') && !location.pathname.startsWith('/exams/technical')) return <Navigate to="/exams/technical?view=results" replace />;
+  if (isRth && location.pathname.startsWith('/exams/talentino')) return <Navigate to="/exams" replace />;
 
   return (
     <div className={`app-layout app-section-${sectionTheme}`}>
@@ -309,13 +319,13 @@ export default function Layout({ children }) {
 
           <div className="pd-nav-list">
             <>
-            {!isDesignerWorkspace && <div className={`pd-nav-item ${location.pathname === dashboardPath || location.pathname === '/dashboard' ? 'active' : ''}`} onClick={() => handleNav(dashboardPath)}><SquaresFour size={22} /><span>Dashboard</span></div>}
+            {!isDesignerWorkspace && !isAssetWorkspace && <div className={`pd-nav-item ${location.pathname === dashboardPath || location.pathname === '/dashboard' ? 'active' : ''}`} onClick={() => handleNav(dashboardPath)}><SquaresFour size={22} /><span>Dashboard</span></div>}
             {isDesignerWorkspace && <>
               {navSectionHeading('designer-events', 'Events', { marginTop: '15px' })}
               <div className={`pd-nav-item ${isActive('/events') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} /><span>All Branch Events</span></div>
             </>}
             
-            {showPlacementAndAcademic && (
+            {showPlacementAndAcademic && !isAssetWorkspace && (
               <>
                 {/* 🚨 PLACEMENT MENU */}
                 {navSectionHeading('placement', 'Main Menu')}
@@ -327,7 +337,7 @@ export default function Layout({ children }) {
                 <div className={`pd-nav-item ${isActive('/placed') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/placed')}><Trophy size={22} weight={isActive('/placed') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Placed Students</span></div>
                 {showStudentApps && <div className={`pd-nav-item ${isActive('/applications') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/applications')}><ListChecks size={22} weight={isActive('/applications') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Student Apps</span></div>}
                 <div className={`pd-nav-item ${isActive('/vacancies') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/vacancies')}><Briefcase size={22} weight={isActive('/vacancies') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Vacancies</span></div>
-                {!isTrainer && !(isTpo && !isSuperAdmin) && <div className={`pd-nav-item ${isActive('/placement-drives') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}><IdentificationCard size={22} weight={isActive('/placement-drives') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Placement Drives</span></div>}
+                {!isTrainer && !isTechnicalLead && !(isTpo && !isSuperAdmin) && <div className={`pd-nav-item ${isActive('/placement-drives') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}><IdentificationCard size={22} weight={isActive('/placement-drives') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Placement Drives</span></div>}
                 {canViewClients && <div className={`pd-nav-item ${isActive('/clients') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/clients')}><Handshake size={22} weight={isActive('/clients') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Clients & Partners</span></div>}
                 </div>
 
@@ -337,7 +347,7 @@ export default function Layout({ children }) {
                 <div className={`pd-nav-item ${isActive('/events') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} weight={isActive('/events') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Events</span></div>
                 <div className={`pd-nav-item ${isActive('/talentino') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/talentino')}><UserCheck size={22} weight={isActive('/talentino') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Talentino</span></div>
                 {showStudyMaterials && <div className={`pd-nav-item ${isActive('/study-materials') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/study-materials')}><Book size={22} weight={isActive('/study-materials') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Study Materials</span></div>}
-                {!userRole.includes('MANAGER') && !isTpo && <div className={`pd-nav-item ${isActive('/exams') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/exams')}><FileText size={22} weight={isActive('/exams') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Exams Hub</span></div>}
+                {(!userRole.includes('MANAGER') || isRth || isTth || isTechnicalLead || isTrainer) && !isTpo && <div className={`pd-nav-item ${isActive('/exams') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/exams')}><FileText size={22} weight={isActive('/exams') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Exams Hub</span></div>}
                 </div>
 
               </>
@@ -374,7 +384,7 @@ export default function Layout({ children }) {
             )}
 
             {/* 🚨 ASSET MANAGEMENT */}
-            {(isSuperAdmin || userRole.includes('MANAGER') || isAssetManager) && !isDesigner && (
+            {(isSuperAdmin || isBranchManager || isAssetManager) && !isDesigner && !isTerritoryManager && (
               <>
                 {navSectionHeading('assets', 'Asset Management', showPlacementAndAcademic ? { marginTop: '15px' } : {})}
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('assets')}>
@@ -425,12 +435,12 @@ export default function Layout({ children }) {
               </>
             )}
 
-            {navSectionHeading('career', 'News & Games', { marginTop: '15px' })}
-            <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('career')}>
+            {!isAssetWorkspace && navSectionHeading('career', 'News & Games', { marginTop: '15px' })}
+            {!isAssetWorkspace && <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('career')}>
               <div className={`pd-nav-item ${location.pathname.startsWith('/career-hub') ? 'active' : ''}`} onClick={() => handleNav('/career-hub')}><Newspaper size={22} /><span>News &amp; Blog</span></div>
               <div className={`pd-nav-item ${location.pathname.startsWith('/game-pal') ? 'active' : ''}`} onClick={() => handleNav('/game-pal')}><Brain size={22} weight={location.pathname.startsWith('/game-pal') ? 'fill' : 'regular'} /><span>GamePal</span></div>
-            </div>
-            {!isDesignerWorkspace && <>
+            </div>}
+            {!isDesignerWorkspace && !isAssetWorkspace && <>
               {navSectionHeading('preferences', 'Preferences', { marginTop: '15px' })}
               <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('preferences')}>
               <div className={`pd-nav-item ${isActive('/settings') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/settings')}>

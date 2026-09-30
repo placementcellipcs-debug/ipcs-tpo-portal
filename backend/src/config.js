@@ -126,39 +126,53 @@ const getStandardCourse = (c) => {
   if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
   if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
   if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
-  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
+  if (lower.includes('information technology') || /(^|[^a-z])it([^a-z]|$)/.test(lower) || lower.includes('python') || lower.includes('software') || lower.includes('data science') || lower.includes('data analytics') || lower.includes('artificial intelligence') || lower.includes('cyber security') || lower.includes('web development') || lower.includes('java') || lower.includes('php')) return 'Information technology (IT)';
   return 'Others';
 };
 
+const normalizeAssignmentList = value => {
+  const values = Array.isArray(value) ? value : String(value || '').split(/[\n,;]+/);
+  return values.map(item => String(item || '').trim().replace(/^\d+\.\s*/, '').toLowerCase()).filter(item => item && !/^(?:[-–—]|n\/a|none)$/i.test(item));
+};
+
 function checkBranchMatch(branch, tpoBranchesArray) {
-  if (!branch || !tpoBranchesArray || !Array.isArray(tpoBranchesArray)) return false;
+  const branches = normalizeAssignmentList(tpoBranchesArray);
+  if (!branch || !branches.length) return false;
   let cleanSB = branch.toString().toLowerCase().trim();
-  if (tpoBranchesArray.includes("all") || cleanSB === "all") return true;
-  return tpoBranchesArray.some(b => cleanSB.includes(b) || b.includes(cleanSB));
+  if (branches.includes("all") || cleanSB === "all") return true;
+  return branches.some(b => cleanSB === b || cleanSB.includes(b) || b.includes(cleanSB));
 }
 
-function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCourse) {
+function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCourse, department = '') {
   if (!role) role = 'TPO'; 
   const upperRole = role.toUpperCase();
+  const upperDepartment = String(department || '').trim().toUpperCase();
   const hasRoleToken = (token) => new RegExp(`(^|[^A-Z0-9])${token}([^A-Z0-9]|$)`).test(upperRole);
   if (upperRole.includes('ADMIN') || upperRole === 'GENERAL MANAGER' || upperRole === 'TECHNICAL HEAD' || upperRole === 'ZONAL PLACEMENT HEAD') return true; 
-  
-  const stdRowCourse = getStandardCourse(rowCourse);
-  
-  // 🚨 BULLETPROOF SPLITTER: Detects both commas and Google Sheets newlines (\n)
-  const isRth = hasRoleToken('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD';
-  let assignedCoursesArray = isRth ? [] : ['All'];
-  if (assignedCourse && assignedCourse !== 'All' && assignedCourse !== 'All Courses') {
-     assignedCoursesArray = assignedCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim()));
-  }
-  
-  const matchCourse = assignedCoursesArray.includes('All') || assignedCoursesArray.includes(stdRowCourse) || assignedCoursesArray.includes('OTHERS');
-  
-  const matchBranch = checkBranchMatch(rowBranch, assignedBranchesArray);
 
-  if (isRth) return matchBranch && matchCourse;
-  if (hasRoleToken('TTH') || upperRole === 'TERRITORY TECHNICAL HEAD' || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD')) return matchBranch && matchCourse;
-  return matchBranch; 
+  const stdRowCourse = getStandardCourse(rowCourse);
+  const isRth = hasRoleToken('RTH') || upperRole === 'REGIONAL TECHNICAL HEAD';
+  const isTth = hasRoleToken('TTH') || upperRole.includes('TERRITORY TECHNICAL HEAD');
+  const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(upperRole) || hasRoleToken('TL');
+  const isTrainerRole = upperRole.includes('TRAINER');
+  const isTrainer = isTrainerRole && (!upperDepartment || upperDepartment === 'ACADEMIC');
+  const matchBranch = checkBranchMatch(rowBranch, assignedBranchesArray);
+  if (isTrainerRole && !isTrainer) return false;
+  if (!matchBranch) return false;
+
+  // A Technical Lead owns one branch and can review every course in that branch.
+  if (isTechnicalLead && !isRth && !isTth) return true;
+
+  // RTH/TTH and trainers must be assigned both dimensions. An empty course
+  // assignment must never silently widen access to every course.
+  if (isRth || isTth || isTrainer) {
+    const courses = normalizeAssignmentList(assignedCourse);
+    if (!courses.length || courses.includes('all') || courses.includes('all courses')) return false;
+    return courses.some(course => getStandardCourse(course) === stdRowCourse);
+  }
+
+  // All other operational roles are constrained to their assigned branch(es).
+  return true;
 }
 
 const getFuzzyHeader = (headers, target) => {

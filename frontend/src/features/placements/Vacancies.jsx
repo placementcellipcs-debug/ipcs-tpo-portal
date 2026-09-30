@@ -63,7 +63,7 @@ const getStandardCourse = (c) => {
   if (lower.includes('auto') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
   if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
   if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
-  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
+  if (lower.includes('information technology') || /(^|[^a-z])it([^a-z]|$)/.test(lower) || lower.includes('python') || lower.includes('software') || lower.includes('data science') || lower.includes('data analytics') || lower.includes('artificial intelligence') || lower.includes('cyber security') || lower.includes('web development') || lower.includes('java') || lower.includes('php')) return 'Information technology (IT)';
   return 'Others';
 };
 
@@ -101,21 +101,24 @@ function VacanciesContent() {
   const userRole = String(tpoData?.role || '').toUpperCase();
   const accessType = String(tpoData?.accessType || '').toLowerCase();
   
-  const isSuperAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
+  const isSuperAdmin = accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(userRole);
   const isTpo = userRole.includes('TPO');
+  const isBranchManager = userRole === 'BM' || userRole.includes('BRANCH MANAGER');
+  const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('REGIONAL TECHNICAL HEAD');
+  const hideTpoFilter = isBranchManager || isRth;
   const canAddOpening = isTpo && !isSuperAdmin;
-  const isCourseSpecific = userRole.includes('TRAINER') || userRole.includes('RTH') || userRole.includes('TTH') || userRole.includes('TECHNICAL LEAD');
+  const isCourseSpecific = userRole.includes('TRAINER') || userRole.includes('RTH') || userRole.includes('REGIONAL TECHNICAL HEAD') || userRole.includes('TTH') || userRole.includes('TERRITORY TECHNICAL HEAD');
   
   const rawCourse = String(tpoData?.assignedCourse || 'All').toLowerCase();
   const assignedDomains = useMemo(() => {
     if (rawCourse === 'all' || rawCourse === 'all courses') return ['All'];
-    const domains = [];
-    if (rawCourse.includes('bms') || rawCourse.includes('cctv')) domains.push('BMS AND CCTV');
-    if (rawCourse.includes('auto') || rawCourse.includes('plc') || rawCourse.includes('scada')) domains.push('Industrial Automation');
-    if (rawCourse.includes('embed') || rawCourse.includes('iot')) domains.push('Embedded and IoT');
-    if (rawCourse.includes('digital') || rawCourse.includes('dm') || rawCourse.includes('marketing')) domains.push('Digital Marketing');
-    if (rawCourse.includes('it') || rawCourse.includes('python') || rawCourse.includes('data')) domains.push('Information technology (IT)');
-    return domains.length ? domains : ['Others'];
+    const entries = String(rawCourse).split(/[\n,;]+/).map(entry => entry.trim()).filter(Boolean);
+    const domains = new Set();
+    entries.forEach(entry => {
+      const c = getStandardCourse(entry);
+      if (c !== 'Others') domains.add(c);
+    });
+    return domains.size ? [...domains] : ['Others'];
   }, [rawCourse]);
 
   const [vacancies, setVacancies] = useState([]);
@@ -223,7 +226,7 @@ function VacanciesContent() {
         }
 
         const tabMatch = activeTab === 'Open' ? (!isExpired && !isClosed) : (isExpired || isClosed);
-        const tpoMatch = tpoFilter === 'All' || rowTpo === tpoFilter;
+        const tpoMatch = hideTpoFilter || tpoFilter === 'All' || rowTpo === tpoFilter;
         
         let monthMatch = true;
         if (monthYearFilter !== 'All') {
@@ -266,7 +269,7 @@ function VacanciesContent() {
         renderError: err.message, appsMap: {}
       };
     }
-  }, [vacancies, applications, searchQuery, courseFilter, tpoFilter, monthYearFilter, activeTab, isCourseSpecific, assignedDomains]);
+  }, [vacancies, applications, searchQuery, courseFilter, tpoFilter, monthYearFilter, activeTab, isCourseSpecific, assignedDomains, hideTpoFilter]);
 
   // Define today for the renderer
   const today = new Date();
@@ -356,10 +359,10 @@ function VacanciesContent() {
 
             {isSuperAdmin && (
               <>
-                <select className="premium-select border-purple" value={tpoFilter} onChange={(e) => setTpoFilter(e.target.value)}>
+                {!hideTpoFilter && <select className="premium-select border-purple" value={tpoFilter} onChange={(e) => setTpoFilter(e.target.value)}>
                   <option value="All">All TPOs</option>
                   {uniqueTPOs.map((tpo, i) => <option key={i} value={tpo}>{tpo}</option>)}
-                </select>
+                </select>}
                 <select className="premium-select border-green" value={monthYearFilter} onChange={(e) => setMonthYearFilter(e.target.value)}>
                   <option value="All">All Time</option>
                   {uniqueMonths.map((m, i) => <option key={i} value={m}>{m}</option>)}

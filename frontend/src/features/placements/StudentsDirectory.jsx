@@ -20,7 +20,7 @@ const getStandardCourse = (c) => {
   if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
   if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
   if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
-  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
+  if (lower.includes('information technology') || /(^|[^a-z])it([^a-z]|$)/.test(lower) || lower.includes('python') || lower.includes('software') || lower.includes('data science') || lower.includes('data analytics') || lower.includes('artificial intelligence') || lower.includes('cyber security') || lower.includes('web development') || lower.includes('java') || lower.includes('php')) return 'Information technology (IT)';
   return 'Others';
 };
 
@@ -48,13 +48,12 @@ export default function StudentsDirectory() {
   
   const assignedBranchesArray = Array.isArray(tpoData?.assignedBranchesArray)
     ? tpoData.assignedBranchesArray.map(branch => String(branch).trim().toLowerCase()).filter(Boolean)
-    : String(tpoData?.assignedBranchesArray || '').split(/[\n,]+/).map(branch => branch.trim().toLowerCase()).filter(Boolean);
+    : String(tpoData?.assignedBranchesArray || '').split(/[\n,;]+/).map(branch => branch.trim().replace(/^\d+\.\s*/, '').toLowerCase()).filter(Boolean);
   const hasAssignedBranch = branch => assignedBranchesArray.includes('all') || assignedBranchesArray.some(assigned => {
     const rowBranch = String(branch || '').trim().toLowerCase();
     return rowBranch && (rowBranch === assigned || rowBranch.includes(assigned) || assigned.includes(rowBranch));
   });
 
-  const [selectedBranch, setSelectedBranch] = useState(null); 
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
   const [monthFilter, setMonthFilter] = useState('');
@@ -89,20 +88,25 @@ export default function StudentsDirectory() {
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
   const isTpo = upperRole === 'TPO' || upperRole.includes('PLACEMENT OFFICER');
   const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(upperRole) || upperRole.includes('REGIONAL TECHNICAL HEAD');
+  const isTth = /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(upperRole) || upperRole.includes('TERRITORY TECHNICAL HEAD');
   const isTrainer = upperRole.includes('TRAINER');
   
   const isBranchManager = upperRole === 'BM' || upperRole.includes('BRANCH MANAGER');
-  const isTechnicalLead = upperRole.includes('TECHNICAL LEAD') || /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(upperRole);
-  const isCourseSpecific = isRth || upperRole.includes('TTH') || isTrainer || upperRole.includes('TECHNICAL LEAD');
+  const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(upperRole) || /(^|[^A-Z0-9])TL([^A-Z0-9]|$)/.test(upperRole);
+  const isCourseSpecific = isRth || isTth || isTrainer;
+  const isDirectBranchRole = (isTechnicalLead || isTrainer || isBranchManager) && assignedBranchesArray.length === 1 && !['all', 'all branches'].includes(assignedBranchesArray[0]);
+  const initialDirectBranch = isDirectBranchRole
+    ? (hasAssignedBranch(tpoData?.sittingBranch) ? tpoData.sittingBranch : assignedBranchesArray[0])
+    : null;
+  const [selectedBranch, setSelectedBranch] = useState(initialDirectBranch);
   
   // 🚨 FIXED: Parse multiple assigned courses splitting by comma and newline
   const rawCourse = tpoData?.assignedCourse || 'All';
-  const assignedCoursesArray = (rawCourse === 'All' || rawCourse === 'All Courses') 
-    ? ['All'] 
-    : [...new Set(rawCourse.split(/[,\n]+/).map(c => getStandardCourse(c.trim())).filter(Boolean))];
+  const courseValues = (Array.isArray(rawCourse) ? rawCourse : String(rawCourse).split(/[\n,;]+/)).map(course => String(course).trim()).filter(Boolean);
+  const assignedCoursesArray = courseValues.some(course => /^all( courses)?$/i.test(course)) ? ['All'] : [...new Set(courseValues.map(getStandardCourse).filter(Boolean))];
 
   const canEditAll = isSuperAdmin || isTpo; 
-  const canEditAcademic = canEditAll || isRth || isTrainer || isTechnicalLead;
+  const canEditAcademic = canEditAll || isRth || isTth || isTrainer || isTechnicalLead;
   const canSave = canEditAll || canEditAcademic; 
 
   useEffect(() => {
@@ -125,7 +129,12 @@ export default function StudentsDirectory() {
         ]);
         
         if (stuRes.data.success) {
-          setRawStudents(stuRes.data.students);
+          const loadedStudents = stuRes.data.students || [];
+          setRawStudents(loadedStudents);
+          if (isDirectBranchRole && loadedStudents.length) {
+            const directBranch = loadedStudents.find(student => hasAssignedBranch(student.branch))?.branch;
+            if (directBranch) setSelectedBranch(directBranch);
+          }
         }
         if (statRes.data.success) {
           setGlobalStats(statRes.data.stats);
@@ -135,7 +144,7 @@ export default function StudentsDirectory() {
       } finally { setLoading(false); }
     };
     fetchData();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- Load the signed-in account's fixed branch/course scope once on mount.
 
   const resetFilters = () => {
     setSearchQuery(''); setCourseFilter('All'); setMonthFilter(''); setPlacementStatusFilter('All'); setSortOrder('newest');
@@ -191,7 +200,7 @@ export default function StudentsDirectory() {
   const saveStudentUpdates = async () => {
     setSavingStatus(true);
     try {
-      const response = await axios.post('https://ipcs-tpo-portal-u0l6.onrender.com/api/tpo/students/update-student', {
+      const response = await axios.post(`${API_BASE}/api/tpo/students/update-student`, {
         rowNumber: selectedStudent.rowIdx,
         vacOpen: localVacState, 
         placementStatus: localPlacementState,
@@ -215,7 +224,7 @@ export default function StudentsDirectory() {
     if (isCourseSpecific && assignedCoursesArray[0] !== 'All') {
       if (!assignedCoursesArray.some(ac => getStandardCourse(s.course) === ac)) return false;
     }
-    return !isCourseSpecific || hasAssignedBranch(s.branch);
+    return hasAssignedBranch(s.branch);
   });
 
   const globallyFiltered = scopedStudents.filter(s => {
@@ -275,7 +284,7 @@ export default function StudentsDirectory() {
         )}
 
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: '20px', gap: '15px' }}>
-          {selectedBranch && (
+          {selectedBranch && !isDirectBranchRole && (
             <button onClick={() => setSelectedBranch(null)} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
               <CaretLeft weight="bold" size={18} /> Back to Branches
             </button>
