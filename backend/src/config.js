@@ -32,14 +32,15 @@ const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function fetchSheetWithRetry(sheet, retries = 3) {
   if (!sheet) return [];
-  const backoffs = [10000, 30000, 60000]; // 🚨 10s, 30s, 60s delays for 429 limits
+  const backoffs = [60000, 120000]; // Let the per-minute quota window reset, then back off further.
   for (let i = 0; i < retries; i++) {
     try {
       return await sheet.getRows();
     } catch (error) {
       if (error.response && error.response.status === 429) {
-        const waitTime = backoffs[i] || 60000;
-        console.warn(`⚠️ Google API Rate Limit Hit (429) on "${sheet.title}". Retrying in ${waitTime}ms to let quota reset...`);
+        if (i === retries - 1) break;
+        const waitTime = (backoffs[i] || 120000) + Math.floor(Math.random() * 5000);
+        console.warn(`⚠️ Google API Rate Limit Hit (429) on "${sheet.title}". Retrying in ${waitTime}ms after quota backoff...`);
         await delay(waitTime);
       } else {
         throw error;
@@ -70,8 +71,8 @@ async function performCacheRefresh() {
     ];
 
     // Keep a small amount of concurrency while avoiding a multi-minute cold
-    // start from serial sheet reads. The 25 reads fit comfortably within the
-    // Sheets API's per-minute read quota when issued in batches of five.
+    // start from serial sheet reads. The cache is the read path for requests;
+    // individual dashboard and list endpoints should not fetch these tabs again.
     const fetchedData = [];
     for (let i = 0; i < sheetsToFetch.length; i += 5) {
       const batch = sheetsToFetch.slice(i, i + 5);

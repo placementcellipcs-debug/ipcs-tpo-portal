@@ -117,17 +117,6 @@ export default function Clients() {
     };
   }, [clientCacheKey, isRestrictedManager, isSuperAdmin, tpoData?.name]);
 
-  const fetchClientsManual = async () => {
-    try {
-      const payload = { tpoName: (isSuperAdmin || isRestrictedManager) ? '' : (tpoData?.name || '') };
-      const res = await axios.post(`${API_BASE}/api/tpo/clients`, payload);
-      if (res.data && res.data.success) {
-        setClients(res.data.clients || []);
-        localStorage.setItem(clientCacheKey, JSON.stringify(res.data.clients || []));
-      }
-    } catch (err) { showToast(err.response?.data?.message || 'Could not refresh partner records.', 'error'); }
-  };
-
   const submitAddClient = async () => {
     if (!addForm.companyName) return showToast("Company Name is required", "error");
     setSavingStatus(true);
@@ -193,8 +182,12 @@ export default function Clients() {
         rowNumber: client.rowNumber, companyEmail: client.email, companyName: client.companyName
       });
       if (response.data.success) {
+        const updatedClients = (Array.isArray(clients) ? clients : []).map(item =>
+          String(item.rowNumber) === String(client.rowNumber) ? { ...item, mailStatus: 'Request Sent' } : item
+        );
+        setClients(updatedClients);
+        localStorage.setItem(clientCacheKey, JSON.stringify(updatedClients));
         showToast(`Email sent successfully to ${client.companyName}!`);
-        fetchClientsManual(); 
       }
     } catch (error) { showToast(`Failed to send request: ${error.response?.data?.message || error.message}`, 'error'); } 
     finally { setSendingRequest(null); }

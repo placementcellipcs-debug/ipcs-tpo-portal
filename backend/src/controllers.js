@@ -609,13 +609,7 @@ exports.getDashboardStats = async (req, res) => {
 
   const cache = getCache();
   let studentCount = 0, pendingApps = 0, placedCount = 0, activeVacs = 0;
-  let clientRows = cache.clients || [];
-  try {
-    const clientsSheet = doc.sheetsByTitle['Clients'] || doc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('clients'));
-    if (clientsSheet && clientsSheet.rowCount - 1 > clientRows.length) clientRows = await clientsSheet.getRows();
-  } catch (error) {
-    console.warn('Using cached client records for the dashboard company total:', error.message);
-  }
+  const clientRows = cache.clients || [];
   const totalCompanies = clientRows.reduce((count, row) => {
     const companyName = getValByHeader(row, ['companyname', 'company']).trim();
     return count + (companyName ? 1 : 0);
@@ -2014,32 +2008,28 @@ const canManageClientRow = (user, row) => {
 
 exports.getClients = async (req, res) => {
   try {
-    let clients = [];
-    await loadDocInfo();
-    const clientSheet = doc.sheetsByTitle['Clients'];
-    if (!clientSheet) return res.status(503).json({ success: false, message: 'Client register is unavailable.' });
-    const rows = await clientSheet.getRows();
-    if (Array.isArray(rows)) {
-      rows.forEach(row => {
-        const officer = getValByHeader(row, ['placementofficer', 'tponame']);
-        if (canManageClientRow(req.portalUser, row)) {
-          clients.push({ 
-            rowNumber: row.rowNumber, 
-            companyName: getValByHeader(row, ['companyname', 'company']) || 'Unknown', 
-            website: getValByHeader(row, ['companywebsite', 'website']) || '', 
-            location: getValByHeader(row, ['companylocation', 'location']) || '', 
-            contact: getValByHeader(row, ['companycontact', 'contactnumber', 'phone']) || '', 
-            email: getValByHeader(row, ['companymailid', 'companyemail', 'mailid', 'email']) || '', 
-            contactPerson: getValByHeader(row, ['companycontactperson', 'contactperson', 'person']) || '', 
-            logo: getValByHeader(row, ['companylogo', 'logo']) || '', 
-            mailStatus: getValByHeader(row, ['mailstatus']) || 'Pending', 
-            documentStatus: getValByHeader(row, ['documentstatus', 'docstatus']) || 'Pending', 
-            mouLink: getValByHeader(row, ['mou', 'moulink']) || '',
-            tpoName: officer || 'Unknown' 
-          });
-        }
-      });
-    }
+    const rows = getCache()?.clients;
+    if (!Array.isArray(rows)) return res.status(503).json({ success: false, message: 'Client records are still loading. Please retry shortly.' });
+    const clients = rows.reduce((result, row) => {
+      const officer = getValByHeader(row, ['placementofficer', 'tponame']);
+      if (canManageClientRow(req.portalUser, row)) {
+        result.push({
+          rowNumber: row.rowNumber,
+          companyName: getValByHeader(row, ['companyname', 'company']) || 'Unknown',
+          website: getValByHeader(row, ['companywebsite', 'website']) || '',
+          location: getValByHeader(row, ['companylocation', 'location']) || '',
+          contact: getValByHeader(row, ['companycontact', 'contactnumber', 'phone']) || '',
+          email: getValByHeader(row, ['companymailid', 'companyemail', 'mailid', 'email']) || '',
+          contactPerson: getValByHeader(row, ['companycontactperson', 'contactperson', 'person']) || '',
+          logo: getValByHeader(row, ['companylogo', 'logo']) || '',
+          mailStatus: getValByHeader(row, ['mailstatus']) || 'Pending',
+          documentStatus: getValByHeader(row, ['documentstatus', 'docstatus']) || 'Pending',
+          mouLink: getValByHeader(row, ['mou', 'moulink']) || '',
+          tpoName: officer || 'Unknown'
+        });
+      }
+      return result;
+    }, []);
 
     res.json({ success: true, clients: clients.reverse() });
   } catch (err) {
