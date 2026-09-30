@@ -75,15 +75,20 @@ const userHasBranch = (user, branch) => {
 // 🚨 NEW: SMART DATE PARSER FOR GOOGLE SHEETS
 const safeParseDate = (dateStr) => {
   if (!dateStr) return null;
-  // Try native parsing first (handles MM/DD/YYYY naturally)
-  let parsedDate = new Date(dateStr);
-  
-  // If native parsing fails, it's likely DD/MM/YYYY (e.g. 13/09/2026)
-  if (isNaN(parsedDate.getTime()) && dateStr.includes('/')) {
-     const parts = dateStr.split(/[/\s,.-]+/);
-     if (parts.length >= 3) {
-       parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-     }
+  const input = String(dateStr).trim();
+  const slashDate = input.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  let parsedDate;
+  if (slashDate) {
+    const [, first, second, year] = slashDate;
+    const firstNumber = Number(first);
+    const secondNumber = Number(second);
+    // The portal's sheets use Indian day-first dates. If one part exceeds 12,
+    // use it to recognize an unambiguous month-first date from older rows.
+    const month = firstNumber > 12 ? secondNumber : secondNumber > 12 ? firstNumber : secondNumber;
+    const day = firstNumber > 12 ? firstNumber : secondNumber > 12 ? secondNumber : firstNumber;
+    parsedDate = new Date(Number(year), month - 1, day);
+  } else {
+    parsedDate = new Date(input);
   }
   return isNaN(parsedDate.getTime()) ? null : parsedDate;
 };
@@ -824,8 +829,10 @@ exports.updateStudent = async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-exports.getApplications = (req, res) => {
+exports.getApplications = async (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, department } = req.body;
+  if (!getCache()) await refreshCache();
+  if (!getCache()) return res.status(503).json({ success: false, message: 'Placement data is still syncing. Please refresh shortly.' });
   let appsList = []; 
   const cache = getCache();
   
@@ -843,7 +850,7 @@ exports.getApplications = (req, res) => {
       let qual = getValByHeader(row, ['qual']) || '';
 
       if (!phone || !email) {
-        const studentData = cache.students.find(s => {
+        const studentData = (cache.students || []).find(s => {
           const sRoll = getValByHeader(s, ['roll', 'rollnumber', 'ipcsrollnumber']);
           return sRoll && sRoll === roll;
         });
@@ -1018,6 +1025,67 @@ exports.updateApplication = async (req, res) => {
   } catch (error) { 
     console.error(error);
     res.status(500).json({ success: false, message: `Update Failed: ${error.message}` }); 
+  }
+};
+
+exports.updatePlacementLog = async (req, res) => {
+  const rowNumber = Number.parseInt(req.body.rowNumber, 10);
+  const user = req.portalUser;
+  if (!Number.isInteger(rowNumber) || rowNumber < 2) {
+    return res.status(400).json({ success: false, message: 'A valid placement log row is required.' });
+  }
+
+  try {
+    await loadDocInfo();
+    const logSheet = doc.sheetsByTitle['TPO_Log'];
+    if (!logSheet) return res.status(503).json({ success: false, message: 'The placement log sheet is unavailable.' });
+    const rows = await logSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (!rows.length || Number(rows[0].rowNumber) !== rowNumber) {
+      return res.status(404).json({ success: false, message: 'Placement log record was not found.' });
+    }
+
+    const row = rows[0];
+    if (!hasAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']), user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department)) {
+      return res.status(403).json({ success: false, message: 'This placement is outside your branch or course assignment.' });
+    }
+
+    let offerLetterLink = getValByHeader(row, ['offerletterstatus', 'offerletter']) || '';
+    if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
+
+    const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const headers = logSheet.headerValues || [];
+    const findHeader = aliases => {
+      for (const alias of aliases) {
+        const header = headers.find(item => normalize(item) === normalize(alias));
+        if (header) return header;
+      }
+      for (const alias of aliases) {
+        const target = normalize(alias);
+        const header = headers.find(item => target.length >= 5 && normalize(item).includes(target));
+        if (header) return header;
+      }
+      return null;
+    };
+    const update = {};
+    const setValue = (aliases, value) => {
+      const header = findHeader(aliases);
+      if (header && value !== undefined) update[header] = value;
+    };
+    setValue(['status'], req.body.status || 'Placed');
+    setValue(['remarks'], req.body.remarks || '');
+    setValue(['dateplaced'], req.body.datePlaced || '');
+    setValue(['package', 'package(lpa)'], req.body.packageLpa || '');
+    setValue(['joiningstatus'], req.body.joiningStatus || '');
+    if (offerLetterLink) setValue(['offerletterstatus', 'offerletter'], offerLetterLink);
+    if (!Object.keys(update).length) return res.status(422).json({ success: false, message: 'No editable placement fields were found in the log sheet.' });
+
+    row.assign(update);
+    await row.save();
+    refreshCache();
+    return res.json({ success: true, message: 'Placement log updated.' });
+  } catch (error) {
+    console.error('Placement log update failed:', error);
+    return res.status(500).json({ success: false, message: `Update failed: ${error.message}` });
   }
 };
 
@@ -1197,14 +1265,16 @@ exports.updateIssue = async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
-exports.getReports = (req, res) => {
+exports.getReports = async (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, department } = req.body;
   const checkAccess = (rBranch, rCourse) => hasAccess(rBranch, rCourse, role, assignedBranchesArray, assignedCourse, department);
 
+  if (!getCache()) await refreshCache();
+  if (!getCache()) return res.status(503).json({ success: false, message: 'Report data is still syncing. Please refresh shortly.' });
   let students = [], applications = [], issues = [], talentino = [], tpoLogs = [];
   const cache = getCache();
   
-  cache.students.forEach(row => {
+  (cache.students || []).forEach(row => {
     if(!checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) return;
     students.push({ 
       name: getValByHeader(row, ['name']), 
@@ -1217,21 +1287,21 @@ exports.getReports = (req, res) => {
     });
   });
   
-  cache.applications.forEach(row => {
+  (cache.applications || []).forEach(row => {
     if(!checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) return;
     applications.push({ name: getValByHeader(row, ['studentname', 'name']), roll: getValByHeader(row, ['rollnumber', 'roll']), jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']), date: getValByHeader(row, ['timestamp']), status: getValByHeader(row, ['status']), remarks: getValByHeader(row, ['remarks']), tpoName: getValByHeader(row, ['placementofficer']), branch: getValByHeader(row, ['branch']), course: getValByHeader(row, ['course']) });
   });
   
-  cache.issues.forEach(row => { 
+  (cache.issues || []).forEach(row => {
     if (checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) issues.push({ name: getValByHeader(row, ['name']), branch: getValByHeader(row, ['branch']), details: getValByHeader(row, ['issuedetails']), status: getValByHeader(row, ['status']), remarks: getValByHeader(row, ['remarks']) }); 
   });
   
-  cache.tAtt.forEach(row => { 
+  (cache.tAtt || []).forEach(row => {
     if (checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) talentino.push({ name: getValByHeader(row, ['name']), branch: getValByHeader(row, ['branch']), date: getValByHeader(row, ['check-in', 'date']), rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes']) }); 
   });
   
-  let vacancies = cache.vacancies.map(row => ({ id: getValByHeader(row, ['jobid', 'id']) || '', company: getValByHeader(row, ['company']) || '', location: getValByHeader(row, ['location']) || '', mode: getValByHeader(row, ['mode']) || '', status: getValByHeader(row, ['status']) || 'Open', course: getValByHeader(row, ['course']) || '', date: getValByHeader(row, ['lastdate', 'date']) || '' }));
-  let events = cache.events.map(row => ({ date: getValByHeader(row, ['date']) || '' }));
+  let vacancies = (cache.vacancies || []).map(row => ({ id: getValByHeader(row, ['jobid', 'id']) || '', company: getValByHeader(row, ['company']) || '', location: getValByHeader(row, ['location']) || '', mode: getValByHeader(row, ['mode']) || '', status: getValByHeader(row, ['status']) || 'Open', course: getValByHeader(row, ['course']) || '', date: getValByHeader(row, ['lastdate', 'date']) || '' }));
+  let events = (cache.events || []).map(row => ({ date: getValByHeader(row, ['date']) || '' }));
 
   if (cache.tpoLogs) {
     cache.tpoLogs.forEach(row => { 
@@ -1239,7 +1309,7 @@ exports.getReports = (req, res) => {
         const rowData = row.toObject();
         // Strict mapping to ensure global view processes properly
         if(checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) {
-          tpoLogs.push(rowData); 
+          tpoLogs.push({ ...rowData, rowNumber: row.rowNumber, sourceSheet: 'TPO_Log' });
         }
       } catch(e) {}
     });
@@ -2101,6 +2171,7 @@ exports.getPublicOpenings = async (_req, res) => {
       const key = [company, position, location].map(normalizePlacementText).join('|');
       const isExpired = /(closed|filled|expired)/i.test(sourceStatus) || Boolean(deadline && deadline < today);
       const status = isExpired ? 'Expired' : 'Open';
+      if (status !== 'Open') return;
       const existing = uniqueOpenings.get(key);
       if (existing && (existing.status === 'Open' || status === 'Expired')) return;
       uniqueOpenings.set(key, {
@@ -3264,10 +3335,13 @@ exports.getDrives = async (req, res) => {
     const registrationRows = await registrationSheet.getRows();
     const signedInName = normalizePlacementText(user?.name);
     const cache = getCache() || {};
+    const eventRows = Array.isArray(cache.events) && cache.events.length
+      ? cache.events
+      : await (doc.sheetsByTitle['Event'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('event')))?.getRows() || [];
     const eventsMap = new Map();
     
     // 1. SMART EVENT MAPPING: Grab ALL Placement Drives so even empty ones exist
-    (cache?.events || []).forEach(row => {
+    eventRows.forEach(row => {
        const type = getValByHeader(row, ['event', 'type', 'event_type']) || '';
        const dId = getValByHeader(row, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(row, ['event_id', 'eventid', 'id', 'title']) || '';
        

@@ -7,8 +7,10 @@ import { latestPlacementRecords, normalizePlacementText } from '../../utils/plac
 
 export default function Reports() {
   const tpoDataStr = localStorage.getItem('tpoData');
-  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
-  const isSuperAdmin = tpoData?.accessType === 'superadmin';
+  let tpoData = null;
+  try { tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null; } catch { tpoData = null; }
+  const role = String(tpoData?.role || '').toUpperCase();
+  const isSuperAdmin = tpoData?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].some(adminRole => role.includes(adminRole));
   const myName = (tpoData?.name || '').toLowerCase().trim();
   
   const [activeTab, setActiveTab] = useState(1);
@@ -21,8 +23,10 @@ export default function Reports() {
   const [tpoLogs, setTpoLogs] = useState([]); 
   const placementLogs = useMemo(() => latestPlacementRecords(tpoLogs), [tpoLogs]);
   
-  const [tpoList, setTpoList] = useState([]);
+  const [tpoList, setTpoList] = useState(() => !isSuperAdmin && tpoData ? [tpoData] : []);
   const [allBranchesList, setAllBranchesList] = useState([]);
+  const [reportLoading, setReportLoading] = useState(true);
+  const [reportError, setReportError] = useState('');
   // Replaced hardcoded courses with dynamic state (initialized with the 5 defaults)
   const [mainCourses, setMainCourses] = useState(['Industrial Automation', 'BMS AND CCTV', 'Information technology (IT)', 'Digital Marketing', 'Embedded and IoT']);
 
@@ -33,48 +37,60 @@ export default function Reports() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    const fetchAllData = async () => {
-      try {
-        const [res, uRes, bRes, cRes] = await Promise.all([
-          axios.post(`${API_BASE}/api/tpo/reports`, { assignedBranchesArray: ['all'] }),
-          axios.get(`${API_BASE}/api/admin/users`),
-          axios.get(`${API_BASE}/api/admin/branches`),
-          axios.get(`${API_BASE}/api/courses`).catch(() => ({ data: { success: false } })) // Graceful fail if endpoint missing
-        ]);
-        
-        if (res.data.success) {
-          setStudents(res.data.students || []);
-          setEvents(res.data.events || []);
-          setTpoLogs(res.data.tpoLogs || []); 
-          setTpoStatsData(res.data.tpoStats || []); // 🚨 FETCHED STATS
-        }
+    let active = true;
+    setReportLoading(true);
+    setReportError('');
 
-        if (uRes.data.success) {
-          const tpos = (uRes.data.users || []).filter(u => u.role === 'TPO');
-          if (isSuperAdmin) {
-            setTpoList(tpos);
-          } else {
-            const me = tpos.find(t => (t.userName||'').toLowerCase().trim() === myName);
-            setTpoList(me ? [me] : [tpoData]); 
-          }
+    axios.post(`${API_BASE}/api/tpo/reports`, {})
+      .then(response => {
+        if (!active) return;
+        if (!response.data?.success) throw new Error(response.data?.message || 'Could not load report data.');
+        const data = response.data;
+        const reportStudents = data.students || [];
+        const reportLogs = data.tpoLogs || [];
+        setStudents(reportStudents);
+        setEvents(data.events || []);
+        setTpoLogs(reportLogs);
+        setTpoStatsData(data.tpoStats || []);
+        setAllBranchesList([...new Set([...reportStudents, ...reportLogs].map(item => item.branch).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
+        if (isSuperAdmin) {
+          const loggedTpos = [...new Set(reportLogs.map(log => getVal(log, 'placementofficer')).filter(Boolean))]
+            .map(name => ({ name, userName: name }));
+          setTpoList(current => current.length ? current : loggedTpos);
         }
-
-        if (bRes.data.success) {
-          const branches = bRes.data.branches.map(b => b.branch).filter(Boolean).sort((a,b)=>a.localeCompare(b));
-          setAllBranchesList(branches);
+      })
+      .catch(error => {
+        if (active) {
+          console.error('Failed to fetch reports', error);
+          setReportError(error.response?.data?.message || error.message || 'Could not load report data.');
         }
+      })
+      .finally(() => { if (active) setReportLoading(false); });
 
-        if (cRes?.data?.success && cRes.data.courses) {
-          const fetchedCourses = Object.keys(cRes.data.courses).filter(c => c.trim() !== '' && c !== 'Others');
-          if (fetchedCourses.length > 0) setMainCourses(fetchedCourses);
-        }
-
-      } catch (error) {
-        console.error("Failed to fetch reports", error);
+    const auxiliaryRequests = [
+      isSuperAdmin ? axios.get(`${API_BASE}/api/admin/users`) : Promise.resolve(null),
+      isSuperAdmin ? axios.get(`${API_BASE}/api/admin/branches`) : Promise.resolve(null),
+      axios.get(`${API_BASE}/api/courses`).catch(() => null)
+    ];
+    Promise.allSettled(auxiliaryRequests).then(([usersResult, branchesResult, coursesResult]) => {
+      if (!active) return;
+      if (isSuperAdmin && usersResult.status === 'fulfilled' && usersResult.value?.data?.success) {
+        const tpos = (usersResult.value.data.users || []).filter(user => /tpo|placement officer/i.test(user.role || ''));
+        if (tpos.length) setTpoList(tpos);
       }
-    };
-    fetchAllData();
-  }, [isSuperAdmin, myName, tpoData]); 
+      if (isSuperAdmin && branchesResult.status === 'fulfilled' && branchesResult.value?.data?.success) {
+        const branches = (branchesResult.value.data.branches || []).map(branch => branch.branch).filter(Boolean).sort((a, b) => a.localeCompare(b));
+        if (branches.length) setAllBranchesList(branches);
+      }
+      const coursesResponse = coursesResult.status === 'fulfilled' ? coursesResult.value : null;
+      if (coursesResponse?.data?.success && coursesResponse.data.courses) {
+        const fetchedCourses = Object.keys(coursesResponse.data.courses).filter(course => course.trim() && course !== 'Others');
+        if (fetchedCourses.length) setMainCourses(fetchedCourses);
+      }
+    });
+
+    return () => { active = false; };
+  }, [isSuperAdmin, myName]);
 
   // Course normalizer for matrix alignment
   const getCourse = (c) => {
@@ -96,17 +112,21 @@ export default function Reports() {
   const checkMonth = (dateStr) => {
     if (!monthFilter) return true;
     if (!dateStr) return false;
+    const dateValue = String(dateStr);
     let year, month;
-    if (dateStr.includes('/')) {
-      const parts = dateStr.split(/[/\s,]+/); 
-      year = parts[2];
-      month = parts[1].padStart(2, '0');
-    } else if (dateStr.includes('-')) {
-      const parts = dateStr.split(' ')[0].split('-');
+    const localDate = dateValue.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+    if (localDate) {
+      const [, first, second, parsedYear] = localDate;
+      const firstNumber = Number(first);
+      const secondNumber = Number(second);
+      month = String(firstNumber > 12 ? secondNumber : secondNumber > 12 ? firstNumber : secondNumber).padStart(2, '0');
+      year = parsedYear;
+    } else if (dateValue.includes('-')) {
+      const parts = dateValue.split(' ')[0].split('-');
       year = parts[0];
-      month = parts[1].padStart(2, '0');
+      month = String(parts[1] || '').padStart(2, '0');
     } else {
-      const d = new Date(dateStr);
+      const d = new Date(dateValue);
       if (isNaN(d)) return false;
       year = d.getFullYear();
       month = String(d.getMonth() + 1).padStart(2, '0');
@@ -120,9 +140,15 @@ export default function Reports() {
   };
 
   const isAssignedBranch = (b) => {
-    if (!tpoData || !tpoData.assignedBranchesArray) return false;
-    if (tpoData.assignedBranchesArray.includes('all')) return true;
-    return tpoData.assignedBranchesArray.some(assigned => (b || '').toLowerCase().includes(assigned.toLowerCase()));
+    if (!tpoData) return false;
+    const assignedBranches = Array.isArray(tpoData.assignedBranchesArray)
+      ? tpoData.assignedBranchesArray
+      : String(tpoData.assignedBranchesArray || '').split(/[\n,;]+/);
+    const target = String(b || '').trim().toLowerCase();
+    return assignedBranches.some(value => {
+      const assigned = String(value || '').trim().toLowerCase();
+      return assigned === 'all' || assigned === 'all branches' || Boolean(assigned && target && (target.includes(assigned) || assigned.includes(target)));
+    });
   };
 
   const displayMonthName = new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
@@ -390,6 +416,9 @@ export default function Reports() {
             <input type="month" className="sleek-input" style={{ background: '#0f1523', border: '1px solid var(--accent-primary)', color: 'var(--accent-primary)', fontWeight: 'bold', fontSize: '1.15rem', padding: '12px 20px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
           </div>
         </div>
+
+        {reportLoading && <div role="status" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px', color: 'var(--text-muted)' }}><CircleNotch className="ph-spin" size={20} />Loading report data…</div>}
+        {reportError && <div role="alert" style={{ marginBottom: '18px', padding: '13px 16px', border: '1px solid rgba(248,113,113,.35)', borderRadius: '10px', color: '#fecaca', background: 'rgba(127,29,29,.2)' }}>Report data could not be loaded: {reportError}</div>}
 
         <div className="rt-tabs">
           <button className={`rt-tab ${activeTab === 1 ? 'active' : ''}`} onClick={() => setActiveTab(1)}>

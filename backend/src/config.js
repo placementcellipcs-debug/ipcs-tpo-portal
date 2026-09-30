@@ -16,6 +16,7 @@ const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 
 let globalCache = null;
 let isFetching = false;
+let cacheRefreshPromise = null;
 let docInfoLoading = null;
 
 const getCache = () => globalCache;
@@ -48,7 +49,7 @@ async function fetchSheetWithRetry(sheet, retries = 3) {
   throw new Error(`Failed to fetch sheet "${sheet.title}" after ${retries} retries due to rate limits.`);
 }
 
-async function refreshCache() {
+async function performCacheRefresh() {
   if (isFetching) return;
   isFetching = true;
   try {
@@ -68,10 +69,13 @@ async function refreshCache() {
       getSheetFuzzy("trainer"), getSheetFuzzy("security"), getSheetFuzzy("TPOStats")
     ];
 
+    // Keep a small amount of concurrency while avoiding a multi-minute cold
+    // start from serial sheet reads. The 25 reads fit comfortably within the
+    // Sheets API's per-minute read quota when issued in batches of five.
     const fetchedData = [];
-    for (let i = 0; i < sheetsToFetch.length; i++) {
-      fetchedData.push(await fetchSheetWithRetry(sheetsToFetch[i]));
-      await delay(3000); // 🚨 Increased to 3 seconds to safely pace below 60 req/min
+    for (let i = 0; i < sheetsToFetch.length; i += 5) {
+      const batch = sheetsToFetch.slice(i, i + 5);
+      fetchedData.push(...await Promise.all(batch.map(sheet => fetchSheetWithRetry(sheet))));
     }
 
     const [
@@ -114,6 +118,12 @@ async function refreshCache() {
     isFetching = false;
     if (!globalCache) { setTimeout(refreshCache, 5000); }
   }
+}
+
+function refreshCache() {
+  if (cacheRefreshPromise) return cacheRefreshPromise;
+  cacheRefreshPromise = performCacheRefresh().finally(() => { cacheRefreshPromise = null; });
+  return cacheRefreshPromise;
 }
 
 refreshCache();

@@ -163,7 +163,11 @@ export default function PlacedStudents() {
         const finalApps = mappedLogs.map(logApp => {
           const identity = getPlacementIdentity(logApp);
           const match = identity ? sheetApplications.find(application => getPlacementIdentity(application) === identity) : null;
-          return { ...logApp, rowNumber: match ? match.rowNumber : null };
+          return {
+            ...logApp,
+            rowNumber: match?.rowNumber ?? logApp.rowNumber ?? null,
+            sourceSheet: match ? 'Opening_Applied' : 'TPO_Log'
+          };
         });
 
         setApplications(finalApps);
@@ -236,7 +240,7 @@ export default function PlacedStudents() {
 
   const openEditModal = (app) => {
     if (!app.rowNumber) {
-      alert("Cannot edit this log because it does not exist in the active Opening_Applied sheet.");
+      alert('This placement record has no editable row in the placement log. Refresh the list and try again.');
       return;
     }
     setSelectedApp(app);
@@ -249,6 +253,7 @@ export default function PlacedStudents() {
     try {
       const formData = new FormData();
       formData.append('rowNumber', selectedApp.rowNumber);
+      formData.append('sourceSheet', selectedApp.sourceSheet || 'Opening_Applied');
       formData.append('fullApp', JSON.stringify(selectedApp));
       formData.append('status', selectedApp.status || 'Placed'); 
       formData.append('remarks', editForm.remarks || '');
@@ -257,7 +262,8 @@ export default function PlacedStudents() {
       formData.append('joiningStatus', editForm.joiningStatus || '');
       if (editForm.offerLetterFile) formData.append('offerLetterFile', editForm.offerLetterFile);
 
-      await axios.post(`${API_BASE}/api/tpo/applications/update`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      const updatePath = selectedApp.sourceSheet === 'TPO_Log' ? 'update-log' : 'update';
+      await axios.post(`${API_BASE}/api/tpo/applications/${updatePath}`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       setIsEditModalOpen(false);
       fetchData();
     } catch { alert("Failed to save placement updates."); } finally { setSavingStatus(false); }

@@ -108,6 +108,30 @@ function SectionHeading({ eyebrow, title, description, align = 'left' }) {
   );
 }
 
+function TeamProfileCard({ person, featured = false, index = 0 }) {
+  const initials = String(person.name || '?').split(' ')
+    .filter(part => /^[A-Z]/i.test(part) && !['Mr.', 'Ms.', 'Mrs.'].includes(part))
+    .slice(0, 2).map(part => part[0].toUpperCase()).join('');
+  const profilePhotoUrl = person.image || logoSource(person.photo);
+  const bio = person.bio || (person.branches
+    ? `Supporting student placements and employer connections across ${person.branches}.`
+    : 'Supporting students with placement preparation and connections to career opportunities.');
+
+  return <article className={`public-team-card${featured ? ' public-team-lead' : ''}`}>
+    <div className={`public-team-photo-wrap avatar-${index + 1}`}>
+      <span className="public-team-photo-fallback" aria-hidden="true">{initials}</span>
+      {profilePhotoUrl && <img src={profilePhotoUrl} alt={`${person.name} profile`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}
+    </div>
+    <div className="public-team-copy">
+      {featured && <span className="public-team-lead-label">Placement team lead</span>}
+      <span className="public-team-role">{person.role || 'Placement Officer'}</span>
+      <h3>{person.name}</h3>
+      {person.branches && <span className="public-team-branches">{person.branches}</span>}
+      <p>{bio}</p>
+    </div>
+  </article>;
+}
+
 function AnimatedMilestone({ value, suffix, label }) {
   const node = useRef(null);
   const [started, setStarted] = useState(false);
@@ -197,6 +221,9 @@ export default function PublicSiteSections({ page = 'all' }) {
     const match = placementOfficers.find(member => profile.aliases.some(alias => normalizeTeamName(alias) === normalizeTeamName(member.name)));
     return { ...profile, photo: profile.image ? '' : match?.photo || '', branches: match?.branches || '' };
   });
+  const placementTeamLeadProfile = placementTeam.find(person => normalizeTeamName(person.name) === normalizeTeamName(placementTeamLead.name));
+  const placementTeamMembers = placementTeam.filter(person => person !== placementTeamLeadProfile);
+  const visibleVacancies = vacancies.filter(vacancy => !/(expired|closed|filled|cancelled|canceled|withdrawn)/i.test(String(vacancy.status || '')));
 
   useEffect(() => {
     if (!['partners', 'partners-all', 'all'].includes(page)) return undefined;
@@ -333,35 +360,37 @@ export default function PublicSiteSections({ page = 'all' }) {
       {['about', 'all'].includes(page) && <>
       <section className="public-about-section" id="about">
         <div className="public-story-shell">
-          <SectionHeading
-            eyebrow="Why Choose Us"
-            title="A World-Leading Technical Training Provider."
-            description="Industry-led technical training and automation solutions, built on practical experience and a commitment to quality."
-          />
-          <div className="public-about-grid">
-            <article className="public-about-card public-about-main">
-              <div className="public-card-icon"><Compass size={23} weight="duotone" /></div>
-              <span className="public-card-kicker">Who We Are</span>
-              <h3>Industry experience. Practical learning. Global reach.</h3>
-              <p>IPCS (Ingenious Power and Control Systems) was founded in Kochi in 2008, first delivering industrial automation projects. As demand for skilled technical professionals grew, we extended that experience into hands-on technical education.</p>
-              <p>Today, IPCS Global combines automation services with professional training across industrial systems, smart infrastructure, IT, emerging technologies, and digital marketing. Our work spans India, the UAE, and Saudi Arabia, and our alumni contribute to organizations worldwide.</p>
-              <a className="public-about-team-link" href="#team">Learn more about our Team <ArrowRight size={17} weight="bold" /></a>
-            </article>
-            <div className="public-about-facts">
-              <article className="public-fact-card"><span className="public-fact-number">2008</span><span>IPCS Global established in Kochi</span></article>
-              <article className="public-fact-card"><span className="public-fact-number">2009</span><span>First training centre opened in Kozhikode</span></article>
-              <article className="public-fact-card"><span className="public-fact-number">2014</span><span>ISO certification milestone</span></article>
+          <article className="public-about-story">
+            <SectionHeading
+              eyebrow="Why Choose Us"
+              title="A World-Leading Technical Training Provider."
+              description="Industry-led technical training and automation solutions, built on practical experience and a commitment to quality."
+            />
+            <div className="public-about-grid">
+              <article className="public-about-card public-about-main">
+                <div className="public-card-icon"><Compass size={23} weight="duotone" /></div>
+                <span className="public-card-kicker">Who We Are</span>
+                <h3>Industry experience. Practical learning. Global reach.</h3>
+                <p>IPCS (Ingenious Power and Control Systems) was founded in Kochi in 2008, first delivering industrial automation projects. As demand for skilled technical professionals grew, we extended that experience into hands-on technical education.</p>
+                <p>Today, IPCS Global combines automation services with professional training across industrial systems, smart infrastructure, IT, emerging technologies, and digital marketing. Our work spans India, the UAE, and Saudi Arabia, and our alumni contribute to organizations worldwide.</p>
+                <a className="public-about-team-link" href="#team">Learn more about our Team <ArrowRight size={17} weight="bold" /></a>
+              </article>
+              <div className="public-about-facts">
+                <article className="public-fact-card"><span className="public-fact-number">2008</span><span>IPCS Global established in Kochi</span></article>
+                <article className="public-fact-card"><span className="public-fact-number">2009</span><span>First training centre opened in Kozhikode</span></article>
+                <article className="public-fact-card"><span className="public-fact-number">2014</span><span>ISO certification milestone</span></article>
+              </div>
             </div>
-          </div>
-          <div className="public-roadmap" aria-label="IPCS Global company history">
-            <div className="public-roadmap-heading"><span>OUR JOURNEY</span><h3>From a Kochi office to a global learning network.</h3><p>Key milestones in the growth of IPCS Global.</p></div>
-            <ol className="public-roadmap-list">
-              {companyRoadmap.map((item, index) => <li className="public-roadmap-item" key={item.date}>
-                <div className="public-roadmap-marker"><span>{String(index + 1).padStart(2, '0')}</span></div>
-                <div className="public-roadmap-card"><div className="public-roadmap-meta"><span>{item.date}</span><span>{item.phase}</span></div><h4>{item.title}</h4><p>{item.copy}</p></div>
-              </li>)}
-            </ol>
-          </div>
+            <div className="public-roadmap" aria-label="IPCS Global company history">
+              <div className="public-roadmap-heading"><span>OUR JOURNEY</span><h3>From a Kochi office to a global learning network.</h3><p>Key milestones in the growth of IPCS Global.</p></div>
+              <ol className="public-roadmap-list">
+                {companyRoadmap.map((item, index) => <li className="public-roadmap-item" key={item.date}>
+                  <div className="public-roadmap-marker"><span>{String(index + 1).padStart(2, '0')}</span></div>
+                  <div className="public-roadmap-card"><div className="public-roadmap-meta"><span>{item.date}</span><span>{item.phase}</span></div><h4>{item.title}</h4><p>{item.copy}</p></div>
+                </li>)}
+              </ol>
+            </div>
+          </article>
           <div className="public-capability-grid">
             <article><span>INDUSTRY SOLUTIONS</span><h3>Automation, from design through commissioning.</h3><p>Process, factory, and machine automation; CNC solutions; building and energy management; IoT and robotics; industrial calibration and testing.</p><div>{['HMI', 'PLCs', 'DCS', 'SCADA', 'Drives', 'Sensors'].map(item => <b key={item}>{item}</b>)}</div></article>
             <article><span>PROFESSIONAL TRAINING</span><h3>Skills built around real systems and industry needs.</h3><p>Corporate and professional programs span automation, controls, digital technology, and career-ready skills.</p><div>{['PLC & SCADA', 'DCS & HMI', 'Panel Design', 'Process & Electrical Controls', 'Embedded Systems', 'Robotics', 'Industrial Networking', 'IoT', 'IT', 'Digital Marketing'].map(item => <b key={item}>{item}</b>)}</div></article>
@@ -384,27 +413,15 @@ export default function PublicSiteSections({ page = 'all' }) {
         <div className="public-story-shell">
           <SectionHeading eyebrow="Career guidance & placement" title="IPCS Placement Team" description="Meet the people helping students prepare for careers and connect with employers." align="center" />
           {placementTeamError && <div className="public-team-status" role="status">Placement team details are temporarily unavailable. Please check back soon.</div>}
-          {placementTeamLoading ? <div className="public-team-grid" aria-label="Loading placement team">{[1, 2, 3].map(item => <div className="public-team-skeleton" key={item} />)}</div> : (
+          {placementTeamLoading ? <>
+            <div className="public-team-skeleton public-team-lead-skeleton" aria-label="Loading placement team lead" />
+            <div className="public-team-grid" aria-label="Loading placement team">{[1, 2, 3].map(item => <div className="public-team-skeleton" key={item} />)}</div>
+          </> : <>
+            {placementTeamLeadProfile && <TeamProfileCard person={placementTeamLeadProfile} featured />}
             <div className="public-team-grid">
-              {placementTeam.map((person, index) => {
-                const initials = String(person.name || '?').split(' ').filter(part => /^[A-Z]/i.test(part) && !['Mr.', 'Ms.', 'Mrs.'].includes(part)).slice(0, 2).map(part => part[0].toUpperCase()).join('');
-                const profilePhotoUrl = person.image || logoSource(person.photo);
-                const bio = person.bio || (person.branches
-                  ? `Supporting student placements and employer connections across ${person.branches}.`
-                  : 'Supporting students with placement preparation and connections to career opportunities.');
-                return <article className="public-team-card" key={`${person.name}-${index}`}>
-                  <div className={`public-team-photo-wrap avatar-${index + 1}`}>
-                    <span className="public-team-photo-fallback" aria-hidden="true">{initials}</span>
-                    {profilePhotoUrl && <img src={profilePhotoUrl} alt={`${person.name} profile`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}
-                  </div>
-                  <span className="public-team-role">{person.role || 'Placement Officer'}</span>
-                  <h3>{person.name}</h3>
-                  {person.branches && <span className="public-team-branches">{person.branches}</span>}
-                  <p>{bio}</p>
-                </article>;
-              })}
+              {placementTeamMembers.map((person, index) => <TeamProfileCard person={person} index={index} key={person.name} />)}
             </div>
-          )}
+          </>}
         </div>
       </section>
       </>}
@@ -604,11 +621,11 @@ export default function PublicSiteSections({ page = 'all' }) {
 
       {page === 'vacancies' && <section className="public-vacancies-section" id="vacancies">
         <div className="public-story-shell">
-          <SectionHeading eyebrow="Career opportunities" title="Current Vacancies" description="Browse open and expired opportunities shared with IPCS Global, with each role’s company and location in one place." />
+          <SectionHeading eyebrow="Career opportunities" title="Current Vacancies" description="Browse current open opportunities shared with IPCS Global, with each role’s company and location in one place." />
           {vacanciesLoading ? <div className="public-vacancy-grid" aria-label="Loading vacancies">{[1, 2, 3, 4].map(item => <div className="public-vacancy-skeleton" key={item} />)}</div>
             : vacanciesError ? <div className="public-vacancy-empty" role="status">Current vacancies are temporarily unavailable. Please check back soon.</div>
-              : vacancies.length === 0 ? <div className="public-vacancy-empty">There are no active openings at the moment. New opportunities will appear here as they are shared.</div>
-                : <div className="public-vacancy-grid">{vacancies.map((vacancy, index) => {
+              : visibleVacancies.length === 0 ? <div className="public-vacancy-empty">There are no active openings at the moment. New opportunities will appear here as they are shared.</div>
+                : <div className="public-vacancy-grid">{visibleVacancies.map((vacancy, index) => {
                   const logo = logoSource(vacancy.companyLogo);
                   const companyInitials = String(vacancy.company || 'IP').trim().split(/\s+/).slice(0, 2).map(word => word[0]?.toUpperCase()).join('');
                   const isExpired = String(vacancy.status || '').toLowerCase() === 'expired';
