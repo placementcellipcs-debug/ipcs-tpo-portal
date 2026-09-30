@@ -31,12 +31,12 @@ export default function CertificateSign() {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+  const [completionEmailSent, setCompletionEmailSent] = useState(true);
 
   const currentDate = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
 
   useEffect(() => {
-    // 🚨 UPDATED TO NEW RENDER BACKEND URL
-    axios.get(`${API_BASE}/api/tpo/clients/${id}`)
+    axios.get(`${API_BASE}/api/public/mou/${encodeURIComponent(id)}`)
       .then(res => {
         if (res.data.success) {
           setClient(res.data.client);
@@ -52,7 +52,7 @@ export default function CertificateSign() {
       })
       .catch(err => {
         console.error(err);
-        setError("We couldn't find the agreement details for this link.");
+        setError(err.response?.data?.message || "We couldn't load the agreement details. Please contact IPCS to request a new signing link.");
       })
       .finally(() => setLoading(false));
   }, [id]);
@@ -100,13 +100,13 @@ export default function CertificateSign() {
       formData.append('certificatePdf', pdfBlob, `${client.companyName}_Agreement.pdf`);
       if (logoFile) formData.append('logoFile', logoFile); 
 
-      formData.append('rowNumber', client.rowNumber);
-      formData.append('companyName', client.companyName);
-      formData.append('companyEmail', client.email);
+      formData.append('signingToken', id);
 
-      // 🚨 UPDATED TO NEW RENDER BACKEND URL
       const res = await axios.post(`${API_BASE}/api/tpo/clients/submit-mou`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
-      if(res.data.success) setIsSuccess(true);
+      if(res.data.success) {
+        setCompletionEmailSent(res.data.emailSent !== false);
+        setIsSuccess(true);
+      }
     } catch (error) {
       console.error(error);
       alert(`Submission Error: ${error.response?.data?.message || error.message}`);
@@ -146,7 +146,7 @@ export default function CertificateSign() {
     <div style={{ minHeight: '100vh', background: '#f8fafc', color: '#333', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center' }}>
       <CheckCircle size={80} color="#10b981" weight="fill" style={{ marginBottom: '20px' }} />
       <h1 style={{ color: '#0f172a', marginBottom: '10px' }}>Agreement Successfully Signed</h1>
-      <p style={{ color: '#475569', fontSize: '1.1rem' }}>Thank you for partnering with IPCS Global. A final copy of your agreement has been emailed to you and the file is now securely locked.</p>
+      <p style={{ color: '#475569', fontSize: '1.1rem' }}>{isSuccess && !completionEmailSent ? 'Thank you for partnering with IPCS Global. Your signed agreement has been saved, but the email notification could not be sent. Please contact IPCS for your final copy.' : 'Thank you for partnering with IPCS Global. Your agreement has been submitted. Please contact IPCS if you need another copy.'}</p>
     </div>
   );
 

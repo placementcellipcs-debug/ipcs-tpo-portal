@@ -1,3 +1,5 @@
+const { createHash, randomBytes, timingSafeEqual } = require('crypto');
+
 // 🚨 IN-MEMORY MULTI-DEVICE SESSION REGISTRY
 const activeSessions = new Map();
 const activeAccounts = new Map();
@@ -2450,6 +2452,51 @@ exports.getClientById = (req, res) => {
   }});
 };
 
+const MOU_TOKEN_HASH_HEADER = 'MOU Signing Token Hash';
+const hashMouSigningToken = token => createHash('sha256').update(String(token || '')).digest('hex');
+
+const findClientByMouToken = async (sheet, token) => {
+  const cleanToken = String(token || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(cleanToken)) return null;
+
+  await sheet.loadHeaderRow();
+  const tokenHash = Buffer.from(hashMouSigningToken(cleanToken), 'hex');
+  const tokenHeader = (sheet.headerValues || []).find(header =>
+    String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mousigningtokenhash'
+  );
+  if (!tokenHeader) return null;
+
+  const rows = await sheet.getRows();
+  return rows.find(row => {
+    const storedHash = String(row.get(tokenHeader) || '').trim().toLowerCase();
+    if (!/^[a-f0-9]{64}$/.test(storedHash)) return false;
+    const storedBuffer = Buffer.from(storedHash, 'hex');
+    return storedBuffer.length === tokenHash.length && timingSafeEqual(storedBuffer, tokenHash);
+  }) || null;
+};
+
+exports.getMouByToken = async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    await loadDocInfo();
+    const sheet = doc.sheetsByTitle['Clients'];
+    if (!sheet) return res.status(503).json({ success: false, message: 'The agreement register is unavailable.' });
+    const row = await findClientByMouToken(sheet, req.params.token);
+    if (!row) return res.status(404).json({ success: false, message: 'This signing link is invalid or has been replaced. Please ask IPCS to send a new MOU request.' });
+
+    return res.json({ success: true, client: {
+      companyName: getValByHeader(row, ['companyname', 'company']) || 'Unknown',
+      email: getValByHeader(row, ['companymailid', 'companyemail', 'mailid', 'email']) || '',
+      contactPerson: getValByHeader(row, ['companycontactperson', 'contactperson', 'person']) || '',
+      logo: getValByHeader(row, ['companylogo', 'logo']) || '',
+      documentStatus: getValByHeader(row, ['documentstatus', 'docstatus']) || 'Pending'
+    }});
+  } catch (error) {
+    console.error('MOU link lookup failed:', error.message);
+    return res.status(503).json({ success: false, message: 'Agreement details are temporarily unavailable. Please try again later.' });
+  }
+};
+
 exports.updateClient = async (req, res) => {
   const { rowNumber, email, phone, location, contactPerson } = req.body;
   const existingLogo = req.body.logo || '';
@@ -2507,16 +2554,29 @@ exports.requestMou = async (req, res) => {
   const rowNumber = Number(req.body?.rowNumber);
   try {
     if (!Number.isInteger(rowNumber) || rowNumber < 2) return res.status(400).json({ success: false, message: 'A valid client record is required.' });
+    await loadDocInfo();
     const sheet = doc.sheetsByTitle['Clients'];
     if (!sheet) return res.status(503).json({ success: false, message: 'Client register is unavailable.' });
+    await sheet.loadHeaderRow();
+    let headers = [...(sheet.headerValues || [])];
+    let tokenHeader = headers.find(header => String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mousigningtokenhash');
+    if (!tokenHeader) {
+      await sheet.setHeaderRow([...headers, MOU_TOKEN_HASH_HEADER]);
+      await sheet.loadHeaderRow();
+      headers = [...(sheet.headerValues || [])];
+      tokenHeader = headers.find(header => String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mousigningtokenhash') || MOU_TOKEN_HASH_HEADER;
+    }
     const rows = await sheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    if (!rows.length) return res.status(404).json({ success: false, message: 'Client record was not found.' });
+    if (!rows.length || Number(rows[0].rowNumber) !== rowNumber) return res.status(404).json({ success: false, message: 'Client record was not found.' });
     const clientRow = rows[0];
     if (!canManageClientRow(req.portalUser, clientRow)) return res.status(403).json({ success: false, message: 'You cannot send an MOU for this client.' });
     const companyEmail = getValByHeader(clientRow, ['companymailid', 'companyemail', 'mailid', 'email']);
     const companyName = getValByHeader(clientRow, ['companyname', 'company']);
     if (!companyEmail || !companyName) return res.status(400).json({ success: false, message: 'This client needs a company name and email before an MOU can be sent.' });
-    const signingLink = `https://talenzo.ipcsglobal.info/sign-certificate/${rowNumber}`;
+    const signingToken = randomBytes(32).toString('hex');
+    clientRow.assign({ [tokenHeader]: hashMouSigningToken(signingToken) });
+    await clientRow.save();
+    const signingLink = `https://talenzo.ipcsglobal.info/sign-certificate/${signingToken}`;
     const refId = Math.floor(10000 + Math.random() * 90000); 
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`, to: companyEmail,
@@ -2531,44 +2591,54 @@ exports.requestMou = async (req, res) => {
 };
 
 exports.submitMou = async (req, res) => {
-  const { rowNumber, companyName, companyEmail, tpoEmail } = req.body;
   try {
-    const certFile = req.files.find(f => f.fieldname === 'certificatePdf');
-    const logoFile = req.files.find(f => f.fieldname === 'logoFile');
+    const signingToken = String(req.body?.signingToken || '').trim().toLowerCase();
+    await loadDocInfo();
+    const sheet = doc.sheetsByTitle['Clients'];
+    if (!sheet) return res.status(503).json({ success: false, message: 'Client register is unavailable.' });
+    const clientRow = await findClientByMouToken(sheet, signingToken);
+    if (!clientRow) return res.status(404).json({ success: false, message: 'This signing link is invalid or has been replaced. Please ask IPCS to send a new MOU request.' });
+    if ((getValByHeader(clientRow, ['documentstatus', 'docstatus']) || '').trim().toLowerCase() === 'completed') {
+      return res.status(409).json({ success: false, message: 'This agreement has already been submitted.' });
+    }
+
+    const certFile = (req.files || []).find(f => f.fieldname === 'certificatePdf');
+    const logoFile = (req.files || []).find(f => f.fieldname === 'logoFile');
     if (!certFile) return res.status(400).json({ success: false, message: "PDF missing" });
+
+    const companyName = getValByHeader(clientRow, ['companyname', 'company']) || 'Hiring Partner';
+    const companyEmail = getValByHeader(clientRow, ['companymailid', 'companyemail', 'mailid', 'email']) || '';
+    const tpoName = getValByHeader(clientRow, ['placementofficer', 'tponame']);
+    const tpoEmail = getTpoEmailByName(tpoName);
 
     const pdfLink = await uploadToDrive(certFile, FOLDER_MOU_CERTIFICATES);
     let logoLink = null;
     if (logoFile) { logoLink = await uploadToDrive(logoFile, FOLDER_CLIENT_LOGOS); }
 
-    const sheet = doc.sheetsByTitle["Clients"]; 
-    const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
-    if (rows.length > 0) {
-      const headers = sheet.headerValues;
-      const updateObj = {};
+    const headers = sheet.headerValues;
+    const updateObj = {};
       
-      const getSafeH = (searchStrs) => {
-        for (let s of searchStrs) {
-          const clean = s.toLowerCase().replace(/\s/g, '');
-          const exact = headers.find(h => h.toLowerCase().replace(/\s/g, '') === clean);
-          if (exact) return exact;
-        }
-        for (let s of searchStrs) {
-          const clean = s.toLowerCase().replace(/\s/g, '');
-          const partial = headers.find(h => h.toLowerCase().replace(/\s/g, '').includes(clean));
-          if (partial) return partial;
-        }
-        return null;
-      };
+    const getSafeH = searchStrs => {
+      for (const search of searchStrs) {
+        const clean = search.toLowerCase().replace(/\s/g, '');
+        const exact = headers.find(header => header.toLowerCase().replace(/\s/g, '') === clean);
+        if (exact) return exact;
+      }
+      for (const search of searchStrs) {
+        const clean = search.toLowerCase().replace(/\s/g, '');
+        const partial = headers.find(header => header.toLowerCase().replace(/\s/g, '').includes(clean));
+        if (partial) return partial;
+      }
+      return null;
+    };
 
-      const hDocStat = getSafeH(['documentstatus', 'docstatus']); if(hDocStat) updateObj[hDocStat] = 'Completed';
-      const hMou = getSafeH(['mou', 'moulink']); if(hMou) updateObj[hMou] = pdfLink;
-      const hLogo = getSafeH(['companylogo', 'logo']); if(hLogo && logoLink) updateObj[hLogo] = logoLink;
+    const hDocStat = getSafeH(['documentstatus', 'docstatus']); if(hDocStat) updateObj[hDocStat] = 'Completed';
+    const hMou = getSafeH(['mou', 'moulink']); if(hMou) updateObj[hMou] = pdfLink;
+    const hLogo = getSafeH(['companylogo', 'logo']); if(hLogo && logoLink) updateObj[hLogo] = logoLink;
+    clientRow.assign(updateObj);
+    await clientRow.save();
 
-      rows[0].assign(updateObj); await rows[0].save();
-    }
-
-    const zonalManagerEmail = 'giftyipcsglobal@gmail.com'; 
+    const zonalManagerEmail = 'giftyipcsglobal@gmail.com';
     const refId = Math.floor(10000 + Math.random() * 90000); 
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`,
@@ -2595,8 +2665,15 @@ exports.submitMou = async (req, res) => {
       `,
       attachments: [{ filename: `${companyName.replace(/\s+/g, '_')}_Agreement.pdf`, content: certFile.buffer }]
     };
-    await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Completion' }); 
-    refreshCache(); res.json({ success: true, pdfLink });
+    let emailSent = true;
+    try {
+      await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Completion' });
+    } catch (mailError) {
+      emailSent = false;
+      console.error('MOU was saved, but completion email failed:', mailError.message);
+    }
+    refreshCache();
+    res.json({ success: true, pdfLink, emailSent });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
