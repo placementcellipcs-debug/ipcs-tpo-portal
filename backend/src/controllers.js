@@ -1,8 +1,55 @@
-const { createHash, randomBytes, timingSafeEqual } = require('crypto');
+const { createHash, createHmac, randomBytes, timingSafeEqual } = require('crypto');
 
-// 🚨 IN-MEMORY MULTI-DEVICE SESSION REGISTRY
-const activeSessions = new Map();
-const activeAccounts = new Map();
+const SESSION_TOKEN_PREFIX = 'IPCS_SESS_V1';
+const SESSION_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+const getPortalSessionSigningKey = () => {
+  const secret = process.env.AUTH_SESSION_SECRET || process.env.GOOGLE_PRIVATE_KEY;
+  if (!secret) return null;
+  return createHash('sha256').update('IPCS:TPO:SESSION:V1\0').update(String(secret)).digest();
+};
+
+const createPortalSessionToken = sessionUser => {
+  const signingKey = getPortalSessionSigningKey();
+  if (!signingKey) throw new Error('Configure AUTH_SESSION_SECRET or GOOGLE_PRIVATE_KEY to sign staff sessions.');
+  const issuedAt = Date.now();
+  const encodedClaims = Buffer.from(JSON.stringify({
+    version: 1,
+    issuedAt,
+    expiresAt: issuedAt + SESSION_TOKEN_TTL_MS,
+    user: sessionUser
+  })).toString('base64url');
+  const unsignedToken = `${SESSION_TOKEN_PREFIX}.${encodedClaims}`;
+  const signature = createHmac('sha256', signingKey).update(unsignedToken).digest('base64url');
+  return `${unsignedToken}.${signature}`;
+};
+
+const readPortalSessionToken = (email, token) => {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  const cleanToken = String(token || '');
+  if (!cleanEmail || cleanToken.length > 8192) return null;
+  const [prefix, encodedClaims, suppliedSignature, extra] = cleanToken.split('.');
+  if (prefix !== SESSION_TOKEN_PREFIX || !encodedClaims || !suppliedSignature || extra !== undefined) return null;
+
+  const signingKey = getPortalSessionSigningKey();
+  if (!signingKey) return null;
+  const unsignedToken = `${prefix}.${encodedClaims}`;
+  const expectedSignature = Buffer.from(createHmac('sha256', signingKey).update(unsignedToken).digest('base64url'));
+  const actualSignature = Buffer.from(suppliedSignature);
+  if (actualSignature.length !== expectedSignature.length || !timingSafeEqual(actualSignature, expectedSignature)) return null;
+
+  try {
+    const claims = JSON.parse(Buffer.from(encodedClaims, 'base64url').toString('utf8'));
+    const now = Date.now();
+    const user = claims?.user;
+    if (claims?.version !== 1 || !Number.isFinite(claims.issuedAt) || !Number.isFinite(claims.expiresAt)) return null;
+    if (claims.issuedAt > now + 60_000 || claims.expiresAt <= now || claims.expiresAt - claims.issuedAt > SESSION_TOKEN_TTL_MS) return null;
+    if (String(user?.email || '').trim().toLowerCase() !== cleanEmail) return null;
+    return user;
+  } catch {
+    return null;
+  }
+};
 
 function parseUserAgent(ua = '') {
   let browser = 'Unknown Browser';
@@ -552,7 +599,6 @@ exports.login = async (req, res) => {
       assignedArray = ['all'];
     }
 
-    const sessionToken = `IPCS_SESS_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
     const sessionKey = String(foundUser.email || cleanInput).trim().toLowerCase();
     const sessionUser = {
       name: userName,
@@ -569,8 +615,7 @@ exports.login = async (req, res) => {
       empId: foundUser.empId || '',
       target: foundUser.target || '0'
     };
-    activeSessions.set(sessionKey, sessionToken);
-    activeAccounts.set(sessionKey, sessionUser);
+    const sessionToken = createPortalSessionToken(sessionUser);
 
     (async () => {
       try {
@@ -2637,9 +2682,19 @@ exports.getClientById = (req, res) => {
   }});
 };
 
-const MOU_TOKEN_HASH_HEADER = 'MOU Signing Token Hash';
-const hashMouSigningToken = token => createHash('sha256').update(String(token || '')).digest('hex');
-const createMouSigningId = () => `MOU-${randomBytes(18).toString('base64url')}`;
+const LEGACY_MOU_TOKEN_HASH_HEADER = 'MOU Signing Token Hash';
+const hashLegacyMouSigningToken = token => createHash('sha256').update(String(token || '')).digest('hex');
+const getMouSigningKey = () => {
+  const secret = process.env.MOU_SIGNING_SECRET || process.env.GOOGLE_PRIVATE_KEY;
+  if (!secret) throw new Error('Configure MOU_SIGNING_SECRET or GOOGLE_PRIVATE_KEY to sign MOU links.');
+  return createHash('sha256').update('IPCS:MOU:LINK:V2\0').update(String(secret)).digest();
+};
+const createMouSigningId = rowNumber => {
+  const nonce = randomBytes(16).toString('base64url');
+  const payload = `${Number(rowNumber)}.${nonce}`;
+  const signature = createHmac('sha256', getMouSigningKey()).update(payload).digest('base64url');
+  return `MOU-${Number(rowNumber)}-${nonce}-${signature}`;
+};
 
 const getMouSigningApiOrigin = req => {
   const configuredHosts = new Set([
@@ -2666,14 +2721,31 @@ const getMouSigningApiOrigin = req => {
 const findClientByMouToken = async (sheet, token) => {
   const cleanToken = String(token || '').trim();
   const isLegacyToken = /^[a-f0-9]{64}$/i.test(cleanToken);
-  const isMouId = /^MOU-[A-Za-z0-9_-]{24}$/.test(cleanToken);
-  if (!isLegacyToken && !isMouId) return null;
+  const signedMatch = cleanToken.match(/^MOU-(\d+)-([A-Za-z0-9_-]{22})-([A-Za-z0-9_-]{43})$/);
+
+  if (signedMatch) {
+    const rowNumber = Number(signedMatch[1]);
+    if (!Number.isSafeInteger(rowNumber) || rowNumber < 2) return null;
+    const payload = `${rowNumber}.${signedMatch[2]}`;
+    const expectedSignature = Buffer.from(createHmac('sha256', getMouSigningKey()).update(payload).digest('base64url'));
+    const suppliedSignature = Buffer.from(signedMatch[3]);
+    if (suppliedSignature.length !== expectedSignature.length || !timingSafeEqual(suppliedSignature, expectedSignature)) return null;
+
+    await sheet.loadHeaderRow();
+    const rows = await sheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    return rows.find(row => Number(row.rowNumber) === rowNumber) || null;
+  }
+
+  // Keep already emailed links working while new requests use signed row IDs.
+  // This read-only legacy path can be removed after all old pending links expire.
+  const isLegacyMouId = /^MOU-[A-Za-z0-9_-]{24}$/.test(cleanToken);
+  if (!isLegacyToken && !isLegacyMouId) return null;
   const canonicalToken = isLegacyToken ? cleanToken.toLowerCase() : cleanToken;
 
   await sheet.loadHeaderRow();
-  const tokenHash = Buffer.from(hashMouSigningToken(canonicalToken), 'hex');
+  const tokenHash = Buffer.from(hashLegacyMouSigningToken(canonicalToken), 'hex');
   const tokenHeader = (sheet.headerValues || []).find(header =>
-    String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mousigningtokenhash'
+    String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '') === LEGACY_MOU_TOKEN_HASH_HEADER.toLowerCase().replace(/[^a-z0-9]/g, '')
   );
   if (!tokenHeader) return null;
 
@@ -2771,11 +2843,8 @@ exports.requestMou = async (req, res) => {
     await sheet.loadHeaderRow();
     let headers = [...(sheet.headerValues || [])];
     const normalizeHeader = header => String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    let tokenHeader = headers.find(header => normalizeHeader(header) === 'mousigningtokenhash');
     let mailStatusHeader = headers.find(header => normalizeHeader(header) === 'mailstatus');
-    const missingHeaders = [];
-    if (!tokenHeader) missingHeaders.push(MOU_TOKEN_HASH_HEADER);
-    if (!mailStatusHeader) missingHeaders.push('Mail Status');
+    const missingHeaders = mailStatusHeader ? [] : ['Mail Status'];
     if (missingHeaders.length) {
       const requiredColumnCount = headers.length + missingHeaders.length;
       const currentColumnCount = Number(sheet.columnCount) || 0;
@@ -2785,10 +2854,9 @@ exports.requestMou = async (req, res) => {
       await sheet.setHeaderRow([...headers, ...missingHeaders]);
       await sheet.loadHeaderRow();
       headers = [...(sheet.headerValues || [])];
-      tokenHeader = headers.find(header => normalizeHeader(header) === 'mousigningtokenhash');
       mailStatusHeader = headers.find(header => normalizeHeader(header) === 'mailstatus');
     }
-    if (!tokenHeader || !mailStatusHeader) return res.status(500).json({ success: false, message: 'The Clients sheet is missing required MOU tracking columns.' });
+    if (!mailStatusHeader) return res.status(500).json({ success: false, message: 'The Clients sheet is missing the Mail Status column.' });
     const rows = await sheet.getRows({ offset: rowNumber - 2, limit: 1 });
     if (!rows.length || Number(rows[0].rowNumber) !== rowNumber) return res.status(404).json({ success: false, message: 'Client record was not found.' });
     const clientRow = rows[0];
@@ -2796,8 +2864,8 @@ exports.requestMou = async (req, res) => {
     const companyEmail = getValByHeader(clientRow, ['companymailid', 'companyemail', 'mailid', 'email']);
     const companyName = getValByHeader(clientRow, ['companyname', 'company']);
     if (!companyEmail || !companyName) return res.status(400).json({ success: false, message: 'This client needs a company name and email before an MOU can be sent.' });
-    const signingToken = createMouSigningId();
-    clientRow.assign({ [tokenHeader]: hashMouSigningToken(signingToken), [mailStatusHeader]: 'Sending' });
+    const signingToken = createMouSigningId(rowNumber);
+    clientRow.assign({ [mailStatusHeader]: 'Sending' });
     await clientRow.save();
     const signingApiOrigin = getMouSigningApiOrigin(req);
     const signingApiQuery = signingApiOrigin ? `?api=${encodeURIComponent(signingApiOrigin)}` : '';
@@ -4075,28 +4143,18 @@ exports.verifySession = (req, res) => {
     return res.json({ valid: false, reason: 'MISSING_PAYLOAD' });
   }
 
-  const cleanEmail = email.toString().trim().toLowerCase();
-  const currentActiveToken = activeSessions.get(cleanEmail);
-
-  if (!currentActiveToken) {
-    return res.json({ valid: false, reason: 'SESSION_EXPIRED', message: 'Your session expired. Please sign in again.' });
-  }
-
-  if (currentActiveToken !== sessionToken) {
-    return res.json({ 
-      valid: false, 
-      reason: 'CONCURRENT_LOGIN', 
-      message: 'Your account was logged in from another device or window.' 
-    });
-  }
-
-  return res.json({ valid: true });
+  const user = exports.getSessionUser(email, sessionToken);
+  if (!user) return res.json({ valid: false, reason: 'SESSION_EXPIRED', message: 'Your session expired. Please sign in again.' });
+  return res.json({ valid: true, expiresIn: SESSION_TOKEN_TTL_MS });
 };
 
 exports.getSessionUser = (email, sessionToken) => {
   const cleanEmail = String(email || '').trim().toLowerCase();
-  if (!cleanEmail || !sessionToken || activeSessions.get(cleanEmail) !== sessionToken) return null;
-  return activeAccounts.get(cleanEmail) || null;
+  if (!cleanEmail || !sessionToken) return null;
+
+  // Signed sessions are independent of process memory, so restarts and
+  // load balancing between API instances do not invalidate active users.
+  return readPortalSessionToken(cleanEmail, sessionToken);
 };
 
 // =========================================================
