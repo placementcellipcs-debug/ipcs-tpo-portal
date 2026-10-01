@@ -47,6 +47,9 @@ export default function Dashboard() {
   const showReports = isSuperAdmin || userRole === 'TPO';
   const isTpo = userRole.includes('TPO') || isSuperAdmin; 
   const isPlacementOfficer = userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER');
+  const isBranchManager = userRole === 'BM' || userRole.includes('BRANCH MANAGER');
+  const isPlacementDriveAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || ['GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(userRole);
+  const canViewPlacementDrives = isPlacementDriveAdmin || isBranchManager || isPlacementOfficer;
   const canViewHiringPartners = !userRole.includes('TRAINER') && !userRole.includes('TECHNICAL LEAD') && !userRole.includes('REGIONAL TECHNICAL HEAD') && !userRole.includes('RTH') && !userRole.includes('TTH');
   const [stats, setStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0, totalCompanies: 0 });
   const [events, setEvents] = useState([]);
@@ -504,7 +507,7 @@ export default function Dashboard() {
             <button type="button" className="qa-box" onClick={() => navigate('/exams')}><span className="qa-icon purple"><NotePencil weight="fill" /></span><span>Exam Centre</span></button>
             <button type="button" className="qa-box" onClick={() => navigate('/study-materials')}><span className="qa-icon teal"><BookOpen weight="fill" /></span><span>Study Materials</span></button>
             {canViewHiringPartners && <button type="button" className="qa-box" onClick={() => navigate('/clients')}><span className="qa-icon green"><FolderOpen weight="fill" /></span><span>Hiring Partners</span></button>}
-            {isTpo && <button type="button" className="qa-box" onClick={() => navigate(isPlacementOfficer && !isSuperAdmin ? '/tracker?tab=drives' : '/placement-drives')}><span className="qa-icon purple"><CalendarCheck weight="fill" /></span><span>Placement Drives</span></button>}
+            {canViewPlacementDrives && <button type="button" className="qa-box" onClick={() => navigate('/placement-drives')}><span className="qa-icon purple"><CalendarCheck weight="fill" /></span><span>Placement Drives</span></button>}
             {isTpo && <button type="button" className="qa-box" onClick={() => navigate('/tracker')}><span className="qa-icon green"><ListChecks weight="fill" /></span><span>Placement Tracker</span></button>}
             {isTpo && <button type="button" className="qa-box" onClick={() => navigate('/talentino')}><span className="qa-icon yellow"><Users weight="fill" /></span><span>Talentino</span></button>}
             {showReports && <button type="button" className="qa-box" onClick={() => navigate('/reports')}><span className="qa-icon blue"><ChartBar weight="fill" /></span><span>Reports</span></button>}

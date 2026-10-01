@@ -92,6 +92,9 @@ const requireSession = (policy = 'portal') => (req, res, next) => {
   if (policy === 'portal-admin' && !isAdmin) {
     return res.status(403).json({ success: false, message: 'System administrator access is required for this action.' });
   }
+  if (policy === 'placement-drive' && !isAdmin && !role.includes('ADMIN') && !isBranchManager(role) && !role.includes('TPO') && !role.includes('PLACEMENT OFFICER')) {
+    return res.status(403).json({ success: false, message: 'Placement Drives are available only to Placement Officers, administrators, and Branch Managers.' });
+  }
   if (policy === 'design' && !isAdmin && !['DESIGN', 'MEDIA', 'CREATIVE'].some(part => role.includes(part))) {
     return res.status(403).json({ success: false, message: 'Media & Design Studio is not available for this role.' });
   }
@@ -181,6 +184,7 @@ app.post('/api/tpo/applications/update-log', upload.single('offerLetterFile'), c
 app.post('/api/tpo/applications/add', upload.single('offerLetterFile'), controllers.addApplication);
 app.get('/api/tpo/vacancies', controllers.getVacancies);
 app.get('/api/tpo/events', requireSession('portal'), controllers.getEvents);
+app.get('/api/tpo/branches', requireSession('events-write'), controllers.getBranches);
 app.post('/api/tpo/events/add', requireSession('events-write'), upload.single('posterFile'), controllers.addEvent);
 app.post('/api/tpo/issues', controllers.getIssues);
 app.post('/api/tpo/issues/update', controllers.updateIssue);
@@ -202,8 +206,8 @@ app.post('/api/tpo/clients/submit-mou', upload.any(), controllers.submitMou);
 app.post('/api/tpo/clients/add', upload.single('logoFile'), controllers.addClient);
 app.post('/api/tpo/profile/update-photo', upload.single('photo'), controllers.updatePhoto);
 app.post('/api/tpo/profile/update-password', controllers.updatePassword);
-app.get('/api/tpo/drives', requireSession('portal'), controllers.getDrives);
-app.post('/api/tpo/drives/update', requireSession('portal'), controllers.updateDriveStatus);
+app.get('/api/tpo/drives', requireSession('placement-drive'), controllers.getDrives);
+app.post('/api/tpo/drives/update', requireSession('placement-drive'), controllers.updateDriveStatus);
 app.get('/api/tpo/trigger-resumes', controllers.triggerDailyCron);
 
 // 🚨 INSTANT TEST ROUTE: Trigger both daily tasks manually anytime

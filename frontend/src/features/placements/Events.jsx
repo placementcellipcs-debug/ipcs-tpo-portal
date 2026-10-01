@@ -47,6 +47,13 @@ export default function Events() {
   });
   const [posterFile, setPosterFile] = useState(null);
 
+  useEffect(() => {
+    if (!isModalOpen && !viewEventModal) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [isModalOpen, viewEventModal]);
+
   const fetchEvents = async () => {
     try {
       setLoading(true);
@@ -63,11 +70,11 @@ export default function Events() {
 
   const fetchBranches = async () => {
     try {
-      const res = await axios.get(`${API_BASE}/api/admin/branches`);
+      const res = await axios.get(`${API_BASE}/api/tpo/branches`);
       if (res.data.success) {
-        const branches = res.data.branches
+        const branches = [...new Set(res.data.branches
           .map(b => b.branch)
-          .filter(Boolean)
+          .filter(name => Boolean(name) && !['all', 'all branches'].includes(String(name).trim().toLowerCase())))]
           .sort((a, b) => a.localeCompare(b));
         setBranchList(branches);
       }
@@ -307,8 +314,8 @@ export default function Events() {
       </div>
 
       {isModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
-          <div className="modal-card" style={{ maxWidth: '600px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '24px', padding: '2rem', boxShadow: '0 25px 50px rgba(0,0,0,0.5)' }}>
+        <div className="event-modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
+          <div className="event-modal-dialog" style={{ maxWidth: '600px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid #1e293b', paddingBottom: '15px' }}>
               <h3 style={{ margin: 0, fontSize: '1.4rem', color: '#fff' }}>Add New Event</h3>
               <X size={24} style={{ cursor: 'pointer', color: '#94a3b8' }} onClick={() => setIsModalOpen(false)} />
@@ -319,7 +326,7 @@ export default function Events() {
               <input type="text" className="sleek-input" style={{ width: '100%' }} value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} placeholder="e.g. Wipro Placement Drive" />
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+            <div className="event-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '15px', marginBottom: '15px' }}>
               <div className="form-group">
                 <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '5px', fontWeight: 'bold' }}>Date *</label>
                 <input type="date" className="sleek-input" style={{ width: '100%' }} value={newEvent.date} onChange={e => setNewEvent({...newEvent, date: e.target.value})} />
@@ -330,13 +337,12 @@ export default function Events() {
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
+            <div className="event-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '15px', marginBottom: '15px' }}>
               <div className="form-group">
                 <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '5px', fontWeight: 'bold' }}>Event Type *</label>
                 <select className="sleek-input" style={{ width: '100%' }} value={newEvent.type} onChange={e => setNewEvent({...newEvent, type: e.target.value})}>
                   <option value="Placement Drive">Placement Drive</option>
                   <option value="Talentino">Talentino</option>
-                  <option value="Training">Training</option>
                 </select>
               </div>
               <div className="form-group">
@@ -380,8 +386,8 @@ export default function Events() {
 
       {/* 🚨 SAFE EVENT DETAILS MODAL */}
       {viewEventModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px', backdropFilter: 'blur(5px)' }} onClick={(e) => { if(e.target === e.currentTarget) setViewEventModal(null); }}>
-          <div className="modal-card" style={{ maxWidth: '650px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f172a', border: '1px solid #1e293b', borderRadius: '24px', padding: '2rem', boxShadow: '0 25px 50px rgba(0,0,0,0.5)', position: 'relative' }}>
+        <div className="event-modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setViewEventModal(null); }}>
+          <div className="event-modal-dialog" style={{ maxWidth: '680px' }}>
             
             <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '15px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
@@ -396,7 +402,7 @@ export default function Events() {
               </button>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
+            <div className="event-detail-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '15px', marginBottom: '20px' }}>
               <div style={{ background: '#1e293b', padding: '15px', borderRadius: '12px' }}>
                 <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '5px' }}>Date & Time</div>
                 <div style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -436,6 +442,18 @@ export default function Events() {
 
       {/* 🎨 NEO CALENDAR STYLES */}
       <style>{`
+        .event-modal-backdrop { position: fixed; inset: 0; z-index: 99999; display: flex; justify-content: center; align-items: center; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; padding: 16px; background: rgba(0,0,0,0.82); backdrop-filter: blur(6px); }
+        .event-modal-dialog { width: 100%; max-height: calc(100dvh - 32px); min-height: 0; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; margin: auto 0; position: relative; background: #0f172a; border: 1px solid #334155; border-radius: 24px; padding: clamp(18px, 3vw, 32px); box-shadow: 0 25px 50px rgba(0,0,0,0.55); scrollbar-width: thin; scrollbar-color: #475569 transparent; }
+        .event-modal-dialog::-webkit-scrollbar { width: 8px; }
+        .event-modal-dialog::-webkit-scrollbar-track { background: transparent; }
+        .event-modal-dialog::-webkit-scrollbar-thumb { background: #475569; border-radius: 8px; }
+        .event-modal-dialog input, .event-modal-dialog select, .event-modal-dialog textarea { width: 100%; max-width: 100%; box-sizing: border-box; }
+        @media (max-width: 600px) {
+          .event-modal-backdrop { padding: 10px; }
+          .event-modal-dialog { max-height: calc(100dvh - 20px); border-radius: 18px; }
+          .event-form-grid, .event-detail-grid { grid-template-columns: minmax(0, 1fr) !important; }
+          .event-modal-dialog h2 { font-size: 1.3rem !important; overflow-wrap: anywhere; }
+        }
         /* Global Reset For This Page */
         .hover-lift:hover { transform: translateY(-4px); border-color: rgba(255,255,255,0.1); background: #1e293b; }
         

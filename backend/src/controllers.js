@@ -1388,6 +1388,14 @@ exports.getTalentino = (req, res) => {
 };
 
 exports.getEvents = (req, res) => {
+  const user = req.portalUser;
+  const role = String(user?.role || '').toUpperCase();
+  const canSeePlacementDrives = canManageEveryDrive(user)
+    || role.includes('ADMIN')
+    || role === 'BM'
+    || role.includes('BRANCH MANAGER')
+    || role.includes('TPO')
+    || role.includes('PLACEMENT OFFICER');
   let allEvents = getCache().events.map(row => {
     return {
       date: getValByHeader(row, ['dateoftheevent', 'date']), 
@@ -1401,7 +1409,7 @@ exports.getEvents = (req, res) => {
       poster: getValByHeader(row, ['posterlink', 'poster'])
     };
   });
-  res.json({ success: true, events: allEvents.filter(e => e.date && e.title) });
+  res.json({ success: true, events: allEvents.filter(e => e.date && e.title && (canSeePlacementDrives || !String(e.type || '').toLowerCase().includes('placement drive'))) });
 };
 
 // =========================================================
@@ -1996,7 +2004,7 @@ const canManageEveryClient = (user) => {
 };
 const canManageEveryDrive = user => {
   const role = String(user?.role || '').toUpperCase();
-  return user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
+  return user?.accessType === 'superadmin' || role.includes('ADMIN') || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
 };
 const isBranchManagerUser = user => {
   const role = String(user?.role || '').toUpperCase();
@@ -2560,6 +2568,11 @@ exports.requestMou = async (req, res) => {
     if (!tokenHeader) missingHeaders.push(MOU_TOKEN_HASH_HEADER);
     if (!mailStatusHeader) missingHeaders.push('Mail Status');
     if (missingHeaders.length) {
+      const requiredColumnCount = headers.length + missingHeaders.length;
+      const currentColumnCount = Number(sheet.columnCount) || 0;
+      if (currentColumnCount < requiredColumnCount) {
+        await sheet.resize({ columnCount: requiredColumnCount });
+      }
       await sheet.setHeaderRow([...headers, ...missingHeaders]);
       await sheet.loadHeaderRow();
       headers = [...(sheet.headerValues || [])];
@@ -3423,10 +3436,7 @@ exports.getDrives = async (req, res) => {
     const canSeeAll = canManageEveryDrive(user);
     const isBranchManager = isBranchManagerUser(user);
     const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
-    const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(role) || role.includes('REGIONAL TECHNICAL HEAD');
-    const isTth = /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(role) || role.includes('TERRITORY TECHNICAL HEAD');
-    const isTechnicalScoped = isRth || isTth;
-    if (!canSeeAll && !isTpo && !isTechnicalScoped && !isBranchManager) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
+    if (!canSeeAll && !isTpo && !isBranchManager) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
 
     await loadDocInfo();
     const registrationSheet = doc.sheetsByTitle['Drive_Registration'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('driveregistration'));
@@ -3473,9 +3483,9 @@ exports.getDrives = async (req, res) => {
       const driveOwner = registrationOwner || eventInfo.tpo || '';
       const rowBranch = getValByHeader(row, ['branch', 'sittingbranch']) || (registrationStudent && getValByHeader(registrationStudent, ['branch', 'sittingbranch'])) || eventInfo.branch || eventInfo.location;
       const rowCourse = getValByHeader(row, ['course']) || (registrationStudent && getValByHeader(registrationStudent, ['course', 'program'])) || eventInfo.course;
-      if ((isTechnicalScoped || isBranchManager) && !hasAccess(rowBranch, rowCourse, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) return;
-      if (!canSeeAll && !isTechnicalScoped && !isBranchManager && driveOwner && normalizePlacementText(driveOwner) !== signedInName) return;
-      if (!canSeeAll && !isTechnicalScoped && !isBranchManager && !driveOwner) {
+      if (isBranchManager && !hasAccess(rowBranch, rowCourse, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) return;
+      if (!canSeeAll && !isBranchManager && driveOwner && normalizePlacementText(driveOwner) !== signedInName) return;
+      if (!canSeeAll && !isBranchManager && !driveOwner) {
         if (!userHasBranch(user, rowBranch)) return;
       }
       
@@ -3505,10 +3515,9 @@ exports.getDrives = async (req, res) => {
 
     // 3. 🚨 INJECT EMPTY DRIVES: If a drive has 0 students, send a "Dummy" row so it still shows up!
     eventsMap.forEach((eventInfo, dId) => {
-      if (isTechnicalScoped && (!eventInfo.course || !hasAccess(eventInfo.branch || eventInfo.location, eventInfo.course, user.role, user.assignedBranchesArray, user.assignedCourse, user.department))) return;
       if (isBranchManager && !userHasBranch(user, eventInfo.branch || eventInfo.location)) return;
-      if (!canSeeAll && !isTechnicalScoped && !isBranchManager && eventInfo.tpo && normalizePlacementText(eventInfo.tpo) !== signedInName) return;
-      if (!canSeeAll && !isTechnicalScoped && !isBranchManager && !eventInfo.tpo) {
+      if (!canSeeAll && !isBranchManager && eventInfo.tpo && normalizePlacementText(eventInfo.tpo) !== signedInName) return;
+      if (!canSeeAll && !isBranchManager && !eventInfo.tpo) {
         if (!userHasBranch(user, eventInfo.branch || eventInfo.location)) return;
       }
       if (!eventInfo.hasApplicants) {
@@ -3545,10 +3554,8 @@ exports.updateDriveStatus = async (req, res) => {
     const canSeeAll = canManageEveryDrive(user);
     const isBranchManager = isBranchManagerUser(user);
     const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
-    const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(role) || role.includes('REGIONAL TECHNICAL HEAD');
-    const isTth = /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(role) || role.includes('TERRITORY TECHNICAL HEAD');
-    if (!canSeeAll && !isTpo && !isRth && !isTth && !isBranchManager) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
-    if (isRth || isTth || isBranchManager) {
+    if (!canSeeAll && !isTpo && !isBranchManager) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
+    if (isBranchManager) {
       const driveId = normalizePlacementText(getValByHeader(rows[0], ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(rows[0], ['eventid', 'event_id', 'companyname']));
       const matchingDrive = (getCache()?.events || []).find(event => {
         const type = getValByHeader(event, ['event', 'type', 'event_type']).toLowerCase();

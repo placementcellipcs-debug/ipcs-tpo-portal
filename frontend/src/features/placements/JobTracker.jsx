@@ -30,8 +30,7 @@ export default function JobTracker() {
   const isSuperAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
   
   const isStrictTpo = (userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER')) && !isSuperAdmin;
-  const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('REGIONAL TECHNICAL HEAD');
-  const canUseDriveTracker = isStrictTpo || isRth;
+  const canUseDriveTracker = isStrictTpo;
 
   const [applications, setApplications] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -48,12 +47,8 @@ export default function JobTracker() {
   useEffect(() => {
     if (!tpoData) return;
 
-    if (!isStrictTpo && !isRth) {
+    if (!isStrictTpo) {
       window.location.href = '/dashboard';
-      return;
-    }
-    if (isRth) {
-      if (activeTab !== 'drives') setSearchParams({ tab: 'drives' }, { replace: true });
       return;
     }
 

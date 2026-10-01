@@ -74,6 +74,13 @@ export default function Clients() {
     setTimeout(() => setNotification(null), 4000);
   };
 
+  useEffect(() => {
+    if (!isAddModalOpen && !isEditModalOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [isAddModalOpen, isEditModalOpen]);
+
   useEffect(() => { 
     let isMounted = true;
     
@@ -492,13 +499,18 @@ export default function Clients() {
         
         .empty-state-card { background: rgba(15, 23, 42, 0.5); border: 1px dashed rgba(255,255,255,0.1); border-radius: 16px; padding: 50px 20px; text-align: center; color: #94a3b8; font-size: 1.1rem; font-weight: bold; }
 
-        .modal-backdrop { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); z-index: 99999; display: flex; justify-content: center; align-items: center; padding: 20px; }
-        .premium-modal { width: 100%; max-height: 90vh; overflow-y: auto; border-radius: 24px; padding: 30px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
+        .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); z-index: 99999; display: flex; justify-content: center; align-items: center; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; padding: 20px; }
+        .premium-modal { width: 100%; max-height: calc(100dvh - 40px); min-height: 0; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; margin: auto 0; border-radius: 24px; padding: 30px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
         .modal-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px; margin-bottom: 20px; }
         .modal-header h2 { margin: 0 0 5px 0; font-size: 1.6rem; color: #fff; font-weight: 800; }
         .modal-subtitle { color: var(--accent-primary); font-weight: bold; font-size: 1.1rem; }
         .close-btn { background: none; border: none; color: #64748b; cursor: pointer; transition: 0.2s; display: flex; }
         .close-btn:hover { color: #ef4444; transform: scale(1.1); }
+        @media (max-width: 560px) {
+          .modal-backdrop { padding: 10px; }
+          .premium-modal { max-height: calc(100dvh - 20px); padding: 20px !important; border-radius: 18px; }
+          .premium-modal .modal-header h2 { font-size: 1.25rem !important; }
+        }
       `}</style>
     </Layout>
   );
