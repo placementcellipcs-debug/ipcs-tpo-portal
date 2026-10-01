@@ -100,6 +100,31 @@ const getTodayInIndia = () => {
   return { iso: `${values.year}-${values.month}-${values.day}`, display: `${values.day}/${values.month}/${values.year}` };
 };
 
+const isVacancyAddedToday = (timestamp, todayIso) => {
+  const value = String(timestamp || '').trim();
+  if (!value) return false;
+
+  const isoDate = value.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (isoDate) return `${isoDate[1]}-${isoDate[2].padStart(2, '0')}-${isoDate[3].padStart(2, '0')}` === todayIso;
+
+  // Older Google Form rows use the spreadsheet's displayed M/D/YYYY timestamp format.
+  const slashDate = value.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+  if (slashDate) {
+    const [, first, second, year] = slashDate;
+    const month = Number(first) > 12 ? second : first;
+    const day = Number(first) > 12 ? first : second;
+    return `${year}-${month.padStart(2, '0')}-${day.padStart(2, '0')}` === todayIso;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return false;
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(parsed);
+  const date = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${date.year}-${date.month}-${date.day}` === todayIso;
+};
+
 function VacancyCreateModal({ onClose, onCreated, currentOfficer }) {
   const today = getTodayInIndia();
   const [placementOfficers, setPlacementOfficers] = useState([]);
@@ -173,7 +198,7 @@ function VacancyCreateModal({ onClose, onCreated, currentOfficer }) {
       payload.append('companyLogo', companyLogo);
       const response = await axios.post(`${API_BASE}/api/tpo/vacancies/add`, payload, { headers: { 'Content-Type': 'multipart/form-data' } });
       if (!response.data?.success) throw new Error(response.data?.message || 'The vacancy could not be saved.');
-      onCreated(response.data.vacancy);
+      onCreated(response.data.vacancy, response.data);
       onClose();
     } catch (requestError) {
       setErrorMessage(requestError.response?.data?.message || requestError.message || 'The vacancy could not be saved.');
@@ -300,6 +325,7 @@ function VacanciesContent() {
   const [courseFilter, setCourseFilter] = useState('All');
   const [tpoFilter, setTpoFilter] = useState('All');
   const [monthYearFilter, setMonthYearFilter] = useState('All');
+  const todaySubmissionIso = getTodayInIndia().iso;
 
   const [selectedJob, setSelectedJob] = useState(null);
   const [isJobDetailsModalOpen, setIsJobDetailsModalOpen] = useState(false);
@@ -341,7 +367,7 @@ function VacanciesContent() {
   const {
     groupedVacs, uniqueTPOs, uniqueMonths, 
     totalActiveOpenings, totalExpiredOpenings, 
-    totalApplicationsCount, uniqueCompaniesCount, 
+    totalApplicationsCount, uniqueCompaniesCount, todayVacanciesCount,
     renderError, appsMap
   } = useMemo(() => {
     try {
@@ -361,7 +387,7 @@ function VacanciesContent() {
 
       const uniqueTPOsSet = new Set();
       const uniqueMonthsSet = new Set();
-      let activeOpenings = 0; let expiredOpenings = 0; let totalApps = 0;
+      let activeOpenings = 0; let expiredOpenings = 0; let totalApps = 0; let addedTodayCount = 0;
       const companiesSet = new Set();
 
       const fVacs = safeVacancies.filter(v => {
@@ -381,6 +407,8 @@ function VacanciesContent() {
         if (rowTpo !== 'Unknown') uniqueTPOsSet.add(rowTpo);
 
         const d = parseDateSafe(v.datePosted || v.timestamp || v.date);
+        const addedToday = isVacancyAddedToday(v.timestamp, todaySubmissionIso);
+        if (addedToday) addedTodayCount++;
         if (d && !isNaN(d.getTime()) && d.getFullYear() < 2050 && d.getFullYear() > 2000) {
           uniqueMonthsSet.add(d.toLocaleString('en-us', { month: 'long', year: 'numeric' }));
         }
@@ -397,7 +425,11 @@ function VacanciesContent() {
            matchTrainerScope = assignedDomains.includes(getStandardCourse(v.course));
         }
 
-        const tabMatch = activeTab === 'Open' ? (!isExpired && !isClosed) : (isExpired || isClosed);
+        const tabMatch = activeTab === 'Open'
+          ? (!isExpired && !isClosed)
+          : activeTab === 'Expired'
+            ? (isExpired || isClosed)
+            : addedToday;
         const tpoMatch = hideTpoFilter || tpoFilter === 'All' || rowTpo === tpoFilter;
         
         let monthMatch = true;
@@ -429,6 +461,7 @@ function VacanciesContent() {
         groupedVacs: gVacs, uniqueTPOs: sortedTPOs, uniqueMonths: sortedMonths,
         totalActiveOpenings: activeOpenings, totalExpiredOpenings: expiredOpenings,
         totalApplicationsCount: totalApps, uniqueCompaniesCount: companiesSet.size,
+        todayVacanciesCount: addedTodayCount,
         renderError: null, appsMap: appsByJobId
       };
 
@@ -437,11 +470,11 @@ function VacanciesContent() {
       return {
         groupedVacs: {}, uniqueTPOs: [], uniqueMonths: [],
         totalActiveOpenings: 0, totalExpiredOpenings: 0,
-        totalApplicationsCount: 0, uniqueCompaniesCount: 0,
+        totalApplicationsCount: 0, uniqueCompaniesCount: 0, todayVacanciesCount: 0,
         renderError: err.message, appsMap: {}
       };
     }
-  }, [vacancies, applications, searchQuery, courseFilter, tpoFilter, monthYearFilter, activeTab, isCourseSpecific, assignedDomains, hideTpoFilter]);
+  }, [vacancies, applications, searchQuery, courseFilter, tpoFilter, monthYearFilter, activeTab, isCourseSpecific, assignedDomains, hideTpoFilter, todaySubmissionIso]);
 
   // Define today for the renderer
   const today = new Date();
@@ -508,6 +541,7 @@ function VacanciesContent() {
           <div className="segmented-tabs">
             <button className={`seg-tab ${activeTab === 'Open' ? 'active' : ''}`} onClick={() => setActiveTab('Open')}>Active Openings</button>
             <button className={`seg-tab ${activeTab === 'Expired' ? 'active-expired' : ''}`} onClick={() => setActiveTab('Expired')}>Expired / Closed</button>
+            <button className={`seg-tab ${activeTab === 'Today' ? 'active' : ''}`} onClick={() => setActiveTab('Today')}>Added Today ({todayVacanciesCount})</button>
           </div>
 
           <div className="filter-group">
@@ -597,7 +631,7 @@ function VacanciesContent() {
                       <div className="jc-body">
                         <div className="jc-detail"><MapPinLine size={16} /> <span>{String(v.location || 'N/A')} ({String(v.mode || 'N/A')})</span></div>
                         <div className="jc-detail"><GraduationCap size={16} /> <span>{String(v.course || 'N/A')}</span></div>
-                        {isSuperAdmin && <div className="jc-detail text-purple"><Clock size={16} /> <span>{rowTpo} • {datePostedStr}</span></div>}
+                        {(isSuperAdmin || activeTab === 'Today') && <div className="jc-detail text-purple"><Clock size={16} /> <span>{rowTpo} • {String(v.timestamp || datePostedStr).replace('T', ' ')}</span></div>}
                       </div>
 
                       <div className="jc-divider"></div>
@@ -634,10 +668,11 @@ function VacanciesContent() {
         <VacancyCreateModal
           currentOfficer={tpoData?.name}
           onClose={() => setIsCreateVacancyOpen(false)}
-          onCreated={vacancy => {
+          onCreated={(vacancy, result) => {
             setVacancies(previous => [vacancy, ...previous]);
-            setActiveTab('Open');
-            setOpeningNotice('Vacancy submitted and saved to the NewsLetter sheet.');
+            setActiveTab('Today');
+            const rowInfo = result?.rowNumber ? ` (row ${result.rowNumber})` : '';
+            setOpeningNotice(`Vacancy saved to ${result?.sheet || 'NewsLetter'}${rowInfo}.`);
           }}
         />
       )}

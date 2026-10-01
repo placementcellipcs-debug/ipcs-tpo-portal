@@ -1243,7 +1243,8 @@ exports.getVacancies = (req, res) => {
         gender: getValByHeader(row, ['genderpreference']), 
         status: getValByHeader(row, ['status']) || 'Open',
         tpoName: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || 'Unknown',
-        datePosted: getValByHeader(row, ['timestamp', 'date', 'posteddate']) || ''
+        timestamp: getValByHeader(row, ['timestamp']) || '',
+        datePosted: getValByHeader(row, ['date', 'posteddate']) || ''
       };
     }).filter(vacancy => {
       const user = req.portalUser;
@@ -1289,7 +1290,8 @@ exports.getVacancyFormOptions = async (_req, res) => {
 };
 
 const vacancyHeaderSpecs = [
-  { key: 'date', title: 'Date', aliases: ['date', 'timestamp', 'posteddate'] },
+  { key: 'timestamp', title: 'Timestamp', aliases: ['timestamp', 'submittedat', 'createdat'] },
+  { key: 'date', title: 'Date', aliases: ['date', 'posteddate'] },
   { key: 'companyLogo', title: 'Company Logo', aliases: ['companylogo', 'logo'] },
   { key: 'companyName', title: 'Company Name', aliases: ['companyname', 'company'] },
   { key: 'companyContact', title: 'Company Contact', aliases: ['companycontact', 'contactnumber', 'phone', 'contact'] },
@@ -1327,6 +1329,14 @@ const findVacancyHeader = (headers, aliases) => {
 const formatTodayForVacancy = () => new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric'
 }).format(new Date());
+const formatVacancyTimestamp = () => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
+};
 
 exports.addVacancy = async (req, res) => {
   try {
@@ -1383,6 +1393,7 @@ exports.addVacancy = async (req, res) => {
     const logoUrl = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS);
     const jobId = `JOB-${Date.now()}-${randomBytes(3).toString('hex').toUpperCase()}`;
     const rowData = {
+      timestamp: formatVacancyTimestamp(),
       date: formatTodayForVacancy(),
       companyLogo: logoUrl,
       companyName: String(input.companyName).trim(),
@@ -1431,9 +1442,16 @@ exports.addVacancy = async (req, res) => {
       interviewDate: rowData.interviewDate,
       status: 'Open',
       tpoName: rowData.placementOfficer,
+      timestamp: rowData.timestamp,
       datePosted: rowData.date
     };
-    return res.status(201).json({ success: true, vacancy, message: 'Vacancy added to the NewsLetter sheet.' });
+    return res.status(201).json({
+      success: true,
+      vacancy,
+      sheet: sheet.title,
+      rowNumber: savedRow?.rowNumber || null,
+      message: `Vacancy added to ${sheet.title}${savedRow?.rowNumber ? ` at row ${savedRow.rowNumber}` : ''}.`
+    });
   } catch (error) {
     console.error('Vacancy creation failed:', error.message);
     return res.status(500).json({ success: false, message: error.message || 'The vacancy could not be saved.' });
@@ -2684,11 +2702,20 @@ exports.getClientById = (req, res) => {
 
 const LEGACY_MOU_TOKEN_HASH_HEADER = 'MOU Signing Token Hash';
 const hashLegacyMouSigningToken = token => createHash('sha256').update(String(token || '')).digest('hex');
-const getMouSigningKey = () => {
-  const secret = process.env.MOU_SIGNING_SECRET || process.env.GOOGLE_PRIVATE_KEY;
-  if (!secret) throw new Error('Configure MOU_SIGNING_SECRET or GOOGLE_PRIVATE_KEY to sign MOU links.');
-  return createHash('sha256').update('IPCS:MOU:LINK:V2\0').update(String(secret)).digest();
+const deriveMouSigningKey = secret => createHash('sha256').update('IPCS:MOU:LINK:V2\0').update(String(secret)).digest();
+const getMouSigningKeys = () => {
+  const privateKey = String(process.env.GOOGLE_PRIVATE_KEY || '');
+  const secretVariants = [
+    process.env.MOU_SIGNING_SECRET,
+    process.env.MOU_SIGNING_SECRET_PREVIOUS,
+    privateKey.replace(/\\n/g, '\n'),
+    privateKey
+  ].map(value => String(value || '')).filter(Boolean);
+  if (!secretVariants.length) throw new Error('Configure MOU_SIGNING_SECRET to sign MOU links.');
+  const uniqueSecrets = [...new Set(secretVariants)];
+  return uniqueSecrets.map(deriveMouSigningKey);
 };
+const getMouSigningKey = () => getMouSigningKeys()[0];
 const createMouSigningId = rowNumber => {
   const nonce = randomBytes(16).toString('base64url');
   const payload = `${Number(rowNumber)}.${nonce}`;
@@ -2718,6 +2745,16 @@ const getMouSigningApiOrigin = req => {
   return '';
 };
 
+const getMouSigningFrontendOrigin = () => {
+  const allowedHosts = new Set(['ipcs-tpo-portal.vercel.app', 'talenzo.ipcsglobal.info']);
+  const candidate = String(process.env.MOU_SIGNING_FRONTEND_BASE || 'https://ipcs-tpo-portal.vercel.app').trim();
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol === 'https:' && allowedHosts.has(parsed.hostname.toLowerCase())) return parsed.origin;
+  } catch { /* Use the known Vercel portal when the optional origin is invalid. */ }
+  return 'https://ipcs-tpo-portal.vercel.app';
+};
+
 const findClientByMouToken = async (sheet, token) => {
   const cleanToken = String(token || '').trim();
   const isLegacyToken = /^[a-f0-9]{64}$/i.test(cleanToken);
@@ -2727,13 +2764,21 @@ const findClientByMouToken = async (sheet, token) => {
     const rowNumber = Number(signedMatch[1]);
     if (!Number.isSafeInteger(rowNumber) || rowNumber < 2) return null;
     const payload = `${rowNumber}.${signedMatch[2]}`;
-    const expectedSignature = Buffer.from(createHmac('sha256', getMouSigningKey()).update(payload).digest('base64url'));
     const suppliedSignature = Buffer.from(signedMatch[3]);
-    if (suppliedSignature.length !== expectedSignature.length || !timingSafeEqual(suppliedSignature, expectedSignature)) return null;
+    const signatureIsValid = getMouSigningKeys().some(signingKey => {
+      const expectedSignature = Buffer.from(createHmac('sha256', signingKey).update(payload).digest('base64url'));
+      return suppliedSignature.length === expectedSignature.length && timingSafeEqual(suppliedSignature, expectedSignature);
+    });
+    if (!signatureIsValid) {
+      console.warn(`[MOU] Rejected signing token signature for Clients row ${rowNumber}; check that the issuing API and this API use the same stable MOU_SIGNING_SECRET.`);
+      return null;
+    }
 
     await sheet.loadHeaderRow();
     const rows = await sheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    return rows.find(row => Number(row.rowNumber) === rowNumber) || null;
+    const row = rows.find(item => Number(item.rowNumber) === rowNumber) || null;
+    if (!row) console.warn(`[MOU] Valid signing token points to missing Clients row ${rowNumber}.`);
+    return row;
   }
 
   // Keep already emailed links working while new requests use signed row IDs.
@@ -2870,7 +2915,8 @@ exports.requestMou = async (req, res) => {
     await clientRow.save();
     const signingApiOrigin = getMouSigningApiOrigin(req);
     const signingApiQuery = signingApiOrigin ? `?api=${encodeURIComponent(signingApiOrigin)}` : '';
-    const signingLink = `https://talenzo.ipcsglobal.info/sign-certificate/${encodeURIComponent(signingToken)}${signingApiQuery}`;
+    const signingLink = `${getMouSigningFrontendOrigin()}/sign-certificate/${encodeURIComponent(signingToken)}${signingApiQuery}`;
+    console.info(`[MOU] Issued signing link for Clients row ${rowNumber}; lookup API: ${signingApiOrigin || 'portal default API'}.`);
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`, to: companyEmail,
       subject: `Action Required: IPCS Global Hiring Partnership Confirmation With ${companyName} [Ref: ${signingReference}]`,
