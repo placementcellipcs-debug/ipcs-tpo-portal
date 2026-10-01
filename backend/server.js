@@ -196,6 +196,8 @@ app.post('/api/tpo/applications/add', upload.single('offerLetterFile'), controll
 app.get('/api/tpo/vacancies', controllers.getVacancies);
 app.get('/api/tpo/vacancies/form-options', requireSession('vacancies-write'), controllers.getVacancyFormOptions);
 app.post('/api/tpo/vacancies/add', requireSession('vacancies-write'), parseVacancyLogo, controllers.addVacancy);
+app.put('/api/tpo/vacancies/:jobId', requireSession('vacancies-write'), parseVacancyLogo, controllers.updateVacancy);
+app.delete('/api/tpo/vacancies/:jobId', requireSession('vacancies-write'), controllers.deleteVacancy);
 app.get('/api/tpo/events', requireSession('portal'), controllers.getEvents);
 app.get('/api/tpo/branches', requireSession('events-write'), controllers.getBranches);
 app.post('/api/tpo/events/add', requireSession('events-write'), upload.single('posterFile'), controllers.addEvent);

@@ -75,7 +75,7 @@ function parseUserAgent(ua = '') {
 }
 
 const { 
-  doc, drive, getCache, refreshCache, loadDocInfo, hasAccess, getFuzzyHeader,
+  doc, drive, google, serviceAccountAuth, getCache, refreshCache, loadDocInfo, hasAccess, getFuzzyHeader,
   sendIPCSMail, uploadToDrive
 } = require('./config');
 
@@ -1223,11 +1223,18 @@ exports.getVacancies = (req, res) => {
       const logo = getValByHeader(row, ['companylogo', 'logo']).trim();
       return [name, logo];
     }).filter(([name, logo]) => name && logo));
+    const user = req.portalUser;
+    const canSeeVacancyEditFields = /(TPO|PLACEMENT OFFICER)/i.test(String(user?.role || '')) && String(user?.accessType || '').toLowerCase() !== 'superadmin';
 
     let vacs = cache.vacancies.map((row, i) => {
       const company = getValByHeader(row, ['companyname', 'company']);
+      const actualJobId = getValByHeader(row, ['jobid', 'id']).trim();
+      const rowTpoName = getValByHeader(row, ['placementofficer', 'tpo', 'tponame']);
+      const canEditThisVacancy = canSeeVacancyEditFields && normalizePlacementText(rowTpoName) === normalizePlacementText(user?.name);
       return {
-        id: getValByHeader(row, ['jobid', 'id']) || `JOB-${i+1}`, 
+        id: actualJobId || getLegacyVacancyId(row),
+        hasJobId: Boolean(actualJobId),
+        rowNumber: row.rowNumber,
         company,
         companyLogo: getValByHeader(row, ['companylogo', 'logo']).trim() || companyLogos.get(company.trim().toLowerCase()) || '',
         position: getValByHeader(row, ['position', 'role']), 
@@ -1241,13 +1248,20 @@ exports.getVacancies = (req, res) => {
         experience: getValByHeader(row, ['experience']), 
         salary: getValByHeader(row, ['salary']), 
         gender: getValByHeader(row, ['genderpreference']), 
+        ...(canEditThisVacancy ? {
+          companyContact: getValByHeader(row, ['companycontact', 'contactnumber', 'phone', 'contact']),
+          companyMailId: getValByHeader(row, ['companymailid', 'companyemail', 'mailid', 'email']),
+          companyContactPerson: getValByHeader(row, ['companycontactperson', 'contactperson', 'person']),
+          companyWebsite: getValByHeader(row, ['companywebsite', 'website', 'url']),
+          openings: getValByHeader(row, ['noofopenings', 'numberofopenings', 'openings']),
+          interviewDate: getValByHeader(row, ['interviewdate'])
+        } : {}),
         status: getValByHeader(row, ['status']) || 'Open',
-        tpoName: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || 'Unknown',
+        tpoName: rowTpoName || 'Unknown',
         timestamp: getValByHeader(row, ['timestamp']) || '',
         datePosted: getValByHeader(row, ['date', 'posteddate']) || ''
       };
     }).filter(vacancy => {
-      const user = req.portalUser;
       if (!user) return false;
       return hasAccess('All', vacancy.course, user.role, user.assignedBranchesArray, user.assignedCourse, user.department);
     });
@@ -1329,14 +1343,10 @@ const findVacancyHeader = (headers, aliases) => {
 const formatTodayForVacancy = () => new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric'
 }).format(new Date());
-const formatVacancyTimestamp = () => {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day} ${values.hour}:${values.minute}:${values.second}`;
-};
+const formatVacancyTimestamp = () => new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Kolkata', month: 'numeric', day: 'numeric', year: 'numeric',
+  hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true
+}).format(new Date());
 
 exports.addVacancy = async (req, res) => {
   try {
@@ -1344,7 +1354,7 @@ exports.addVacancy = async (req, res) => {
     const requiredFields = [
       'companyName', 'companyContact', 'companyMailId', 'companyContactPerson', 'companyWebsite',
       'course', 'position', 'state', 'location', 'workMode', 'openings', 'qualification',
-      'jobDescription', 'experience', 'salary', 'genderPreference', 'interviewPlan', 'lastDate', 'placementOfficer'
+      'jobDescription', 'experience', 'salary', 'genderPreference', 'interviewPlan', 'lastDate'
     ];
     const missingFields = requiredFields.filter(field => !String(input[field] || '').trim());
     if (missingFields.length) return res.status(400).json({ success: false, message: `Please complete all required fields: ${missingFields.join(', ')}.` });
@@ -1364,8 +1374,9 @@ exports.addVacancy = async (req, res) => {
     if (!experience) return res.status(400).json({ success: false, message: 'Enter the custom experience requirement.' });
 
     const placementOfficers = await getVacancyPlacementOfficers();
-    const selectedOfficer = placementOfficers.find(name => normalizePlacementText(name) === normalizePlacementText(input.placementOfficer));
-    if (!selectedOfficer) return res.status(400).json({ success: false, message: 'Choose a placement officer from the Contact sheet list.' });
+    const signedInOfficer = String(req.portalUser?.name || '').trim();
+    const selectedOfficer = placementOfficers.find(name => normalizePlacementText(name) === normalizePlacementText(signedInOfficer));
+    if (!selectedOfficer) return res.status(403).json({ success: false, message: 'Your signed-in name is not listed as a placement officer in the Contact sheet.' });
 
     await loadDocInfo();
     const sheet = doc.sheetsByTitle['NewsLetter'] || doc.sheetsByIndex.find(item =>
@@ -1455,6 +1466,275 @@ exports.addVacancy = async (req, res) => {
   } catch (error) {
     console.error('Vacancy creation failed:', error.message);
     return res.status(500).json({ success: false, message: error.message || 'The vacancy could not be saved.' });
+  }
+};
+
+const getNewsletterSheet = () => doc.sheetsByTitle['NewsLetter'] || doc.sheetsByIndex.find(item =>
+  item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('newsletter')
+);
+
+const toA1Column = columnNumber => {
+  let value = Number(columnNumber);
+  let label = '';
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    label = String.fromCharCode(65 + remainder) + label;
+    value = Math.floor((value - 1) / 26);
+  }
+  return label;
+};
+
+const getVacancyInterviewCellValue = input => input.interviewPlan === 'Interview Scheduled'
+  ? String(input.interviewDate || '').trim()
+  : 'Will inform once scheduled';
+
+const getEditableVacancyValues = (input, logoUrl) => {
+  const experience = input.experience === 'Other'
+    ? String(input.experienceOther || '').trim()
+    : String(input.experience || '').trim();
+  return {
+    companyLogo: logoUrl,
+    companyName: String(input.companyName || '').trim(),
+    companyContact: String(input.companyContact || '').trim(),
+    companyMailId: String(input.companyMailId || '').trim(),
+    companyContactPerson: String(input.companyContactPerson || '').trim(),
+    companyWebsite: String(input.companyWebsite || '').trim(),
+    course: String(input.course || '').trim(),
+    position: String(input.position || '').trim(),
+    state: String(input.state || '').trim(),
+    location: String(input.location || '').trim(),
+    workMode: String(input.workMode || '').trim(),
+    openings: String(input.openings || '').trim(),
+    qualification: String(input.qualification || '').trim(),
+    jobDescription: String(input.jobDescription || '').trim(),
+    experience,
+    salary: String(input.salary || '').trim(),
+    genderPreference: String(input.genderPreference || '').trim(),
+    interviewDate: getVacancyInterviewCellValue(input),
+    lastDate: String(input.lastDate || '').trim()
+  };
+};
+
+const validateVacancyEditInput = input => {
+  const requiredFields = [
+    'companyName', 'companyContact', 'companyMailId', 'companyContactPerson', 'companyWebsite',
+    'course', 'position', 'state', 'location', 'workMode', 'openings', 'qualification',
+    'jobDescription', 'experience', 'salary', 'genderPreference', 'interviewPlan', 'lastDate'
+  ];
+  const missingFields = requiredFields.filter(field => !String(input[field] || '').trim());
+  if (missingFields.length) return `Please complete all required fields: ${missingFields.join(', ')}.`;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(input.companyMailId).trim())) return 'Enter a valid company email address.';
+  if (!['Will Inform Once Scheduled', 'Interview Scheduled'].includes(String(input.interviewPlan || ''))) return 'Select an interview scheduling option.';
+  if (input.interviewPlan === 'Interview Scheduled' && !/^\d{4}-\d{2}-\d{2}$/.test(String(input.interviewDate || ''))) return 'Select the scheduled interview date.';
+  if (input.experience === 'Other' && !String(input.experienceOther || '').trim()) return 'Enter the custom experience requirement.';
+  return '';
+};
+
+const getLegacyVacancyId = row => {
+  const headers = row?._worksheet?.headerValues || [];
+  const values = headers
+    .map((header, index) => ({
+      header: String(header || '').toLowerCase().replace(/[^a-z0-9]/g, ''),
+      value: String(row?._rawData?.[index] ?? '').trim()
+    }))
+    .filter(cell => !['jobid', 'id'].includes(cell.header))
+    .map(cell => cell.value);
+  return `LEGACY-${createHash('sha256').update(JSON.stringify(values)).digest('hex').slice(0, 24)}`;
+};
+
+const getVacancyActorName = req => String(req.portalUser?.name || '').trim();
+
+const canManageVacancyRow = (user, row) => Boolean(
+  user?.name && normalizePlacementText(user.name) === normalizePlacementText(
+    getValByHeader(row, ['placementofficer', 'tpo', 'tponame'])
+  )
+);
+
+const writeVacancyCellChanges = async (sheet, row, headers, changes, actorName) => {
+  if (!changes.length) return;
+  const spreadsheetId = process.env.SPREADSHEET_ID;
+  const rowNumber = Number(row.rowNumber);
+  const sheetId = Number(sheet.sheetId);
+  if (!spreadsheetId || !Number.isSafeInteger(rowNumber) || rowNumber < 2 || !Number.isSafeInteger(sheetId)) {
+    throw new Error('Could not identify the NewsLetter spreadsheet row for the edit history.');
+  }
+
+  const endColumn = toA1Column(headers.length);
+  const quotedSheetName = `'${String(sheet.title).replace(/'/g, "''")}'`;
+  const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
+  const currentNotesResponse = await sheetsApi.spreadsheets.get({
+    spreadsheetId,
+    ranges: [`${quotedSheetName}!A${rowNumber}:${endColumn}${rowNumber}`],
+    includeGridData: true,
+    fields: 'sheets(data(rowData(values(note))))'
+  });
+  const currentNotes = currentNotesResponse.data?.sheets?.[0]?.data?.[0]?.rowData?.[0]?.values || [];
+  const timestamp = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+  }).format(new Date());
+
+  const requests = changes.map(change => {
+    const columnIndex = headers.findIndex(header => header === change.header);
+    if (columnIndex < 0) throw new Error(`Could not locate the ${change.header} column in NewsLetter.`);
+    const oldValue = String(change.oldValue ?? '').trim();
+    const newValue = String(change.newValue ?? '').trim();
+    const priorNote = String(currentNotes[columnIndex]?.note || '').trim();
+    const historyEntry = `${timestamp} IST — ${actorName} changed ${change.header}: “${oldValue.slice(0, 350)}” → “${newValue.slice(0, 350)}”.`;
+    const combinedNote = [priorNote, historyEntry].filter(Boolean).join('\n');
+    const boundedNote = combinedNote.length > 45000 ? combinedNote.slice(-45000) : combinedNote;
+    const isoDate = ['lastDate', 'interviewDate'].includes(change.key) && newValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    const dateAsSheetSerial = isoDate
+      ? Date.UTC(Number(isoDate[1]), Number(isoDate[2]) - 1, Number(isoDate[3])) / 86400000 + 25569
+      : null;
+    return {
+      updateCells: {
+        range: {
+          sheetId,
+          startRowIndex: rowNumber - 1,
+          endRowIndex: rowNumber,
+          startColumnIndex: columnIndex,
+          endColumnIndex: columnIndex + 1
+        },
+        rows: [{ values: [{ userEnteredValue: dateAsSheetSerial === null ? { stringValue: newValue } : { numberValue: dateAsSheetSerial }, note: boundedNote }] }],
+        fields: 'userEnteredValue,note'
+      }
+    };
+  });
+
+  await sheetsApi.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+};
+
+exports.updateVacancy = async (req, res) => {
+  try {
+    const jobId = String(req.params.jobId || '').trim();
+    const input = req.body || {};
+    const validationError = validateVacancyEditInput(input);
+    if (validationError) return res.status(400).json({ success: false, message: validationError });
+    if (req.file && (!String(req.file.mimetype || '').startsWith('image/') || req.file.size > 10 * 1024 * 1024)) {
+      return res.status(req.file.size > 10 * 1024 * 1024 ? 413 : 400).json({ success: false, message: 'The company logo must be an image no larger than 10 MB.' });
+    }
+
+    await loadDocInfo();
+    const sheet = getNewsletterSheet();
+    if (!sheet) return res.status(503).json({ success: false, message: 'The NewsLetter sheet is unavailable.' });
+    await sheet.loadHeaderRow();
+    const headers = [...(sheet.headerValues || [])];
+    const jobIdHeader = findVacancyHeader(headers, ['jobid', 'id']);
+    if (!jobIdHeader) return res.status(503).json({ success: false, message: 'The NewsLetter sheet has no JobID column.' });
+    const rows = await sheet.getRows();
+    let row = rows.find(item => String(item.get(jobIdHeader) || '').trim() === jobId);
+    if (!row && /^LEGACY-[a-f0-9]{24}$/i.test(jobId)) {
+      const legacyMatches = rows.filter(item => !String(item.get(jobIdHeader) || '').trim() && getLegacyVacancyId(item) === jobId);
+      if (legacyMatches.length > 1) return res.status(409).json({ success: false, message: 'More than one legacy vacancy matches this row. Add a JobID to the correct sheet row before editing.' });
+      row = legacyMatches[0] || null;
+    }
+    if (!row) return res.status(404).json({ success: false, message: 'This vacancy no longer exists.' });
+    if (!canManageVacancyRow(req.portalUser, row)) return res.status(403).json({ success: false, message: 'You can edit only vacancies created by your placement account.' });
+
+    const logoHeader = findVacancyHeader(headers, ['companylogo', 'logo']);
+    let logoUrl = logoHeader ? String(row.get(logoHeader) || '').trim() : '';
+    if (req.file) logoUrl = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS);
+    const values = getEditableVacancyValues(input, logoUrl);
+    const changes = [];
+    const unavailableFields = [];
+    Object.entries(values).forEach(([key, newValue]) => {
+      const spec = vacancyHeaderSpecs.find(item => item.key === key);
+      const header = spec && findVacancyHeader(headers, spec.aliases);
+      if (!header) {
+        unavailableFields.push(spec?.title || key);
+        return;
+      }
+      const oldValue = row.get(header);
+      if (String(oldValue ?? '').trim() !== String(newValue ?? '').trim()) {
+        changes.push({ key, header, oldValue, newValue });
+      }
+    });
+    if (unavailableFields.length) {
+      return res.status(503).json({ success: false, message: `The NewsLetter sheet is missing columns: ${unavailableFields.join(', ')}.` });
+    }
+
+    const existingJobId = String(row.get(jobIdHeader) || '').trim();
+    const persistedJobId = existingJobId || `JOB-${Date.now()}-${randomBytes(3).toString('hex').toUpperCase()}`;
+    if (!existingJobId) changes.push({ key: 'jobId', header: jobIdHeader, oldValue: '', newValue: persistedJobId });
+
+    await writeVacancyCellChanges(sheet, row, headers, changes, getVacancyActorName(req));
+    refreshCache();
+    const updated = {
+      id: persistedJobId,
+      hasJobId: true,
+      company: values.companyName,
+      companyLogo: logoUrl,
+      position: values.position,
+      location: values.location,
+      state: values.state,
+      mode: values.workMode,
+      lastDate: values.lastDate,
+      course: values.course,
+      qualification: values.qualification,
+      description: values.jobDescription,
+      experience: values.experience,
+      salary: values.salary,
+      gender: values.genderPreference,
+      companyContact: values.companyContact,
+      companyMailId: values.companyMailId,
+      companyContactPerson: values.companyContactPerson,
+      companyWebsite: values.companyWebsite,
+      openings: values.openings,
+      interviewDate: values.interviewDate,
+      status: getValByHeader(row, ['status']) || 'Open',
+      tpoName: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || getVacancyActorName(req),
+      timestamp: getValByHeader(row, ['timestamp']) || '',
+      datePosted: getValByHeader(row, ['date', 'posteddate']) || ''
+    };
+    return res.json({
+      success: true,
+      vacancy: updated,
+      changedCells: changes.length,
+      message: changes.length ? 'Vacancy updated. Each changed cell now has a timestamped edit note.' : 'No vacancy details changed.'
+    });
+  } catch (error) {
+    console.error('Vacancy update failed:', error.message);
+    return res.status(500).json({ success: false, message: error.message || 'The vacancy could not be updated.' });
+  }
+};
+
+exports.deleteVacancy = async (req, res) => {
+  try {
+    const jobId = String(req.params.jobId || '').trim();
+    if (!jobId) return res.status(400).json({ success: false, message: 'A vacancy Job ID is required.' });
+    await loadDocInfo();
+    const sheet = getNewsletterSheet();
+    if (!sheet) return res.status(503).json({ success: false, message: 'The NewsLetter sheet is unavailable.' });
+    await sheet.loadHeaderRow();
+    const jobIdHeader = findVacancyHeader(sheet.headerValues || [], ['jobid', 'id']);
+    if (!jobIdHeader) return res.status(503).json({ success: false, message: 'The NewsLetter sheet has no JobID column.' });
+    const rows = await sheet.getRows();
+    let row = rows.find(item => String(item.get(jobIdHeader) || '').trim() === jobId);
+    if (!row && /^LEGACY-[a-f0-9]{24}$/i.test(jobId)) {
+      const legacyMatches = rows.filter(item => !String(item.get(jobIdHeader) || '').trim() && getLegacyVacancyId(item) === jobId);
+      if (legacyMatches.length > 1) return res.status(409).json({ success: false, message: 'More than one legacy vacancy matches this row. The row was not deleted.' });
+      row = legacyMatches[0] || null;
+    }
+    if (!row) return res.status(404).json({ success: false, message: 'This vacancy no longer exists.' });
+    if (!canManageVacancyRow(req.portalUser, row)) return res.status(403).json({ success: false, message: 'You can delete only vacancies created by your placement account.' });
+
+    const linkedApplications = (getCache()?.applications || []).filter(application =>
+      String(getValByHeader(application, ['jobid', 'job id', 'job_id']) || '').trim() === jobId
+    );
+    if (linkedApplications.length) {
+      return res.status(409).json({
+        success: false,
+        message: `This vacancy has ${linkedApplications.length} linked application${linkedApplications.length === 1 ? '' : 's'}. Keep the row so those applications remain traceable.`
+      });
+    }
+
+    await row.delete();
+    refreshCache();
+    return res.json({ success: true, message: 'Vacancy deleted from the NewsLetter sheet.' });
+  } catch (error) {
+    console.error('Vacancy deletion failed:', error.message);
+    return res.status(500).json({ success: false, message: error.message || 'The vacancy could not be deleted.' });
   }
 };
 
