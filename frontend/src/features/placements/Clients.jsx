@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { 
   CircleNotch, PencilSimple, PaperPlaneRight, FilePdf, X, FloppyDisk, 
@@ -363,11 +364,12 @@ export default function Clients() {
       </div>
 
       {isAddModalOpen && (
-        <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
-          <div className="premium-modal glass-panel" style={{ maxWidth: '550px', padding: '30px' }}>
+        createPortal(
+        <div className="clients-modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
+          <div className="clients-modal-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="add-partner-title" style={{ maxWidth: '550px', padding: '30px' }}>
             <div className="modal-header">
               <div>
-                <h2 style={{ fontSize: '1.5rem', color: '#fff' }}>Add New Partner</h2>
+                <h2 id="add-partner-title" style={{ fontSize: '1.5rem', color: '#fff' }}>Add New Partner</h2>
                 <div className="modal-subtitle">Add a new company to the directory</div>
               </div>
               <button className="close-btn" onClick={() => setIsAddModalOpen(false)}><X size={24} /></button>
@@ -392,15 +394,16 @@ export default function Clients() {
               {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><Buildings size={20} weight="bold"/> Register Partner</>}
             </button>
           </div>
-        </div>
+        </div>, document.body)
       )}
 
       {isEditModalOpen && selectedClient && (
-        <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
-          <div className="premium-modal glass-panel" style={{ maxWidth: '500px', padding: '30px' }}>
+        createPortal(
+        <div className="clients-modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
+          <div className="clients-modal-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="edit-partner-title" style={{ maxWidth: '500px', padding: '30px' }}>
             <div className="modal-header">
               <div>
-                <h2 style={{ fontSize: '1.4rem' }}>Edit Details</h2>
+                <h2 id="edit-partner-title" style={{ fontSize: '1.4rem' }}>Edit Details</h2>
                 <div className="modal-subtitle">{selectedClient.companyName}</div>
               </div>
               <button className="close-btn" onClick={() => setIsEditModalOpen(false)}><X size={24} /></button>
@@ -421,7 +424,7 @@ export default function Clients() {
               {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> Save Updates</>}
             </button>
           </div>
-        </div>
+        </div>, document.body)
       )}
 
       {notification && (
@@ -499,17 +502,17 @@ export default function Clients() {
         
         .empty-state-card { background: rgba(15, 23, 42, 0.5); border: 1px dashed rgba(255,255,255,0.1); border-radius: 16px; padding: 50px 20px; text-align: center; color: #94a3b8; font-size: 1.1rem; font-weight: bold; }
 
-        .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.8); backdrop-filter: blur(8px); z-index: 99999; display: flex; justify-content: center; align-items: center; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; padding: 20px; }
-        .premium-modal { width: 100%; max-height: calc(100dvh - 40px); min-height: 0; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; margin: auto 0; border-radius: 24px; padding: 30px; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.8); }
+        .clients-modal-backdrop { position: fixed; inset: 0; z-index: 2147483000; display: grid; place-items: center; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; padding: 20px; background: rgba(2, 6, 23, .76); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); isolation: isolate; }
+        .clients-modal-dialog { position: relative; z-index: 1; display: block; flex: 0 0 auto; width: min(100%, 550px); max-height: calc(100dvh - 40px); min-height: 0; overflow-y: auto; overscroll-behavior: contain; box-sizing: border-box; margin: auto; border-radius: 24px; background: linear-gradient(145deg, rgba(26, 39, 63, .98), rgba(13, 21, 38, .99)); border: 1px solid rgba(196, 218, 255, .2); box-shadow: 0 30px 90px rgba(0,0,0,.65); }
         .modal-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 15px; margin-bottom: 20px; }
         .modal-header h2 { margin: 0 0 5px 0; font-size: 1.6rem; color: #fff; font-weight: 800; }
         .modal-subtitle { color: var(--accent-primary); font-weight: bold; font-size: 1.1rem; }
         .close-btn { background: none; border: none; color: #64748b; cursor: pointer; transition: 0.2s; display: flex; }
         .close-btn:hover { color: #ef4444; transform: scale(1.1); }
         @media (max-width: 560px) {
-          .modal-backdrop { padding: 10px; }
-          .premium-modal { max-height: calc(100dvh - 20px); padding: 20px !important; border-radius: 18px; }
-          .premium-modal .modal-header h2 { font-size: 1.25rem !important; }
+          .clients-modal-backdrop { padding: 10px; }
+          .clients-modal-dialog { max-height: calc(100dvh - 20px); padding: 20px !important; border-radius: 18px; }
+          .clients-modal-dialog .modal-header h2 { font-size: 1.25rem !important; }
         }
       `}</style>
     </Layout>
