@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { 
   Users, Briefcase, CircleNotch, BookOpen, 
@@ -91,6 +92,175 @@ const companyLogoSource = value => {
   return driveId ? `https://lh3.googleusercontent.com/d/${driveId[1]}` : logo;
 };
 
+const getTodayInIndia = () => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  return { iso: `${values.year}-${values.month}-${values.day}`, display: `${values.day}/${values.month}/${values.year}` };
+};
+
+function VacancyCreateModal({ onClose, onCreated, currentOfficer }) {
+  const today = getTodayInIndia();
+  const [placementOfficers, setPlacementOfficers] = useState([]);
+  const [loadingOfficers, setLoadingOfficers] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [companyLogo, setCompanyLogo] = useState(null);
+  const [form, setForm] = useState({
+    date: today.display,
+    companyName: '', companyContact: '', companyMailId: '', companyContactPerson: '', companyWebsite: '',
+    course: '', position: '', state: '', location: '', workMode: '', openings: '', qualification: '',
+    jobDescription: '', experience: '', experienceOther: '', salary: '', genderPreference: '',
+    interviewPlan: '', interviewDate: '', lastDate: '', placementOfficer: ''
+  });
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    axios.get(`${API_BASE}/api/tpo/vacancies/form-options`)
+      .then(response => {
+        const officers = Array.isArray(response.data?.placementOfficers) ? response.data.placementOfficers : [];
+        setPlacementOfficers(officers);
+        setForm(previous => ({
+          ...previous,
+          placementOfficer: officers.find(name => name.toLowerCase() === String(currentOfficer || '').trim().toLowerCase()) || officers[0] || ''
+        }));
+      })
+      .catch(requestError => setErrorMessage(requestError.response?.data?.message || 'Could not load placement officers from the Contact sheet.'))
+      .finally(() => setLoadingOfficers(false));
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [currentOfficer]);
+
+  const updateField = (field, value) => setForm(previous => ({ ...previous, [field]: value }));
+  const inputStyle = { width: '100%', minWidth: 0, boxSizing: 'border-box', background: '#080d18', border: '1px solid #334155', borderRadius: '10px', padding: '11px 13px', color: '#f8fafc' };
+  const labelStyle = { display: 'block', color: '#cbd5e1', fontSize: '0.78rem', fontWeight: 700, marginBottom: '7px' };
+  const field = (label, name, control, required = true) => (
+    <label key={name} style={{ display: 'block', minWidth: 0 }}>
+      <span style={labelStyle}>{label}{required ? ' *' : ''}</span>
+      {control}
+    </label>
+  );
+  const textInput = (name, type = 'text', extra = {}) => (
+    <input
+      className="premium-input"
+      style={inputStyle}
+      type={type}
+      value={form[name]}
+      onChange={event => updateField(name, event.target.value)}
+      required
+      {...extra}
+    />
+  );
+  const selectInput = (name, placeholder, options, extra = {}) => (
+    <select className="premium-select" style={inputStyle} value={form[name]} onChange={event => updateField(name, event.target.value)} required {...extra}>
+      <option value="">{placeholder}</option>
+      {options.map(option => <option key={option} value={option}>{option}</option>)}
+    </select>
+  );
+  const handleSubmit = async event => {
+    event.preventDefault();
+    setErrorMessage('');
+    if (!companyLogo) return setErrorMessage('Please upload the company logo.');
+    if (companyLogo.size > 10 * 1024 * 1024) return setErrorMessage('The company logo must be 10 MB or smaller.');
+    if (form.experience === 'Other' && !form.experienceOther.trim()) return setErrorMessage('Please specify the experience requirement.');
+    if (form.interviewPlan === 'Interview Scheduled' && !form.interviewDate) return setErrorMessage('Please select the interview date.');
+
+    setSaving(true);
+    try {
+      const payload = new FormData();
+      Object.entries(form).forEach(([key, value]) => payload.append(key, value));
+      payload.append('companyLogo', companyLogo);
+      const response = await axios.post(`${API_BASE}/api/tpo/vacancies/add`, payload, { headers: { 'Content-Type': 'multipart/form-data' } });
+      if (!response.data?.success) throw new Error(response.data?.message || 'The vacancy could not be saved.');
+      onCreated(response.data.vacancy);
+      onClose();
+    } catch (requestError) {
+      setErrorMessage(requestError.response?.data?.message || requestError.message || 'The vacancy could not be saved.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const courses = ['Information Technology (IT)', 'BMS & CCTV', 'Embedded and IOT', 'Industrial Automation', 'Digital Marketing'];
+  const states = ['Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chhattisgarh', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jharkhand', 'Karnataka', 'Kerala', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal', 'International'];
+
+  return createPortal((
+    <div className="modal-backdrop" onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <form onSubmit={handleSubmit} className="premium-modal glass-panel vacancy-create-modal" style={{ maxWidth: '920px', maxHeight: 'calc(100dvh - 32px)', overflowY: 'auto', padding: 'clamp(18px, 3vw, 30px)', boxSizing: 'border-box' }}>
+        <div className="modal-header" style={{ position: 'sticky', top: '-1px', zIndex: 1, background: '#111827', paddingTop: '2px' }}>
+          <div>
+            <h2>Add Vacancy</h2>
+            <div className="modal-subtitle">Create a hiring opening in the NewsLetter sheet</div>
+          </div>
+          <button type="button" className="close-btn" onClick={onClose} aria-label="Close vacancy form"><X size={24} /></button>
+        </div>
+
+        <div className="vacancy-modal-grid">
+          {field('Date', 'date', <input style={inputStyle} type="text" value={form.date} readOnly aria-readonly="true" />)}
+          {field('Company Logo', 'companyLogo', <input style={inputStyle} type="file" accept="image/png,image/jpeg,image/webp,image/gif" onChange={event => setCompanyLogo(event.target.files?.[0] || null)} required />)}
+          {field('Company Name', 'companyName', textInput('companyName'))}
+          {field('Company Contact', 'companyContact', textInput('companyContact', 'tel'))}
+          {field('Company Mail ID', 'companyMailId', textInput('companyMailId', 'email'))}
+          {field('Company Contact Person', 'companyContactPerson', textInput('companyContactPerson'))}
+          {field('Company Website', 'companyWebsite', textInput('companyWebsite', 'url', { placeholder: 'https://www.example.com' }))}
+          {field('Course', 'course', selectInput('course', 'Select course', courses))}
+          {field('Position', 'position', textInput('position'))}
+          {field('State', 'state', selectInput('state', 'Select state', states))}
+          {field('Opening At (Location)', 'location', textInput('location'))}
+          {field('No. of Openings', 'openings', selectInput('openings', 'Select number of openings', ['01', '01 - 02', '01 - 05', '05 +']))}
+          {field('Qualification', 'qualification', textInput('qualification'))}
+          {field('Salary', 'salary', textInput('salary'))}
+          {field('Gender Preference', 'genderPreference', selectInput('genderPreference', 'Select preference', ['Preferred both Male & female candidates', 'Preferred Male candidates Only', 'Preferred female candidates Only', 'Not Mentioned']))}
+          {field('Placement Officer', 'placementOfficer', selectInput('placementOfficer', loadingOfficers ? 'Loading officers…' : 'Select placement officer', placementOfficers, { disabled: loadingOfficers || placementOfficers.length === 0 }))}
+        </div>
+
+        <fieldset style={{ margin: '18px 0', padding: '14px', border: '1px solid #334155', borderRadius: '12px' }}>
+          <legend style={{ color: '#cbd5e1', fontWeight: 700, padding: '0 7px' }}>Work Mode *</legend>
+          <div className="vacancy-radio-row">
+            {['Work at Office', 'Work from Home', 'Hybrid'].map(option => (
+              <label key={option} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#e2e8f0' }}>
+                <input type="radio" name="workMode" value={option} checked={form.workMode === option} onChange={() => updateField('workMode', option)} required />{option}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset style={{ margin: '18px 0', padding: '14px', border: '1px solid #334155', borderRadius: '12px' }}>
+          <legend style={{ color: '#cbd5e1', fontWeight: 700, padding: '0 7px' }}>Experience *</legend>
+          <div className="vacancy-radio-row">
+            {['Fresher', 'Experienced', 'Other'].map(option => (
+              <label key={option} style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#e2e8f0' }}>
+                <input type="radio" name="experience" value={option} checked={form.experience === option} onChange={() => updateField('experience', option)} required />{option}
+              </label>
+            ))}
+          </div>
+          {form.experience === 'Other' && <input className="premium-input" style={{ ...inputStyle, marginTop: '12px' }} value={form.experienceOther} onChange={event => updateField('experienceOther', event.target.value)} placeholder="Specify experience" required />}
+        </fieldset>
+
+        {field('Job Description', 'jobDescription', <textarea className="premium-input" style={{ ...inputStyle, minHeight: '130px', resize: 'vertical' }} value={form.jobDescription} onChange={event => updateField('jobDescription', event.target.value)} required />)}
+
+        <div className="vacancy-modal-grid" style={{ marginTop: '16px' }}>
+          {field('Interview Date', 'interviewPlan', selectInput('interviewPlan', 'Choose interview status', ['Will Inform Once Scheduled', 'Interview Scheduled']))}
+          {form.interviewPlan === 'Interview Scheduled' && field('Scheduled Interview Date', 'interviewDate', textInput('interviewDate', 'date', { min: today.iso }))}
+          {field('Last Date', 'lastDate', textInput('lastDate', 'date', { min: today.iso }))}
+        </div>
+
+        {errorMessage && <div role="alert" style={{ marginTop: '16px', padding: '12px 14px', color: '#fecaca', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px' }}>{errorMessage}</div>}
+        {!placementOfficers.length && !loadingOfficers && <div style={{ marginTop: '12px', color: '#fbbf24' }}>No placement officers were found in the Contact sheet.</div>}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #334155', marginTop: '22px', paddingTop: '18px' }}>
+          <button type="button" className="premium-btn secondary" onClick={onClose}>Cancel</button>
+          <button type="submit" className="premium-btn primary" disabled={saving || loadingOfficers || !placementOfficers.length}>
+            {saving ? <><CircleNotch size={18} className="ph-spin" /> Saving…</> : 'Submit Opening'}
+          </button>
+        </div>
+      </form>
+      <style>{`.vacancy-modal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 16px}.vacancy-radio-row{display:flex;flex-wrap:wrap;gap:18px}@media(max-width:680px){.vacancy-modal-grid{grid-template-columns:minmax(0,1fr)}.vacancy-radio-row{flex-direction:column;gap:10px}}`}</style>
+    </div>
+  ), document.body);
+}
+
 function VacanciesContent() {
   let tpoData = null;
   try {
@@ -106,7 +276,7 @@ function VacanciesContent() {
   const isBranchManager = userRole === 'BM' || userRole.includes('BRANCH MANAGER');
   const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('REGIONAL TECHNICAL HEAD');
   const hideTpoFilter = isBranchManager || isRth;
-  const canAddOpening = isTpo && !isSuperAdmin;
+  const canAddOpening = (isTpo || userRole.includes('PLACEMENT OFFICER')) && !isSuperAdmin;
   const isCourseSpecific = userRole.includes('TRAINER') || userRole.includes('RTH') || userRole.includes('REGIONAL TECHNICAL HEAD') || userRole.includes('TTH') || userRole.includes('TERRITORY TECHNICAL HEAD');
   
   const rawCourse = String(tpoData?.assignedCourse || 'All').toLowerCase();
@@ -134,6 +304,8 @@ function VacanciesContent() {
   const [selectedJob, setSelectedJob] = useState(null);
   const [isJobDetailsModalOpen, setIsJobDetailsModalOpen] = useState(false);
   const [isApplicantsModalOpen, setIsApplicantsModalOpen] = useState(false);
+  const [isCreateVacancyOpen, setIsCreateVacancyOpen] = useState(false);
+  const [openingNotice, setOpeningNotice] = useState('');
 
   useEffect(() => {
     const fetchAllData = async () => {
@@ -295,11 +467,12 @@ function VacanciesContent() {
             <p>Real-time applicant tracking and opening management</p>
           </div>
           {canAddOpening && (
-            <button className="premium-btn primary hover-lift" onClick={() => window.open('https://forms.gle/9Gxbwx1S2uqeXHne9', '_blank')}>
+            <button className="premium-btn primary hover-lift" onClick={() => { setOpeningNotice(''); setIsCreateVacancyOpen(true); }}>
               <Plus weight="bold" size={20} /> Add Opening
             </button>
           )}
         </div>
+        {openingNotice && <div role="status" style={{ marginBottom: '18px', padding: '12px 16px', borderRadius: '10px', background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.3)', color: '#a7f3d0' }}>{openingNotice}</div>}
 
         {/* ADMIN MINI DASHBOARD */}
         {isSuperAdmin && (
@@ -456,6 +629,18 @@ function VacanciesContent() {
           ))
         )}
       </div>
+
+      {isCreateVacancyOpen && (
+        <VacancyCreateModal
+          currentOfficer={tpoData?.name}
+          onClose={() => setIsCreateVacancyOpen(false)}
+          onCreated={vacancy => {
+            setVacancies(previous => [vacancy, ...previous]);
+            setActiveTab('Open');
+            setOpeningNotice('Vacancy submitted and saved to the NewsLetter sheet.');
+          }}
+        />
+      )}
 
       {/* JOB DETAILS MODAL */}
       {isJobDetailsModalOpen && selectedJob && (

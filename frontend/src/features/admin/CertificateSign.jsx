@@ -10,8 +10,21 @@ import { API_BASE } from '../../services/apiConfig';
 import ipcsLogo from '../../assets/brand/ipcs-logo.png';
 import ipcsSignature from '../../assets/brand/ipcs-signature.png';
 
+const resolveSigningApiBase = () => {
+  if (typeof window === 'undefined') return API_BASE;
+  const requestedApi = new URLSearchParams(window.location.search).get('api');
+  if (!requestedApi) return API_BASE;
+  try {
+    const candidate = new URL(requestedApi);
+    const host = candidate.hostname.toLowerCase();
+    if (candidate.protocol === 'https:' && host.endsWith('.ipcsglobal.info')) return candidate.origin;
+  } catch { /* An invalid URL falls back to the app's configured API. */ }
+  return API_BASE;
+};
+
 export default function CertificateSign() {
   const { id } = useParams();
+  const [signingApiBase] = useState(resolveSigningApiBase);
   const certificateRef = useRef(null);
   
   const [client, setClient] = useState(null);
@@ -36,7 +49,7 @@ export default function CertificateSign() {
   const currentDate = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
 
   useEffect(() => {
-    axios.get(`${API_BASE}/api/public/mou/${encodeURIComponent(id)}`)
+    axios.get(`${signingApiBase}/api/public/mou/${encodeURIComponent(id)}`)
       .then(res => {
         if (res.data.success) {
           setClient(res.data.client);
@@ -55,7 +68,7 @@ export default function CertificateSign() {
         setError(err.response?.data?.message || "We couldn't load the agreement details. Please contact IPCS to request a new signing link.");
       })
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, signingApiBase]);
 
   const handleImageUpload = (e, setPreviewFunc, setFileState) => {
     const file = e.target.files[0];
@@ -102,7 +115,7 @@ export default function CertificateSign() {
 
       formData.append('signingToken', id);
 
-      const res = await axios.post(`${API_BASE}/api/tpo/clients/submit-mou`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      const res = await axios.post(`${signingApiBase}/api/tpo/clients/submit-mou`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       if(res.data.success) {
         setCompletionEmailSent(res.data.emailSent !== false);
         setIsSuccess(true);

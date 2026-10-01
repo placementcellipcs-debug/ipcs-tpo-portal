@@ -1212,6 +1212,189 @@ exports.getVacancies = (req, res) => {
   }
 };
 
+const getVacancyPlacementOfficers = async () => {
+  let rows = getCache()?.contacts;
+  if (!Array.isArray(rows) || rows.length === 0) {
+    await loadDocInfo();
+    const contactSheet = doc.sheetsByTitle['Contact'] || doc.sheetsByIndex.find(sheet =>
+      sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('contact')
+    );
+    if (!contactSheet) throw new Error('The Contact sheet is unavailable.');
+    rows = await contactSheet.getRows();
+  }
+
+  const officers = new Map();
+  rows.forEach(row => {
+    const name = getValByHeader(row, ['name', 'tponame', 'placementofficer']).trim();
+    const role = getValByHeader(row, ['role', 'designation', 'position']).trim();
+    if (!name || (role && !/(tpo|placement|career guidance)/i.test(role))) return;
+    const key = normalizePlacementText(name);
+    if (key && !officers.has(key)) officers.set(key, name);
+  });
+  return [...officers.values()].sort((a, b) => a.localeCompare(b));
+};
+
+exports.getVacancyFormOptions = async (_req, res) => {
+  try {
+    return res.json({ success: true, placementOfficers: await getVacancyPlacementOfficers() });
+  } catch (error) {
+    console.error('Could not load placement officers for vacancy form:', error.message);
+    return res.status(503).json({ success: false, message: 'Placement officer names are unavailable. Please try again shortly.' });
+  }
+};
+
+const vacancyHeaderSpecs = [
+  { key: 'date', title: 'Date', aliases: ['date', 'timestamp', 'posteddate'] },
+  { key: 'companyLogo', title: 'Company Logo', aliases: ['companylogo', 'logo'] },
+  { key: 'companyName', title: 'Company Name', aliases: ['companyname', 'company'] },
+  { key: 'companyContact', title: 'Company Contact', aliases: ['companycontact', 'contactnumber', 'phone', 'contact'] },
+  { key: 'companyMailId', title: 'Company Mail ID', aliases: ['companymailid', 'companyemail', 'mailid', 'email'] },
+  { key: 'companyContactPerson', title: 'Company Contact Person', aliases: ['companycontactperson', 'contactperson', 'person'] },
+  { key: 'companyWebsite', title: 'Company Website', aliases: ['companywebsite', 'website', 'url'] },
+  { key: 'course', title: 'Course', aliases: ['course', 'program'] },
+  { key: 'position', title: 'Position', aliases: ['position', 'role', 'jobtitle'] },
+  { key: 'state', title: 'State', aliases: ['state', 'region'] },
+  { key: 'location', title: 'Opening At (Location)', aliases: ['openingat(location)', 'openingatlocation', 'location', 'city'] },
+  { key: 'workMode', title: 'Work Mode', aliases: ['workmode', 'mode'] },
+  { key: 'openings', title: 'No. of Openings', aliases: ['noofopenings', 'numberofopenings', 'openings'] },
+  { key: 'qualification', title: 'Qualification', aliases: ['qualification', 'educationalqualification', 'eligibility'] },
+  { key: 'jobDescription', title: 'Job Description', aliases: ['jobdescription', 'description', 'roleoverview'] },
+  { key: 'experience', title: 'Experience', aliases: ['experience', 'yearsofexperience'] },
+  { key: 'salary', title: 'Salary', aliases: ['salary', 'package', 'ctc', 'compensation'] },
+  { key: 'genderPreference', title: 'Gender Preference', aliases: ['genderpreference', 'gender'] },
+  { key: 'interviewDate', title: 'Interview Date', aliases: ['interviewdate'] },
+  { key: 'lastDate', title: 'Last Date', aliases: ['lastdate', 'applicationdeadline'] },
+  { key: 'placementOfficer', title: 'Placement Officer', aliases: ['placementofficer', 'tpo', 'tponame'] },
+  { key: 'jobId', title: 'Job ID', aliases: ['jobid', 'id'] },
+  { key: 'status', title: 'Status', aliases: ['status', 'openingstatus'] }
+];
+
+const normalizeVacancyHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const findVacancyHeader = (headers, aliases) => {
+  for (const alias of aliases) {
+    const normalizedAlias = normalizeVacancyHeader(alias);
+    const exact = headers.find(header => normalizeVacancyHeader(header) === normalizedAlias);
+    if (exact) return exact;
+  }
+  return null;
+};
+
+const formatTodayForVacancy = () => new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric'
+}).format(new Date());
+
+exports.addVacancy = async (req, res) => {
+  try {
+    const input = req.body || {};
+    const requiredFields = [
+      'companyName', 'companyContact', 'companyMailId', 'companyContactPerson', 'companyWebsite',
+      'course', 'position', 'state', 'location', 'workMode', 'openings', 'qualification',
+      'jobDescription', 'experience', 'salary', 'genderPreference', 'interviewPlan', 'lastDate', 'placementOfficer'
+    ];
+    const missingFields = requiredFields.filter(field => !String(input[field] || '').trim());
+    if (missingFields.length) return res.status(400).json({ success: false, message: `Please complete all required fields: ${missingFields.join(', ')}.` });
+    if (!req.file) return res.status(400).json({ success: false, message: 'Please upload the company logo.' });
+    if (!String(req.file.mimetype || '').startsWith('image/')) return res.status(400).json({ success: false, message: 'The company logo must be an image.' });
+    if (req.file.size > 10 * 1024 * 1024) return res.status(413).json({ success: false, message: 'The company logo must be 10 MB or smaller.' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(input.companyMailId).trim())) {
+      return res.status(400).json({ success: false, message: 'Enter a valid company email address.' });
+    }
+    if (!['Will Inform Once Scheduled', 'Interview Scheduled'].includes(String(input.interviewPlan || ''))) {
+      return res.status(400).json({ success: false, message: 'Select an interview scheduling option.' });
+    }
+    if (input.interviewPlan === 'Interview Scheduled' && !/^\d{4}-\d{2}-\d{2}$/.test(String(input.interviewDate || ''))) {
+      return res.status(400).json({ success: false, message: 'Select the scheduled interview date.' });
+    }
+    const experience = input.experience === 'Other' ? String(input.experienceOther || '').trim() : String(input.experience).trim();
+    if (!experience) return res.status(400).json({ success: false, message: 'Enter the custom experience requirement.' });
+
+    const placementOfficers = await getVacancyPlacementOfficers();
+    const selectedOfficer = placementOfficers.find(name => normalizePlacementText(name) === normalizePlacementText(input.placementOfficer));
+    if (!selectedOfficer) return res.status(400).json({ success: false, message: 'Choose a placement officer from the Contact sheet list.' });
+
+    await loadDocInfo();
+    const sheet = doc.sheetsByTitle['NewsLetter'] || doc.sheetsByIndex.find(item =>
+      item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('newsletter')
+    );
+    if (!sheet) return res.status(503).json({ success: false, message: 'The NewsLetter sheet is unavailable.' });
+    await sheet.loadHeaderRow();
+    let headers = [...(sheet.headerValues || [])];
+    const headerMap = new Map();
+    const missingHeaders = [];
+    vacancyHeaderSpecs.forEach(spec => {
+      const existing = findVacancyHeader(headers, spec.aliases);
+      if (existing) headerMap.set(spec.key, existing);
+      else missingHeaders.push(spec);
+    });
+    if (missingHeaders.length) {
+      const requiredColumnCount = headers.length + missingHeaders.length;
+      if ((Number(sheet.columnCount) || 0) < requiredColumnCount) await sheet.resize({ columnCount: requiredColumnCount });
+      headers = [...headers, ...missingHeaders.map(spec => spec.title)];
+      await sheet.setHeaderRow(headers);
+      await sheet.loadHeaderRow();
+      missingHeaders.forEach(spec => headerMap.set(spec.key, spec.title));
+    }
+
+    const logoUrl = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS);
+    const jobId = `JOB-${Date.now()}-${randomBytes(3).toString('hex').toUpperCase()}`;
+    const rowData = {
+      date: formatTodayForVacancy(),
+      companyLogo: logoUrl,
+      companyName: String(input.companyName).trim(),
+      companyContact: String(input.companyContact).trim(),
+      companyMailId: String(input.companyMailId).trim(),
+      companyContactPerson: String(input.companyContactPerson).trim(),
+      companyWebsite: String(input.companyWebsite).trim(),
+      course: String(input.course).trim(),
+      position: String(input.position).trim(),
+      state: String(input.state).trim(),
+      location: String(input.location).trim(),
+      workMode: String(input.workMode).trim(),
+      openings: String(input.openings).trim(),
+      qualification: String(input.qualification).trim(),
+      jobDescription: String(input.jobDescription).trim(),
+      experience,
+      salary: String(input.salary).trim(),
+      genderPreference: String(input.genderPreference).trim(),
+      interviewDate: input.interviewPlan === 'Interview Scheduled' ? String(input.interviewDate) : 'Will inform once scheduled',
+      lastDate: String(input.lastDate).trim(),
+      placementOfficer: selectedOfficer,
+      jobId,
+      status: 'Open'
+    };
+    const rowValues = Object.fromEntries(Object.entries(rowData).map(([key, value]) => [headerMap.get(key), value]));
+    const savedRow = await sheet.addRow(rowValues);
+    const cache = getCache();
+    if (Array.isArray(cache?.vacancies)) cache.vacancies.push(savedRow);
+    refreshCache();
+
+    const vacancy = {
+      id: jobId,
+      company: rowData.companyName,
+      companyLogo: logoUrl,
+      position: rowData.position,
+      location: rowData.location,
+      state: rowData.state,
+      mode: rowData.workMode,
+      lastDate: rowData.lastDate,
+      course: rowData.course,
+      qualification: rowData.qualification,
+      description: rowData.jobDescription,
+      experience: rowData.experience,
+      salary: rowData.salary,
+      gender: rowData.genderPreference,
+      interviewDate: rowData.interviewDate,
+      status: 'Open',
+      tpoName: rowData.placementOfficer,
+      datePosted: rowData.date
+    };
+    return res.status(201).json({ success: true, vacancy, message: 'Vacancy added to the NewsLetter sheet.' });
+  } catch (error) {
+    console.error('Vacancy creation failed:', error.message);
+    return res.status(500).json({ success: false, message: error.message || 'The vacancy could not be saved.' });
+  }
+};
+
 exports.getIssues = (req, res) => {
   try {
     const { assignedBranchesArray, role, assignedCourse } = req.body;
@@ -2456,13 +2639,33 @@ exports.getClientById = (req, res) => {
 
 const MOU_TOKEN_HASH_HEADER = 'MOU Signing Token Hash';
 const hashMouSigningToken = token => createHash('sha256').update(String(token || '')).digest('hex');
+const createMouSigningId = () => `MOU-${randomBytes(18).toString('base64url')}`;
+
+const getMouSigningApiOrigin = req => {
+  const configuredHosts = String(process.env.MOU_SIGNING_API_HOSTS || 'api-talenzo.ipcsglobal.info,placement.ipcsglobal.info,api-placement.ipcsglobal.info')
+    .split(',')
+    .map(host => host.trim().toLowerCase())
+    .filter(Boolean);
+  const requestHost = String(req.hostname || '').trim().toLowerCase();
+  if (configuredHosts.includes(requestHost) && requestHost.endsWith('.ipcsglobal.info')) return `https://${requestHost}`;
+
+  const configuredBase = String(process.env.MOU_SIGNING_API_BASE || '').trim();
+  try {
+    const parsed = new URL(configuredBase);
+    if (parsed.protocol === 'https:' && parsed.hostname.toLowerCase().endsWith('.ipcsglobal.info')) return parsed.origin;
+  } catch { /* Use the frontend's configured API when no trusted service URL is configured. */ }
+  return '';
+};
 
 const findClientByMouToken = async (sheet, token) => {
-  const cleanToken = String(token || '').trim().toLowerCase();
-  if (!/^[a-f0-9]{64}$/.test(cleanToken)) return null;
+  const cleanToken = String(token || '').trim();
+  const isLegacyToken = /^[a-f0-9]{64}$/i.test(cleanToken);
+  const isMouId = /^MOU-[A-Za-z0-9_-]{24}$/.test(cleanToken);
+  if (!isLegacyToken && !isMouId) return null;
+  const canonicalToken = isLegacyToken ? cleanToken.toLowerCase() : cleanToken;
 
   await sheet.loadHeaderRow();
-  const tokenHash = Buffer.from(hashMouSigningToken(cleanToken), 'hex');
+  const tokenHash = Buffer.from(hashMouSigningToken(canonicalToken), 'hex');
   const tokenHeader = (sheet.headerValues || []).find(header =>
     String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mousigningtokenhash'
   );
@@ -2587,15 +2790,16 @@ exports.requestMou = async (req, res) => {
     const companyEmail = getValByHeader(clientRow, ['companymailid', 'companyemail', 'mailid', 'email']);
     const companyName = getValByHeader(clientRow, ['companyname', 'company']);
     if (!companyEmail || !companyName) return res.status(400).json({ success: false, message: 'This client needs a company name and email before an MOU can be sent.' });
-    const signingToken = randomBytes(32).toString('hex');
+    const signingToken = createMouSigningId();
     clientRow.assign({ [tokenHeader]: hashMouSigningToken(signingToken), [mailStatusHeader]: 'Sending' });
     await clientRow.save();
-    const signingLink = `https://talenzo.ipcsglobal.info/sign-certificate/${signingToken}`;
-    const refId = Math.floor(10000 + Math.random() * 90000); 
+    const signingApiOrigin = getMouSigningApiOrigin(req);
+    const signingApiQuery = signingApiOrigin ? `?api=${encodeURIComponent(signingApiOrigin)}` : '';
+    const signingLink = `https://talenzo.ipcsglobal.info/sign-certificate/${encodeURIComponent(signingToken)}${signingApiQuery}`;
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`, to: companyEmail,
-      subject: `Action Required: IPCS Global Hiring Partnership Confirmation With ${companyName} [Ref: ${refId}]`, 
-      html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #8b5cf6;"><h2 style="color: #ffffff; margin: 0;">IPCS HIRING PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${companyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Confirmation of Hiring Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review & Sign</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, copy and paste this link into your browser: <br/>${signingLink}</p></div></div>`
+      subject: `Action Required: IPCS Global Hiring Partnership Confirmation With ${companyName} [MOU ID: ${signingToken}]`,
+      html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #8b5cf6;"><h2 style="color: #ffffff; margin: 0;">IPCS HIRING PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${companyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Confirmation of Hiring Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><p style="font-size: 13px; color: #64748b;">MOU ID: <strong>${signingToken}</strong></p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review & Sign</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, open the signing page using <a href="${signingLink}" style="color: #0369a1; font-weight: bold;">MOU ID ${signingToken}</a>.</p></div></div>`
     };
     try {
       await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Request' });
@@ -2627,7 +2831,7 @@ exports.requestMou = async (req, res) => {
 
 exports.submitMou = async (req, res) => {
   try {
-    const signingToken = String(req.body?.signingToken || '').trim().toLowerCase();
+    const signingToken = String(req.body?.signingToken || '').trim();
     await loadDocInfo();
     const sheet = doc.sheetsByTitle['Clients'];
     if (!sheet) return res.status(503).json({ success: false, message: 'Client register is unavailable.' });

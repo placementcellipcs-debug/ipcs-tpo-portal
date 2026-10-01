@@ -44,6 +44,14 @@ app.use(cors({
 
 app.use(express.json());
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+const vacancyLogoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }).single('companyLogo');
+const parseVacancyLogo = (req, res, next) => vacancyLogoUpload(req, res, error => {
+  if (error) {
+    const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+    return res.status(status).json({ success: false, message: status === 413 ? 'The company logo must be 10 MB or smaller.' : error.message });
+  }
+  next();
+});
 
 // ---------------------------------------------------------
 // AUTHENTICATION ROUTES
@@ -100,6 +108,9 @@ const requireSession = (policy = 'portal') => (req, res, next) => {
   }
   if (policy === 'events-write' && !isAdmin && !role.includes('TPO') && !role.includes('PLACEMENT OFFICER')) {
     return res.status(403).json({ success: false, message: 'Event management is not available for this role.' });
+  }
+  if (policy === 'vacancies-write' && (isAdmin || (!role.includes('TPO') && !role.includes('PLACEMENT OFFICER')))) {
+    return res.status(403).json({ success: false, message: 'Only placement officers can add vacancies.' });
   }
   if (policy === 'academic') {
     return res.status(404).json({ success: false, message: 'Training & Academics is temporarily unavailable.' });
@@ -183,6 +194,8 @@ app.post('/api/tpo/applications/update', upload.single('offerLetterFile'), contr
 app.post('/api/tpo/applications/update-log', upload.single('offerLetterFile'), controllers.updatePlacementLog);
 app.post('/api/tpo/applications/add', upload.single('offerLetterFile'), controllers.addApplication);
 app.get('/api/tpo/vacancies', controllers.getVacancies);
+app.get('/api/tpo/vacancies/form-options', requireSession('vacancies-write'), controllers.getVacancyFormOptions);
+app.post('/api/tpo/vacancies/add', requireSession('vacancies-write'), parseVacancyLogo, controllers.addVacancy);
 app.get('/api/tpo/events', requireSession('portal'), controllers.getEvents);
 app.get('/api/tpo/branches', requireSession('events-write'), controllers.getBranches);
 app.post('/api/tpo/events/add', requireSession('events-write'), upload.single('posterFile'), controllers.addEvent);

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { 
   Plus, CaretLeft, CaretRight, X, CircleNotch, MapPin, 
@@ -313,7 +314,7 @@ export default function Events() {
         </div>
       </div>
 
-      {isModalOpen && (
+      {isModalOpen && createPortal((
         <div className="event-modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsModalOpen(false); }}>
           <div className="event-modal-dialog" style={{ maxWidth: '600px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', borderBottom: '1px solid #1e293b', paddingBottom: '15px' }}>
@@ -382,10 +383,10 @@ export default function Events() {
 
           </div>
         </div>
-      )}
+      ), document.body)}
 
       {/* 🚨 SAFE EVENT DETAILS MODAL */}
-      {viewEventModal && (
+      {viewEventModal && createPortal((
         <div className="event-modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setViewEventModal(null); }}>
           <div className="event-modal-dialog" style={{ maxWidth: '680px' }}>
             
@@ -438,7 +439,7 @@ export default function Events() {
 
           </div>
         </div>
-      )}
+      ), document.body)}
 
       {/* 🎨 NEO CALENDAR STYLES */}
       <style>{`
