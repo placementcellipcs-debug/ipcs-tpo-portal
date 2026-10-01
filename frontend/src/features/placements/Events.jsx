@@ -41,6 +41,9 @@ export default function Events() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewEventModal, setViewEventModal] = useState(null); 
   const [isSaving, setIsSaving] = useState(false);
+  const [eventActionForm, setEventActionForm] = useState(null);
+  const [isUpdatingEvent, setIsUpdatingEvent] = useState(false);
+  const [eventActionNotice, setEventActionNotice] = useState(null);
   
   const [newEvent, setNewEvent] = useState({ 
     date: '', time: '', branch: tpoData?.assignedBranchesArray?.[0] || 'All Branches', 
@@ -118,6 +121,51 @@ export default function Events() {
     }
   };
 
+  const startEventAction = action => {
+    const parsedDate = parseDate(viewEventModal?.date);
+    const initialDate = parsedDate && !Number.isNaN(parsedDate.getTime())
+      ? `${parsedDate.getFullYear()}-${String(parsedDate.getMonth() + 1).padStart(2, '0')}-${String(parsedDate.getDate()).padStart(2, '0')}`
+      : '';
+    const rawTime = String(viewEventModal?.time || '').trim();
+    setEventActionForm({
+      action,
+      newDate: initialDate,
+      time: /^\d{2}:\d{2}$/.test(rawTime) ? rawTime : '',
+      reason: ''
+    });
+    setEventActionNotice(null);
+  };
+
+  const submitEventAction = async () => {
+    if (!eventActionForm || !viewEventModal?.eventKey) return;
+    if (eventActionForm.action === 'reschedule' && !eventActionForm.newDate) {
+      setEventActionNotice({ type: 'error', message: 'Choose the new event date before saving.' });
+      return;
+    }
+    setIsUpdatingEvent(true);
+    try {
+      const endpoint = eventActionForm.action === 'cancel' ? 'cancel' : 'reschedule';
+      const payload = { reason: eventActionForm.reason };
+      if (endpoint === 'reschedule') {
+        payload.date = eventActionForm.newDate;
+        payload.time = eventActionForm.time;
+      }
+      const response = await axios.post(`${API_BASE}/api/tpo/events/${encodeURIComponent(viewEventModal.eventKey)}/${endpoint}`, payload);
+      if (!response.data?.success) throw new Error(response.data?.message || 'The event could not be updated.');
+      const updatedEvent = response.data.event;
+      if (updatedEvent) {
+        setEvents(previous => previous.map(event => event.eventKey === updatedEvent.eventKey ? updatedEvent : event));
+        setViewEventModal(updatedEvent);
+      }
+      setEventActionForm(null);
+      setEventActionNotice({ type: response.data.emailSent ? 'success' : 'warning', message: response.data.message || 'Event updated.' });
+    } catch (error) {
+      setEventActionNotice({ type: 'error', message: error.response?.data?.message || error.message || 'The event could not be updated.' });
+    } finally {
+      setIsUpdatingEvent(false);
+    }
+  };
+
   const getEventColor = (type) => {
     if (!type) return 'var(--accent-primary)';
     const safeType = String(type).toLowerCase();
@@ -187,8 +235,8 @@ export default function Events() {
                 style={{ cursor: 'pointer' }}
                 onClick={(ev) => { ev.stopPropagation(); setViewEventModal(e); }}
               >
-                <span className="neo-event-bar" style={{ background: isSelected ? 'rgba(255,255,255,0.8)' : getEventColor(e.type) }}></span>
-                <span className="neo-event-title" style={{ color: isSelected ? '#fff' : '#cbd5e1' }}>{e.title}</span>
+                <span className="neo-event-bar" style={{ background: String(e.status || '').toLowerCase() === 'cancelled' ? '#ef4444' : String(e.status || '').toLowerCase() === 'rescheduled' ? '#f59e0b' : isSelected ? 'rgba(255,255,255,0.8)' : getEventColor(e.type) }}></span>
+                <span className="neo-event-title" style={{ color: isSelected ? '#fff' : '#cbd5e1', textDecoration: String(e.status || '').toLowerCase() === 'cancelled' ? 'line-through' : 'none' }}>{e.title}</span>
               </div>
             ))}
             {dayEvents.length > 3 && (
@@ -212,6 +260,8 @@ export default function Events() {
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
+
+        {eventActionNotice && !viewEventModal && <div role={eventActionNotice.type === 'error' ? 'alert' : 'status'} style={{ marginBottom: '16px', padding: '13px 16px', borderRadius: '12px', border: `1px solid ${eventActionNotice.type === 'error' ? 'rgba(248,113,113,.35)' : eventActionNotice.type === 'warning' ? 'rgba(251,191,36,.35)' : 'rgba(52,211,153,.35)'}`, background: eventActionNotice.type === 'error' ? 'rgba(127,29,29,.2)' : eventActionNotice.type === 'warning' ? 'rgba(120,53,15,.2)' : 'rgba(6,78,59,.22)', color: eventActionNotice.type === 'error' ? '#fecaca' : eventActionNotice.type === 'warning' ? '#fde68a' : '#a7f3d0' }}>{eventActionNotice.message}</div>}
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '15px' }}>
           <div>
@@ -293,6 +343,7 @@ export default function Events() {
                       <div className="neo-ac-content">
                         <h4 className="neo-ac-title">{e.title}</h4>
                         <p className="neo-ac-desc">{e.type}</p>
+                        {String(e.status || 'Scheduled').toLowerCase() !== 'scheduled' && <span className={`event-status-pill ${String(e.status).toLowerCase() === 'cancelled' ? 'cancelled' : 'rescheduled'}`}>{e.status}</span>}
                         
                         <div className="neo-ac-footer">
                           <div className="neo-ac-detail"><Clock size={14} /> {e.time || 'All Day'}</div>
@@ -397,6 +448,7 @@ export default function Events() {
                 </span>
                 <h2 style={{ margin: '0 0 5px 0', fontSize: '1.6rem', color: '#fff' }}>{String(viewEventModal.title || 'Untitled Event')}</h2>
                 {viewEventModal.eventId && <div style={{ color: 'var(--accent-primary)', fontSize: '0.85rem', fontWeight: 'bold' }}>Event ID: {String(viewEventModal.eventId)}</div>}
+                <span className={`event-status-pill ${String(viewEventModal.status || 'Scheduled').toLowerCase() === 'cancelled' ? 'cancelled' : String(viewEventModal.status || 'Scheduled').toLowerCase() === 'rescheduled' ? 'rescheduled' : 'scheduled'}`}>{String(viewEventModal.status || 'Scheduled')}</span>
               </div>
               <button style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', padding: '8px', borderRadius: '50%', cursor: 'pointer', display: 'flex', transition: '0.2s' }} onClick={() => setViewEventModal(null)} title="Close">
                 <X size={20} weight="bold"/>
@@ -437,6 +489,44 @@ export default function Events() {
               </div>
             )}
 
+            {viewEventModal.statusReason && <div style={{ marginTop: '16px', padding: '12px 14px', background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(148,163,184,.15)', borderRadius: '10px', color: '#cbd5e1', fontSize: '.9rem' }}><strong style={{ color: '#94a3b8' }}>Latest update:</strong> {String(viewEventModal.statusReason)}</div>}
+
+            {eventActionNotice && <div role={eventActionNotice.type === 'error' ? 'alert' : 'status'} style={{ marginTop: '16px', padding: '12px 14px', borderRadius: '10px', border: `1px solid ${eventActionNotice.type === 'error' ? 'rgba(248,113,113,.35)' : eventActionNotice.type === 'warning' ? 'rgba(251,191,36,.35)' : 'rgba(52,211,153,.35)'}`, background: eventActionNotice.type === 'error' ? 'rgba(127,29,29,.2)' : eventActionNotice.type === 'warning' ? 'rgba(120,53,15,.2)' : 'rgba(6,78,59,.22)', color: eventActionNotice.type === 'error' ? '#fecaca' : eventActionNotice.type === 'warning' ? '#fde68a' : '#a7f3d0' }}>{eventActionNotice.message}</div>}
+
+            {canManageEvents && String(viewEventModal.status || '').toLowerCase() !== 'cancelled' && <div className="event-action-row">
+              <button type="button" onClick={() => startEventAction('reschedule')} disabled={isUpdatingEvent} className="event-reschedule-button"><CalendarBlank size={18} /> Reschedule Event</button>
+              <button type="button" onClick={() => startEventAction('cancel')} disabled={isUpdatingEvent} className="event-cancel-button"><X size={18} /> Cancel Event</button>
+            </div>}
+
+          </div>
+        </div>
+      ), document.body)}
+
+      {eventActionForm && viewEventModal && createPortal((
+        <div className="event-modal-backdrop event-action-layer" onClick={event => { if (event.target === event.currentTarget && !isUpdatingEvent) setEventActionForm(null); }}>
+          <div className="event-modal-dialog event-action-dialog" role="dialog" aria-modal="true" aria-labelledby="event-action-title">
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '16px', alignItems: 'flex-start', marginBottom: '18px' }}>
+              <div>
+                <span className={`event-status-pill ${eventActionForm.action === 'cancel' ? 'cancelled' : 'rescheduled'}`}>{eventActionForm.action === 'cancel' ? 'Cancellation notice' : 'Schedule update'}</span>
+                <h2 id="event-action-title" style={{ color: '#fff', margin: '8px 0 0', fontSize: '1.35rem' }}>{eventActionForm.action === 'cancel' ? 'Cancel this event?' : 'Reschedule this event'}</h2>
+                <div style={{ color: '#94a3b8', marginTop: '5px' }}>{String(viewEventModal.title || 'Untitled Event')}</div>
+              </div>
+              <button type="button" aria-label="Close" onClick={() => !isUpdatingEvent && setEventActionForm(null)} style={{ border: 0, background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}><X size={22} /></button>
+            </div>
+
+            {eventActionForm.action === 'reschedule' && <div className="event-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
+              <label style={{ color: '#cbd5e1', fontSize: '.82rem', fontWeight: 700 }}>New date *<input type="date" className="sleek-input" value={eventActionForm.newDate} onChange={event => setEventActionForm(previous => ({ ...previous, newDate: event.target.value }))} /></label>
+              <label style={{ color: '#cbd5e1', fontSize: '.82rem', fontWeight: 700 }}>New time<input type="time" className="sleek-input" value={eventActionForm.time} onChange={event => setEventActionForm(previous => ({ ...previous, time: event.target.value }))} /></label>
+            </div>}
+
+            <label style={{ display: 'block', color: '#cbd5e1', fontSize: '.82rem', fontWeight: 700, marginBottom: '8px' }}>{eventActionForm.action === 'cancel' ? 'Reason for cancellation (optional)' : 'Message for recipients (optional)'}</label>
+            <textarea className="sleek-input" rows={3} maxLength={1000} value={eventActionForm.reason} onChange={event => setEventActionForm(previous => ({ ...previous, reason: event.target.value }))} placeholder={eventActionForm.action === 'cancel' ? 'Add a short explanation for the cancellation…' : 'Add any instructions or context for the revised schedule…'} />
+            <div className="event-audience-note">The notice will be sent to the recipients assigned to this event type and branch.</div>
+            {eventActionNotice && <div role={eventActionNotice.type === 'error' ? 'alert' : 'status'} style={{ marginTop: '12px', padding: '11px 12px', borderRadius: '9px', border: `1px solid ${eventActionNotice.type === 'error' ? 'rgba(248,113,113,.35)' : eventActionNotice.type === 'warning' ? 'rgba(251,191,36,.35)' : 'rgba(52,211,153,.35)'}`, background: eventActionNotice.type === 'error' ? 'rgba(127,29,29,.2)' : eventActionNotice.type === 'warning' ? 'rgba(120,53,15,.2)' : 'rgba(6,78,59,.22)', color: eventActionNotice.type === 'error' ? '#fecaca' : eventActionNotice.type === 'warning' ? '#fde68a' : '#a7f3d0', fontSize: '.88rem' }}>{eventActionNotice.message}</div>}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px', paddingTop: '16px', borderTop: '1px solid #253247' }}>
+              <button type="button" className="event-action-secondary" disabled={isUpdatingEvent} onClick={() => setEventActionForm(null)}>Back</button>
+              <button type="button" className={eventActionForm.action === 'cancel' ? 'event-action-confirm-cancel' : 'event-action-confirm-reschedule'} disabled={isUpdatingEvent} onClick={submitEventAction}>{isUpdatingEvent ? <CircleNotch size={18} className="ph-spin" /> : eventActionForm.action === 'cancel' ? 'Cancel Event & Notify' : 'Save New Schedule & Notify'}</button>
+            </div>
           </div>
         </div>
       ), document.body)}
@@ -449,6 +539,22 @@ export default function Events() {
         .event-modal-dialog::-webkit-scrollbar-track { background: transparent; }
         .event-modal-dialog::-webkit-scrollbar-thumb { background: #475569; border-radius: 8px; }
         .event-modal-dialog input, .event-modal-dialog select, .event-modal-dialog textarea { width: 100%; max-width: 100%; box-sizing: border-box; }
+        .event-action-layer { z-index: 100001; background: rgba(2,6,23,.72); }
+        .event-status-pill { display: inline-flex; align-items: center; width: fit-content; margin-top: 7px; padding: 5px 9px; border-radius: 999px; font-size: .68rem; line-height: 1.2; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+        .event-status-pill.scheduled { color: #a7f3d0; background: rgba(16,185,129,.14); border: 1px solid rgba(16,185,129,.28); }
+        .event-status-pill.cancelled { color: #fecaca; background: rgba(239,68,68,.14); border: 1px solid rgba(239,68,68,.28); }
+        .event-status-pill.rescheduled { color: #fde68a; background: rgba(245,158,11,.14); border: 1px solid rgba(245,158,11,.28); }
+        .event-action-row { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 10px; margin-top: 22px; padding-top: 18px; border-top: 1px solid #253247; }
+        .event-reschedule-button, .event-cancel-button, .event-action-secondary, .event-action-confirm-cancel, .event-action-confirm-reschedule { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px 15px; border-radius: 10px; font-weight: 700; cursor: pointer; }
+        .event-reschedule-button { background: rgba(245,158,11,.12); border: 1px solid rgba(245,158,11,.32); color: #fde68a; }
+        .event-cancel-button, .event-action-confirm-cancel { background: rgba(239,68,68,.14); border: 1px solid rgba(239,68,68,.38); color: #fecaca; }
+        .event-action-secondary { background: transparent; border: 1px solid #475569; color: #cbd5e1; }
+        .event-action-confirm-reschedule { background: #7c3aed; border: 1px solid #8b5cf6; color: #fff; }
+        .event-reschedule-button:disabled, .event-cancel-button:disabled, .event-action-secondary:disabled, .event-action-confirm-cancel:disabled, .event-action-confirm-reschedule:disabled { opacity: .6; cursor: wait; }
+        .event-action-dialog { max-width: 560px; }
+        .event-action-dialog input { display: block; margin-top: 7px; }
+        .event-action-dialog textarea { min-height: 84px; resize: vertical; }
+        .event-audience-note { color: #94a3b8; font-size: .8rem; margin-top: 9px; }
         @media (max-width: 600px) {
           .event-modal-backdrop { padding: 10px; }
           .event-modal-dialog { max-height: calc(100dvh - 20px); border-radius: 18px; }

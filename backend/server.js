@@ -201,6 +201,8 @@ app.delete('/api/tpo/vacancies/:jobId', requireSession('vacancies-write'), contr
 app.get('/api/tpo/events', requireSession('portal'), controllers.getEvents);
 app.get('/api/tpo/branches', requireSession('events-write'), controllers.getBranches);
 app.post('/api/tpo/events/add', requireSession('events-write'), upload.single('posterFile'), controllers.addEvent);
+app.post('/api/tpo/events/:eventKey/cancel', requireSession('events-write'), controllers.cancelEvent);
+app.post('/api/tpo/events/:eventKey/reschedule', requireSession('events-write'), controllers.rescheduleEvent);
 app.post('/api/tpo/issues', controllers.getIssues);
 app.post('/api/tpo/issues/update', controllers.updateIssue);
 app.post('/api/tpo/reports', controllers.getReports);

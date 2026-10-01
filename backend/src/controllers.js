@@ -1913,6 +1913,113 @@ exports.getTalentino = (req, res) => {
   res.json({ success: true, dates: Array.from(dates).sort().reverse(), records: records.reverse(), sessions: sessions.reverse() });
 };
 
+const normalizeEventHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const findEventHeader = (headers, aliases) => {
+  const normalized = (headers || []).map(header => ({ header, key: normalizeEventHeader(header) }));
+  for (const alias of aliases) {
+    const key = normalizeEventHeader(alias);
+    const found = normalized.find(item => item.key === key);
+    if (found) return found.header;
+  }
+  return '';
+};
+
+const getExactEventValue = (row, aliases) => {
+  const headers = row?._worksheet?.headerValues || [];
+  const header = findEventHeader(headers, aliases);
+  const index = headers.indexOf(header);
+  return index >= 0 ? String(row?._rawData?.[index] ?? '').trim() : '';
+};
+
+const ensureEventHeaders = async (sheet, titles) => {
+  await sheet.loadHeaderRow();
+  let headers = [...(sheet.headerValues || [])];
+  const missing = titles.filter(title => !findEventHeader(headers, [title]));
+  if (!missing.length) return headers;
+  const requiredColumns = headers.length + missing.length;
+  if ((Number(sheet.columnCount) || 0) < requiredColumns) await sheet.resize({ columnCount: requiredColumns });
+  headers = [...headers, ...missing];
+  await sheet.setHeaderRow(headers);
+  await sheet.loadHeaderRow();
+  return [...(sheet.headerValues || [])];
+};
+
+const serializeEvent = row => ({
+  eventKey: getValByHeader(row, ['eventid']) || `row-${row?.rowNumber || ''}`,
+  eventId: getValByHeader(row, ['eventid']),
+  rowNumber: row?.rowNumber || null,
+  date: getValByHeader(row, ['dateoftheevent', 'date']),
+  tpo: getValByHeader(row, ['tpo', 'placementofficer']),
+  branch: getValByHeader(row, ['branch']),
+  type: getValByHeader(row, ['event', 'type']),
+  title: getValByHeader(row, ['title']),
+  description: getValByHeader(row, ['descripation', 'description']),
+  time: getValByHeader(row, ['timeoftheevent', 'time']),
+  location: getValByHeader(row, ['eventhappeningin', 'location']),
+  poster: getValByHeader(row, ['posterlink', 'poster']),
+  status: getExactEventValue(row, ['status']) || 'Scheduled',
+  statusUpdatedAt: getExactEventValue(row, ['statusupdatedat']),
+  statusUpdatedBy: getExactEventValue(row, ['statusupdatedby']),
+  statusReason: getExactEventValue(row, ['statusreason'])
+});
+
+const eventNotificationRecipients = event => {
+  const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
+  const giftyEmail = getUserEmailById('U003') || 'gifty@ipcsglobal.com';
+  const ajithEmail = getUserEmailById('U001') || 'ajith@ipcsglobal.com';
+  const rakeshEmail = getUserEmailById('U002') || 'rakesh@ipcsglobal.com';
+  const eventType = String(event.type || '').toLowerCase();
+  let to = [];
+  let cc = [];
+  let bcc = [];
+
+  // Match the original event-creation audience: placement drives go to the
+  // placement leads, TPOs, and branch managers; Talentino goes to its branch BM.
+  if (eventType.includes('talentino')) {
+    const branchContact = getBranchManagerEmail(event.branch) || getAssignedTpoEmail(event.branch);
+    to = [branchContact];
+    cc = [giftyEmail, getTpoEmailByName(event.tpo)];
+  } else {
+    to = [giftyEmail || senderEmail];
+    cc = [ajithEmail, rakeshEmail];
+    bcc = [...getAllBranchManagerEmails(), ...getAllTpoEmails()];
+  }
+
+  const valid = values => [...new Set(values.map(value => String(value || '').trim()).filter(value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)))];
+  const toList = valid(to);
+  const toKeys = new Set(toList.map(value => value.toLowerCase()));
+  const ccList = valid(cc).filter(value => !toKeys.has(value.toLowerCase()));
+  const ccKeys = new Set([...toKeys, ...ccList.map(value => value.toLowerCase())]);
+  const bccList = valid(bcc).filter(value => !ccKeys.has(value.toLowerCase()));
+  return { to: toList.join(','), cc: ccList.join(','), bcc: bccList.join(',') };
+};
+
+const escapeEventHtml = value => String(value || '').replace(/[&<>"']/g, character => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[character]));
+
+const buildEventStatusEmail = (event, status, details) => {
+  const cancelled = status === 'Cancelled';
+  const accent = cancelled ? '#dc2626' : '#7c3aed';
+  const heading = cancelled ? 'Event Cancelled' : 'Event Rescheduled';
+  const intro = cancelled
+    ? 'Please note that the event below has been cancelled. Kindly share this update with the concerned students and staff.'
+    : 'Please note the updated schedule below. Kindly share the revised details with the concerned students and staff.';
+  const oldSchedule = `${escapeEventHtml(details.previousDate || event.date || 'TBD')} • ${escapeEventHtml(details.previousTime || event.time || 'Time to be confirmed')}`;
+  const scheduleRows = cancelled
+    ? `<tr><td style="padding:8px 0;color:#64748b;width:34%">Scheduled for</td><td style="padding:8px 0;color:#0f172a;font-weight:700">${oldSchedule}</td></tr>`
+    : `<tr><td style="padding:8px 0;color:#64748b;width:34%">Previous schedule</td><td style="padding:8px 0;color:#64748b;text-decoration:line-through">${oldSchedule}</td></tr><tr><td style="padding:8px 0;color:#64748b">New schedule</td><td style="padding:8px 0;color:#0f172a;font-weight:700">${escapeEventHtml(event.date || 'TBD')} • ${escapeEventHtml(event.time || 'Time to be confirmed')}</td></tr>`;
+  const reason = String(details.reason || '').trim();
+  const reasonBlock = reason ? `<div style="margin:18px 0;padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:700;margin-bottom:5px">${cancelled ? 'Reason for cancellation' : 'Update note'}</div><div style="color:#334155;white-space:pre-line">${escapeEventHtml(reason)}</div></div>` : '';
+  const html = `<div style="margin:0 auto;max-width:640px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#334155"><div style="padding:24px 28px;background:#0f172a;border-bottom:5px solid ${accent};text-align:center"><div style="font-size:12px;letter-spacing:.18em;color:#93c5fd;font-weight:700">IPCS GLOBAL • PLACEMENT CELL</div><h1 style="margin:12px 0 4px;color:#fff;font-size:24px">${heading}</h1><div style="color:#cbd5e1;font-size:13px">Event reference: ${escapeEventHtml(event.eventId || event.eventKey || 'IPCS Event')}</div></div><div style="padding:28px;line-height:1.65;font-size:15px"><p style="margin:0 0 14px;color:#0f172a;font-weight:700">Dear Team,</p><p style="margin:0 0 20px">${intro}</p><div style="padding:18px 20px;background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid ${accent};border-radius:10px"><div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#64748b;font-weight:700;margin-bottom:8px">${escapeEventHtml(event.type || 'Event')}</div><div style="font-size:20px;line-height:1.3;font-weight:700;color:#0f172a;margin-bottom:10px">${escapeEventHtml(event.title || 'IPCS event')}</div><table style="width:100%;border-collapse:collapse;font-size:14px">${scheduleRows}<tr><td style="padding:8px 0;color:#64748b">Branch</td><td style="padding:8px 0;color:#0f172a">${escapeEventHtml(event.branch || 'All Branches')}</td></tr><tr><td style="padding:8px 0;color:#64748b">Location</td><td style="padding:8px 0;color:#0f172a">${escapeEventHtml(event.location || 'To be confirmed')}</td></tr><tr><td style="padding:8px 0;color:#64748b">Coordinator</td><td style="padding:8px 0;color:#0f172a">${escapeEventHtml(event.tpo || 'Placement Team')}</td></tr></table></div>${reasonBlock}<p style="margin:22px 0 0">Please contact the Placement Cell if any coordination is required.</p><div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;color:#475569;font-size:14px">Regards,<br><strong style="color:#0f172a">Placement Team</strong><br><strong style="color:#7c3aed">IPCS Global</strong></div></div></div>`;
+  const subjectPrefix = cancelled ? 'EVENT CANCELLED' : 'EVENT RESCHEDULED';
+  return {
+    subject: `[${subjectPrefix}] ${event.title || 'IPCS Event'} | ${event.eventId || event.eventKey || 'Event update'}`,
+    html
+  };
+};
+
 exports.getEvents = (req, res) => {
   const user = req.portalUser;
   const role = String(user?.role || '').toUpperCase();
@@ -1922,19 +2029,7 @@ exports.getEvents = (req, res) => {
     || role.includes('BRANCH MANAGER')
     || role.includes('TPO')
     || role.includes('PLACEMENT OFFICER');
-  let allEvents = getCache().events.map(row => {
-    return {
-      date: getValByHeader(row, ['dateoftheevent', 'date']), 
-      tpo: getValByHeader(row, ['tpo', 'placementofficer']), 
-      branch: getValByHeader(row, ['branch']), 
-      type: getValByHeader(row, ['event', 'type']), 
-      title: getValByHeader(row, ['title']), 
-      description: getValByHeader(row, ['descripation', 'description']), 
-      time: getValByHeader(row, ['timeoftheevent', 'time']), 
-      location: getValByHeader(row, ['eventhappeningin', 'location']), 
-      poster: getValByHeader(row, ['posterlink', 'poster'])
-    };
-  });
+  const allEvents = (getCache()?.events || []).map(serializeEvent);
   res.json({ success: true, events: allEvents.filter(e => e.date && e.title && (canSeePlacementDrives || !String(e.type || '').toLowerCase().includes('placement drive'))) });
 };
 
@@ -1984,10 +2079,12 @@ exports.addEvent = async (req, res) => {
       'Event_ID': eventId,
       'Created_At': timestamp,
       'Created_By': userName || tpo,
-      'Mail_Status': 'PENDING'
+      'Mail_Status': 'PENDING',
+      'Status': 'Scheduled'
     };
 
     // Add to sheet
+    await ensureEventHeaders(eventSheet, Object.keys(rowData));
     const newRow = await eventSheet.addRow(rowData);
 
     // 🚨 GUARANTEED EXECUTIVE EMAILS (Fallback to hardcoded if ID lookup fails)
@@ -2201,6 +2298,8 @@ exports.addEvent = async (req, res) => {
         }
       }
     }
+    const eventCache = getCache();
+    if (eventCache) eventCache.events = [...(eventCache.events || []).filter(row => String(getValByHeader(row, ['eventid'])) !== String(eventId)), newRow];
     refreshCache(); 
     
     // 🚨 Check if the mail Options existed but failed to send
@@ -2216,6 +2315,119 @@ exports.addEvent = async (req, res) => {
     res.status(500).json({ success: false, message: error.message }); 
   }
 };
+
+const updateEventStatus = async (req, res, nextStatus) => {
+  const eventKey = String(req.params?.eventKey || '').trim();
+  const reason = String(req.body?.reason || '').trim().slice(0, 1000);
+  const requestedDate = String(req.body?.date || '').trim();
+  const requestedTime = String(req.body?.time || '').trim();
+  if (!eventKey) return res.status(400).json({ success: false, message: 'A valid event reference is required.' });
+  if (nextStatus === 'Rescheduled') {
+    const parsedDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate) ? new Date(`${requestedDate}T00:00:00Z`) : null;
+    if (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== requestedDate) {
+      return res.status(400).json({ success: false, message: 'Choose a valid new event date.' });
+    }
+    if (requestedTime && !/^\d{2}:\d{2}$/.test(requestedTime)) {
+      return res.status(400).json({ success: false, message: 'Choose a valid event time.' });
+    }
+  }
+
+  try {
+    await loadDocInfo();
+    const eventSheet = doc.sheetsByTitle.Event;
+    if (!eventSheet) return res.status(503).json({ success: false, message: 'The Event sheet is unavailable.' });
+    await ensureEventHeaders(eventSheet, ['Status', 'Status_Updated_At', 'Status_Updated_By', 'Status_Reason', 'Mail_Status', 'Mail_Error']);
+    const rows = await eventSheet.getRows();
+    const eventRow = rows.find(row => {
+      const id = String(getValByHeader(row, ['eventid']) || '').trim();
+      if (id && id.toLowerCase() === eventKey.toLowerCase()) return true;
+      const rowKey = eventKey.match(/^row-(\d+)$/i);
+      return Boolean(rowKey && Number(row.rowNumber) === Number(rowKey[1]));
+    });
+    if (!eventRow) return res.status(404).json({ success: false, message: 'This event could not be found in the Event sheet. Refresh the calendar and try again.' });
+
+    const event = serializeEvent(eventRow);
+    const currentStatus = String(event.status || 'Scheduled').trim().toLowerCase();
+    if (currentStatus === 'cancelled') {
+      return res.status(409).json({ success: false, message: 'This event is already cancelled and cannot be changed.' });
+    }
+    const recipients = eventNotificationRecipients(event);
+    if (!recipients.to) {
+      return res.status(400).json({ success: false, message: `No valid email recipient is configured for this ${event.type || 'event'} and branch. The event was not changed.` });
+    }
+
+    const headers = eventSheet.headerValues || [];
+    const updatedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const actor = String(req.portalUser?.name || req.portalUser?.email || 'Placement Team').trim();
+    const updateData = {};
+    const assignByAliases = (aliases, value) => {
+      const header = findEventHeader(headers, aliases);
+      if (header) updateData[header] = value;
+    };
+    assignByAliases(['status'], nextStatus);
+    assignByAliases(['statusupdatedat'], updatedAt);
+    assignByAliases(['statusupdatedby'], actor);
+    assignByAliases(['statusreason'], reason);
+    assignByAliases(['mailstatus'], `${nextStatus.toUpperCase()} NOTICE PENDING`);
+    assignByAliases(['mailerror'], '');
+
+    const previousDate = event.date;
+    const previousTime = event.time;
+    if (nextStatus === 'Rescheduled') {
+      assignByAliases(['dateoftheevent', 'date'], requestedDate);
+      assignByAliases(['timeoftheevent', 'time'], requestedTime);
+    }
+    eventRow.assign(updateData);
+    await eventRow.save();
+
+    let emailSent = false;
+    let emailError = '';
+    try {
+      const mailContent = buildEventStatusEmail(serializeEvent(eventRow), nextStatus, { reason, previousDate, previousTime });
+      await sendMailAndLog({
+        from: `"IPCS Global Placement Cell" <${process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com'}>`,
+        to: recipients.to,
+        cc: recipients.cc,
+        bcc: recipients.bcc,
+        subject: mailContent.subject,
+        html: mailContent.html
+      }, { name: event.branch || event.title, email: [recipients.to, recipients.cc, recipients.bcc].filter(Boolean).join(','), type: `${nextStatus} Event Notification` });
+      emailSent = true;
+    } catch (mailError) {
+      emailError = String(mailError?.message || 'The email service did not accept the notification.');
+      console.error(`[EVENT] ${nextStatus} notification failed for ${event.eventId || event.eventKey}:`, mailError);
+    }
+
+    const mailStatusHeader = findEventHeader(headers, ['mailstatus']);
+    const mailErrorHeader = findEventHeader(headers, ['mailerror']);
+    const mailUpdates = {};
+    if (mailStatusHeader) mailUpdates[mailStatusHeader] = `${nextStatus.toUpperCase()} NOTICE ${emailSent ? 'SENT' : 'FAILED'}`;
+    if (mailErrorHeader) mailUpdates[mailErrorHeader] = emailError;
+    if (Object.keys(mailUpdates).length) {
+      eventRow.assign(mailUpdates);
+      await eventRow.save();
+    }
+
+    const eventCache = getCache();
+    if (eventCache) eventCache.events = rows;
+    refreshCache();
+    const updatedEvent = serializeEvent(eventRow);
+    return res.json({
+      success: true,
+      emailSent,
+      event: updatedEvent,
+      message: emailSent
+        ? `Event ${nextStatus.toLowerCase()} and notification email sent.`
+        : `Event ${nextStatus.toLowerCase()}, but the notification email could not be sent: ${emailError}`
+    });
+  } catch (error) {
+    console.error(`Event ${nextStatus.toLowerCase()} error:`, error);
+    return res.status(500).json({ success: false, message: error?.message || `Could not ${nextStatus.toLowerCase()} the event.` });
+  }
+};
+
+exports.cancelEvent = (req, res) => updateEventStatus(req, res, 'Cancelled');
+exports.rescheduleEvent = (req, res) => updateEventStatus(req, res, 'Rescheduled');
 
 // =========================================================
 // 🚨 RULE 3: CRON HELPER (RESUME DELIVERY & DRIVE SUMMARY)
