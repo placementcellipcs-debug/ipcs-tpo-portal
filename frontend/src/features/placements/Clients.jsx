@@ -176,17 +176,23 @@ export default function Clients() {
 
   const sendRequest = async (client) => {
     if(!client.email) return showToast("Company Mail ID is missing. Please click 'Edit' and add an email first.", 'error');
-    setSendingRequest(client.rowNumber);
+    if (!Number.isInteger(Number(client.rowNumber))) return showToast('This client record has no valid sheet row. Refresh the page and try again.', 'error');
+    setSendingRequest(String(client.rowNumber));
     try {
       const response = await axios.post(`${API_BASE}/api/tpo/clients/request-mou`, {
         rowNumber: client.rowNumber, companyEmail: client.email, companyName: client.companyName
       });
-      if (response.data.success) {
-        const updatedClients = (Array.isArray(clients) ? clients : []).map(item =>
-          String(item.rowNumber) === String(client.rowNumber) ? { ...item, mailStatus: 'Request Sent' } : item
-        );
-        setClients(updatedClients);
-        localStorage.setItem(clientCacheKey, JSON.stringify(updatedClients));
+      if (response.data?.success !== true || response.data?.mailSent !== true) {
+        throw new Error(response.data?.message || 'The MOU email was not sent.');
+      }
+      const updatedClients = (Array.isArray(clients) ? clients : []).map(item =>
+        String(item.rowNumber) === String(client.rowNumber) ? { ...item, mailStatus: 'Request Sent' } : item
+      );
+      setClients(updatedClients);
+      localStorage.setItem(clientCacheKey, JSON.stringify(updatedClients));
+      if (response.data.statusUpdated === false) {
+        showToast(response.data.message || 'Email sent, but the sheet status did not update. Check before resending.', 'error');
+      } else {
         showToast(`Email sent successfully to ${client.companyName}!`);
       }
     } catch (error) { showToast(`Failed to send request: ${error.response?.data?.message || error.message}`, 'error'); } 
@@ -332,8 +338,8 @@ export default function Clients() {
                             <button className="mou-btn edit-btn" onClick={() => openEditModal(c)}>
                               <PencilSimple size={18} weight="bold" /> Edit
                             </button>
-                            <button className={`mou-btn request-btn ${c.mailStatus === 'Request Sent' ? 'sent' : ''}`} onClick={() => sendRequest(c)} disabled={sendingRequest === c.rowNumber}>
-                              {sendingRequest === c.rowNumber ? <CircleNotch className="ph-spin" size={18} /> : <><PaperPlaneRight size={18} weight="fill" /> {c.mailStatus === 'Request Sent' ? 'Resend' : 'Send MOU'}</>}
+                            <button type="button" className={`mou-btn request-btn ${c.mailStatus === 'Request Sent' ? 'sent' : ''}`} onClick={() => sendRequest(c)} disabled={sendingRequest === String(c.rowNumber)}>
+                              {sendingRequest === String(c.rowNumber) ? <><CircleNotch className="ph-spin" size={18} /> Sending…</> : <><PaperPlaneRight size={18} weight="fill" /> {c.mailStatus === 'Request Sent' ? 'Resend' : 'Send MOU'}</>}
                             </button>
                           </div>
                         ) : (

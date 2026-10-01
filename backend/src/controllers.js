@@ -2553,13 +2553,20 @@ exports.requestMou = async (req, res) => {
     if (!sheet) return res.status(503).json({ success: false, message: 'Client register is unavailable.' });
     await sheet.loadHeaderRow();
     let headers = [...(sheet.headerValues || [])];
-    let tokenHeader = headers.find(header => String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mousigningtokenhash');
-    if (!tokenHeader) {
-      await sheet.setHeaderRow([...headers, MOU_TOKEN_HASH_HEADER]);
+    const normalizeHeader = header => String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    let tokenHeader = headers.find(header => normalizeHeader(header) === 'mousigningtokenhash');
+    let mailStatusHeader = headers.find(header => normalizeHeader(header) === 'mailstatus');
+    const missingHeaders = [];
+    if (!tokenHeader) missingHeaders.push(MOU_TOKEN_HASH_HEADER);
+    if (!mailStatusHeader) missingHeaders.push('Mail Status');
+    if (missingHeaders.length) {
+      await sheet.setHeaderRow([...headers, ...missingHeaders]);
       await sheet.loadHeaderRow();
       headers = [...(sheet.headerValues || [])];
-      tokenHeader = headers.find(header => String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mousigningtokenhash') || MOU_TOKEN_HASH_HEADER;
+      tokenHeader = headers.find(header => normalizeHeader(header) === 'mousigningtokenhash');
+      mailStatusHeader = headers.find(header => normalizeHeader(header) === 'mailstatus');
     }
+    if (!tokenHeader || !mailStatusHeader) return res.status(500).json({ success: false, message: 'The Clients sheet is missing required MOU tracking columns.' });
     const rows = await sheet.getRows({ offset: rowNumber - 2, limit: 1 });
     if (!rows.length || Number(rows[0].rowNumber) !== rowNumber) return res.status(404).json({ success: false, message: 'Client record was not found.' });
     const clientRow = rows[0];
@@ -2568,7 +2575,7 @@ exports.requestMou = async (req, res) => {
     const companyName = getValByHeader(clientRow, ['companyname', 'company']);
     if (!companyEmail || !companyName) return res.status(400).json({ success: false, message: 'This client needs a company name and email before an MOU can be sent.' });
     const signingToken = randomBytes(32).toString('hex');
-    clientRow.assign({ [tokenHeader]: hashMouSigningToken(signingToken) });
+    clientRow.assign({ [tokenHeader]: hashMouSigningToken(signingToken), [mailStatusHeader]: 'Sending' });
     await clientRow.save();
     const signingLink = `https://talenzo.ipcsglobal.info/sign-certificate/${signingToken}`;
     const refId = Math.floor(10000 + Math.random() * 90000); 
@@ -2577,11 +2584,32 @@ exports.requestMou = async (req, res) => {
       subject: `Action Required: IPCS Global Hiring Partnership Confirmation With ${companyName} [Ref: ${refId}]`, 
       html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #8b5cf6;"><h2 style="color: #ffffff; margin: 0;">IPCS HIRING PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${companyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Confirmation of Hiring Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review & Sign</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, copy and paste this link into your browser: <br/>${signingLink}</p></div></div>`
     };
-    await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Request' }); 
-    const statusCol = getFuzzyHeader(sheet.headerValues, 'mailstatus') || getFuzzyHeader(sheet.headerValues, 'status');
-    if (statusCol) { clientRow.assign({ [statusCol]: 'Request Sent' }); await clientRow.save(); }
-    refreshCache(); res.json({ success: true });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+    try {
+      await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Request' });
+    } catch (mailError) {
+      try {
+        clientRow.assign({ [mailStatusHeader]: 'Failed' });
+        await clientRow.save();
+      } catch (statusError) {
+        console.error('Could not save failed MOU mail status:', statusError.message);
+      }
+      throw mailError;
+    }
+
+    try {
+      clientRow.assign({ [mailStatusHeader]: 'Request Sent' });
+      await clientRow.save();
+      refreshCache();
+      return res.json({ success: true, mailSent: true, statusUpdated: true });
+    } catch (statusError) {
+      console.error('MOU email was sent, but its sheet status could not be updated:', statusError.message);
+      refreshCache();
+      return res.json({ success: true, mailSent: true, statusUpdated: false, message: 'The email was sent, but the sheet status could not be updated. Check the client email before resending.' });
+    }
+  } catch (error) {
+    console.error('MOU request failed:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 exports.submitMou = async (req, res) => {
