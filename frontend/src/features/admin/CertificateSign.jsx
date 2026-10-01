@@ -33,8 +33,13 @@ const normalizeTrustedSigningApiBase = value => {
 const getSigningApiCandidates = () => {
   if (typeof window === 'undefined') return [API_BASE];
   const requestedApi = new URLSearchParams(window.location.search).get('api');
+  const requestedApiBase = normalizeTrustedSigningApiBase(requestedApi);
+  // Links created by the portal carry the API that issued the signing token.
+  // Placement and Talenzo APIs can use different sheets and signing keys, so
+  // querying another service after a definitive response can mask the real result.
+  if (requestedApiBase) return [requestedApiBase];
+
   const candidates = [
-    requestedApi,
     API_BASE,
     'https://ipcs-tpo-portal-u0l6.onrender.com',
     'https://api-placement.ipcsglobal.info',
@@ -73,13 +78,15 @@ export default function CertificateSign() {
     let isCancelled = false;
     const loadAgreement = async () => {
       let lastError = null;
+      let lastErrorMessage = '';
       for (const apiBase of getSigningApiCandidates()) {
         try {
           const response = await axios.get(`${apiBase}/api/public/mou/${encodeURIComponent(id)}`, {
             timeout: 7000
           });
           if (!response.data?.success || !response.data?.client) {
-            lastError = new Error(response.data?.message || 'Agreement details were not found on this service.');
+            lastErrorMessage = response.data?.message || 'Agreement details were not found on this service.';
+            lastError = new Error(lastErrorMessage);
             continue;
           }
           if (isCancelled) return;
@@ -95,11 +102,12 @@ export default function CertificateSign() {
           return;
         } catch (requestError) {
           lastError = requestError;
-          console.warn(`MOU lookup did not succeed on ${apiBase}:`, requestError.response?.data?.message || requestError.message);
+          lastErrorMessage = requestError.response?.data?.message || requestError.message;
+          console.warn(`MOU lookup did not succeed on ${apiBase}:`, lastErrorMessage);
         }
       }
       if (!isCancelled) {
-        setError(lastError?.response?.data?.message || "We couldn't load the agreement details. Please contact IPCS to request a new signing link.");
+        setError(lastErrorMessage || lastError?.response?.data?.message || "We couldn't load the agreement details. Please contact IPCS to request a new signing link.");
       }
     };
 
