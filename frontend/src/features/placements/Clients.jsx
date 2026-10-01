@@ -187,7 +187,7 @@ export default function Clients() {
     setSendingRequest(String(client.rowNumber));
     try {
       const response = await axios.post(`${API_BASE}/api/tpo/clients/request-mou`, {
-        rowNumber: client.rowNumber, companyEmail: client.email, companyName: client.companyName
+        rowNumber: client.rowNumber, companyEmail: client.email, companyName: client.companyName, mouApiBase: API_BASE
       });
       if (response.data?.success !== true || response.data?.mailSent !== true) {
         throw new Error(response.data?.message || 'The MOU email was not sent.');

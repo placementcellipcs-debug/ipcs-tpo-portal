@@ -2642,18 +2642,24 @@ const hashMouSigningToken = token => createHash('sha256').update(String(token ||
 const createMouSigningId = () => `MOU-${randomBytes(18).toString('base64url')}`;
 
 const getMouSigningApiOrigin = req => {
-  const configuredHosts = String(process.env.MOU_SIGNING_API_HOSTS || 'api-talenzo.ipcsglobal.info,placement.ipcsglobal.info,api-placement.ipcsglobal.info')
-    .split(',')
-    .map(host => host.trim().toLowerCase())
-    .filter(Boolean);
-  const requestHost = String(req.hostname || '').trim().toLowerCase();
-  if (configuredHosts.includes(requestHost) && requestHost.endsWith('.ipcsglobal.info')) return `https://${requestHost}`;
-
-  const configuredBase = String(process.env.MOU_SIGNING_API_BASE || '').trim();
-  try {
-    const parsed = new URL(configuredBase);
-    if (parsed.protocol === 'https:' && parsed.hostname.toLowerCase().endsWith('.ipcsglobal.info')) return parsed.origin;
-  } catch { /* Use the frontend's configured API when no trusted service URL is configured. */ }
+  const configuredHosts = new Set([
+    'api-talenzo.ipcsglobal.info',
+    'api-placement.ipcsglobal.info',
+    'placement.ipcsglobal.info',
+    'ipcs-tpo-portal-u0l6.onrender.com',
+    ...String(process.env.MOU_SIGNING_API_HOSTS || '').split(',')
+  ].map(host => String(host || '').trim().toLowerCase()).filter(Boolean));
+  const candidateBases = [
+    req.body?.mouApiBase,
+    process.env.MOU_SIGNING_API_BASE,
+    `https://${String(req.hostname || '').trim()}`
+  ];
+  for (const candidateBase of candidateBases) {
+    try {
+      const parsed = new URL(String(candidateBase || '').trim());
+      if (parsed.protocol === 'https:' && configuredHosts.has(parsed.hostname.toLowerCase())) return parsed.origin;
+    } catch { /* Ignore invalid candidates and try the next trusted source. */ }
+  }
   return '';
 };
 

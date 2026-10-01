@@ -10,21 +10,42 @@ import { API_BASE } from '../../services/apiConfig';
 import ipcsLogo from '../../assets/brand/ipcs-logo.png';
 import ipcsSignature from '../../assets/brand/ipcs-signature.png';
 
-const resolveSigningApiBase = () => {
-  if (typeof window === 'undefined') return API_BASE;
-  const requestedApi = new URLSearchParams(window.location.search).get('api');
-  if (!requestedApi) return API_BASE;
+const KNOWN_SIGNING_API_HOSTS = new Set([
+  'api-placement.ipcsglobal.info',
+  'api-talenzo.ipcsglobal.info',
+  'ipcs-tpo-portal-u0l6.onrender.com'
+]);
+
+const normalizeTrustedSigningApiBase = value => {
+  if (typeof window === 'undefined') return '';
+  const rawValue = String(value || '').trim();
+  if (!rawValue) return '';
   try {
-    const candidate = new URL(requestedApi);
+    const candidate = new URL(rawValue, window.location.origin);
     const host = candidate.hostname.toLowerCase();
-    if (candidate.protocol === 'https:' && host.endsWith('.ipcsglobal.info')) return candidate.origin;
-  } catch { /* An invalid URL falls back to the app's configured API. */ }
-  return API_BASE;
+    const configuredOrigin = new URL(API_BASE, window.location.origin).origin;
+    const isLocalConfiguredApi = candidate.origin === configuredOrigin && ['localhost', '127.0.0.1'].includes(host);
+    if ((candidate.protocol === 'https:' && (host.endsWith('.ipcsglobal.info') || KNOWN_SIGNING_API_HOSTS.has(host))) || isLocalConfiguredApi) return candidate.origin;
+  } catch { /* Ignore invalid or untrusted service URLs. */ }
+  return '';
+};
+
+const getSigningApiCandidates = () => {
+  if (typeof window === 'undefined') return [API_BASE];
+  const requestedApi = new URLSearchParams(window.location.search).get('api');
+  const candidates = [
+    requestedApi,
+    API_BASE,
+    'https://ipcs-tpo-portal-u0l6.onrender.com',
+    'https://api-placement.ipcsglobal.info',
+    'https://api-talenzo.ipcsglobal.info'
+  ].map(normalizeTrustedSigningApiBase).filter(Boolean);
+  return [...new Set(candidates)];
 };
 
 export default function CertificateSign() {
   const { id } = useParams();
-  const [signingApiBase] = useState(resolveSigningApiBase);
+  const [signingApiBase, setSigningApiBase] = useState(() => getSigningApiCandidates()[0] || API_BASE);
   const certificateRef = useRef(null);
   
   const [client, setClient] = useState(null);
@@ -49,26 +70,42 @@ export default function CertificateSign() {
   const currentDate = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
 
   useEffect(() => {
-    axios.get(`${signingApiBase}/api/public/mou/${encodeURIComponent(id)}`)
-      .then(res => {
-        if (res.data.success) {
-          setClient(res.data.client);
-          setEmployerName(res.data.client.contactPerson || '');
-          
-          if (res.data.client.logo && typeof res.data.client.logo === 'string') {
-            const match = res.data.client.logo.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
-            // 🚨 FIXED: Using the modern, unblocked Google Image URL format
-            if (match) setLogoPreview(`https://lh3.googleusercontent.com/d/${match[1]}`);
-            else setLogoPreview(res.data.client.logo);
+    let isCancelled = false;
+    const loadAgreement = async () => {
+      let lastError = null;
+      for (const apiBase of getSigningApiCandidates()) {
+        try {
+          const response = await axios.get(`${apiBase}/api/public/mou/${encodeURIComponent(id)}`, {
+            timeout: 7000
+          });
+          if (!response.data?.success || !response.data?.client) {
+            lastError = new Error(response.data?.message || 'Agreement details were not found on this service.');
+            continue;
           }
+          if (isCancelled) return;
+          setSigningApiBase(apiBase);
+          setClient(response.data.client);
+          setEmployerName(response.data.client.contactPerson || '');
+
+          if (response.data.client.logo && typeof response.data.client.logo === 'string') {
+            const match = response.data.client.logo.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+            if (match) setLogoPreview(`https://lh3.googleusercontent.com/d/${match[1]}`);
+            else setLogoPreview(response.data.client.logo);
+          }
+          return;
+        } catch (requestError) {
+          lastError = requestError;
+          console.warn(`MOU lookup did not succeed on ${apiBase}:`, requestError.response?.data?.message || requestError.message);
         }
-      })
-      .catch(err => {
-        console.error(err);
-        setError(err.response?.data?.message || "We couldn't load the agreement details. Please contact IPCS to request a new signing link.");
-      })
-      .finally(() => setLoading(false));
-  }, [id, signingApiBase]);
+      }
+      if (!isCancelled) {
+        setError(lastError?.response?.data?.message || "We couldn't load the agreement details. Please contact IPCS to request a new signing link.");
+      }
+    };
+
+    loadAgreement().finally(() => { if (!isCancelled) setLoading(false); });
+    return () => { isCancelled = true; };
+  }, [id]);
 
   const handleImageUpload = (e, setPreviewFunc, setFileState) => {
     const file = e.target.files[0];
