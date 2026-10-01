@@ -460,7 +460,7 @@ exports.login = async (req, res) => {
   try {
     const cache = getCache();
     
-    if (!cache || !cache.contacts || !cache.users) {
+    if (!cache?.authCacheReady || !Array.isArray(cache.contacts) || !Array.isArray(cache.users)) {
        return res.status(503).json({ success: false, message: "System is booting up. Please try again in 5 seconds." });
     }
 
@@ -527,6 +527,9 @@ exports.login = async (req, res) => {
     }
 
     if (!foundUser) {
+      if (!cache.authSheetsHealthy?.contacts || !cache.authSheetsHealthy?.users) {
+        return res.status(503).json({ success: false, message: 'Login records are temporarily unavailable. Please retry shortly.' });
+      }
       return res.status(401).json({ success: false, message: "Invalid Login ID or Password." });
     }
 
@@ -589,7 +592,6 @@ exports.login = async (req, res) => {
             'Browser': uaInfo.browser,
             'Status': 'Active'
           });
-          refreshCache();
         }
       } catch (logErr) {}
     })();
@@ -815,7 +817,8 @@ exports.updateStudent = async (req, res) => {
                 </div>
               </div>
             `;
-            sendMailAndLog({ from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`, to: sEmail, subject: `Welcome to IPCS Placements! Your Profile is Active [Ref: ${refId}]`, html: html }, { name: sName, email: sEmail, type: 'Course Completion Welcome' });
+            sendMailAndLog({ from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`, to: sEmail, subject: `Welcome to IPCS Placements! Your Profile is Active [Ref: ${refId}]`, html: html }, { name: sName, email: sEmail, type: 'Course Completion Welcome' })
+              .catch(error => console.error('Student welcome email failed:', error.message));
          }
       }
 
@@ -1010,7 +1013,7 @@ exports.updateApplication = async (req, res) => {
          name: sName, roll: sRoll, email: sMail, company: sCompany, 
          position: sPosition, tpoName: sTpo, branch: sBranch, jobId: sJobId
        }, status, { date: interviewDate, time: interviewTime, venue: interviewVenue }, currentUserEmail)
-       .catch(e => console.error("Background Mail Error")); 
+       .catch(e => console.error('Placement status email failed:', e.message));
     }
 
     // 🚨 DESIGN PORTAL AUTO-TRIGGER: Sends the student to Media Team if Placed/Joined
@@ -1148,7 +1151,8 @@ exports.addApplication = async (req, res) => {
       }
     }
     
-    checkAndSendStudentMails({ ...appData, tpoName: tpoName }, appData.status || 'Placed', {}, req.body.currentUserEmail);
+    checkAndSendStudentMails({ ...appData, tpoName: tpoName }, appData.status || 'Placed', {}, req.body.currentUserEmail)
+      .catch(error => console.error('Manual placement email failed:', error.message));
 
     // 🚨 DESIGN PORTAL AUTO-TRIGGER: Sends the manual addition to the Media Team
     await autoCreateDesignTask({ ...appData, status: appData.status || 'Placed' });

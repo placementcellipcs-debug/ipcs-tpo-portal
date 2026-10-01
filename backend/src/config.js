@@ -1,4 +1,5 @@
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
 const { google } = require('googleapis');
@@ -17,6 +18,8 @@ const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 let globalCache = null;
 let isFetching = false;
 let cacheRefreshPromise = null;
+let lastCacheRefreshStartedAt = 0;
+let scheduledCacheRefreshTimer = null;
 let docInfoLoading = null;
 
 const getCache = () => globalCache;
@@ -70,20 +73,72 @@ async function performCacheRefresh() {
       getSheetFuzzy("trainer"), getSheetFuzzy("security"), getSheetFuzzy("TPOStats")
     ];
 
+    const cacheFields = [
+      'students', 'applications', 'vacancies', 'events', 'issues', 'tSched', 'tAtt', 'clients', 'tpoLogs',
+      'materials', 'techQuestions', 'techResults', 'aptQuestions', 'aptResults', 'talQuestions', 'talResults',
+      'coursesRows', 'drives', 'contacts', 'users', 'branches', 'mails', 'trainerLogs', 'securityLogs', 'tpoStats'
+    ];
+    const emptyCache = {
+      students: [], applications: [], vacancies: [], events: [], issues: [], tSched: [], tAtt: [], clients: [],
+      tpoLogs: [], materials: [], techQuestions: [], techResults: [], aptQuestions: [], aptResults: [],
+      talQuestions: [], talResults: [], coursesRows: [], drives: [], contacts: [], users: [], branches: [],
+      mails: [], trainerLogs: [], securityLogs: [], tpoStats: [], coursesDict: {}
+    };
+    const previousCache = globalCache || {};
+    const cacheFailedSheets = [];
+    const fetchAndKeepCache = async index => {
+      const sheet = sheetsToFetch[index];
+      const field = cacheFields[index];
+      try {
+        if (!sheet) throw new Error('Sheet was not found.');
+        const rows = await fetchSheetWithRetry(sheet, 2);
+        globalCache = { ...emptyCache, ...globalCache, [field]: rows };
+        return rows;
+      } catch (error) {
+        cacheFailedSheets.push(sheet?.title || field);
+        console.error(`⚠️ Could not refresh "${sheet?.title || field}"; keeping its previous cache:`, error.message);
+        const rows = Array.isArray(globalCache?.[field]) ? globalCache[field] : (previousCache[field] || []);
+        globalCache = { ...emptyCache, ...globalCache, [field]: rows };
+        return rows;
+      }
+    };
+
+    // Load account records first so a quota error on an unrelated tab cannot
+    // prevent staff from logging in after a cold start.
+    const [contactRows, userRows] = await Promise.all([fetchAndKeepCache(18), fetchAndKeepCache(19)]);
+    globalCache = {
+      ...emptyCache,
+      ...previousCache,
+      ...globalCache,
+      contacts: contactRows,
+      users: userRows,
+      authCacheReady: true,
+      authSheetsHealthy: { contacts: !cacheFailedSheets.includes(sheetsToFetch[18]?.title || 'contacts'), users: !cacheFailedSheets.includes(sheetsToFetch[19]?.title || 'users') }
+    };
+
     // Keep a small amount of concurrency while avoiding a multi-minute cold
     // start from serial sheet reads. The cache is the read path for requests;
     // individual dashboard and list endpoints should not fetch these tabs again.
-    const fetchedData = [];
-    for (let i = 0; i < sheetsToFetch.length; i += 5) {
-      const batch = sheetsToFetch.slice(i, i + 5);
-      fetchedData.push(...await Promise.all(batch.map(sheet => fetchSheetWithRetry(sheet))));
+    const fetchedData = new Array(sheetsToFetch.length);
+    fetchedData[18] = contactRows;
+    fetchedData[19] = userRows;
+    const remainingIndexes = sheetsToFetch.map((_, index) => index).filter(index => index !== 18 && index !== 19);
+    for (let i = 0; i < remainingIndexes.length; i += 5) {
+      const batch = remainingIndexes.slice(i, i + 5);
+      const rows = await Promise.all(batch.map(fetchAndKeepCache));
+      batch.forEach((index, offset) => { fetchedData[index] = rows[offset]; });
     }
 
     const [
       stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, 
       matRows, tqRows, trRows, aptQRows, aptRRows, talQRows, talRRows,
-      courseRows, driveRows, contactRows, userRows, branchRows, mailRows, trainerLogRows, securityRows, tpoStatsRows
+      courseRows, driveRows
     ] = fetchedData;
+    const branchRows = fetchedData[20] || [];
+    const mailRows = fetchedData[21] || [];
+    const trainerLogRows = fetchedData[22] || [];
+    const securityRows = fetchedData[23] || [];
+    const tpoStatsRows = fetchedData[24] || [];
 
     let coursesDict = {};
     const courseSheet = sheetsToFetch[16];
@@ -109,10 +164,16 @@ async function performCacheRefresh() {
       contacts: contactRows, users: userRows, branches: branchRows, mails: mailRows,
       trainerLogs: trainerLogRows,
       securityLogs: securityRows,
-      tpoStats: tpoStatsRows
+      tpoStats: tpoStatsRows,
+      authCacheReady: true,
+      authSheetsHealthy: globalCache.authSheetsHealthy
     };
     
-    console.log("✅ Cache successfully synced with Google Sheets!");
+    if (cacheFailedSheets.length) {
+      console.warn(`⚠️ Cache refresh completed with ${cacheFailedSheets.length} unavailable sheet(s): ${[...new Set(cacheFailedSheets)].join(', ')}`);
+    } else {
+      console.log("✅ Cache successfully synced with Google Sheets!");
+    }
     isFetching = false;
   } catch (err) { 
     console.error("❌ Cache sync failed:", err.message); 
@@ -123,6 +184,18 @@ async function performCacheRefresh() {
 
 function refreshCache() {
   if (cacheRefreshPromise) return cacheRefreshPromise;
+  const minimumRefreshGapMs = 120000;
+  const earliestNextRefresh = lastCacheRefreshStartedAt + minimumRefreshGapMs;
+  if (globalCache && Date.now() < earliestNextRefresh) {
+    if (!scheduledCacheRefreshTimer) {
+      scheduledCacheRefreshTimer = setTimeout(() => {
+        scheduledCacheRefreshTimer = null;
+        refreshCache();
+      }, earliestNextRefresh - Date.now());
+    }
+    return Promise.resolve();
+  }
+  lastCacheRefreshStartedAt = Date.now();
   cacheRefreshPromise = performCacheRefresh().finally(() => { cacheRefreshPromise = null; });
   return cacheRefreshPromise;
 }
@@ -325,6 +398,16 @@ const transporterIPv6 = nodemailer.createTransport({
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
 });
 
+const missingMailSettings = [
+  !process.env.APPS_SCRIPT_EMAIL_URL && 'APPS_SCRIPT_EMAIL_URL',
+  (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) && 'EMAIL_USER/EMAIL_PASS'
+].filter(Boolean);
+if (missingMailSettings.length) {
+  console.error(`[MAIL CONFIG] Missing runtime settings: ${missingMailSettings.join(', ')}`);
+} else {
+  console.log('[MAIL CONFIG] Apps Script sender and Gmail SMTP fallback are configured.');
+}
+
 async function sendIPCSMail(mailOptions, logDetails) {
   try {
     const cleanEmails = (val) => {
@@ -351,41 +434,47 @@ async function sendIPCSMail(mailOptions, logDetails) {
     }
 
     let success = false;
-    let finalErrorMessage = '';
+    const deliveryErrors = [];
 
     try {
       console.log(`➡️  [1/3] Attempting Google Apps Script...`);
+      if (!process.env.APPS_SCRIPT_EMAIL_URL) throw new Error('APPS_SCRIPT_EMAIL_URL is not configured on this API service.');
       const res = await axios.post(process.env.APPS_SCRIPT_EMAIL_URL, appsPayload, { timeout: 30000 });
       if (!res.data || !res.data.success) throw new Error(res.data?.error || "Apps Script rejected payload");
       success = true;
       console.log(`✅ Apps Script Success!`);
     } catch (err1) {
-      finalErrorMessage = `Apps Script Failed: ${err1.message}`;
-      console.log(`❌ ${finalErrorMessage}`);
+      const message = `Apps Script Failed: ${err1.message}`;
+      deliveryErrors.push(message);
+      console.log(`❌ ${message}`);
       
       try {
         console.log(`➡️  [2/3] Attempting SMTP (IPv4)...`);
+        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) throw new Error('EMAIL_USER and EMAIL_PASS must both be configured for SMTP fallback.');
         await transporterIPv4.sendMail({ ...mailOptions, to: formattedTo, cc: formattedCc, bcc: formattedBcc });
         success = true;
         console.log(`✅ SMTP IPv4 Success!`);
       } catch (err2) {
-        finalErrorMessage = `SMTP IPv4 Failed: ${err2.message}`;
-        console.log(`❌ ${finalErrorMessage}`);
+        const message = `SMTP IPv4 Failed: ${err2.message}`;
+        deliveryErrors.push(message);
+        console.log(`❌ ${message}`);
         
         try {
           console.log(`➡️  [3/3] Attempting SMTP (IPv6)...`);
+          if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) throw new Error('EMAIL_USER and EMAIL_PASS must both be configured for SMTP fallback.');
           await transporterIPv6.sendMail({ ...mailOptions, to: formattedTo, cc: formattedCc, bcc: formattedBcc });
           success = true;
           console.log(`✅ SMTP IPv6 Success!`);
         } catch (err3) {
-          finalErrorMessage = `SMTP IPv6 Failed: ${err3.message}`;
-          console.log(`❌ ${finalErrorMessage}`);
+          const message = `SMTP IPv6 Failed: ${err3.message}`;
+          deliveryErrors.push(message);
+          console.log(`❌ ${message}`);
         }
       }
     }
 
     if (!success) {
-      throw new Error(`All 3 email servers blocked the request. Last Error: ${finalErrorMessage}`);
+      throw new Error(`All email delivery methods failed. ${deliveryErrors.join(' | ')}`);
     }
 
     if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, 'Success');
