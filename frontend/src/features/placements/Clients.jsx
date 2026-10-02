@@ -155,7 +155,7 @@ export default function Clients() {
 
   const openEditModal = (client) => {
     setSelectedClient(client);
-    setEditForm({ email: client.email, phone: client.contact, location: client.location, contactPerson: client.contactPerson, logoFile: null });
+    setEditForm({ companyName: client.companyName || '', website: client.website || '', email: client.email || '', phone: client.contact || '', location: client.location || '', contactPerson: client.contactPerson || '', logoFile: null });
     setIsEditModalOpen(true);
   };
 
@@ -164,6 +164,8 @@ export default function Clients() {
     try {
       const formData = new FormData();
       formData.append('rowNumber', selectedClient.rowNumber);
+      formData.append('companyName', editForm.companyName);
+      formData.append('website', editForm.website);
       formData.append('email', editForm.email);
       formData.append('phone', editForm.phone);
       formData.append('location', editForm.location);
@@ -173,7 +175,7 @@ export default function Clients() {
 
       const res = await axios.post(`${API_BASE}/api/tpo/clients/update`, formData);
       if (!res.data?.success) throw new Error(res.data?.message || 'The client could not be updated.');
-      const updatedClient = { ...selectedClient, email: editForm.email, contact: editForm.phone, location: editForm.location, contactPerson: editForm.contactPerson, logo: res.data.logoLink || selectedClient.logo };
+      const updatedClient = { ...selectedClient, companyName: editForm.companyName, website: editForm.website, email: editForm.email, contact: editForm.phone, location: editForm.location, contactPerson: editForm.contactPerson, logo: res.data.logoLink || selectedClient.logo };
       setClients(current => current.map(client => String(client.rowNumber) === String(selectedClient.rowNumber) ? updatedClient : client));
       localStorage.setItem(clientCacheKey, JSON.stringify(safeClients.map(client => String(client.rowNumber) === String(selectedClient.rowNumber) ? updatedClient : client)));
       setIsEditModalOpen(false);
@@ -400,7 +402,7 @@ export default function Clients() {
       {isEditModalOpen && selectedClient && (
         createPortal(
         <div className="clients-modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
-          <div className="clients-modal-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="edit-partner-title" style={{ maxWidth: '500px', padding: '30px' }}>
+          <div className="clients-modal-dialog glass-panel" role="dialog" aria-modal="true" aria-labelledby="edit-partner-title" style={{ maxWidth: '620px', padding: '30px' }}>
             <div className="modal-header">
               <div>
                 <h2 id="edit-partner-title" style={{ fontSize: '1.4rem' }}>Edit Details</h2>
@@ -409,11 +411,13 @@ export default function Clients() {
               <button className="close-btn" onClick={() => setIsEditModalOpen(false)}><X size={24} /></button>
             </div>
             
-            <div style={{ display: 'grid', gap: '15px', marginBottom: '20px' }}>
-              <div><label className="data-label">Company Email</label><input type="email" className="premium-input" style={{width:'100%'}} value={editForm.email} onChange={e=>setEditForm({...editForm, email: e.target.value})} /></div>
-              <div><label className="data-label">Contact Number</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.phone} onChange={e=>setEditForm({...editForm, phone: e.target.value})} /></div>
-              <div><label className="data-label">Location</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.location} onChange={e=>setEditForm({...editForm, location: e.target.value})} /></div>
-              <div><label className="data-label">Contact Person</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.contactPerson} onChange={e=>setEditForm({...editForm, contactPerson: e.target.value})} /></div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom: '20px' }}>
+              <div><label className="data-label">Company Name</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.companyName} onChange={e=>setEditForm({...editForm, companyName: e.target.value})} required /></div>
+              <div><label className="data-label">Company Website</label><input type="url" className="premium-input" style={{width:'100%'}} placeholder="https://company.com" value={editForm.website} onChange={e=>setEditForm({...editForm, website: e.target.value})} /></div>
+              <div><label className="data-label">Company Location / State</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.location} onChange={e=>setEditForm({...editForm, location: e.target.value})} /></div>
+              <div><label className="data-label">Company Contact</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.phone} onChange={e=>setEditForm({...editForm, phone: e.target.value})} /></div>
+              <div><label className="data-label">Company Mail ID</label><input type="email" className="premium-input" style={{width:'100%'}} value={editForm.email} onChange={e=>setEditForm({...editForm, email: e.target.value})} /></div>
+              <div><label className="data-label">Company Contact Person</label><input type="text" className="premium-input" style={{width:'100%'}} value={editForm.contactPerson} onChange={e=>setEditForm({...editForm, contactPerson: e.target.value})} /></div>
               <div>
                 <label className="data-label">Upload Company Logo</label>
                 <input type="file" accept="image/*" className="premium-input" style={{width:'100%', padding: '8px'}} onChange={e=>setEditForm({...editForm, logoFile: e.target.files[0]})} />

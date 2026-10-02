@@ -3343,9 +3343,10 @@ exports.getMouByToken = async (req, res) => {
 };
 
 exports.updateClient = async (req, res) => {
-  const { rowNumber, email, phone, location, contactPerson } = req.body;
+  const { rowNumber, companyName, website, email, phone, location, contactPerson } = req.body;
   const existingLogo = req.body.logo || '';
   try {
+    if (companyName !== undefined && !String(companyName).trim()) return res.status(400).json({ success: false, message: 'Company name cannot be empty.' });
     let logoLink = existingLogo;
     if (req.file) { logoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); }
     
@@ -3376,6 +3377,8 @@ exports.updateClient = async (req, res) => {
         return null;
       };
       
+      const hCompanyName = getSafeH(['companyname', 'company']); if(hCompanyName && companyName !== undefined) updateObj[hCompanyName] = String(companyName).trim();
+      const hWebsite = getSafeH(['companywebsite', 'website']); if(hWebsite && website !== undefined) updateObj[hWebsite] = String(website).trim();
       const hEmail = getSafeH(['companymailid', 'companyemail', 'mailid', 'email']); if(hEmail && email !== undefined) updateObj[hEmail] = email;
       const hPhone = getSafeH(['companycontact', 'contactnumber', 'contact', 'phone']); if(hPhone && phone !== undefined) updateObj[hPhone] = phone;
       const hLoc = getSafeH(['companylocation', 'location']); if(hLoc && location !== undefined) updateObj[hLoc] = location;
