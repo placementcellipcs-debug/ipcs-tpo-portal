@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { 
   CircleNotch, Plus, PencilSimple, X, FloppyDisk, 
@@ -95,6 +96,13 @@ export default function PlacedStudents() {
     company: '', position: '', status: 'Placed', remarks: '', 
     datePlaced: new Date().toISOString().split('T')[0], packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null 
   });
+
+  useEffect(() => {
+    if (!isEditModalOpen && !isAddModalOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [isEditModalOpen, isAddModalOpen]);
 
   const fetchData = async () => {
     const localTpoStr = localStorage.getItem('tpoData');
@@ -476,7 +484,7 @@ export default function PlacedStudents() {
         )}
       </div>
 
-      {isEditModalOpen && selectedApp && (
+      {isEditModalOpen && selectedApp && createPortal((
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -520,9 +528,9 @@ export default function PlacedStudents() {
             </button>
           </div>
         </div>
-      )}
+      ), document.body)}
 
-      {isAddModalOpen && canEditPlacement && (
+      {isAddModalOpen && canEditPlacement && createPortal((
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsAddModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '800px', width: '100%', maxHeight: '90vh', overflowY: 'auto', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -575,7 +583,7 @@ export default function PlacedStudents() {
             </button>
           </div>
         </div>
-      )}
+      ), document.body)}
     </Layout>
   );
 }

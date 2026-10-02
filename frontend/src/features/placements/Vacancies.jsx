@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { 
@@ -137,6 +137,7 @@ const getTodayInIndia = () => {
 function VacancyCreateModal({ onClose, onCreated, currentOfficer, vacancyToEdit = null }) {
   const today = getTodayInIndia();
   const [saving, setSaving] = useState(false);
+  const submitInProgress = useRef(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [companyLogo, setCompanyLogo] = useState(null);
   const [form, setForm] = useState(() => createVacancyFormState(vacancyToEdit, today));
@@ -176,12 +177,14 @@ function VacancyCreateModal({ onClose, onCreated, currentOfficer, vacancyToEdit 
   );
   const handleSubmit = async event => {
     event.preventDefault();
+    if (submitInProgress.current) return;
     setErrorMessage('');
     if (!vacancyToEdit && !companyLogo) return setErrorMessage('Please upload the company logo.');
     if (companyLogo && companyLogo.size > 10 * 1024 * 1024) return setErrorMessage('The company logo must be 10 MB or smaller.');
     if (form.experience === 'Other' && !form.experienceOther.trim()) return setErrorMessage('Please specify the experience requirement.');
     if (form.interviewPlan === 'Interview Scheduled' && !form.interviewDate) return setErrorMessage('Please select the interview date.');
 
+    submitInProgress.current = true;
     setSaving(true);
     try {
       const payload = new FormData();
@@ -199,6 +202,7 @@ function VacancyCreateModal({ onClose, onCreated, currentOfficer, vacancyToEdit 
     } catch (requestError) {
       setErrorMessage(requestError.response?.data?.message || requestError.message || 'The vacancy could not be saved.');
     } finally {
+      submitInProgress.current = false;
       setSaving(false);
     }
   };

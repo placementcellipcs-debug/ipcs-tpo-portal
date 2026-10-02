@@ -325,7 +325,7 @@ export default function Clients() {
                     <div className="client-loc"><MapPinLine size={14} /> {c.location || 'Location Not Specified'}</div>
                   </div>
 
-                  {isSuperAdmin && !isRestrictedManager && (
+                  {(isSuperAdmin || canManageClients) && !isRestrictedManager && (
                     <div className="admin-client-details">
                       <div className="acd-item"><UserCircle size={16} /> <span>{c.contactPerson || 'No Name'}</span></div>
                       <div className="acd-item"><Phone size={16} /> <span>{c.contact || 'No Phone'}</span></div>

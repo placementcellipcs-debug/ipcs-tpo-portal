@@ -42,6 +42,7 @@ export default function StudentApps() {
   const [searchQuery, setSearchQuery] = useState('');
   const [monthFilter, setMonthFilter] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
 
   const upperRole = (tpoData?.role || '').toUpperCase();
   const accessType = String(tpoData?.accessType || '').toLowerCase();
@@ -82,6 +83,7 @@ export default function StudentApps() {
     setSearchQuery('');
     setMonthFilter('');
     setCourseFilter('All');
+    setStatusFilter('All');
   };
 
   const globallyFiltered = applications.filter(a => {
@@ -110,14 +112,22 @@ export default function StudentApps() {
   const branchList = Object.keys(branchData).sort();
 
   const activeApps = selectedBranch ? globallyFiltered.filter(a => a.branch === selectedBranch) : [];
+  const statusCounts = activeApps.reduce((counts, application) => {
+    const status = String(application.status || 'Applied').trim() || 'Applied';
+    counts[status] = (counts[status] || 0) + 1;
+    return counts;
+  }, {});
+  const statusOptions = Object.entries(statusCounts).sort(([left], [right]) => left.localeCompare(right));
 
   const filteredApps = activeApps.filter(a => {
+    const applicationStatus = String(a.status || 'Applied').trim() || 'Applied';
+    const statusMatch = statusFilter === 'All' || applicationStatus.toLowerCase() === statusFilter.toLowerCase();
     let sMatch = searchQuery === '' || 
       (a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
       (a.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
       (a.roll || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
       (a.jobId || '').toLowerCase().includes(searchQuery.toLowerCase());
-    return sMatch;
+    return statusMatch && sMatch;
   });
 
   return (
@@ -128,7 +138,7 @@ export default function StudentApps() {
           <div>
             {selectedBranch ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                <button onClick={() => setSelectedBranch(null)} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <button onClick={() => { setSelectedBranch(null); setStatusFilter('All'); }} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '10px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
                   <CaretLeft weight="bold" size={18} /> Back to Branches
                 </button>
                 <div>
@@ -169,7 +179,7 @@ export default function StudentApps() {
             <input type="month" className="sleek-input" style={{ minWidth: '150px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
           </div>
 
-          {(courseFilter !== 'All' || monthFilter !== '' || searchQuery !== '') && (
+          {(courseFilter !== 'All' || monthFilter !== '' || searchQuery !== '' || statusFilter !== 'All') && (
             <button onClick={resetFilters} style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem' }}>
               <ArrowsClockwise size={14} /> Reset
             </button>
@@ -191,7 +201,7 @@ export default function StudentApps() {
               {branchList.map((branch, index) => {
                 const color = TILE_COLORS[index % TILE_COLORS.length];
                 return (
-                  <div key={branch} onClick={() => setSelectedBranch(branch)} style={{ backgroundColor: color, borderRadius: '20px', padding: '35px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+                  <div key={branch} onClick={() => { setSelectedBranch(branch); setStatusFilter('All'); }} style={{ backgroundColor: color, borderRadius: '20px', padding: '35px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
                     <h2 style={{ color: '#ffffff', fontSize: '2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>{branch}</h2>
                     <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <Files size={20} color="#ffffff" weight="bold" />
@@ -203,7 +213,21 @@ export default function StudentApps() {
             </div>
           )
         ) : (
-          <div className="table-container" style={{ marginTop: '1.5rem' }}>
+          <>
+          <h2 style={{ margin: '1.25rem 0 0', fontSize: '1rem', color: 'var(--text-muted)' }}>Applications by status</h2>
+          <div aria-label="Filter student applications by status" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '10px', marginTop: '0.75rem' }}>
+            <button type="button" onClick={() => setStatusFilter('All')} aria-pressed={statusFilter === 'All'} style={{ textAlign: 'left', padding: '13px 15px', borderRadius: '12px', border: `1px solid ${statusFilter === 'All' ? '#38bdf8' : 'var(--card-border)'}`, background: statusFilter === 'All' ? 'rgba(56,189,248,0.13)' : 'var(--card-bg)', color: 'var(--text-main)', cursor: 'pointer' }}>
+              <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.75rem' }}>All statuses</span>
+              <strong style={{ fontSize: '1.2rem' }}>{activeApps.length}</strong>
+            </button>
+            {statusOptions.map(([status, count]) => (
+              <button key={status} type="button" onClick={() => setStatusFilter(status)} aria-pressed={statusFilter === status} style={{ textAlign: 'left', padding: '13px 15px', borderRadius: '12px', border: `1px solid ${statusFilter === status ? '#38bdf8' : 'var(--card-border)'}`, background: statusFilter === status ? 'rgba(56,189,248,0.13)' : 'var(--card-bg)', color: 'var(--text-main)', cursor: 'pointer' }}>
+                <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '0.75rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{status}</span>
+                <strong style={{ fontSize: '1.2rem' }}>{count}</strong>
+              </button>
+            ))}
+          </div>
+          <div className="table-container" style={{ marginTop: '1rem' }}>
             <table className="modern-table">
               <thead>
                 <tr>
@@ -253,6 +277,7 @@ export default function StudentApps() {
               </tbody>
             </table>
           </div>
+          </>
         )}
       </div>
     </Layout>

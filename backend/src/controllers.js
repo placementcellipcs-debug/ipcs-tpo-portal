@@ -1348,6 +1348,31 @@ const formatVacancyTimestamp = () => new Intl.DateTimeFormat('en-US', {
   hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true
 }).format(new Date());
 
+let vacancyJobSequence = null;
+let vacancyJobSequenceReady = null;
+
+const highestSequentialVacancyNumber = rows => (rows || []).reduce((highest, row) => {
+  const match = String(getValByHeader(row, ['jobid', 'id']) || '').trim().match(/^JOB\s*-\s*(\d+)$/i);
+  return match ? Math.max(highest, Number(match[1])) : highest;
+}, 10296);
+
+const nextSequentialVacancyJobId = async (sheet, rows = null) => {
+  if (vacancyJobSequence === null) {
+    if (!vacancyJobSequenceReady) {
+      vacancyJobSequenceReady = (async () => {
+        let sourceRows = rows;
+        if (!Array.isArray(sourceRows)) sourceRows = getCache()?.vacancies;
+        if (!Array.isArray(sourceRows)) sourceRows = await sheet.getRows();
+        vacancyJobSequence = highestSequentialVacancyNumber(sourceRows);
+      })();
+    }
+    await vacancyJobSequenceReady;
+  }
+
+  vacancyJobSequence = Math.max(vacancyJobSequence, highestSequentialVacancyNumber(rows || [])) + 1;
+  return `JOB - ${vacancyJobSequence}`;
+};
+
 exports.addVacancy = async (req, res) => {
   try {
     const input = req.body || {};
@@ -1402,7 +1427,7 @@ exports.addVacancy = async (req, res) => {
     }
 
     const logoUrl = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS);
-    const jobId = `JOB-${Date.now()}-${randomBytes(3).toString('hex').toUpperCase()}`;
+    const jobId = await nextSequentialVacancyJobId(sheet);
     const rowData = {
       timestamp: formatVacancyTimestamp(),
       date: formatTodayForVacancy(),
@@ -1655,7 +1680,7 @@ exports.updateVacancy = async (req, res) => {
     }
 
     const existingJobId = String(row.get(jobIdHeader) || '').trim();
-    const persistedJobId = existingJobId || `JOB-${Date.now()}-${randomBytes(3).toString('hex').toUpperCase()}`;
+    const persistedJobId = existingJobId || await nextSequentialVacancyJobId(sheet, rows);
     if (!existingJobId) changes.push({ key: 'jobId', header: jobIdHeader, oldValue: '', newValue: persistedJobId });
 
     await writeVacancyCellChanges(sheet, row, headers, changes, getVacancyActorName(req));
