@@ -95,6 +95,7 @@ const teamWhatsappHref = value => {
   let digits = String(value || '').replace(/\D/g, '');
   if (digits.length === 10) digits = `91${digits}`;
   return digits ? `https://wa.me/${digits}` : '';
+};
 const publicGet = async (url) => {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt += 1) {
