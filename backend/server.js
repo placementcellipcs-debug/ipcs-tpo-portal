@@ -193,6 +193,8 @@ app.post('/api/tpo/applications', controllers.getApplications);
 app.post('/api/tpo/applications/update', upload.single('offerLetterFile'), controllers.updateApplication);
 app.post('/api/tpo/applications/update-log', upload.single('offerLetterFile'), controllers.updatePlacementLog);
 app.post('/api/tpo/applications/add', upload.single('offerLetterFile'), controllers.addApplication);
+app.post('/api/tpo/applications/direct-interview', controllers.addDirectInterview);
+app.post('/api/tpo/applications/email-student', controllers.emailStudent);
 app.get('/api/tpo/vacancies', controllers.getVacancies);
 app.get('/api/tpo/vacancies/form-options', requireSession('vacancies-write'), controllers.getVacancyFormOptions);
 app.post('/api/tpo/vacancies/add', requireSession('vacancies-write'), parseVacancyLogo, controllers.addVacancy);

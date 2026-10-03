@@ -873,6 +873,87 @@ exports.updateStudent = async (req, res) => {
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
+const normalizePlacementHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+const ensurePlacementHeaders = async (sheet, titles) => {
+  await sheet.loadHeaderRow();
+  let headers = [...(sheet.headerValues || [])];
+  const missing = titles.filter(title => !headers.some(header => normalizePlacementHeader(header) === normalizePlacementHeader(title)));
+  if (missing.length) {
+    const requiredColumns = headers.length + missing.length;
+    if ((Number(sheet.columnCount) || 0) < requiredColumns) await sheet.resize({ columnCount: requiredColumns });
+    headers = [...headers, ...missing];
+    await sheet.setHeaderRow(headers);
+    await sheet.loadHeaderRow();
+  }
+  return [...(sheet.headerValues || [])];
+};
+
+const findPlacementHeader = (headers, aliases) => {
+  const normalized = (headers || []).map(header => ({ header, key: normalizePlacementHeader(header) }));
+  for (const alias of aliases) {
+    const key = normalizePlacementHeader(alias);
+    const exact = normalized.find(item => item.key === key);
+    if (exact) return exact.header;
+  }
+  for (const alias of aliases) {
+    const key = normalizePlacementHeader(alias);
+    const partial = normalized.find(item => key.length >= 6 && item.key.includes(key));
+    if (partial) return partial.header;
+  }
+  return '';
+};
+
+const mapPlacementRowData = (sheet, values) => Object.fromEntries(Object.entries(values).map(([key, value]) => [findPlacementHeader(sheet.headerValues || [], [key]) || key, value]));
+
+const parsePlacementHistory = value => {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(String(value));
+    return Array.isArray(parsed) ? parsed.filter(entry => entry && typeof entry === 'object') : [];
+  } catch {
+    return [];
+  }
+};
+
+const placementHistoryEntry = ({ status, remarks, interviewDate, interviewTime, interviewVenue, changedBy, changedAt, event }) => ({
+  status: String(status || ''),
+  remarks: String(remarks || ''),
+  interviewDate: String(interviewDate || ''),
+  interviewTime: String(interviewTime || ''),
+  interviewVenue: String(interviewVenue || ''),
+  changedBy: String(changedBy || 'Placement team'),
+  changedAt: String(changedAt || new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })),
+  event: String(event || 'Record updated')
+});
+
+const appendPlacementHistory = ({ row, oldStatus, status, oldRemarks, remarks, oldInterviewDate, interviewDate, oldInterviewTime, interviewTime, oldInterviewVenue, interviewVenue, changedBy, changedAt }) => {
+  let history = parsePlacementHistory(getValByHeader(row, ['statushistory']));
+  if (!history.length && (oldStatus || oldRemarks || oldInterviewDate || oldInterviewTime || oldInterviewVenue)) {
+    history.push(placementHistoryEntry({
+      status: oldStatus, remarks: oldRemarks, interviewDate: oldInterviewDate,
+      interviewTime: oldInterviewTime, interviewVenue: oldInterviewVenue,
+      changedBy: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || 'Placement team',
+      changedAt: getValByHeader(row, ['timestamp', 'date', 'time']) || changedAt,
+      event: 'Existing record'
+    }));
+  }
+  const statusChanged = String(oldStatus || '').trim() !== String(status || '').trim();
+  const remarksChanged = String(oldRemarks || '').trim() !== String(remarks || '').trim();
+  const dateChanged = String(oldInterviewDate || '').trim() !== String(interviewDate || '').trim();
+  const timeChanged = String(oldInterviewTime || '').trim() !== String(interviewTime || '').trim();
+  const venueChanged = String(oldInterviewVenue || '').trim() !== String(interviewVenue || '').trim();
+  if (statusChanged || remarksChanged || dateChanged || timeChanged || venueChanged || !history.length) {
+    const event = statusChanged ? `Status changed to ${status || 'Updated'}`
+      : (dateChanged || timeChanged || venueChanged) ? 'Interview details updated'
+        : remarksChanged ? 'Remarks updated' : 'Record created';
+    history.push(placementHistoryEntry({ status, remarks, interviewDate, interviewTime, interviewVenue, changedBy, changedAt, event }));
+  }
+  return history.slice(-60);
+};
+
+const placementTrackingHeaders = ['Interview Date', 'Interview Time', 'Interview Venue', 'Status History'];
+
 exports.getApplications = async (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, department } = req.body;
   if (!getCache()) await refreshCache();
@@ -881,6 +962,27 @@ exports.getApplications = async (req, res) => {
   const cache = getCache();
   
   const sourceData = cache.applications || [];
+  const historyKeyFor = row => [
+    getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']) || getValByHeader(row, ['studentname', 'name']),
+    getValByHeader(row, ['companyname', 'company']),
+    getValByHeader(row, ['jobid']) || getValByHeader(row, ['position', 'role'])
+  ].map(normalizePlacementText).join('|');
+  const historyByIdentity = new Map();
+  (cache.tpoLogs || []).forEach(log => {
+    const key = historyKeyFor(log);
+    if (!key.replace(/\|/g, '')) return;
+    let history = parsePlacementHistory(getValByHeader(log, ['statushistory']));
+    if (!history.length) {
+      const status = getValByHeader(log, ['status']);
+      if (status) history = [placementHistoryEntry({
+        status, remarks: getValByHeader(log, ['remarks']), interviewDate: getValByHeader(log, ['interviewdate']),
+        interviewTime: getValByHeader(log, ['interviewtime', 'intervewtime']), interviewVenue: getValByHeader(log, ['interviewvenue']),
+        changedBy: getValByHeader(log, ['placementofficer', 'tponame']) || 'Placement team',
+        changedAt: getValByHeader(log, ['timestamp', 'dateplaced', 'date']), event: 'Existing placement log'
+      })];
+    }
+    if (history.length) historyByIdentity.set(key, [...(historyByIdentity.get(key) || []), ...history]);
+  });
 
   sourceData.forEach((row) => {
     const branch = getValByHeader(row, ['branch']) || 'Unknown';
@@ -906,8 +1008,28 @@ exports.getApplications = async (req, res) => {
         }
       }
 
+      const status = getValByHeader(row, ['status']) || 'Applied';
+      const remarks = getValByHeader(row, ['remarks']) || '';
+      const tpoName = getValByHeader(row, ['placementofficer', 'tponame']) || '';
+      const interviewDate = getValByHeader(row, ['interviewdate']) || '';
+      const interviewTime = getValByHeader(row, ['interviewtime', 'intervewtime']) || '';
+      const interviewVenue = getValByHeader(row, ['interviewvenue']) || '';
+      let statusHistory = parsePlacementHistory(getValByHeader(row, ['statushistory']));
+      const relatedHistory = historyByIdentity.get(historyKeyFor(row)) || [];
+      if (relatedHistory.length) {
+        const seenHistory = new Set();
+        statusHistory = [...statusHistory, ...relatedHistory].filter(entry => {
+          const key = [entry.status, entry.changedAt, entry.remarks, entry.interviewDate, entry.interviewTime, entry.interviewVenue].map(value => String(value || '').trim()).join('|');
+          if (seenHistory.has(key)) return false;
+          seenHistory.add(key);
+          return true;
+        }).sort((left, right) => (safeParseDate(left.changedAt)?.getTime() || 0) - (safeParseDate(right.changedAt)?.getTime() || 0));
+      }
+      if (!statusHistory.length && (status || remarks || interviewDate || interviewTime || interviewVenue)) {
+        statusHistory = [placementHistoryEntry({ status, remarks, interviewDate, interviewTime, interviewVenue, changedBy: tpoName || 'Placement team', changedAt: getValByHeader(row, ['timestamp', 'date', 'time']), event: 'Current record' })];
+      }
       appsList.push({
-        rowNumber: row.rowNumber, name: getValByHeader(row, ['name', 'studentname']) || '', roll: roll, branch: branch, course: course, qual: qual || 'Not Specified', jobId: jobId, company: getValByHeader(row, ['company', 'companyname']) || 'Unknown Company', position: getValByHeader(row, ['position', 'role']) || 'Unknown Position', date: getValByHeader(row, ['time', 'date', 'timestamp']) || '', status: getValByHeader(row, ['status']) || 'Applied', remarks: getValByHeader(row, ['remarks']) || '', tpoName: getValByHeader(row, ['placementofficer']) || '', phone: phone, email: email, resume: resume, datePlaced: getValByHeader(row, ['dateplaced']) || '', packageLpa: getValByHeader(row, ['package']) || '', offerLetter: getValByHeader(row, ['offerletter']) || '', joiningStatus: getValByHeader(row, ['joiningstatus']) || ''
+        rowNumber: row.rowNumber, recordType: 'application', name: getValByHeader(row, ['name', 'studentname']) || '', roll, branch, course, qual: qual || 'Not Specified', jobId, company: getValByHeader(row, ['company', 'companyname']) || 'Unknown Company', position: getValByHeader(row, ['position', 'role']) || 'Unknown Position', date: getValByHeader(row, ['time', 'date', 'timestamp']) || '', status, remarks, statusHistory, interviewDate, interviewTime, interviewVenue, tpoName, phone, email, resume, datePlaced: getValByHeader(row, ['dateplaced']) || '', packageLpa: getValByHeader(row, ['package']) || '', offerLetter: getValByHeader(row, ['offerletter']) || '', joiningStatus: getValByHeader(row, ['joiningstatus']) || ''
       });
     }
   });
@@ -935,6 +1057,7 @@ exports.updateApplication = async (req, res) => {
   try {
     const appSheet = doc.sheetsByTitle["Opening_Applied"];
     if (!appSheet || isNaN(rowNumber)) return res.status(400).json({ success: false, message: "Invalid payload or sheet missing." });
+    await ensurePlacementHeaders(appSheet, placementTrackingHeaders);
 
     const rows = await appSheet.getRows({ offset: rowNumber - 2, limit: 1 });
     
@@ -967,7 +1090,11 @@ exports.updateApplication = async (req, res) => {
     };
 
     const oldStatusH = getSafeH(['status']);
-    const oldStatus = oldStatusH && rows[0]._rawData[headers.indexOf(oldStatusH)] ? rows[0]._rawData[headers.indexOf(oldStatusH)].toString().toLowerCase() : '';
+    const oldStatus = oldStatusH ? getValByHeader(rows[0], ['status']) : '';
+    const oldRemarks = getValByHeader(rows[0], ['remarks']);
+    const oldInterviewDate = getValByHeader(rows[0], ['interviewdate']);
+    const oldInterviewTime = getValByHeader(rows[0], ['interviewtime', 'intervewtime']);
+    const oldInterviewVenue = getValByHeader(rows[0], ['interviewvenue']);
 
     // Treat the selected sheet row as the source of placement identity; the
     // browser's fullApp payload is only presentation data and is not trusted.
@@ -985,7 +1112,7 @@ exports.updateApplication = async (req, res) => {
     const sTpo = getValByHeader(sourceRow, ['placementofficer', 'tponame']) || user?.name || '';
 
     const updateObj = {};
-    if (oldStatusH) updateObj[oldStatusH] = status;
+    if (oldStatusH && status !== undefined) updateObj[oldStatusH] = status;
     
     const hRemarks = getSafeH(['remarks']); if (hRemarks && remarks !== undefined) updateObj[hRemarks] = remarks;
     const hDatePlaced = getSafeH(['dateplaced']); if (hDatePlaced && datePlaced !== undefined) updateObj[hDatePlaced] = datePlaced;
@@ -999,7 +1126,21 @@ exports.updateApplication = async (req, res) => {
     
     if (hDate && interviewDate !== undefined) updateObj[hDate] = interviewDate;
     if (hTime && interviewTime !== undefined) updateObj[hTime] = interviewTime;
-    if (hVenue && interviewVenue !== undefined) updateObj[hVenue] = updateObj[hVenue] = interviewVenue;
+    if (hVenue && interviewVenue !== undefined) updateObj[hVenue] = interviewVenue;
+
+    const nextStatus = status !== undefined ? status : oldStatus;
+    const nextRemarks = remarks !== undefined ? remarks : oldRemarks;
+    const nextInterviewDate = interviewDate !== undefined ? interviewDate : oldInterviewDate;
+    const nextInterviewTime = interviewTime !== undefined ? interviewTime : oldInterviewTime;
+    const nextInterviewVenue = interviewVenue !== undefined ? interviewVenue : oldInterviewVenue;
+    const changedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const nextHistory = appendPlacementHistory({
+      row: rows[0], oldStatus, status: nextStatus, oldRemarks, remarks: nextRemarks,
+      oldInterviewDate, interviewDate: nextInterviewDate, oldInterviewTime, interviewTime: nextInterviewTime,
+      oldInterviewVenue, interviewVenue: nextInterviewVenue, changedBy: user?.name || 'Placement team', changedAt
+    });
+    const historyHeader = getSafeH(['statushistory']);
+    if (historyHeader) updateObj[historyHeader] = JSON.stringify(nextHistory);
 
     rows[0].assign(updateObj); 
     await rows[0].save(); 
@@ -1007,7 +1148,7 @@ exports.updateApplication = async (req, res) => {
     try {
       const logSheet = doc.sheetsByTitle["TPO_Log"];
       if (logSheet) {
-        const logHeaders = logSheet.headerValues;
+        const logHeaders = await ensurePlacementHeaders(logSheet, placementTrackingHeaders);
         const logObj = {};
         
         const setLogH = (key, val) => {
@@ -1016,7 +1157,7 @@ exports.updateApplication = async (req, res) => {
            if (foundHeader) logObj[foundHeader] = val;
         };
 
-        setLogH('timestamp', new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }));
+        setLogH('timestamp', changedAt);
         setLogH('studentname', sName);
         setLogH('contact', sContact);
         setLogH('mailid', sMail);
@@ -1029,16 +1170,17 @@ exports.updateApplication = async (req, res) => {
         setLogH('companyname', sCompany);
         setLogH('position', sPosition);
         setLogH('placementofficer', sTpo);
-        setLogH('status', status || '');
-        setLogH('remarks', remarks !== undefined ? remarks : '');
+        setLogH('status', nextStatus || '');
+        setLogH('remarks', nextRemarks || '');
         setLogH('dateplaced', datePlaced !== undefined ? datePlaced : '');
         setLogH('package', packageLpa !== undefined ? packageLpa : '');
         setLogH('offerletterstatus', offerLetterLink || '');
         setLogH('joiningstatus', joiningStatus !== undefined ? joiningStatus : '');
-        setLogH('interviewdate', interviewDate || '');
-        setLogH('interviewtime', interviewTime || '');
-        setLogH('intervewtime', interviewTime || ''); 
-        setLogH('interviewvenue', interviewVenue || '');
+        setLogH('interviewdate', nextInterviewDate || '');
+        setLogH('interviewtime', nextInterviewTime || '');
+        setLogH('intervewtime', nextInterviewTime || '');
+        setLogH('interviewvenue', nextInterviewVenue || '');
+        setLogH('statushistory', JSON.stringify(nextHistory));
 
         const identity = `${normalizePlacementText(sRoll) || normalizePlacementText(sName)}|${normalizePlacementText(sCompany)}`;
         const existingLogs = identity
@@ -1053,19 +1195,28 @@ exports.updateApplication = async (req, res) => {
       }
     } catch(e) { console.error('Placement log sync failed:', e.message); }
     
-    if (oldStatus !== (status || '').toLowerCase()) {
-       checkAndSendStudentMails({
-         name: sName, roll: sRoll, email: sMail, company: sCompany, 
-         position: sPosition, tpoName: sTpo, branch: sBranch, jobId: sJobId
-       }, status, { date: interviewDate, time: interviewTime, venue: interviewVenue }, currentUserEmail)
-       .catch(e => console.error('Placement status email failed:', e.message));
+    const interviewDetailsChanged = String(oldInterviewDate || '') !== String(nextInterviewDate || '') || String(oldInterviewTime || '') !== String(nextInterviewTime || '') || String(oldInterviewVenue || '') !== String(nextInterviewVenue || '');
+    let emailWarning = '';
+    if (oldStatus.toLowerCase() !== String(nextStatus || '').toLowerCase() || (String(nextStatus || '').toLowerCase() === 'interview scheduled' && interviewDetailsChanged)) {
+      if (String(nextStatus || '').toLowerCase() === 'interview scheduled' && !sMail) {
+        emailWarning = 'The placement update was saved, but the student has no email address on this application.';
+      } else {
+        try {
+          await checkAndSendStudentMails({
+            name: sName, roll: sRoll, email: sMail, company: sCompany,
+            position: sPosition, tpoName: sTpo, branch: sBranch, jobId: sJobId
+          }, nextStatus, { date: nextInterviewDate, time: nextInterviewTime, venue: nextInterviewVenue }, currentUserEmail);
+        } catch (error) {
+          emailWarning = `The placement update was saved, but the student email could not be sent: ${error.message}`;
+        }
+      }
     }
 
     // 🚨 DESIGN PORTAL AUTO-TRIGGER: Sends the student to Media Team if Placed/Joined
     await autoCreateDesignTask({ ...fullApp, name: sName, roll: sRoll, email: sMail, course: sCourse, branch: sBranch, company: sCompany, position: sPosition, status });
 
-    refreshCache(); 
-    res.json({ success: true, message: "Updated!" });
+    refreshCache();
+    res.json({ success: true, message: "Updated!", statusHistory: nextHistory, warning: emailWarning });
   } catch (error) { 
     console.error(error);
     res.status(500).json({ success: false, message: `Update Failed: ${error.message}` }); 
@@ -1156,9 +1307,14 @@ exports.addApplication = async (req, res) => {
     const logSheet = doc.sheetsByTitle["TPO_Log"];
 
     if (!appSheet) return res.status(503).json({ success: false, message: 'The applications sheet is unavailable.' });
+    await ensurePlacementHeaders(appSheet, placementTrackingHeaders);
+    if (logSheet) await ensurePlacementHeaders(logSheet, placementTrackingHeaders);
+
+    const addedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const initialHistory = [placementHistoryEntry({ status: appData.status || 'Placed', remarks: appData.remarks || '', changedBy: tpoName || 'Placement team', changedAt: addedAt, event: 'Record created' })];
 
     const newRowObj = {
-      'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }), 
+      'TimeStamp': addedAt,
       'Student Name': appData.name || '', 'Contact': appData.phone || '', 'Mail ID': appData.email || '', 
       'Roll Number': appData.roll || '', 'Course': appData.course || '', 'Branch': appData.branch || '', 
       'Qualification': appData.qual || '', 'Resume': appData.resume || '', 'Job ID': 'MANUAL-ADD', 
@@ -1166,7 +1322,8 @@ exports.addApplication = async (req, res) => {
       'Placement Officer': tpoName || '', 'Status': appData.status || 'Placed', 
       'Remarks': appData.remarks || '', 'DATE PLACED': appData.datePlaced || '', 
       'PACKAGE (LPA)': appData.packageLpa || '', 'Offer Letter': offerLetterLink, 
-      'Joining Status': appData.joiningStatus || '' 
+      'Joining Status': appData.joiningStatus || '',
+      'Interview Date': '', 'Interview Time': '', 'Interview Venue': '', 'Status History': JSON.stringify(initialHistory)
     };
 
     const identity = `${normalizePlacementText(appData.roll) || normalizePlacementText(appData.name)}|${normalizePlacementText(appData.company)}`;
@@ -1176,10 +1333,10 @@ exports.addApplication = async (req, res) => {
       : [];
     const existingApplication = existingApplications[0] || null;
     if (existingApplication) {
-      existingApplication.assign(newRowObj);
+      existingApplication.assign(mapPlacementRowData(appSheet, newRowObj));
       await existingApplication.save();
     } else {
-      await appSheet.addRow(newRowObj);
+      await appSheet.addRow(mapPlacementRowData(appSheet, newRowObj));
     }
 
     if (logSheet) {
@@ -1189,10 +1346,10 @@ exports.addApplication = async (req, res) => {
         ? latestPlacementRows((await logSheet.getRows()).filter(row => placementIdentity(row, getValByHeader) === identity), getValByHeader)
         : [];
       if (existingLogs.length) {
-        existingLogs[0].assign(logData);
+        existingLogs[0].assign(mapPlacementRowData(logSheet, logData));
         await existingLogs[0].save();
       } else {
-        await logSheet.addRow(logData);
+        await logSheet.addRow(mapPlacementRowData(logSheet, logData));
       }
     }
     
@@ -1204,6 +1361,141 @@ exports.addApplication = async (req, res) => {
 
     refreshCache(); res.json({ success: true, updated: Boolean(existingApplication), rowNumber: existingApplication?.rowNumber || null, message: existingApplication ? 'Existing placement updated.' : 'Placement added manually.' });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+};
+
+const isPlacementOfficer = user => /(^|\b)(TPO|PLACEMENT OFFICER)(\b|$)/i.test(String(user?.role || ''));
+const escapePlacementMailHtml = value => String(value || '').replace(/[&<>"']/g, character => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[character]));
+
+exports.addDirectInterview = async (req, res) => {
+  const user = req.portalUser;
+  const { roll, company, position, jobId, interviewDate, interviewTime, interviewVenue, remarks } = req.body || {};
+  if (!isPlacementOfficer(user)) return res.status(403).json({ success: false, message: 'Only a placement officer can create a direct interview referral.' });
+  if (!String(roll || '').trim() || !String(company || '').trim() || !String(position || '').trim() || !interviewDate || !interviewTime || !String(interviewVenue || '').trim()) {
+    return res.status(400).json({ success: false, message: 'Choose a student and complete the company, position, interview date, time, and venue.' });
+  }
+  try {
+    await loadDocInfo();
+    let cache = getCache();
+    if (!cache?.students) cache = await refreshCache();
+    const studentRoll = normalizePlacementText(roll);
+    const student = (cache?.students || []).find(row => normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])) === studentRoll);
+    if (!student) return res.status(404).json({ success: false, message: 'The selected student could not be found in the student register. Refresh the page and try again.' });
+    const studentBranch = getValByHeader(student, ['branch', 'sittingbranch']) || '';
+    const studentCourse = getValByHeader(student, ['course', 'program']) || '';
+    if (!hasAccess(studentBranch, studentCourse, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) {
+      return res.status(403).json({ success: false, message: 'This student is outside your assigned branch or course.' });
+    }
+
+    const appSheet = doc.sheetsByTitle['Opening_Applied'];
+    const logSheet = doc.sheetsByTitle['TPO_Log'];
+    if (!appSheet) return res.status(503).json({ success: false, message: 'The applications sheet is unavailable.' });
+    if (logSheet) await ensurePlacementHeaders(logSheet, placementTrackingHeaders);
+
+    const tpoName = user?.name || getValByHeader(user, ['name']) || 'Placement Officer';
+    const studentData = {
+      name: getValByHeader(student, ['name', 'studentname']) || '',
+      roll: getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']) || '',
+      email: getValByHeader(student, ['mailid', 'email']) || '',
+      phone: getValByHeader(student, ['contact', 'phone']) || '',
+      course: studentCourse, branch: studentBranch,
+      qual: getValByHeader(student, ['qualification', 'qual']) || '',
+      resume: getValByHeader(student, ['resume', 'cv']) || ''
+    };
+    const resolvedJobId = String(jobId || '').trim() || 'DIRECT-REFERRAL';
+    const normalizedCompany = normalizePlacementText(company);
+    const normalizedPosition = normalizePlacementText(position);
+    const existing = (await appSheet.getRows()).find(row =>
+      normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'roll'])) === studentRoll &&
+      normalizePlacementText(getValByHeader(row, ['companyname', 'company'])) === normalizedCompany &&
+      normalizePlacementText(getValByHeader(row, ['position', 'role'])) === normalizedPosition &&
+      normalizePlacementText(getValByHeader(row, ['jobid'])) === normalizePlacementText(resolvedJobId)
+    );
+    if (existing) return res.status(409).json({ success: false, message: 'This student already has a record for that company, position, and opening. Open the existing record to update or reschedule it.' });
+
+    const createdAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const history = [placementHistoryEntry({ status: 'Interview Scheduled', remarks, interviewDate, interviewTime, interviewVenue, changedBy: tpoName, changedAt: createdAt, event: 'Direct interview referral created' })];
+    const rowData = {
+      TimeStamp: createdAt, 'Student Name': studentData.name, Contact: studentData.phone,
+      'Mail ID': studentData.email, 'Roll Number': studentData.roll, Course: studentData.course,
+      Branch: studentData.branch, Qualification: studentData.qual, Resume: studentData.resume,
+      'Job ID': resolvedJobId, 'Company Name': String(company).trim(), Position: String(position).trim(),
+      'Placement Officer': tpoName, Status: 'Interview Scheduled', Remarks: String(remarks || '').trim(),
+      'Interview Date': interviewDate, 'Interview Time': interviewTime, 'Interview Venue': String(interviewVenue).trim(),
+      'Status History': JSON.stringify(history)
+    };
+    await ensurePlacementHeaders(appSheet, Object.keys(rowData));
+    await appSheet.addRow(mapPlacementRowData(appSheet, rowData));
+
+    if (logSheet) {
+      const logData = { ...rowData, 'Offer Letter Status': '' };
+      delete logData['Offer Letter'];
+      await ensurePlacementHeaders(logSheet, Object.keys(logData));
+      const identity = `${normalizePlacementText(studentData.roll) || normalizePlacementText(studentData.name)}|${normalizedCompany}`;
+      const existingLogs = identity
+        ? latestPlacementRows((await logSheet.getRows()).filter(row => placementIdentity(row, getValByHeader) === identity), getValByHeader)
+        : [];
+      if (existingLogs.length) {
+        const logHistory = appendPlacementHistory({ row: existingLogs[0], oldStatus: getValByHeader(existingLogs[0], ['status']), status: 'Interview Scheduled', oldRemarks: getValByHeader(existingLogs[0], ['remarks']), remarks, oldInterviewDate: getValByHeader(existingLogs[0], ['interviewdate']), interviewDate, oldInterviewTime: getValByHeader(existingLogs[0], ['interviewtime', 'intervewtime']), interviewTime, oldInterviewVenue: getValByHeader(existingLogs[0], ['interviewvenue']), interviewVenue, changedBy: tpoName, changedAt: createdAt });
+        logData['Status History'] = JSON.stringify(logHistory);
+        existingLogs[0].assign(mapPlacementRowData(logSheet, logData));
+        await existingLogs[0].save();
+      } else {
+        await logSheet.addRow(mapPlacementRowData(logSheet, logData));
+      }
+    }
+
+    let emailSent = false;
+    let emailWarning = '';
+    if (studentData.email) {
+      try {
+        await checkAndSendStudentMails({ ...studentData, company: String(company).trim(), position: String(position).trim(), jobId: resolvedJobId, tpoName }, 'Interview Scheduled', { date: interviewDate, time: interviewTime, venue: interviewVenue }, user?.email || '');
+        emailSent = true;
+      } catch (error) {
+        emailWarning = `The interview was recorded, but the email could not be sent: ${error.message}`;
+      }
+    } else {
+      emailWarning = 'The interview was recorded, but this student has no email address in the student register.';
+    }
+
+    await refreshCache();
+    return res.json({ success: true, emailSent, warning: emailWarning, message: emailWarning || 'Interview added to Opening_Applied and TPO_Log; invitation sent.' });
+  } catch (error) {
+    console.error('Direct interview creation failed:', error);
+    return res.status(500).json({ success: false, message: `Could not create the interview referral: ${error.message}` });
+  }
+};
+
+exports.emailStudent = async (req, res) => {
+  const user = req.portalUser;
+  const { roll, subject, message } = req.body || {};
+  if (!isPlacementOfficer(user)) return res.status(403).json({ success: false, message: 'Only a placement officer can send a student email from this workspace.' });
+  if (!String(roll || '').trim() || !String(subject || '').trim() || !String(message || '').trim()) {
+    return res.status(400).json({ success: false, message: 'Choose a student and enter an email subject and message.' });
+  }
+  try {
+    let cache = getCache();
+    if (!cache?.students) cache = await refreshCache();
+    const normalizedRoll = normalizePlacementText(roll);
+    const student = (cache?.students || []).find(row => normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])) === normalizedRoll);
+    if (!student) return res.status(404).json({ success: false, message: 'Student not found in the student register.' });
+    const branch = getValByHeader(student, ['branch', 'sittingbranch']) || '';
+    const course = getValByHeader(student, ['course', 'program']) || '';
+    if (!hasAccess(branch, course, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) {
+      return res.status(403).json({ success: false, message: 'This student is outside your assigned branch or course.' });
+    }
+    const name = getValByHeader(student, ['name', 'studentname']) || 'Student';
+    const email = getValByHeader(student, ['mailid', 'email']) || '';
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(422).json({ success: false, message: 'A valid student email address is not available in the register.' });
+    const safeMessage = escapePlacementMailHtml(message).replace(/\r?\n/g, '<br>');
+    const html = `<div style="margin:0 auto;max-width:640px;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#334155;background:#fff"><div style="padding:22px 28px;background:#0f172a;border-bottom:4px solid #7c3aed"><div style="font-size:12px;letter-spacing:.16em;color:#93c5fd;font-weight:700">IPCS GLOBAL • PLACEMENT CELL</div><h1 style="margin:10px 0 0;color:#fff;font-size:21px">Placement update</h1></div><div style="padding:26px 28px;font-size:15px;line-height:1.7"><p>Dear ${escapePlacementMailHtml(name)},</p><p>${safeMessage}</p><div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;color:#475569">Regards,<br><strong style="color:#0f172a">${escapePlacementMailHtml(user?.name || 'Placement Officer')}</strong><br>IPCS Global Placement Cell</div></div></div>`;
+    await sendMailAndLog({ from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`, to: email, subject: String(subject).trim(), html }, { name, email, type: 'TPO Student Email' });
+    return res.json({ success: true, message: `Email sent to ${name}.` });
+  } catch (error) {
+    console.error('TPO student email failed:', error);
+    return res.status(500).json({ success: false, message: `Email could not be sent: ${error.message}` });
+  }
 };
 
 // ---------------------------------------------------------
@@ -4352,6 +4644,21 @@ exports.getDrives = async (req, res) => {
         regDate: getValByHeader(row, ['registeddate', 'timestamp', 'date']) || '',
         studentStatus: getValByHeader(row, ['studentstatus']) || '',
         remarks: getValByHeader(row, ['studentremarks', 'remarks', 'remark', 'tpo remarks']) || '',
+        interviewDate: getValByHeader(row, ['interviewdate']) || '',
+        interviewTime: getValByHeader(row, ['interviewtime', 'intervewtime']) || '',
+        interviewVenue: getValByHeader(row, ['interviewvenue']) || '',
+        statusHistory: (() => {
+          const history = parsePlacementHistory(getValByHeader(row, ['statushistory']));
+          if (history.length) return history;
+          const status = getValByHeader(row, ['studentstatus']) || '';
+          const remarks = getValByHeader(row, ['studentremarks', 'remarks', 'remark', 'tpo remarks']) || '';
+          const interviewDate = getValByHeader(row, ['interviewdate']) || '';
+          const interviewTime = getValByHeader(row, ['interviewtime', 'intervewtime']) || '';
+          const interviewVenue = getValByHeader(row, ['interviewvenue']) || '';
+          return status || remarks || interviewDate || interviewTime || interviewVenue
+            ? [placementHistoryEntry({ status, remarks, interviewDate, interviewTime, interviewVenue, changedBy: driveOwner || 'Placement team', changedAt: getValByHeader(row, ['timestamp', 'registeddate', 'date']), event: 'Current record' })]
+            : [];
+        })(),
         driveTpo: driveOwner,
         driveDate: eventInfo.date || getValByHeader(row, ['dateofthedrive', 'drivedate', 'eventdate']) || '',
         driveLocation: eventInfo.location || getValByHeader(row, ['drivelocation', 'eventhappeningin', 'location']) || eventInfo.branch || ''
@@ -4384,13 +4691,14 @@ exports.getDrives = async (req, res) => {
 };
 
 exports.updateDriveStatus = async (req, res) => {
-  const { rowNumber, studentStatus, remarks } = req.body;
+  const { rowNumber, studentStatus, remarks, interviewDate, interviewTime, interviewVenue } = req.body;
   try {
     const numericRow = Number(rowNumber);
     if (!Number.isInteger(numericRow) || numericRow < 2) return res.status(400).json({ success: false, message: 'A valid registration row is required.' });
     await loadDocInfo();
     const sheet = doc.sheetsByTitle['Drive_Registration'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('driveregistration'));
     if (!sheet) return res.status(503).json({ success: false, message: 'The Drive Registration sheet is unavailable.' });
+    await ensurePlacementHeaders(sheet, ['Student Status', 'Student Remarks', ...placementTrackingHeaders]);
     const rows = await sheet.getRows({ offset: numericRow - 2, limit: 1 });
     if (!rows.length) return res.status(404).json({ success: false, message: 'Registration row was not found.' });
 
@@ -4441,47 +4749,67 @@ exports.updateDriveStatus = async (req, res) => {
           return res.status(403).json({ success: false, message: 'You can only update registrations for placement drives assigned to your branch.' });
         }
       }
+      const registrationStudent = (getCache()?.students || []).find(student => {
+        const sourceRoll = normalizePlacementText(getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+        const sourceName = normalizePlacementText(getValByHeader(student, ['name', 'studentname']));
+        const rowRoll = normalizePlacementText(getValByHeader(rows[0], ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+        const rowName = normalizePlacementText(getValByHeader(rows[0], ['name', 'studentname']));
+        return (rowRoll && sourceRoll === rowRoll) || (rowName && sourceName === rowName);
+      });
+      const branch = getValByHeader(rows[0], ['branch', 'sittingbranch']) || getValByHeader(registrationStudent, ['branch', 'sittingbranch']) || getValByHeader(matchingDrive, ['branch', 'sittingbranch', 'eventhappeningin', 'location']);
+      const course = getValByHeader(rows[0], ['course']) || getValByHeader(registrationStudent, ['course', 'program']) || getValByHeader(matchingDrive, ['course', 'assignedcourse']);
+      if (isTpo && !hasAccess(branch, course, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) {
+        return res.status(403).json({ success: false, message: 'This registration is outside your assigned branch or course.' });
+      }
     }
 
-    let headers = sheet.headerValues || [];
-    const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-    const findHeader = aliases => {
-      for (const alias of aliases) {
-        const header = headers.find(item => normalize(item) === normalize(alias));
-        if (header) return header;
-      }
-      for (const alias of aliases) {
-        const key = normalize(alias);
-        const header = headers.find(item => key.length >= 6 && normalize(item).includes(key));
-        if (header) return header;
-      }
-      return null;
-    };
+    const current = rows[0];
+    const oldStatus = getValByHeader(current, ['studentstatus']);
+    const oldRemarks = getValByHeader(current, ['studentremarks', 'remarks', 'remark', 'tpo remarks']);
+    const oldInterviewDate = getValByHeader(current, ['interviewdate']);
+    const oldInterviewTime = getValByHeader(current, ['interviewtime', 'intervewtime']);
+    const oldInterviewVenue = getValByHeader(current, ['interviewvenue']);
+    const nextStatus = studentStatus !== undefined ? studentStatus : oldStatus;
+    const nextRemarks = remarks !== undefined ? remarks : oldRemarks;
+    const nextInterviewDate = interviewDate !== undefined ? interviewDate : oldInterviewDate;
+    const nextInterviewTime = interviewTime !== undefined ? interviewTime : oldInterviewTime;
+    const nextInterviewVenue = interviewVenue !== undefined ? interviewVenue : oldInterviewVenue;
+    const headers = sheet.headerValues || [];
+    const findHeader = aliases => findPlacementHeader(headers, aliases);
     const update = {};
-    if (studentStatus !== undefined) {
-      let statusHeader = findHeader(['studentstatus', 'student status']);
-      if (!statusHeader) {
-        statusHeader = 'Student Status';
-        await sheet.setHeaderRow([...headers, statusHeader]);
-        headers = [...headers, statusHeader];
-      }
-      update[statusHeader] = studentStatus;
-    }
-    if (remarks !== undefined) {
-      let remarksHeader = findHeader(['studentremarks', 'tpo remarks', 'remarks', 'remark']);
-      if (!remarksHeader) {
-        remarksHeader = 'Student Remarks';
-        await sheet.setHeaderRow([...headers, remarksHeader]);
-        headers = [...headers, remarksHeader];
-      }
-      update[remarksHeader] = remarks;
-    }
+    if (studentStatus !== undefined) update[findHeader(['studentstatus'])] = studentStatus;
+    if (remarks !== undefined) update[findHeader(['studentremarks', 'tpo remarks', 'remarks', 'remark'])] = remarks;
+    if (interviewDate !== undefined) update[findHeader(['interviewdate'])] = interviewDate;
+    if (interviewTime !== undefined) update[findHeader(['interviewtime'])] = interviewTime;
+    if (interviewVenue !== undefined) update[findHeader(['interviewvenue'])] = interviewVenue;
     if (!Object.keys(update).length) return res.status(400).json({ success: false, message: 'There are no placement drive changes to save.' });
 
-    rows[0].assign(update);
-    await rows[0].save();
+    const changedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const nextHistory = appendPlacementHistory({ row: current, oldStatus, status: nextStatus, oldRemarks, remarks: nextRemarks, oldInterviewDate, interviewDate: nextInterviewDate, oldInterviewTime, interviewTime: nextInterviewTime, oldInterviewVenue, interviewVenue: nextInterviewVenue, changedBy: user?.name || 'Placement team', changedAt });
+    update[findHeader(['statushistory'])] = JSON.stringify(nextHistory);
+
+    current.assign(update);
+    await current.save();
+
+    const interviewDetailsChanged = String(oldInterviewDate || '') !== String(nextInterviewDate || '') || String(oldInterviewTime || '') !== String(nextInterviewTime || '') || String(oldInterviewVenue || '') !== String(nextInterviewVenue || '');
+    let emailWarning = '';
+    if (String(nextStatus || '').toLowerCase() !== String(oldStatus || '').toLowerCase() || (String(nextStatus || '').toLowerCase() === 'interview scheduled' && interviewDetailsChanged)) {
+      const studentRoll = getValByHeader(current, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']) || '';
+      const studentName = getValByHeader(current, ['name', 'studentname']) || '';
+      const student = (getCache()?.students || []).find(row => {
+        const rowRoll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+        const rowName = normalizePlacementText(getValByHeader(row, ['name', 'studentname']));
+        return (studentRoll && rowRoll === normalizePlacementText(studentRoll)) || (studentName && rowName === normalizePlacementText(studentName));
+      });
+      const studentEmail = getValByHeader(current, ['mailid', 'email']) || getValByHeader(student, ['mailid', 'email']) || '';
+      if (studentEmail) {
+        try {
+          await checkAndSendStudentMails({ name: studentName || getValByHeader(student, ['name', 'studentname']), roll: studentRoll, email: studentEmail, company: getValByHeader(current, ['companyname', 'company', 'driveid']) || 'Placement Drive', position: getValByHeader(current, ['position', 'role']) || 'Placement Drive', jobId: getValByHeader(current, ['jobid', 'driveid']), branch: getValByHeader(current, ['branch', 'sittingbranch']), tpoName: getValByHeader(current, ['placementofficer', 'tpo']) || user?.name }, nextStatus, { date: nextInterviewDate, time: nextInterviewTime, venue: nextInterviewVenue }, user?.email || '');
+        } catch (error) { emailWarning = `Saved, but the student email could not be sent: ${error.message}`; }
+      } else if (String(nextStatus || '').toLowerCase() === 'interview scheduled') emailWarning = 'Interview details were saved, but this student has no email address on file.';
+    }
     refreshCache();
-    res.json({ success: true, studentStatus: studentStatus ?? getValByHeader(rows[0], ['studentstatus']), remarks: remarks ?? getValByHeader(rows[0], ['studentremarks', 'remarks', 'remark']) });
+    res.json({ success: true, studentStatus: nextStatus, remarks: nextRemarks, interviewDate: nextInterviewDate, interviewTime: nextInterviewTime, interviewVenue: nextInterviewVenue, statusHistory: nextHistory, warning: emailWarning });
   } catch(err) { res.status(500).json({ success: false, message: err.message }); }
 };
 

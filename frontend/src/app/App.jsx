@@ -47,6 +47,15 @@ const MediaSettings = lazy(() => import('../features/media/MediaSettings'));
 const BrainGym = lazy(() => import('../features/learning/BrainGym'));
 const CareerHub = lazy(() => import('../features/placements/CareerHub'));
 
+function PlacementDrivesRoute() {
+  let account = null;
+  try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Login will handle an invalid session. */ }
+  const role = String(account?.role || '').toUpperCase();
+  const isAdmin = account?.accessType === 'superadmin' || role.includes('ADMIN') || role.includes('HEAD') || role.includes('MANAGER');
+  const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
+  return isTpo && !isAdmin ? <Navigate to="/tracker" replace /> : <PlacementDrives />;
+}
+
 function App() {
   return (
     <BrowserRouter>
@@ -82,7 +91,7 @@ function App() {
         <Route path="/users" element={<UserManagement />} />
         <Route path="/study-materials" element={<StudyMaterials />} />
         <Route path="/courses" element={<Courses />} />
-        <Route path="/placement-drives" element={<PlacementDrives />} />
+        <Route path="/placement-drives" element={<PlacementDrivesRoute />} />
         <Route path="/branches" element={<Branches />} />
         <Route path="/exams" element={<ExamsHub />} />
         <Route path="/exams/technical" element={<TechnicalExams />} />

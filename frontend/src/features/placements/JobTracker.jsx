@@ -1,697 +1,315 @@
-import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import axios from 'axios';
-import { 
-  CircleNotch, CaretDown, FloppyDisk, CheckCircle, WarningCircle,
-  WhatsappLogo, EnvelopeSimple, FilePdf, X 
+import {
+  ArrowRight, Briefcase, Buildings, CalendarBlank, CheckCircle, Clock,
+  CircleNotch, EnvelopeSimple, FilePdf, FloppyDisk, MagnifyingGlass,
+  MapPinLine, PaperPlaneTilt, Plus, Sparkle, Users, WarningCircle, WhatsappLogo, X
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
 import { getStatusTone } from '../../utils/statusTone';
-import PlacementDriveTracker from './PlacementDriveTracker';
+
+const STATUS_OPTIONS = [
+  'Applied', 'Pending', 'Shortlisted', 'Interview Scheduled', 'Interview Attended',
+  'Interview Not Attended', 'No Response from Student', 'Got Offer', 'Placed',
+  'Student Not Interested', 'Student Rejected Offer', 'Company Rejected'
+];
+const FILTERS = ['All records', 'Needs follow-up', 'Interviews', 'Applications', 'Drive registrations', 'Offers & placements'];
+const dateValue = value => {
+  if (!value) return 0;
+  const text = String(value).trim();
+  const dayFirst = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
+  if (dayFirst) return new Date(Number(dayFirst[3]), Number(dayFirst[2]) - 1, Number(dayFirst[1])).getTime();
+  const parsed = new Date(text).getTime();
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+const prettyDate = value => {
+  const parsed = dateValue(value);
+  return parsed ? new Date(parsed).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) : String(value || 'Date not recorded');
+};
+const dateInputValue = value => {
+  const parsed = dateValue(value);
+  if (!parsed) return '';
+  const date = new Date(parsed);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+};
+const isInterview = status => String(status || '').toLowerCase().includes('interview scheduled');
+const isFollowUp = status => /^(applied|pending|shortlisted|no response from student)$/i.test(String(status || '').trim());
+const getDrivePdf = url => {
+  const value = String(url || '');
+  const match = value.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+  return match ? `https://drive.google.com/file/d/${match[1]}/view` : value;
+};
+
+const makeRecords = (applications, drives) => [
+  ...applications.map(app => ({ ...app, sourceType: 'application', recordKey: `application-${app.rowNumber}`, status: app.status || 'Applied', appliedAt: app.date || '', company: app.company || 'Company not recorded' })),
+  ...drives.filter(row => Number.isInteger(Number(row.rowNumber)) && Number(row.rowNumber) >= 2 && row.name !== 'NO_APPLICANTS').map(row => ({
+    ...row, sourceType: 'drive', recordKey: `drive-${row.rowNumber}`, status: row.studentStatus || 'Pending',
+    appliedAt: row.regDate || row.driveDate || '', company: row.driveId || 'Placement drive',
+    position: row.position || 'Placement drive participant', jobId: row.driveId || '', tpoName: row.driveTpo || ''
+  }))
+];
 
 export default function JobTracker() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const activeTab = searchParams.get('tab') === 'drives' ? 'drives' : 'jobs';
-  const [interviewModal, setInterviewModal] = useState({
-    isOpen: false,
-    appRowNumber: null,
-    status: '',
-    date: '',
-    time: '',
-    venue: ''
+  const [account] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('tpoData') || 'null'); }
+    catch { return null; }
   });
-
-  const tpoDataStr = localStorage.getItem('tpoData');
-  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
-  
-  const userRole = String(tpoData?.role || '').toUpperCase();
-  const accessType = String(tpoData?.accessType || '').toLowerCase();
-  const isSuperAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
-  
-  const isStrictTpo = (userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER')) && !isSuperAdmin;
-  const canUseDriveTracker = isStrictTpo;
-
+  const role = String(account?.role || '').toUpperCase();
+  const isStrictTpo = (role.includes('TPO') || role.includes('PLACEMENT OFFICER')) && account?.accessType !== 'superadmin';
   const [applications, setApplications] = useState([]);
+  const [drives, setDrives] = useState([]);
   const [loading, setLoading] = useState(true);
-  
-  const [searchQuery, setSearchQuery] = useState('');
-  const [monthFilter, setMonthFilter] = useState('');
-  const [courseFilter, setCourseFilter] = useState('All');
-  const [sortOrder, setSortOrder] = useState('newest'); 
-  
-  const [openGroups, setOpenGroups] = useState({});
-  const [savingStatus, setSavingStatus] = useState({});
-  const [localEdits, setLocalEdits] = useState({});
+  const [loadError, setLoadError] = useState('');
+  const [notice, setNotice] = useState(null);
+  const [query, setQuery] = useState('');
+  const [filter, setFilter] = useState('All records');
+  const [course, setCourse] = useState('All');
+  const [month, setMonth] = useState('');
+  const [edits, setEdits] = useState({});
+  const [saving, setSaving] = useState({});
+  const [students, setStudents] = useState([]);
+  const [studentsLoading, setStudentsLoading] = useState(false);
+  const [studentQuery, setStudentQuery] = useState('');
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [directForm, setDirectForm] = useState({ company: '', position: '', jobId: '', interviewDate: '', interviewTime: '', interviewVenue: '', remarks: '' });
+  const [directOpen, setDirectOpen] = useState(false);
+  const [directSaving, setDirectSaving] = useState(false);
+  const [interviewTarget, setInterviewTarget] = useState(null);
+  const [emailTarget, setEmailTarget] = useState(null);
+  const [emailForm, setEmailForm] = useState({ subject: '', message: '' });
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [detailsRecord, setDetailsRecord] = useState(null);
+
+  const reloadRecords = useCallback(async () => {
+    const [appResult, driveResult] = await Promise.allSettled([
+      axios.post(`${API_BASE}/api/tpo/applications`, { assignedBranchesArray: account?.assignedBranchesArray, tpoName: account?.name, role: account?.role, assignedCourse: account?.assignedCourse }),
+      axios.get(`${API_BASE}/api/tpo/drives`)
+    ]);
+    const errors = [];
+    if (appResult.status === 'fulfilled' && appResult.value.data?.success) {
+      const myName = String(account?.name || '').trim().toLowerCase();
+      const owned = (appResult.value.data.applications || []).filter(app => String(app.tpoName || '').trim().toLowerCase() === myName);
+      setApplications(owned);
+    } else {
+      errors.push(appResult.status === 'rejected' ? appResult.reason?.response?.data?.message || appResult.reason?.message : appResult.value?.data?.message || 'Applications could not be loaded.');
+    }
+    if (driveResult.status === 'fulfilled' && driveResult.value.data?.success) setDrives(driveResult.value.data.drives || []);
+    else errors.push(driveResult.status === 'rejected' ? driveResult.reason?.response?.data?.message || driveResult.reason?.message : driveResult.value?.data?.message || 'Drive registrations could not be loaded.');
+    setLoadError(errors.length === 2 ? errors.join(' ') : errors[0] || '');
+    return errors.length === 0;
+  }, [account]);
 
   useEffect(() => {
-    if (!tpoData) return;
-
+    if (!account) return;
     if (!isStrictTpo) {
       window.location.href = '/dashboard';
       return;
     }
+    let active = true;
+    setLoading(true);
+    reloadRecords().finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [account, isStrictTpo, reloadRecords]);
 
-    const fetchData = async () => {
-      try {
-        const response = await axios.post(`${API_BASE}/api/tpo/applications`, { 
-          assignedBranchesArray: tpoData.assignedBranchesArray,
-          tpoName: tpoData.name 
-        });
-        
-        if (response.data.success) {
-          const myName = (tpoData.name || '').toLowerCase().trim();
-          
-          const strictlyMyJobs = response.data.applications.filter(app => {
-            const jobOwner = (app.tpoName || '').toLowerCase().trim();
-            return jobOwner === myName;
-          });
+  const records = useMemo(() => makeRecords(applications, drives), [applications, drives]);
+  const courses = useMemo(() => [...new Set(records.map(item => item.course).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [records]);
+  const visibleRecords = useMemo(() => records.filter(record => {
+    const text = query.trim().toLowerCase();
+    const matchesQuery = !text || [record.name, record.roll, record.company, record.position, record.jobId, record.branch, record.course, record.remarks]
+      .some(value => String(value || '').toLowerCase().includes(text));
+    const matchesCourse = course === 'All' || String(record.course || '').toLowerCase() === course.toLowerCase();
+    const parsedDate = dateValue(record.appliedAt);
+    const recordMonth = parsedDate ? `${new Date(parsedDate).getFullYear()}-${String(new Date(parsedDate).getMonth() + 1).padStart(2, '0')}` : '';
+    const matchesMonth = !month || recordMonth === month;
+    const status = String(record.status || '');
+    let matchesFilter = true;
+    if (filter === 'Needs follow-up') matchesFilter = isFollowUp(status);
+    if (filter === 'Interviews') matchesFilter = isInterview(status);
+    if (filter === 'Applications') matchesFilter = record.sourceType === 'application';
+    if (filter === 'Drive registrations') matchesFilter = record.sourceType === 'drive';
+    if (filter === 'Offers & placements') matchesFilter = /offer|placed|joined/i.test(status);
+    return matchesQuery && matchesCourse && matchesMonth && matchesFilter;
+  }).sort((a, b) => dateValue(b.appliedAt) - dateValue(a.appliedAt)), [records, query, course, month, filter]);
+  const upcomingInterviews = records.filter(record => isInterview(record.status)).length;
+  const followUps = records.filter(record => isFollowUp(record.status)).length;
+  const placedCount = records.filter(record => /offer|placed|joined/i.test(record.status)).length;
 
-          setApplications(strictlyMyJobs);
-        }
-      } catch (error) { 
-        console.error("Failed to load data", error); 
-      } finally { 
-        setLoading(false); 
-      }
-    };
-    fetchData();
-  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps -- Load the account-scoped tracker snapshot once per page mount.
-
-  const toggleGroup = (groupKey) => setOpenGroups(prev => ({ ...prev, [groupKey]: !prev[groupKey] }));
-
-  const handleEditChange = (rowNumber, field, value) => {
-    setLocalEdits(prev => ({ ...prev, [rowNumber]: { ...prev[rowNumber], [field]: value } }));
+  const setEdit = (record, field, value) => setEdits(current => ({ ...current, [record.recordKey]: { ...current[record.recordKey], [field]: value } }));
+  const updateLocalRecord = (record, changes) => {
+    if (record.sourceType === 'application') setApplications(current => current.map(item => item.rowNumber === record.rowNumber ? { ...item, ...changes } : item));
+    else setDrives(current => current.map(item => item.rowNumber === record.rowNumber ? { ...item, studentStatus: changes.status ?? item.studentStatus, remarks: changes.remarks ?? item.remarks, interviewDate: changes.interviewDate ?? item.interviewDate, interviewTime: changes.interviewTime ?? item.interviewTime, interviewVenue: changes.interviewVenue ?? item.interviewVenue, statusHistory: changes.statusHistory ?? item.statusHistory } : item));
   };
 
-  const getDrivePdf = (url) => {
-    if (!url || typeof url !== 'string') return null;
-    const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
-    return match ? `https://drive.google.com/file/d/${match[1]}/view` : url;
-  };
-
-  const saveApplication = async (app) => {
-    const rowNum = app.rowNumber;
-    const edits = localEdits[rowNum] || {};
-    const newStatus = edits.status !== undefined ? edits.status : app.status;
-    const newRemarks = edits.remarks !== undefined ? edits.remarks : app.remarks;
-
-    setSavingStatus(prev => ({ ...prev, [rowNum]: 'saving' }));
-
+  const saveRecord = async (record, extra = {}) => {
+    const changes = edits[record.recordKey] || {};
+    const status = extra.status ?? changes.status ?? record.status;
+    const remarks = extra.remarks ?? changes.remarks ?? record.remarks ?? '';
+    if (isInterview(status) && [extra.interviewDate ?? record.interviewDate, extra.interviewTime ?? record.interviewTime, extra.interviewVenue ?? record.interviewVenue].some(value => !String(value || '').trim())) {
+      setNotice({ tone: 'error', text: 'Add the interview date, time, and venue before saving this status.' });
+      return false;
+    }
+    setSaving(current => ({ ...current, [record.recordKey]: true }));
     try {
-      const payload = {
-        rowNumber: rowNum, 
-        status: newStatus, 
-        remarks: newRemarks,
-        fullApp: app,
-        currentUserEmail: tpoData?.email || '',
-        interviewDate: interviewModal.appRowNumber === rowNum ? interviewModal.date : '',
-        interviewTime: interviewModal.appRowNumber === rowNum ? interviewModal.time : '',
-        interviewVenue: interviewModal.appRowNumber === rowNum ? interviewModal.venue : ''
-      };
-
-      const response = await axios.post(`${API_BASE}/api/tpo/applications/update`, payload);
-      
-      if (response.data.success) {
-        setSavingStatus(prev => ({ ...prev, [rowNum]: 'success' }));
-        
-        if (interviewModal.isOpen && interviewModal.appRowNumber === rowNum) {
-          setInterviewModal({ isOpen: false, appRowNumber: null, status: '', date: '', time: '', venue: '' });
-        }
-
-        setTimeout(() => setSavingStatus(prev => ({ ...prev, [rowNum]: null })), 2500);
-      } else {
-        setSavingStatus(prev => ({ ...prev, [rowNum]: 'error' }));
-        setTimeout(() => setSavingStatus(prev => ({ ...prev, [rowNum]: null })), 4500);
-      }
-    } catch {
-      setSavingStatus(prev => ({ ...prev, [rowNum]: 'error' }));
-      setTimeout(() => setSavingStatus(prev => ({ ...prev, [rowNum]: null })), 4500);
+      const url = record.sourceType === 'application' ? '/api/tpo/applications/update' : '/api/tpo/drives/update';
+      const payload = record.sourceType === 'application'
+        ? { rowNumber: record.rowNumber, status, remarks, fullApp: record, currentUserEmail: account?.email || '', interviewDate: extra.interviewDate ?? record.interviewDate ?? '', interviewTime: extra.interviewTime ?? record.interviewTime ?? '', interviewVenue: extra.interviewVenue ?? record.interviewVenue ?? '' }
+        : { rowNumber: record.rowNumber, studentStatus: status, remarks, interviewDate: extra.interviewDate ?? record.interviewDate ?? '', interviewTime: extra.interviewTime ?? record.interviewTime ?? '', interviewVenue: extra.interviewVenue ?? record.interviewVenue ?? '' };
+      const response = await axios.post(`${API_BASE}${url}`, payload);
+      if (!response.data?.success) throw new Error(response.data?.message || 'The update could not be saved.');
+      updateLocalRecord(record, { status, remarks, ...extra, statusHistory: response.data.statusHistory });
+      setEdits(current => { const next = { ...current }; delete next[record.recordKey]; return next; });
+      setNotice(response.data.warning ? { tone: 'warning', text: response.data.warning } : { tone: 'success', text: 'Student update saved.' });
+      setTimeout(() => setNotice(null), 6000);
+      setInterviewTarget(null);
+      return true;
+    } catch (error) {
+      setNotice({ tone: 'error', text: error.response?.data?.message || error.message || 'Update failed.' });
+      return false;
+    } finally {
+      setSaving(current => ({ ...current, [record.recordKey]: false }));
     }
   };
 
-  const filteredApps = applications.filter(a => {
-    let dateObj = new Date(a.date);
-    let monthKey = !isNaN(dateObj) ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
-    
-    let mMatch = monthFilter ? monthKey === monthFilter : true;
-    let cMatch = courseFilter === 'All' || a.course.toLowerCase().includes(courseFilter.toLowerCase());
-    
-    let sMatch = searchQuery === '' || 
-                 a.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                 a.jobId.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                 a.company.toLowerCase().includes(searchQuery.toLowerCase());
+  const openSchedule = (record, nextStatus = record.status) => setInterviewTarget({ record, status: nextStatus, previousStatus: record.status, interviewDate: dateInputValue(record.interviewDate), interviewTime: record.interviewTime || '', interviewVenue: record.interviewVenue || '' });
+  const closeSchedule = () => {
+    if (interviewTarget && !isInterview(interviewTarget.previousStatus)) setEdit(interviewTarget.record, 'status', interviewTarget.previousStatus || 'Applied');
+    setInterviewTarget(null);
+  };
+  const fetchStudents = async () => {
+    if (students.length) return;
+    setStudentsLoading(true);
+    try {
+      const response = await axios.post(`${API_BASE}/api/tpo/students`, { assignedBranchesArray: account?.assignedBranchesArray, role: account?.role, assignedCourse: account?.assignedCourse, department: account?.department });
+      if (!response.data?.success) throw new Error(response.data?.message || 'Student register could not be loaded.');
+      setStudents(response.data.students || []);
+    } catch (error) {
+      setNotice({ tone: 'error', text: error.response?.data?.message || error.message || 'Student register could not be loaded.' });
+    } finally { setStudentsLoading(false); }
+  };
+  const openDirectInterview = () => {
+    setDirectOpen(true); setSelectedStudent(null); setStudentQuery('');
+    void fetchStudents();
+  };
+  const submitDirectInterview = async event => {
+    event.preventDefault();
+    if (!selectedStudent) return setNotice({ tone: 'error', text: 'Select the student before scheduling the interview.' });
+    setDirectSaving(true);
+    try {
+      const response = await axios.post(`${API_BASE}/api/tpo/applications/direct-interview`, { roll: selectedStudent.roll, company: directForm.company, position: directForm.position, jobId: directForm.jobId, interviewDate: directForm.interviewDate, interviewTime: directForm.interviewTime, interviewVenue: directForm.interviewVenue, remarks: directForm.remarks });
+      if (!response.data?.success) throw new Error(response.data?.message || 'Could not add the interview.');
+      setDirectOpen(false); setDirectForm({ company: '', position: '', jobId: '', interviewDate: '', interviewTime: '', interviewVenue: '', remarks: '' });
+      setNotice(response.data.warning ? { tone: 'warning', text: response.data.warning } : { tone: 'success', text: response.data.message || 'Interview added and invitation sent.' });
+      await reloadRecords();
+    } catch (error) {
+      setNotice({ tone: 'error', text: error.response?.data?.message || error.message || 'Could not add the interview.' });
+    } finally { setDirectSaving(false); }
+  };
 
-    return mMatch && cMatch && sMatch;
-  });
+  const openEmail = record => {
+    setEmailTarget(record);
+    setEmailForm({ subject: `Placement update${record.company ? ` — ${record.company}` : ''}`, message: `Dear ${record.name || 'Student'},\n\nWe are contacting you regarding ${record.position || 'the placement opportunity'}${record.company ? ` at ${record.company}` : ''}.\n\nPlease reply to this email if you have any questions.\n\nRegards,\n${account?.name || 'Placement Officer'}\nIPCS Global Placement Cell` });
+  };
+  const submitEmail = async event => {
+    event.preventDefault();
+    if (!emailTarget) return;
+    setEmailSaving(true);
+    try {
+      const response = await axios.post(`${API_BASE}/api/tpo/applications/email-student`, { roll: emailTarget.roll, subject: emailForm.subject, message: emailForm.message });
+      if (!response.data?.success) throw new Error(response.data?.message || 'Email could not be sent.');
+      setEmailTarget(null); setNotice({ tone: 'success', text: response.data.message || 'Email sent.' });
+    } catch (error) {
+      setNotice({ tone: 'error', text: error.response?.data?.message || error.message || 'Email could not be sent.' });
+    } finally { setEmailSaving(false); }
+  };
 
-  const groupedApps = {};
-  filteredApps.forEach(app => {
-    let groupKey = app.jobId ? app.jobId : `${app.company} - ${app.position}`;
-    if (!app.jobId && app.company === 'Unknown Company') groupKey = `Unspecified Job - Row ${app.rowNumber}`;
+  const initials = value => String(value || 'S').trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+  const filteredStudents = students.filter(student => [student.name, student.roll, student.branch, student.course].some(value => String(value || '').toLowerCase().includes(studentQuery.trim().toLowerCase()))).slice(0, 12);
+  if (!isStrictTpo) return null;
 
-    if(!groupedApps[groupKey]) {
-      groupedApps[groupKey] = { jobId: app.jobId, company: app.company, position: app.position, apps: [] };
-    }
-    groupedApps[groupKey].apps.push(app);
-  });
+  return <Layout>
+    <main className="tracker-page">
+      <motion.section className="tracker-hero" initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .32 }}>
+        <div className="tracker-hero-copy"><div className="tracker-eyebrow"><span className="tracker-live-dot" /> PLACEMENT OPERATIONS <i /> UNIFIED STUDENT PIPELINE</div><h1>Talent, in <span>motion.</span></h1><p>One live workspace for applications, drive registrations, interview coordination, and student communication.</p><div className="tracker-hero-actions"><button type="button" className="tracker-primary-action" onClick={openDirectInterview}><Plus size={18} weight="bold" /> Schedule a direct interview</button><span><Sparkle size={15} /> Your branch access is applied automatically</span></div></div>
+        <div className="tracker-orbit" aria-hidden="true"><div className="tracker-orbit-ring ring-a" /><div className="tracker-orbit-ring ring-b" /><div className="tracker-orbit-core"><Briefcase size={33} weight="duotone" /></div><i /><b /></div>
+      </motion.section>
 
-  const groupsArray = Object.keys(groupedApps).map(key => ({ groupKey: key, ...groupedApps[key] }));
+      <section className="tracker-kpis" aria-label="Placement pipeline overview">
+        <div className="tracker-kpi"><span><Users size={18} /> TRACKED RECORDS</span><strong>{records.length}</strong><small>Applications + drive registrations</small></div>
+        <div className="tracker-kpi kpi-attention"><span><Clock size={18} /> NEEDS FOLLOW-UP</span><strong>{followUps}</strong><small>Applied, pending, or shortlisted</small></div>
+        <div className="tracker-kpi kpi-interview"><span><CalendarBlank size={18} /> INTERVIEWS</span><strong>{upcomingInterviews}</strong><small>Scheduled across both sources</small></div>
+        <div className="tracker-kpi kpi-outcome"><span><CheckCircle size={18} /> OFFERS &amp; PLACEMENTS</span><strong>{placedCount}</strong><small>Positive hiring outcomes</small></div>
+      </section>
 
-  groupsArray.sort((a, b) => {
-    if (sortOrder === 'jobId-az') return (a.jobId || '').localeCompare(b.jobId || '');
-    if (sortOrder === 'jobId-za') return (b.jobId || '').localeCompare(a.jobId || '');
-    if (sortOrder === 'company-az') return (a.company || '').localeCompare(b.company || '');
-    if (sortOrder === 'company-za') return (b.company || '').localeCompare(a.company || '');
-    if (sortOrder === 'newest') {
-      const maxDateA = Math.max(...a.apps.map(app => new Date(app.date).getTime() || 0));
-      const maxDateB = Math.max(...b.apps.map(app => new Date(app.date).getTime() || 0));
-      return maxDateB - maxDateA;
-    }
-    return 0;
-  });
+      <section className="tracker-board">
+        <header className="tracker-board-heading"><div><span className="tracker-section-label">LIVE REGISTER</span><h2>Placement pipeline <small>{visibleRecords.length} shown</small></h2></div><div className="tracker-board-tools"><label className="tracker-search"><MagnifyingGlass size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Find student, company, role, or ID" /></label><label className="tracker-month"><CalendarBlank size={17} /><input type="month" value={month} onChange={event => setMonth(event.target.value)} aria-label="Filter by month" /></label></div></header>
+        <div className="tracker-filter-row" role="tablist" aria-label="Pipeline filters">{FILTERS.map(label => <button type="button" role="tab" aria-selected={filter === label} key={label} className={filter === label ? 'active' : ''} onClick={() => setFilter(label)}>{label}<span>{label === 'All records' ? records.length : label === 'Needs follow-up' ? followUps : label === 'Interviews' ? upcomingInterviews : label === 'Applications' ? applications.length : label === 'Drive registrations' ? drives.filter(item => Number.isInteger(Number(item.rowNumber)) && Number(item.rowNumber) >= 2).length : placedCount}</span></button>)}<label className="tracker-course-filter"><Briefcase size={15} /><select value={course} onChange={event => setCourse(event.target.value)} aria-label="Filter by course"><option value="All">All courses</option>{courses.map(value => <option key={value} value={value}>{value}</option>)}</select></label></div>
+        {notice && <motion.div className={`tracker-notice ${notice.tone}`} initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} role={notice.tone === 'error' ? 'alert' : 'status'}><span>{notice.tone === 'error' ? <WarningCircle size={18} /> : notice.tone === 'warning' ? <WarningCircle size={18} /> : <CheckCircle size={18} />}{notice.text}</span><button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message"><X size={16} /></button></motion.div>}
+        {loadError && <div className="tracker-load-warning"><WarningCircle size={16} /> {loadError} <button type="button" onClick={() => { setLoading(true); reloadRecords().finally(() => setLoading(false)); }}>Retry</button></div>}
+        {loading ? <div className="tracker-state"><CircleNotch className="ph-spin" size={30} /><strong>Syncing your placement pipeline</strong><span>Reading applications and drive registrations…</span></div> : visibleRecords.length === 0 ? <div className="tracker-state"><div><MagnifyingGlass size={26} /></div><strong>{records.length ? 'No matching records' : 'Your tracker is ready'}</strong><span>{records.length ? 'Change the filters or search terms.' : 'New applications and drive registrations assigned to you will appear here.'}</span></div> : <div className="tracker-record-list">
+          <div className="tracker-list-header"><span>STUDENT &amp; OPPORTUNITY</span><span>INTERVIEW / SOURCE</span><span>STATUS &amp; UPDATE</span><span>ACTIONS</span></div>
+          <AnimatePresence initial={false}>{visibleRecords.map((record, index) => {
+            const edited = edits[record.recordKey] || {};
+            const status = edited.status ?? record.status;
+            const remarks = edited.remarks ?? record.remarks ?? '';
+            const busy = Boolean(saving[record.recordKey]);
+            return <motion.article layout key={record.recordKey} className="tracker-record" initial={{ opacity: 0, y: 9 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }} transition={{ delay: Math.min(index * .018, .15), duration: .2 }}>
+              <div className="tracker-student-cell"><div className="tracker-avatar">{initials(record.name)}</div><div className="tracker-student-copy"><strong>{record.name || 'Student name missing'}</strong><span>{[record.roll, record.branch, record.course].filter(Boolean).join(' · ')}</span><div className="tracker-tags"><span className={record.sourceType === 'drive' ? 'drive-tag' : 'application-tag'}>{record.sourceType === 'drive' ? 'DRIVE REGISTRATION' : 'JOB APPLICATION'}</span>{record.jobId && <span>{record.jobId}</span>}</div><div className="tracker-opportunity"><Buildings size={14} /><b>{record.company || 'Company not recorded'}</b><i>·</i>{record.position || 'Role not recorded'}</div><div className="tracker-quicklinks">{record.phone && <a href={`https://wa.me/91${String(record.phone).replace(/\D/g, '')}`} target="_blank" rel="noreferrer" title="Open WhatsApp"><WhatsappLogo size={14} weight="fill" /> Chat</a>}{record.resume && <a href={getDrivePdf(record.resume)} target="_blank" rel="noreferrer" title="Open resume"><FilePdf size={14} weight="fill" /> Resume</a>}</div></div></div>
+              <div className="tracker-interview-cell"><span className="tracker-applied-date">{prettyDate(record.appliedAt)}</span>{isInterview(record.status) ? <button type="button" className="tracker-interview-summary" onClick={() => setDetailsRecord(record)}><CalendarBlank size={15} /><span>{record.interviewDate ? prettyDate(record.interviewDate) : 'Interview details missing'}{record.interviewTime ? ` · ${record.interviewTime}` : ''}</span><ArrowRight size={14} /></button> : <span className="tracker-source-caption">{record.sourceType === 'drive' ? `Drive · ${record.driveId || 'registered'}` : `Applied · ${record.jobId || 'opening'}`}</span>}</div>
+              <div className="tracker-status-cell"><div className="tracker-status-line"><select aria-label={`Update status for ${record.name}`} className={`tracker-status-select tone-${getStatusTone(status)}`} value={status} onChange={event => { const next = event.target.value; setEdit(record, 'status', next); if (isInterview(next)) openSchedule(record, next); }}><option value={status}>{status}</option>{STATUS_OPTIONS.filter(option => option !== status).map(option => <option key={option} value={option}>{option}</option>)}</select><button type="button" className="tracker-history-link" onClick={() => setDetailsRecord(record)}>Timeline <ArrowRight size={13} /></button></div><textarea rows={2} value={remarks} onChange={event => setEdit(record, 'remarks', event.target.value)} placeholder="Add an internal remark…" aria-label={`Remarks for ${record.name}`} /></div>
+              <div className="tracker-actions"><button type="button" className="tracker-icon-action schedule" onClick={() => openSchedule(record)} title={isInterview(record.status) ? 'Edit interview schedule' : 'Schedule interview'}><CalendarBlank size={16} /><span>{isInterview(record.status) ? 'Reschedule' : 'Schedule'}</span></button><button type="button" className="tracker-icon-action mail" onClick={() => openEmail(record)} title="Compose email to student"><EnvelopeSimple size={16} /><span>Email</span></button><button type="button" className="tracker-save-action" disabled={busy} onClick={() => saveRecord(record)}>{busy ? <CircleNotch className="ph-spin" size={17} /> : <FloppyDisk size={16} />}{busy ? 'Saving' : 'Save'}</button><button type="button" className="tracker-mobile-details" onClick={() => setDetailsRecord(record)}>Details</button></div>
+            </motion.article>;
+          })}</AnimatePresence>
+        </div>}
+      </section>
+    </main>
 
-  const statusOptions = [
-    "Applied", 
-    "Shortlisted",
-    "Interview Scheduled", 
-    "Interview Not Attended", 
-    "No Response from Student", 
-    "Got Offer", 
-    "Placed", 
-    "Student Not Interested",
-    "Student Rejected Offer", 
-    "Company Rejected"
-  ];
+    <AnimatePresence>
+      {interviewTarget && <motion.div className="tracker-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.currentTarget === event.target) closeSchedule(); }}><motion.form className="tracker-modal" onSubmit={event => { event.preventDefault(); if (!interviewTarget.interviewDate || !interviewTarget.interviewTime || !interviewTarget.interviewVenue.trim()) return; saveRecord(interviewTarget.record, { status: 'Interview Scheduled', interviewDate: interviewTarget.interviewDate, interviewTime: interviewTarget.interviewTime, interviewVenue: interviewTarget.interviewVenue }); }} initial={{ opacity: 0, y: 16, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .985 }}>
+        <header><div><span>INTERVIEW COORDINATION</span><h2>{isInterview(interviewTarget.previousStatus) ? 'Update interview' : 'Schedule interview'}</h2><p>{interviewTarget.record.name} · {interviewTarget.record.company}</p></div><button type="button" onClick={closeSchedule} aria-label="Close"><X size={19} /></button></header>
+        <div className="tracker-modal-grid"><label>Interview date<input required type="date" value={interviewTarget.interviewDate} onChange={event => setInterviewTarget({ ...interviewTarget, interviewDate: event.target.value })} /></label><label>Interview time<input required type="time" value={interviewTarget.interviewTime} onChange={event => setInterviewTarget({ ...interviewTarget, interviewTime: event.target.value })} /></label><label className="wide-field">Venue or online meeting link<input required value={interviewTarget.interviewVenue} onChange={event => setInterviewTarget({ ...interviewTarget, interviewVenue: event.target.value })} placeholder="Branch address or meeting link" /></label></div>
+        <div className="tracker-modal-footer"><button type="button" className="tracker-secondary-button" onClick={closeSchedule}>Cancel</button><button type="submit" className="tracker-primary-action" disabled={Boolean(saving[interviewTarget.record.recordKey])}>{saving[interviewTarget.record.recordKey] ? <CircleNotch className="ph-spin" size={17} /> : <PaperPlaneTilt size={17} />} Save &amp; send invitation</button></div>
+      </motion.form></motion.div>}
 
-  if (!canUseDriveTracker) return <></>;
+      {directOpen && <motion.div className="tracker-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.currentTarget === event.target && !directSaving) setDirectOpen(false); }}><motion.form className="tracker-modal tracker-direct-modal" onSubmit={submitDirectInterview} initial={{ opacity: 0, y: 16, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .985 }}>
+        <header><div><span>DIRECT REFERRAL</span><h2>Schedule without an application</h2><p>Add the referral to Opening_Applied and TPO_Log, then send the student an invitation.</p></div><button type="button" onClick={() => !directSaving && setDirectOpen(false)} aria-label="Close"><X size={19} /></button></header>
+        <div className="tracker-student-picker"><label>Find a student<input value={studentQuery} onChange={event => { setStudentQuery(event.target.value); setSelectedStudent(null); }} placeholder="Search name, roll, branch, or course" /></label>{studentsLoading ? <div className="tracker-picker-state"><CircleNotch className="ph-spin" size={18} /> Loading assigned students…</div> : selectedStudent ? <div className="tracker-selected-student"><div className="tracker-avatar">{initials(selectedStudent.name)}</div><div><strong>{selectedStudent.name}</strong><span>{[selectedStudent.roll, selectedStudent.branch, selectedStudent.course].filter(Boolean).join(' · ')}</span></div><button type="button" onClick={() => setSelectedStudent(null)} aria-label="Change student"><X size={16} /></button></div> : <div className="tracker-student-options">{filteredStudents.map(student => <button type="button" key={student.rowIdx || student.roll} onClick={() => { setSelectedStudent(student); setStudentQuery(`${student.name} · ${student.roll}`); }}><span>{initials(student.name)}</span><strong>{student.name}</strong><small>{[student.roll, student.branch, student.course].filter(Boolean).join(' · ')}</small></button>)}{!studentsLoading && filteredStudents.length === 0 && <p>{students.length ? 'No students match that search.' : 'Student list is unavailable. Retry by closing and reopening this form.'}</p>}</div>}</div>
+        <div className="tracker-modal-grid"><label>Company<input required value={directForm.company} onChange={event => setDirectForm({ ...directForm, company: event.target.value })} placeholder="Company name" /></label><label>Position<input required value={directForm.position} onChange={event => setDirectForm({ ...directForm, position: event.target.value })} placeholder="Job title" /></label><label>Job ID <small>Optional</small><input value={directForm.jobId} onChange={event => setDirectForm({ ...directForm, jobId: event.target.value })} placeholder="Optional opening ID" /></label><label>Interview date<input required type="date" value={directForm.interviewDate} onChange={event => setDirectForm({ ...directForm, interviewDate: event.target.value })} /></label><label>Interview time<input required type="time" value={directForm.interviewTime} onChange={event => setDirectForm({ ...directForm, interviewTime: event.target.value })} /></label><label className="wide-field">Venue or online meeting link<input required value={directForm.interviewVenue} onChange={event => setDirectForm({ ...directForm, interviewVenue: event.target.value })} placeholder="Branch address or meeting link" /></label><label className="wide-field">Remarks<textarea rows={3} value={directForm.remarks} onChange={event => setDirectForm({ ...directForm, remarks: event.target.value })} placeholder="Optional context for the placement team" /></label></div>
+        <div className="tracker-modal-footer"><button type="button" className="tracker-secondary-button" disabled={directSaving} onClick={() => setDirectOpen(false)}>Cancel</button><button type="submit" className="tracker-primary-action" disabled={directSaving || studentsLoading || !selectedStudent}>{directSaving ? <CircleNotch className="ph-spin" size={17} /> : <PaperPlaneTilt size={17} />} Add referral &amp; send invitation</button></div>
+      </motion.form></motion.div>}
 
-  return (
-    <Layout>
-      <div className="page-container jt-premium-wrapper">
-        
-        {/* PREMIUM HEADER */}
-        <div className="jt-hero-section">
-          <h1 className="jt-title">Placement workspace</h1>
-          <p className="jt-subtitle">Manage job applications and placement drive registrations from one place.</p>
-        </div>
+      {emailTarget && <motion.div className="tracker-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.currentTarget === event.target && !emailSaving) setEmailTarget(null); }}><motion.form className="tracker-modal" onSubmit={submitEmail} initial={{ opacity: 0, y: 16, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .985 }}>
+        <header><div><span>STUDENT COMMUNICATION</span><h2>Compose an email</h2><p>To {emailTarget.name} · {emailTarget.email || 'Email is read from the student register'}</p></div><button type="button" onClick={() => setEmailTarget(null)} aria-label="Close"><X size={19} /></button></header>
+        <div className="tracker-compose-fields"><label>Subject<input required value={emailForm.subject} onChange={event => setEmailForm({ ...emailForm, subject: event.target.value })} /></label><label>Message<textarea required rows={9} value={emailForm.message} onChange={event => setEmailForm({ ...emailForm, message: event.target.value })} /></label><small>The message is sent to the student email on file and logged in the Mail sheet.</small></div>
+        <div className="tracker-modal-footer"><button type="button" className="tracker-secondary-button" disabled={emailSaving} onClick={() => setEmailTarget(null)}>Cancel</button><button type="submit" className="tracker-primary-action" disabled={emailSaving}>{emailSaving ? <CircleNotch className="ph-spin" size={17} /> : <PaperPlaneTilt size={17} />} Send email</button></div>
+      </motion.form></motion.div>}
 
-        <div className="jt-workspace-tabs" role="tablist" aria-label="Placement tracking">
-          {isStrictTpo && <button type="button" role="tab" aria-selected={activeTab === 'jobs'} className={activeTab === 'jobs' ? 'active' : ''} onClick={() => setSearchParams({})}>Job Tracker<span>{applications.length}</span></button>}
-          <button type="button" role="tab" aria-selected={activeTab === 'drives'} className={activeTab === 'drives' ? 'active' : ''} onClick={() => setSearchParams({ tab: 'drives' })}>Placement Drives</button>
-        </div>
+      {detailsRecord && <motion.div className="tracker-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.currentTarget === event.target) setDetailsRecord(null); }}><motion.section className="tracker-modal tracker-details-modal" role="dialog" aria-modal="true" aria-labelledby="tracker-details-title" initial={{ opacity: 0, y: 16, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .985 }}>
+        <header><div><span>{detailsRecord.sourceType === 'drive' ? 'PLACEMENT DRIVE' : 'JOB APPLICATION'}</span><h2 id="tracker-details-title">{detailsRecord.name}</h2><p>{detailsRecord.company} · {detailsRecord.position}</p></div><button type="button" onClick={() => setDetailsRecord(null)} aria-label="Close"><X size={19} /></button></header>
+        <div className="tracker-detail-summary"><span className={`tracker-source-pill ${detailsRecord.sourceType}`}>{detailsRecord.sourceType === 'drive' ? 'Drive registration' : 'Job application'}</span><span className={`tracker-detail-status tone-${getStatusTone(detailsRecord.status)}`}>{detailsRecord.status}</span><span>{[detailsRecord.roll, detailsRecord.branch, detailsRecord.course].filter(Boolean).join(' · ')}</span></div>
+        {isInterview(detailsRecord.status) && <div className="tracker-interview-grid"><div><span><CalendarBlank size={15} /> DATE</span><strong>{detailsRecord.interviewDate ? prettyDate(detailsRecord.interviewDate) : 'Not recorded'}</strong></div><div><span><Clock size={15} /> TIME</span><strong>{detailsRecord.interviewTime || 'Not recorded'}</strong></div><div className="wide-field"><span><MapPinLine size={15} /> VENUE / LINK</span><strong>{detailsRecord.interviewVenue || 'Not recorded'}</strong></div></div>}
+        <section className="tracker-detail-remarks"><h3>Current remarks</h3><p>{detailsRecord.remarks || 'No remarks have been added.'}</p></section>
+        <section className="tracker-timeline"><h3>Status timeline <small>{(detailsRecord.statusHistory || []).length}</small></h3>{(detailsRecord.statusHistory || []).length ? <ol>{[...detailsRecord.statusHistory].reverse().map((item, index) => <li key={`${item.changedAt || 'step'}-${index}`}><i /><div><div className="tracker-timeline-heading"><strong>{item.status || 'Record updated'}</strong><time>{item.changedAt || ''}</time></div><span>{item.event || 'Status update'}{item.changedBy ? ` · ${item.changedBy}` : ''}</span>{item.interviewDate || item.interviewTime || item.interviewVenue ? <small><CalendarBlank size={13} /> {[item.interviewDate, item.interviewTime, item.interviewVenue].filter(Boolean).join(' · ')}</small> : null}{item.remarks ? <p>{item.remarks}</p> : null}</div></li>)}</ol> : <p className="tracker-empty-timeline">No saved status changes are available for this record yet. Changes made from now on will appear here.</p>}</section>
+      </motion.section></motion.div>}
+    </AnimatePresence>
 
-        {activeTab === 'drives' ? <PlacementDriveTracker /> : <>
-        
-        {/* PREMIUM FILTERS */}
-        <div className="jt-filter-bar">
-          <input type="text" className="jt-input" placeholder="Search student, company, or ID..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-          <input type="month" className="jt-input" value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
-          
-          <select className="jt-select" value={courseFilter} onChange={(e) => setCourseFilter(e.target.value)}>
-            <option value="All">All Courses</option>
-            <option value="Industrial Automation">Industrial Automation</option>
-            <option value="BMS & CCTV">BMS & CCTV</option>
-            <option value="Embedded and IOT">Embedded and IOT</option>
-            <option value="Python and Data Science">Python</option>
-            <option value="Artificial Intelligence">AI</option>
-            <option value="Digital Marketing">Digital Marketing</option>
-          </select>
-
-          <select className="jt-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
-            <option value="newest">Sort: Recent Activity</option>
-            <option value="jobId-az">Sort: Job ID (A-Z)</option>
-            <option value="jobId-za">Sort: Job ID (Z-A)</option>
-            <option value="company-az">Sort: Company Name (A-Z)</option>
-            <option value="company-za">Sort: Company Name (Z-A)</option>
-          </select>
-        </div>
-
-        {/* DATA RENDERING */}
-        <div className="jt-content-area">
-          {loading ? (
-            <div className="jt-loading"><CircleNotch size={48} className="ph-spin" /><p>Syncing job opening data...</p></div>
-          ) : groupsArray.length === 0 ? (
-            <div className="jt-empty-state">No applications found for your job openings.</div>
-          ) : (
-            groupsArray.map(group => {
-              const isOpen = openGroups[group.groupKey];
-              const posText = group.position && !group.position.includes('undefined') ? group.position : '';
-              const compText = group.company && !group.company.includes('Unknown') ? group.company : 'Company Not Specified';
-              const groupTitle = group.jobId ? group.jobId : compText;
-              const groupSubtitle = group.jobId ? [compText, posText].filter(Boolean).join(' - ') : posText;
-
-              return (
-                <div key={group.groupKey} className="jt-accordion-wrapper">
-                  
-                  {/* ACCORDION HEADER */}
-                  <div className={`jt-accordion-header ${isOpen ? 'active' : ''}`} onClick={() => toggleGroup(group.groupKey)}>
-                    <div>
-                      <strong className="jt-acc-title">{groupTitle}</strong>
-                      <span className="jt-acc-sub">{groupSubtitle} • {group.apps.length} Application(s)</span>
-                    </div>
-                    <CaretDown size={20} className="jt-chevron" style={{ transform: isOpen ? 'rotate(180deg)' : 'none' }} />
-                  </div>
-
-                  {/* ACCORDION BODY (GRID BASED) */}
-                  {isOpen && (
-                    <div className="jt-accordion-body">
-                      
-                      {/* Grid Headers matching screenshot */}
-                      <div className="jt-grid-header">
-                        <span>STUDENT INFO & CONTACT</span>
-                        <span style={{ textAlign: 'center' }}>DATE APPLIED</span>
-                        <span>STATUS UPDATE</span>
-                        <span>REMARKS LOG</span>
-                        <span style={{ textAlign: 'center' }}>SAVE</span>
-                      </div>
-
-                      {/* Application Cards */}
-                      <div className="jt-app-list">
-                        {group.apps.map(app => {
-                          const rowEdits = localEdits[app.rowNumber] || {};
-                          const currentStatus = rowEdits.status !== undefined ? rowEdits.status : app.status;
-                          const currentRemarks = rowEdits.remarks !== undefined ? rowEdits.remarks : app.remarks;
-                          const btnStatus = savingStatus[app.rowNumber];
-
-                          const safePhone = app.phone ? String(app.phone).trim() : '';
-                          const safeEmail = app.email ? String(app.email).trim() : '';
-                          const safeResume = app.resume ? String(app.resume).trim() : '';
-
-                          const hasPhone = safePhone !== '' && safePhone !== 'N/A';
-                          const hasEmail = safeEmail !== '' && safeEmail !== 'N/A';
-                          const hasResume = safeResume !== '' && safeResume !== 'N/A';
-
-                          return (
-                            <div key={app.rowNumber} className="jt-app-card">
-                              
-                              {/* COL 1: Student Details & Badges */}
-                              <div className="jt-col-student">
-                                <div className="jt-stu-name">
-                                  {app.name} <span className="jt-stu-roll">({app.roll})</span>
-                                </div>
-                                <div className="jt-stu-course">{app.branch} • {app.qual || app.course}</div>
-                                
-                                <div className="jt-badge-row">
-                                  <a 
-                                    href={hasPhone ? `https://wa.me/91${safePhone.replace(/\D/g,'')}` : '#'} 
-                                    target={hasPhone ? "_blank" : "_self"} 
-                                    rel="noreferrer" 
-                                    className={`jt-badge ${hasPhone ? 'chat' : 'disabled'}`}
-                                    onClick={(e) => { if(!hasPhone) e.preventDefault(); }}
-                                  >
-                                    <WhatsappLogo weight="fill" size={14} /> Chat
-                                  </a>
-                                  <a 
-                                    href={hasEmail ? `mailto:${safeEmail}` : '#'} 
-                                    className={`jt-badge ${hasEmail ? 'mail' : 'disabled'}`}
-                                    onClick={(e) => { if(!hasEmail) e.preventDefault(); }}
-                                  >
-                                    <EnvelopeSimple weight="bold" size={14} /> Mail
-                                  </a>
-                                  <a 
-                                    href={hasResume ? (getDrivePdf(safeResume) || safeResume) : '#'} 
-                                    target={hasResume ? "_blank" : "_self"} 
-                                    rel="noreferrer" 
-                                    className={`jt-badge ${hasResume ? 'cv' : 'disabled'}`}
-                                    onClick={(e) => { if(!hasResume) e.preventDefault(); }}
-                                  >
-                                    <FilePdf weight="fill" size={14} /> CV
-                                  </a>
-                                </div>
-                              </div>
-                              
-                              {/* COL 2: Date Applied */}
-                              <div className="jt-col-date">
-                                {app.date.split(' ')[0]}
-                              </div>
-                              
-                              {/* COL 3: Status Dropdown */}
-                              <div className="jt-col-status">
-                                <select 
-                                  className={`jt-select status-${getStatusTone(currentStatus)}`} 
-                                  value={currentStatus} 
-                                  onChange={(e) => {
-                                    const newStat = e.target.value;
-                                    handleEditChange(app.rowNumber, 'status', newStat);
-                                    if (newStat === 'Interview Scheduled') {
-                                      setInterviewModal({ isOpen: true, appRowNumber: app.rowNumber, status: newStat, date: '', time: '', venue: '' });
-                                    }
-                                  }}
-                                >
-                                  {statusOptions.map(o => <option key={o} value={o}>{o}</option>)}
-                                </select>
-                              </div>
-                              
-                              {/* COL 4: Remarks Log */}
-                              <div className="jt-col-remarks">
-                                <input 
-                                  type="text" 
-                                  placeholder="Add remarks..." 
-                                  className="jt-input" 
-                                  value={currentRemarks} 
-                                  onChange={(e) => handleEditChange(app.rowNumber, 'remarks', e.target.value)} 
-                                />
-                              </div>
-                              
-                              {/* COL 5: Action Save */}
-                              <div className="jt-col-save">
-                                <button 
-                                  className={`jt-save-btn ${btnStatus === 'success' ? 'success' : btnStatus === 'error' ? 'error' : ''}`} 
-                                  onClick={() => saveApplication(app)} 
-                                  disabled={btnStatus === 'saving'}
-                                >
-                                  {btnStatus === 'saving' ? <CircleNotch size={18} className="ph-spin" /> : 
-                                   btnStatus === 'success' ? <CheckCircle size={18} weight="bold" /> :
-                                   btnStatus === 'error' ? <WarningCircle size={18} weight="bold" /> :
-                                   <><FloppyDisk size={18} weight="bold" /> Save</>}
-                                </button>
-                                {btnStatus === 'success' && <span className="save-status-text success" role="status"><CheckCircle size={14} weight="fill" /> Saved</span>}
-                                {btnStatus === 'error' && <span className="save-status-text error" role="alert"><WarningCircle size={14} weight="fill" /> Could not save</span>}
-                              </div>
-
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              );
-            })
-          )}
-        </div>
-        </>}
-      </div>
-
-      {/* INTERVIEW MODAL REMAINS FUNCTIONAL */}
-      {interviewModal.isOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setInterviewModal(current => ({ ...current, isOpen: false })); }}>
-          <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid #1e293b', borderRadius: '16px', padding: '2rem' }}>
-            
-            <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-              <div>
-                <h2 style={{ margin: 0, color: 'var(--accent-primary)', fontSize: '1.4rem' }}>Schedule Interview</h2>
-                <p style={{ margin: '5px 0 0 0', color: '#94a3b8', fontSize: '0.85rem' }}>
-                  These details will be emailed to the student and recorded.
-                </p>
-              </div>
-              <X size={24} style={{ cursor: 'pointer', color: '#94a3b8' }} onClick={() => {
-                handleEditChange(interviewModal.appRowNumber, 'status', 'Applied');
-                setInterviewModal({ ...interviewModal, isOpen: false });
-              }} />
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '5px', fontWeight: 'bold' }}>Interview Date *</label>
-                <input type="date" className="jt-input" value={interviewModal.date} onChange={(e) => setInterviewModal({...interviewModal, date: e.target.value})} />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '5px', fontWeight: 'bold' }}>Interview Time *</label>
-                <input type="time" className="jt-input" value={interviewModal.time} onChange={(e) => setInterviewModal({...interviewModal, time: e.target.value})} />
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '25px' }}>
-              <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '5px', fontWeight: 'bold' }}>Venue / Google Meet Link *</label>
-              <input type="text" className="jt-input" placeholder="e.g., Calicut Branch or Meet Link" value={interviewModal.venue} onChange={(e) => setInterviewModal({...interviewModal, venue: e.target.value})} />
-            </div>
-
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '1.5rem' }}>
-              <button className="jt-btn-cancel" onClick={() => {
-                  handleEditChange(interviewModal.appRowNumber, 'status', 'Applied');
-                  setInterviewModal({ ...interviewModal, isOpen: false });
-                }}>Cancel</button>
-              <button className="jt-save-btn" style={{ width: 'auto' }} onClick={() => {
-                  if (!interviewModal.date || !interviewModal.time || !interviewModal.venue) return alert("Please fill in all interview details to proceed.");
-                  const appToSave = applications.find(a => a.rowNumber === interviewModal.appRowNumber);
-                  if (appToSave) saveApplication(appToSave);
-                }}>Confirm & Send Mail</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 🎨 ULTRA 4K PREMIUM STYLES TO MATCH MOCKUP EXACTLY */}
-      <style>{`
-        /* Global Page Adjustments */
-        .jt-premium-wrapper {
-          font-family: 'Inter', sans-serif;
-        }
-
-        /* Top Hero Section */
-        .jt-hero-section {
-          margin-bottom: 25px;
-        }
-        .jt-title {
-          font-size: 2.2rem;
-          font-weight: 800;
-          color: #fff;
-          margin: 0 0 5px 0;
-        }
-        .jt-subtitle {
-          color: #94a3b8;
-          font-size: 1.05rem;
-          margin: 0;
-        }
-
-        /* Sleek Filter Bar */
-        .jt-filter-bar {
-          display: flex;
-          gap: 15px;
-          margin-bottom: 30px;
-          flex-wrap: wrap;
-        }
-
-        /* Inputs & Selects matching the Dark Theme */
-        .jt-input, .jt-select {
-          background: #0b1121; /* Very dark inner background */
-          border: 1px solid #1e293b;
-          color: #f8fafc;
-          padding: 12px 16px;
-          border-radius: 8px;
-          font-size: 0.9rem;
-          outline: none;
-          transition: all 0.2s ease;
-        }
-        .jt-input:focus, .jt-select:focus {
-          border-color: var(--accent-primary);
-          box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.1);
-        }
-        .jt-input::placeholder { color: #475569; }
-        .jt-select option { background: #0f1523; color: #fff; padding: 10px; }
-        
-        /* Loading & Empty States */
-        .jt-loading, .jt-empty-state {
-          text-align: center;
-          padding: 4rem 0;
-          color: var(--accent-primary);
-        }
-        .jt-empty-state {
-          color: #64748b;
-          font-size: 1.1rem;
-        }
-
-        /* Accordion Wrapper */
-        .jt-accordion-wrapper {
-          margin-bottom: 20px;
-        }
-
-        /* Accordion Header */
-        .jt-accordion-header {
-          background: #111827; /* Dark card background */
-          border: 1px solid #1e293b;
-          padding: 1.2rem 1.5rem;
-          border-radius: 12px;
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          cursor: pointer;
-          transition: 0.2s ease;
-        }
-        .jt-accordion-header:hover {
-          background: #161e2e;
-          border-color: #334155;
-        }
-        .jt-accordion-header.active {
-          border-bottom-left-radius: 0;
-          border-bottom-right-radius: 0;
-          border-bottom: 1px solid transparent;
-        }
-        
-        .jt-acc-title {
-          font-size: 1.1rem;
-          color: var(--accent-primary); /* Vibrant Cyan */
-          display: block;
-          margin-bottom: 4px;
-        }
-        .jt-acc-sub {
-          font-size: 0.85rem;
-          color: #64748b;
-        }
-        .jt-chevron {
-          color: #94a3b8;
-          transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        /* Accordion Body */
-        .jt-accordion-body {
-          background: transparent;
-          padding: 10px 0 0 0;
-          animation: fadeIn 0.3s ease;
-        }
-
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(-5px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* Grid Based Table Header */
-        .jt-grid-header {
-          display: grid;
-          grid-template-columns: 2.5fr 1fr 1.5fr 1.5fr 0.8fr;
-          gap: 15px;
-          padding: 0 20px 12px 20px;
-          font-size: 0.75rem;
-          font-weight: 800;
-          color: #64748b;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
-        }
-
-        /* The Application Cards (Mockup accurate) */
-        .jt-app-list {
-          display: flex;
-          flex-direction: column;
-          gap: 12px;
-        }
-
-        .jt-app-card {
-          display: grid;
-          grid-template-columns: 2.5fr 1fr 1.5fr 1.5fr 0.8fr;
-          gap: 15px;
-          background: #111827; /* Same dark tone as accordion header */
-          border: 1px solid #1e293b;
-          border-radius: 12px;
-          padding: 20px;
-          align-items: center;
-          transition: 0.2s;
-        }
-        .jt-app-card:hover {
-          border-color: rgba(255,255,255,0.1);
-        }
-
-        /* Columns Content */
-        .jt-stu-name {
-          color: #fff;
-          font-size: 1.05rem;
-          font-weight: 700;
-          margin-bottom: 4px;
-        }
-        .jt-stu-roll {
-          color: #64748b;
-          font-size: 0.85rem;
-          font-weight: 600;
-        }
-        .jt-stu-course {
-          color: #94a3b8;
-          font-size: 0.8rem;
-          margin-bottom: 12px;
-        }
-
-        .jt-col-date {
-          color: #94a3b8;
-          font-size: 0.9rem;
-          text-align: center;
-        }
-
-        /* Action Badges */
-        .jt-badge-row {
-          display: flex;
-          gap: 8px;
-          align-items: center;
-          flex-wrap: wrap;
-        }
-        
-        .jt-badge {
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          padding: 4px 10px;
-          border-radius: 6px;
-          font-size: 0.75rem;
-          font-weight: 700;
-          text-decoration: none;
-          transition: 0.2s;
-        }
-        
-        .jt-badge.chat { color: #10b981; background: rgba(16, 185, 129, 0.15); border: 1px solid rgba(16, 185, 129, 0.3); }
-        .jt-badge.chat:hover { background: rgba(16, 185, 129, 0.25); }
-        
-        .jt-badge.mail { color: var(--accent-primary); background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.3); }
-        .jt-badge.mail:hover { background: rgba(56, 189, 248, 0.25); }
-        
-        .jt-badge.cv { color: #f59e0b; background: rgba(245, 158, 11, 0.15); border: 1px solid rgba(245, 158, 11, 0.3); }
-        .jt-badge.cv:hover { background: rgba(245, 158, 11, 0.25); }
-        
-        .jt-badge.disabled { color: #475569; background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); cursor: not-allowed; }
-
-        /* Save & Cancel Buttons */
-        .jt-save-btn {
-          width: 100%;
-          background: var(--accent-primary); /* The signature Cyan from mockup */
-          color: #ffffff;
-          border: none;
-          padding: 10px 16px;
-          border-radius: 8px;
-          font-weight: 800;
-          font-size: 0.85rem;
-          cursor: pointer;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 6px;
-          transition: all 0.2s;
-        }
-        .jt-save-btn:hover:not(:disabled) {
-          background: color-mix(in srgb, var(--accent-primary) 82%, #0f172a);
-          color: #fff;
-          transform: translateY(-2px);
-          box-shadow: 0 4px 12px color-mix(in srgb, var(--accent-primary) 35%, transparent);
-        }
-        .jt-col-save { display: flex; flex-direction: column; align-items: stretch; gap: 6px; }
-        .jt-save-btn:disabled { opacity: 0.7; cursor: not-allowed; }
-        .jt-save-btn.success { background: #10b981; color: #fff; }
-        .jt-save-btn.error { background: #ef4444; color: #fff; }
-        .jt-select.status-success { border-color: rgba(16,185,129,.65); color: #10b981; }
-        .jt-select.status-danger { border-color: rgba(239,68,68,.65); color: #ef4444; }
-        .jt-select.status-warning { border-color: rgba(245,158,11,.65); color: #f59e0b; }
-        .jt-select.status-info { border-color: rgba(59,130,246,.65); color: #60a5fa; }
-        
-        .jt-btn-cancel {
-          background: transparent;
-          border: 1px solid #334155;
-          color: #cbd5e1;
-          padding: 10px 20px;
-          border-radius: 8px;
-          cursor: pointer;
-          font-weight: bold;
-          transition: 0.2s;
-        }
-        .jt-btn-cancel:hover { background: rgba(255,255,255,0.05); color: #fff; }
-
-        /* Responsive Breakpoints */
-        @media (max-width: 1024px) {
-          .jt-grid-header { display: none; } /* Hide headers on small screens */
-          .jt-app-card {
-            grid-template-columns: 1fr;
-            gap: 20px;
-          }
-          .jt-col-date { text-align: left; }
-          .jt-col-date::before { content: "Date Applied: "; color: #64748b; font-size: 0.8rem; margin-right: 5px; }
-        }
-      `}</style>
-    </Layout>
-  );
+    <style>{`
+      .tracker-page{max-width:1510px;margin:0 auto;padding:0 0 48px;color:var(--text-main);--tracker-border:rgba(148,163,184,.14);--tracker-muted:#8393aa}
+      .tracker-hero{position:relative;isolation:isolate;min-height:290px;overflow:hidden;display:flex;align-items:center;justify-content:space-between;gap:24px;padding:clamp(24px,4vw,43px);border:1px solid rgba(103,232,249,.15);border-radius:29px;background:radial-gradient(ellipse at 11% 2%,rgba(8,145,178,.2),transparent 42%),radial-gradient(ellipse at 75% 110%,rgba(124,58,237,.18),transparent 38%),linear-gradient(125deg,#0b1729,#111a2d 53%,#121427);box-shadow:0 26px 70px rgba(2,8,23,.27)}
+      .tracker-hero-copy{max-width:780px;position:relative;z-index:2}.tracker-eyebrow{display:flex;align-items:center;gap:9px;color:#8ea5c1;font-size:.64rem;font-weight:850;letter-spacing:.17em}.tracker-eyebrow i{height:13px;width:1px;margin:0 4px;background:rgba(148,163,184,.25)}.tracker-live-dot{width:7px;height:7px;border-radius:50%;background:#34d399;box-shadow:0 0 13px #34d399;animation:trackerPulse 1.8s infinite}.tracker-hero h1{margin:17px 0 0;color:#f5f9ff;font-size:clamp(2.4rem,5vw,4.15rem);line-height:.98;letter-spacing:-.075em}.tracker-hero h1 span{color:transparent;background:linear-gradient(92deg,#67e8f9,#a5b4fc 58%,#c4b5fd);background-clip:text;-webkit-background-clip:text}.tracker-hero p{max-width:650px;margin:14px 0 0;color:#a0b1c7;font-size:.94rem;line-height:1.65}.tracker-hero-actions{display:flex;align-items:center;flex-wrap:wrap;gap:17px;margin-top:22px}.tracker-hero-actions>span{display:flex;align-items:center;gap:6px;color:#8496ad;font-size:.7rem}.tracker-hero-actions>span svg{color:#a78bfa}.tracker-primary-action,.tracker-secondary-button{min-height:43px;display:inline-flex;align-items:center;justify-content:center;gap:9px;padding:0 15px;border:1px solid rgba(103,232,249,.28);border-radius:13px;background:linear-gradient(110deg,#0e7490,#4f46e5);box-shadow:0 8px 24px rgba(14,116,144,.2);color:#f8fafc;font-size:.76rem;font-weight:800;cursor:pointer;transition:transform .18s,filter .18s,box-shadow .18s}.tracker-primary-action:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.1);box-shadow:0 12px 27px rgba(14,116,144,.27)}.tracker-primary-action:disabled{opacity:.55;cursor:not-allowed}.tracker-secondary-button{border-color:var(--tracker-border);background:rgba(15,23,42,.8);box-shadow:none;color:#b9c6d7}.tracker-orbit{position:relative;width:204px;height:204px;flex:0 0 204px;margin-right:5%;display:grid;place-items:center;opacity:.82}.tracker-orbit-ring{position:absolute;inset:15px;border:1px solid rgba(103,232,249,.23);border-radius:50%;transform:rotate(22deg) scaleY(.63)}.ring-b{inset:-2px;border-color:rgba(196,181,253,.18);transform:rotate(-41deg) scaleY(.63)}.tracker-orbit-core{width:83px;height:83px;display:grid;place-items:center;border:1px solid rgba(125,211,252,.3);border-radius:26px;background:linear-gradient(145deg,rgba(14,165,233,.22),rgba(129,140,248,.14));color:#a5f3fc;box-shadow:0 0 60px rgba(34,211,238,.15);transform:rotate(-8deg)}.tracker-orbit>i,.tracker-orbit>b{position:absolute;width:11px;height:11px;border:2px solid #111b2d;border-radius:50%;background:#67e8f9;box-shadow:0 0 15px #67e8f9}.tracker-orbit>i{top:16px;left:68px}.tracker-orbit>b{right:7px;bottom:55px;background:#c4b5fd;box-shadow:0 0 15px #c4b5fd}
+      .tracker-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px;margin:15px 0 25px}.tracker-kpi{position:relative;overflow:hidden;display:flex;flex-direction:column;min-height:120px;padding:16px;border:1px solid var(--tracker-border);border-radius:17px;background:linear-gradient(140deg,rgba(24,37,59,.93),rgba(13,21,36,.91));box-shadow:0 10px 26px rgba(2,8,23,.13)}.tracker-kpi::after{position:absolute;right:-35px;top:-48px;width:115px;height:115px;border-radius:50%;background:#38bdf8;opacity:.06;content:''}.tracker-kpi>span{display:flex;align-items:center;gap:7px;color:#91a5bf;font-size:.6rem;font-weight:850;letter-spacing:.1em}.tracker-kpi>span svg{color:#7dd3fc}.tracker-kpi strong{margin-top:9px;color:#f8fafc;font-size:1.8rem;line-height:1;letter-spacing:-.06em}.tracker-kpi small{margin-top:8px;color:#73869e;font-size:.66rem}.kpi-attention>span svg{color:#fbbf24}.kpi-interview>span svg{color:#a78bfa}.kpi-outcome>span svg{color:#34d399}
+      .tracker-board{overflow:hidden;border:1px solid var(--tracker-border);border-radius:22px;background:linear-gradient(150deg,rgba(15,25,42,.93),rgba(10,17,30,.96));box-shadow:0 20px 52px rgba(2,8,23,.18)}.tracker-board-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;padding:22px 23px 17px}.tracker-section-label{color:#7192b2;font-size:.61rem;font-weight:850;letter-spacing:.16em}.tracker-board-heading h2{margin:5px 0 0;color:#eef5ff;font-size:1.25rem;letter-spacing:-.04em}.tracker-board-heading h2 small{margin-left:7px;color:#7c8fa8;font-size:.68rem;font-weight:600;letter-spacing:0}.tracker-board-tools{display:flex;align-items:center;gap:8px}.tracker-search,.tracker-month{height:41px;display:flex;align-items:center;gap:9px;padding:0 12px;border:1px solid var(--tracker-border);border-radius:12px;background:rgba(2,8,23,.26);color:#8196af}.tracker-search{width:min(330px,33vw)}.tracker-search input,.tracker-month input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:#dfe9f6;font:inherit;font-size:.73rem}.tracker-search input::placeholder{color:#71839a}.tracker-month{width:155px}.tracker-month input{color-scheme:dark}.tracker-filter-row{display:flex;align-items:center;gap:5px;overflow:auto;padding:0 20px 13px;border-bottom:1px solid rgba(148,163,184,.1);scrollbar-width:thin}.tracker-filter-row>button{flex:0 0 auto;min-height:36px;display:flex;align-items:center;gap:8px;padding:0 11px;border:1px solid transparent;border-radius:10px;background:transparent;color:#8c9eb4;font-size:.68rem;font-weight:700;white-space:nowrap;cursor:pointer}.tracker-filter-row>button span{display:grid;min-width:20px;height:20px;place-items:center;border-radius:7px;background:rgba(148,163,184,.08);color:#98acc3;font-size:.61rem}.tracker-filter-row>button:hover{background:rgba(148,163,184,.07);color:#d5e1ef}.tracker-filter-row>button.active{border-color:rgba(103,232,249,.2);background:linear-gradient(105deg,rgba(14,165,233,.14),rgba(99,102,241,.12));color:#a5f3fc}.tracker-filter-row>button.active span{background:rgba(103,232,249,.13);color:#a5f3fc}.tracker-course-filter{height:33px;display:flex;align-items:center;gap:7px;margin-left:auto;padding:0 10px;border:1px solid var(--tracker-border);border-radius:10px;color:#7189a3}.tracker-course-filter select{max-width:180px;border:0;outline:0;background:transparent;color:#b8c8da;font-size:.67rem}.tracker-course-filter option{background:#101827;color:#e2e8f0}
+      .tracker-notice,.tracker-load-warning{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:13px 20px 0;padding:11px 13px;border:1px solid rgba(52,211,153,.18);border-radius:12px;background:rgba(16,185,129,.07);color:#a7f3d0;font-size:.75rem}.tracker-notice>span,.tracker-load-warning{display:flex;align-items:center;gap:8px}.tracker-notice button,.tracker-load-warning button{border:0;background:transparent;color:inherit;font-size:.7rem;font-weight:800;cursor:pointer}.tracker-notice.warning{border-color:rgba(251,191,36,.22);background:rgba(245,158,11,.07);color:#fcd34d}.tracker-notice.error,.tracker-load-warning{border-color:rgba(248,113,113,.2);background:rgba(239,68,68,.07);color:#fda4af}.tracker-load-warning{justify-content:flex-start}.tracker-load-warning button{margin-left:auto;text-decoration:underline}
+      .tracker-list-header,.tracker-record{display:grid;grid-template-columns:minmax(250px,1.45fr) minmax(145px,.75fr) minmax(245px,1.25fr) minmax(195px,.9fr);gap:17px}.tracker-list-header{padding:13px 20px 9px;color:#69809b;font-size:.56rem;font-weight:850;letter-spacing:.12em}.tracker-list-header span:last-child{text-align:right}.tracker-record-list{padding:0 13px 14px}.tracker-record{align-items:center;margin-bottom:8px;padding:15px 12px;border:1px solid rgba(148,163,184,.1);border-radius:15px;background:linear-gradient(115deg,rgba(22,34,54,.79),rgba(13,21,35,.8));transition:border-color .17s,background .17s,transform .17s}.tracker-record:hover{transform:translateY(-1px);border-color:rgba(103,232,249,.2);background:linear-gradient(115deg,rgba(24,41,64,.89),rgba(15,25,42,.92))}.tracker-student-cell{display:flex;align-items:flex-start;gap:11px;min-width:0}.tracker-avatar{width:39px;height:39px;flex:0 0 39px;display:grid;place-items:center;border:1px solid rgba(103,232,249,.2);border-radius:13px;background:linear-gradient(145deg,rgba(14,165,233,.17),rgba(129,140,248,.17));color:#b9f3ff;font-size:.68rem;font-weight:850}.tracker-student-copy{min-width:0}.tracker-student-copy>strong{display:block;overflow:hidden;color:#e6eef9;font-size:.82rem;text-overflow:ellipsis;white-space:nowrap}.tracker-student-copy>span{display:block;overflow:hidden;margin-top:4px;color:#8598b0;font-size:.65rem;text-overflow:ellipsis;white-space:nowrap}.tracker-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:7px}.tracker-tags span,.tracker-source-pill{padding:3px 6px;border:1px solid rgba(148,163,184,.12);border-radius:6px;color:#8295ac;font-size:.5rem;font-weight:850;letter-spacing:.04em}.tracker-tags .application-tag,.tracker-source-pill.application{border-color:rgba(56,189,248,.2);background:rgba(56,189,248,.06);color:#7dd3fc}.tracker-tags .drive-tag,.tracker-source-pill.drive{border-color:rgba(167,139,250,.22);background:rgba(167,139,250,.07);color:#c4b5fd}.tracker-opportunity{display:flex;align-items:center;gap:5px;overflow:hidden;margin-top:8px;color:#92a4ba;font-size:.64rem;white-space:nowrap}.tracker-opportunity svg{flex:0 0 auto;color:#8b9bb0}.tracker-opportunity b{overflow:hidden;color:#b9c8d9;font-weight:700;text-overflow:ellipsis}.tracker-opportunity i{color:#536780;font-style:normal}.tracker-interview-cell{display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-width:0}.tracker-applied-date{color:#d3deec;font-size:.72rem;font-weight:750}.tracker-source-caption{overflow:hidden;color:#71859e;font-size:.63rem;text-overflow:ellipsis;white-space:nowrap}.tracker-interview-summary{max-width:100%;display:flex;align-items:center;gap:6px;padding:6px 8px;border:1px solid rgba(167,139,250,.18);border-radius:9px;background:rgba(139,92,246,.08);color:#d2c4ff;font-size:.63rem;cursor:pointer}.tracker-interview-summary span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tracker-status-cell{min-width:0}.tracker-status-line{display:flex;align-items:center;justify-content:space-between;gap:7px}.tracker-status-select{max-width:calc(100% - 60px);min-height:31px;padding:0 8px;border:1px solid rgba(148,163,184,.16);border-radius:9px;background:#0b1220;color:#dce6f3;font-size:.65rem;cursor:pointer}.tracker-status-select option{background:#111b2d;color:#e2e8f0}.tracker-status-select.tone-success{border-color:rgba(52,211,153,.28);color:#6ee7b7}.tracker-status-select.tone-danger{border-color:rgba(248,113,113,.28);color:#fda4af}.tracker-status-select.tone-warning{border-color:rgba(251,191,36,.26);color:#fcd34d}.tracker-history-link{display:inline-flex;align-items:center;gap:3px;padding:4px 0;border:0;background:transparent;color:#78cde8;font-size:.61rem;font-weight:750;white-space:nowrap;cursor:pointer}.tracker-status-cell textarea{width:100%;min-height:46px;resize:vertical;margin-top:7px;padding:7px 9px;border:1px solid rgba(148,163,184,.1);border-radius:9px;outline:0;background:rgba(2,8,23,.29);color:#bdcada;font:inherit;font-size:.65rem;line-height:1.45}.tracker-status-cell textarea:focus,.tracker-modal input:focus,.tracker-modal textarea:focus,.tracker-search:focus-within{border-color:rgba(103,232,249,.42);box-shadow:0 0 0 3px rgba(34,211,238,.07)}.tracker-status-cell textarea::placeholder{color:#61738b}.tracker-actions{display:flex;justify-content:flex-end;align-items:center;flex-wrap:wrap;gap:5px}.tracker-icon-action,.tracker-save-action,.tracker-mobile-details{min-height:32px;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:0 8px;border:1px solid rgba(148,163,184,.13);border-radius:9px;background:rgba(15,23,42,.54);color:#9fb0c4;font-size:.62rem;font-weight:750;cursor:pointer;transition:border-color .16s,color .16s,background .16s}.tracker-icon-action.schedule:hover{border-color:rgba(167,139,250,.25);color:#c4b5fd}.tracker-icon-action.mail:hover{border-color:rgba(56,189,248,.25);color:#7dd3fc}.tracker-save-action{border-color:rgba(52,211,153,.22);background:rgba(16,185,129,.08);color:#6ee7b7}.tracker-save-action:disabled{opacity:.55;cursor:wait}.tracker-mobile-details{display:none}
+      .tracker-state{min-height:230px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#7dd3fc;text-align:center}.tracker-state>div{width:48px;height:48px;display:grid;place-items:center;border:1px solid rgba(103,232,249,.19);border-radius:15px;background:rgba(14,165,233,.07)}.tracker-state strong{margin-top:5px;color:#dce8f6;font-size:.9rem}.tracker-state span{color:#8193aa;font-size:.72rem}
+      .tracker-overlay{position:fixed;inset:0;z-index:10020;display:grid;place-items:center;padding:18px;background:rgba(2,6,15,.79);backdrop-filter:blur(12px)}.tracker-modal{width:min(580px,100%);max-height:min(91vh,920px);overflow:auto;padding:0 22px 20px;border:1px solid rgba(148,163,184,.18);border-radius:22px;background:radial-gradient(circle at 100% 0%,rgba(56,189,248,.08),transparent 31%),linear-gradient(155deg,#111c30,#0b1220);box-shadow:0 30px 85px rgba(0,0,0,.48);color:#e2e8f0}.tracker-modal>header{position:sticky;top:0;z-index:2;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:20px 0 15px;border-bottom:1px solid rgba(148,163,184,.11);background:linear-gradient(#111b2e 83%,rgba(17,27,46,.91))}.tracker-modal>header>div>span{color:#7dd3fc;font-size:.58rem;font-weight:850;letter-spacing:.16em}.tracker-modal>header h2{margin:6px 0 0;color:#f0f6ff;font-size:1.25rem;letter-spacing:-.04em}.tracker-modal>header p{margin:5px 0 0;color:#8698af;font-size:.69rem;line-height:1.5}.tracker-modal>header button{width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border:1px solid rgba(148,163,184,.16);border-radius:10px;background:rgba(15,23,42,.7);color:#aab9ca;cursor:pointer}.tracker-modal-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:17px}.tracker-modal label,.tracker-compose-fields label{display:flex;flex-direction:column;gap:6px;color:#92a5bd;font-size:.65rem;font-weight:750}.tracker-modal label small{color:#71839b;font-size:.58rem;font-weight:600}.tracker-modal input,.tracker-modal textarea,.tracker-compose-fields input,.tracker-compose-fields textarea{width:100%;min-width:0;min-height:40px;padding:9px 10px;border:1px solid rgba(148,163,184,.15);border-radius:10px;outline:0;background:rgba(2,8,23,.38);color:#dce7f4;font:inherit;font-size:.72rem;transition:border-color .17s,box-shadow .17s}.tracker-modal input[type=date],.tracker-modal input[type=time]{color-scheme:dark}.tracker-modal textarea,.tracker-compose-fields textarea{resize:vertical;line-height:1.55}.tracker-modal .wide-field{grid-column:1/-1}.tracker-modal-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:19px;padding-top:15px;border-top:1px solid rgba(148,163,184,.11)}.tracker-modal-footer .tracker-primary-action{min-height:39px;font-size:.69rem}.tracker-student-picker{margin-top:15px}.tracker-student-picker>label{display:flex;flex-direction:column;gap:6px;color:#92a5bd;font-size:.65rem;font-weight:750}.tracker-student-options{max-height:155px;overflow:auto;display:grid;gap:5px;margin-top:7px}.tracker-student-options button{display:grid;grid-template-columns:30px minmax(100px,.75fr) minmax(130px,1fr);align-items:center;gap:8px;padding:7px;border:1px solid rgba(148,163,184,.09);border-radius:10px;background:rgba(15,23,42,.45);color:#dbe7f5;text-align:left;cursor:pointer}.tracker-student-options button:hover{border-color:rgba(103,232,249,.24);background:rgba(14,165,233,.07)}.tracker-student-options button>span{width:29px;height:29px;display:grid;place-items:center;border:1px solid rgba(103,232,249,.18);border-radius:9px;background:rgba(14,165,233,.08);color:#a5f3fc;font-size:.57rem;font-weight:850}.tracker-student-options strong{overflow:hidden;font-size:.68rem;text-overflow:ellipsis;white-space:nowrap}.tracker-student-options small{overflow:hidden;color:#7f93ab;font-size:.58rem;text-overflow:ellipsis;white-space:nowrap}.tracker-student-options p,.tracker-picker-state{display:flex;align-items:center;gap:7px;padding:10px;color:#8598af;font-size:.67rem}.tracker-selected-student{display:flex;align-items:center;gap:9px;margin-top:7px;padding:9px;border:1px solid rgba(52,211,153,.19);border-radius:11px;background:rgba(16,185,129,.06)}.tracker-selected-student>div:nth-child(2){display:grid;gap:3px}.tracker-selected-student strong{color:#e1ecf8;font-size:.72rem}.tracker-selected-student span{color:#8397ae;font-size:.61rem}.tracker-selected-student button{margin-left:auto;border:0;background:transparent;color:#8295ac;cursor:pointer}.tracker-compose-fields{display:grid;gap:13px;margin-top:17px}.tracker-compose-fields>small{color:#7589a2;font-size:.61rem}.tracker-detail-summary{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:15px 0;color:#8194ac;font-size:.65rem}.tracker-detail-status{padding:5px 8px;border:1px solid rgba(148,163,184,.16);border-radius:8px;background:rgba(15,23,42,.55);font-size:.64rem;font-weight:800}.tracker-detail-status.tone-success{color:#6ee7b7}.tracker-detail-status.tone-warning{color:#fcd34d}.tracker-detail-status.tone-danger{color:#fda4af}.tracker-interview-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:13px}.tracker-interview-grid>div{padding:11px;border:1px solid rgba(148,163,184,.12);border-radius:12px;background:rgba(30,41,59,.36)}.tracker-interview-grid span{display:flex;align-items:center;gap:6px;color:#8097b0;font-size:.57rem;font-weight:850;letter-spacing:.08em}.tracker-interview-grid strong{display:block;margin-top:7px;color:#e1eaf5;font-size:.76rem;line-height:1.5;overflow-wrap:anywhere}.tracker-detail-remarks,.tracker-timeline{margin-top:11px;padding:14px;border:1px solid rgba(148,163,184,.12);border-radius:13px;background:rgba(15,23,42,.44)}.tracker-detail-remarks h3,.tracker-timeline h3{margin:0 0 9px;color:#cbd8e8;font-size:.75rem}.tracker-detail-remarks p,.tracker-empty-timeline{margin:0;color:#abb9ca;font-size:.72rem;line-height:1.6;white-space:pre-wrap;overflow-wrap:anywhere}.tracker-timeline h3{display:flex;align-items:center;gap:7px}.tracker-timeline h3 small{display:grid;min-width:20px;height:20px;place-items:center;border-radius:6px;background:rgba(103,232,249,.09);color:#7dd3fc;font-size:.59rem}.tracker-timeline ol{position:relative;display:grid;gap:0;margin:0;padding:0;list-style:none}.tracker-timeline ol::before{position:absolute;left:5px;top:9px;bottom:12px;width:1px;background:linear-gradient(#38bdf8,rgba(148,163,184,.1));content:''}.tracker-timeline li{position:relative;display:grid;grid-template-columns:12px 1fr;gap:10px;padding:7px 0 12px}.tracker-timeline li>i{z-index:1;width:11px;height:11px;margin-top:3px;border:2px solid #10192a;border-radius:50%;background:#38bdf8;box-shadow:0 0 0 1px rgba(56,189,248,.26)}.tracker-timeline-heading{display:flex;justify-content:space-between;gap:12px}.tracker-timeline-heading strong{color:#e6eef9;font-size:.71rem}.tracker-timeline-heading time{color:#71849c;font-size:.59rem;text-align:right}.tracker-timeline li>div>span,.tracker-timeline li>div>small{display:flex;align-items:center;gap:5px;margin-top:4px;color:#8396ad;font-size:.61rem}.tracker-timeline li>div>small{color:#7dd3fc}.tracker-timeline li p{margin:6px 0 0;color:#aab9ca;font-size:.67rem;line-height:1.5;white-space:pre-wrap;overflow-wrap:anywhere}.tracker-empty-timeline{padding:8px;border:1px dashed rgba(148,163,184,.16);border-radius:9px;color:#8295ac;font-size:.66rem}
+      .tracker-quicklinks{display:flex;gap:6px;margin-top:7px}.tracker-quicklinks a{display:inline-flex;align-items:center;gap:4px;padding:3px 6px;border:1px solid rgba(148,163,184,.12);border-radius:7px;background:rgba(15,23,42,.3);color:#8fa2b9;font-size:.57rem;text-decoration:none}.tracker-quicklinks a:first-child{color:#6ee7b7}.tracker-quicklinks a:hover{border-color:rgba(103,232,249,.25);color:#a5f3fc}
+      @keyframes trackerPulse{0%,100%{opacity:1;box-shadow:0 0 13px #34d399}50%{opacity:.5;box-shadow:0 0 3px #34d399}}
+      @media(max-width:1130px){.tracker-list-header,.tracker-record{grid-template-columns:minmax(230px,1.3fr) minmax(130px,.65fr) minmax(220px,1.15fr)}.tracker-list-header span:last-child{display:none}.tracker-actions{grid-column:1/-1;justify-content:flex-end;margin-top:-3px}.tracker-record{row-gap:10px}.tracker-orbit{margin-right:0}}
+      @media(max-width:760px){.tracker-hero{min-height:auto;padding:23px 20px;border-radius:22px}.tracker-hero h1{font-size:2.8rem}.tracker-hero p{font-size:.8rem}.tracker-orbit{display:none}.tracker-kpis{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0 19px}.tracker-kpi{min-height:100px;padding:12px}.tracker-kpi>span{font-size:.54rem}.tracker-kpi strong{font-size:1.55rem}.tracker-kpi small{font-size:.58rem}.tracker-board{border-radius:17px}.tracker-board-heading{align-items:flex-start;flex-direction:column;padding:17px 15px 12px}.tracker-board-tools{width:100%}.tracker-search{width:auto;flex:1}.tracker-month{width:142px}.tracker-filter-row{padding:0 12px 10px}.tracker-course-filter{margin-left:0}.tracker-list-header{display:none}.tracker-record-list{padding:10px}.tracker-record{grid-template-columns:minmax(0,1fr) auto;gap:11px;padding:13px}.tracker-student-cell{grid-column:1/-1}.tracker-interview-cell{grid-column:1}.tracker-status-cell{grid-column:1/-1}.tracker-actions{grid-column:1/-1;margin:0;justify-content:flex-start}.tracker-mobile-details{display:inline-flex}.tracker-icon-action,.tracker-save-action,.tracker-mobile-details{min-height:34px}.tracker-status-cell textarea{min-height:54px}.tracker-overlay{padding:8px}.tracker-modal{max-height:95vh;padding:0 16px 16px;border-radius:18px}.tracker-modal>header{padding-top:16px}.tracker-student-options button{grid-template-columns:30px minmax(0,1fr)}.tracker-student-options small{grid-column:2}.tracker-direct-modal .tracker-modal-grid{grid-template-columns:1fr 1fr}}
+      @media(max-width:430px){.tracker-hero h1{font-size:2.35rem}.tracker-eyebrow{font-size:.53rem;letter-spacing:.1em}.tracker-hero-actions{align-items:flex-start;flex-direction:column;gap:10px}.tracker-board-tools{align-items:stretch;flex-direction:column}.tracker-search,.tracker-month{width:100%;min-height:40px}.tracker-modal-grid{grid-template-columns:1fr}.tracker-modal .wide-field{grid-column:auto}.tracker-student-options button{grid-template-columns:29px minmax(0,1fr)}.tracker-student-options small{grid-column:2}.tracker-modal-footer{flex-wrap:wrap}.tracker-modal-footer>*{flex:1}.tracker-detail-summary{align-items:flex-start;flex-direction:column}.tracker-timeline-heading{flex-direction:column;gap:2px}}
+      @media(prefers-reduced-motion:reduce){.tracker-live-dot{animation:none}.tracker-record,.tracker-primary-action{transition:none}}
+    `}</style>
+  </Layout>;
 }
