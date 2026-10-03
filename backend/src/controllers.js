@@ -1613,6 +1613,9 @@ exports.getVacancies = (req, res) => {
   }
 };
 
+const vacancyOfficerRolePattern = /\b(?:tpo|placement|career\s+guidance|corporate\s+relation(?:ship)?s?|client\s+relation(?:ship)?s?)\b/i;
+const normalizeVacancyOfficerName = value => normalizePlacementText(value).replace(/^(?:mrs|miss|ms|mr|dr|prof)+/, '');
+
 const getVacancyPlacementOfficers = async () => {
   let rows = getCache()?.contacts;
   if (!Array.isArray(rows) || rows.length === 0) {
@@ -1628,8 +1631,8 @@ const getVacancyPlacementOfficers = async () => {
   rows.forEach(row => {
     const name = getValByHeader(row, ['name', 'tponame', 'placementofficer']).trim();
     const role = getValByHeader(row, ['role', 'designation', 'position']).trim();
-    if (!name || (role && !/(tpo|placement|career guidance)/i.test(role))) return;
-    const key = normalizePlacementText(name);
+    if (!name || (role && !vacancyOfficerRolePattern.test(role))) return;
+    const key = normalizeVacancyOfficerName(name);
     if (key && !officers.has(key)) officers.set(key, name);
   });
   return [...officers.values()].sort((a, b) => a.localeCompare(b));
@@ -1738,8 +1741,8 @@ exports.addVacancy = async (req, res) => {
 
     const placementOfficers = await getVacancyPlacementOfficers();
     const signedInOfficer = String(req.portalUser?.name || '').trim();
-    const selectedOfficer = placementOfficers.find(name => normalizePlacementText(name) === normalizePlacementText(signedInOfficer));
-    if (!selectedOfficer) return res.status(403).json({ success: false, message: 'Your signed-in name is not listed as a placement officer in the Contact sheet.' });
+    const selectedOfficer = placementOfficers.find(name => normalizeVacancyOfficerName(name) === normalizeVacancyOfficerName(signedInOfficer));
+    if (!selectedOfficer) return res.status(403).json({ success: false, message: 'Your signed-in account does not match a placement officer in the Contact sheet. Check the TPO Name and Position columns.' });
 
     await loadDocInfo();
     const sheet = doc.sheetsByTitle['NewsLetter'] || doc.sheetsByIndex.find(item =>
@@ -1908,7 +1911,7 @@ const getLegacyVacancyId = row => {
 const getVacancyActorName = req => String(req.portalUser?.name || '').trim();
 
 const canManageVacancyRow = (user, row) => Boolean(
-  user?.name && normalizePlacementText(user.name) === normalizePlacementText(
+  user?.name && normalizeVacancyOfficerName(user.name) === normalizeVacancyOfficerName(
     getValByHeader(row, ['placementofficer', 'tpo', 'tponame'])
   )
 );
