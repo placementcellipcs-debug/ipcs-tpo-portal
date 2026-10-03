@@ -40,6 +40,7 @@ const formatDate = value => {
 };
 
 const getInitials = value => String(value || 'Student').trim().split(/\s+/).slice(0, 2).map(part => part[0] || '').join('').toUpperCase();
+const driveKeyFor = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 
 const STATUS_ORDER = ['Applied', 'Shortlisted', 'Interview Scheduled', 'Interview Attended', 'Interview Not Attended', 'Student Rejected', 'Company Rejected', 'Rejected', 'Offer Received', 'Placed'];
 const STATUS_META = {
@@ -65,6 +66,7 @@ export default function StudentApps() {
   const [driveLoadError, setDriveLoadError] = useState('');
   const [driveSearch, setDriveSearch] = useState('');
   const [driveStatusFilter, setDriveStatusFilter] = useState('All statuses');
+  const [selectedDriveKey, setSelectedDriveKey] = useState('');
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [selectedBranch, setSelectedBranch] = useState(null);
@@ -75,6 +77,7 @@ export default function StudentApps() {
   const [selectedDetails, setSelectedDetails] = useState(null);
 
   const upperRole = String(tpoData?.role || '').toUpperCase();
+  const isTpoRole = upperRole.includes('TPO') || upperRole.includes('PLACEMENT OFFICER');
   const accessType = String(tpoData?.accessType || '').toLowerCase();
   const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole.includes('MANAGER');
   const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
@@ -101,7 +104,7 @@ export default function StudentApps() {
             role: tpoData.role,
             assignedCourse: tpoData.assignedCourse
           }),
-          axios.get(`${API_BASE}/api/tpo/drives`)
+          axios.get(`${API_BASE}/api/tpo/drives`, { params: { scope: 'all' } })
         ]);
         if (applicationResult.status !== 'fulfilled' || !applicationResult.value.data?.success) {
           throw new Error(applicationResult.status === 'rejected'
@@ -181,20 +184,38 @@ export default function StudentApps() {
       .some(value => String(value || '').toLowerCase().includes(query));
     return matchesStatus && matchesSearch;
   });
-  const filteredDriveRegistrations = useMemo(() => driveRegistrations.filter(registration => {
+  const filteredDriveRows = useMemo(() => driveRegistrations.filter(registration => {
+    const isEmptyDrive = registration.name === 'NO_APPLICANTS';
     const rowNumber = Number(registration.rowNumber);
-    if (!Number.isInteger(rowNumber) || rowNumber < 2 || registration.name === 'NO_APPLICANTS') return false;
+    if (!isEmptyDrive && (!Number.isInteger(rowNumber) || rowNumber < 2)) return false;
+    if (isEmptyDrive && driveStatusFilter !== 'All statuses') return false;
     const branch = String(registration.branch || '').toLowerCase();
     const hasBranchAccess = allowedBranches.includes('all') || allowedBranches.includes('all branches') || allowedBranches.some(assigned => branch.includes(assigned));
-    if (!isSuperAdmin && !hasBranchAccess) return false;
+    if (!isSuperAdmin && !isTpoRole && !hasBranchAccess) return false;
     if (selectedBranch && String(registration.branch || '').toLowerCase() !== selectedBranch.toLowerCase()) return false;
     if (isCourseSpecific && getStandardCourse(registration.course) !== getStandardCourse(displayCourse)) return false;
     const status = normalizeStatus(registration.studentStatus || registration.regStatus || 'Registered');
-    if (driveStatusFilter !== 'All statuses' && status !== driveStatusFilter) return false;
+    if (!isEmptyDrive && driveStatusFilter !== 'All statuses' && status !== driveStatusFilter) return false;
     const search = driveSearch.trim().toLowerCase();
-    return !search || [registration.name, registration.roll, registration.driveId, registration.branch, registration.course, registration.remarks, status]
+    return !search || [isEmptyDrive ? '' : registration.name, registration.roll, registration.driveId, registration.branch, registration.course, registration.remarks, status]
       .some(value => String(value || '').toLowerCase().includes(search));
-  }), [driveRegistrations, allowedBranches, isSuperAdmin, selectedBranch, isCourseSpecific, displayCourse, driveStatusFilter, driveSearch]);
+  }), [driveRegistrations, allowedBranches, isSuperAdmin, isTpoRole, selectedBranch, isCourseSpecific, displayCourse, driveStatusFilter, driveSearch]);
+  const driveGroups = useMemo(() => {
+    const groups = new Map();
+    filteredDriveRows.forEach(registration => {
+      const driveId = String(registration.driveId || 'Placement drive').trim();
+      const key = driveKeyFor(driveId);
+      if (!key) return;
+      if (!groups.has(key)) groups.set(key, { key, driveId, driveDate: registration.driveDate || '', driveLocation: registration.driveLocation || '', branch: registration.branch || '', records: [] });
+      const group = groups.get(key);
+      if (!group.driveDate && registration.driveDate) group.driveDate = registration.driveDate;
+      if (!group.driveLocation && registration.driveLocation) group.driveLocation = registration.driveLocation;
+      if (!group.branch && registration.branch) group.branch = registration.branch;
+      if (registration.name !== 'NO_APPLICANTS') group.records.push(registration);
+    });
+    return [...groups.values()];
+  }, [filteredDriveRows]);
+  const selectedDrive = driveGroups.find(group => group.key === selectedDriveKey) || null;
   const driveStatusOptions = useMemo(() => ['All statuses', ...new Set(driveRegistrations
     .filter(registration => Number.isInteger(Number(registration.rowNumber)) && Number(registration.rowNumber) >= 2 && registration.name !== 'NO_APPLICANTS')
     .map(registration => normalizeStatus(registration.studentStatus || registration.regStatus || 'Registered')))], [driveRegistrations]);
@@ -290,10 +311,14 @@ export default function StudentApps() {
         </AnimatePresence>
 
         <section className="apps-drive-section" aria-labelledby="apps-drive-heading">
-          <div className="apps-section-heading"><div><span className="apps-section-kicker">PLACEMENT DRIVE</span><h2 id="apps-drive-heading">Drive registrations <span>{filteredDriveRegistrations.length} shown</span></h2><p>Registration status and interview updates for placement-drive candidates.</p></div><div className="apps-drive-total"><CalendarBlank size={17} /> {filteredDriveRegistrations.length} registrations</div></div>
+          <div className="apps-section-heading"><div><span className="apps-section-kicker">PLACEMENT DRIVE</span><h2 id="apps-drive-heading">Placement drives <span>{driveGroups.length} shown</span></h2><p>Select a drive to review its registered students, current status, interview details, and remarks.</p></div><div className="apps-drive-total"><CalendarBlank size={17} /> {selectedDrive ? `${selectedDrive.records.length} attendees` : `${driveGroups.length} drives`}</div></div>
           <div className="apps-drive-filters"><label><MagnifyingGlass size={17} /><input value={driveSearch} onChange={event => setDriveSearch(event.target.value)} placeholder="Search student, drive, branch or status" /></label><label><Funnel size={16} /><select value={driveStatusFilter} onChange={event => setDriveStatusFilter(event.target.value)}>{driveStatusOptions.map(status => <option key={status} value={status}>{status}</option>)}</select></label></div>
-          {driveLoadError ? <div className="apps-drive-message"><WarningCircle size={18} /> {driveLoadError}</div> : filteredDriveRegistrations.length === 0 ? <div className="apps-drive-message">No placement drive registrations match this view.</div> : <div className="apps-drive-list">
-            {filteredDriveRegistrations.map((registration, index) => {
+          {driveLoadError ? <div className="apps-drive-message"><WarningCircle size={18} /> {driveLoadError}</div> : driveGroups.length === 0 ? <div className="apps-drive-message">No placement drives match this view.</div> : !selectedDrive ? <div className="apps-drive-picker">
+            {driveGroups.map(group => <button type="button" key={group.key} className="apps-drive-choice" onClick={() => setSelectedDriveKey(group.key)}><span className="apps-drive-choice-icon"><CalendarBlank size={20} /></span><span className="apps-drive-choice-copy"><strong>{group.driveId}</strong><small>{[group.driveLocation, group.branch, group.driveDate ? formatDate(group.driveDate) : ''].filter(Boolean).join(' · ') || 'Drive details unavailable'}</small></span><span className="apps-drive-choice-count"><strong>{group.records.length}</strong><small>{group.records.length === 1 ? 'student' : 'students'}</small></span><ArrowRight size={16} /></button>)}
+          </div> : <>
+            <div className="apps-selected-drive"><button type="button" onClick={() => setSelectedDriveKey('')}><CaretLeft size={16} /> All drives</button><div><strong>{selectedDrive.driveId}</strong><span>{[selectedDrive.driveLocation, selectedDrive.branch, selectedDrive.driveDate ? `Drive date ${formatDate(selectedDrive.driveDate)}` : ''].filter(Boolean).join(' · ')}</span></div><small>{selectedDrive.records.length} {selectedDrive.records.length === 1 ? 'attendee' : 'attendees'}</small></div>
+            {selectedDrive.records.length === 0 ? <div className="apps-drive-message">No students have registered for this drive yet.</div> : <div className="apps-drive-list">
+            {selectedDrive.records.map((registration, index) => {
               const status = normalizeStatus(registration.studentStatus || registration.regStatus || 'Registered');
               const detailRecord = { ...registration, recordType: 'drive', status, company: registration.driveId || 'Placement drive', position: 'Placement Drive', jobId: registration.driveId || '', tpoName: registration.driveTpo || '' };
               return <motion.article key={registration.rowNumber} className="apps-drive-card" initial={{ opacity: 0, y: 9 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(index * .018, .18), duration: .2 }}>
@@ -304,6 +329,7 @@ export default function StudentApps() {
               </motion.article>;
             })}
           </div>}
+          </>}
         </section>
       </main>
 
@@ -341,8 +367,9 @@ export default function StudentApps() {
         @media(max-width:720px){.apps-page{padding-bottom:28px}.apps-hero{min-height:0;border-radius:22px;padding:25px 20px 23px}.apps-hero-content{max-width:100%}.apps-hero-art,.apps-hero-mark{display:none}.apps-hero h1{font-size:2.65rem}.apps-hero p{font-size:.84rem}.apps-hero-metrics{gap:7px;margin-top:20px}.apps-hero-metrics>div{min-width:calc(33.333% - 6px);flex:1;padding:9px}.apps-hero-metrics span{font-size:.59rem}.apps-hero-metrics small{display:none}.apps-filter-panel{margin:-13px 8px 23px;padding:9px}.apps-search-wrap{flex-basis:100%}.apps-select-wrap{flex:1 1 145px}.apps-reset-button{flex:1;justify-content:center}.apps-section-heading{align-items:flex-start;flex-direction:column}.apps-section-heading h2{font-size:1.35rem}.apps-branch-chip{display:none}.apps-subheading,.apps-list-heading{align-items:flex-start;flex-direction:column}.apps-subheading p{margin-top:0}.apps-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.apps-status-card{min-height:130px;padding:12px}.apps-student-card{grid-template-columns:1fr auto;gap:12px;padding:14px}.apps-student-identity{grid-column:1/-1}.apps-job-info{grid-column:1/-1}.apps-record-meta{grid-column:1}.apps-record-status{grid-column:2;grid-row:3;align-items:flex-end;flex-direction:column}.apps-remarks{max-width:120px}.apps-branch-grid{grid-template-columns:repeat(auto-fill,minmax(215px,1fr));gap:10px}}
         @media(max-width:420px){.apps-hero h1{font-size:2.25rem}.apps-hero-metrics>div{min-width:calc(50% - 5px)}.apps-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.apps-branch-grid{grid-template-columns:1fr}.apps-branch-card{min-height:195px}.apps-detail-backdrop{padding:8px}.apps-detail-dialog{max-height:94vh;border-radius:18px}.apps-detail-header{padding:19px}.apps-detail-status-row{padding:13px 19px}.apps-interview-details{padding:0 19px 17px}.apps-detail-remarks,.apps-history-section{margin:0 19px 15px;padding:14px}.apps-history-top{flex-direction:column;gap:2px}}
         @media(prefers-reduced-motion:reduce){.apps-live-dot{animation:none}.apps-back-button,.apps-reset-button,.apps-status-card,.apps-branch-card,.apps-student-card{transition:none}}
-        .apps-drive-section{margin-top:42px;padding:20px;border:1px solid rgba(167,139,250,.18);border-radius:22px;background:radial-gradient(ellipse at 0 0,rgba(139,92,246,.08),transparent 45%),linear-gradient(145deg,rgba(17,27,46,.62),rgba(10,17,30,.55))}.apps-drive-section .apps-section-heading{margin-bottom:15px}.apps-drive-section .apps-section-heading p{margin:8px 0 0;color:#8093ac;font-size:.76rem}.apps-drive-total{display:flex;align-items:center;gap:7px;color:#c4b5fd;font-size:.72rem;font-weight:750}.apps-drive-filters{display:flex;gap:9px;margin-bottom:12px}.apps-drive-filters label{height:40px;display:flex;align-items:center;gap:8px;padding:0 11px;border:1px solid rgba(167,139,250,.17);border-radius:11px;background:rgba(2,8,23,.24);color:#9d8be3}.apps-drive-filters label:first-child{flex:1}.apps-drive-filters input,.apps-drive-filters select{min-width:0;border:0;outline:0;background:transparent;color:#dce7f4;font:inherit;font-size:.72rem}.apps-drive-filters input{width:100%}.apps-drive-filters input::placeholder{color:#71839b}.apps-drive-filters select option{background:#101827;color:#e2e8f0}.apps-drive-list{display:grid;gap:8px}.apps-drive-card{display:grid;grid-template-columns:minmax(210px,1.15fr) minmax(170px,1fr) minmax(145px,.7fr) minmax(160px,.8fr);align-items:center;gap:15px;padding:14px;border:1px solid rgba(167,139,250,.12);border-radius:15px;background:linear-gradient(110deg,rgba(26,31,59,.68),rgba(13,21,36,.78))}.drive-avatar{border-color:rgba(167,139,250,.27);background:linear-gradient(145deg,rgba(139,92,246,.23),rgba(56,189,248,.12));color:#c4b5fd}.apps-drive-details{display:inline-flex;align-items:center;gap:4px;padding:0;border:0;background:transparent;color:#c4b5fd;font-size:.65rem;font-weight:750;cursor:pointer}.apps-drive-details:hover{text-decoration:underline}.apps-drive-message{min-height:84px;display:flex;align-items:center;justify-content:center;gap:8px;padding:18px;border:1px dashed rgba(167,139,250,.2);border-radius:14px;color:#899ab0;font-size:.76rem;text-align:center}
+        .apps-drive-section{margin-top:42px;padding:20px;border:1px solid rgba(167,139,250,.18);border-radius:22px;background:radial-gradient(ellipse at 0 0,rgba(139,92,246,.08),transparent 45%),linear-gradient(145deg,rgba(17,27,46,.62),rgba(10,17,30,.55))}.apps-drive-section .apps-section-heading{margin-bottom:15px}.apps-drive-section .apps-section-heading p{margin:8px 0 0;color:#8093ac;font-size:.76rem}.apps-drive-total{display:flex;align-items:center;gap:7px;color:#c4b5fd;font-size:.72rem;font-weight:750}.apps-drive-filters{display:flex;gap:9px;margin-bottom:12px}.apps-drive-filters label{height:40px;display:flex;align-items:center;gap:8px;padding:0 11px;border:1px solid rgba(167,139,250,.17);border-radius:11px;background:rgba(2,8,23,.24);color:#9d8be3}.apps-drive-filters label:first-child{flex:1}.apps-drive-filters input,.apps-drive-filters select{min-width:0;border:0;outline:0;background:transparent;color:#dce7f4;font:inherit;font-size:.72rem}.apps-drive-filters input{width:100%}.apps-drive-filters input::placeholder{color:#71839b}.apps-drive-filters select option{background:#101827;color:#e2e8f0}.apps-drive-list{display:grid;gap:8px}.apps-drive-card{display:grid;grid-template-columns:minmax(210px,1.15fr) minmax(170px,1fr) minmax(145px,.7fr) minmax(160px,.8fr);align-items:center;gap:15px;padding:14px;border:1px solid rgba(167,139,250,.12);border-radius:15px;background:linear-gradient(110deg,rgba(26,31,59,.68),rgba(13,21,36,.78))}.drive-avatar{border-color:rgba(167,139,250,.27);background:linear-gradient(145deg,rgba(139,92,246,.23),rgba(56,189,248,.12));color:#c4b5fd}.apps-drive-details{display:inline-flex;align-items:center;gap:4px;padding:0;border:0;background:transparent;color:#c4b5fd;font-size:.65rem;font-weight:750;cursor:pointer}.apps-drive-details:hover{text-decoration:underline}.apps-drive-message{min-height:84px;display:flex;align-items:center;justify-content:center;gap:8px;padding:18px;border:1px dashed rgba(167,139,250,.2);border-radius:14px;color:#899ab0;font-size:.76rem;text-align:center}.apps-drive-picker{display:grid;gap:8px}.apps-drive-choice{width:100%;display:flex;align-items:center;gap:12px;padding:13px 15px;border:1px solid rgba(167,139,250,.14);border-radius:14px;background:linear-gradient(105deg,rgba(26,31,59,.66),rgba(13,21,36,.76));color:#8da0b8;text-align:left;cursor:pointer;transition:transform .16s,border-color .16s,background .16s}.apps-drive-choice:hover{transform:translateY(-1px);border-color:rgba(167,139,250,.36);background:linear-gradient(105deg,rgba(44,39,83,.65),rgba(15,25,43,.84))}.apps-drive-choice-icon{width:38px;height:38px;flex:0 0 38px;display:grid;place-items:center;border:1px solid rgba(167,139,250,.23);border-radius:12px;background:rgba(139,92,246,.12);color:#c4b5fd}.apps-drive-choice-copy{min-width:0;display:grid;gap:4px;flex:1}.apps-drive-choice-copy strong{overflow:hidden;color:#e8eaf7;font-size:.78rem;text-overflow:ellipsis;white-space:nowrap}.apps-drive-choice-copy small,.apps-drive-choice-count small{color:#8798af;font-size:.62rem}.apps-drive-choice-count{display:grid;min-width:58px;justify-items:center;padding:4px 8px;border:1px solid rgba(167,139,250,.12);border-radius:9px;background:rgba(139,92,246,.06)}.apps-drive-choice-count strong{color:#c4b5fd;font-size:.9rem}.apps-selected-drive{display:flex;align-items:center;gap:13px;margin-bottom:12px;padding:12px 14px;border:1px solid rgba(167,139,250,.16);border-radius:13px;background:rgba(139,92,246,.06)}.apps-selected-drive>button{display:inline-flex;align-items:center;gap:4px;flex:0 0 auto;padding:7px 9px;border:1px solid rgba(167,139,250,.17);border-radius:9px;background:rgba(15,23,42,.35);color:#c4b5fd;font-size:.65rem;font-weight:750;cursor:pointer}.apps-selected-drive>div{min-width:0;display:grid;gap:4px;flex:1}.apps-selected-drive>div strong{overflow:hidden;color:#e8eaf7;font-size:.82rem;text-overflow:ellipsis;white-space:nowrap}.apps-selected-drive>div span{overflow:hidden;color:#8798af;font-size:.62rem;text-overflow:ellipsis;white-space:nowrap}.apps-selected-drive>small{color:#c4b5fd;font-size:.65rem;font-weight:750}
         @media(max-width:1050px){.apps-drive-card{grid-template-columns:minmax(190px,1.1fr) minmax(165px,1fr) minmax(140px,.75fr)}.apps-drive-card .apps-record-status{grid-column:2/-1;flex-direction:row;align-items:center;flex-wrap:wrap}}
+        @media(max-width:720px){.apps-selected-drive{align-items:flex-start;flex-wrap:wrap}.apps-selected-drive>div{flex-basis:calc(100% - 120px);order:2}.apps-selected-drive>small{margin-left:auto}.apps-drive-choice{gap:8px;padding:11px}.apps-drive-choice-icon{width:33px;height:33px;flex-basis:33px}.apps-drive-choice-count{min-width:47px}}
         @media(max-width:720px){.apps-drive-section{margin-top:28px;padding:14px}.apps-drive-filters{flex-direction:column}.apps-drive-filters label{width:100%}.apps-drive-card{grid-template-columns:1fr auto;gap:12px;padding:13px}.apps-drive-card .apps-student-identity,.apps-drive-card .apps-job-info{grid-column:1/-1}.apps-drive-card .apps-record-meta{grid-column:1}.apps-drive-card .apps-record-status{grid-column:2;grid-row:3;align-items:flex-end;flex-direction:column}.apps-drive-card .apps-remarks{max-width:130px}}
       `}</style>
     </Layout>

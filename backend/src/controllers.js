@@ -4621,6 +4621,7 @@ exports.getDrives = async (req, res) => {
     const canSeeAll = canManageEveryDrive(user);
     const isBranchManager = isBranchManagerUser(user);
     const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
+    const includeAllTpoDrives = isTpo && String(req.query?.scope || '').toLowerCase() === 'all';
     if (!canSeeAll && !isTpo && !isBranchManager) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
 
     await loadDocInfo();
@@ -4669,11 +4670,8 @@ exports.getDrives = async (req, res) => {
       const rowBranch = getValByHeader(row, ['branch', 'sittingbranch']) || (registrationStudent && getValByHeader(registrationStudent, ['branch', 'sittingbranch'])) || eventInfo.branch || eventInfo.location;
       const rowCourse = getValByHeader(row, ['course']) || (registrationStudent && getValByHeader(registrationStudent, ['course', 'program'])) || eventInfo.course;
       if (isBranchManager && !hasAccess(rowBranch, rowCourse, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) return;
-      if (!canSeeAll && !isBranchManager && driveOwner && normalizePlacementText(driveOwner) !== signedInName) return;
-      if (!canSeeAll && !isBranchManager && !driveOwner) {
-        if (!userHasBranch(user, rowBranch)) return;
-      }
-      
+      if (!includeAllTpoDrives && !canSeeAll && !isBranchManager && driveOwner && normalizePlacementText(driveOwner) !== signedInName) return;
+      if (!includeAllTpoDrives && !canSeeAll && !isBranchManager && !driveOwner && !userHasBranch(user, rowBranch)) return;
       // Mark that this drive has at least one student
       if (eventInfo.hasApplicants !== undefined) eventInfo.hasApplicants = true;
 
@@ -4716,10 +4714,8 @@ exports.getDrives = async (req, res) => {
     // 3. 🚨 INJECT EMPTY DRIVES: If a drive has 0 students, send a "Dummy" row so it still shows up!
     eventsMap.forEach((eventInfo, dId) => {
       if (isBranchManager && !userHasBranch(user, eventInfo.branch || eventInfo.location)) return;
-      if (!canSeeAll && !isBranchManager && eventInfo.tpo && normalizePlacementText(eventInfo.tpo) !== signedInName) return;
-      if (!canSeeAll && !isBranchManager && !eventInfo.tpo) {
-        if (!userHasBranch(user, eventInfo.branch || eventInfo.location)) return;
-      }
+      if (!includeAllTpoDrives && !canSeeAll && !isBranchManager && eventInfo.tpo && normalizePlacementText(eventInfo.tpo) !== signedInName) return;
+      if (!includeAllTpoDrives && !canSeeAll && !isBranchManager && !eventInfo.tpo && !userHasBranch(user, eventInfo.branch || eventInfo.location)) return;
       if (!eventInfo.hasApplicants) {
         drivesData.push({
           rowNumber: `empty-${dId}`,
