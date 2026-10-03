@@ -23,6 +23,7 @@ export default function Reports() {
   const [students, setStudents] = useState([]);
   const [events, setEvents] = useState([]);
   const [tpoLogs, setTpoLogs] = useState([]); 
+  const [placementReportLogs, setPlacementReportLogs] = useState([]);
   const placementLogs = useMemo(() => latestPlacementRecords(tpoLogs), [tpoLogs]);
   
   const [tpoList, setTpoList] = useState(() => !isSuperAdmin && tpoData ? [tpoData] : []);
@@ -53,6 +54,7 @@ export default function Reports() {
         setStudents(reportStudents);
         setEvents(data.events || []);
         setTpoLogs(reportLogs);
+        setPlacementReportLogs(Array.isArray(data.placementReportLogs) ? data.placementReportLogs : []);
         setTpoStatsData(data.tpoStats || []);
         setAllBranchesList([...new Set([...reportStudents, ...reportLogs].map(item => item.branch).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
         if (isSuperAdmin) {
@@ -427,13 +429,13 @@ export default function Reports() {
             {tpoList.map((tpo, idx) => {
               const targetTpoName = (tpo.userName || tpo.name || '').toLowerCase().trim();
               
-              const placedStudentsLog = placementLogs.filter(log => {
-                const logTpo = getVal(log, 'placementofficer').toLowerCase().trim();
-                const isMatch = logTpo === targetTpoName || logTpo.includes(targetTpoName) || targetTpoName.includes(logTpo);
-                if (!isMatch) return false;
+              const placedStudentsLog = placementReportLogs.filter(log => {
+                const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
+                if (!logTpo || logTpo !== normalizePlacementText(targetTpoName)) return false;
 
-                const status = getVal(log, 'status').toLowerCase();
-                if (!status.includes('placed')) return false;
+                if (normalizePlacementText(getVal(log, 'status')) !== 'placed') return false;
+                if (!getVal(log, 'studentname') && !getVal(log, 'name')) return false;
+                if (!getVal(log, 'companyname') && !getVal(log, 'company')) return false;
 
                 const dateStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp') || '';
                 return checkMonth(dateStr);

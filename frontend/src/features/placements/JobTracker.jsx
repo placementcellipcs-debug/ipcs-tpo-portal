@@ -112,8 +112,8 @@ export default function JobTracker() {
     ]);
     const errors = [];
     if (appResult.status === 'fulfilled' && appResult.value.data?.success) {
-      // The API already applies the signed-in user's branch/course permissions.
-      // Keep every authorized application instead of hiding records owned by another officer.
+      // The API scopes these records to the signed-in officer's owned job IDs
+      // and their existing branch/course permissions.
       setApplications(appResult.value.data.applications || []);
     } else {
       errors.push(appResult.status === 'rejected' ? appResult.reason?.response?.data?.message || appResult.reason?.message : appResult.value?.data?.message || 'Applications could not be loaded.');

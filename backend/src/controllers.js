@@ -960,6 +960,20 @@ exports.getApplications = async (req, res) => {
   if (!getCache()) return res.status(503).json({ success: false, message: 'Placement data is still syncing. Please refresh shortly.' });
   let appsList = []; 
   const cache = getCache();
+  const portalUser = req.portalUser || {};
+  const trackerRole = String(portalUser.role || role || '').toUpperCase();
+  const restrictToPlacementOfficer = portalUser.accessType !== 'superadmin' && /(^|\b)(TPO|PLACEMENT OFFICER)(\b|$)/i.test(trackerRole);
+  const signedInOfficer = normalizePlacementText(portalUser.name);
+  const ownedJobIds = new Set((cache.vacancies || [])
+    .filter(row => signedInOfficer && normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame'])) === signedInOfficer)
+    .map(row => normalizePlacementText(getValByHeader(row, ['jobid', 'job id', 'id'])))
+    .filter(Boolean));
+  const belongsToSignedInOfficer = row => {
+    if (!restrictToPlacementOfficer || !signedInOfficer) return !restrictToPlacementOfficer;
+    const rowOfficer = normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']));
+    const jobId = normalizePlacementText(getValByHeader(row, ['jobid', 'job id']));
+    return rowOfficer === signedInOfficer || Boolean(jobId && ownedJobIds.has(jobId));
+  };
   
   const sourceData = cache.applications || [];
   const historyKeyFor = row => [
@@ -985,9 +999,12 @@ exports.getApplications = async (req, res) => {
   });
 
   sourceData.forEach((row) => {
-    const branch = getValByHeader(row, ['branch']) || 'Unknown';
+    const sourceBranch = getValByHeader(row, ['branch']);
+    const branch = sourceBranch || 'Unknown';
     const course = getValByHeader(row, ['course']) || 'Unknown';
-    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse, department)) {
+    const belongsToOfficer = belongsToSignedInOfficer(row);
+    const withinAssignedScope = hasAccess(branch, course, role, assignedBranchesArray, assignedCourse, department);
+    if (belongsToOfficer && (withinAssignedScope || (restrictToPlacementOfficer && !sourceBranch))) {
       const roll = getValByHeader(row, ['roll']) || ''; 
       const jobId = getValByHeader(row, ['jobid']) || '';
       let phone = getValByHeader(row, ['contact', 'phone']) || '';
@@ -2160,10 +2177,14 @@ exports.updateIssue = async (req, res) => {
 exports.getReports = async (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, department } = req.body;
   const checkAccess = (rBranch, rCourse) => hasAccess(rBranch, rCourse, role, assignedBranchesArray, assignedCourse, department);
+  const reportUser = req.portalUser || {};
+  const reportRole = String(reportUser.role || role || '').toUpperCase();
+  const reportOfficer = normalizePlacementText(reportUser.name);
+  const isAdminReportUser = reportUser.accessType === 'superadmin' || reportRole.includes('ADMIN') || ['GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(reportRole);
 
   if (!getCache()) await refreshCache();
   if (!getCache()) return res.status(503).json({ success: false, message: 'Report data is still syncing. Please refresh shortly.' });
-  let students = [], applications = [], issues = [], talentino = [], tpoLogs = [];
+  let students = [], applications = [], issues = [], talentino = [], tpoLogs = [], placementReportLogs = [];
   const cache = getCache();
   
   (cache.students || []).forEach(row => {
@@ -2205,6 +2226,22 @@ exports.getReports = async (req, res) => {
         }
       } catch(e) {}
     });
+
+    // Target reports count only actual placements from TPO_Log. TPO-owned
+    // placements are matched by officer even when legacy rows have no branch.
+    cache.tpoLogs.forEach(row => {
+      const studentName = getValByHeader(row, ['studentname', 'name']).trim();
+      const companyName = getValByHeader(row, ['companyname', 'company']).trim();
+      const status = normalizePlacementText(getValByHeader(row, ['status']));
+      const placementOfficer = normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame']));
+      const belongsToReportUser = isAdminReportUser
+        ? checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))
+        : Boolean(reportOfficer && placementOfficer === reportOfficer);
+      if (status !== 'placed' || !studentName || !companyName || !belongsToReportUser) return;
+      try {
+        placementReportLogs.push({ ...row.toObject(), rowNumber: row.rowNumber, sourceSheet: 'TPO_Log' });
+      } catch (error) {}
+    });
   }
   tpoLogs = latestPlacementRows(tpoLogs, (row, aliases) => {
     const keys = Object.keys(row || {});
@@ -2229,7 +2266,7 @@ exports.getReports = async (req, res) => {
     });
   }
 
-  res.json({ success: true, students, applications, issues, talentino, vacancies, events, tpoLogs, tpoStats: tpoStatsList });
+  res.json({ success: true, students, applications, issues, talentino, vacancies, events, tpoLogs, placementReportLogs, tpoStats: tpoStatsList });
 };
 
 exports.getTalentino = (req, res) => {

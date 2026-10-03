@@ -235,7 +235,17 @@ export default function PublicSiteSections({ page = 'all' }) {
   const mediaBasePath = partnerMediaPage ? '/partners/media' : '/placements/media';
   const partnersLoading = ['partners', 'partners-all', 'all'].includes(page) && !partnersLoaded;
   const postersLoading = ['placement', 'placement-gallery', 'all'].includes(page) && !postersLoaded;
-  const placementTeam = placementOfficers.map(member => {
+  const hasGiftyProfile = placementOfficers.some(member => normalizeTeamName(member.name) === normalizeTeamName(placementTeamLead.name));
+  const placementTeamSource = hasGiftyProfile ? placementOfficers : [
+    {
+      name: placementTeamLead.name,
+      role: placementTeamLead.role,
+      branches: 'Kerala, Karnataka, Tamil Nadu',
+      linkedin: 'https://www.linkedin.com/in/gifty-kp/'
+    },
+    ...placementOfficers
+  ];
+  const placementTeam = placementTeamSource.map(member => {
     const profile = placementTeamProfiles.find(candidate => candidate.aliases.some(alias => normalizeTeamName(alias) === normalizeTeamName(member.name)));
     const isGifty = normalizeTeamName(member.name) === normalizeTeamName(placementTeamLead.name);
     return {
