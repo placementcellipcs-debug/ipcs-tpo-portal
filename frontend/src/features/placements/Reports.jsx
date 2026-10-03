@@ -4,6 +4,7 @@ import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, Us
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
 import { latestPlacementRecords, normalizePlacementText } from '../../utils/placementRecords';
+import { parsePortalDateTime } from '../../utils/dateFormat';
 
 export default function Reports() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -15,7 +16,8 @@ export default function Reports() {
   
   const [activeTab, setActiveTab] = useState(1);
 
-  const currentMonthStr = new Date().toISOString().slice(0, 7); 
+  const today = new Date();
+  const currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   const [monthFilter, setMonthFilter] = useState(currentMonthStr);
 
   const [students, setStudents] = useState([]);
@@ -111,27 +113,9 @@ export default function Reports() {
 
   const checkMonth = (dateStr) => {
     if (!monthFilter) return true;
-    if (!dateStr) return false;
-    const dateValue = String(dateStr);
-    let year, month;
-    const localDate = dateValue.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})/);
-    if (localDate) {
-      const [, first, second, parsedYear] = localDate;
-      const firstNumber = Number(first);
-      const secondNumber = Number(second);
-      month = String(firstNumber > 12 ? secondNumber : secondNumber > 12 ? firstNumber : secondNumber).padStart(2, '0');
-      year = parsedYear;
-    } else if (dateValue.includes('-')) {
-      const parts = dateValue.split(' ')[0].split('-');
-      year = parts[0];
-      month = String(parts[1] || '').padStart(2, '0');
-    } else {
-      const d = new Date(dateValue);
-      if (isNaN(d)) return false;
-      year = d.getFullYear();
-      month = String(d.getMonth() + 1).padStart(2, '0');
-    }
-    return `${year}-${month}` === monthFilter;
+    const date = parsePortalDateTime(dateStr);
+    if (!date) return false;
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` === monthFilter;
   };
 
   const getVal = (obj, searchStr) => {

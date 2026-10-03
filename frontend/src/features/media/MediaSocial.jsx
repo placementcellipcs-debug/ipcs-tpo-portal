@@ -4,6 +4,7 @@ import { CircleNotch, ShareNetwork, InstagramLogo, LinkedinLogo, FacebookLogo, Y
 import Layout from '../../layouts/Layout';
 import MediaTopNav from './MediaTopNav';
 import { API_BASE } from '../../services/apiConfig';
+import { formatPortalDate } from '../../utils/dateFormat';
 
 export default function MediaSocial() {
   const [social, setSocial] = useState([]);
@@ -73,7 +74,7 @@ export default function MediaSocial() {
                       </a>}
                     </td>
                     <td style={{ padding: '15px 20px' }}><span style={{ color: '#ec4899', fontWeight: 'bold', background: 'rgba(236,72,153,0.1)', padding: '6px 12px', borderRadius: '8px' }}>{s.designId}</span></td>
-                    <td style={{ padding: '15px 20px', color: '#e2e8f0', fontSize: '0.85rem' }}>{s.date}</td>
+                    <td style={{ padding: '15px 20px', color: '#e2e8f0', fontSize: '0.85rem' }}>{formatPortalDate(s.date, String(s.date || ''))}</td>
                     <td style={{ padding: '15px 20px', textAlign: 'center' }}>
                       <span style={{ padding: '6px 12px', borderRadius: '12px', fontSize: '0.7rem', fontWeight: 'bold', background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.3)', textTransform: 'uppercase' }}>{s.status}</span>
                     </td>

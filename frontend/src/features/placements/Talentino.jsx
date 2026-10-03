@@ -4,6 +4,7 @@ import { CircleNotch, CaretLeft, MagnifyingGlass, Star, GraduationCap } from '@p
 import Layout from '../../layouts/Layout';
 
 import { API_BASE } from '../../services/apiConfig';
+import { formatPortalDate } from '../../utils/dateFormat';
 
 const TILE_COLORS = ['var(--accent-primary)', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 
@@ -229,7 +230,7 @@ export default function Talentino() {
                   {r.branch}
                 </div>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                  {r.date ? r.date.split(' ')[0] : 'N/A'}
+                  {r.date ? formatPortalDate(r.date, r.date) : 'N/A'}
                 </div>
                 <div style={{ color: 'var(--text-muted)', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '5px' }}>
                   {rawRating !== '-' ? (

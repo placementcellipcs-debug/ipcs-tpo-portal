@@ -6,6 +6,7 @@ import {
   MapPinLine, Clock, Prohibit, EnvelopeSimple, Phone, GraduationCap, Money, X, Eye, Plus, WarningCircle, Buildings, PencilSimple, Trash
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import { formatPortalDate, formatPortalDateTime, parsePortalDateTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
 import StatusBadge from '../../components/StatusBadge';
 
@@ -68,22 +69,7 @@ const getStandardCourse = (c) => {
   return 'Others';
 };
 
-const parseDateSafe = (dateStr) => {
-  if (!dateStr) return null; 
-  try {
-    let cleanStr = String(dateStr).split(' ')[0].replace(/st|nd|rd|th/gi, '').trim();
-    let d = new Date(cleanStr);
-    if (isNaN(d.getTime()) && (cleanStr.includes('/') || cleanStr.includes('-'))) {
-      const parts = cleanStr.split(/[/-]/);
-      if (parts.length >= 3) {
-        d = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-      }
-    }
-    return isNaN(d.getTime()) ? null : d;
-  } catch {
-    return null;
-  }
-};
+const parseDateSafe = dateStr => parsePortalDateTime(dateStr);
 
 const companyLogoSource = value => {
   const logo = String(value || '').trim();
@@ -93,15 +79,9 @@ const companyLogoSource = value => {
 };
 
 const toDateInputValue = value => {
-  const clean = String(value || '').trim().split(' ')[0];
-  if (/^\d{4}-\d{2}-\d{2}$/.test(clean)) return clean;
-  const parts = clean.split(/[/-]/);
-  if (parts.length !== 3) return '';
-  if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-  const [first, second, year] = parts;
-  const day = Number(first) > 12 ? first : second;
-  const month = Number(first) > 12 ? second : first;
-  return `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  const date = parsePortalDateTime(value);
+  if (!date) return '';
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
 
 const normalizeOfficerName = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -624,7 +604,7 @@ function VacanciesContent() {
                   const rowTpo = String(v.tpoName || v.placementofficer || v.placementOfficer || 'Unknown');
                   const canManageThisVacancy = canAddOpening && normalizeOfficerName(rowTpo) === normalizeOfficerName(tpoData?.name);
                   const datePostedObj = parseDateSafe(v.datePosted || v.timestamp || v.date);
-                  const datePostedStr = (datePostedObj && !isNaN(datePostedObj.getTime()) && datePostedObj.getFullYear() < 2050 && datePostedObj.getFullYear() > 2000) ? datePostedObj.toLocaleDateString('en-GB') : 'N/A';
+                  const datePostedStr = (datePostedObj && !isNaN(datePostedObj.getTime()) && datePostedObj.getFullYear() < 2050 && datePostedObj.getFullYear() > 2000) ? formatPortalDate(datePostedObj, 'N/A') : 'N/A';
 
                   return (
                     <div key={i} className="job-card glass-panel hover-lift">
@@ -643,7 +623,7 @@ function VacanciesContent() {
                       <div className="jc-body">
                         <div className="jc-detail"><MapPinLine size={16} /> <span>{String(v.location || 'N/A')} ({String(v.mode || 'N/A')})</span></div>
                         <div className="jc-detail"><GraduationCap size={16} /> <span>{String(v.course || 'N/A')}</span></div>
-                        {isSuperAdmin && <div className="jc-detail text-purple"><Clock size={16} /> <span>{rowTpo} • {String(v.timestamp || datePostedStr).replace('T', ' ')}</span></div>}
+                        {isSuperAdmin && <div className="jc-detail text-purple"><Clock size={16} /> <span>{rowTpo} • {v.timestamp ? formatPortalDateTime(v.timestamp, datePostedStr) : datePostedStr}</span></div>}
                       </div>
 
                       <div className="jc-divider"></div>
@@ -651,7 +631,7 @@ function VacanciesContent() {
                       <div className="jc-footer">
                         <div>
                           <div className={`status-pill ${statClass}`}>{statText}</div>
-                          <div className="jc-deadline">Ends: <span style={{color: isExpired || isClosed ? '#ef4444' : '#fff'}}>{String(v.lastDate || 'N/A')}</span></div>
+                          <div className="jc-deadline">Ends: <span style={{color: isExpired || isClosed ? '#ef4444' : '#fff'}}>{formatPortalDate(v.lastDate, String(v.lastDate || 'N/A'))}</span></div>
                         </div>
                         <div className="jc-applicants" onClick={() => { setSelectedJob(v); setIsApplicantsModalOpen(true); }}>
                           <Users size={16} weight={applicantCount > 0 ? "fill" : "regular"} color={applicantCount > 0 ? '#3b82f6' : '#94a3b8'}/>

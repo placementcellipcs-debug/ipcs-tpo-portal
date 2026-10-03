@@ -1,6 +1,7 @@
 const { JWT } = require('google-auth-library');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { getCache, uploadToDrive, doc: mainDoc } = require('./config');
+const { formatIndiaTimestamp } = require('./utils/dateTime');
 
 // Authenticate specifically for the new Design Spreadsheet
 const serviceAccountAuth = new JWT({
@@ -34,7 +35,7 @@ const logDesignActivity = async (user, designId, action, remarks = '') => {
     const h = sheet.headerValues;
     await sheet.addRow({
       [getFuzzyHeader(h, 'logid')]: `LOG-${Date.now().toString().slice(-6)}`,
-      [getFuzzyHeader(h, 'datetime')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      [getFuzzyHeader(h, 'datetime')]: formatIndiaTimestamp(),
       [getFuzzyHeader(h, 'user')]: user || 'System',
       [getFuzzyHeader(h, 'designid')]: designId,
       [getFuzzyHeader(h, 'action')]: action,
@@ -178,7 +179,7 @@ exports.uploadDesignFile = async (req, res) => {
     }
 
     const fileLink = await uploadToDrive(req.file, targetFolder || '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5');
-    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const timestamp = formatIndiaTimestamp();
     const sessionNumber = cleanSessionLevel === 'Session 1' ? '1' : '2';
     const overallStatus = cleanStatus === 'Completed' ? 'Completed' : cleanStatus;
     const updateData = {
@@ -235,7 +236,7 @@ exports.trackSocialMedia = async (req, res) => {
       [getFuzzyHeader(sh, 'postlink')]: postLink,
       [getFuzzyHeader(sh, 'status')]: status || 'Published',
       [getFuzzyHeader(sh, 'postedby')]: actor,
-      [getFuzzyHeader(sh, 'publisheddate')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+      [getFuzzyHeader(sh, 'publisheddate')]: formatIndiaTimestamp()
     });
 
     await logDesignActivity(actor, designId, `Published ${postType} on ${platform}`);
@@ -280,7 +281,7 @@ exports.autoCreateDesignTask = async (appData) => {
 
     await sheet.addRow({
       [safeH('designid')]: designId,
-      [safeH('createddate')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      [safeH('createddate')]: formatIndiaTimestamp(),
       [safeH('source')]: 'Placement Auto',
       [safeH('rollnumber')]: appData.roll || '',
       [safeH('studentname')]: appData.name || '',
@@ -354,7 +355,7 @@ exports.syncExistingPlacements = async (req, res) => {
            const designId = `DES-${Date.now().toString().slice(-7)}-${Math.floor(100 + Math.random() * 900)}`;
            await dSheet.addRow({
               [getDH('designid')]: designId,
-              [getDH('createddate')]: r.get(getAH('timestamp')) || new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+              [getDH('createddate')]: r.get(getAH('timestamp')) || formatIndiaTimestamp(),
               [getDH('source')]: 'Legacy Sync',
               [getDH('rollnumber')]: roll,
               [getDH('studentname')]: r.get(getAH('studentname')) || r.get(getAH('name')) || '',
@@ -421,7 +422,7 @@ exports.createManualTask = async (req, res) => {
 
     await sheet.addRow({
       [getFuzzyHeader(h, 'designid')]: designId,
-      [getFuzzyHeader(h, 'createddate')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      [getFuzzyHeader(h, 'createddate')]: formatIndiaTimestamp(),
       [getFuzzyHeader(h, 'source')]: 'Manual Request',
       [getFuzzyHeader(h, 'studentname')]: cleanName,
       [getFuzzyHeader(h, 'company')]: String(company || '').trim(),

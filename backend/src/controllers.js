@@ -81,6 +81,7 @@ const {
 
 const { autoCreateDesignTask } = require('./designControllers');
 const { normalizePlacementText, placementIdentity, latestPlacementRows } = require('./placementRecords');
+const { formatIndiaTimestamp, formatIndiaDate, formatIndiaTime } = require('./utils/dateTime');
 
 const FOLDER_OFFER_LETTERS = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5';
 const FOLDER_CLIENT_LOGOS = '11M8jGi1ISWP2mOpWRZncHhThHLoc7cDi'; 
@@ -168,7 +169,7 @@ const syncTpoStats = async (userName, updates) => {
      await targetRow.save();
   } else {
      await sheet.addRow({
-       'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+       'TimeStamp': formatIndiaTimestamp(),
        'USER': userName,
        ...updates
      });
@@ -268,7 +269,7 @@ const logMailToSheet = async (receiverName, receiverMail, mailType, subject, sta
     const sheet = doc.sheetsByTitle["Mail"];
     if (sheet) {
       await sheet.addRow({
-        'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+        'TimeStamp': formatIndiaTimestamp(),
         'Reciver Name': receiverName || 'Unknown',
         'Reciver Mail': receiverMail || 'Unknown',
         'Mail Type': mailType || 'System Alert',
@@ -626,7 +627,7 @@ exports.login = async (req, res) => {
           const uaInfo = parseUserAgent(req.headers['user-agent'] || '');
 
           await sheet.addRow({
-            'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+            'TimeStamp': formatIndiaTimestamp(),
             'UserName': userName,
             'Email': cleanInput,
             'Role': role,
@@ -687,8 +688,7 @@ exports.getDashboardStats = async (req, res) => {
     }
   });
   
-  const todayStart = new Date();
-  todayStart.setHours(0,0,0,0);
+  const todayStart = safeParseDate(formatIndiaDate(new Date()));
 
   (cache.vacancies || []).forEach(row => {
     const status = getValByHeader(row, ['status']).toLowerCase() || 'open';
@@ -707,7 +707,7 @@ exports.getDashboardStats = async (req, res) => {
 
   let eventsList = cache.events.filter(row => checkAccess(getValByHeader(row, ['branch', 'sittingbranch']), getValByHeader(row, ['course', 'assignedcourse'])))
     .slice(-8)
-    .map(row => ({ title: getValByHeader(row, ['title']) || 'Event', date: getValByHeader(row, ['date']) || '', time: getValByHeader(row, ['time']) || '', type: getValByHeader(row, ['type', 'event']) || 'Placement Drive', location: getValByHeader(row, ['location', 'eventhappeningin']) || '' }));
+    .map(row => ({ title: getValByHeader(row, ['title']) || 'Event', date: formatIndiaDate(getValByHeader(row, ['date'])) || '', time: formatIndiaTime(getValByHeader(row, ['time'])) || '', type: getValByHeader(row, ['type', 'event']) || 'Placement Drive', location: getValByHeader(row, ['location', 'eventhappeningin']) || '' }));
   
   res.json({ 
     success: true, 
@@ -923,7 +923,7 @@ const placementHistoryEntry = ({ status, remarks, interviewDate, interviewTime, 
   interviewTime: String(interviewTime || ''),
   interviewVenue: String(interviewVenue || ''),
   changedBy: String(changedBy || 'Placement team'),
-  changedAt: String(changedAt || new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })),
+  changedAt: String(changedAt || formatIndiaTimestamp()),
   event: String(event || 'Record updated')
 });
 
@@ -1029,7 +1029,7 @@ exports.getApplications = async (req, res) => {
         statusHistory = [placementHistoryEntry({ status, remarks, interviewDate, interviewTime, interviewVenue, changedBy: tpoName || 'Placement team', changedAt: getValByHeader(row, ['timestamp', 'date', 'time']), event: 'Current record' })];
       }
       appsList.push({
-        rowNumber: row.rowNumber, recordType: 'application', name: getValByHeader(row, ['name', 'studentname']) || '', roll, branch, course, qual: qual || 'Not Specified', jobId, company: getValByHeader(row, ['company', 'companyname']) || 'Unknown Company', position: getValByHeader(row, ['position', 'role']) || 'Unknown Position', date: getValByHeader(row, ['time', 'date', 'timestamp']) || '', status, remarks, statusHistory, interviewDate, interviewTime, interviewVenue, tpoName, phone, email, resume, datePlaced: getValByHeader(row, ['dateplaced']) || '', packageLpa: getValByHeader(row, ['package']) || '', offerLetter: getValByHeader(row, ['offerletter']) || '', joiningStatus: getValByHeader(row, ['joiningstatus']) || ''
+        rowNumber: row.rowNumber, recordType: 'application', origin: getValByHeader(row, ['entrysource', 'recordorigin', 'origin']), name: getValByHeader(row, ['name', 'studentname']) || '', roll, branch, course, qual: qual || 'Not Specified', jobId, company: getValByHeader(row, ['company', 'companyname']) || 'Unknown Company', position: getValByHeader(row, ['position', 'role']) || 'Unknown Position', date: getValByHeader(row, ['time', 'date', 'timestamp']) || '', status, remarks, statusHistory, interviewDate, interviewTime, interviewVenue, tpoName, phone, email, resume, datePlaced: getValByHeader(row, ['dateplaced']) || '', packageLpa: getValByHeader(row, ['package']) || '', offerLetter: getValByHeader(row, ['offerletter']) || '', joiningStatus: getValByHeader(row, ['joiningstatus']) || ''
       });
     }
   });
@@ -1115,7 +1115,7 @@ exports.updateApplication = async (req, res) => {
     if (oldStatusH && status !== undefined) updateObj[oldStatusH] = status;
     
     const hRemarks = getSafeH(['remarks']); if (hRemarks && remarks !== undefined) updateObj[hRemarks] = remarks;
-    const hDatePlaced = getSafeH(['dateplaced']); if (hDatePlaced && datePlaced !== undefined) updateObj[hDatePlaced] = datePlaced;
+    const hDatePlaced = getSafeH(['dateplaced']); if (hDatePlaced && datePlaced !== undefined) updateObj[hDatePlaced] = formatIndiaDate(datePlaced);
     const hPackage = getSafeH(['package']); if (hPackage && packageLpa !== undefined) updateObj[hPackage] = packageLpa;
     const hOffer = getSafeH(['offerletter']); if (hOffer && offerLetterLink) updateObj[hOffer] = offerLetterLink;
     const hJoining = getSafeH(['joiningstatus']); if (hJoining && joiningStatus !== undefined) updateObj[hJoining] = joiningStatus;
@@ -1124,16 +1124,18 @@ exports.updateApplication = async (req, res) => {
     const hTime = getSafeH(['interviewtime', 'intervewtime']);
     const hVenue = getSafeH(['interviewvenue']);
     
-    if (hDate && interviewDate !== undefined) updateObj[hDate] = interviewDate;
-    if (hTime && interviewTime !== undefined) updateObj[hTime] = interviewTime;
+    const cleanInterviewDate = interviewDate !== undefined ? formatIndiaDate(interviewDate) : undefined;
+    const cleanInterviewTime = interviewTime !== undefined ? formatIndiaTime(interviewTime) : undefined;
+    if (hDate && interviewDate !== undefined) updateObj[hDate] = cleanInterviewDate;
+    if (hTime && interviewTime !== undefined) updateObj[hTime] = cleanInterviewTime;
     if (hVenue && interviewVenue !== undefined) updateObj[hVenue] = interviewVenue;
 
     const nextStatus = status !== undefined ? status : oldStatus;
     const nextRemarks = remarks !== undefined ? remarks : oldRemarks;
-    const nextInterviewDate = interviewDate !== undefined ? interviewDate : oldInterviewDate;
-    const nextInterviewTime = interviewTime !== undefined ? interviewTime : oldInterviewTime;
+    const nextInterviewDate = interviewDate !== undefined ? cleanInterviewDate : oldInterviewDate;
+    const nextInterviewTime = interviewTime !== undefined ? cleanInterviewTime : oldInterviewTime;
     const nextInterviewVenue = interviewVenue !== undefined ? interviewVenue : oldInterviewVenue;
-    const changedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const changedAt = formatIndiaTimestamp();
     const nextHistory = appendPlacementHistory({
       row: rows[0], oldStatus, status: nextStatus, oldRemarks, remarks: nextRemarks,
       oldInterviewDate, interviewDate: nextInterviewDate, oldInterviewTime, interviewTime: nextInterviewTime,
@@ -1172,7 +1174,7 @@ exports.updateApplication = async (req, res) => {
         setLogH('placementofficer', sTpo);
         setLogH('status', nextStatus || '');
         setLogH('remarks', nextRemarks || '');
-        setLogH('dateplaced', datePlaced !== undefined ? datePlaced : '');
+        setLogH('dateplaced', datePlaced !== undefined ? formatIndiaDate(datePlaced) : '');
         setLogH('package', packageLpa !== undefined ? packageLpa : '');
         setLogH('offerletterstatus', offerLetterLink || '');
         setLogH('joiningstatus', joiningStatus !== undefined ? joiningStatus : '');
@@ -1268,7 +1270,7 @@ exports.updatePlacementLog = async (req, res) => {
     };
     setValue(['status'], req.body.status || 'Placed');
     setValue(['remarks'], req.body.remarks || '');
-    setValue(['dateplaced'], req.body.datePlaced || '');
+    setValue(['dateplaced'], formatIndiaDate(req.body.datePlaced || ''));
     setValue(['package', 'package(lpa)'], req.body.packageLpa || '');
     setValue(['joiningstatus'], req.body.joiningStatus || '');
     if (offerLetterLink) setValue(['offerletterstatus', 'offerletter'], offerLetterLink);
@@ -1310,7 +1312,7 @@ exports.addApplication = async (req, res) => {
     await ensurePlacementHeaders(appSheet, placementTrackingHeaders);
     if (logSheet) await ensurePlacementHeaders(logSheet, placementTrackingHeaders);
 
-    const addedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const addedAt = formatIndiaTimestamp();
     const initialHistory = [placementHistoryEntry({ status: appData.status || 'Placed', remarks: appData.remarks || '', changedBy: tpoName || 'Placement team', changedAt: addedAt, event: 'Record created' })];
 
     const newRowObj = {
@@ -1320,7 +1322,7 @@ exports.addApplication = async (req, res) => {
       'Qualification': appData.qual || '', 'Resume': appData.resume || '', 'Job ID': 'MANUAL-ADD', 
       'Company Name': appData.company || '', 'Position': appData.position || '', 
       'Placement Officer': tpoName || '', 'Status': appData.status || 'Placed', 
-      'Remarks': appData.remarks || '', 'DATE PLACED': appData.datePlaced || '', 
+      'Remarks': appData.remarks || '', 'DATE PLACED': formatIndiaDate(appData.datePlaced || ''),
       'PACKAGE (LPA)': appData.packageLpa || '', 'Offer Letter': offerLetterLink, 
       'Joining Status': appData.joiningStatus || '',
       'Interview Date': '', 'Interview Time': '', 'Interview Venue': '', 'Status History': JSON.stringify(initialHistory)
@@ -1375,6 +1377,8 @@ exports.addDirectInterview = async (req, res) => {
   if (!String(candidateName || '').trim() || !String(candidateEmail || '').trim() || !String(company || '').trim() || !String(position || '').trim() || !interviewDate || !interviewTime || !String(interviewVenue || '').trim()) {
     return res.status(400).json({ success: false, message: 'Enter the candidate name and email, then complete the company, position, interview date, time, and venue.' });
   }
+  const cleanInterviewDate = formatIndiaDate(interviewDate);
+  const cleanInterviewTime = formatIndiaTime(interviewTime);
   const normalizedEmail = String(candidateEmail || '').trim();
   if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return res.status(422).json({ success: false, message: 'Enter a valid candidate email address.' });
   const resumeLink = String(candidateResume || '').trim();
@@ -1424,15 +1428,15 @@ exports.addDirectInterview = async (req, res) => {
     );
     if (existing) return res.status(409).json({ success: false, message: 'This student already has a record for that company, position, and opening. Open the existing record to update or reschedule it.' });
 
-    const createdAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
-    const history = [placementHistoryEntry({ status: 'Interview Scheduled', remarks, interviewDate, interviewTime, interviewVenue, changedBy: tpoName, changedAt: createdAt, event: 'Direct interview referral created' })];
+    const createdAt = formatIndiaTimestamp();
+    const history = [placementHistoryEntry({ status: 'Interview Scheduled', remarks, interviewDate: cleanInterviewDate, interviewTime: cleanInterviewTime, interviewVenue, changedBy: tpoName, changedAt: createdAt, event: 'Direct interview referral created' })];
     const rowData = {
       TimeStamp: createdAt, 'Student Name': studentData.name, Contact: studentData.phone,
       'Mail ID': studentData.email, 'Roll Number': studentData.roll, Course: studentData.course,
       Branch: studentData.branch, Qualification: studentData.qual, Resume: studentData.resume,
       'Job ID': resolvedJobId, 'Company Name': String(company).trim(), Position: String(position).trim(),
-      'Placement Officer': tpoName, Status: 'Interview Scheduled', Remarks: String(remarks || '').trim(),
-      'Interview Date': interviewDate, 'Interview Time': interviewTime, 'Interview Venue': String(interviewVenue).trim(),
+      'Placement Officer': tpoName, 'Entry Source': 'Manual Add', Status: 'Interview Scheduled', Remarks: String(remarks || '').trim(),
+      'Interview Date': cleanInterviewDate, 'Interview Time': cleanInterviewTime, 'Interview Venue': String(interviewVenue).trim(),
       'Status History': JSON.stringify(history)
     };
     await ensurePlacementHeaders(appSheet, Object.keys(rowData));
@@ -1447,7 +1451,7 @@ exports.addDirectInterview = async (req, res) => {
         ? latestPlacementRows((await logSheet.getRows()).filter(row => placementIdentity(row, getValByHeader) === identity), getValByHeader)
         : [];
       if (existingLogs.length) {
-        const logHistory = appendPlacementHistory({ row: existingLogs[0], oldStatus: getValByHeader(existingLogs[0], ['status']), status: 'Interview Scheduled', oldRemarks: getValByHeader(existingLogs[0], ['remarks']), remarks, oldInterviewDate: getValByHeader(existingLogs[0], ['interviewdate']), interviewDate, oldInterviewTime: getValByHeader(existingLogs[0], ['interviewtime', 'intervewtime']), interviewTime, oldInterviewVenue: getValByHeader(existingLogs[0], ['interviewvenue']), interviewVenue, changedBy: tpoName, changedAt: createdAt });
+        const logHistory = appendPlacementHistory({ row: existingLogs[0], oldStatus: getValByHeader(existingLogs[0], ['status']), status: 'Interview Scheduled', oldRemarks: getValByHeader(existingLogs[0], ['remarks']), remarks, oldInterviewDate: getValByHeader(existingLogs[0], ['interviewdate']), interviewDate: cleanInterviewDate, oldInterviewTime: getValByHeader(existingLogs[0], ['interviewtime', 'intervewtime']), interviewTime: cleanInterviewTime, oldInterviewVenue: getValByHeader(existingLogs[0], ['interviewvenue']), interviewVenue, changedBy: tpoName, changedAt: createdAt });
         logData['Status History'] = JSON.stringify(logHistory);
         existingLogs[0].assign(mapPlacementRowData(logSheet, logData));
         await existingLogs[0].save();
@@ -1460,7 +1464,7 @@ exports.addDirectInterview = async (req, res) => {
     let emailWarning = '';
     if (studentData.email) {
       try {
-        await checkAndSendStudentMails({ ...studentData, company: String(company).trim(), position: String(position).trim(), jobId: resolvedJobId, tpoName }, 'Interview Scheduled', { date: interviewDate, time: interviewTime, venue: interviewVenue }, user?.email || '');
+        await checkAndSendStudentMails({ ...studentData, company: String(company).trim(), position: String(position).trim(), jobId: resolvedJobId, tpoName }, 'Interview Scheduled', { date: cleanInterviewDate, time: cleanInterviewTime, venue: interviewVenue }, user?.email || '');
         emailSent = true;
       } catch (error) {
         emailWarning = `The interview was recorded, but the email could not be sent: ${error.message}`;
@@ -1680,10 +1684,7 @@ const findVacancyHeader = (headers, aliases) => {
 const formatTodayForVacancy = () => new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric'
 }).format(new Date());
-const formatVacancyTimestamp = () => new Intl.DateTimeFormat('en-US', {
-  timeZone: 'Asia/Kolkata', month: 'numeric', day: 'numeric', year: 'numeric',
-  hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true
-}).format(new Date());
+const formatVacancyTimestamp = () => formatIndiaTimestamp();
 
 let vacancyJobSequence = null;
 let vacancyJobSequenceReady = null;
@@ -1785,8 +1786,8 @@ exports.addVacancy = async (req, res) => {
       experience,
       salary: String(input.salary).trim(),
       genderPreference: String(input.genderPreference).trim(),
-      interviewDate: input.interviewPlan === 'Interview Scheduled' ? String(input.interviewDate) : 'Will inform once scheduled',
-      lastDate: String(input.lastDate).trim(),
+      interviewDate: input.interviewPlan === 'Interview Scheduled' ? formatIndiaDate(input.interviewDate) : 'Will inform once scheduled',
+      lastDate: formatIndiaDate(input.lastDate),
       placementOfficer: selectedOfficer,
       jobId,
       status: 'Open'
@@ -1847,7 +1848,7 @@ const toA1Column = columnNumber => {
 };
 
 const getVacancyInterviewCellValue = input => input.interviewPlan === 'Interview Scheduled'
-  ? String(input.interviewDate || '').trim()
+  ? formatIndiaDate(input.interviewDate)
   : 'Will inform once scheduled';
 
 const getEditableVacancyValues = (input, logoUrl) => {
@@ -1873,7 +1874,7 @@ const getEditableVacancyValues = (input, logoUrl) => {
     salary: String(input.salary || '').trim(),
     genderPreference: String(input.genderPreference || '').trim(),
     interviewDate: getVacancyInterviewCellValue(input),
-    lastDate: String(input.lastDate || '').trim()
+    lastDate: formatIndiaDate(input.lastDate)
   };
 };
 
@@ -2311,13 +2312,13 @@ const serializeEvent = row => ({
   eventKey: getValByHeader(row, ['eventid']) || `row-${row?.rowNumber || ''}`,
   eventId: getValByHeader(row, ['eventid']),
   rowNumber: row?.rowNumber || null,
-  date: getValByHeader(row, ['dateoftheevent', 'date']),
+  date: formatIndiaDate(getValByHeader(row, ['dateoftheevent', 'date'])),
   tpo: getValByHeader(row, ['tpo', 'placementofficer']),
   branch: getValByHeader(row, ['branch']),
   type: getValByHeader(row, ['event', 'type']),
   title: getValByHeader(row, ['title']),
   description: getValByHeader(row, ['descripation', 'description']),
-  time: getValByHeader(row, ['timeoftheevent', 'time']),
+  time: formatIndiaTime(getValByHeader(row, ['timeoftheevent', 'time'])),
   location: getValByHeader(row, ['eventhappeningin', 'location']),
   poster: getValByHeader(row, ['posterlink', 'poster']),
   status: getExactEventValue(row, ['status']) || 'Scheduled',
@@ -2399,7 +2400,9 @@ exports.getEvents = (req, res) => {
 // 🚨 RULES 1 & 2: TALENTINO & PLACEMENT DRIVE EVENTS (NEW ARCHITECTURE)
 // =========================================================
 exports.addEvent = async (req, res) => {
-  const { date, tpo, branch, type, title, description, time, location, userName } = req.body;
+  const { date: rawDate, tpo, branch, type, title, description, time: rawTime, location, userName } = req.body;
+  const date = formatIndiaDate(rawDate);
+  const time = formatIndiaTime(rawTime);
   try {
     const eventSheet = doc.sheetsByTitle["Event"];
     let posterLink = '';
@@ -2425,7 +2428,7 @@ exports.addEvent = async (req, res) => {
     const dateStr = dateObj.toISOString().split('T')[0].replace(/-/g, '');
     const randomStr = Math.random().toString(36).substring(2, 6).toUpperCase();
     const eventId = `EVT-${dateStr}-${randomStr}`;
-    const timestamp = dateObj.toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const timestamp = formatIndiaTimestamp(dateObj);
 
     // Prepare row data including new system columns
     const rowData = { 
@@ -2435,7 +2438,7 @@ exports.addEvent = async (req, res) => {
       'Event': type, 
       'Title': title, 
       'Descripation': description || '', 
-      'Time of the Event': time || '', 
+      'Time of the Event': time,
       'Event Happening in': location || '', 
       'Poster Link': posterLink,
       'Event_ID': eventId,
@@ -2638,7 +2641,7 @@ exports.addEvent = async (req, res) => {
         const mailSentAtH = getH('mailsentat');
         
         if (mailStatusH) updateData[mailStatusH] = 'SENT';
-        if (mailSentAtH) updateData[mailSentAtH] = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+        if (mailSentAtH) updateData[mailSentAtH] = formatIndiaTimestamp();
         
         if (Object.keys(updateData).length > 0) {
            newRow.assign(updateData);
@@ -2693,6 +2696,8 @@ const updateEventStatus = async (req, res, nextStatus) => {
       return res.status(400).json({ success: false, message: 'Choose a valid event time.' });
     }
   }
+  const nextEventDate = nextStatus === 'Rescheduled' ? formatIndiaDate(requestedDate) : '';
+  const nextEventTime = nextStatus === 'Rescheduled' ? formatIndiaTime(requestedTime) : '';
 
   try {
     await loadDocInfo();
@@ -2719,7 +2724,7 @@ const updateEventStatus = async (req, res, nextStatus) => {
     }
 
     const headers = eventSheet.headerValues || [];
-    const updatedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const updatedAt = formatIndiaTimestamp();
     const actor = String(req.portalUser?.name || req.portalUser?.email || 'Placement Team').trim();
     const updateData = {};
     const assignByAliases = (aliases, value) => {
@@ -2736,8 +2741,8 @@ const updateEventStatus = async (req, res, nextStatus) => {
     const previousDate = event.date;
     const previousTime = event.time;
     if (nextStatus === 'Rescheduled') {
-      assignByAliases(['dateoftheevent', 'date'], requestedDate);
-      assignByAliases(['timeoftheevent', 'time'], requestedTime);
+      assignByAliases(['dateoftheevent', 'date'], nextEventDate);
+      assignByAliases(['timeoftheevent', 'time'], nextEventTime);
     }
     eventRow.assign(updateData);
     await eventRow.save();
@@ -2824,11 +2829,7 @@ exports.runDailyCron = async () => {
     if (!lastDateKey) return false;
 
     try {
-      let parsedDate = new Date(lastDateKey);
-      if (isNaN(parsedDate.getTime()) && lastDateKey.includes('/')) {
-         const parts = lastDateKey.split(/[/\s,.-]+/);
-         if (parts.length >= 3) { parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`); }
-      }
+      const parsedDate = safeParseDate(lastDateKey);
       if (!isNaN(parsedDate.getTime())) { return formatter.format(parsedDate) === yStr; }
       return false;
     } catch(e) { return false; }
@@ -2934,11 +2935,7 @@ exports.runDailyCron = async () => {
     if (!evDateStr) return false;
     
     try {
-      let parsedDate = new Date(evDateStr);
-      if (isNaN(parsedDate.getTime()) && evDateStr.includes('/')) {
-         const parts = evDateStr.split(/[/\s,.-]+/);
-         if (parts.length >= 3) { parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`); }
-      }
+      const parsedDate = safeParseDate(evDateStr);
       if (!isNaN(parsedDate.getTime())) { return formatter.format(parsedDate) === todayStr; }
       return false;
     } catch(err) { return false; }
@@ -3225,16 +3222,19 @@ exports.getPublicPlacementTeam = async (_req, res) => {
     const seen = new Set();
     const team = rows.map(row => {
       const name = getValByHeader(row, ['name', 'tponame', 'placementofficer']).trim();
-      const role = getValByHeader(row, ['role', 'designation', 'position']).trim() || 'Placement Officer';
+      const role = getValByHeader(row, ['position', 'role', 'designation']).trim();
       return {
         name,
         role,
         branches: getValByHeader(row, ['assignedbranches', 'assignedbranch', 'sittingbranch', 'branch']).trim(),
-        photo: getValByHeader(row, ['profilephotourl', 'profilephoto', 'profileimage', 'photo', 'imageurl']).trim()
+        photo: getValByHeader(row, ['profilephotourl', 'profilephoto', 'profileimage', 'photo', 'imageurl']).trim(),
+        phone: getValByHeader(row, ['contactnumber', 'phonenumber', 'phone', 'contact']).trim(),
+        email: getValByHeader(row, ['mailid', 'email', 'workemail']).trim(),
+        linkedin: getValByHeader(row, ['linkedin', 'linkedinurl', 'linkedinprofile']).trim()
       };
     }).filter(member => {
       const key = normalizePlacementText(member.name).replace(/^(mrs|miss|mr|ms|dr)/, '');
-      if (!key || seen.has(key) || !/(tpo|placement|career guidance|corporate relations?|client relations?)/i.test(member.role)) return false;
+      if (!key || seen.has(key) || !/(tpo|placement|career guidance|corporate relations?(?:hip)?|client relations?(?:hip)?)/i.test(member.role)) return false;
       seen.add(key);
       return true;
     });
@@ -4007,7 +4007,7 @@ exports.addAdminUser = async (req, res) => {
       const hCourse = getSafeH(['assignedcourses', 'course']); if(hCourse) newRow[hCourse] = course;
       const hAccess = getSafeH(['accesstype', 'access']); if(hAccess) newRow[hAccess] = access;
       const hStatus = getSafeH(['status']); if(hStatus) newRow[hStatus] = 'Active';
-      const hCreated = getSafeH(['createdat']); if(hCreated) newRow[hCreated] = new Date().toLocaleString('en-GB');
+      const hCreated = getSafeH(['createdat']); if(hCreated) newRow[hCreated] = formatIndiaTimestamp();
     }
 
     // 🚨 SAVE THE NEW FIELDS SAFELY
@@ -4074,7 +4074,7 @@ exports.updateAdminUser = async (req, res) => {
         const hRole = getSafeH(['role']); if(hRole) updateObj[hRole] = role;
         const hCourse = getSafeH(['assignedcourses', 'course']); if(hCourse) updateObj[hCourse] = course;
         const hAccess = getSafeH(['accesstype', 'access']); if(hAccess) updateObj[hAccess] = access;
-        const hUpdated = getSafeH(['updatedat']); if(hUpdated) updateObj[hUpdated] = new Date().toLocaleString('en-GB');
+        const hUpdated = getSafeH(['updatedat']); if(hUpdated) updateObj[hUpdated] = formatIndiaTimestamp();
       }
 
       // 🚨 UPDATE THE NEW FIELDS SAFELY
@@ -4814,22 +4814,24 @@ exports.updateDriveStatus = async (req, res) => {
     const oldInterviewDate = getValByHeader(current, ['interviewdate']);
     const oldInterviewTime = getValByHeader(current, ['interviewtime', 'intervewtime']);
     const oldInterviewVenue = getValByHeader(current, ['interviewvenue']);
+    const cleanInterviewDate = interviewDate !== undefined ? formatIndiaDate(interviewDate) : undefined;
+    const cleanInterviewTime = interviewTime !== undefined ? formatIndiaTime(interviewTime) : undefined;
     const nextStatus = studentStatus !== undefined ? studentStatus : oldStatus;
     const nextRemarks = remarks !== undefined ? remarks : oldRemarks;
-    const nextInterviewDate = interviewDate !== undefined ? interviewDate : oldInterviewDate;
-    const nextInterviewTime = interviewTime !== undefined ? interviewTime : oldInterviewTime;
+    const nextInterviewDate = interviewDate !== undefined ? cleanInterviewDate : oldInterviewDate;
+    const nextInterviewTime = interviewTime !== undefined ? cleanInterviewTime : oldInterviewTime;
     const nextInterviewVenue = interviewVenue !== undefined ? interviewVenue : oldInterviewVenue;
     const headers = sheet.headerValues || [];
     const findHeader = aliases => findPlacementHeader(headers, aliases);
     const update = {};
     if (studentStatus !== undefined) update[findHeader(['studentstatus'])] = studentStatus;
     if (remarks !== undefined) update[findHeader(['studentremarks', 'tpo remarks', 'remarks', 'remark'])] = remarks;
-    if (interviewDate !== undefined) update[findHeader(['interviewdate'])] = interviewDate;
-    if (interviewTime !== undefined) update[findHeader(['interviewtime'])] = interviewTime;
+    if (interviewDate !== undefined) update[findHeader(['interviewdate'])] = cleanInterviewDate;
+    if (interviewTime !== undefined) update[findHeader(['interviewtime'])] = cleanInterviewTime;
     if (interviewVenue !== undefined) update[findHeader(['interviewvenue'])] = interviewVenue;
     if (!Object.keys(update).length) return res.status(400).json({ success: false, message: 'There are no placement drive changes to save.' });
 
-    const changedAt = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const changedAt = formatIndiaTimestamp();
     const nextHistory = appendPlacementHistory({ row: current, oldStatus, status: nextStatus, oldRemarks, remarks: nextRemarks, oldInterviewDate, interviewDate: nextInterviewDate, oldInterviewTime, interviewTime: nextInterviewTime, oldInterviewVenue, interviewVenue: nextInterviewVenue, changedBy: user?.name || 'Placement team', changedAt });
     update[findHeader(['statushistory'])] = JSON.stringify(nextHistory);
 
@@ -5012,7 +5014,7 @@ exports.addTrainerLog = async (req, res) => {
     const h = sheet.headerValues;
     
     await sheet.addRow({
-      [getFuzzyHeader(h, 'timestamp')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      [getFuzzyHeader(h, 'timestamp')]: formatIndiaTimestamp(),
       [getFuzzyHeader(h, 'branch')]: branch,
       [getFuzzyHeader(h, 'trainername')]: trainerName,
       [getFuzzyHeader(h, 'course')]: course,

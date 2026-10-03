@@ -1,6 +1,7 @@
 const { JWT } = require('google-auth-library');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { getCache, hasAccess } = require('./config');
+const { formatIndiaTimestamp } = require('./utils/dateTime');
 
 const serviceAccountAuth = new JWT({
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -332,7 +333,7 @@ exports.reviewLeaveRequest = async (req, res) => {
     row.assign(makeRow(sheet, {
       leaveStatus: decision,
       approvedBy: cleanText(req.portalUser?.name),
-      decisionDate: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      decisionDate: formatIndiaTimestamp(),
       approvalNotes: cleanText(body.notes),
     }));
     await row.save();
@@ -553,7 +554,7 @@ exports.addSession = async (req, res) => {
     const progressSheet = findSheet('topicProgress');
     const diarySheet = findSheet('diary');
     const progressRows = progressSheet ? await readRows(progressSheet) : [];
-    const now = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const now = formatIndiaTimestamp();
     for (const studentId of studentIds) {
       const trainingRow = trainingRows.find(row => cleanText(readField(row, 'studentId')).toLowerCase() === studentId.toLowerCase() &&
         (trainingId ? cleanText(readField(row, 'trainingId')) === trainingId : cleanText(readField(row, 'batchId')) === batchId));
@@ -634,7 +635,7 @@ exports.addDiaryEntry = async (req, res) => {
     const diaryId = nextId('DIA');
     await sheet.addRow(makeRow(sheet, {
       diaryId, studentId: cleanText(body.studentId), trainingId: cleanText(body.trainingId),
-      date: cleanText(body.date) || new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+      date: cleanText(body.date) || formatIndiaTimestamp(),
       eventType: cleanText(body.eventType) || 'Trainer Note', title: cleanText(body.title),
       description: cleanText(body.description), createdBy: cleanText(req.portalUser?.name)
     }));

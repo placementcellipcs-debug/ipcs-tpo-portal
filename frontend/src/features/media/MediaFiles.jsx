@@ -4,6 +4,7 @@ import { CircleNotch, FolderOpen, Eye } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import MediaTopNav from './MediaTopNav';
 import { API_BASE } from '../../services/apiConfig';
+import { formatPortalDate } from '../../utils/dateFormat';
 
 export default function MediaFiles() {
   const [files, setFiles] = useState([]);
@@ -72,7 +73,7 @@ export default function MediaFiles() {
                         {f.session}
                       </span>
                     </td>
-                    <td style={{ padding: '15px 20px', color: '#e2e8f0', fontSize: '0.85rem' }}>{f.date}</td>
+                    <td style={{ padding: '15px 20px', color: '#e2e8f0', fontSize: '0.85rem' }}>{formatPortalDate(f.date, String(f.date || ''))}</td>
                     <td style={{ padding: '15px 20px', textAlign: 'center' }}>
                       <a href={f.link} target="_blank" rel="noreferrer" style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#3b82f6', padding: '8px 16px', borderRadius: '8px', textDecoration: 'none', fontSize: '0.8rem', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '5px', border: '1px solid rgba(59, 130, 246, 0.3)', transition: '0.2s' }}>
                         <Eye size={16} weight="bold"/> Preview File

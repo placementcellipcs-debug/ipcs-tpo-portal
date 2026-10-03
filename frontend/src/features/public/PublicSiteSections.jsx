@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import axios from 'axios';
-import { ArrowRight, ArrowUpRight, BookOpenText, Briefcase, Buildings, CheckCircle, Compass, GlobeHemisphereWest, GraduationCap, Handshake, Lightbulb, Megaphone, PlayCircle, Star, Target, UsersThree, VideoCamera, X } from '@phosphor-icons/react';
+import { ArrowRight, ArrowUpRight, BookOpenText, Briefcase, Buildings, CheckCircle, Compass, EnvelopeSimple, GlobeHemisphereWest, GraduationCap, Handshake, Lightbulb, LinkedinLogo, Megaphone, Phone, PlayCircle, Star, Target, UsersThree, VideoCamera, WhatsappLogo, X } from '@phosphor-icons/react';
 import { API_BASE } from '../../services/apiConfig';
+import { formatPortalDate } from '../../utils/dateFormat';
 import './PublicSiteSections.css';
 import giftyPhoto from '../../assets/Team IPCS/Ms. Gifty KP.png';
 
@@ -27,7 +28,7 @@ const placementTeamProfiles = [
   { name: 'Ms. Gifty KP', aliases: ['Gifty KP'], role: placementTeamLead.role, bio: placementTeamLead.bio, image: giftyPhoto },
   { name: 'Mr. Pranav V S', aliases: ['Pranav V S', 'Pranav V.S.'], role: 'Corporate Relations Officer', bio: 'Mr. Pranav V S is a driven Corporate Relations Officer at IPCS Global, specializing in building industry partnerships and managing placement operations. He holds a Bachelor of Computer Application degree with a focus on Cloud Computing and Cyber Security. Passionate about connecting candidates with real career opportunities, Pranav has successfully contributed to over 500 placements. He excels in coordinating campus hiring activities, conducting candidate screening, and providing comprehensive job readiness support, including resume building and interview preparation. His dedication ensures that students are well-prepared to get hired while helping companies find the right talent efficiently.' },
   { name: 'Ms. Thana Anjana', aliases: ['Thana Anjana'], role: 'Placement Officer', bio: 'Ms. Thana Anjana is a proactive Placement Officer at IPCS Global. Holding a Master of Business Administration in HR and Finance, she specializes in Placement and Corporate Coordination. Thana consistently connects skilled candidates with the right job opportunities across technical domains like IT, Digital Marketing, Data Science, and AI. She is highly adept at identifying companies with active job openings, building comprehensive HR contact databases, and reaching out to organizations for placement tie-ups. Her strong networking and communication skills ensure a seamless hiring process, coordinating interviews and guiding candidates successfully through their hiring journeys.' },
-  { name: 'Ms. Fathima Rinsa', aliases: ['Fathima Rinsa', 'Fathima Rinsa P'], role: 'Placement Officer' },
+  { name: 'Ms. Fathima Rinsa', aliases: ['Fathima Rinsa', 'Fathima Rinsa P'], role: 'Senior Corporate Relations Officer', bio: 'Ms. Fathima Rinsa is a highly experienced Senior Corporate Relations Officer at IPCS Global, specializing in Human Resource Management and Corporate Recruitment. With a robust background in developing HR frameworks and leading end-to-end recruitment operations, she excels at bridging the gap between academic institutions and corporate organizations. Based in Kochi, Fathima actively builds strategic partnerships, collaborates with industry leaders, and organizes placement drives, workshops, and corporate training programs to enhance candidate employability. Holding a Bachelor of Arts in Economics, she leverages her extensive expertise in full-lifecycle employee management and corporate tie-ups to align skilled talent with business success, driving both organizational growth and meaningful career development for candidates.' },
   { name: 'Mr. Visakh S', aliases: ['Visakh S'], role: 'Senior Corporate Relation Officer', bio: 'Mr. Visakh S is a highly skilled Senior Corporate Relation Officer at IPCS Global, dedicated to connecting the dots between talent, business, and success. Bringing valuable experience from his previous roles as a Talent Acquisition Specialist and a Documentation Specialist, he possesses deep expertise in global talent acquisition, technical recruiting, and people management. Visakh leverages his strong professional background to bridge the gap between skilled candidates and corporate hiring needs, facilitating successful placements and fostering long-term industry connections.' },
   { name: 'Ms. Yashi Gupta', aliases: ['Yashi Gupta'], role: 'Placement Officer', bio: 'Ms. Yashi Gupta is a dedicated professional serving as a Placement Officer at IPCS Global. Based in Mumbai, Maharashtra, she operates within the organization’s placement division to connect job seekers with industry opportunities. Her role is essential in supporting the broader corporate relations team and contributing to the successful career development of candidates.' }
 ];
@@ -85,6 +86,15 @@ const logoSource = value => {
 };
 const videoThumbnail = item => item.thumbnailLink || `https://drive.google.com/thumbnail?id=${encodeURIComponent(item.id)}&sz=w640`;
 const normalizeTeamName = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '').replace(/^(mrs|miss|mr|ms|dr)/, '');
+const teamPhoneHref = value => {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  return `tel:${String(value).trim().startsWith('+') ? '+' : digits.length === 10 ? '+91' : ''}${digits}`;
+};
+const teamWhatsappHref = value => {
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.length === 10) digits = `91${digits}`;
+  return digits ? `https://wa.me/${digits}` : '';
 const publicGet = async (url) => {
   let lastError;
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -129,6 +139,12 @@ function TeamProfileCard({ person, featured = false, index = 0 }) {
       <h3>{person.name}</h3>
       {person.branches && <span className="public-team-branches">{person.branches}</span>}
       <p>{bio}</p>
+      <nav className="public-team-actions" aria-label={`Contact ${person.name}`}>
+        {person.linkedin && <a href={person.linkedin.startsWith('http') ? person.linkedin : `https://${person.linkedin}`} target="_blank" rel="noreferrer"><LinkedinLogo size={15} weight="fill" /> Connect</a>}
+        {person.phone && <a href={teamPhoneHref(person.phone)}><Phone size={15} weight="fill" /> Call</a>}
+        {person.email && <a href={`mailto:${person.email}`}><EnvelopeSimple size={15} weight="fill" /> Email</a>}
+        {person.phone && <a href={teamWhatsappHref(person.phone)} target="_blank" rel="noreferrer"><WhatsappLogo size={15} weight="fill" /> WhatsApp</a>}
+      </nav>
     </div>
   </article>;
 }
@@ -218,9 +234,18 @@ export default function PublicSiteSections({ page = 'all' }) {
   const mediaBasePath = partnerMediaPage ? '/partners/media' : '/placements/media';
   const partnersLoading = ['partners', 'partners-all', 'all'].includes(page) && !partnersLoaded;
   const postersLoading = ['placement', 'placement-gallery', 'all'].includes(page) && !postersLoaded;
-  const placementTeam = placementTeamProfiles.map(profile => {
-    const match = placementOfficers.find(member => profile.aliases.some(alias => normalizeTeamName(alias) === normalizeTeamName(member.name)));
-    return { ...profile, photo: profile.image ? '' : match?.photo || '', branches: match?.branches || '' };
+  const placementTeam = placementOfficers.map(member => {
+    const profile = placementTeamProfiles.find(candidate => candidate.aliases.some(alias => normalizeTeamName(alias) === normalizeTeamName(member.name)));
+    const isGifty = normalizeTeamName(member.name) === normalizeTeamName(placementTeamLead.name);
+    return {
+      ...profile,
+      ...member,
+      name: member.name,
+      role: member.role || profile?.role || 'Placement Officer',
+      bio: profile?.bio || member.bio || `Supporting student placements and employer partnerships${member.branches ? ` across ${member.branches}` : ''} at IPCS Global.`,
+      image: member.photo ? '' : (profile?.image || ''),
+      linkedin: member.linkedin || (isGifty ? 'https://www.linkedin.com/in/gifty-kp/' : '')
+    };
   });
   const placementTeamLeadProfile = placementTeam.find(person => normalizeTeamName(person.name) === normalizeTeamName(placementTeamLead.name));
   const placementTeamMembers = placementTeam.filter(person => person !== placementTeamLeadProfile);
@@ -372,8 +397,9 @@ export default function PublicSiteSections({ page = 'all' }) {
                 <div className="public-card-icon"><Compass size={23} weight="duotone" /></div>
                 <span className="public-card-kicker">Who We Are</span>
                 <h3>Industry experience. Practical learning. Global reach.</h3>
-                <p>IPCS (Ingenious Power and Control Systems) was founded in Kochi in 2008, first delivering industrial automation projects. As demand for skilled technical professionals grew, we extended that experience into hands-on technical education.</p>
-                <p>Today, IPCS Global combines automation services with professional training across industrial systems, smart infrastructure, IT, emerging technologies, and digital marketing. Our work spans India, the UAE, and Saudi Arabia, and our alumni contribute to organizations worldwide.</p>
+                <p>IPCS Global (Ingenious Power and Control Systems) brings a research-oriented and progressive approach to technical education and industrial automation. Established in Kochi in 2008, IPCS began with industrial automation projects for local industries and grew through a practical, quality-focused approach.</p>
+                <p>In 2009, IPCS opened its first practical training centre in Kozhikode to help close the gap between education and industry. Today, IPCS Global combines technical education, automation solutions, and career pathways across India, the UAE, and Saudi Arabia, with more than 1,000 employees and training centres located within partner university campuses.</p>
+                <p>Our alumni work across manufacturing, Oil &amp; Gas, IT, and infrastructure. We continue to connect skills, industry, and opportunity through practical learning and industry partnerships.</p>
                 <a className="public-about-team-link" href="#team">Learn more about our Team <ArrowRight size={17} weight="bold" /></a>
               </article>
               <div className="public-about-facts">
@@ -393,13 +419,13 @@ export default function PublicSiteSections({ page = 'all' }) {
             </div>
           </article>
           <div className="public-capability-grid">
-            <article><span>INDUSTRY SOLUTIONS</span><h3>Automation, from design through commissioning.</h3><p>Process, factory, and machine automation; CNC solutions; building and energy management; IoT and robotics; industrial calibration and testing.</p><div>{['HMI', 'PLCs', 'DCS', 'SCADA', 'Drives', 'Sensors'].map(item => <b key={item}>{item}</b>)}</div></article>
-            <article><span>PROFESSIONAL TRAINING</span><h3>Skills built around real systems and industry needs.</h3><p>Corporate and professional programs span automation, controls, digital technology, and career-ready skills.</p><div>{['PLC & SCADA', 'DCS & HMI', 'Panel Design', 'Process & Electrical Controls', 'Embedded Systems', 'Robotics', 'Industrial Networking', 'IoT', 'IT', 'Digital Marketing'].map(item => <b key={item}>{item}</b>)}</div></article>
+            <article><span>INDUSTRY SOLUTIONS</span><h3>Automation, from design through commissioning.</h3><p>We propose, supply, install, and commission systems to industry standards across software, marine, construction, and manufacturing. Our work includes process, factory, and machine automation; CNC; building and energy management; IoT and robotics; and industrial calibration and testing.</p><div>{['PLCs', 'SCADA', 'DCS', 'HMI', 'CNC', 'IoT', 'Robotics', 'Drives', 'Sensors'].map(item => <b key={item}>{item}</b>)}</div></article>
+            <article><span>PROFESSIONAL &amp; CORPORATE TRAINING</span><h3>Skills built around real systems and industry needs.</h3><p>Hands-on training for professionals and companies builds practical skills for modern technical work, automation, controls, IT, and emerging technologies.</p><div>{['PLC & SCADA', 'DCS & HMI', 'Panel Design', 'Process & Electrical Controls', 'Embedded Systems', 'Robotics', 'Industrial Networking', 'IoT', 'Python & Data Science', 'Digital Marketing'].map(item => <b key={item}>{item}</b>)}</div></article>
           </div>
           <div className="public-values-row">
-            <div><span className="public-value-icon"><Star size={17} weight="fill" /></span><span><b>Our Values</b><small>Professional ethics, mutual respect, teamwork, and complete client satisfaction.</small></span></div>
-            <div><span className="public-value-icon"><Target size={17} weight="fill" /></span><span><b>Our Goal</b><small>Exceed customer expectations and deliver excellent automation solutions across sectors.</small></span></div>
-            <div><span className="public-value-icon"><GlobeHemisphereWest size={17} weight="fill" /></span><span><b>Our reach</b><small>Learning and industry relationships across regions.</small></span></div>
+            <div><span className="public-value-icon"><Compass size={17} weight="fill" /></span><span><b>Our Mission</b><small>Bring practical technical education, automation expertise, and career opportunity together to prepare people for industry.</small></span></div>
+            <div><span className="public-value-icon"><Target size={17} weight="fill" /></span><span><b>Our Vision</b><small>Become a premier automation solutions provider across diverse sectors while exceeding customer expectations.</small></span></div>
+            <div><span className="public-value-icon"><Star size={17} weight="fill" /></span><span><b>Our Values</b><small>Professional ethics, complete client satisfaction, team spirit, mutual respect, and coordinated delivery.</small></span></div>
           </div>
           <section className="public-milestones-section" id="milestones" aria-label="IPCS Global milestones">
             <div className="public-milestones-intro"><span>IPCS GLOBAL IN NUMBERS</span><h2>Progress built together.</h2></div>
@@ -641,7 +667,7 @@ export default function PublicSiteSections({ page = 'all' }) {
                       {vacancy.location && <span><Buildings size={16} /><span>{vacancy.location}</span></span>}
                       {vacancy.mode && <span><Briefcase size={16} /><span>{vacancy.mode}</span></span>}
                     </div>
-                    {vacancy.lastDate && <div className="public-vacancy-deadline">{isExpired ? 'Closed on' : 'Apply by'} <strong>{vacancy.lastDate}</strong></div>}
+                    {vacancy.lastDate && <div className="public-vacancy-deadline">{isExpired ? 'Closed on' : 'Apply by'} <strong>{formatPortalDate(vacancy.lastDate, vacancy.lastDate)}</strong></div>}
                   </article>;
                 })}</div>}
         </div>

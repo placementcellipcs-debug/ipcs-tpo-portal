@@ -6,6 +6,7 @@ import {
   CaretLeft, Trophy, ArrowsClockwise, FilePdf
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import { formatPortalDate, getTodayPortalDateInput, parsePortalDateTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
 import StatusBadge from '../../components/StatusBadge';
 import { getPlacementIdentity, latestPlacementRecords, normalizePlacementText } from '../../utils/placementRecords';
@@ -23,19 +24,7 @@ const getStandardCourse = (c) => {
   return 'Others';
 };
 
-const parseDate = (dStr) => {
-  if (!dStr) return null;
-  let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0].replace(/,/g, '') : dStr;
-  if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
-    const parts = cleanStr.split(/[/-]/);
-    if (parts.length === 3) {
-      if (parts[2].length === 4) return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-      if (parts[0].length === 4) return new Date(`${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`);
-    }
-  }
-  const d = new Date(cleanStr);
-  return isNaN(d) ? null : d;
-};
+const parseDate = dStr => parsePortalDateTime(dStr);
 
 const getDrivePdf = (url) => {
   if (!url || typeof url !== 'string') return null;
@@ -94,7 +83,7 @@ export default function PlacedStudents() {
   const [addForm, setAddForm] = useState({ 
     name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', 
     company: '', position: '', status: 'Placed', remarks: '', 
-    datePlaced: new Date().toISOString().split('T')[0], packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null 
+    datePlaced: getTodayPortalDateInput(), packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null
   });
 
   useEffect(() => {
@@ -298,7 +287,7 @@ export default function PlacedStudents() {
 
       await axios.post(`${API_BASE}/api/tpo/applications/add`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       setIsAddModalOpen(false);
-      setAddForm({ name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', company: '', position: '', status: 'Placed', remarks: '', datePlaced: new Date().toISOString().split('T')[0], packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null });
+      setAddForm({ name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', company: '', position: '', status: 'Placed', remarks: '', datePlaced: getTodayPortalDateInput(), packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null });
       fetchData();
     } catch { alert("Failed to add placement."); } finally { setSavingStatus(false); }
   };
@@ -453,7 +442,7 @@ export default function PlacedStudents() {
                     </div>
                     <div>
                       <strong style={{ display: 'block', color: '#fff', fontSize: '1rem', marginBottom: '4px' }}>
-                        {app.datePlaced ? (app.datePlaced.includes('/') ? app.datePlaced.split(' ')[0].replace(/,/g, '') : new Date(app.datePlaced).toLocaleDateString('en-GB')) : 'N/A'}
+                        {app.datePlaced ? formatPortalDate(app.datePlaced, 'N/A') : 'N/A'}
                       </strong>
                       <span style={{ color: '#10b981', fontSize: '0.85rem', fontWeight: 600 }}>{app.packageLpa ? `${app.packageLpa} LPA` : 'N/A LPA'}</span>
                     </div>

@@ -81,6 +81,9 @@
 .public-team-role { color: #187ba3; font-size: .64rem; font-weight: 900; letter-spacing: .11em; text-transform: uppercase; }
 .public-team-card h3 { margin: 7px 0 10px; color: #172e49; font-size: 1.05rem; letter-spacing: -.025em; }
 .public-team-card p { margin: 0; color: #6a7a8e; font-size: .75rem; line-height: 1.68; }
+.public-team-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
+.public-team-actions a { display: inline-flex; align-items: center; gap: 5px; padding: 6px 8px; border: 1px solid #dce8f1; border-radius: 8px; color: #28658a; background: #f5fafc; font-size: .65rem; font-weight: 800; text-decoration: none; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+.public-team-actions a:hover { transform: translateY(-1px); border-color: #9bc7da; background: #e9f6fa; }
 .public-team-lead { width: min(100%, 900px); min-height: 0; margin: 0 auto 20px; padding: 30px; display: grid; grid-template-columns: 210px minmax(0, 1fr); align-items: center; gap: 30px; border-color: #cfe0ec; background: linear-gradient(115deg, #fff, #f7fbfd); }
 .public-team-lead .public-team-photo-wrap { width: 210px; margin: 0; }
 .public-team-lead-label { display: inline-flex; margin-bottom: 11px; padding: 6px 10px; border-radius: 999px; color: #087b96; background: #e9f8fa; font-size: .63rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }

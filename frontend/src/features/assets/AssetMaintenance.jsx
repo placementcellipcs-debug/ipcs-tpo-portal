@@ -4,6 +4,7 @@ import { CircleNotch, Wrench, X, CheckCircle, WarningCircle, Screwdriver } from 
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
 import AssetWorkspaceNav from './AssetWorkspaceNav';
+import { formatPortalDateTime } from '../../utils/dateFormat';
 
 export default function AssetMaintenance() {
   const [maintenance, setMaintenance] = useState([]);
@@ -104,7 +105,7 @@ export default function AssetMaintenance() {
                 
                 <div className="cl-middle" style={{ flex: 1, minWidth: '150px' }}>
                   <span className={`status-pill ${m.status === 'OPEN' ? 'red' : 'green'}`}>{m.status}</span>
-                  <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '6px' }}>Reported: <strong style={{ color: '#cbd5e1' }}>{m.date}</strong></div>
+                  <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '6px' }}>Reported: <strong style={{ color: '#cbd5e1' }}>{formatPortalDateTime(m.date, String(m.date || ''))}</strong></div>
                 </div>
                 
                 <div className="cl-right" style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', minWidth: '150px' }}>

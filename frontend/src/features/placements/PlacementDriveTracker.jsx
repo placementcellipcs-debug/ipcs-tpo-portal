@@ -3,6 +3,7 @@ import axios from 'axios';
 import { CalendarBlank, CaretDown, CircleNotch, FloppyDisk, MagnifyingGlass, MapPin, Users, CheckCircle, WarningCircle } from '@phosphor-icons/react';
 import { API_BASE } from '../../services/apiConfig';
 import { getStatusTone } from '../../utils/statusTone';
+import { formatPortalDate } from '../../utils/dateFormat';
 
 const DRIVE_STATUSES = [
   'Pending', 'Shortlisted', 'Interview Scheduled', 'Interview Attended', 'Interview Not Attended',
@@ -95,7 +96,7 @@ export default function PlacementDriveTracker() {
             return <article className={`pdt-drive-card ${isOpen ? 'expanded' : ''}`} key={drive.driveId}>
               <button type="button" className="pdt-drive-heading" aria-expanded={isOpen} onClick={() => setOpenDrives(current => ({ ...current, [drive.driveId]: !current[drive.driveId] }))}>
                 <div className="pdt-drive-mark"><CalendarBlank size={22} weight="fill" /></div>
-                <div className="pdt-drive-title"><span className="pdt-eyebrow">PLACEMENT DRIVE</span><strong>{drive.driveId}</strong><span className="pdt-drive-meta"><span><CalendarBlank size={15} />{drive.driveDate || 'Date not set'}</span><span><MapPin size={15} />{drive.driveLocation || 'Location not set'}</span></span></div>
+                <div className="pdt-drive-title"><span className="pdt-eyebrow">PLACEMENT DRIVE</span><strong>{drive.driveId}</strong><span className="pdt-drive-meta"><span><CalendarBlank size={15} />{drive.driveDate ? formatPortalDate(drive.driveDate) : 'Date not set'}</span><span><MapPin size={15} />{drive.driveLocation || 'Location not set'}</span></span></div>
                 <div className="pdt-drive-metrics"><span><Users size={17} />{drive.applicants.length} students</span><span className="pdt-placed-count">{placedCount} offer / placed</span></div>
                 <CaretDown className="pdt-chevron" size={20} />
               </button>

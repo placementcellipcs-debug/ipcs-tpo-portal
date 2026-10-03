@@ -10,6 +10,7 @@ import {
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
 import StatusBadge from '../../components/StatusBadge';
+import { parsePortalDateTime } from '../../utils/dateFormat';
 
 const TILE_COLORS = ['#10b981', '#ef4444', '#3b82f6', 'var(--accent-primary)', '#f59e0b', '#ec4899', '#0ea5e9', '#f43f5e'];
 
@@ -24,19 +25,7 @@ const getStandardCourse = (c) => {
   return 'Others';
 };
 
-const parseDate = (dStr) => {
-  if (!dStr) return null;
-  let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dStr;
-  if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
-    const parts = cleanStr.split(/[/-]/);
-    if (parts.length === 3) {
-      if (parts[2].length === 4) return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-      if (parts[0].length === 4) return new Date(`${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`);
-    }
-  }
-  const d = new Date(cleanStr);
-  return isNaN(d) ? null : d;
-};
+const parseDate = dStr => parsePortalDateTime(dStr);
 
 export default function StudentsDirectory() {
   const tpoDataStr = localStorage.getItem('tpoData');

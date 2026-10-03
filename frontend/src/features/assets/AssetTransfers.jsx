@@ -4,6 +4,7 @@ import { CircleNotch, ArrowsLeftRight, CheckCircle, WarningCircle, Truck } from 
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
 import AssetWorkspaceNav from './AssetWorkspaceNav';
+import { formatPortalDateTime } from '../../utils/dateFormat';
 
 export default function AssetTransfers() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -145,7 +146,7 @@ export default function AssetTransfers() {
                 
                 <div className="cl-middle" style={{ flex: 1, minWidth: '150px' }}>
                   <span className={`status-pill ${t.status === 'PENDING' ? 'orange' : t.status === 'IN_TRANSIT' ? 'blue' : 'green'}`}>{t.status}</span>
-                  <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '6px' }}>Requested: <strong style={{ color: '#cbd5e1' }}>{t.date}</strong></div>
+                  <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '6px' }}>Requested: <strong style={{ color: '#cbd5e1' }}>{formatPortalDateTime(t.date, String(t.date || ''))}</strong></div>
                   {t.status === 'IN_TRANSIT' && <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>Approved by: <strong style={{ color: '#cbd5e1' }}>{t.approvedBy || 'Admin'}</strong></div>}
                   {t.status === 'COMPLETED' && <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>Received by: <strong style={{ color: '#cbd5e1' }}>{t.receivedBy || 'Branch'}</strong></div>}
                 </div>

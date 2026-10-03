@@ -4,6 +4,7 @@ import { CircleNotch } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import MediaTopNav from './MediaTopNav';
 import { API_BASE } from '../../services/apiConfig';
+import { formatPortalDateTime } from '../../utils/dateFormat';
 
 export default function MediaLogs() {
   const [logs, setLogs] = useState([]);
@@ -51,7 +52,7 @@ export default function MediaLogs() {
                       </div>
                       <div>
                         <div style={{ fontSize: '1rem', color: '#fff', fontWeight: 'bold', marginBottom: '4px' }}>{log.action}</div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{log.user || 'System'} • {log.date || 'Date unavailable'}</div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{log.user || 'System'} • {formatPortalDateTime(log.date, String(log.date || 'Date unavailable'))}</div>
                       </div>
                     </div>
                     <div>

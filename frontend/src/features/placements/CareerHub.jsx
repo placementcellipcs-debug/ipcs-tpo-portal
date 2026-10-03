@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { ArrowSquareOut, ArrowsClockwise, BookmarkSimple, MagnifyingGlass, Newspaper, WarningCircle } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import { formatPortalDate, formatPortalTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
 import './CareerHub.css';
 
@@ -66,7 +67,7 @@ export default function CareerHub() {
         <span className="career-hub-eyebrow"><Newspaper size={15} weight="fill" /> NEWS &amp; BLOG</span>
         <h1>News &amp; Blog</h1>
         <p>Practical reads across technology, industry, careers, workplace culture, and the evolving world of work.</p>
-        <div className="career-hub-meta"><span>{items.length} updates</span><span>Updated {refreshedAt ? new Date(refreshedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'when you open the hub'}</span></div>
+        <div className="career-hub-meta"><span>{items.length} updates</span><span>Updated {refreshedAt ? formatPortalTime(refreshedAt) : 'when you open the hub'}</span></div>
       </section>
 
       <section className="career-hub-feed" aria-label="News and blog updates">
@@ -86,7 +87,7 @@ export default function CareerHub() {
         {loading && !items.length ? <div className="career-hub-loading" role="status"><span /><span /><span />Bringing together current industry updates…</div>
           : !visibleItems.length ? <div className="career-hub-empty"><Newspaper size={28} /><b>{showSaved ? 'No saved reads yet' : 'No updates found'}</b><span>{showSaved ? 'Save a useful article and it will be here.' : 'Try another topic or clear your search.'}</span></div>
             : <div className="career-hub-grid">{visibleItems.map(item => <article className="career-post-card" key={item.id}>
-              <div className="career-post-meta"><span className={`career-post-category category-${item.color}`}>{item.categoryLabel}</span><time>{item.publishedAt ? new Date(item.publishedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : 'Recent'}</time></div>
+              <div className="career-post-meta"><span className={`career-post-category category-${item.color}`}>{item.categoryLabel}</span><time>{item.publishedAt ? formatPortalDate(item.publishedAt) : 'Recent'}</time></div>
               <h3>{item.title}</h3>
               {item.summary && <p>{item.summary}</p>}
               <div className="career-post-footer"><span>{item.source || 'Industry update'}</span><div><button className={`career-bookmark ${saved.includes(item.id) ? 'saved' : ''}`} type="button" onClick={() => toggleSaved(item)} aria-label={saved.includes(item.id) ? 'Remove saved article' : 'Save article'} title={saved.includes(item.id) ? 'Remove saved article' : 'Save article'}><BookmarkSimple size={19} weight={saved.includes(item.id) ? 'fill' : 'regular'} /></button><a href={item.link} target="_blank" rel="noopener noreferrer">Read source <ArrowSquareOut size={16} /></a></div></div>

@@ -1,6 +1,7 @@
 const { assetDoc, getAssetCache, refreshAssetCache } = require('./assetConfig');
 const { getCache, uploadToDrive } = require('./config');
 const { randomBytes } = require('crypto');
+const { formatIndiaTimestamp } = require('./utils/dateTime');
 
 // Helper to safely map sheet headers regardless of spaces or cases
 const getH = (headers, target) => {
@@ -47,7 +48,7 @@ async function saveAssetPhoto(assetId, file, documentType, userName, fileUrl = '
     [getH(headers, 'File_Name')]: file.originalname,
     [getH(headers, 'Drive_URL')]: storedUrl,
     [getH(headers, 'Uploaded_By')]: userName || '',
-    [getH(headers, 'Uploaded_At')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+    [getH(headers, 'Uploaded_At')]: formatIndiaTimestamp()
   });
   return storedUrl;
 }
@@ -226,7 +227,7 @@ exports.addAsset = async (req, res) => {
     const assetHeaders = await ensureAssetHeaders(assetSheet, ['Depreciation_Method', 'Useful_Life_Years', 'Salvage_Value']);
 
     // Generate Unique IDs
-    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const timestamp = formatIndiaTimestamp();
     const existingAssetIds = new Set((await assetSheet.getRows()).map(row => String(rowValue(row, 'Asset_ID') || '').trim().toUpperCase()));
     let assetId;
     do {
@@ -508,7 +509,7 @@ exports.assignAsset = async (req, res) => {
     );
     if (isReassignment && !activeAssignment) return res.status(409).json({ success: false, message: 'No active employee assignment was found. Record the return before assigning this item again.' });
 
-    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const timestamp = formatIndiaTimestamp();
     const assignmentId = `ASN-${Date.now()}`;
     const issuePhotoUrl = issuePhoto ? await uploadToDrive(issuePhoto, process.env.DRIVE_FOLDER_ID || '') : '';
     const returnPhotoUrl = returnPhoto ? await uploadToDrive(returnPhoto, process.env.DRIVE_FOLDER_ID || '') : '';
@@ -609,7 +610,7 @@ exports.returnAsset = async (req, res) => {
     if (req.file && !sheetByKey('documents')) return res.status(503).json({ success: false, message: 'Asset photo history is unavailable. No return was recorded.' });
     const returnPhotoUrl = req.file ? await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || '') : '';
 
-    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const timestamp = formatIndiaTimestamp();
     const targetStatus = returnStatus || (conditionOnReturn === 'DAMAGED' ? 'UNDER_MAINTENANCE' : 'AVAILABLE');
 
     // 2. Update 07_Assets
@@ -714,7 +715,7 @@ exports.addInventory = async (req, res) => {
     if (!invSheet) return res.status(404).json({ success: false, message: "Inventory sheet missing." });
 
     const itemId = `INV-${Date.now().toString().slice(-6)}`;
-    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const timestamp = formatIndiaTimestamp();
 
     const iH = invSheet.headerValues;
     await invSheet.addRow({
@@ -787,7 +788,7 @@ exports.updateStock = async (req, res) => {
     itemRow.assign({ 
       [getH(iH, 'Quantity')]: newQty, 
       [getH(iH, 'Status')]: newStatus, 
-      [getH(iH, 'Updated_At')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) 
+      [getH(iH, 'Updated_At')]: formatIndiaTimestamp()
     });
     
     await itemRow.save();
@@ -803,7 +804,7 @@ exports.updateStock = async (req, res) => {
         [getH(tH, 'Previous')]: currentQty, 
         [getH(tH, 'New')]: newQty, 
         [getH(tH, 'Performed_By')]: userName, 
-        [getH(tH, 'Date')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) 
+        [getH(tH, 'Date')]: formatIndiaTimestamp()
       });
     }
     
@@ -885,7 +886,7 @@ exports.requestTransfer = async (req, res) => {
     });
     if (activeTransfer) return res.status(409).json({ success: false, message: 'This asset already has an open transfer.' });
 
-    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const timestamp = formatIndiaTimestamp();
     const transferId = `TRF-${Date.now()}`;
     await trfSheet.addRow({
       [getH(tH, 'Transfer_ID')]: transferId,
@@ -945,7 +946,7 @@ exports.approveTransfer = async (req, res) => {
     if (String(assetRow.get(assetStatusHeader) || '').toUpperCase() !== 'TRANSFER_PENDING') {
       return res.status(409).json({ success: false, message: 'Asset is no longer awaiting transfer.' });
     }
-    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const timestamp = formatIndiaTimestamp();
     const approvalUpdate = {
       [getH(tH, 'Status')]: 'IN_TRANSIT',
       [getH(tH, 'Approved_By')]: userName || ''
@@ -996,7 +997,7 @@ exports.receiveTransfer = async (req, res) => {
     if (String(assetRow.get(getH(aH, 'Status')) || '').toUpperCase() !== 'TRANSFER_PENDING') {
       return res.status(409).json({ success: false, message: 'Asset is no longer in transfer.' });
     }
-    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const timestamp = formatIndiaTimestamp();
     assetRow.assign({
       [getH(aH, 'Branch')]: destination,
       [getH(aH, 'Status')]: 'AVAILABLE',
@@ -1078,7 +1079,7 @@ exports.reportMaintenance = async (req, res) => {
     const activeTickets = await mSheet.getRows();
     const openTicket = activeTickets.find(row => String(row.get(getH(mH, 'Asset_ID')) || '').trim().toLowerCase() === String(assetId).trim().toLowerCase() && String(row.get(getH(mH, 'Status')) || '').toUpperCase() === 'OPEN');
     if (openTicket) return res.status(409).json({ success: false, message: 'This asset already has an open maintenance ticket.' });
-    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const timestamp = formatIndiaTimestamp();
     const ticketValues = {
       [getH(mH, 'Maintenance_ID')]: `MNT-${Date.now()}`,
       [getH(mH, 'Asset_ID')]: assetId,
@@ -1125,7 +1126,7 @@ exports.resolveMaintenance = async (req, res) => {
     const prevStatusHeader = getOptionalH(mH, 'Previous_Status');
     const savedRemarks = String(mRow.get(getH(mH, 'Remarks')) || '');
     const previousStatus = String((prevStatusHeader && mRow.get(prevStatusHeader)) || savedRemarks.match(/Previous status:\s*([A-Z_]+)/i)?.[1] || 'AVAILABLE').toUpperCase();
-    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const timestamp = formatIndiaTimestamp();
 
     mRow.assign({
       [getH(mH, 'Status')]: 'COMPLETED',
@@ -1213,7 +1214,7 @@ exports.addLocation = async (req, res) => {
       [getH(h, 'Area')]: area,
       [getH(h, 'Location_Name')]: locationName,
       [getH(h, 'Status')]: 'ACTIVE',
-      [getH(h, 'Created_At')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+      [getH(h, 'Created_At')]: formatIndiaTimestamp()
     });
 
     refreshAssetCache();
@@ -1239,7 +1240,7 @@ exports.addVendor = async (req, res) => {
       [getH(h, 'Address')]: '',
       [getH(h, 'GST_Number')]: '',
       [getH(h, 'Status')]: 'ACTIVE',
-      [getH(h, 'Created_At')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+      [getH(h, 'Created_At')]: formatIndiaTimestamp()
     });
 
     refreshAssetCache();
@@ -1274,7 +1275,7 @@ exports.uploadAssetDocument = async (req, res) => {
       [getH(h, 'File_Name')]: req.file.originalname,
       [getH(h, 'Drive_URL')]: fileUrl,
       [getH(h, 'Uploaded_By')]: req.portalUser?.name || '',
-      [getH(h, 'Uploaded_At')]: new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+      [getH(h, 'Uploaded_At')]: formatIndiaTimestamp()
     });
 
     refreshAssetCache();
@@ -1319,7 +1320,7 @@ exports.disposeAsset = async (req, res) => {
       if (openTicket) return res.status(409).json({ success: false, message: 'Resolve the open maintenance ticket before disposal.' });
     }
 
-    const timestamp = new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+    const timestamp = formatIndiaTimestamp();
     const disposalId = `DSP-${Date.now()}`;
     const dH = dispSheet.headerValues;
     await dispSheet.addRow({

@@ -5,6 +5,7 @@ const { JWT } = require('google-auth-library');
 const { google } = require('googleapis');
 const nodemailer = require('nodemailer');
 const axios = require('axios');
+const { formatIndiaTimestamp } = require('./utils/dateTime');
 
 const serviceAccountAuth = new JWT({
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -375,7 +376,7 @@ async function logMailToSheet(receiverName, receiverMail, mailType, subject, sta
     const sheet = doc.sheetsByTitle["Mail"];
     if (sheet) {
       await sheet.addRow({
-        'TimeStamp': new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }),
+        'TimeStamp': formatIndiaTimestamp(),
         'Reciver Name': receiverName || 'Unknown',
         'Reciver Mail': receiverMail || 'Unknown',
         'Mail Type': mailType || 'System Alert',

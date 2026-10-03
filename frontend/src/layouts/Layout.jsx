@@ -12,6 +12,7 @@ import {
 } from '@phosphor-icons/react';
 import { API_BASE } from '../services/apiConfig';
 import { applyAppearance, readAppearance } from '../services/appearance';
+import { formatPortalDateTime, parsePortalDateTime } from '../utils/dateFormat';
 
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
@@ -106,7 +107,7 @@ export default function Layout({ children }) {
       const logsStr = localStorage.getItem('dash_logs');
       if (logsStr) {
       const logs = JSON.parse(logsStr);
-        const sorted = logs.sort((a,b) => new Date(b.TimeStamp || b.Timestamp || b['Time Stamp'] || 0) - new Date(a.TimeStamp || a.Timestamp || a['Time Stamp'] || 0)).slice(0, 20); 
+        const sorted = logs.sort((a,b) => (parsePortalDateTime(b.TimeStamp || b.Timestamp || b['Time Stamp'])?.getTime() || 0) - (parsePortalDateTime(a.TimeStamp || a.Timestamp || a['Time Stamp'])?.getTime() || 0)).slice(0, 20);
         
         const mappedNotifs = sorted.map(log => {
           const getVal = (s) => {
@@ -274,7 +275,7 @@ export default function Layout({ children }) {
                           <div>
                             <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginBottom: '3px' }}>{notif.title}</div>
                             <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: '1.4' }}>{notif.desc}</div>
-                            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '5px' }}>{notif.time.split(' ')[0]}</div>
+            <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '5px' }}>{formatPortalDateTime(notif.time, 'Recently')}</div>
                           </div>
                         </div>
                       ))

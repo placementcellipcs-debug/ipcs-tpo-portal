@@ -3,6 +3,7 @@ import axios from 'axios';
 import { CircleNotch, Plus, PencilSimple, X, Notebook } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
+import { formatPortalDateTime, parsePortalDateTime } from '../../utils/dateFormat';
 
 export default function TrainerLog() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
@@ -73,14 +74,15 @@ export default function TrainerLog() {
   };
 
   const uniqueMonths = ['All', ...new Set(logs.map(l => {
-    const d = new Date(l.timestamp);
-    return isNaN(d) ? null : d.toLocaleString('default', { month: 'long', year: 'numeric' });
+    const d = parsePortalDateTime(l.timestamp);
+    return !d ? null : d.toLocaleString('default', { month: 'long', year: 'numeric' });
   }).filter(Boolean))];
   
   const uniqueCourses = ['All', ...new Set(logs.map(l => l.course).filter(Boolean))];
 
   const filteredLogs = logs.filter(l => {
-    const m = new Date(l.timestamp).toLocaleString('default', { month: 'long', year: 'numeric' });
+    const date = parsePortalDateTime(l.timestamp);
+    const m = date ? date.toLocaleString('default', { month: 'long', year: 'numeric' }) : '';
     const matchMonth = monthFilter === 'All' || m === monthFilter;
     const matchCourse = courseFilter === 'All' || (l.course || '') === courseFilter;
     return matchMonth && matchCourse;
@@ -166,7 +168,7 @@ export default function TrainerLog() {
                 filteredLogs.map((log, i) => (
                   <tr key={i}>
                     <td>
-                      <span className="primary-text">{log.timestamp.split(' ')[0]}</span>
+                      <span className="primary-text">{formatPortalDateTime(log.timestamp, String(log.timestamp || ''))}</span>
                       {/* 🚨 FIXED: Fallback if TrainerName just says "Trainer" */}
                       <span className="sub-text">
                         {(log.trainerName && log.trainerName !== 'Trainer') ? log.trainerName : `${log.branch} Trainer`} • {log.branch}

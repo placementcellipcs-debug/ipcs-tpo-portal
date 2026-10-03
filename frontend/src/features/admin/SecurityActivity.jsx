@@ -6,6 +6,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
+import { formatPortalDateTime, parsePortalDateTime } from '../../utils/dateFormat';
 
 export default function SecurityActivity() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData') || '{}');
@@ -75,16 +76,8 @@ export default function SecurityActivity() {
 
   const checkIsActive = (timestamp) => {
     if (!timestamp) return false;
-    let logDate;
-    try {
-      if (timestamp.includes('/')) {
-        const parts = timestamp.split(/[\s,/:]+/);
-        if (parts.length >= 3) {
-          logDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-        } else { logDate = new Date(timestamp); }
-      } else { logDate = new Date(timestamp); }
-    } catch { return true; } // fallback active if parse fails
-    if (isNaN(logDate)) return true;
+    const logDate = parsePortalDateTime(timestamp);
+    if (!logDate) return true;
     return (currentTime - logDate.getTime()) < (4 * 60 * 60 * 1000);
   };
 
@@ -209,7 +202,7 @@ export default function SecurityActivity() {
                     </div>
                     <div style={{ textAlign: 'right' }}>
                       <div style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold' }}>Session Recorded</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>{item.timestamp}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>{formatPortalDateTime(item.timestamp, String(item.timestamp || ''))}</div>
                     </div>
                   </div>
                 ))}

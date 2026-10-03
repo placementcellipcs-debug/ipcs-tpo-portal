@@ -11,6 +11,7 @@ import {
   PieChart, Pie, Cell 
 } from 'recharts';
 import Layout from '../../layouts/Layout';
+import { formatPortalDate, parsePortalDateTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
 
 function DashboardTooltip({ active, payload, label, selectedYear }) {
@@ -91,25 +92,7 @@ export default function Dashboard() {
     return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : raw;
   })();
 
-  // 🚨 FIXED DATE PARSER: Now handles MM/DD/YYYY directly from Google Sheets
-  const parseDateRobust = (dStr) => {
-    if (!dStr) return null;
-    
-    // 1. Try native parsing first (works flawlessly for MM/DD/YYYY)
-    let parsedDate = new Date(dStr);
-    
-    // 2. If it fails, fallback to cleaning the string for DD/MM/YYYY formats
-    if (isNaN(parsedDate.getTime())) {
-      let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0].replace(/st|nd|rd|th|,/g, '') : dStr;
-      if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
-        const parts = cleanStr.split(/[/-]/);
-        if (parts.length === 3) {
-           parsedDate = new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-        }
-      }
-    }
-    return isNaN(parsedDate.getTime()) ? null : parsedDate;
-  };
+  const parseDateRobust = dStr => parsePortalDateTime(dStr);
 
   const getStandardDomain = (courseStr) => {
     if (!courseStr) return 'Other Domains';
@@ -315,7 +298,7 @@ export default function Dashboard() {
         {/* WELCOME CARD */}
         <section className="dash-welcome-card">
           <div className="dash-welcome-copy">
-            <span className="dash-welcome-date">{greetingTime.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()}</span>
+            <span className="dash-welcome-date">{formatPortalDate(greetingTime)}</span>
             <h1>{greeting}, <em>{firstName}</em></h1>
             <p>Here’s an overview of {dashboardFocus}</p>
             <div className="dash-welcome-actions">
@@ -488,7 +471,7 @@ export default function Dashboard() {
                     <div className="dt-icon"><CalendarCheck size={18} weight="fill"/></div>
                     <div className="dt-info">
                       <h4>{evt.title}</h4>
-                      <p>{String(evt.date || '').substring(0,10)} | {evt.location || 'Online'}</p>
+                      <p>{formatPortalDate(evt.date, 'Date not set')} | {evt.location || 'Online'}</p>
                     </div>
                     <div className="dt-check"><CheckCircle size={20} weight="fill"/></div>
                   </div>

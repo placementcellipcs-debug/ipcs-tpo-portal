@@ -5,6 +5,7 @@ import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
 import { CircleNotch, WarningCircle, CheckCircle } from '@phosphor-icons/react';
 import { API_BASE } from '../../services/apiConfig';
+import { formatPortalDate } from '../../utils/dateFormat';
 
 // 🚨 IMPORTING THE IMAGES DIRECTLY FROM THE SRC FOLDER
 import ipcsLogo from '../../assets/brand/ipcs-logo.png';
@@ -72,7 +73,7 @@ export default function CertificateSign() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [completionEmailSent, setCompletionEmailSent] = useState(true);
 
-  const currentDate = new Date().toLocaleDateString('en-GB'); // DD/MM/YYYY
+  const currentDate = formatPortalDate(new Date());
 
   useEffect(() => {
     let isCancelled = false;

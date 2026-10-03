@@ -6,6 +6,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
+import { formatPortalDateTime } from '../../utils/dateFormat';
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', 'var(--accent-primary)'];
 
@@ -444,7 +445,7 @@ export default function TechnicalExams() {
                             <span className="sub-text">{r.rollNo} • {r.branch}</span>
                           </td>
                           <td>
-                            <span className="primary-text" style={{ fontSize: '0.85rem' }}>{r.timestamp}</span>
+                            <span className="primary-text" style={{ fontSize: '0.85rem' }}>{formatPortalDateTime(r.timestamp, String(r.timestamp || ''))}</span>
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#10b981' }}>{r.percentage}</span>

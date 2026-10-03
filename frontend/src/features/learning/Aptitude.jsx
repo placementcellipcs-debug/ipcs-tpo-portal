@@ -6,6 +6,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
+import { formatPortalDateTime } from '../../utils/dateFormat';
 
 export default function Aptitude() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -178,7 +179,7 @@ export default function Aptitude() {
                 {filteredResults.map((r, i) => (
                   <tr key={i} style={{ background: i < 3 ? 'rgba(245, 158, 11, 0.02)' : 'transparent' }}>
                     <td style={{ textAlign: 'center', verticalAlign: 'middle' }}>{getRankBadge(i)}</td>
-                    <td><span className="primary-text" style={{ fontSize: i < 3 ? '1.1rem' : '1rem', color: i < 3 ? '#fff' : 'inherit' }}>{r.name}</span><span className="sub-text">{r.rollNo} • {r.timestamp}</span></td>
+                    <td><span className="primary-text" style={{ fontSize: i < 3 ? '1.1rem' : '1rem', color: i < 3 ? '#fff' : 'inherit' }}>{r.name}</span><span className="sub-text">{r.rollNo} • {formatPortalDateTime(r.timestamp, String(r.timestamp || ''))}</span></td>
                     <td><span className="primary-text">{r.branch}</span></td>
                     <td style={{ textAlign: 'center' }}><span style={{ fontSize: '1.3rem', fontWeight: 'bold', color: '#10b981' }}>{r.score}</span><span style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}> / {r.total}</span></td>
                     <td style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{r.categoryBreakdown}</td>

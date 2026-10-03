@@ -7,23 +7,9 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
+import { formatPortalDate, parsePortalDateTime } from '../../utils/dateFormat';
 
-const parseDate = (dStr) => {
-  if (!dStr) return 0;
-  const d = new Date(dStr);
-  if (!isNaN(d.getTime())) return d.getTime();
-  
-  try {
-      let cleanStr = typeof dStr === 'string' ? dStr.split(' ')[0] : dStr;
-      if (typeof cleanStr === 'string' && cleanStr.includes('/')) {
-        const parts = cleanStr.split(/[/-]/);
-        if (parts.length === 3 && parts[2].length === 4) {
-          return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`).getTime();
-        }
-      }
-      return 0;
-  } catch { return 0; }
-};
+const parseDate = dStr => parsePortalDateTime(dStr)?.getTime() || 0;
 
 export default function PlacementDrives() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -227,7 +213,7 @@ export default function PlacementDrives() {
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <CalendarBlank size={18} color="#94a3b8" /> 
-                          <span>{drive.driveDate || <span style={{ color: '#f59e0b' }}>Date Missing in Sheet</span>}</span>
+                          <span>{drive.driveDate ? formatPortalDate(drive.driveDate) : <span style={{ color: '#f59e0b' }}>Date Missing in Sheet</span>}</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                           <MapPin size={18} color="#94a3b8" /> 
@@ -361,7 +347,7 @@ export default function PlacementDrives() {
                         <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.95rem', marginBottom: '4px' }}>{String(app.branch || 'Unknown Branch')}</div>
                         <div style={{ color: '#94a3b8', fontSize: '0.8rem', marginBottom: '8px' }}>{String(app.course || 'Unknown Course')}</div>
                         <span style={{ background: 'rgba(255,255,255,0.05)', padding: '4px 8px', borderRadius: '6px', fontSize: '0.75rem', color: '#cbd5e1' }}>
-                          Registered: {String(app.regDate || 'N/A')}
+                          Registered: {app.regDate ? formatPortalDate(app.regDate) : 'N/A'}
                         </span>
                       </div>
                       

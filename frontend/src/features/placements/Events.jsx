@@ -6,23 +6,11 @@ import {
   Clock, CalendarBlank, UserCheck, CaretDown, Image
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import { formatPortalDate, formatPortalTime, parsePortalDateTime } from '../../utils/dateFormat';
 
 import { API_BASE } from '../../services/apiConfig';
 
-const parseDate = (dateStr) => {
-  if (!dateStr) return null;
-  const standardDate = new Date(dateStr);
-  if (!isNaN(standardDate)) return standardDate;
-
-  let cleanStr = typeof dateStr === 'string' ? dateStr.split(' ')[0].replace(/st|nd|rd|th/g, '') : dateStr;
-  if (typeof cleanStr === 'string' && (cleanStr.includes('/') || cleanStr.includes('-'))) {
-    const parts = cleanStr.split(/[/-]/);
-    if (parts.length === 3) {
-      if (parts[2].length === 4) return new Date(`${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`);
-    }
-  }
-  return null;
-};
+const parseDate = dateStr => parsePortalDateTime(dateStr);
 
 export default function Events() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -130,7 +118,7 @@ export default function Events() {
     setEventActionForm({
       action,
       newDate: initialDate,
-      time: /^\d{2}:\d{2}$/.test(rawTime) ? rawTime : '',
+      time: rawTime ? formatPortalTime(rawTime, '') : '',
       reason: ''
     });
     setEventActionNotice(null);
@@ -317,7 +305,7 @@ export default function Events() {
                 <div>
                   <h3>Scheduled</h3>
                   <div className="neo-agenda-date">
-                    {selectedDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })}
+                    {formatPortalDate(selectedDate)}
                   </div>
                 </div>
                 <button onClick={() => setSelectedDate(null)} style={{ background: 'rgba(255,255,255,0.05)', border: 'none', color: '#94a3b8', padding: '6px', borderRadius: '50%', cursor: 'pointer', display: 'flex', transition: '0.2s' }} title="Close Agenda">
@@ -337,7 +325,7 @@ export default function Events() {
                       <div className="neo-ac-accent" style={{ background: getEventColor(e.type) }}></div>
                       
                       <div className="neo-ac-time-row">
-                        <span style={{ color: '#fff', fontWeight: 'bold' }}>{e.time || '09:00'}</span>
+                        <span style={{ color: '#fff', fontWeight: 'bold' }}>{formatPortalTime(e.time, '09:00:00')}</span>
                       </div>
                       
                       <div className="neo-ac-content">
@@ -346,7 +334,7 @@ export default function Events() {
                         {String(e.status || 'Scheduled').toLowerCase() !== 'scheduled' && <span className={`event-status-pill ${String(e.status).toLowerCase() === 'cancelled' ? 'cancelled' : 'rescheduled'}`}>{e.status}</span>}
                         
                         <div className="neo-ac-footer">
-                          <div className="neo-ac-detail"><Clock size={14} /> {e.time || 'All Day'}</div>
+                          <div className="neo-ac-detail"><Clock size={14} /> {e.time ? formatPortalTime(e.time) : 'All Day'}</div>
                           <div className="neo-ac-detail"><MapPin size={14} /> {e.location || 'Online'}</div>
                         </div>
 
@@ -385,7 +373,7 @@ export default function Events() {
               </div>
               <div className="form-group">
                 <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '5px', fontWeight: 'bold' }}>Time</label>
-                <input type="time" className="sleek-input" style={{ width: '100%' }} value={newEvent.time} onChange={e => setNewEvent({...newEvent, time: e.target.value})} />
+                <input type="time" step="1" className="sleek-input" style={{ width: '100%' }} value={newEvent.time} onChange={e => setNewEvent({...newEvent, time: e.target.value})} />
               </div>
             </div>
 
@@ -459,7 +447,7 @@ export default function Events() {
               <div style={{ background: '#1e293b', padding: '15px', borderRadius: '12px' }}>
                 <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '5px' }}>Date & Time</div>
                 <div style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Clock size={16} color="var(--accent-primary)" /> {String(viewEventModal.date || 'TBD')} • {String(viewEventModal.time || 'TBD')}
+                  <Clock size={16} color="var(--accent-primary)" /> {formatPortalDate(viewEventModal.date, 'TBD')} • {formatPortalTime(viewEventModal.time, 'TBD')}
                 </div>
               </div>
               <div style={{ background: '#1e293b', padding: '15px', borderRadius: '12px' }}>
@@ -516,7 +504,7 @@ export default function Events() {
 
             {eventActionForm.action === 'reschedule' && <div className="event-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
               <label style={{ color: '#cbd5e1', fontSize: '.82rem', fontWeight: 700 }}>New date *<input type="date" className="sleek-input" value={eventActionForm.newDate} onChange={event => setEventActionForm(previous => ({ ...previous, newDate: event.target.value }))} /></label>
-              <label style={{ color: '#cbd5e1', fontSize: '.82rem', fontWeight: 700 }}>New time<input type="time" className="sleek-input" value={eventActionForm.time} onChange={event => setEventActionForm(previous => ({ ...previous, time: event.target.value }))} /></label>
+              <label style={{ color: '#cbd5e1', fontSize: '.82rem', fontWeight: 700 }}>New time<input type="time" step="1" className="sleek-input" value={eventActionForm.time} onChange={event => setEventActionForm(previous => ({ ...previous, time: event.target.value }))} /></label>
             </div>}
 
             <label style={{ display: 'block', color: '#cbd5e1', fontSize: '.82rem', fontWeight: 700, marginBottom: '8px' }}>{eventActionForm.action === 'cancel' ? 'Reason for cancellation (optional)' : 'Message for recipients (optional)'}</label>
