@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import {
   ArrowsClockwise, Briefcase, Buildings, CalendarBlank, CaretLeft, ChartLineUp,
@@ -256,7 +257,7 @@ export default function StudentApps() {
         </AnimatePresence>
       </main>
 
-      <AnimatePresence>
+      {typeof document !== 'undefined' && createPortal(<AnimatePresence>
         {selectedDetails && <motion.div className="apps-detail-backdrop" role="presentation" onClick={event => { if (event.target === event.currentTarget) setSelectedDetails(null); }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
           <motion.section className="apps-detail-dialog" role="dialog" aria-modal="true" aria-labelledby="apps-detail-title" initial={{ opacity: 0, y: 16, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 10, scale: .985 }} transition={{ duration: .18 }}>
             <header className="apps-detail-header"><div><span>APPLICATION RECORD</span><h2 id="apps-detail-title">{selectedDetails.name || 'Student'} <small>· {selectedDetails.company || 'Company'}</small></h2><p>{[selectedDetails.position, selectedDetails.roll, selectedDetails.jobId].filter(Boolean).join(' · ')}</p></div><button type="button" onClick={() => setSelectedDetails(null)} aria-label="Close details"><X size={19} /></button></header>
@@ -268,7 +269,7 @@ export default function StudentApps() {
             </section>
           </motion.section>
         </motion.div>}
-      </AnimatePresence>
+      </AnimatePresence>, document.body)}
 
       <style>{`
         .apps-page{max-width:1440px;margin:0 auto;padding:0 0 46px;color:var(--text-main);--apps-border:rgba(148,163,184,.16);--apps-muted:#94a3b8}

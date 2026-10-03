@@ -1370,22 +1370,28 @@ const escapePlacementMailHtml = value => String(value || '').replace(/[&<>"']/g,
 
 exports.addDirectInterview = async (req, res) => {
   const user = req.portalUser;
-  const { roll, company, position, jobId, interviewDate, interviewTime, interviewVenue, remarks } = req.body || {};
+  const { candidateName, candidateEmail, candidatePhone, candidateRoll, candidateBranch, candidateCourse, candidateResume, company, position, jobId, interviewDate, interviewTime, interviewVenue, remarks } = req.body || {};
   if (!isPlacementOfficer(user)) return res.status(403).json({ success: false, message: 'Only a placement officer can create a direct interview referral.' });
-  if (!String(roll || '').trim() || !String(company || '').trim() || !String(position || '').trim() || !interviewDate || !interviewTime || !String(interviewVenue || '').trim()) {
-    return res.status(400).json({ success: false, message: 'Choose a student and complete the company, position, interview date, time, and venue.' });
+  if (!String(candidateName || '').trim() || !String(candidateEmail || '').trim() || !String(company || '').trim() || !String(position || '').trim() || !interviewDate || !interviewTime || !String(interviewVenue || '').trim()) {
+    return res.status(400).json({ success: false, message: 'Enter the candidate name and email, then complete the company, position, interview date, time, and venue.' });
+  }
+  const normalizedEmail = String(candidateEmail || '').trim();
+  if (normalizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return res.status(422).json({ success: false, message: 'Enter a valid candidate email address.' });
+  const resumeLink = String(candidateResume || '').trim();
+  if (resumeLink) {
+    try { if (!['http:', 'https:'].includes(new URL(resumeLink).protocol)) throw new Error('protocol'); }
+    catch { return res.status(422).json({ success: false, message: 'The resume link must be a valid http or https URL.' }); }
   }
   try {
     await loadDocInfo();
-    let cache = getCache();
-    if (!cache?.students) cache = await refreshCache();
-    const studentRoll = normalizePlacementText(roll);
-    const student = (cache?.students || []).find(row => normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])) === studentRoll);
-    if (!student) return res.status(404).json({ success: false, message: 'The selected student could not be found in the student register. Refresh the page and try again.' });
-    const studentBranch = getValByHeader(student, ['branch', 'sittingbranch']) || '';
-    const studentCourse = getValByHeader(student, ['course', 'program']) || '';
+    const userBranches = [...(Array.isArray(user?.assignedBranchesArray) ? user.assignedBranchesArray : []), ...String(user?.assignedBranches || '').split(/[\n,;]+/)].map(value => String(value || '').trim()).filter(Boolean);
+    const defaultBranch = user?.sittingBranch && !/^n\/?a$/i.test(String(user.sittingBranch).trim())
+      ? String(user.sittingBranch).trim()
+      : userBranches.find(value => !/^all(?: branches)?$/i.test(value)) || userBranches[0] || 'Unknown';
+    const studentBranch = String(candidateBranch || '').trim() || defaultBranch;
+    const studentCourse = String(candidateCourse || '').trim() || String(user?.assignedCourse || '').trim() || 'Unknown';
     if (!hasAccess(studentBranch, studentCourse, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) {
-      return res.status(403).json({ success: false, message: 'This student is outside your assigned branch or course.' });
+      return res.status(403).json({ success: false, message: 'The candidate branch is outside your assigned branches.' });
     }
 
     const appSheet = doc.sheetsByTitle['Opening_Applied'];
@@ -1394,20 +1400,24 @@ exports.addDirectInterview = async (req, res) => {
     if (logSheet) await ensurePlacementHeaders(logSheet, placementTrackingHeaders);
 
     const tpoName = user?.name || getValByHeader(user, ['name']) || 'Placement Officer';
+    const cleanName = String(candidateName).trim();
+    const cleanRoll = String(candidateRoll || '').trim();
     const studentData = {
-      name: getValByHeader(student, ['name', 'studentname']) || '',
-      roll: getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']) || '',
-      email: getValByHeader(student, ['mailid', 'email']) || '',
-      phone: getValByHeader(student, ['contact', 'phone']) || '',
+      name: cleanName,
+      roll: cleanRoll,
+      email: normalizedEmail,
+      phone: String(candidatePhone || '').trim(),
       course: studentCourse, branch: studentBranch,
-      qual: getValByHeader(student, ['qualification', 'qual']) || '',
-      resume: getValByHeader(student, ['resume', 'cv']) || ''
+      qual: '',
+      resume: resumeLink
     };
     const resolvedJobId = String(jobId || '').trim() || 'DIRECT-REFERRAL';
     const normalizedCompany = normalizePlacementText(company);
     const normalizedPosition = normalizePlacementText(position);
     const existing = (await appSheet.getRows()).find(row =>
-      normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'roll'])) === studentRoll &&
+      (cleanRoll
+        ? normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'roll'])) === normalizePlacementText(cleanRoll)
+        : normalizePlacementText(getValByHeader(row, ['studentname', 'name'])) === normalizePlacementText(cleanName)) &&
       normalizePlacementText(getValByHeader(row, ['companyname', 'company'])) === normalizedCompany &&
       normalizePlacementText(getValByHeader(row, ['position', 'role'])) === normalizedPosition &&
       normalizePlacementText(getValByHeader(row, ['jobid'])) === normalizePlacementText(resolvedJobId)
@@ -1456,7 +1466,7 @@ exports.addDirectInterview = async (req, res) => {
         emailWarning = `The interview was recorded, but the email could not be sent: ${error.message}`;
       }
     } else {
-      emailWarning = 'The interview was recorded, but this student has no email address in the student register.';
+      emailWarning = 'The interview was recorded, but no candidate email was entered, so the invitation was not sent.';
     }
 
     await refreshCache();
@@ -1469,25 +1479,60 @@ exports.addDirectInterview = async (req, res) => {
 
 exports.emailStudent = async (req, res) => {
   const user = req.portalUser;
-  const { roll, subject, message } = req.body || {};
+  const { roll, rowNumber, sourceType, subject, message } = req.body || {};
   if (!isPlacementOfficer(user)) return res.status(403).json({ success: false, message: 'Only a placement officer can send a student email from this workspace.' });
-  if (!String(roll || '').trim() || !String(subject || '').trim() || !String(message || '').trim()) {
-    return res.status(400).json({ success: false, message: 'Choose a student and enter an email subject and message.' });
+  const requestedRow = Number(rowNumber);
+  const hasRecordRow = Number.isInteger(requestedRow) && requestedRow >= 2;
+  if ((!String(roll || '').trim() && !hasRecordRow) || !String(subject || '').trim() || !String(message || '').trim()) {
+    return res.status(400).json({ success: false, message: 'Choose a placement record and enter an email subject and message.' });
   }
   try {
+    await loadDocInfo();
     let cache = getCache();
     if (!cache?.students) cache = await refreshCache();
-    const normalizedRoll = normalizePlacementText(roll);
-    const student = (cache?.students || []).find(row => normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])) === normalizedRoll);
-    if (!student) return res.status(404).json({ success: false, message: 'Student not found in the student register.' });
-    const branch = getValByHeader(student, ['branch', 'sittingbranch']) || '';
-    const course = getValByHeader(student, ['course', 'program']) || '';
-    if (!hasAccess(branch, course, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) {
+    let name = '';
+    let email = '';
+    let studentRoll = String(roll || '').trim();
+    let branch = '';
+    let course = '';
+    const numericRow = requestedRow;
+    if (Number.isInteger(numericRow) && numericRow >= 2 && sourceType === 'drive') {
+      const sheet = doc.sheetsByTitle['Drive_Registration'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('driveregistration'));
+      const row = sheet && (await sheet.getRows({ offset: numericRow - 2, limit: 1 }))[0];
+      if (!row) return res.status(404).json({ success: false, message: 'The drive registration was not found.' });
+      name = getValByHeader(row, ['name', 'studentname']) || '';
+      email = getValByHeader(row, ['mailid', 'email']) || '';
+      studentRoll = getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']) || studentRoll;
+      branch = getValByHeader(row, ['branch', 'sittingbranch']) || '';
+      course = getValByHeader(row, ['course']) || '';
+      const owner = getValByHeader(row, ['placementofficer', 'tponame', 'createdby', 'tpo']);
+      if (owner && normalizePlacementText(owner) !== normalizePlacementText(user?.name)) return res.status(403).json({ success: false, message: 'You can only email students on your own placement drives.' });
+    } else if (Number.isInteger(numericRow) && numericRow >= 2) {
+      const sheet = doc.sheetsByTitle['Opening_Applied'];
+      const row = sheet && (await sheet.getRows({ offset: numericRow - 2, limit: 1 }))[0];
+      if (!row) return res.status(404).json({ success: false, message: 'The application record was not found.' });
+      name = getValByHeader(row, ['studentname', 'name']) || '';
+      email = getValByHeader(row, ['mailid', 'email']) || '';
+      studentRoll = getValByHeader(row, ['rollnumber', 'rollno', 'roll']) || studentRoll;
+      branch = getValByHeader(row, ['branch', 'sittingbranch']) || '';
+      course = getValByHeader(row, ['course']) || '';
+      const owner = getValByHeader(row, ['placementofficer', 'tponame']);
+      if (owner && normalizePlacementText(owner) !== normalizePlacementText(user?.name)) return res.status(403).json({ success: false, message: 'You can only email students on your own placement records.' });
+    }
+    const normalizedRoll = normalizePlacementText(studentRoll);
+    const student = (cache?.students || []).find(row => normalizedRoll && normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])) === normalizedRoll);
+    if (student) {
+      name ||= getValByHeader(student, ['name', 'studentname']);
+      email ||= getValByHeader(student, ['mailid', 'email']);
+      branch ||= getValByHeader(student, ['branch', 'sittingbranch']);
+      course ||= getValByHeader(student, ['course', 'program']);
+    }
+    if (!name && !studentRoll) return res.status(404).json({ success: false, message: 'Student not found in the placement record or student register.' });
+    name ||= 'Student';
+    if (!hasAccess(branch || user?.sittingBranch || 'Unknown', course || user?.assignedCourse || 'Unknown', user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) {
       return res.status(403).json({ success: false, message: 'This student is outside your assigned branch or course.' });
     }
-    const name = getValByHeader(student, ['name', 'studentname']) || 'Student';
-    const email = getValByHeader(student, ['mailid', 'email']) || '';
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(422).json({ success: false, message: 'A valid student email address is not available in the register.' });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(422).json({ success: false, message: 'A valid candidate email address is not available on this record.' });
     const safeMessage = escapePlacementMailHtml(message).replace(/\r?\n/g, '<br>');
     const html = `<div style="margin:0 auto;max-width:640px;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#334155;background:#fff"><div style="padding:22px 28px;background:#0f172a;border-bottom:4px solid #7c3aed"><div style="font-size:12px;letter-spacing:.16em;color:#93c5fd;font-weight:700">IPCS GLOBAL • PLACEMENT CELL</div><h1 style="margin:10px 0 0;color:#fff;font-size:21px">Placement update</h1></div><div style="padding:26px 28px;font-size:15px;line-height:1.7"><p>Dear ${escapePlacementMailHtml(name)},</p><p>${safeMessage}</p><div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;color:#475569">Regards,<br><strong style="color:#0f172a">${escapePlacementMailHtml(user?.name || 'Placement Officer')}</strong><br>IPCS Global Placement Cell</div></div></div>`;
     await sendMailAndLog({ from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`, to: email, subject: String(subject).trim(), html }, { name, email, type: 'TPO Student Email' });
@@ -3189,7 +3234,7 @@ exports.getPublicPlacementTeam = async (_req, res) => {
       };
     }).filter(member => {
       const key = normalizePlacementText(member.name).replace(/^(mrs|miss|mr|ms|dr)/, '');
-      if (!key || seen.has(key) || !/(tpo|placement|career guidance)/i.test(member.role)) return false;
+      if (!key || seen.has(key) || !/(tpo|placement|career guidance|corporate relations?|client relations?)/i.test(member.role)) return false;
       seen.add(key);
       return true;
     });
