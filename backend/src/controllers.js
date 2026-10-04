@@ -1701,6 +1701,62 @@ const findVacancyHeader = (headers, aliases) => {
   return null;
 };
 
+const vacancyClientSyncLocks = new Map();
+const withVacancyClientSyncLock = async (companyKey, operation) => {
+  const previous = vacancyClientSyncLocks.get(companyKey) || Promise.resolve();
+  let release;
+  const current = new Promise(resolve => { release = resolve; });
+  vacancyClientSyncLocks.set(companyKey, current);
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+    if (vacancyClientSyncLocks.get(companyKey) === current) vacancyClientSyncLocks.delete(companyKey);
+  }
+};
+
+// Keep this company-register sync behind one helper so its persistence can be
+// replaced with a database upsert when the portal moves from Sheets to MySQL.
+const ensureVacancyClientRecord = async vacancy => {
+  const companyKey = normalizePlacementText(vacancy.companyName);
+  if (!companyKey) throw new Error('A company name is required to sync the client register.');
+
+  return withVacancyClientSyncLock(companyKey, async () => {
+    const clientsSheet = doc.sheetsByTitle['Clients'];
+    if (!clientsSheet) throw new Error('The Clients sheet is unavailable.');
+    await clientsSheet.loadHeaderRow();
+    const headers = [...(clientsSheet.headerValues || [])];
+    const companyHeader = findVacancyHeader(headers, ['companyname', 'company']);
+    if (!companyHeader) throw new Error('The Clients sheet is missing its Company Name column.');
+
+    const clients = await clientsSheet.getRows();
+    const alreadyExists = clients.some(row => normalizePlacementText(getValByHeader(row, ['companyname', 'company'])) === companyKey);
+    if (alreadyExists) return { added: false, duplicate: true, rowNumber: null };
+
+    const fieldSpecs = [
+      { value: vacancy.placementOfficer, aliases: ['placementofficer', 'tpo', 'tponame'] },
+      { value: vacancy.companyName, aliases: ['companyname', 'company'] },
+      { value: vacancy.companyWebsite, aliases: ['companywebsite', 'website'] },
+      { value: vacancy.state || vacancy.location, aliases: ['companylocation', 'state', 'location'] },
+      { value: vacancy.companyContact, aliases: ['companycontact', 'contactnumber', 'phone', 'contact'] },
+      { value: vacancy.companyMailId, aliases: ['companymailid', 'companyemail', 'mailid', 'email'] },
+      { value: vacancy.companyContactPerson, aliases: ['companycontactperson', 'contactperson', 'person'] },
+      { value: vacancy.companyLogo, aliases: ['companylogo', 'logo'] }
+    ];
+    const clientRow = {};
+    fieldSpecs.forEach(field => {
+      const header = findVacancyHeader(headers, field.aliases);
+      if (header) clientRow[header] = field.value || '';
+    });
+
+    const savedClient = await clientsSheet.addRow(clientRow);
+    const cache = getCache();
+    if (Array.isArray(cache?.clients)) cache.clients.push(savedClient);
+    return { added: true, duplicate: false, rowNumber: savedClient?.rowNumber || null };
+  });
+};
+
 const formatTodayForVacancy = () => new Intl.DateTimeFormat('en-GB', {
   timeZone: 'Asia/Kolkata', day: '2-digit', month: '2-digit', year: 'numeric'
 }).format(new Date());
@@ -1814,6 +1870,13 @@ exports.addVacancy = async (req, res) => {
     };
     const rowValues = Object.fromEntries(Object.entries(rowData).map(([key, value]) => [headerMap.get(key), value]));
     const savedRow = await sheet.addRow(rowValues);
+    let clientSync = null;
+    try {
+      clientSync = await ensureVacancyClientRecord(rowData);
+    } catch (syncError) {
+      console.error('Vacancy saved but Clients register sync failed:', syncError.message);
+      clientSync = { added: false, duplicate: false, warning: syncError.message };
+    }
     const cache = getCache();
     if (Array.isArray(cache?.vacancies)) cache.vacancies.push(savedRow);
     refreshCache();
@@ -1839,12 +1902,18 @@ exports.addVacancy = async (req, res) => {
       timestamp: rowData.timestamp,
       datePosted: rowData.date
     };
+    const clientSyncMessage = clientSync?.warning
+      ? ` The opening was saved, but its company could not be synced to Clients: ${clientSync.warning}`
+      : clientSync?.added
+        ? ' The new company was also added to Clients.'
+        : ' The company was already listed in Clients, so no duplicate was added.';
     return res.status(201).json({
       success: true,
       vacancy,
+      clientSync,
       sheet: sheet.title,
       rowNumber: savedRow?.rowNumber || null,
-      message: `Vacancy added to ${sheet.title}${savedRow?.rowNumber ? ` at row ${savedRow.rowNumber}` : ''}.`
+      message: `Vacancy added to ${sheet.title}${savedRow?.rowNumber ? ` at row ${savedRow.rowNumber}` : ''}.${clientSyncMessage}`
     });
   } catch (error) {
     console.error('Vacancy creation failed:', error.message);

@@ -678,9 +678,8 @@ function VacanciesContent() {
             } else {
               setVacancies(previous => [vacancy, ...previous]);
               setActiveTab('Open');
-              const rowInfo = result?.rowNumber ? ` (row ${result.rowNumber})` : '';
-              setOpeningNoticeIsError(false);
-              setOpeningNotice(`Vacancy saved to ${result?.sheet || 'NewsLetter'}${rowInfo}.`);
+              setOpeningNoticeIsError(Boolean(result?.clientSync?.warning));
+              setOpeningNotice(result?.message || `Vacancy saved to ${result?.sheet || 'NewsLetter'}.`);
             }
           }}
         />
