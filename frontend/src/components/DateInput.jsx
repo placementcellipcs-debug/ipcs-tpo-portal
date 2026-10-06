@@ -5,7 +5,7 @@ import { formatPortalDate } from '../utils/dateFormat';
 const toIsoDate = value => {
   const text = String(value || '').trim();
   const iso = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  const dmy = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const dmy = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   const year = Number(iso ? iso[1] : dmy?.[3]);
   const month = Number(iso ? iso[2] : dmy?.[2]);
   const day = Number(iso ? iso[3] : dmy?.[1]);
@@ -44,7 +44,10 @@ export default function DateInput({ value, onChange, className = '', style, requ
     const iso = toIsoDate(next);
     const withinRange = iso && (!min || iso >= min) && (!max || iso <= max);
     event.target.setCustomValidity(!iso ? 'Enter a valid date as DD/MM/YYYY.' : !withinRange ? 'Choose a date within the allowed range.' : '');
-    if (withinRange) notifyChange(onChange, iso);
+    if (withinRange) {
+      setDraft(displayDate(iso));
+      notifyChange(onChange, iso);
+    }
   };
 
   const updateFromPicker = event => {
@@ -69,7 +72,7 @@ export default function DateInput({ value, onChange, className = '', style, requ
         onChange={updateText}
         required={required}
         disabled={disabled}
-        pattern="\\d{2}/\\d{2}/\\d{4}"
+        pattern="[0-9]{1,2}/[0-9]{1,2}/[0-9]{4}"
         aria-label={props['aria-label'] || 'Date (DD/MM/YYYY)'}
       />
       <CalendarBlank size={17} aria-hidden="true" style={{ position: 'absolute', right: 11, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
