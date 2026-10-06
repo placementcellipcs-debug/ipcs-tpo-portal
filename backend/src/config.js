@@ -22,6 +22,7 @@ let cacheRefreshPromise = null;
 let lastCacheRefreshStartedAt = 0;
 let scheduledCacheRefreshTimer = null;
 let docInfoLoading = null;
+let spreadsheetDateFormatPromise = null;
 
 const getCache = () => globalCache;
 async function loadDocInfo() {
@@ -31,6 +32,70 @@ async function loadDocInfo() {
   } finally {
     docInfoLoading = null;
   }
+}
+
+async function ensureSpreadsheetDateFormats() {
+  if (!spreadsheetDateFormatPromise) {
+    spreadsheetDateFormatPromise = (async () => {
+      const spreadsheetId = process.env.SPREADSHEET_ID;
+      if (!spreadsheetId) return;
+      await loadDocInfo();
+
+      const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
+      const metadata = await sheetsApi.spreadsheets.get({
+        spreadsheetId,
+        fields: 'sheets(properties(sheetId,title,gridProperties(columnCount)))'
+      });
+      const sheets = metadata.data?.sheets || [];
+      const ranges = sheets.map(({ properties }) => `'${String(properties?.title || '').replace(/'/g, "''")}'!1:1`);
+      const headerResponse = ranges.length
+        ? await sheetsApi.spreadsheets.values.batchGet({ spreadsheetId, ranges, valueRenderOption: 'FORMATTED_VALUE' })
+        : { data: { valueRanges: [] } };
+      const headerRows = headerResponse.data?.valueRanges || [];
+      const requests = [{
+        updateSpreadsheetProperties: {
+          properties: { locale: 'en_GB', timeZone: 'Asia/Kolkata' },
+          fields: 'locale,timeZone'
+        }
+      }];
+
+      sheets.forEach(({ properties }, sheetIndex) => {
+        const headerCells = headerRows[sheetIndex]?.values?.[0] || [];
+        headerCells.forEach((header, columnIndex) => {
+          const key = String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (!key) return;
+          let numberFormat = null;
+          if (/(timestamp|datetime|createdat|updatedat|submittedat|modifiedat|dateandtime)/.test(key)) {
+            numberFormat = { type: 'DATE_TIME', pattern: 'dd/MM/yyyy HH:mm:ss' };
+          } else if (/(^|)(time|interviewtime|starttime|endtime|checkintime|checkouttime)$/.test(key)) {
+            numberFormat = { type: 'TIME', pattern: 'HH:mm:ss' };
+          } else if (/(date|birthday|dob|deadline|expiry|warranty|purchasedate|dateplaced)/.test(key)) {
+            numberFormat = { type: 'DATE', pattern: 'dd/MM/yyyy' };
+          }
+          if (!numberFormat) return;
+          requests.push({
+            repeatCell: {
+              range: {
+                sheetId: properties.sheetId,
+                startRowIndex: 1,
+                startColumnIndex: columnIndex,
+                endColumnIndex: columnIndex + 1
+              },
+              cell: { userEnteredFormat: { numberFormat } },
+              fields: 'userEnteredFormat.numberFormat'
+            }
+          });
+        });
+      });
+
+      await sheetsApi.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+      console.log(`🗓️ Applied DD/MM/YYYY date formats to ${sheets.length} spreadsheet tabs.`);
+    })().catch(error => {
+      spreadsheetDateFormatPromise = null;
+      throw error;
+    });
+  }
+  return spreadsheetDateFormatPromise;
 }
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -59,6 +124,12 @@ async function performCacheRefresh() {
   isFetching = true;
   try {
     await loadDocInfo();
+    try {
+      await ensureSpreadsheetDateFormats();
+    } catch (error) {
+      // A formatting issue should not keep the portal from serving data.
+      console.warn('Could not apply spreadsheet date formats:', error.message);
+    }
     
     const getSheetFuzzy = (keyword) => {
       const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');

@@ -28,7 +28,7 @@ const placementTimestamp = (record, getValue) => parsePlacementTime(
 
 const latestPlacementRows = (rows, getValue) => {
   const latest = new Map();
-  (Array.isArray(rows) ? rows : []).forEach((row, index) => {
+  (Array.isArray(rows) ? rows : []).filter(row => !/^\s*(?:yes|true|1)\s*$/i.test(String(getValue(row, ['tpoactionlog']) || ''))).forEach((row, index) => {
     const identity = placementIdentity(row, getValue);
     if (!identity) {
       latest.set(`unkeyed:${row?.rowNumber || index}`, row);

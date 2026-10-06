@@ -5,6 +5,7 @@ import {
   MapPinLine, Plus, Trash, CheckCircle, WarningCircle, Image as ImageIcon, UploadSimple
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import DateInput from '../../components/DateInput';
 import { API_BASE } from '../../services/apiConfig';
 import AssetWorkspaceNav from './AssetWorkspaceNav';
 
@@ -296,7 +297,7 @@ export default function AddAsset() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '20px' }}>
                 <div>
                   <label className="data-label">Purchase Date</label>
-                  <input type="date" className="premium-input" style={{ width: '100%' }} value={asset.purchaseDate} onChange={e => setAsset({...asset, purchaseDate: e.target.value})} />
+                  <DateInput className="premium-input" style={{ width: '100%' }} value={asset.purchaseDate} onChange={e => setAsset({...asset, purchaseDate: e.target.value})} />
                 </div>
                 <div>
                   <label className="data-label">Purchase Cost (₹)</label>
@@ -309,7 +310,7 @@ export default function AddAsset() {
                 </div>
                 <div>
                   <label className="data-label">Warranty End Date</label>
-                  <input type="date" className="premium-input" style={{ width: '100%' }} value={asset.warrantyEnd} onChange={e => setAsset({...asset, warrantyEnd: e.target.value})} />
+                  <DateInput className="premium-input" style={{ width: '100%' }} value={asset.warrantyEnd} onChange={e => setAsset({...asset, warrantyEnd: e.target.value})} />
                 </div>
               </div>
               <div style={{ marginTop: '20px', padding: '17px', border: '1px solid rgba(245,158,11,.25)', borderRadius: '13px', background: 'rgba(245,158,11,.055)' }}>

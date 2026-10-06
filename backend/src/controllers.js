@@ -953,6 +953,43 @@ const appendPlacementHistory = ({ row, oldStatus, status, oldRemarks, remarks, o
 };
 
 const placementTrackingHeaders = ['Interview Date', 'Interview Time', 'Interview Venue', 'Status History'];
+const placementActionHeaders = ['TPO Action Log', 'Action Type', 'Action Details'];
+
+const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentContact, studentEmail, studentRoll, course, branch, qualification, resume, jobId, company, position, status, remarks, interviewDate, interviewTime, interviewVenue, datePlaced, packageLpa, joiningStatus, entrySource, actionType, actionDetails, historyEntry }) => {
+  await loadDocInfo();
+  const logSheet = doc.sheetsByTitle['TPO_Log'];
+  if (!logSheet) throw new Error('The TPO_Log sheet is unavailable.');
+  await ensurePlacementHeaders(logSheet, [...placementTrackingHeaders, ...placementActionHeaders]);
+  const actionRow = {
+    TimeStamp: changedAt || formatIndiaTimestamp(),
+    'Student Name': studentName || '',
+    Contact: studentContact || '',
+    'Mail ID': studentEmail || '',
+    'Roll Number': studentRoll || '',
+    Course: course || '',
+    Branch: branch || '',
+    Qualification: qualification || '',
+    Resume: resume || '',
+    'Job ID': jobId || '',
+    'Company Name': company || '',
+    Position: position || '',
+    'Placement Officer': changedBy || '',
+    Status: status || '',
+    Remarks: remarks || '',
+    'DATE PLACED': datePlaced || '',
+    'PACKAGE (LPA)': packageLpa || '',
+    'Joining Status': joiningStatus || '',
+    'Interview Date': interviewDate || '',
+    'Interview Time': interviewTime || '',
+    'Interview Venue': interviewVenue || '',
+    'Entry Source': entrySource || 'Job Tracker',
+    'Status History': JSON.stringify(historyEntry ? [historyEntry] : []),
+    'TPO Action Log': 'YES',
+    'Action Type': actionType || 'Record updated',
+    'Action Details': actionDetails || ''
+  };
+  await logSheet.addRow(mapPlacementRowData(logSheet, actionRow), { insert: true });
+};
 
 exports.getApplications = async (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, department } = req.body;
@@ -1112,6 +1149,10 @@ exports.updateApplication = async (req, res) => {
     const oldInterviewDate = getValByHeader(rows[0], ['interviewdate']);
     const oldInterviewTime = getValByHeader(rows[0], ['interviewtime', 'intervewtime']);
     const oldInterviewVenue = getValByHeader(rows[0], ['interviewvenue']);
+    const oldDatePlaced = getValByHeader(rows[0], ['dateplaced']);
+    const oldPackage = getValByHeader(rows[0], ['package', 'packagelpa']);
+    const oldJoiningStatus = getValByHeader(rows[0], ['joiningstatus']);
+    const oldOfferLetter = getValByHeader(rows[0], ['offerletter', 'offerletterstatus']);
 
     // Treat the selected sheet row as the source of placement identity; the
     // browser's fullApp payload is only presentation data and is not trusted.
@@ -1152,6 +1193,24 @@ exports.updateApplication = async (req, res) => {
     const nextInterviewDate = interviewDate !== undefined ? cleanInterviewDate : oldInterviewDate;
     const nextInterviewTime = interviewTime !== undefined ? cleanInterviewTime : oldInterviewTime;
     const nextInterviewVenue = interviewVenue !== undefined ? interviewVenue : oldInterviewVenue;
+    const nextDatePlaced = datePlaced !== undefined ? formatIndiaDate(datePlaced) : oldDatePlaced;
+    const nextPackage = packageLpa !== undefined ? packageLpa : oldPackage;
+    const nextJoiningStatus = joiningStatus !== undefined ? joiningStatus : oldJoiningStatus;
+    const nextOfferLetter = offerLetterLink || oldOfferLetter;
+    const actionChanges = [];
+    const recordActionChange = (label, before, after, wasProvided = true) => {
+      if (!wasProvided || String(before ?? '').trim() === String(after ?? '').trim()) return;
+      actionChanges.push(`${label}: ${String(before || '—').trim()} → ${String(after || '—').trim()}`);
+    };
+    recordActionChange('Status', oldStatus, nextStatus, status !== undefined);
+    recordActionChange('Remarks', oldRemarks, nextRemarks, remarks !== undefined);
+    recordActionChange('Interview date', oldInterviewDate, nextInterviewDate, interviewDate !== undefined);
+    recordActionChange('Interview time', oldInterviewTime, nextInterviewTime, interviewTime !== undefined);
+    recordActionChange('Interview venue', oldInterviewVenue, nextInterviewVenue, interviewVenue !== undefined);
+    recordActionChange('Date placed', oldDatePlaced, nextDatePlaced, datePlaced !== undefined);
+    recordActionChange('Package', oldPackage, nextPackage, packageLpa !== undefined);
+    recordActionChange('Joining status', oldJoiningStatus, nextJoiningStatus, joiningStatus !== undefined);
+    recordActionChange('Offer letter', oldOfferLetter, nextOfferLetter, Boolean(offerLetterLink));
     const changedAt = formatIndiaTimestamp();
     const nextHistory = appendPlacementHistory({
       row: rows[0], oldStatus, status: nextStatus, oldRemarks, remarks: nextRemarks,
@@ -1191,10 +1250,10 @@ exports.updateApplication = async (req, res) => {
         setLogH('placementofficer', sTpo);
         setLogH('status', nextStatus || '');
         setLogH('remarks', nextRemarks || '');
-        setLogH('dateplaced', datePlaced !== undefined ? formatIndiaDate(datePlaced) : '');
-        setLogH('package', packageLpa !== undefined ? packageLpa : '');
-        setLogH('offerletterstatus', offerLetterLink || '');
-        setLogH('joiningstatus', joiningStatus !== undefined ? joiningStatus : '');
+        setLogH('dateplaced', nextDatePlaced || '');
+        setLogH('package', nextPackage || '');
+        setLogH('offerletterstatus', nextOfferLetter || '');
+        setLogH('joiningstatus', nextJoiningStatus || '');
         setLogH('interviewdate', nextInterviewDate || '');
         setLogH('interviewtime', nextInterviewTime || '');
         setLogH('intervewtime', nextInterviewTime || '');
@@ -1213,6 +1272,26 @@ exports.updateApplication = async (req, res) => {
         }
       }
     } catch(e) { console.error('Placement log sync failed:', e.message); }
+
+    let actionLogWarning = '';
+    if (actionChanges.length) {
+      try {
+        const nextHistoryEntry = nextHistory[nextHistory.length - 1];
+        await appendTpoActionLog({
+          changedAt, changedBy: sTpo, studentName: sName, studentContact: sContact, studentEmail: sMail,
+          studentRoll: sRoll, course: sCourse, branch: sBranch, qualification: sQual, resume: sResume,
+          jobId: sJobId, company: sCompany, position: sPosition, status: nextStatus, remarks: nextRemarks,
+          interviewDate: nextInterviewDate, interviewTime: nextInterviewTime, interviewVenue: nextInterviewVenue,
+          datePlaced: nextDatePlaced, packageLpa: nextPackage, joiningStatus: nextJoiningStatus,
+          entrySource: getValByHeader(sourceRow, ['entrysource', 'recordorigin', 'origin']) || 'Job Application',
+          actionType: actionChanges.map(change => change.split(':')[0]).join(', '),
+          actionDetails: actionChanges.join('\n'), historyEntry: nextHistoryEntry
+        });
+      } catch (error) {
+        console.error('Placement action audit failed:', error.message);
+        actionLogWarning = `The update was saved, but its action could not be appended to TPO_Log: ${error.message}`;
+      }
+    }
     
     const interviewDetailsChanged = String(oldInterviewDate || '') !== String(nextInterviewDate || '') || String(oldInterviewTime || '') !== String(nextInterviewTime || '') || String(oldInterviewVenue || '') !== String(nextInterviewVenue || '');
     let emailWarning = '';
@@ -1235,7 +1314,7 @@ exports.updateApplication = async (req, res) => {
     await autoCreateDesignTask({ ...fullApp, name: sName, roll: sRoll, email: sMail, course: sCourse, branch: sBranch, company: sCompany, position: sPosition, status });
 
     refreshCache();
-    res.json({ success: true, message: "Updated!", statusHistory: nextHistory, warning: emailWarning });
+    res.json({ success: true, message: "Updated!", statusHistory: nextHistory, warning: [emailWarning, actionLogWarning].filter(Boolean).join(' ') });
   } catch (error) { 
     console.error(error);
     res.status(500).json({ success: false, message: `Update Failed: ${error.message}` }); 
@@ -1592,11 +1671,13 @@ exports.getVacancies = async (req, res) => {
     // Read NewsLetter directly here so additions made by another API instance
     // appear immediately instead of waiting for the shared five-minute cache.
     let vacancyRows = Array.isArray(cache?.vacancies) ? cache.vacancies : [];
+    let vacancyReadWarning = '';
     try {
       vacancyRows = await readCurrentVacancyRows();
       if (Array.isArray(cache?.vacancies)) cache.vacancies = vacancyRows;
     } catch (refreshError) {
       console.warn('Using cached vacancy rows because NewsLetter could not be refreshed:', refreshError.message);
+      vacancyReadWarning = 'Could not refresh the NewsLetter sheet. This list is cached and may not include recent openings.';
     }
 
     const companyLogos = new Map((cache?.clients || []).map(row => {
@@ -1649,7 +1730,7 @@ exports.getVacancies = async (req, res) => {
       if (!user) return false;
       return hasAccess('All', vacancy.course, user.role, user.assignedBranchesArray, user.assignedCourse, user.department);
     });
-    res.json({ success: true, vacancies: vacs.reverse() });
+    res.json({ success: true, vacancies: vacs.reverse(), warning: vacancyReadWarning });
   } catch (err) {
     console.error("Get Vacancies Error:", err);
     res.status(500).json({ success: false, message: err.message });
@@ -2346,6 +2427,7 @@ exports.getReports = async (req, res) => {
     cache.tpoLogs.forEach(row => {
       const studentName = getValByHeader(row, ['studentname', 'name']).trim();
       const companyName = getValByHeader(row, ['companyname', 'company']).trim();
+      if (/^\s*(?:yes|true|1)\s*$/i.test(getValByHeader(row, ['tpoactionlog']))) return;
       const status = normalizePlacementText(getValByHeader(row, ['status']));
       const placementOfficer = normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame']));
       const belongsToReportUser = isAdminReportUser
@@ -4988,6 +5070,49 @@ exports.updateDriveStatus = async (req, res) => {
     current.assign(update);
     await current.save();
 
+    const actionChanges = [];
+    const recordActionChange = (label, before, after, wasProvided = true) => {
+      if (!wasProvided || String(before ?? '').trim() === String(after ?? '').trim()) return;
+      actionChanges.push(`${label}: ${String(before || '—').trim()} → ${String(after || '—').trim()}`);
+    };
+    recordActionChange('Status', oldStatus, nextStatus, studentStatus !== undefined);
+    recordActionChange('Remarks', oldRemarks, nextRemarks, remarks !== undefined);
+    recordActionChange('Interview date', oldInterviewDate, nextInterviewDate, interviewDate !== undefined);
+    recordActionChange('Interview time', oldInterviewTime, nextInterviewTime, interviewTime !== undefined);
+    recordActionChange('Interview venue', oldInterviewVenue, nextInterviewVenue, interviewVenue !== undefined);
+    let actionLogWarning = '';
+    if (actionChanges.length) {
+      try {
+        const studentRoll = getValByHeader(current, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']);
+        const studentName = getValByHeader(current, ['name', 'studentname']);
+        const student = (getCache()?.students || []).find(row => {
+          const rowRoll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+          const rowName = normalizePlacementText(getValByHeader(row, ['name', 'studentname']));
+          return (studentRoll && rowRoll === normalizePlacementText(studentRoll)) || (studentName && rowName === normalizePlacementText(studentName));
+        });
+        const driveName = getValByHeader(current, ['driveid', 'drive id', 'eventid', 'event_id', 'companyname']) || 'Placement Drive';
+        const actionHistory = nextHistory[nextHistory.length - 1];
+        await appendTpoActionLog({
+          changedAt, changedBy: getValByHeader(current, ['placementofficer', 'tpo', 'tponame']) || user?.name,
+          studentName, studentContact: getValByHeader(current, ['contact', 'phone']) || getValByHeader(student, ['contact', 'phone']),
+          studentEmail: getValByHeader(current, ['mailid', 'email']) || getValByHeader(student, ['mailid', 'email']),
+          studentRoll, course: getValByHeader(current, ['course']) || getValByHeader(student, ['course']),
+          branch: getValByHeader(current, ['branch', 'sittingbranch']) || getValByHeader(student, ['branch', 'sittingbranch']),
+          qualification: getValByHeader(current, ['qualification', 'qual']) || getValByHeader(student, ['qualification', 'qual']),
+          resume: getValByHeader(current, ['resume', 'cv']) || getValByHeader(student, ['resume', 'cv']),
+          jobId: `DRIVE - ${driveName}`, company: driveName,
+          position: getValByHeader(current, ['position', 'role']) || 'Placement drive participant',
+          status: nextStatus, remarks: nextRemarks, interviewDate: nextInterviewDate,
+          interviewTime: nextInterviewTime, interviewVenue: nextInterviewVenue,
+          entrySource: 'Placement Drive', actionType: actionChanges.map(change => change.split(':')[0]).join(', '),
+          actionDetails: actionChanges.join('\n'), historyEntry: actionHistory
+        });
+      } catch (error) {
+        console.error('Placement drive action audit failed:', error.message);
+        actionLogWarning = `The update was saved, but its action could not be appended to TPO_Log: ${error.message}`;
+      }
+    }
+
     const interviewDetailsChanged = String(oldInterviewDate || '') !== String(nextInterviewDate || '') || String(oldInterviewTime || '') !== String(nextInterviewTime || '') || String(oldInterviewVenue || '') !== String(nextInterviewVenue || '');
     let emailWarning = '';
     if (String(nextStatus || '').toLowerCase() !== String(oldStatus || '').toLowerCase() || (String(nextStatus || '').toLowerCase() === 'interview scheduled' && interviewDetailsChanged)) {
@@ -5006,7 +5131,7 @@ exports.updateDriveStatus = async (req, res) => {
       } else if (String(nextStatus || '').toLowerCase() === 'interview scheduled') emailWarning = 'Interview details were saved, but this student has no email address on file.';
     }
     refreshCache();
-    res.json({ success: true, studentStatus: nextStatus, remarks: nextRemarks, interviewDate: nextInterviewDate, interviewTime: nextInterviewTime, interviewVenue: nextInterviewVenue, statusHistory: nextHistory, warning: emailWarning });
+    res.json({ success: true, studentStatus: nextStatus, remarks: nextRemarks, interviewDate: nextInterviewDate, interviewTime: nextInterviewTime, interviewVenue: nextInterviewVenue, statusHistory: nextHistory, warning: [emailWarning, actionLogWarning].filter(Boolean).join(' ') });
   } catch(err) { res.status(500).json({ success: false, message: err.message }); }
 };
 

@@ -6,6 +6,7 @@ import {
   MapPinLine, Clock, Prohibit, EnvelopeSimple, Phone, GraduationCap, Money, X, Eye, Plus, WarningCircle, Buildings, PencilSimple, Trash
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import DateInput from '../../components/DateInput';
 import { formatPortalDate, formatPortalDateTime, parsePortalDateTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
 import StatusBadge from '../../components/StatusBadge';
@@ -280,8 +281,8 @@ function VacancyCreateModal({ onClose, onCreated, currentOfficer, vacancyToEdit 
 
         <div className="vacancy-modal-grid" style={{ marginTop: '16px' }}>
           {field('Interview Date', 'interviewPlan', selectInput('interviewPlan', 'Choose interview status', ['Will Inform Once Scheduled', 'Interview Scheduled']))}
-          {form.interviewPlan === 'Interview Scheduled' && field('Scheduled Interview Date', 'interviewDate', textInput('interviewDate', 'date', vacancyToEdit ? {} : { min: today.iso }))}
-          {field('Last Date', 'lastDate', textInput('lastDate', 'date', vacancyToEdit ? {} : { min: today.iso }))}
+          {form.interviewPlan === 'Interview Scheduled' && field('Scheduled Interview Date', 'interviewDate', <DateInput className="premium-input" style={inputStyle} value={form.interviewDate} onChange={event => updateField('interviewDate', event.target.value)} required min={vacancyToEdit ? undefined : today.iso} />)}
+          {field('Last Date', 'lastDate', <DateInput className="premium-input" style={inputStyle} value={form.lastDate} onChange={event => updateField('lastDate', event.target.value)} required min={vacancyToEdit ? undefined : today.iso} />)}
         </div>
 
         {errorMessage && <div role="alert" style={{ marginTop: '16px', padding: '12px 14px', color: '#fecaca', background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.35)', borderRadius: '10px' }}>{errorMessage}</div>}
@@ -380,7 +381,13 @@ function VacanciesContent() {
           })
         ]);
         
-        if (vacRes.data.success) setVacancies(Array.isArray(vacRes.data.vacancies) ? vacRes.data.vacancies : []);
+        if (vacRes.data.success) {
+          setVacancies(Array.isArray(vacRes.data.vacancies) ? vacRes.data.vacancies : []);
+          if (vacRes.data.warning) {
+            setOpeningNotice(vacRes.data.warning);
+            setOpeningNoticeIsError(true);
+          }
+        }
         if (appRes.data.success) setApplications(Array.isArray(appRes.data.applications) ? appRes.data.applications : []);
       } catch (error) { 
         console.error("Failed to fetch data", error); 

@@ -6,6 +6,7 @@ import {
   CaretLeft, Trophy, ArrowsClockwise, FilePdf
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import DateInput from '../../components/DateInput';
 import { formatPortalDate, getTodayPortalDateInput, parsePortalDateTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
 import StatusBadge from '../../components/StatusBadge';
@@ -484,7 +485,7 @@ export default function PlacedStudents() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
               <div>
                 <label className="data-label">Date Placed</label>
-                <input type="date" className="sleek-input" style={{ width: '100%' }} value={editForm.datePlaced || ''} onChange={e => setEditForm({...editForm, datePlaced: e.target.value})} />
+                <DateInput className="sleek-input" style={{ width: '100%' }} value={editForm.datePlaced || ''} onChange={e => setEditForm({...editForm, datePlaced: e.target.value})} />
               </div>
               <div>
                 <label className="data-label">Package (LPA)</label>
@@ -550,7 +551,7 @@ export default function PlacedStudents() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
               <div><label className="data-label">Company Name *</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.company} onChange={e=>setAddForm({...addForm, company: e.target.value})} /></div>
               <div><label className="data-label">Position / Role</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.position} onChange={e=>setAddForm({...addForm, position: e.target.value})} /></div>
-              <div><label className="data-label">Date Placed</label><input type="date" className="sleek-input" style={{ width: '100%' }} value={addForm.datePlaced} onChange={e=>setAddForm({...addForm, datePlaced: e.target.value})} /></div>
+              <div><label className="data-label">Date Placed</label><DateInput className="sleek-input" style={{ width: '100%' }} value={addForm.datePlaced} onChange={e=>setAddForm({...addForm, datePlaced: e.target.value})} /></div>
               <div><label className="data-label">Package (LPA)</label><input type="number" step="0.1" className="sleek-input" style={{ width: '100%' }} value={addForm.packageLpa} onChange={e=>setAddForm({...addForm, packageLpa: e.target.value})} /></div>
               <div>
                 <label className="data-label">Joining Status</label>

@@ -6,6 +6,7 @@ import {
   Clock, CalendarBlank, UserCheck, CaretDown, Image
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import DateInput from '../../components/DateInput';
 import { formatPortalDate, formatPortalTime, parsePortalDateTime } from '../../utils/dateFormat';
 
 import { API_BASE } from '../../services/apiConfig';
@@ -369,7 +370,7 @@ export default function Events() {
             <div className="event-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '15px', marginBottom: '15px' }}>
               <div className="form-group">
                 <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '5px', fontWeight: 'bold' }}>Date *</label>
-                <input type="date" className="sleek-input" style={{ width: '100%' }} value={newEvent.date} onChange={e => setNewEvent({...newEvent, date: e.target.value})} />
+                <DateInput className="sleek-input" style={{ width: '100%' }} value={newEvent.date} onChange={e => setNewEvent({...newEvent, date: e.target.value})} />
               </div>
               <div className="form-group">
                 <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '5px', fontWeight: 'bold' }}>Time</label>
@@ -503,7 +504,7 @@ export default function Events() {
             </div>
 
             {eventActionForm.action === 'reschedule' && <div className="event-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '14px', marginBottom: '14px' }}>
-              <label style={{ color: '#cbd5e1', fontSize: '.82rem', fontWeight: 700 }}>New date *<input type="date" className="sleek-input" value={eventActionForm.newDate} onChange={event => setEventActionForm(previous => ({ ...previous, newDate: event.target.value }))} /></label>
+              <label style={{ color: '#cbd5e1', fontSize: '.82rem', fontWeight: 700 }}>New date *<DateInput className="sleek-input" value={eventActionForm.newDate} onChange={event => setEventActionForm(previous => ({ ...previous, newDate: event.target.value }))} required /></label>
               <label style={{ color: '#cbd5e1', fontSize: '.82rem', fontWeight: 700 }}>New time<input type="time" step="1" className="sleek-input" value={eventActionForm.time} onChange={event => setEventActionForm(previous => ({ ...previous, time: event.target.value }))} /></label>
             </div>}
 
