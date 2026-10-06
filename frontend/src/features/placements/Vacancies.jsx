@@ -71,6 +71,36 @@ const getStandardCourse = (c) => {
 
 const parseDateSafe = dateStr => parsePortalDateTime(dateStr);
 
+// The NewsLetter sheet has older rows whose Last Date is formatted M/D/YYYY,
+// while the portal now writes dates as DD/MM/YYYY. For an ambiguous value such
+// as 10/7/2026, use the posting date to select the interpretation that is on or
+// after the opening was posted. This keeps October deadlines from being read
+// as July deadlines and incorrectly hiding valid openings in Expired / Closed.
+const parseVacancyDate = (value, postedAt) => {
+  const defaultDate = parsePortalDateTime(value);
+  const text = String(value || '').trim();
+  const match = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:$|[\s,T])/);
+  if (!match) return defaultDate;
+
+  const first = Number(match[1]);
+  const second = Number(match[2]);
+  if (first > 12 || second > 12) return defaultDate;
+
+  const year = Number(match[3]);
+  const dayFirst = new Date(year, second - 1, first);
+  const monthFirst = new Date(year, first - 1, second);
+  const valid = date => date.getFullYear() === year && date.getMonth() >= 0 && date.getDate() === (date === dayFirst ? first : second);
+  const candidates = [dayFirst, monthFirst].filter(valid);
+  if (!candidates.length) return defaultDate;
+
+  const postedDate = parsePortalDateTime(postedAt);
+  if (!postedDate || candidates.length === 1) return defaultDate || candidates[0];
+  const postedDay = new Date(postedDate.getFullYear(), postedDate.getMonth(), postedDate.getDate()).getTime();
+  const plausible = candidates.filter(candidate => new Date(candidate.getFullYear(), candidate.getMonth(), candidate.getDate()).getTime() >= postedDay);
+  if (plausible.length) return plausible.sort((a, b) => a - b)[0];
+  return defaultDate || candidates[0];
+};
+
 const companyLogoSource = value => {
   const logo = String(value || '').trim();
   if (!logo) return '';
@@ -78,8 +108,8 @@ const companyLogoSource = value => {
   return driveId ? `https://lh3.googleusercontent.com/d/${driveId[1]}` : logo;
 };
 
-const toDateInputValue = value => {
-  const date = parsePortalDateTime(value);
+const toDateInputValue = (value, postedAt) => {
+  const date = postedAt ? parseVacancyDate(value, postedAt) : parsePortalDateTime(value);
   if (!date) return '';
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 };
@@ -102,7 +132,7 @@ const createVacancyFormState = (vacancy, today) => {
     experience: experienceOption, experienceOther: experienceOption === 'Other' ? existingExperience : '',
     salary: vacancy?.salary || '', genderPreference: vacancy?.gender || '', interviewPlan,
     interviewDate: interviewPlan === 'Interview Scheduled' ? toDateInputValue(savedInterviewDate) : '',
-    lastDate: toDateInputValue(vacancy?.lastDate)
+    lastDate: toDateInputValue(vacancy?.lastDate, vacancy?.datePosted || vacancy?.timestamp || vacancy?.date)
   };
 };
 
@@ -390,9 +420,10 @@ function VacanciesContent() {
       const fVacs = safeVacancies.filter(v => {
         if (!v) return false;
         
-        const deadline = parseDateSafe(v.lastDate);
-        const isExpired = (deadline && deadline < todayInner) || String(v.status || '').toLowerCase().includes('expire');
-        const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
+        const deadline = parseVacancyDate(v.lastDate, v.datePosted || v.timestamp || v.date);
+        const statusText = String(v.status || '').trim().toLowerCase();
+        const isExpired = (deadline && deadline < todayInner) || /\bexpire\w*\b/.test(statusText);
+        const isClosed = /\b(?:closed?|filled|cancelled|canceled|inactive)\b|\bno openings?\b/.test(statusText);
         
         if (isExpired || isClosed) expiredOpenings++; else activeOpenings++;
         if (v.company && String(v.company).toLowerCase() !== 'unknown company') companiesSet.add(String(v.company));
@@ -531,8 +562,8 @@ function VacanciesContent() {
 
         <div className="glass-panel control-action-bar">
           <div className="segmented-tabs">
-            <button className={`seg-tab ${activeTab === 'Open' ? 'active' : ''}`} onClick={() => setActiveTab('Open')}>Active Openings</button>
-            <button className={`seg-tab ${activeTab === 'Expired' ? 'active-expired' : ''}`} onClick={() => setActiveTab('Expired')}>Expired / Closed</button>
+            <button className={`seg-tab ${activeTab === 'Open' ? 'active' : ''}`} onClick={() => setActiveTab('Open')}>Active Openings ({totalActiveOpenings})</button>
+            <button className={`seg-tab ${activeTab === 'Expired' ? 'active-expired' : ''}`} onClick={() => setActiveTab('Expired')}>Expired / Closed ({totalExpiredOpenings})</button>
           </div>
 
           <div className="filter-group">
@@ -576,6 +607,7 @@ function VacanciesContent() {
           <div className="empty-state-card">
             <span style={{ fontSize: '2.5rem', marginBottom: '10px', display: 'block' }}>🔍</span>
             No {String(activeTab || '').toLowerCase()} vacancies match your current filters.
+            {activeTab === 'Open' && totalExpiredOpenings > 0 && <div style={{ marginTop: '8px', color: '#94a3b8' }}>Some saved openings have passed their last date. Find them in Expired / Closed; their NewsLetter rows are retained.</div>}
           </div>
         ) : (
           Object.keys(groupedVacs).map((state, idx) => (
@@ -590,9 +622,10 @@ function VacanciesContent() {
                 {groupedVacs[state].map((v, i) => {
                   if (!v) return null;
                   
-                  const deadline = parseDateSafe(v.lastDate);
-                  const isExpired = (deadline && deadline < today) || String(v.status || '').toLowerCase().includes('expire');
-                  const isClosed = String(v.status || '').toLowerCase().includes('close') || String(v.status || '').toLowerCase().includes('no');
+                  const deadline = parseVacancyDate(v.lastDate, v.datePosted || v.timestamp || v.date);
+                  const statusText = String(v.status || '').trim().toLowerCase();
+                  const isExpired = (deadline && deadline < today) || /\bexpire\w*\b/.test(statusText);
+                  const isClosed = /\b(?:closed?|filled|cancelled|canceled|inactive)\b|\bno openings?\b/.test(statusText);
                   
                   let statClass = 'green'; let statText = 'Open Now';
                   if(isClosed) { statClass = 'gray'; statText = 'Closed'; }
@@ -631,7 +664,7 @@ function VacanciesContent() {
                       <div className="jc-footer">
                         <div>
                           <div className={`status-pill ${statClass}`}>{statText}</div>
-                          <div className="jc-deadline">Ends: <span style={{color: isExpired || isClosed ? '#ef4444' : '#fff'}}>{formatPortalDate(v.lastDate, String(v.lastDate || 'N/A'))}</span></div>
+                          <div className="jc-deadline">Ends: <span style={{color: isExpired || isClosed ? '#ef4444' : '#fff'}}>{formatPortalDate(deadline || v.lastDate, String(v.lastDate || 'N/A'))}</span></div>
                         </div>
                         <div className="jc-applicants" onClick={() => { setSelectedJob(v); setIsApplicantsModalOpen(true); }}>
                           <Users size={16} weight={applicantCount > 0 ? "fill" : "regular"} color={applicantCount > 0 ? '#3b82f6' : '#94a3b8'}/>

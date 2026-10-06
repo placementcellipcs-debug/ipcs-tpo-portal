@@ -1568,15 +1568,38 @@ exports.emailStudent = async (req, res) => {
 // 🚨 EVENTS / VACANCIES / ISSUES / REPORTS
 // ---------------------------------------------------------
 
-exports.getVacancies = (req, res) => {
+let vacancySheetReadPromise = null;
+const readCurrentVacancyRows = async () => {
+  if (!vacancySheetReadPromise) {
+    vacancySheetReadPromise = (async () => {
+      await loadDocInfo();
+      const sheet = getNewsletterSheet();
+      if (!sheet) throw new Error('The NewsLetter sheet is unavailable.');
+      await sheet.loadHeaderRow();
+      return sheet.getRows();
+    })();
+  }
+  try {
+    return await vacancySheetReadPromise;
+  } finally {
+    vacancySheetReadPromise = null;
+  }
+};
+
+exports.getVacancies = async (req, res) => {
   try {
     const cache = getCache();
-    // 🚨 EXTREME BACKEND SAFETY: Prevents server crash if Google Sheet is empty/syncing
-    if (!cache || !cache.vacancies || !Array.isArray(cache.vacancies)) {
-      return res.json({ success: true, vacancies: [] });
+    // Read NewsLetter directly here so additions made by another API instance
+    // appear immediately instead of waiting for the shared five-minute cache.
+    let vacancyRows = Array.isArray(cache?.vacancies) ? cache.vacancies : [];
+    try {
+      vacancyRows = await readCurrentVacancyRows();
+      if (Array.isArray(cache?.vacancies)) cache.vacancies = vacancyRows;
+    } catch (refreshError) {
+      console.warn('Using cached vacancy rows because NewsLetter could not be refreshed:', refreshError.message);
     }
 
-    const companyLogos = new Map((cache.clients || []).map(row => {
+    const companyLogos = new Map((cache?.clients || []).map(row => {
       const name = getValByHeader(row, ['companyname', 'company']).trim().toLowerCase();
       const logo = getValByHeader(row, ['companylogo', 'logo']).trim();
       return [name, logo];
@@ -1584,7 +1607,7 @@ exports.getVacancies = (req, res) => {
     const user = req.portalUser;
     const canSeeVacancyEditFields = /(TPO|PLACEMENT OFFICER)/i.test(String(user?.role || '')) && String(user?.accessType || '').toLowerCase() !== 'superadmin';
 
-    let vacs = cache.vacancies.map((row, i) => {
+    let vacs = vacancyRows.map(row => {
       const company = getValByHeader(row, ['companyname', 'company']);
       const actualJobId = getValByHeader(row, ['jobid', 'id']).trim();
       const rowTpoName = getValByHeader(row, ['placementofficer', 'tpo', 'tponame']);
@@ -1620,6 +1643,9 @@ exports.getVacancies = (req, res) => {
         datePosted: getValByHeader(row, ['date', 'posteddate']) || ''
       };
     }).filter(vacancy => {
+      // Google Sheets can return formatted but otherwise empty grid rows.
+      // They are not vacancies and must not be exposed as blank cards.
+      if (!vacancy.company && !vacancy.position && !vacancy.hasJobId) return false;
       if (!user) return false;
       return hasAccess('All', vacancy.course, user.role, user.assignedBranchesArray, user.assignedCourse, user.department);
     });
@@ -1764,6 +1790,19 @@ const formatVacancyTimestamp = () => formatIndiaTimestamp();
 
 let vacancyJobSequence = null;
 let vacancyJobSequenceReady = null;
+let vacancyAppendQueue = Promise.resolve();
+
+const withVacancyAppendLock = async operation => {
+  const previous = vacancyAppendQueue;
+  let release;
+  vacancyAppendQueue = new Promise(resolve => { release = resolve; });
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+};
 
 const highestSequentialVacancyNumber = rows => (rows || []).reduce((highest, row) => {
   const match = String(getValByHeader(row, ['jobid', 'id']) || '').trim().match(/^JOB\s*-\s*(\d+)$/i);
@@ -1841,35 +1880,41 @@ exports.addVacancy = async (req, res) => {
     }
 
     const logoUrl = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS);
-    const jobId = await nextSequentialVacancyJobId(sheet);
-    const rowData = {
-      timestamp: formatVacancyTimestamp(),
-      date: formatTodayForVacancy(),
-      companyLogo: logoUrl,
-      companyName: String(input.companyName).trim(),
-      companyContact: String(input.companyContact).trim(),
-      companyMailId: String(input.companyMailId).trim(),
-      companyContactPerson: String(input.companyContactPerson).trim(),
-      companyWebsite: String(input.companyWebsite).trim(),
-      course: String(input.course).trim(),
-      position: String(input.position).trim(),
-      state: String(input.state).trim(),
-      location: String(input.location).trim(),
-      workMode: String(input.workMode).trim(),
-      openings: String(input.openings).trim(),
-      qualification: String(input.qualification).trim(),
-      jobDescription: String(input.jobDescription).trim(),
-      experience,
-      salary: String(input.salary).trim(),
-      genderPreference: String(input.genderPreference).trim(),
-      interviewDate: input.interviewPlan === 'Interview Scheduled' ? formatIndiaDate(input.interviewDate) : 'Will inform once scheduled',
-      lastDate: formatIndiaDate(input.lastDate),
-      placementOfficer: selectedOfficer,
-      jobId,
-      status: 'Open'
-    };
-    const rowValues = Object.fromEntries(Object.entries(rowData).map(([key, value]) => [headerMap.get(key), value]));
-    const savedRow = await sheet.addRow(rowValues);
+    const { jobId, rowData, savedRow } = await withVacancyAppendLock(async () => {
+      // Re-read before allocating the sequential ID, then explicitly ask Sheets
+      // to insert a row. INSERT_ROWS prevents appending over existing records.
+      const latestRows = await sheet.getRows();
+      const jobId = await nextSequentialVacancyJobId(sheet, latestRows);
+      const rowData = {
+        timestamp: formatVacancyTimestamp(),
+        date: formatTodayForVacancy(),
+        companyLogo: logoUrl,
+        companyName: String(input.companyName).trim(),
+        companyContact: String(input.companyContact).trim(),
+        companyMailId: String(input.companyMailId).trim(),
+        companyContactPerson: String(input.companyContactPerson).trim(),
+        companyWebsite: String(input.companyWebsite).trim(),
+        course: String(input.course).trim(),
+        position: String(input.position).trim(),
+        state: String(input.state).trim(),
+        location: String(input.location).trim(),
+        workMode: String(input.workMode).trim(),
+        openings: String(input.openings).trim(),
+        qualification: String(input.qualification).trim(),
+        jobDescription: String(input.jobDescription).trim(),
+        experience,
+        salary: String(input.salary).trim(),
+        genderPreference: String(input.genderPreference).trim(),
+        interviewDate: input.interviewPlan === 'Interview Scheduled' ? formatIndiaDate(input.interviewDate) : 'Will inform once scheduled',
+        lastDate: formatIndiaDate(input.lastDate),
+        placementOfficer: selectedOfficer,
+        jobId,
+        status: 'Open'
+      };
+      const rowValues = Object.fromEntries(Object.entries(rowData).map(([key, value]) => [headerMap.get(key), value]));
+      const savedRow = await sheet.addRow(rowValues, { insert: true });
+      return { jobId, rowData, savedRow };
+    });
     let clientSync = null;
     try {
       clientSync = await ensureVacancyClientRecord(rowData);
