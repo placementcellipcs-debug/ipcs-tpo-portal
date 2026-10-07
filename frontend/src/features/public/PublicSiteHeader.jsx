@@ -6,6 +6,7 @@ import ipcsLogo from '../../assets/brand/ipcs-logo.png';
 const links = [
   { label: 'Home', to: '/' },
   { label: 'About Us', to: '/about' },
+  { label: 'Corporate Training', to: '/corporate-training' },
   { label: 'Placements', to: '/placements' },
   { label: 'Hiring Partners', to: '/partners' },
   { label: 'Updates', to: '/updates' },

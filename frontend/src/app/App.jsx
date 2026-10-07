@@ -64,6 +64,7 @@ function App() {
         <Route path="/" element={<Login />} />
         <Route path="/login" element={<Login />} />
         <Route path="/about" element={<PublicSitePage page="about" />} />
+        <Route path="/corporate-training" element={<PublicSitePage page="corporate-training" />} />
         <Route path="/placements" element={<PublicSitePage page="placement" />} />
         <Route path="/placements/posters" element={<PublicSitePage page="placement-gallery" />} />
         <Route path="/placements/media" element={<PublicSitePage page="placement-media" />} />

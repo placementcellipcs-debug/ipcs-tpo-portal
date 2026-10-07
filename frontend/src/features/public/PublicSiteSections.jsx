@@ -56,6 +56,27 @@ const careerPrograms = [
   'Interactive communication activities'
 ];
 
+const corporateTrainingFeatures = [
+  { icon: Target, title: 'Built around your goals', copy: 'Customized modules shaped around your operational priorities, whether you are automating a process, integrating IoT, or upgrading PLC and SCADA skills.' },
+  { icon: Lightbulb, title: 'Learn by doing', copy: 'Practical sessions on live industrial setups give participants real exposure to the tools and systems they use at work.' },
+  { icon: UsersThree, title: 'Trainers with field experience', copy: 'Industry professionals connect technical concepts to real projects, with practical guidance drawn from hands-on work.' },
+  { icon: GlobeHemisphereWest, title: 'Onsite or remote', copy: 'Choose a delivery format that fits your team, locations, and operations while keeping disruption to a minimum.' },
+  { icon: Briefcase, title: 'Progress that supports performance', copy: 'Programs build technical capability, productivity, leadership, and problem-solving for individuals and organizations.' },
+  { icon: CheckCircle, title: 'Measured learning', copy: 'Practical tasks and progress reviews show what participants can apply, with internationally recognized certification on successful completion.' }
+];
+
+const corporateTrainingTopics = [
+  'Industrial Automation', 'PLC & SCADA', 'Robotics', 'Building Management Systems',
+  'Embedded Systems', 'Internet of Things', 'Digital Marketing with AI', 'Emerging technologies'
+];
+
+const corporateTrainingAudiences = [
+  { title: 'Engineers & technicians', copy: 'Build practical skills, work confidently with modern systems, and keep technical knowledge current.' },
+  { title: 'Mid-level professionals', copy: 'Prepare for specialist and managerial responsibilities with focused, job-relevant learning.' },
+  { title: 'Organizations', copy: 'Upskill teams, improve operational capability, and adopt new technologies with a reliable training partner.' },
+  { title: 'HR & L&D teams', copy: 'Plan scalable learning that supports workforce development and organizational goals.' }
+];
+
 const companyRoadmap = [
   { date: '2008', phase: 'The Modest Beginnings', title: 'Industrial automation starts in Kochi', copy: 'IPCS began as a system integrator and automation service provider, helping local industries adopt advanced manufacturing processes while building relationships with global technology companies.' },
   { date: '2009', phase: 'Bridging the Skills Gap', title: 'Practical technical training begins', copy: 'Seeing the shortage of industry-ready engineers and technicians, IPCS opened its first training centre in Kozhikode with hands-on PLC, SCADA, HMI, and DCS programs.' },
@@ -394,6 +415,60 @@ export default function PublicSiteSections({ page = 'all' }) {
 
   return (
     <div className="public-story">
+      {page === 'corporate-training' && <>
+        <section className="public-corporate-hero">
+          <div className="public-story-shell public-corporate-hero-grid">
+            <div className="public-corporate-hero-copy">
+              <span className="public-corporate-kicker"><span /> IPCS GLOBAL · CORPORATE TRAINING</span>
+              <h1>Enhancing professionalism with <em>proven standards.</em></h1>
+              <p>Build a skilled, adaptive, and forward-thinking workforce. IPCS Global brings more than 17 years of experience in automation and industrial solutions to customized, practical training for working professionals and organizations.</p>
+              <div className="public-corporate-hero-actions"><Link className="public-corporate-primary" to="/about#team">Talk with our team <ArrowRight size={17} /></Link><a className="public-corporate-secondary" href="#training-programs">Explore programs</a></div>
+              <div className="public-corporate-trust"><span><CheckCircle size={16} weight="fill" /> Industry-informed</span><span><CheckCircle size={16} weight="fill" /> Practical learning</span><span><CheckCircle size={16} weight="fill" /> Flexible delivery</span></div>
+            </div>
+            <aside className="public-corporate-hero-panel" aria-label="Corporate training highlights">
+              <div className="public-corporate-orbit" aria-hidden="true"><span /><span /><span /></div>
+              <div className="public-corporate-panel-icon"><GraduationCap size={31} weight="duotone" /></div>
+              <span className="public-corporate-panel-label">LEARNING THAT WORKS IN THE REAL WORLD</span>
+              <h2>People. Practice. Progress.</h2>
+              <p>Technology training designed around the systems, teams, and outcomes that matter to your organization.</p>
+              <div className="public-corporate-panel-stats"><div><strong>17+</strong><span>years of experience</span></div><div><strong>Onsite</strong><span>or remote delivery</span></div></div>
+            </aside>
+          </div>
+        </section>
+
+        <section className="public-corporate-intro">
+          <div className="public-story-shell public-corporate-intro-grid">
+            <div><span className="public-corporate-eyebrow">TRAINING BENEFICIARIES</span><h2>Upskill your people.<br /><em>Move your business forward.</em></h2></div>
+            <p>Success in a fast-evolving industrial landscape depends on a capable, adaptable workforce. Our corporate programs help working professionals grow their skills and help organizations build the technological edge to flourish. Each program is customized, scalable, and results-driven, aligned with your team’s objectives.</p>
+          </div>
+        </section>
+
+        <section className="public-corporate-features" id="training-programs">
+          <div className="public-story-shell">
+            <SectionHeading eyebrow="The IPCS approach" title="Training designed for the way your team works." description="From planning through assessment, every part of the program is shaped to make learning useful on the job." align="center" />
+            <div className="public-corporate-feature-grid">{corporateTrainingFeatures.map((item, index) => { const Icon = item.icon; return <article className="public-corporate-feature-card" key={item.title}><span className="public-corporate-feature-number">{String(index + 1).padStart(2, '0')}</span><span className="public-corporate-feature-icon"><Icon size={22} weight="duotone" /></span><h3>{item.title}</h3><p>{item.copy}</p></article>; })}</div>
+          </div>
+        </section>
+
+        <section className="public-corporate-topics">
+          <div className="public-story-shell public-corporate-topics-grid">
+            <div className="public-corporate-topics-copy"><span className="public-corporate-eyebrow">CURRENT, ADVANCED TOPICS</span><h2>Technical learning for a changing workplace.</h2><p>Keep your teams moving with programs that span foundational systems and emerging technology. We work with you to select the right topics and depth for your people.</p><Link to="/about" className="public-corporate-text-link">Discover IPCS Global <ArrowRight size={16} /></Link></div>
+            <div className="public-corporate-topic-list">{corporateTrainingTopics.map((topic, index) => <div key={topic}><span>{String(index + 1).padStart(2, '0')}</span><b>{topic}</b><CheckCircle size={17} weight="fill" /></div>)}</div>
+          </div>
+        </section>
+
+        <section className="public-corporate-audience">
+          <div className="public-story-shell">
+            <SectionHeading eyebrow="Who benefits" title="One learning partner. Different paths to grow." description="Programs can support individuals, specialist teams, and organization-wide capability building." />
+            <div className="public-corporate-audience-grid">{corporateTrainingAudiences.map((item, index) => <article key={item.title}><span className="public-corporate-audience-icon">{index === 0 ? <Compass size={20} /> : index === 1 ? <Star size={20} /> : index === 2 ? <Buildings size={20} /> : <UsersThree size={20} />}</span><span className="public-corporate-eyebrow">0{index + 1}</span><h3>{item.title}</h3><p>{item.copy}</p></article>)}</div>
+          </div>
+        </section>
+
+        <section className="public-corporate-results">
+          <div className="public-story-shell public-corporate-results-inner"><div><span className="public-corporate-kicker"><span /> PEOPLE ARE YOUR ADVANTAGE</span><h2>Invest in people.<br /><em>Accelerate growth.</em></h2><p>Our corporate clients have seen tangible gains in process efficiency, innovation, and employee retention. Our wider experience includes work with Fortune 500 companies, government projects, and reputed academic institutions. Let’s build smarter teams, better systems, and stronger futures—together.</p></div><Link className="public-corporate-primary" to="/about#team">Connect with IPCS Global <ArrowRight size={17} /></Link><div className="public-corporate-results-mark" aria-hidden="true"><Handshake size={150} weight="thin" /></div></div>
+        </section>
+      </>}
+
       {['about', 'all'].includes(page) && <>
       <section className="public-about-section" id="about">
         <div className="public-story-shell">
