@@ -141,10 +141,8 @@ const corporateTrainingPhotos = [
   ...militaryPhotoNames.map((name, index) => ({ name, index, group: 'Military', label: 'MILITARY · BMS TRAINING', folder: 'MILITIARY' }))
 ].map(photo => ({
   ...photo,
-  src: `${sharePointTrainingFolder}/${photo.folder}/${encodeURIComponent(photo.name)}`
+  src: `${sharePointTrainingFolder}/${photo.folder}/${encodeURIComponent(photo.name)}?download=1`
 }));
-const corporateTrainingPhotoFolderUrl = 'https://ipcsglobalsolutions-my.sharepoint.com/:f:/g/personal/ipcsdesigners_ipcsglobal_com/IgDnHRuCtjq7T6LRb3OJgLA4AWwy4FpckVKwrBJ8OjB6kY0?e=quw7dk';
-const militaryTrainingPhotoFolderUrl = 'https://ipcsglobalsolutions-my.sharepoint.com/:f:/g/personal/ipcsdesigners_ipcsglobal_com/IgCsOJqZefn-S7AW1M0HLcT0ASJCGpjnbzSv4vTgyZlSysc?e=YZ13DI';
 const magazineFolderUrl = 'https://drive.google.com/drive/folders/151HVXrNa_lBwY9sLzA_j3pca4Otdw-5R?usp=sharing';
 
 const companyRoadmap = [
@@ -374,6 +372,9 @@ export default function PublicSiteSections({ page = 'all' }) {
   const [magazines, setMagazines] = useState([]);
   const [magazinesLoading, setMagazinesLoading] = useState(false);
   const [magazinesError, setMagazinesError] = useState(false);
+  const [activeCorporateVideoKey, setActiveCorporateVideoKey] = useState(null);
+  const [corporatePhotoGalleryOpen, setCorporatePhotoGalleryOpen] = useState(false);
+  const [activeCorporatePhotoIndex, setActiveCorporatePhotoIndex] = useState(null);
   const partnerListPage = page === 'partners-all';
   const posterGalleryPage = page === 'placement-gallery';
   const partnerMediaPage = page === 'partners-media';
@@ -534,6 +535,23 @@ export default function PublicSiteSections({ page = 'all' }) {
     };
   }, [selectedVideo]);
 
+  useEffect(() => {
+    if (!corporatePhotoGalleryOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = event => {
+      if (event.key === 'Escape') setCorporatePhotoGalleryOpen(false);
+      if (activeCorporatePhotoIndex === null) return;
+      if (event.key === 'ArrowRight') setActiveCorporatePhotoIndex(index => (index + 1) % corporateTrainingPhotos.length);
+      if (event.key === 'ArrowLeft') setActiveCorporatePhotoIndex(index => (index + corporateTrainingPhotos.length - 1) % corporateTrainingPhotos.length);
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [corporatePhotoGalleryOpen, activeCorporatePhotoIndex]);
+
   const loadMore = async (kind) => {
     const isPartner = kind === 'partners';
     const isPoster = kind === 'posters';
@@ -612,7 +630,9 @@ export default function PublicSiteSections({ page = 'all' }) {
           <div className="public-story-shell">
             <SectionHeading eyebrow="Watch &amp; learn" title="Corporate training in action." description="Preview and play IPCS Global corporate training videos here." align="center" />
             <div className="public-corporate-video-grid">{corporateTrainingVideos.map((video, index) => <article className={`public-corporate-video-card corporate-video-${index + 1}`} key={video.key}>
-              <div className="public-corporate-video-frame"><iframe src={`https://ipcsglobalsolutions-my.sharepoint.com/personal/ipcsdesigners_ipcsglobal_com/_layouts/15/embed.aspx?UniqueId=${video.id}&embed=%7B%22af%22%3Atrue%2C%22ust%22%3Atrue%7D&referrer=StreamWebApp&referrerScenario=EmbedDialog.Create`} title={video.title} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /></div>
+              <div className="public-corporate-video-frame">{activeCorporateVideoKey === video.key
+                ? <iframe src={`https://ipcsglobalsolutions-my.sharepoint.com/personal/ipcsdesigners_ipcsglobal_com/_layouts/15/embed.aspx?autoplay=true&muted=true&UniqueId=${video.id}&embed=%7B%22af%22%3Atrue%2C%22ust%22%3Atrue%7D&referrer=StreamWebApp&referrerScenario=EmbedDialog.Create`} title={video.title} loading="eager" allow="autoplay; encrypted-media; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
+                : <button type="button" className="public-corporate-video-launch" onClick={() => setActiveCorporateVideoKey(video.key)} aria-label={`Play video: ${video.title}`}><PlayCircle size={46} weight="fill" /><span>Play video</span></button>}</div>
               <h3>{video.title}</h3>
               <span>VIDEO {String(index + 1).padStart(2, '0')}</span>
             </article>)}</div>
@@ -624,16 +644,13 @@ export default function PublicSiteSections({ page = 'all' }) {
             <SectionHeading eyebrow="Event gallery" title="Training moments from the field." description="A moving photo reel from IPCS Global’s Bhutan Police and Military BMS training programmes." align="center" />
             <div className="public-corporate-photo-marquee" aria-label="Bhutan Police and Military BMS training event photos">
               <div className="public-corporate-photo-track">
-                {[...corporateTrainingPhotos, ...corporateTrainingPhotos].map((photo, index) => <a className="public-corporate-photo-card" href={photo.src} target="_blank" rel="noreferrer" key={`${photo.group}-${photo.name}-${index}`} aria-label={`Open ${photo.group} training photo ${photo.index + 1}`}>
+                {[...corporateTrainingPhotos, ...corporateTrainingPhotos].map((photo, index) => <button type="button" className="public-corporate-photo-card" onClick={() => { setActiveCorporateVideoKey(null); setActiveCorporatePhotoIndex(index % corporateTrainingPhotos.length); setCorporatePhotoGalleryOpen(true); }} key={`${photo.group}-${photo.name}-${index}`} aria-label={`View ${photo.group} training photo ${photo.index + 1}`}>
                   <img src={photo.src} alt={`IPCS Global ${photo.group} BMS training event, photo ${photo.index + 1}`} loading={index < 5 ? 'eager' : 'lazy'} onError={event => { event.currentTarget.closest('.public-corporate-photo-card')?.classList.add('is-unavailable'); }} />
                   <span>{photo.label}</span>
-                </a>)}
+                </button>)}
               </div>
             </div>
-            <div className="public-corporate-photo-links">
-              <a href={corporateTrainingPhotoFolderUrl} target="_blank" rel="noreferrer"><span>Bhutan Police</span><small>Open the shared event photo folder</small><ArrowUpRight size={16} /></a>
-              <a href={militaryTrainingPhotoFolderUrl} target="_blank" rel="noreferrer"><span>Military training</span><small>Open the shared event photo folder</small><ArrowUpRight size={16} /></a>
-            </div>
+            <div className="public-corporate-photo-actions"><span>Showing {corporateTrainingPhotos.length} event photos</span><button type="button" onClick={() => { setActiveCorporateVideoKey(null); setActiveCorporatePhotoIndex(null); setCorporatePhotoGalleryOpen(true); }}>See all photos <ArrowRight size={16} /></button></div>
           </div>
         </section>
 
@@ -959,6 +976,14 @@ export default function PublicSiteSections({ page = 'all' }) {
         <section className="public-video-dialog" role="dialog" aria-modal="true" aria-label={selectedVideo.name}>
           <header><div><span>{selectedVideo.folder || 'IPCS MEDIA'}</span><h2>{selectedVideo.name}</h2></div><button type="button" onClick={() => setSelectedVideo(null)} aria-label="Close video"><X size={21} /></button></header>
           {videoPlaybackError ? <iframe src={`https://drive.google.com/file/d/${encodeURIComponent(selectedVideo.id)}/preview`} title={selectedVideo.name} allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen /> : <video src={`${API_BASE}${selectedVideo.imageUrl}`} poster={videoThumbnail(selectedVideo)} controls playsInline preload="metadata" aria-label={selectedVideo.name} onError={() => setVideoPlaybackError(true)} />}
+        </section>
+      </div>, document.body)}
+      {corporatePhotoGalleryOpen && createPortal(<div className="public-corporate-gallery-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setCorporatePhotoGalleryOpen(false); }}>
+        <section className="public-corporate-gallery-dialog" role="dialog" aria-modal="true" aria-label="Corporate training photo gallery">
+          <header><div><span>BHUTAN POLICE &amp; MILITARY</span><h2>{activeCorporatePhotoIndex === null ? 'Training photo gallery' : corporateTrainingPhotos[activeCorporatePhotoIndex].group}</h2><p>{activeCorporatePhotoIndex === null ? `${corporateTrainingPhotos.length} event photos` : `Photo ${activeCorporatePhotoIndex + 1} of ${corporateTrainingPhotos.length}`}</p></div><button type="button" onClick={() => setCorporatePhotoGalleryOpen(false)} aria-label="Close photo gallery"><X size={21} /></button></header>
+          {activeCorporatePhotoIndex === null
+            ? <div className="public-corporate-gallery-grid">{corporateTrainingPhotos.map((photo, index) => <button type="button" className="public-corporate-gallery-thumb" onClick={() => setActiveCorporatePhotoIndex(index)} key={`${photo.group}-${photo.name}`} aria-label={`Open ${photo.group} photo ${photo.index + 1}`}><img src={photo.src} alt={`IPCS Global ${photo.group} BMS training event`} loading="lazy" onError={event => { event.currentTarget.closest('.public-corporate-gallery-thumb')?.classList.add('is-unavailable'); }} /><span>{photo.label}</span></button>)}</div>
+            : <div className="public-corporate-gallery-viewer"><button type="button" className="public-corporate-gallery-nav" onClick={() => setActiveCorporatePhotoIndex((activeCorporatePhotoIndex + corporateTrainingPhotos.length - 1) % corporateTrainingPhotos.length)} aria-label="Previous photo"><ArrowRight size={20} /></button><figure><img src={corporateTrainingPhotos[activeCorporatePhotoIndex].src} alt={`IPCS Global ${corporateTrainingPhotos[activeCorporatePhotoIndex].group} BMS training event`} /><figcaption>{corporateTrainingPhotos[activeCorporatePhotoIndex].label}</figcaption></figure><button type="button" className="public-corporate-gallery-nav next" onClick={() => setActiveCorporatePhotoIndex((activeCorporatePhotoIndex + 1) % corporateTrainingPhotos.length)} aria-label="Next photo"><ArrowRight size={20} /></button><button type="button" className="public-corporate-gallery-back" onClick={() => setActiveCorporatePhotoIndex(null)}>All photos</button></div>}
         </section>
       </div>, document.body)}
     </div>
