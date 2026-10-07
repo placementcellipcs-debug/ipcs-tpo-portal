@@ -120,7 +120,6 @@ const corporateTrainingVideos = [
   { key: 'cial-certification-part-1', title: 'CIAL Engineers Training & Certification · Part 1', id: '13699e3e-1df7-42ec-9142-59eb30e0257a' }
 ];
 
-const sharePointTrainingFolder = 'https://ipcsglobalsolutions-my.sharepoint.com/personal/ipcsdesigners_ipcsglobal_com/Documents/Marketing%20Creatives%202026/GALLERY/PHOTOS/CORPORATE%20TRAINING/2026';
 const bhutanPolicePhotoNames = [
   'STUDENT 11.jpg', 'STUDENT 12.jpg', 'STUDENT 9.jpg', 'STUDENT 6.jpg', 'STUDENT 10.jpg',
   'STUDENT 5.jpg', 'STUDENT 7.jpg', 'STUDENT 8.jpg', 'STUDENT 3 A.jpg', 'STUDENT 3.jpg',
@@ -137,11 +136,11 @@ const militaryPhotoNames = [
   'IMG_20260716_100705450.jpg'
 ];
 const corporateTrainingPhotos = [
-  ...bhutanPolicePhotoNames.map((name, index) => ({ name, index, group: 'Bhutan Police', label: 'BHUTAN POLICE · BMS TRAINING', folder: 'BHUTAN%20POLICE' })),
-  ...militaryPhotoNames.map((name, index) => ({ name, index, group: 'Military', label: 'MILITARY · BMS TRAINING', folder: 'MILITIARY' }))
+  ...bhutanPolicePhotoNames.map((name, index) => ({ name, index, group: 'Bhutan Police', label: 'BHUTAN POLICE · BMS TRAINING', folder: 'bhutan-police' })),
+  ...militaryPhotoNames.map((name, index) => ({ name, index, group: 'Military', label: 'MILITARY · BMS TRAINING', folder: 'military' }))
 ].map(photo => ({
   ...photo,
-  src: `${sharePointTrainingFolder}/${photo.folder}/${encodeURIComponent(photo.name)}?download=1`
+  src: `/event-gallery/${photo.folder}/${encodeURIComponent(photo.name.replace(/\.[^.]+$/i, '.webp'))}`
 }));
 const magazineFolderUrl = 'https://drive.google.com/drive/folders/151HVXrNa_lBwY9sLzA_j3pca4Otdw-5R?usp=sharing';
 

@@ -12,6 +12,11 @@
   font-family: 'Plus Jakarta Sans', sans-serif;
 }
 
+html:has(.public-portal),
+body:has(.public-portal),
+#root:has(.public-portal) { background-color: #f7f9fc; }
+#root:has(.public-portal) { min-height: 100vh; }
+
 .portal-glow { position: absolute; z-index: -1; pointer-events: none; border-radius: 50%; filter: blur(2px); }
 .portal-glow-one { width: 660px; height: 660px; top: 90px; right: -240px; background: radial-gradient(circle, rgba(91, 164, 255, .16), rgba(91, 164, 255, 0) 70%); }
 .portal-glow-two { width: 560px; height: 560px; bottom: -300px; left: -180px; background: radial-gradient(circle, rgba(89, 205, 232, .13), rgba(89, 205, 232, 0) 70%); }
