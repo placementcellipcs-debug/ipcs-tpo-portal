@@ -15,11 +15,44 @@ const placementTeamLead = {
 };
 
 const milestones = [
-  { value: 3, suffix: 'M+', label: 'Trained professionals' },
-  { value: 50, suffix: 'K+', label: 'Placed professionals' },
-  { value: 2400, suffix: '+', label: 'Industrial projects' },
-  { value: 100, suffix: '+', label: 'Presence across countries' },
-  { value: 240, suffix: '+', label: 'Corporate partners' }
+  { value: 30, suffix: '+', label: 'Branches across India' },
+  { value: 3, suffix: '', label: 'International locations' },
+  { value: 400, suffix: '+', label: 'Automation clients worldwide' },
+  { value: 100, suffix: '+', label: 'IPCS Technologies clients' }
+];
+
+const aboutBrands = [
+  {
+    name: 'IPCS Automation',
+    focus: 'INDUSTRIAL SOLUTIONS',
+    copy: 'End-to-end automation solutions designed around each organization’s needs. From PLC and SCADA integration to IoT-enabled systems, teams focus on efficiency, accuracy, and reliable operations.',
+    stat: '400+',
+    statLabel: 'clients worldwide',
+    tags: ['PLC & SCADA', 'Industrial automation', 'IoT systems']
+  },
+  {
+    name: 'IPCS Technologies',
+    focus: 'DIGITAL SERVICES',
+    copy: 'Web and mobile development, AI-integrated digital marketing, custom software, and branding—combining technology and creativity to turn ideas into scalable digital experiences.',
+    stat: '100+',
+    statLabel: 'satisfied clients',
+    tags: ['Web & mobile', 'Custom software', 'AI digital marketing', 'Branding']
+  },
+  {
+    name: 'IPCS Global',
+    focus: 'TRAINING & CAREER PATHWAYS',
+    copy: 'Industry-aligned learning and digital solutions that prepare people for real work, with programs spanning automation, Embedded and IoT, BMS, Python and Data Science, AI, and software testing.',
+    stat: '30+',
+    statLabel: 'branches across India',
+    tags: ['Practical training', 'Industry partnerships', 'Career development']
+  }
+];
+
+const companyAwards = [
+  { title: 'ISO 9001:2015', detail: 'Certified quality management' },
+  { title: 'Certificate of Excellence', detail: 'In Education' },
+  { title: 'Best Training Institute', detail: 'Award · 2014' },
+  { title: 'TÜV SÜD Corporation Partner', detail: 'Recognition · 2020, 2022 & 2025' }
 ];
 
 const placementTeamProfiles = [
@@ -78,20 +111,21 @@ const corporateTrainingAudiences = [
 ];
 
 const corporateTrainingVideos = [
-  { url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQA-nmkT9x3sQpFCWesw4CV6AZ5RjHVB7kWdBUAy2vLUmcc?e=QVJ1Z9' },
-  { url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQCYPEeh3imaQITdZWm6CqiDATWx4DtiCPC6XGQmkZDc2sE?e=9ENNXZ' },
-  { url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQBleYkeX6kWRrAAGyTVLh-MAdL-hXnF-t8WFzTToPSn8GQ?e=LqVgh6' },
-  { url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQAVn8NKD02jS7dSE_Jqg9mVAaV4dGmdXNwZYXSRIhxjnts?e=JIfCz6' },
-  { url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQBy9XQdbB33SbIWBXmHY67nAepunFdaUEiyH1nE3FrBpIk?e=ofv2x1' },
-  { url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQCAxZbBXwJoRZLNh_-SF6r0AbipIrFM9YpMHh2FvXEDKpQ?e=WHJCVj' }
+  { key: 'corporate-video-1', embedUrl: '' },
+  { key: 'corporate-video-2', embedUrl: '' },
+  { key: 'corporate-video-3', embedUrl: '' },
+  { key: 'corporate-video-4', embedUrl: '' },
+  { key: 'corporate-video-5', embedUrl: '' },
+  { key: 'corporate-video-6', embedUrl: '' }
 ];
 
 const companyRoadmap = [
-  { date: '2008', phase: 'The Modest Beginnings', title: 'Industrial automation starts in Kochi', copy: 'IPCS began as a system integrator and automation service provider, helping local industries adopt advanced manufacturing processes while building relationships with global technology companies.' },
-  { date: '2009', phase: 'Bridging the Skills Gap', title: 'Practical technical training begins', copy: 'Seeing the shortage of industry-ready engineers and technicians, IPCS opened its first training centre in Kozhikode with hands-on PLC, SCADA, HMI, and DCS programs.' },
-  { date: '2014+', phase: 'Standards & Global Growth', title: 'ISO certification and international centres', copy: 'After expanding training centres across Calicut, Trivandrum, Madurai, Hyderabad, and Pune, IPCS achieved ISO certification in 2014. It later established training and corporate service centres in the UAE and the Kingdom of Saudi Arabia.' },
-  { date: 'Digital Age', phase: 'A Broader Technology Portfolio', title: 'From smart buildings to emerging technology', copy: 'IPCS expanded into Building Management Systems and CCTV, alongside Python, data science, artificial intelligence, embedded systems, IoT, and digital marketing.' },
-  { date: 'Today', phase: 'IPCS Global', title: 'Connecting skills, industry, and opportunity', copy: 'IPCS Global is a self-sustaining, unfunded organization with over 1,000 employees. It brings technical education, automation solutions, and career pathways together, while alumni contribute to global enterprises across manufacturing, Oil & Gas, IT, and infrastructure.' }
+  { date: '2008', phase: 'The first step', title: 'A first office in Calicut, Kerala', copy: 'IPCS began its journey with the inauguration of its first office in Calicut, building a foundation in technology and industrial solutions.' },
+  { date: '2009', phase: 'Learning by doing', title: 'Training and project operations in Cochin', copy: 'IPCS launched its first training institute and project operations in Cochin, bringing practical, industry-focused learning closer to aspiring professionals.' },
+  { date: '2016', phase: 'International growth', title: 'A new branch in the UAE', copy: 'The opening of a UAE branch extended IPCS services and training beyond India.' },
+  { date: '2017', phase: 'A wider learning network', title: 'More institutes across South India', copy: 'IPCS expanded by launching additional institutes across regions of South India.' },
+  { date: '2025', phase: 'A global footprint', title: '30+ branches and three international locations', copy: 'IPCS reports operating more than 30 branches across India and three international locations.' },
+  { date: '2026', phase: 'The next milestone · goal', title: 'Building toward 50+ branches', copy: 'The stated expansion goal for 2026 is to reach more than 50 branches across India and add two international locations.' }
 ];
 
 const blogs = [
@@ -525,8 +559,13 @@ export default function PublicSiteSections({ page = 'all' }) {
         <section className="public-corporate-video-section" id="corporate-training-videos">
           <div className="public-story-shell">
             <SectionHeading eyebrow="Watch &amp; learn" title="Corporate training in action." description="Preview and play IPCS Global corporate training videos here." align="center" />
-            <div className="public-corporate-video-grid">{corporateTrainingVideos.map((video, index) => <article className={`public-corporate-video-card corporate-video-${index + 1}`} key={video.url}>
-              <iframe src={video.url} title={`Corporate training video ${index + 1}`} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
+            <div className="public-corporate-video-grid">{corporateTrainingVideos.map((video, index) => <article className={`public-corporate-video-card corporate-video-${index + 1}`} key={video.key}>
+              {video.embedUrl ? <iframe src={video.embedUrl} title={`Corporate training video ${index + 1}`} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /> : <div className="public-corporate-video-placeholder" role="status">
+                <VideoCamera size={34} weight="duotone" />
+                <span>VIDEO {String(index + 1).padStart(2, '0')}</span>
+                <strong>SharePoint embed link needed</strong>
+                <small>This video will play here once its SharePoint embed URL is added.</small>
+              </div>}
             </article>)}</div>
           </div>
         </section>
@@ -548,28 +587,35 @@ export default function PublicSiteSections({ page = 'all' }) {
         <div className="public-story-shell">
           <article className="public-about-story">
             <SectionHeading
-              eyebrow="Why Choose Us"
-              title="A World-Leading Technical Training Provider."
-              description="Industry-led technical training and automation solutions, built on practical experience and a commitment to quality."
+              eyebrow="THE JOURNEY · IPCS GLOBAL SOLUTIONS PVT. LTD."
+              title="The world’s trusted industry-based training institution."
+              description="What makes IPCS different is one word: improvisation. We aspire to be a one-stop technology partner for job aspirants and recruiters, closing the technical skills gap through practical training and on-project experience."
             />
             <div className="public-about-grid">
               <article className="public-about-card public-about-main">
                 <div className="public-card-icon"><Compass size={23} weight="duotone" /></div>
                 <span className="public-card-kicker">Who We Are</span>
-                <h3>Industry experience. Practical learning. Global reach.</h3>
-                <p>IPCS Global (Ingenious Power and Control Systems) brings a research-oriented and progressive approach to technical education and industrial automation. Established in Kochi in 2008, IPCS began with industrial automation projects for local industries and grew through a practical, quality-focused approach.</p>
-                <p>In 2009, IPCS opened its first practical training centre in Kozhikode to help close the gap between education and industry. Today, IPCS Global combines technical education, automation solutions, and career pathways across India, the UAE, and Saudi Arabia, with more than 1,000 employees and training centres located within partner university campuses.</p>
-                <p>Our alumni work across manufacturing, Oil &amp; Gas, IT, and infrastructure. We continue to connect skills, industry, and opportunity through practical learning and industry partnerships.</p>
+                <h3>Practical learning. Constant improvement. Real opportunity.</h3>
+                <p>IPCS Global Solutions began in Kerala with a belief that technical education should prepare people for the work they will actually do. Practical training and on-project experience help students build confidence, develop their potential, and move toward meaningful careers.</p>
+                <p>Our work brings together technical training, industrial automation, digital services, and corporate partnerships. By connecting job aspirants with recruiters and industry, we work to make the technical skills gap smaller and opportunity more accessible.</p>
                 <a className="public-about-team-link" href="#team">Learn more about our Team <ArrowRight size={17} weight="bold" /></a>
               </article>
               <div className="public-about-facts">
-                <article className="public-fact-card"><span className="public-fact-number">2008</span><span>IPCS Global established in Kochi</span></article>
-                <article className="public-fact-card"><span className="public-fact-number">2009</span><span>First training centre opened in Kozhikode</span></article>
-                <article className="public-fact-card"><span className="public-fact-number">2014</span><span>ISO certification milestone</span></article>
+                <article className="public-fact-card"><span className="public-fact-number">2008</span><span>Our first office opened in Calicut, Kerala</span></article>
+                <article className="public-fact-card"><span className="public-fact-number">30+</span><span>Branches across India, with three international locations</span></article>
+                <article className="public-fact-card"><span className="public-fact-number">50+</span><span>India branches is our 2026 expansion goal</span></article>
               </div>
             </div>
+            <section className="public-brand-portfolio" aria-labelledby="public-brand-title">
+              <div className="public-brand-heading"><span>BRANDS UNDER IPCS</span><h3 id="public-brand-title">Three teams. One shared drive to improve.</h3><p>Automation, digital technology, and industry-focused learning work together to help organizations and people move forward.</p></div>
+              <div className="public-brand-grid">{aboutBrands.map((brand, index) => <article className={`public-brand-card public-brand-card-${index + 1}`} key={brand.name}>
+                <span className="public-brand-focus">{brand.focus}</span><h4>{brand.name}</h4><p>{brand.copy}</p>
+                <div className="public-brand-stat"><strong>{brand.stat}</strong><span>{brand.statLabel}</span></div>
+                <div className="public-brand-tags">{brand.tags.map(tag => <span key={tag}>{tag}</span>)}</div>
+              </article>)}</div>
+            </section>
             <div className="public-roadmap" aria-label="IPCS Global company history">
-              <div className="public-roadmap-heading"><span>OUR JOURNEY</span><h3>From a Kochi office to a global learning network.</h3><p>Key milestones in the growth of IPCS Global.</p></div>
+              <div className="public-roadmap-heading"><span>OUR JOURNEY</span><h3>From our first Calicut office to a growing global network.</h3><p>Milestones shared by IPCS Global—and the next goals we are working toward.</p></div>
               <ol className="public-roadmap-list">
                 {companyRoadmap.map((item, index) => <li className="public-roadmap-item" key={item.date}>
                   <div className="public-roadmap-marker"><span>{String(index + 1).padStart(2, '0')}</span></div>
@@ -582,13 +628,17 @@ export default function PublicSiteSections({ page = 'all' }) {
             <article><span>INDUSTRY SOLUTIONS</span><h3>Automation, from design through commissioning.</h3><p>We propose, supply, install, and commission systems to industry standards across software, marine, construction, and manufacturing. Our work includes process, factory, and machine automation; CNC; building and energy management; IoT and robotics; and industrial calibration and testing.</p><div>{['PLCs', 'SCADA', 'DCS', 'HMI', 'CNC', 'IoT', 'Robotics', 'Drives', 'Sensors'].map(item => <b key={item}>{item}</b>)}</div></article>
             <article><span>PROFESSIONAL &amp; CORPORATE TRAINING</span><h3>Skills built around real systems and industry needs.</h3><p>Hands-on training for professionals and companies builds practical skills for modern technical work, automation, controls, IT, and emerging technologies.</p><div>{['PLC & SCADA', 'DCS & HMI', 'Panel Design', 'Process & Electrical Controls', 'Embedded Systems', 'Robotics', 'Industrial Networking', 'IoT', 'Python & Data Science', 'Digital Marketing'].map(item => <b key={item}>{item}</b>)}</div></article>
           </div>
+          <section className="public-awards-section" aria-labelledby="public-awards-title">
+            <div className="public-brand-heading"><span>AWARDED FOR EXCELLENCE</span><h3 id="public-awards-title">Standards and recognition.</h3></div>
+            <div className="public-awards-grid">{companyAwards.map((award, index) => <article key={award.title}><span className="public-award-index">0{index + 1}</span><span className="public-award-star"><Star size={19} weight="fill" /></span><h4>{award.title}</h4><p>{award.detail}</p></article>)}</div>
+          </section>
           <div className="public-values-row">
-            <div><span className="public-value-icon"><Compass size={17} weight="fill" /></span><span><b>Our Mission</b><small>Bring practical technical education, automation expertise, and career opportunity together to prepare people for industry.</small></span></div>
-            <div><span className="public-value-icon"><Target size={17} weight="fill" /></span><span><b>Our Vision</b><small>Become a premier automation solutions provider across diverse sectors while exceeding customer expectations.</small></span></div>
-            <div><span className="public-value-icon"><Star size={17} weight="fill" /></span><span><b>Our Values</b><small>Professional ethics, complete client satisfaction, team spirit, mutual respect, and coordinated delivery.</small></span></div>
+            <div><span className="public-value-icon"><Compass size={17} weight="fill" /></span><span><b>Our Mission</b><small>Help job aspirants and recruiters meet through practical learning and technology solutions that build real capability.</small></span></div>
+            <div><span className="public-value-icon"><Target size={17} weight="fill" /></span><span><b>Our Vision</b><small>Become a one-stop technological solution for learners, employers, and organizations.</small></span></div>
+            <div><span className="public-value-icon"><Star size={17} weight="fill" /></span><span><b>Our Values</b><small>Keep improving, work with integrity, learn by doing, and help people reach their potential.</small></span></div>
           </div>
           <section className="public-milestones-section" id="milestones" aria-label="IPCS Global milestones">
-            <div className="public-milestones-intro"><span>IPCS GLOBAL IN NUMBERS</span><h2>Progress built together.</h2></div>
+            <div className="public-milestones-intro"><span>IPCS GLOBAL IN NUMBERS</span><h2>Skills, solutions, and reach.</h2></div>
             <div className="public-milestone-grid">
               {milestones.map(item => <AnimatedMilestone key={item.label} {...item} />)}
             </div>

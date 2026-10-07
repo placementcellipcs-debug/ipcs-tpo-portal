@@ -65,6 +65,14 @@
 .public-corporate-video-card { min-width: 0; aspect-ratio: 16 / 9; overflow: hidden; border: 1px solid #dce6ef; border-radius: 18px; background: #0b1523; box-shadow: 0 14px 36px rgba(25,57,91,.09); }
 .public-corporate-video-card iframe { display: block; width: 100%; height: 100%; border: 0; background: #0b1523; }
 .public-corporate-video-card:focus-within { outline: 3px solid #1782d1; outline-offset: 4px; }
+.public-corporate-video-placeholder { position: relative; isolation: isolate; width: 100%; height: 100%; min-height: 210px; padding: 25px; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; color: #dcecff; text-align: center; background: radial-gradient(circle at 82% 14%, rgba(64,205,205,.28), transparent 34%), linear-gradient(140deg, #102d51, #0a1a2c); }
+.public-corporate-video-placeholder::before, .public-corporate-video-placeholder::after { position: absolute; z-index: -1; width: 210px; height: 210px; border: 1px solid rgba(186,225,255,.12); border-radius: 50%; content: ''; }
+.public-corporate-video-placeholder::before { top: -155px; right: -45px; box-shadow: 0 0 0 23px rgba(255,255,255,.025); }
+.public-corporate-video-placeholder::after { bottom: -175px; left: -50px; }
+.public-corporate-video-placeholder > svg { margin-bottom: 12px; color: #7edbd4; }
+.public-corporate-video-placeholder > span { color: #8eb9db; font-size: .58rem; font-weight: 900; letter-spacing: .17em; }
+.public-corporate-video-placeholder > strong { margin-top: 7px; color: #fff; font-size: .95rem; }
+.public-corporate-video-placeholder > small { max-width: 270px; margin-top: 6px; color: #b0c5db; font-size: .66rem; line-height: 1.55; }
 .public-corporate-inquiry-backdrop { position: fixed; z-index: 10030; inset: 0; padding: clamp(14px, 3vw, 34px); display: grid; place-items: center; overflow-y: auto; background: rgba(5,14,27,.74); backdrop-filter: blur(10px); animation: corporate-inquiry-fade .18s ease both; }
 .public-corporate-inquiry-dialog { width: min(720px, 100%); max-height: min(850px, calc(100dvh - 36px)); overflow: auto; border: 1px solid rgba(210,232,246,.82); border-radius: 22px; color: #18314d; background: #fff; box-shadow: 0 32px 100px rgba(0,0,0,.33); animation: corporate-inquiry-rise .22s ease both; }
 .public-corporate-inquiry-header { padding: 25px 27px 21px; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; border-bottom: 1px solid #e8eef4; background: linear-gradient(120deg,#f6fbfd,#fff); }
@@ -127,6 +135,31 @@
 .public-about-main p { max-width: 700px; margin: 0 0 12px; color: #66778c; font-size: .86rem; line-height: 1.78; }
 .public-about-team-link { width: fit-content; margin-top: 7px; display: inline-flex; align-items: center; gap: 8px; color: #155eef; font-size: .84rem; font-weight: 800; text-decoration: none; transition: gap .2s ease, color .2s ease; }
 .public-about-team-link:hover { gap: 12px; color: #0b49c8; }
+.public-brand-portfolio, .public-awards-section { margin-top: 42px; }
+.public-brand-heading { max-width: 700px; margin-bottom: 19px; }
+.public-brand-heading > span { color: #16829e; font-size: .65rem; font-weight: 900; letter-spacing: .16em; }
+.public-brand-heading h3 { margin: 9px 0 7px; color: #142d49; font-size: clamp(1.35rem, 2.5vw, 1.9rem); line-height: 1.2; letter-spacing: -.045em; }
+.public-brand-heading p { margin: 0; color: #6b7e93; font-size: .78rem; line-height: 1.7; }
+.public-brand-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.public-brand-card { position: relative; min-width: 0; min-height: 330px; padding: 24px; display: flex; flex-direction: column; overflow: hidden; border: 1px solid #e1eaf2; border-radius: 20px; background: linear-gradient(150deg, #fff, #f7fbfd); box-shadow: 0 14px 36px rgba(26,63,103,.055); transition: transform .22s ease, box-shadow .22s ease; }
+.public-brand-card:hover { transform: translateY(-4px); box-shadow: 0 22px 46px rgba(26,63,103,.11); }
+.public-brand-card::after { position: absolute; top: -72px; right: -75px; width: 175px; height: 175px; border: 1px solid rgba(16,122,160,.1); border-radius: 50%; box-shadow: 0 0 0 22px rgba(16,122,160,.025), 0 0 0 46px rgba(16,122,160,.018); content: ''; pointer-events: none; }
+.public-brand-card-2::after { border-color: rgba(80,106,198,.13); box-shadow: 0 0 0 22px rgba(80,106,198,.03), 0 0 0 46px rgba(80,106,198,.02); }
+.public-brand-card-3::after { border-color: rgba(16,163,145,.13); box-shadow: 0 0 0 22px rgba(16,163,145,.03), 0 0 0 46px rgba(16,163,145,.02); }
+.public-brand-focus { color: #12819b; font-size: .58rem; font-weight: 900; letter-spacing: .14em; }
+.public-brand-card h4 { position: relative; z-index: 1; margin: 14px 0 10px; color: #152e4c; font-size: 1.2rem; letter-spacing: -.04em; }
+.public-brand-card > p { position: relative; z-index: 1; margin: 0 0 17px; color: #6b7c91; font-size: .72rem; line-height: 1.75; }
+.public-brand-stat { display: flex; align-items: baseline; gap: 9px; margin-top: auto; padding-top: 15px; border-top: 1px solid #e7edf3; }
+.public-brand-stat strong { color: #127c9a; font-size: 1.55rem; letter-spacing: -.06em; }
+.public-brand-stat span { color: #76889b; font-size: .66rem; font-weight: 750; }
+.public-brand-tags { margin-top: 13px; display: flex; flex-wrap: wrap; gap: 6px; }
+.public-brand-tags span { padding: 5px 8px; border: 1px solid #e5edf3; border-radius: 999px; color: #526981; background: #fff; font-size: .57rem; font-weight: 750; }
+.public-awards-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; }
+.public-awards-grid article { position: relative; min-height: 155px; padding: 19px; border: 1px solid #e3eaf2; border-radius: 17px; background: linear-gradient(145deg, #fff, #f8fbfd); }
+.public-award-index { color: #a6b5c4; font-size: .57rem; font-weight: 900; letter-spacing: .1em; }
+.public-award-star { width: 33px; height: 33px; margin: 12px 0 10px; display: grid; place-items: center; border-radius: 11px; color: #a87514; background: #fff5dc; }
+.public-awards-grid h4 { margin: 0 0 5px; color: #1b3653; font-size: .75rem; line-height: 1.4; }
+.public-awards-grid p { margin: 0; color: #74859a; font-size: .64rem; line-height: 1.55; }
 .public-about-facts { display: grid; gap: 12px; }
 .public-fact-card { min-height: 106px; padding: 19px 23px; display: flex; align-items: center; gap: 18px; }
 .public-fact-number { min-width: 78px; color: #155eef; font-size: 1.8rem; font-weight: 900; letter-spacing: -.06em; }
@@ -145,7 +178,7 @@
 .public-milestones-intro { position: relative; z-index: 1; margin-bottom: 25px; }
 .public-milestones-intro > span { color: #92c6f3; font-size: .66rem; font-weight: 900; letter-spacing: .18em; }
 .public-milestones-intro h2 { margin: 8px 0 0; font-size: 1.45rem; letter-spacing: -.04em; }
-.public-milestone-grid { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(5, 1fr); }
+.public-milestone-grid { position: relative; z-index: 1; display: grid; grid-template-columns: repeat(4, 1fr); }
 .public-milestone { min-height: 95px; padding: 5px 20px; display: flex; flex-direction: column; justify-content: center; border-left: 1px solid rgba(255,255,255,.15); }
 .public-milestone:first-child { padding-left: 0; border-left: 0; }
 .public-milestone strong { color: #fff; font-size: clamp(1.8rem, 3.3vw, 2.55rem); font-weight: 900; letter-spacing: -.07em; font-variant-numeric: tabular-nums; }
@@ -375,6 +408,9 @@
   .public-team-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .public-placement-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .public-partner-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .public-brand-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .public-brand-card:last-child { grid-column: 1 / -1; }
+  .public-awards-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .public-roadmap { grid-template-columns: 1fr; }
   .public-roadmap-heading { position: static; }
   .public-updates-columns { gap: 25px; }
@@ -403,6 +439,8 @@
   .public-corporate-results-mark { right: 0; }
   .public-about-story { padding: 20px; border-radius: 20px; }
   .public-about-grid, .public-placement-copy-grid, .public-updates-columns { grid-template-columns: 1fr; }
+  .public-brand-grid { grid-template-columns: 1fr; }
+  .public-brand-card:last-child { grid-column: auto; }
   .public-capability-grid { grid-template-columns: 1fr; }
   .public-recruiter-panel { grid-template-columns: 1fr; gap: 20px; padding: 20px; }
   .public-about-main { min-height: 0; padding: 26px; }
@@ -437,6 +475,7 @@
 @media (max-width: 430px) {
   .public-story-shell { width: calc(100% - 34px); }
   .public-about-facts { grid-template-columns: 1fr; }
+  .public-awards-grid { grid-template-columns: 1fr; }
   .public-fact-card { min-height: 75px; flex-direction: row; align-items: center; gap: 12px; }
   .public-fact-number { min-width: 66px; }
   .public-team-grid { grid-template-columns: 1fr; }
