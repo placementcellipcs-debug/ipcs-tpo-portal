@@ -254,6 +254,8 @@ app.get('/api/admin/courses', controllers.getCourses);
 app.post('/api/admin/courses/add', controllers.addCourse);
 app.post('/api/admin/courses/delete', controllers.deleteCourse); 
 app.get('/api/admin/security-logs', controllers.getSecurityLogs);
+app.get('/api/admin/corporate-training-inquiries', controllers.getCorporateTrainingInquiries);
+app.post('/api/admin/corporate-training-inquiries/assign', controllers.assignCorporateTrainingInquiry);
 app.get('/api/admin/branches', controllers.getBranches);
 app.post('/api/admin/branches/add', controllers.addBranch);
 app.post('/api/admin/branches/update', controllers.updateBranch); 

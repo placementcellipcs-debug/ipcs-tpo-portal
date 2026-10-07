@@ -3527,17 +3527,216 @@ exports.submitCorporateTrainingInquiry = async (req, res) => {
     </div>`;
 
   try {
-    await sendMailAndLog({
-      from: `"IPCS Global Corporate Training" <${senderEmail}>`,
-      to: recipient,
-      replyTo: email,
-      subject: `Corporate Training Inquiry · ${safeCompanySubject}`,
-      html
-    }, { name: `${name} · ${company}`, email, type: 'Corporate Training Inquiry' });
-    return res.status(201).json({ success: true, message: 'Your inquiry has been sent to the IPCS Global team.' });
+    const sheet = await getCorporateTrainingInquirySheet();
+    const inquiryId = `CT-${Date.now()}-${randomBytes(4).toString('hex').toUpperCase()}`;
+    const submittedAt = formatIndiaTimestamp();
+    await sheet.addRow({
+      'Inquiry ID': inquiryId,
+      'Submitted At': submittedAt,
+      Name: name,
+      Company: company,
+      Email: email,
+      Phone: phone,
+      Location: location,
+      'Training Area': trainingArea,
+      'Team Size': teamSize,
+      Message: message,
+      Status: 'New',
+      'Assigned Branch': '',
+      'Assigned Branch Email': '',
+      'Assigned At': '',
+      'Assigned By': '',
+      'Notification Status': 'Not sent',
+      'Notification Sent At': '',
+      'Internal Email Status': 'Pending'
+    });
+
+    let internalEmailStatus = 'Sent';
+    try {
+      await sendMailAndLog({
+        from: `"IPCS Global Corporate Training" <${senderEmail}>`,
+        to: recipient,
+        replyTo: email,
+        subject: `Corporate Training Inquiry · ${safeCompanySubject}`,
+        html
+      }, { name: `${name} · ${company}`, email, type: 'Corporate Training Inquiry' });
+    } catch (mailError) {
+      internalEmailStatus = `Failed: ${mailError.message}`.slice(0, 500);
+      console.error('Corporate training inquiry was stored, but its internal alert failed:', mailError.message);
+    }
+    try {
+      const storedRow = (await sheet.getRows()).find(item => getValByHeader(item, ['inquiryid']) === inquiryId);
+      if (storedRow) { storedRow.set('Internal Email Status', internalEmailStatus); await storedRow.save(); }
+    } catch (statusError) {
+      console.error('Could not update internal email status for corporate training inquiry:', statusError.message);
+    }
+    return res.status(201).json({ success: true, message: 'Your inquiry has been received by the IPCS Global team.' });
   } catch (err) {
-    console.error('Corporate training inquiry email failed:', err.message);
-    return res.status(503).json({ success: false, message: 'We could not send your inquiry right now. Please try again later.' });
+    console.error('Corporate training inquiry could not be stored:', err.message);
+    return res.status(503).json({ success: false, message: 'We could not save your inquiry right now. Please try again later.' });
+  }
+};
+
+const CORPORATE_TRAINING_INQUIRY_HEADERS = [
+  'Inquiry ID', 'Submitted At', 'Name', 'Company', 'Email', 'Phone', 'Location', 'Training Area',
+  'Team Size', 'Message', 'Status', 'Assigned Branch', 'Assigned Branch Email', 'Assigned At',
+  'Assigned By', 'Notification Status', 'Notification Sent At', 'Internal Email Status'
+];
+
+const getCorporateTrainingInquirySheet = async () => {
+  await loadDocInfo();
+  let sheet = doc.sheetsByTitle['Corporate Training Inquiries'];
+  if (!sheet) {
+    try {
+      sheet = await doc.addSheet({ title: 'Corporate Training Inquiries', headerValues: CORPORATE_TRAINING_INQUIRY_HEADERS });
+    } catch (error) {
+      // Two first submissions can arrive together; re-read sheet metadata if another request created it.
+      await loadDocInfo();
+      sheet = doc.sheetsByTitle['Corporate Training Inquiries'];
+      if (!sheet) throw error;
+    }
+  }
+
+  await sheet.loadHeaderRow();
+  const normalizedHeaders = new Set((sheet.headerValues || []).map(value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '')));
+  const missingHeaders = CORPORATE_TRAINING_INQUIRY_HEADERS.filter(value => !normalizedHeaders.has(value.toLowerCase().replace(/[^a-z0-9]/g, '')));
+  if (missingHeaders.length) await sheet.setHeaderRow([...(sheet.headerValues || []), ...missingHeaders]);
+  return sheet;
+};
+
+const toCorporateTrainingInquiry = row => ({
+  inquiryId: getValByHeader(row, ['inquiryid']),
+  submittedAt: getValByHeader(row, ['submittedat']),
+  name: getValByHeader(row, ['name']),
+  company: getValByHeader(row, ['company', 'organization']),
+  email: getValByHeader(row, ['email']),
+  phone: getValByHeader(row, ['phone']),
+  location: getValByHeader(row, ['location']),
+  trainingArea: getValByHeader(row, ['trainingarea']),
+  teamSize: getValByHeader(row, ['teamsize']),
+  message: getValByHeader(row, ['message']),
+  status: getValByHeader(row, ['status']) || 'New',
+  assignedBranch: getValByHeader(row, ['assignedbranch']),
+  assignedBranchEmail: getValByHeader(row, ['assignedbranchemail']),
+  assignedAt: getValByHeader(row, ['assignedat']),
+  assignedBy: getValByHeader(row, ['assignedby']),
+  notificationStatus: getValByHeader(row, ['notificationstatus']) || 'Not sent',
+  notificationSentAt: getValByHeader(row, ['notificationsentat']),
+  internalEmailStatus: getValByHeader(row, ['internalemailstatus']) || 'Unknown'
+});
+
+exports.getCorporateTrainingInquiries = async (_req, res) => {
+  try {
+    const sheet = await getCorporateTrainingInquirySheet();
+    const rows = await sheet.getRows();
+    const inquiries = rows.map(toCorporateTrainingInquiry).filter(inquiry => inquiry.inquiryId).reverse();
+    res.json({ success: true, inquiries });
+  } catch (error) {
+    console.error('Could not load corporate training inquiries:', error.message);
+    res.status(503).json({ success: false, inquiries: [], message: 'Corporate training inquiries are temporarily unavailable.' });
+  }
+};
+
+const buildCorporateTrainingAssignmentEmail = (inquiry, branch) => {
+  const safe = escapeCorporateInquiryHtml;
+  const details = [
+    ['Organization', inquiry.company], ['Contact person', inquiry.name], ['Work email', inquiry.email],
+    ['Phone / WhatsApp', inquiry.phone], ['Location', inquiry.location], ['Training area', inquiry.trainingArea],
+    ['Approximate team size', inquiry.teamSize]
+  ].filter(([, value]) => value);
+  const notes = safe(inquiry.message).replace(/\r?\n/g, '<br>') || '<span style="color:#64748b">No additional notes were provided.</span>';
+  return `
+    <div style="max-width:680px;margin:24px auto;border:1px solid #dce6ef;border-radius:18px;overflow:hidden;font-family:Arial,sans-serif;color:#18314d;background:#fff">
+      <div style="padding:25px 30px;background:#102b4a;color:#fff;border-bottom:4px solid #39c8bd">
+        <div style="font-size:11px;font-weight:bold;letter-spacing:2px;color:#9fdedb">IPCS GLOBAL · CORPORATE TRAINING</div>
+        <h1 style="margin:10px 0 0;font-size:23px">A new training opportunity for ${safe(branch)}</h1>
+      </div>
+      <div style="padding:28px 30px">
+        <p style="margin:0 0 16px;line-height:1.7">Hello ${safe(branch)} Team,</p>
+        <p style="margin:0 0 20px;color:#53677d;line-height:1.7">A corporate training inquiry has been assigned to your branch. Please connect with the organization and coordinate the next steps.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:14px">
+          ${details.map(([label, value]) => `<tr><th style="width:190px;padding:11px 12px;border:1px solid #e1e8ef;background:#f5f8fb;text-align:left;color:#52667c">${safe(label)}</th><td style="padding:11px 12px;border:1px solid #e1e8ef;color:#18314d">${safe(value)}</td></tr>`).join('')}
+        </table>
+        <h2 style="margin:24px 0 8px;font-size:15px;color:#173955">Training goals or notes</h2>
+        <div style="padding:14px;border:1px solid #e1e8ef;border-radius:10px;background:#fafcfe;font-size:14px;line-height:1.7">${notes}</div>
+        <p style="margin:22px 0 0;color:#718197;font-size:12px">Please reply to the contact above and keep the IPCS Global team informed of progress.</p>
+      </div>
+      <div style="padding:14px 30px;background:#f5f8fb;color:#718197;font-size:12px">IPCS Global · Learn · Connect · Grow</div>
+    </div>`;
+};
+
+exports.assignCorporateTrainingInquiry = async (req, res) => {
+  const inquiryId = String(req.body?.inquiryId || '').trim();
+  const branchName = String(req.body?.branch || '').trim();
+  if (!inquiryId || !branchName) return res.status(400).json({ success: false, message: 'Choose a branch for this inquiry.' });
+
+  try {
+    const cache = getCache();
+    await loadDocInfo();
+    const branchSheet = doc.sheetsByTitle['Branches'];
+    const branchRows = branchSheet ? await branchSheet.getRows() : (cache?.branches || []);
+    const branchRow = branchRows.find(row => normalizePlacementText(getValByHeader(row, ['branch', 'branchname', 'branchlocation'])) === normalizePlacementText(branchName));
+    if (!branchRow) return res.status(400).json({ success: false, message: 'Choose a branch from the active branch list.' });
+
+    const branchEmail = getValByHeader(branchRow, ['email', 'branchemail', 'mailid']) || getBranchManagerEmail(branchName) || getAssignedTpoEmail(branchName);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(branchEmail)) {
+      return res.status(400).json({ success: false, message: `No email is configured for ${branchName}. Add a branch email in Manage Branches or assign an active branch manager/TPO first.` });
+    }
+
+    const sheet = await getCorporateTrainingInquirySheet();
+    const rows = await sheet.getRows();
+    const row = rows.find(item => getValByHeader(item, ['inquiryid']) === inquiryId);
+    if (!row) return res.status(404).json({ success: false, message: 'This corporate training inquiry could not be found.' });
+    const inquiry = toCorporateTrainingInquiry(row);
+    const sameBranch = normalizePlacementText(inquiry.assignedBranch) === normalizePlacementText(branchName);
+    if (sameBranch && inquiry.notificationStatus === 'Sent' && String(inquiry.assignedBranchEmail).toLowerCase() === branchEmail.toLowerCase()) {
+      return res.json({ success: true, alreadyAssigned: true, inquiry, message: 'This inquiry is already assigned and the branch has been notified.' });
+    }
+    if (sameBranch && String(inquiry.notificationStatus || '').toLowerCase() === 'sending') {
+      const timestamp = String(inquiry.assignedAt || '').match(/^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})$/);
+      const assignedAtMs = timestamp ? Date.UTC(Number(timestamp[3]), Number(timestamp[2]) - 1, Number(timestamp[1]), Number(timestamp[4]), Number(timestamp[5]), Number(timestamp[6])) - 5.5 * 60 * 60 * 1000 : 0;
+      if (assignedAtMs && Date.now() - assignedAtMs < 5 * 60 * 1000) {
+        return res.status(409).json({ success: false, message: 'The branch notification is already being processed. Refresh this inquiry before retrying.' });
+      }
+    }
+
+    const assignedAt = formatIndiaTimestamp();
+    row.set('Status', 'Assigned');
+    row.set('Assigned Branch', branchName);
+    row.set('Assigned Branch Email', branchEmail);
+    row.set('Assigned At', assignedAt);
+    row.set('Assigned By', String(req.portalUser?.name || req.portalUser?.email || 'IPCS Admin').slice(0, 120));
+    row.set('Notification Status', 'Sending');
+    await row.save();
+
+    const subjectBranch = branchName.replace(/[\r\n]+/g, ' ').slice(0, 100);
+    try {
+      await sendMailAndLog({
+        from: `"IPCS Global Corporate Training" <${process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com'}>`,
+        to: branchEmail,
+        cc: ['ajith@ipcsglobal.com', 'rakesh@ipcsglobal.com', 'gifty@ipcsglobal.com'],
+        replyTo: inquiry.email,
+        subject: `Corporate Training Inquiry Assigned · ${subjectBranch}`,
+        html: buildCorporateTrainingAssignmentEmail(inquiry, branchName)
+      }, { name: `${branchName} · ${inquiry.company}`, email: branchEmail, type: 'Corporate Training Assignment' });
+    } catch (mailError) {
+      row.set('Notification Status', `Failed: ${mailError.message}`.slice(0, 500));
+      try { await row.save(); }
+      catch (statusError) { console.error('Could not record failed branch notification status:', statusError.message); }
+      return res.json({ success: true, inquiry: toCorporateTrainingInquiry(row), warning: `The inquiry was assigned, but the branch email could not be sent: ${mailError.message}` });
+    }
+    row.set('Notification Status', 'Sent');
+    row.set('Notification Sent At', formatIndiaTimestamp());
+    try {
+      await row.save();
+      return res.json({ success: true, inquiry: toCorporateTrainingInquiry(row), message: `Assigned to ${branchName}; the branch notification was sent.` });
+    } catch (statusError) {
+      console.error('The branch email was sent, but notification status could not be saved:', statusError.message);
+      return res.json({ success: true, inquiry: toCorporateTrainingInquiry(row), warning: 'The branch email was sent, but its status could not be saved. Refresh before retrying.' });
+    }
+  } catch (error) {
+    console.error('Could not assign corporate training inquiry:', error.message);
+    res.status(500).json({ success: false, message: 'The corporate training inquiry could not be assigned.' });
   }
 };
 
@@ -3926,7 +4125,9 @@ const createMouSigningId = rowNumber => {
   const nonce = randomBytes(16).toString('base64url');
   const payload = `${Number(rowNumber)}.${nonce}`;
   const signature = createHmac('sha256', getMouSigningKey()).update(payload).digest('base64url');
-  return `MOU-${Number(rowNumber)}-${nonce}-${signature}`;
+  // New company-facing links use a neutral token prefix; the validator below
+  // continues accepting previously issued MOU-prefixed links.
+  return `IPCS-${Number(rowNumber)}-${nonce}-${signature}`;
 };
 
 const getMouSigningApiOrigin = req => {
@@ -3964,7 +4165,7 @@ const getMouSigningFrontendOrigin = () => {
 const findClientByMouToken = async (sheet, token) => {
   const cleanToken = String(token || '').trim();
   const isLegacyToken = /^[a-f0-9]{64}$/i.test(cleanToken);
-  const signedMatch = cleanToken.match(/^MOU-(\d+)-([A-Za-z0-9_-]{22})-([A-Za-z0-9_-]{43})$/);
+  const signedMatch = cleanToken.match(/^(?:IPCS|MOU)-(\d+)-([A-Za-z0-9_-]{22})-([A-Za-z0-9_-]{43})$/);
 
   if (signedMatch) {
     const rowNumber = Number(signedMatch[1]);
@@ -4119,17 +4320,18 @@ exports.requestMou = async (req, res) => {
     const companyName = getValByHeader(clientRow, ['companyname', 'company']);
     if (!companyEmail || !companyName) return res.status(400).json({ success: false, message: 'This client needs a company name and email before an MOU can be sent.' });
     const signingToken = createMouSigningId(rowNumber);
-    const signingReference = `IPCS-MOU-${rowNumber}`;
+    const signingReference = `IPCS-${rowNumber}`;
     clientRow.assign({ [mailStatusHeader]: 'Sending' });
     await clientRow.save();
     const signingApiOrigin = getMouSigningApiOrigin(req);
     const signingApiQuery = signingApiOrigin ? `?api=${encodeURIComponent(signingApiOrigin)}` : '';
     const signingLink = `${getMouSigningFrontendOrigin()}/sign-certificate/${encodeURIComponent(signingToken)}${signingApiQuery}`;
     console.info(`[MOU] Issued signing link for Clients row ${rowNumber}; lookup API: ${signingApiOrigin || 'portal default API'}.`);
+    const safeCompanyName = escapeCorporateInquiryHtml(companyName);
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`, to: companyEmail,
-      subject: `Action Required: IPCS Global Hiring Partnership Confirmation With ${companyName} [Ref: ${signingReference}]`,
-      html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #8b5cf6;"><h2 style="color: #ffffff; margin: 0;">IPCS HIRING PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${companyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Confirmation of Hiring Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><p style="font-size: 13px; color: #64748b;">Reference: <strong>${signingReference}</strong></p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review & Sign</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, <a href="${signingLink}" style="color: #0369a1; font-weight: bold;">open the MOU signing page</a>.</p></div></div>`
+      subject: `Action Required: IPCS Global Hiring Partnership Confirmation With ${companyName.replace(/[\r\n]+/g, ' ').slice(0, 100)} [Ref: ${signingReference}]`,
+      html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #8b5cf6;"><h2 style="color: #ffffff; margin: 0;">IPCS HIRING PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${safeCompanyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Confirmation of Hiring Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><p style="font-size: 13px; color: #64748b;">Reference: <strong>${signingReference}</strong></p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review &amp; Sign</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, <a href="${signingLink}" style="color: #0369a1; font-weight: bold;">open your secure signing page</a>.</p></div></div>`
     };
     try {
       await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Request' });
@@ -4212,7 +4414,7 @@ exports.submitMou = async (req, res) => {
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`,
       to: [companyEmail, zonalManagerEmail, tpoEmail].filter(Boolean).join(','),
-      subject: `MOU Completed: Hiring Partnership Confirmation – ${companyName} [Ref: ${refId}]`, 
+      subject: `Hiring Partnership Confirmation Completed – ${companyName.replace(/[\r\n]+/g, ' ').slice(0, 100)} [Ref: ${refId}]`,
       html: `
         <div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;">
           <div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #10b981;">
@@ -5272,6 +5474,7 @@ exports.getBranches = (req, res) => {
         no: index + 1, 
         region: regionName || '', 
         branch: branchName || '',
+        email: getValByHeader(row, ['email', 'branchemail', 'mailid']) || '',
         latitude: typeof row.get === 'function' ? (row.get('Latitude') || row.get('Lat') || '') : '',
         longitude: typeof row.get === 'function' ? (row.get('Longitude') || row.get('Lng') || row.get('Lon') || '') : ''
       };
@@ -5296,7 +5499,8 @@ exports.getBranches = (req, res) => {
 
 exports.addBranch = async (req, res) => {
   try {
-    const { no, region, branch, latitude, longitude } = req.body;
+    const { no, region, branch, email, latitude, longitude } = req.body;
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return res.status(400).json({ success: false, message: 'Enter a valid branch email address.' });
     if (latitude !== '' && latitude !== undefined && (!Number.isFinite(Number(latitude)) || Number(latitude) < -90 || Number(latitude) > 90)) return res.status(400).json({ success: false, message: 'Latitude must be between -90 and 90.' });
     if (longitude !== '' && longitude !== undefined && (!Number.isFinite(Number(longitude)) || Number(longitude) < -180 || Number(longitude) > 180)) return res.status(400).json({ success: false, message: 'Longitude must be between -180 and 180.' });
     const sheet = doc.sheetsByTitle["Branches"];
@@ -5305,11 +5509,14 @@ exports.addBranch = async (req, res) => {
     let headers = sheet.headerValues || [];
     const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const find = names => headers.find(header => names.includes(normalized(header)));
-    if (!find(['latitude', 'lat']) || !find(['longitude', 'long', 'lng', 'lon'])) {
+    if (!find(['latitude', 'lat']) || !find(['longitude', 'long', 'lng', 'lon']) || !find(['email', 'branchemail', 'mailid'])) {
       headers = [...headers];
       if (!find(['latitude', 'lat'])) headers.push('Latitude');
       if (!find(['longitude', 'long', 'lng', 'lon'])) headers.push('Longitude');
+      if (!find(['email', 'branchemail', 'mailid'])) headers.push('Email');
       await sheet.setHeaderRow(headers);
+      await sheet.loadHeaderRow();
+      headers = [...(sheet.headerValues || [])];
     }
     const header = names => headers.find(value => names.includes(normalized(value)));
     const newRow = {
@@ -5317,7 +5524,8 @@ exports.addBranch = async (req, res) => {
       [header(['regionstate', 'region', 'state']) || headers[1]]: region,
       [header(['branch', 'branchname', 'branchlocation']) || headers[2]]: branch,
       [header(['latitude', 'lat'])]: latitude || '',
-      [header(['longitude', 'long', 'lng', 'lon'])]: longitude || ''
+      [header(['longitude', 'long', 'lng', 'lon'])]: longitude || '',
+      [header(['email', 'branchemail', 'mailid'])]: email || ''
     };
     await sheet.addRow(newRow);
     refreshCache(); res.json({ success: true, message: "Branch saved" });
@@ -5326,7 +5534,8 @@ exports.addBranch = async (req, res) => {
 
 exports.updateBranch = async (req, res) => {
   try {
-    const { oldBranch, no, region, branch, latitude, longitude } = req.body;
+    const { oldBranch, no, region, branch, email, latitude, longitude } = req.body;
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return res.status(400).json({ success: false, message: 'Enter a valid branch email address.' });
     if (latitude !== '' && latitude !== undefined && (!Number.isFinite(Number(latitude)) || Number(latitude) < -90 || Number(latitude) > 90)) return res.status(400).json({ success: false, message: 'Latitude must be between -90 and 90.' });
     if (longitude !== '' && longitude !== undefined && (!Number.isFinite(Number(longitude)) || Number(longitude) < -180 || Number(longitude) > 180)) return res.status(400).json({ success: false, message: 'Longitude must be between -180 and 180.' });
     const sheet = doc.sheetsByTitle["Branches"];
@@ -5335,11 +5544,14 @@ exports.updateBranch = async (req, res) => {
     let headers = sheet.headerValues || [];
     const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const find = names => headers.find(header => names.includes(normalized(header)));
-    if (!find(['latitude', 'lat']) || !find(['longitude', 'long', 'lng', 'lon'])) {
+    if (!find(['latitude', 'lat']) || !find(['longitude', 'long', 'lng', 'lon']) || !find(['email', 'branchemail', 'mailid'])) {
       headers = [...headers];
       if (!find(['latitude', 'lat'])) headers.push('Latitude');
       if (!find(['longitude', 'long', 'lng', 'lon'])) headers.push('Longitude');
+      if (!find(['email', 'branchemail', 'mailid'])) headers.push('Email');
       await sheet.setHeaderRow(headers);
+      await sheet.loadHeaderRow();
+      headers = [...(sheet.headerValues || [])];
     }
     const header = names => headers.find(value => names.includes(normalized(value)));
     const rows = await sheet.getRows();
@@ -5351,6 +5563,7 @@ exports.updateBranch = async (req, res) => {
       rowToUpdate.set(branchHeader, branch);
       rowToUpdate.set(header(['latitude', 'lat']), latitude || '');
       rowToUpdate.set(header(['longitude', 'long', 'lng', 'lon']), longitude || '');
+      rowToUpdate.set(header(['email', 'branchemail', 'mailid']), email || '');
       await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Branch updated" });
     } else { res.status(404).json({ success: false, message: "Branch not found" }); }
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }

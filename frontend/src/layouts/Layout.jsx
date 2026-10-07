@@ -8,7 +8,7 @@ import {
   WarningCircle, Barcode, Package, ArrowsLeftRight, Wrench, Plus,
   Headset, SignOut,
   Kanban, ImageSquare, ShareNetwork, CheckCircle, ClockCounterClockwise, SlidersHorizontal,
-  CaretDown, Brain, Newspaper
+  CaretDown, Brain, Newspaper, GraduationCap
 } from '@phosphor-icons/react';
 import { API_BASE } from '../services/apiConfig';
 import { applyAppearance, readAppearance } from '../services/appearance';
@@ -423,6 +423,9 @@ export default function Layout({ children }) {
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('system')}>
                 <div className={`pd-nav-item ${isActive('/branches') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/branches')}>
                   <MapPin size={22} weight={isActive('/branches') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Manage Branches</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/admin/corporate-training') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/admin/corporate-training')}>
+                  <GraduationCap size={22} weight={isActive('/admin/corporate-training') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Corporate Training</span>
                 </div>
                 <div className={`pd-nav-item ${isActive('/courses') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/courses')}>
                   <Bookmarks size={22} weight={isActive('/courses') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Manage Courses</span>

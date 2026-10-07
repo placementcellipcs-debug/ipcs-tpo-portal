@@ -20,7 +20,7 @@ export default function Branches() {
   const [isEditMode, setIsEditMode] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
-  const [formData, setFormData] = useState({ oldBranch: '', no: '', region: '', branch: '', latitude: '', longitude: '' });
+  const [formData, setFormData] = useState({ oldBranch: '', no: '', region: '', branch: '', email: '', latitude: '', longitude: '' });
 
   const fetchBranches = async () => {
     try {
@@ -47,13 +47,13 @@ export default function Branches() {
   const openAddModal = () => {
     setIsEditMode(false);
     // 🚨 Auto-generates the next index number based on the list length
-    setFormData({ oldBranch: '', no: (branches.length + 1).toString(), region: '', branch: '', latitude: '', longitude: '' });
+    setFormData({ oldBranch: '', no: (branches.length + 1).toString(), region: '', branch: '', email: '', latitude: '', longitude: '' });
     setIsModalOpen(true);
   };
 
   const openEditModal = (b) => {
     setIsEditMode(true);
-    setFormData({ oldBranch: b.branch, no: b.no, region: b.region, branch: b.branch, latitude: b.latitude || '', longitude: b.longitude || '' });
+    setFormData({ oldBranch: b.branch, no: b.no, region: b.region, branch: b.branch, email: b.email || '', latitude: b.latitude || '', longitude: b.longitude || '' });
     setIsModalOpen(true);
   };
 
@@ -116,20 +116,21 @@ export default function Branches() {
                 <th style={{ width: '8%' }}>No.</th>
                 <th style={{ width: '26%' }}>Region / State</th>
                 <th style={{ width: '22%' }}>Branch Location</th>
-                <th style={{ width: '25%' }}>Latitude / Longitude</th>
-                <th style={{ width: '19%', textAlign: 'center' }}>Actions</th>
+                <th style={{ width: '25%' }}>Branch email</th>
+                <th style={{ width: '18%' }}>Latitude / Longitude</th>
+                <th style={{ width: '12%', textAlign: 'center' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '3rem' }}>
+                  <td colSpan="6" style={{ textAlign: 'center', padding: '3rem' }}>
                     <CircleNotch size={32} className="ph-spin" color="var(--accent-primary)" />
                   </td>
                 </tr>
               ) : branches.length === 0 ? (
                 <tr>
-                  <td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
+                  <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>
                     No branches found. Add a branch to get started.
                   </td>
                 </tr>
@@ -139,6 +140,7 @@ export default function Branches() {
                     <td style={{ color: 'var(--text-muted)' }}>{b.no || i + 1}</td>
                     <td><strong style={{ color: 'var(--text-main)' }}>{b.region}</strong></td>
                     <td><strong style={{ color: 'var(--accent-primary)' }}>{b.branch}</strong></td>
+                    <td style={{ color: 'var(--text-muted)', fontSize: '.82rem' }}>{b.email || 'Not set (manager/TPO fallback)'}</td>
                     <td style={{ color: 'var(--text-muted)', fontSize: '.82rem' }}>{b.latitude || b.longitude ? `${b.latitude || '—'}, ${b.longitude || '—'}` : 'Not set'}</td>
                     <td style={{ textAlign: 'center' }}>
                       <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
@@ -185,6 +187,11 @@ export default function Branches() {
               <div className="form-group" style={{ marginBottom: '25px' }}>
                 <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Branch Name *</label>
                 <input type="text" className="sleek-input" style={{ width: '100%' }} value={formData.branch} onChange={e => setFormData({...formData, branch: e.target.value})} placeholder="e.g. Calicut" required />
+              </div>
+
+              <div className="form-group" style={{ marginBottom: '25px' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '5px' }}>Branch email (used for Corporate Training assignments)</label>
+                <input type="email" className="sleek-input" style={{ width: '100%' }} value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} placeholder="e.g. calicut@ipcsglobal.com" />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '22px' }}>

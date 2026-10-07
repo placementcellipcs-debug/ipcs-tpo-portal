@@ -25,6 +25,7 @@ const PlacementDrives = lazy(() => import('../features/placements/PlacementDrive
 const ExamsHub = lazy(() => import('../features/learning/ExamsHub'));
 const Branches = lazy(() => import('../features/placements/Branches'));
 const SecurityActivity = lazy(() => import('../features/admin/SecurityActivity'));
+const CorporateTrainingInquiries = lazy(() => import('../features/admin/CorporateTrainingInquiries'));
 const PublicSitePage = lazy(() => import('../features/public/PublicSitePage'));
 
 // ASSET MANAGEMENT (ERP)
@@ -99,6 +100,7 @@ function App() {
         <Route path="/exams/aptitude" element={<Aptitude />} />
         <Route path="/exams/talentino" element={<TalentinoExams />} />
         <Route path="/security-logs" element={<SecurityActivity />} />
+        <Route path="/admin/corporate-training" element={<CorporateTrainingInquiries />} />
         
         {/* ASSET MANAGEMENT ERP ROUTES */}
         <Route path="/assets" element={<AssetList />} />
