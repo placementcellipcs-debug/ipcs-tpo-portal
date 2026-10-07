@@ -77,6 +77,15 @@ const corporateTrainingAudiences = [
   { title: 'HR & L&D teams', copy: 'Plan scalable learning that supports workforce development and organizational goals.' }
 ];
 
+const corporateTrainingVideos = [
+  { title: 'Corporate training film 01', url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQA-nmkT9x3sQpFCWesw4CV6AZ5RjHVB7kWdBUAy2vLUmcc?e=QVJ1Z9' },
+  { title: 'Corporate training film 02', url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQCYPEeh3imaQITdZWm6CqiDATWx4DtiCPC6XGQmkZDc2sE?e=9ENNXZ' },
+  { title: 'Corporate training film 03', url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQBleYkeX6kWRrAAGyTVLh-MAdL-hXnF-t8WFzTToPSn8GQ?e=LqVgh6' },
+  { title: 'Corporate training film 04', url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQAVn8NKD02jS7dSE_Jqg9mVAaV4dGmdXNwZYXSRIhxjnts?e=JIfCz6' },
+  { title: 'Corporate training film 05', url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQBy9XQdbB33SbIWBXmHY67nAepunFdaUEiyH1nE3FrBpIk?e=ofv2x1' },
+  { title: 'Corporate training film 06', url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQCAxZbBXwJoRZLNh_-SF6r0AbipIrFM9YpMHh2FvXEDKpQ?e=WHJCVj' }
+];
+
 const companyRoadmap = [
   { date: '2008', phase: 'The Modest Beginnings', title: 'Industrial automation starts in Kochi', copy: 'IPCS began as a system integrator and automation service provider, helping local industries adopt advanced manufacturing processes while building relationships with global technology companies.' },
   { date: '2009', phase: 'Bridging the Skills Gap', title: 'Practical technical training begins', copy: 'Seeing the shortage of industry-ready engineers and technicians, IPCS opened its first training centre in Kozhikode with hands-on PLC, SCADA, HMI, and DCS programs.' },
@@ -454,6 +463,16 @@ export default function PublicSiteSections({ page = 'all' }) {
           <div className="public-story-shell public-corporate-topics-grid">
             <div className="public-corporate-topics-copy"><span className="public-corporate-eyebrow">CURRENT, ADVANCED TOPICS</span><h2>Technical learning for a changing workplace.</h2><p>Keep your teams moving with programs that span foundational systems and emerging technology. We work with you to select the right topics and depth for your people.</p><Link to="/about" className="public-corporate-text-link">Discover IPCS Global <ArrowRight size={16} /></Link></div>
             <div className="public-corporate-topic-list">{corporateTrainingTopics.map((topic, index) => <div key={topic}><span>{String(index + 1).padStart(2, '0')}</span><b>{topic}</b><CheckCircle size={17} weight="fill" /></div>)}</div>
+          </div>
+        </section>
+
+        <section className="public-corporate-video-section" id="corporate-training-videos">
+          <div className="public-story-shell">
+            <SectionHeading eyebrow="Watch &amp; learn" title="Corporate training in action." description="Explore IPCS Global training videos. Select a film to open and play it in SharePoint." align="center" />
+            <div className="public-corporate-video-grid">{corporateTrainingVideos.map((video, index) => <a className={`public-corporate-video-card corporate-video-${index + 1}`} href={video.url} target="_blank" rel="noreferrer" key={video.url} aria-label={`Watch ${video.title} in SharePoint`}>
+              <div className="public-corporate-video-art"><span className="public-corporate-video-orbit" aria-hidden="true" /><span className="public-corporate-video-brand">IPCS GLOBAL <i>·</i> CORPORATE TRAINING</span><span className="public-corporate-video-play"><PlayCircle size={48} weight="fill" /></span><span className="public-corporate-video-index">FILM {String(index + 1).padStart(2, '0')}</span></div>
+              <div className="public-corporate-video-meta"><span>Training video</span><h3>{video.title}</h3><b>Watch on SharePoint <ArrowUpRight size={15} /></b></div>
+            </a>)}</div>
           </div>
         </section>
 
