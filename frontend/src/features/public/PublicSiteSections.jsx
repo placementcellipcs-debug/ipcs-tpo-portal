@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { ArrowRight, ArrowUpRight, BookOpenText, Briefcase, Buildings, CheckCircle, Compass, EnvelopeSimple, GlobeHemisphereWest, GraduationCap, Handshake, Lightbulb, LinkedinLogo, Megaphone, Phone, PlayCircle, Star, Target, UsersThree, VideoCamera, WhatsappLogo, X } from '@phosphor-icons/react';
 import { API_BASE } from '../../services/apiConfig';
@@ -111,13 +112,40 @@ const corporateTrainingAudiences = [
 ];
 
 const corporateTrainingVideos = [
-  { key: 'corporate-video-1', embedUrl: '' },
-  { key: 'corporate-video-2', embedUrl: '' },
-  { key: 'corporate-video-3', embedUrl: '' },
-  { key: 'corporate-video-4', embedUrl: '' },
-  { key: 'corporate-video-5', embedUrl: '' },
-  { key: 'corporate-video-6', embedUrl: '' }
+  { key: 'military-review', title: 'IPCS × Military BMS Training · Combined review, Bangalore', id: 'c196c580-025f-4568-92cd-87ff9217aaf4' },
+  { key: 'military-event', title: 'IPCS × Military BMS Training · Event, Bangalore', id: '1d74f572-1d6c-49f7-b216-05798763aee7' },
+  { key: 'bhutan-police', title: 'Bhutan Police BMS Training Programme · Kochi', id: '4ac39f15-4d0f-4ba3-b752-13f26a83d995' },
+  { key: 'cial-visit', title: 'CIAL Engineers Visit', id: '1e897965-a95f-4616-b000-1b24d52e1f8c' },
+  { key: 'cial-certification-part-2', title: 'CIAL Engineers Training & Certification · Part 2', id: 'a1473c98-29de-409a-84dd-6569ba0aa883' },
+  { key: 'cial-certification-part-1', title: 'CIAL Engineers Training & Certification · Part 1', id: '13699e3e-1df7-42ec-9142-59eb30e0257a' }
 ];
+
+const sharePointTrainingFolder = 'https://ipcsglobalsolutions-my.sharepoint.com/personal/ipcsdesigners_ipcsglobal_com/Documents/Marketing%20Creatives%202026/GALLERY/PHOTOS/CORPORATE%20TRAINING/2026';
+const bhutanPolicePhotoNames = [
+  'STUDENT 11.jpg', 'STUDENT 12.jpg', 'STUDENT 9.jpg', 'STUDENT 6.jpg', 'STUDENT 10.jpg',
+  'STUDENT 5.jpg', 'STUDENT 7.jpg', 'STUDENT 8.jpg', 'STUDENT 3 A.jpg', 'STUDENT 3.jpg',
+  'STUDENT 4 A.jpg', 'STUDENT 4.jpg', 'STUDENT 2.jpg', 'STUDENT 1.jpg', 'STUDENT 1 A.jpg'
+];
+const militaryPhotoNames = [
+  'IMG_20260716_151908431.jpg', 'IMG_20260716_151842350.jpg', 'IMG_20260716_151852323.jpg', 'IMG_20260716_151827854.jpg', 'IMG_20260716_151808839.jpg',
+  'IMG_20260716_151751963.jpg', 'IMG_20260716_151642537.jpg', 'IMG_20260716_151717384.jpg', 'IMG_20260716_151709947.jpg', 'IMG_20260716_151733057.jpg',
+  'IMG_20260716_151537637.jpg', 'IMG_20260716_151602810.jpg', 'IMG_20260716_151627369.jpg', 'IMG_20260716_151616144.jpg', 'IMG_20260716_151507041.jpg',
+  'IMG_20260716_151545728.jpg', 'IMG_20260716_151529640.jpg', 'IMG_20260716_151518205.jpg', 'IMG_20260716_151350491.jpg', 'IMG_20260716_151401294.jpg',
+  'IMG_20260716_151454539.jpg', 'IMG_20260716_151214361.jpg', 'IMG_20260716_151231817.jpg', 'IMG_20260716_151255072.jpg', 'IMG_20260716_151309988.jpg',
+  'IMG_20260716_151341262.jpg', 'IMG_20260716_151331681.jpg', 'IMG_20260716_151159968.jpg', 'IMG_20260716_151144688.jpg', 'IMG_20260716_151105299.jpg',
+  'IMG_20260716_151053462.jpg', 'IMG_20260716_151132825.jpg', 'IMG_20260716_151032523.jpg', 'IMG_20260716_101001478.jpg', 'IMG_20260716_151040456.jpg',
+  'IMG_20260716_100705450.jpg'
+];
+const corporateTrainingPhotos = [
+  ...bhutanPolicePhotoNames.map((name, index) => ({ name, index, group: 'Bhutan Police', label: 'BHUTAN POLICE · BMS TRAINING', folder: 'BHUTAN%20POLICE' })),
+  ...militaryPhotoNames.map((name, index) => ({ name, index, group: 'Military', label: 'MILITARY · BMS TRAINING', folder: 'MILITIARY' }))
+].map(photo => ({
+  ...photo,
+  src: `${sharePointTrainingFolder}/${photo.folder}/${encodeURIComponent(photo.name)}`
+}));
+const corporateTrainingPhotoFolderUrl = 'https://ipcsglobalsolutions-my.sharepoint.com/:f:/g/personal/ipcsdesigners_ipcsglobal_com/IgDnHRuCtjq7T6LRb3OJgLA4AWwy4FpckVKwrBJ8OjB6kY0?e=quw7dk';
+const militaryTrainingPhotoFolderUrl = 'https://ipcsglobalsolutions-my.sharepoint.com/:f:/g/personal/ipcsdesigners_ipcsglobal_com/IgCsOJqZefn-S7AW1M0HLcT0ASJCGpjnbzSv4vTgyZlSysc?e=YZ13DI';
+const magazineFolderUrl = 'https://drive.google.com/drive/folders/151HVXrNa_lBwY9sLzA_j3pca4Otdw-5R?usp=sharing';
 
 const companyRoadmap = [
   { date: '2008', phase: 'The first step', title: 'A first office in Calicut, Kerala', copy: 'IPCS began its journey with the inauguration of its first office in Calicut, building a foundation in technology and industrial solutions.' },
@@ -142,7 +170,12 @@ const blogs = [
   'How to Become a Perfect Digital Marketer?'
 ];
 
-const magazines = [48, 47, 46, 45, 44, 43, 36, 35, 34];
+const magazineEditionTitle = name => String(name || '')
+  .replace(/\.pdf$/i, '')
+  .replace(/^Izair\s+E(?:\s*-\s*|\s*)Magazine\s*/i, '')
+  .replace(/_/g, ' ')
+  .replace(/\s+/g, ' ')
+  .trim();
 const logoSource = value => {
   if (!value || typeof value !== 'string') return '';
   const match = value.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
@@ -207,7 +240,7 @@ function CorporateTrainingInquiryModal({ onClose }) {
     }
   };
 
-  return <div className="public-corporate-inquiry-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !submitting) onClose(); }}>
+  return createPortal(<div className="public-corporate-inquiry-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !submitting) onClose(); }}>
     <section className="public-corporate-inquiry-dialog" role="dialog" aria-modal="true" aria-labelledby="corporate-inquiry-title">
       <header className="public-corporate-inquiry-header"><div><span>IPCS GLOBAL · CORPORATE TRAINING</span><h2 id="corporate-inquiry-title">Let’s plan your team’s training.</h2><p>Tell us a little about your organization and what your team wants to learn.</p></div><button type="button" onClick={onClose} disabled={submitting} aria-label="Close inquiry form"><X size={21} /></button></header>
       {submitted ? <div className="public-corporate-inquiry-success" role="status"><span><CheckCircle size={28} weight="fill" /></span><h3>Thank you for reaching out.</h3><p>Your corporate training inquiry has been sent to the IPCS Global team. We’ll follow up using the contact details you provided.</p><button type="button" className="public-corporate-primary" onClick={onClose}>Done</button></div> : <form className="public-corporate-inquiry-form" onSubmit={submitInquiry}>
@@ -226,7 +259,7 @@ function CorporateTrainingInquiryModal({ onClose }) {
         <footer><span>We’ll use these details only to respond to your training inquiry.</span><button type="submit" className="public-corporate-primary" disabled={submitting}>{submitting ? 'Sending…' : 'Send inquiry'} <ArrowRight size={17} /></button></footer>
       </form>}
     </section>
-  </div>;
+  </div>, document.body);
 }
 
 function SectionHeading({ eyebrow, title, description, align = 'left' }) {
@@ -338,6 +371,9 @@ export default function PublicSiteSections({ page = 'all' }) {
   const [mediaError, setMediaError] = useState(false);
   const [mediaNextOffset, setMediaNextOffset] = useState(null);
   const [mediaTotal, setMediaTotal] = useState(0);
+  const [magazines, setMagazines] = useState([]);
+  const [magazinesLoading, setMagazinesLoading] = useState(false);
+  const [magazinesError, setMagazinesError] = useState(false);
   const partnerListPage = page === 'partners-all';
   const posterGalleryPage = page === 'placement-gallery';
   const partnerMediaPage = page === 'partners-media';
@@ -430,6 +466,22 @@ export default function PublicSiteSections({ page = 'all' }) {
       })
       .catch(() => { if (active) setVacanciesError(true); })
       .finally(() => { if (active) setVacanciesLoading(false); });
+    return () => { active = false; };
+  }, [page]);
+
+  useEffect(() => {
+    if (!['updates', 'all'].includes(page)) return undefined;
+    let active = true;
+    setMagazinesLoading(true);
+    publicGet(`${API_BASE}/api/public/magazines`)
+      .then(response => {
+        if (!active) return;
+        if (!response.data?.success) throw new Error('Magazine library unavailable');
+        setMagazines(Array.isArray(response.data.magazines) ? response.data.magazines : []);
+        setMagazinesError(false);
+      })
+      .catch(() => { if (active) setMagazinesError(true); })
+      .finally(() => { if (active) setMagazinesLoading(false); });
     return () => { active = false; };
   }, [page]);
 
@@ -560,13 +612,28 @@ export default function PublicSiteSections({ page = 'all' }) {
           <div className="public-story-shell">
             <SectionHeading eyebrow="Watch &amp; learn" title="Corporate training in action." description="Preview and play IPCS Global corporate training videos here." align="center" />
             <div className="public-corporate-video-grid">{corporateTrainingVideos.map((video, index) => <article className={`public-corporate-video-card corporate-video-${index + 1}`} key={video.key}>
-              {video.embedUrl ? <iframe src={video.embedUrl} title={`Corporate training video ${index + 1}`} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /> : <div className="public-corporate-video-placeholder" role="status">
-                <VideoCamera size={34} weight="duotone" />
-                <span>VIDEO {String(index + 1).padStart(2, '0')}</span>
-                <strong>SharePoint embed link needed</strong>
-                <small>This video will play here once its SharePoint embed URL is added.</small>
-              </div>}
+              <div className="public-corporate-video-frame"><iframe src={`https://ipcsglobalsolutions-my.sharepoint.com/personal/ipcsdesigners_ipcsglobal_com/_layouts/15/embed.aspx?UniqueId=${video.id}&embed=%7B%22af%22%3Atrue%2C%22ust%22%3Atrue%7D&referrer=StreamWebApp&referrerScenario=EmbedDialog.Create`} title={video.title} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" /></div>
+              <h3>{video.title}</h3>
+              <span>VIDEO {String(index + 1).padStart(2, '0')}</span>
             </article>)}</div>
+          </div>
+        </section>
+
+        <section className="public-corporate-photo-section" id="corporate-training-photos">
+          <div className="public-story-shell">
+            <SectionHeading eyebrow="Event gallery" title="Training moments from the field." description="A moving photo reel from IPCS Global’s Bhutan Police and Military BMS training programmes." align="center" />
+            <div className="public-corporate-photo-marquee" aria-label="Bhutan Police and Military BMS training event photos">
+              <div className="public-corporate-photo-track">
+                {[...corporateTrainingPhotos, ...corporateTrainingPhotos].map((photo, index) => <a className="public-corporate-photo-card" href={photo.src} target="_blank" rel="noreferrer" key={`${photo.group}-${photo.name}-${index}`} aria-label={`Open ${photo.group} training photo ${photo.index + 1}`}>
+                  <img src={photo.src} alt={`IPCS Global ${photo.group} BMS training event, photo ${photo.index + 1}`} loading={index < 5 ? 'eager' : 'lazy'} onError={event => { event.currentTarget.closest('.public-corporate-photo-card')?.classList.add('is-unavailable'); }} />
+                  <span>{photo.label}</span>
+                </a>)}
+              </div>
+            </div>
+            <div className="public-corporate-photo-links">
+              <a href={corporateTrainingPhotoFolderUrl} target="_blank" rel="noreferrer"><span>Bhutan Police</span><small>Open the shared event photo folder</small><ArrowUpRight size={16} /></a>
+              <a href={militaryTrainingPhotoFolderUrl} target="_blank" rel="noreferrer"><span>Military training</span><small>Open the shared event photo folder</small><ArrowUpRight size={16} /></a>
+            </div>
           </div>
         </section>
 
@@ -842,10 +909,15 @@ export default function PublicSiteSections({ page = 'all' }) {
             </div>
             <div className="public-update-column">
               <div className="public-subheading"><span>IZIAR E-MAGAZINE</span><h3>News &amp; stories</h3></div>
-              <div className="public-magazine-grid">
-                {magazines.map((edition, index) => <article className={`public-magazine-card magazine-${index % 4}`} key={edition}><span className="public-magazine-mark">IPCS <i>×</i> IZIAR</span><span className="public-magazine-title">IZIAR</span><span className="public-magazine-edition">E-MAGAZINE <b>EDITION {edition}</b></span></article>)}
-              </div>
-              <div className="public-news-note"><Buildings size={18} /><span>IPCS Global news and magazine editions</span><ArrowUpRight size={15} /></div>
+              {magazinesLoading ? <div className="public-magazine-grid" aria-label="Loading magazine editions">{[1, 2, 3, 4, 5, 6].map(item => <div className="public-magazine-skeleton" key={item} />)}</div>
+                : magazinesError ? <div className="public-magazine-empty" role="status">Magazine editions could not be loaded. You can still browse the shared IZIAR library in Drive.</div>
+                  : magazines.length ? <div className="public-magazine-grid">
+                    {magazines.map((magazine, index) => <a className={`public-magazine-card magazine-${index % 4}`} href={magazine.webViewUrl || `https://drive.google.com/file/d/${encodeURIComponent(magazine.id)}/view?usp=sharing`} target="_blank" rel="noreferrer" key={magazine.id} aria-label={`Open IZIAR e-magazine ${magazineEditionTitle(magazine.name)}`}>
+                      <img src={magazine.thumbnailUrl || `https://drive.google.com/thumbnail?id=${encodeURIComponent(magazine.id)}&sz=w640`} alt="" loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />
+                      <span className="public-magazine-mark">IPCS <i>×</i> IZIAR</span><span className="public-magazine-title">IZIAR</span><span className="public-magazine-edition">E-MAGAZINE <b>{magazineEditionTitle(magazine.name)}</b></span>
+                    </a>)}
+                  </div> : <div className="public-magazine-empty">No PDF editions are available in the shared folder right now.</div>}
+              <a className="public-news-note" href={magazineFolderUrl} target="_blank" rel="noreferrer"><Buildings size={18} /><span>Browse all IZIAR editions in Drive</span><ArrowUpRight size={15} /></a>
             </div>
           </div>
         </div>
@@ -883,12 +955,12 @@ export default function PublicSiteSections({ page = 'all' }) {
         </div>
       </section>}
       {corporateInquiryOpen && <CorporateTrainingInquiryModal onClose={() => setCorporateInquiryOpen(false)} />}
-      {selectedVideo && <div className="public-video-modal" role="presentation" onClick={event => { if (event.target === event.currentTarget) setSelectedVideo(null); }}>
+      {selectedVideo && createPortal(<div className="public-video-modal" role="presentation" onClick={event => { if (event.target === event.currentTarget) setSelectedVideo(null); }}>
         <section className="public-video-dialog" role="dialog" aria-modal="true" aria-label={selectedVideo.name}>
           <header><div><span>{selectedVideo.folder || 'IPCS MEDIA'}</span><h2>{selectedVideo.name}</h2></div><button type="button" onClick={() => setSelectedVideo(null)} aria-label="Close video"><X size={21} /></button></header>
           {videoPlaybackError ? <iframe src={`https://drive.google.com/file/d/${encodeURIComponent(selectedVideo.id)}/preview`} title={selectedVideo.name} allow="autoplay; encrypted-media; fullscreen; picture-in-picture" allowFullScreen /> : <video src={`${API_BASE}${selectedVideo.imageUrl}`} poster={videoThumbnail(selectedVideo)} controls playsInline preload="metadata" aria-label={selectedVideo.name} onError={() => setVideoPlaybackError(true)} />}
         </section>
-      </div>}
+      </div>, document.body)}
     </div>
   );
 }

@@ -3833,6 +3833,63 @@ exports.streamPublicTeamPhoto = async (req, res) => {
   }
 };
 
+const PUBLIC_MAGAZINE_FOLDER_ID = '151HVXrNa_lBwY9sLzA_j3pca4Otdw-5R';
+let publicMagazineCache = { expiresAt: 0, magazines: [] };
+let publicMagazineLoading = null;
+
+async function getPublicMagazineFiles() {
+  if (publicMagazineCache.expiresAt > Date.now()) return publicMagazineCache.magazines;
+  if (publicMagazineLoading) return publicMagazineLoading;
+
+  publicMagazineLoading = (async () => {
+    const magazines = [];
+    let pageToken;
+    do {
+      const response = await drive.files.list({
+        q: `'${PUBLIC_MAGAZINE_FOLDER_ID}' in parents and trashed = false`,
+        pageSize: 250,
+        pageToken,
+        orderBy: 'modifiedTime desc',
+        fields: 'nextPageToken,files(id,name,mimeType,modifiedTime,webViewLink)',
+        supportsAllDrives: true,
+        includeItemsFromAllDrives: true
+      });
+      for (const file of response.data.files || []) {
+        if (file.mimeType === 'application/pdf' || /\.pdf$/i.test(file.name || '')) magazines.push(file);
+      }
+      pageToken = response.data.nextPageToken;
+    } while (pageToken);
+
+    publicMagazineCache = { expiresAt: Date.now() + 5 * 60 * 1000, magazines };
+    return magazines;
+  })();
+
+  try {
+    return await publicMagazineLoading;
+  } finally {
+    publicMagazineLoading = null;
+  }
+}
+
+exports.getPublicMagazines = async (_req, res) => {
+  try {
+    const magazines = await getPublicMagazineFiles();
+    res.json({
+      success: true,
+      magazines: magazines.map(file => ({
+        id: file.id,
+        name: file.name,
+        modifiedTime: file.modifiedTime || '',
+        thumbnailUrl: `https://drive.google.com/thumbnail?id=${encodeURIComponent(file.id)}&sz=w640`,
+        webViewUrl: file.webViewLink || `https://drive.google.com/file/d/${encodeURIComponent(file.id)}/view?usp=sharing`
+      }))
+    });
+  } catch (err) {
+    console.error('Error reading IZIAR magazine PDFs from Drive:', err.message);
+    res.status(503).json({ success: false, magazines: [], message: 'IZIAR magazine editions are temporarily unavailable.' });
+  }
+};
+
 exports.getClientById = (req, res) => {
   const targetRow = parseInt(req.params.id);
   const row = getCache().clients.find(r => r.rowNumber === targetRow);

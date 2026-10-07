@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import PublicSiteHeader from './PublicSiteHeader';
 import PublicSiteSections from './PublicSiteSections';
@@ -5,6 +6,10 @@ import './Login.css';
 
 export default function PublicSitePage({ page }) {
   const location = useLocation();
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [location.pathname, location.search]);
+
   return (
     <main className="public-portal">
       <div className="portal-glow portal-glow-one" aria-hidden="true" />

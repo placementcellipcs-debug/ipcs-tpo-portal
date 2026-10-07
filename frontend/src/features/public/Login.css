@@ -5,7 +5,7 @@
   --portal-cyan: #38bdf8;
   min-height: 100vh;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
   isolation: isolate;
   color: var(--portal-ink);
   background: #f7f9fc;
