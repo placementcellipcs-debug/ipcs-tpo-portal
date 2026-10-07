@@ -213,6 +213,7 @@ app.post('/api/tpo/clients', controllers.getClients);
 app.get('/api/public/partners', controllers.getPublicPartners);
 app.get('/api/public/placement-team', controllers.getPublicPlacementTeam);
 app.get('/api/public/openings', controllers.getPublicOpenings);
+app.post('/api/public/corporate-training-inquiries', controllers.submitCorporateTrainingInquiry);
 app.get('/api/public/mou/:token', controllers.getMouByToken);
 app.get('/api/public/placement-posters', controllers.getPublicPlacementPosters);
 app.get('/api/public/placement-posters/:fileId', controllers.streamPublicPlacementPoster);

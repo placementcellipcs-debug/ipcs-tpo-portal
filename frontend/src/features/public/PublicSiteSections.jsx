@@ -78,12 +78,12 @@ const corporateTrainingAudiences = [
 ];
 
 const corporateTrainingVideos = [
-  { title: 'Corporate training film 01', url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQA-nmkT9x3sQpFCWesw4CV6AZ5RjHVB7kWdBUAy2vLUmcc?e=QVJ1Z9' },
-  { title: 'Corporate training film 02', url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQCYPEeh3imaQITdZWm6CqiDATWx4DtiCPC6XGQmkZDc2sE?e=9ENNXZ' },
-  { title: 'Corporate training film 03', url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQBleYkeX6kWRrAAGyTVLh-MAdL-hXnF-t8WFzTToPSn8GQ?e=LqVgh6' },
-  { title: 'Corporate training film 04', url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQAVn8NKD02jS7dSE_Jqg9mVAaV4dGmdXNwZYXSRIhxjnts?e=JIfCz6' },
-  { title: 'Corporate training film 05', url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQBy9XQdbB33SbIWBXmHY67nAepunFdaUEiyH1nE3FrBpIk?e=ofv2x1' },
-  { title: 'Corporate training film 06', url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQCAxZbBXwJoRZLNh_-SF6r0AbipIrFM9YpMHh2FvXEDKpQ?e=WHJCVj' }
+  { url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQA-nmkT9x3sQpFCWesw4CV6AZ5RjHVB7kWdBUAy2vLUmcc?e=QVJ1Z9' },
+  { url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQCYPEeh3imaQITdZWm6CqiDATWx4DtiCPC6XGQmkZDc2sE?e=9ENNXZ' },
+  { url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQBleYkeX6kWRrAAGyTVLh-MAdL-hXnF-t8WFzTToPSn8GQ?e=LqVgh6' },
+  { url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQAVn8NKD02jS7dSE_Jqg9mVAaV4dGmdXNwZYXSRIhxjnts?e=JIfCz6' },
+  { url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQBy9XQdbB33SbIWBXmHY67nAepunFdaUEiyH1nE3FrBpIk?e=ofv2x1' },
+  { url: 'https://ipcsglobalsolutions-my.sharepoint.com/:v:/g/personal/ipcsdesigners_ipcsglobal_com/IQCAxZbBXwJoRZLNh_-SF6r0AbipIrFM9YpMHh2FvXEDKpQ?e=WHJCVj' }
 ];
 
 const companyRoadmap = [
@@ -139,6 +139,61 @@ const publicGet = async (url) => {
   }
   throw lastError;
 };
+
+function CorporateTrainingInquiryModal({ onClose }) {
+  const [form, setForm] = useState({ name: '', company: '', email: '', phone: '', location: '', trainingArea: '', teamSize: '', message: '', website: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const handleKeyDown = event => { if (event.key === 'Escape' && !submitting) onClose(); };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [onClose, submitting]);
+
+  const updateField = event => setForm(current => ({ ...current, [event.target.name]: event.target.value }));
+  const submitInquiry = async event => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError('');
+    try {
+      const response = await axios.post(`${API_BASE}/api/public/corporate-training-inquiries`, form);
+      if (!response.data?.success) throw new Error(response.data?.message || 'We could not send your request. Please try again.');
+      setSubmitted(true);
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || requestError.message || 'We could not send your request. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return <div className="public-corporate-inquiry-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !submitting) onClose(); }}>
+    <section className="public-corporate-inquiry-dialog" role="dialog" aria-modal="true" aria-labelledby="corporate-inquiry-title">
+      <header className="public-corporate-inquiry-header"><div><span>IPCS GLOBAL · CORPORATE TRAINING</span><h2 id="corporate-inquiry-title">Let’s plan your team’s training.</h2><p>Tell us a little about your organization and what your team wants to learn.</p></div><button type="button" onClick={onClose} disabled={submitting} aria-label="Close inquiry form"><X size={21} /></button></header>
+      {submitted ? <div className="public-corporate-inquiry-success" role="status"><span><CheckCircle size={28} weight="fill" /></span><h3>Thank you for reaching out.</h3><p>Your corporate training inquiry has been sent to the IPCS Global team. We’ll follow up using the contact details you provided.</p><button type="button" className="public-corporate-primary" onClick={onClose}>Done</button></div> : <form className="public-corporate-inquiry-form" onSubmit={submitInquiry}>
+        <div className="public-corporate-inquiry-grid">
+          <label>Full name *<input name="name" value={form.name} onChange={updateField} autoComplete="name" maxLength={120} required /></label>
+          <label>Company / organization *<input name="company" value={form.company} onChange={updateField} autoComplete="organization" maxLength={160} required /></label>
+          <label>Work email *<input name="email" type="email" value={form.email} onChange={updateField} autoComplete="email" maxLength={254} required /></label>
+          <label>Phone / WhatsApp<input name="phone" type="tel" value={form.phone} onChange={updateField} autoComplete="tel" maxLength={40} /></label>
+          <label>Location<input name="location" value={form.location} onChange={updateField} autoComplete="address-level2" maxLength={120} /></label>
+          <label>Training area *<select name="trainingArea" value={form.trainingArea} onChange={updateField} required><option value="">Choose a topic</option>{['Industrial Automation', 'PLC & SCADA', 'Robotics', 'Building Management Systems', 'Embedded Systems & IoT', 'Digital Marketing with AI', 'Customized programme', 'Other'].map(topic => <option key={topic} value={topic}>{topic}</option>)}</select></label>
+          <label>Approximate team size<input name="teamSize" value={form.teamSize} onChange={updateField} maxLength={40} placeholder="e.g. 15 participants" /></label>
+          <label className="public-corporate-inquiry-message">What would you like your team to learn?<textarea name="message" value={form.message} onChange={updateField} rows={4} maxLength={2000} placeholder="Share your goals, preferred format, or timeframe." /></label>
+        </div>
+        <label className="public-corporate-inquiry-trap" aria-hidden="true">Website<input name="website" value={form.website} onChange={updateField} tabIndex={-1} autoComplete="off" /></label>
+        {error && <p className="public-corporate-inquiry-error" role="alert">{error}</p>}
+        <footer><span>We’ll use these details only to respond to your training inquiry.</span><button type="submit" className="public-corporate-primary" disabled={submitting}>{submitting ? 'Sending…' : 'Send inquiry'} <ArrowRight size={17} /></button></footer>
+      </form>}
+    </section>
+  </div>;
+}
 
 function SectionHeading({ eyebrow, title, description, align = 'left' }) {
   return (
@@ -222,6 +277,7 @@ function AnimatedMilestone({ value, suffix, label }) {
 
 export default function PublicSiteSections({ page = 'all' }) {
   const location = useLocation();
+  const [corporateInquiryOpen, setCorporateInquiryOpen] = useState(false);
   const [partners, setPartners] = useState([]);
   const [placementOfficers, setPlacementOfficers] = useState([]);
   const [placementTeamLoading, setPlacementTeamLoading] = useState(false);
@@ -431,7 +487,7 @@ export default function PublicSiteSections({ page = 'all' }) {
               <span className="public-corporate-kicker"><span /> IPCS GLOBAL · CORPORATE TRAINING</span>
               <h1>Enhancing professionalism with <em>proven standards.</em></h1>
               <p>Build a skilled, adaptive, and forward-thinking workforce. IPCS Global brings more than 17 years of experience in automation and industrial solutions to customized, practical training for working professionals and organizations.</p>
-              <div className="public-corporate-hero-actions"><Link className="public-corporate-primary" to="/about#team">Talk with our team <ArrowRight size={17} /></Link><a className="public-corporate-secondary" href="#training-programs">Explore programs</a></div>
+              <div className="public-corporate-hero-actions"><button type="button" className="public-corporate-primary" onClick={() => setCorporateInquiryOpen(true)}>Talk with our team <ArrowRight size={17} /></button><a className="public-corporate-secondary" href="#training-programs">Explore programs</a></div>
               <div className="public-corporate-trust"><span><CheckCircle size={16} weight="fill" /> Industry-informed</span><span><CheckCircle size={16} weight="fill" /> Practical learning</span><span><CheckCircle size={16} weight="fill" /> Flexible delivery</span></div>
             </div>
             <aside className="public-corporate-hero-panel" aria-label="Corporate training highlights">
@@ -468,11 +524,10 @@ export default function PublicSiteSections({ page = 'all' }) {
 
         <section className="public-corporate-video-section" id="corporate-training-videos">
           <div className="public-story-shell">
-            <SectionHeading eyebrow="Watch &amp; learn" title="Corporate training in action." description="Explore IPCS Global training videos. Select a film to open and play it in SharePoint." align="center" />
-            <div className="public-corporate-video-grid">{corporateTrainingVideos.map((video, index) => <a className={`public-corporate-video-card corporate-video-${index + 1}`} href={video.url} target="_blank" rel="noreferrer" key={video.url} aria-label={`Watch ${video.title} in SharePoint`}>
-              <div className="public-corporate-video-art"><span className="public-corporate-video-orbit" aria-hidden="true" /><span className="public-corporate-video-brand">IPCS GLOBAL <i>·</i> CORPORATE TRAINING</span><span className="public-corporate-video-play"><PlayCircle size={48} weight="fill" /></span><span className="public-corporate-video-index">FILM {String(index + 1).padStart(2, '0')}</span></div>
-              <div className="public-corporate-video-meta"><span>Training video</span><h3>{video.title}</h3><b>Watch on SharePoint <ArrowUpRight size={15} /></b></div>
-            </a>)}</div>
+            <SectionHeading eyebrow="Watch &amp; learn" title="Corporate training in action." description="Preview and play IPCS Global corporate training videos here." align="center" />
+            <div className="public-corporate-video-grid">{corporateTrainingVideos.map((video, index) => <article className={`public-corporate-video-card corporate-video-${index + 1}`} key={video.url}>
+              <iframe src={video.url} title={`Corporate training video ${index + 1}`} loading="lazy" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
+            </article>)}</div>
           </div>
         </section>
 
@@ -484,7 +539,7 @@ export default function PublicSiteSections({ page = 'all' }) {
         </section>
 
         <section className="public-corporate-results">
-          <div className="public-story-shell public-corporate-results-inner"><div><span className="public-corporate-kicker"><span /> PEOPLE ARE YOUR ADVANTAGE</span><h2>Invest in people.<br /><em>Accelerate growth.</em></h2><p>Our corporate clients have seen tangible gains in process efficiency, innovation, and employee retention. Our wider experience includes work with Fortune 500 companies, government projects, and reputed academic institutions. Let’s build smarter teams, better systems, and stronger futures—together.</p></div><Link className="public-corporate-primary" to="/about#team">Connect with IPCS Global <ArrowRight size={17} /></Link><div className="public-corporate-results-mark" aria-hidden="true"><Handshake size={150} weight="thin" /></div></div>
+          <div className="public-story-shell public-corporate-results-inner"><div><span className="public-corporate-kicker"><span /> PEOPLE ARE YOUR ADVANTAGE</span><h2>Invest in people.<br /><em>Accelerate growth.</em></h2><p>Our corporate clients have seen tangible gains in process efficiency, innovation, and employee retention. Our wider experience includes work with Fortune 500 companies, government projects, and reputed academic institutions. Let’s build smarter teams, better systems, and stronger futures—together.</p></div><button type="button" className="public-corporate-primary" onClick={() => setCorporateInquiryOpen(true)}>Connect with our team <ArrowRight size={17} /></button><div className="public-corporate-results-mark" aria-hidden="true"><Handshake size={150} weight="thin" /></div></div>
         </section>
       </>}
 
@@ -777,6 +832,7 @@ export default function PublicSiteSections({ page = 'all' }) {
                 })}</div>}
         </div>
       </section>}
+      {corporateInquiryOpen && <CorporateTrainingInquiryModal onClose={() => setCorporateInquiryOpen(false)} />}
       {selectedVideo && <div className="public-video-modal" role="presentation" onClick={event => { if (event.target === event.currentTarget) setSelectedVideo(null); }}>
         <section className="public-video-dialog" role="dialog" aria-modal="true" aria-label={selectedVideo.name}>
           <header><div><span>{selectedVideo.folder || 'IPCS MEDIA'}</span><h2>{selectedVideo.name}</h2></div><button type="button" onClick={() => setSelectedVideo(null)} aria-label="Close video"><X size={21} /></button></header>

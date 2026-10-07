@@ -3482,6 +3482,65 @@ exports.getPublicPlacementTeam = async (_req, res) => {
   }
 };
 
+const escapeCorporateInquiryHtml = value => String(value || '').replace(/[&<>"']/g, character => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[character]));
+
+exports.submitCorporateTrainingInquiry = async (req, res) => {
+  const input = req.body || {};
+  // A hidden honeypot field catches basic automated form submissions.
+  if (String(input.website || '').trim()) return res.status(201).json({ success: true });
+
+  const name = String(input.name || '').trim().slice(0, 120);
+  const company = String(input.company || '').trim().slice(0, 160);
+  const email = String(input.email || '').trim().slice(0, 254);
+  const phone = String(input.phone || '').trim().slice(0, 40);
+  const location = String(input.location || '').trim().slice(0, 120);
+  const trainingArea = String(input.trainingArea || '').trim().slice(0, 120);
+  const teamSize = String(input.teamSize || '').trim().slice(0, 40);
+  const message = String(input.message || '').trim().slice(0, 2000);
+
+  if (!name || !company || !trainingArea || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ success: false, message: 'Enter your name, organization, a valid work email, and a training area.' });
+  }
+
+  const safe = escapeCorporateInquiryHtml;
+  const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
+  const recipient = process.env.CORPORATE_TRAINING_EMAIL || senderEmail;
+  const safeCompanySubject = company.replace(/[\r\n]+/g, ' ').slice(0, 100);
+  const messageHtml = safe(message).replace(/\r?\n/g, '<br>') || '<span style="color:#64748b">No additional message was provided.</span>';
+  const html = `
+    <div style="max-width:680px;margin:24px auto;border:1px solid #dce6ef;border-radius:18px;overflow:hidden;font-family:Arial,sans-serif;color:#18314d;background:#fff">
+      <div style="padding:24px 28px;background:#102b4a;color:#fff;border-bottom:4px solid #39c8bd">
+        <div style="font-size:11px;font-weight:bold;letter-spacing:2px;color:#9fdedb">IPCS GLOBAL · CORPORATE TRAINING</div>
+        <h1 style="margin:10px 0 0;font-size:22px">New training inquiry</h1>
+      </div>
+      <div style="padding:26px 28px">
+        <p style="margin:0 0 18px;color:#53677d;line-height:1.65">A visitor has asked the IPCS Global team to discuss a corporate training program.</p>
+        <table style="width:100%;border-collapse:collapse;font-size:14px">
+          ${[['Name', name], ['Organization', company], ['Work email', email], ['Phone / WhatsApp', phone], ['Location', location], ['Training area', trainingArea], ['Approximate team size', teamSize]].filter(([, value]) => value).map(([label, value]) => `<tr><th style="width:190px;padding:11px 12px;border:1px solid #e1e8ef;background:#f5f8fb;text-align:left;color:#52667c">${safe(label)}</th><td style="padding:11px 12px;border:1px solid #e1e8ef;color:#18314d">${safe(value)}</td></tr>`).join('')}
+        </table>
+        <h2 style="margin:23px 0 8px;font-size:15px;color:#173955">Training goals or notes</h2>
+        <div style="padding:14px;border:1px solid #e1e8ef;border-radius:10px;background:#fafcfe;font-size:14px;line-height:1.7">${messageHtml}</div>
+        <p style="margin:22px 0 0;color:#718197;font-size:12px">Reply to this email to contact ${safe(name)} directly.</p>
+      </div>
+    </div>`;
+
+  try {
+    await sendMailAndLog({
+      from: `"IPCS Global Corporate Training" <${senderEmail}>`,
+      to: recipient,
+      replyTo: email,
+      subject: `Corporate Training Inquiry · ${safeCompanySubject}`,
+      html
+    }, { name: `${name} · ${company}`, email, type: 'Corporate Training Inquiry' });
+    return res.status(201).json({ success: true, message: 'Your inquiry has been sent to the IPCS Global team.' });
+  } catch (err) {
+    console.error('Corporate training inquiry email failed:', err.message);
+    return res.status(503).json({ success: false, message: 'We could not send your inquiry right now. Please try again later.' });
+  }
+};
+
 exports.getPublicOpenings = async (_req, res) => {
   try {
     let rows = getCache()?.vacancies;
