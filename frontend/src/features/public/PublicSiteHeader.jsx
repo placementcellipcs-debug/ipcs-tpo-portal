@@ -8,9 +8,8 @@ const links = [
   { label: 'About Us', to: '/about' },
   { label: 'Corporate Training', to: '/corporate-training' },
   { label: 'Placements', to: '/placements' },
-  { label: 'Hiring Partners', to: '/partners' },
+  { label: 'Hiring & Vacancies', to: '/hiring' },
   { label: 'Updates', to: '/updates' },
-  { label: 'Vacancies', to: '/openings' }
 ];
 
 export default function PublicSiteHeader() {
@@ -33,7 +32,7 @@ export default function PublicSiteHeader() {
       </button>
       <nav className={`portal-nav${menuOpen ? ' is-open' : ''}`} aria-label="Main navigation">
         {links.map(link => {
-          const active = link.to === '/' ? pathname === '/' : pathname === link.to || (link.to === '/placements' && pathname.startsWith('/placements')) || (link.to === '/partners' && pathname.startsWith('/partners'));
+          const active = link.to === '/' ? pathname === '/' : pathname === link.to || (link.to === '/placements' && pathname.startsWith('/placements')) || (link.to === '/hiring' && (pathname.startsWith('/hiring') || pathname.startsWith('/partners') || pathname.startsWith('/openings')));
           const className = `portal-nav-link${active ? ' active' : ''}`;
           return <Link key={link.label} className={className} to={link.to} aria-current={active ? 'page' : undefined} onClick={() => setMenuOpen(false)}>{link.label}</Link>;
         })}

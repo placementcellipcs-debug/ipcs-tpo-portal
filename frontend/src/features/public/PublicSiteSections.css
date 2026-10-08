@@ -84,8 +84,11 @@
 .public-corporate-video-placeholder > strong { margin-top: 7px; color: #fff; font-size: .95rem; }
 .public-corporate-video-placeholder > small { max-width: 270px; margin-top: 6px; color: #b0c5db; font-size: .66rem; line-height: 1.55; }
 .public-corporate-photo-section { padding: 82px 0 88px; overflow: hidden; background: linear-gradient(180deg,#eef4f8,#f8fafc); }
+.public-corporate-photo-reel { display: grid; gap: 8px; }
 .public-corporate-photo-marquee { overflow: hidden; margin: 22px -1px 0; padding: 5px 1px 16px; mask-image: linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent); }
-.public-corporate-photo-track { width: max-content; display: flex; gap: 15px; animation: corporate-photo-drift 72s linear infinite; }
+.public-corporate-photo-reel .public-corporate-photo-marquee + .public-corporate-photo-marquee { margin-top: 0; }
+.public-corporate-photo-track { width: max-content; display: flex; gap: 15px; animation: corporate-photo-drift-left 120s linear infinite; }
+.public-corporate-photo-track.is-right { animation: corporate-photo-drift-right 132s linear infinite; }
 .public-corporate-photo-marquee:hover .public-corporate-photo-track, .public-corporate-photo-marquee:focus-within .public-corporate-photo-track { animation-play-state: paused; }
 .public-corporate-photo-card { position: relative; width: 248px; height: 300px; flex: 0 0 248px; overflow: hidden; padding: 0; border: 1px solid #dce6ef; border-radius: 17px; background: linear-gradient(145deg,#dce8f1,#c9d8e5); box-shadow: 0 14px 34px rgba(25,57,91,.1); cursor: pointer; }
 .public-corporate-photo-card img { display: block; width: 100%; height: 100%; object-fit: cover; transition: transform .35s ease; }
@@ -95,7 +98,8 @@
 .public-corporate-photo-card:focus-visible, .public-corporate-gallery-thumb:focus-visible { outline: 3px solid #1685c5; outline-offset: 3px; }
 .public-corporate-photo-card.is-unavailable img { opacity: 0; }
 .public-corporate-photo-card.is-unavailable::before { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; color: #52708c; content: 'Photo preview unavailable'; font-size: .75rem; font-weight: 700; text-align: center; }
-@keyframes corporate-photo-drift { to { transform: translateX(-50%); } }
+@keyframes corporate-photo-drift-left { to { transform: translateX(-50%); } }
+@keyframes corporate-photo-drift-right { from { transform: translateX(-50%); } to { transform: translateX(0); } }
 .public-corporate-photo-actions { min-height: 54px; margin-top: 12px; padding: 10px 16px; display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid #e1e9f0; border-radius: 13px; color: #72849a; background: rgba(255,255,255,.85); font-size: .68rem; }
 .public-corporate-photo-actions > button { min-height: 36px; padding: 7px 10px; display: inline-flex; align-items: center; gap: 7px; border: 0; border-radius: 8px; color: #155eef; background: transparent; font: inherit; font-weight: 800; cursor: pointer; }
 .public-corporate-photo-actions > button:hover { background: #edf5ff; }

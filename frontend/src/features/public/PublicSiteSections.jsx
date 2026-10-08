@@ -142,6 +142,10 @@ const corporateTrainingPhotos = [
   ...photo,
   src: `/event-gallery/${photo.folder}/${encodeURIComponent(photo.name.replace(/\.[^.]+$/i, '.webp'))}`
 }));
+const corporateTrainingPhotoRows = [
+  corporateTrainingPhotos.filter((_, index) => index % 2 === 0),
+  corporateTrainingPhotos.filter((_, index) => index % 2 === 1)
+];
 const magazineFolderUrl = 'https://drive.google.com/drive/folders/151HVXrNa_lBwY9sLzA_j3pca4Otdw-5R?usp=sharing';
 
 const companyRoadmap = [
@@ -375,6 +379,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   const [corporatePhotoGalleryOpen, setCorporatePhotoGalleryOpen] = useState(false);
   const [activeCorporatePhotoIndex, setActiveCorporatePhotoIndex] = useState(null);
   const partnerListPage = page === 'partners-all';
+  const partnerDirectoryPage = ['partners-all', 'hiring'].includes(page);
   const posterGalleryPage = page === 'placement-gallery';
   const partnerMediaPage = page === 'partners-media';
   const openVideo = item => { setVideoPlaybackError(false); setSelectedVideo(item); };
@@ -389,7 +394,7 @@ export default function PublicSiteSections({ page = 'all' }) {
     ? [['clients', 'Client stories'], ['client-videos', 'Client videos']]
     : [['placement-drive', 'Placement drives'], ['testimonials', 'Student testimonials'], ['talentino', 'Talentino videos'], ['videos', 'All videos']];
   const mediaBasePath = partnerMediaPage ? '/partners/media' : '/placements/media';
-  const partnersLoading = ['partners', 'partners-all', 'all'].includes(page) && !partnersLoaded;
+  const partnersLoading = ['partners', 'partners-all', 'hiring', 'all'].includes(page) && !partnersLoaded;
   const postersLoading = ['placement', 'placement-gallery', 'all'].includes(page) && !postersLoaded;
   const hasGiftyProfile = placementOfficers.some(member => normalizeTeamName(member.name) === normalizeTeamName(placementTeamLead.name));
   const placementTeamSource = hasGiftyProfile ? placementOfficers : [
@@ -419,10 +424,10 @@ export default function PublicSiteSections({ page = 'all' }) {
   const visibleVacancies = vacancies.filter(vacancy => !/(expired|closed|filled|cancelled|canceled|withdrawn)/i.test(String(vacancy.status || '')));
 
   useEffect(() => {
-    if (!['partners', 'partners-all', 'all'].includes(page)) return undefined;
+    if (!['partners', 'partners-all', 'hiring', 'all'].includes(page)) return undefined;
     let active = true;
-    const limit = partnerListPage ? 500 : 8;
-    const query = partnerListPage ? '&all=true' : '&random=true';
+    const limit = partnerDirectoryPage ? 500 : 8;
+    const query = partnerDirectoryPage ? '&all=true' : '&random=true';
     publicGet(`${API_BASE}/api/public/partners?limit=${limit}&offset=0${query}`)
       .then(response => {
         if (!active) return;
@@ -435,7 +440,7 @@ export default function PublicSiteSections({ page = 'all' }) {
       .catch(() => { if (active) setPartnersError(true); })
       .finally(() => { if (active) setPartnersLoaded(true); });
     return () => { active = false; };
-  }, [page, partnerListPage]);
+  }, [page, partnerDirectoryPage]);
 
   useEffect(() => {
     if (!['about', 'all'].includes(page)) return undefined;
@@ -454,7 +459,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   }, [page]);
 
   useEffect(() => {
-    if (page !== 'vacancies') return undefined;
+    if (!['vacancies', 'hiring'].includes(page)) return undefined;
     let active = true;
     setVacanciesLoading(true);
     publicGet(`${API_BASE}/api/public/openings`)
@@ -641,13 +646,15 @@ export default function PublicSiteSections({ page = 'all' }) {
         <section className="public-corporate-photo-section" id="corporate-training-photos">
           <div className="public-story-shell">
             <SectionHeading eyebrow="Event gallery" title="Training moments from the field." description="A moving photo reel from IPCS Global’s Bhutan Police and Military BMS training programmes." align="center" />
-            <div className="public-corporate-photo-marquee" aria-label="Bhutan Police and Military BMS training event photos">
-              <div className="public-corporate-photo-track">
-                {[...corporateTrainingPhotos, ...corporateTrainingPhotos].map((photo, index) => <button type="button" className="public-corporate-photo-card" onClick={() => { setActiveCorporateVideoKey(null); setActiveCorporatePhotoIndex(index % corporateTrainingPhotos.length); setCorporatePhotoGalleryOpen(true); }} key={`${photo.group}-${photo.name}-${index}`} aria-label={`View ${photo.group} training photo ${photo.index + 1}`}>
-                  <img src={photo.src} alt={`IPCS Global ${photo.group} BMS training event, photo ${photo.index + 1}`} loading={index < 5 ? 'eager' : 'lazy'} onError={event => { event.currentTarget.closest('.public-corporate-photo-card')?.classList.add('is-unavailable'); }} />
-                  <span>{photo.label}</span>
-                </button>)}
-              </div>
+            <div className="public-corporate-photo-reel" role="region" aria-label="Bhutan Police and Military BMS training event photos">
+              {corporateTrainingPhotoRows.map((photos, rowIndex) => <div className="public-corporate-photo-marquee" role="group" aria-label={rowIndex === 0 ? 'Photo row moving left' : 'Photo row moving right'} key={`photo-row-${rowIndex}`}>
+                <div className={`public-corporate-photo-track${rowIndex === 1 ? ' is-right' : ''}`}>
+                  {[...photos, ...photos].map((photo, index) => <button type="button" className="public-corporate-photo-card" onClick={() => { setActiveCorporateVideoKey(null); setActiveCorporatePhotoIndex(corporateTrainingPhotos.indexOf(photo)); setCorporatePhotoGalleryOpen(true); }} key={`${photo.group}-${photo.name}-${index}`} aria-label={`View ${photo.group} training photo ${photo.index + 1}`}>
+                    <img src={photo.src} alt={`IPCS Global ${photo.group} BMS training event, photo ${photo.index + 1}`} loading={index < 5 ? 'eager' : 'lazy'} onError={event => { event.currentTarget.closest('.public-corporate-photo-card')?.classList.add('is-unavailable'); }} />
+                    <span>{photo.label}</span>
+                  </button>)}
+                </div>
+              </div>)}
             </div>
             <div className="public-corporate-photo-actions"><span>Showing {corporateTrainingPhotos.length} event photos</span><button type="button" onClick={() => { setActiveCorporateVideoKey(null); setActiveCorporatePhotoIndex(null); setCorporatePhotoGalleryOpen(true); }}>See all photos <ArrowRight size={16} /></button></div>
           </div>
@@ -860,11 +867,11 @@ export default function PublicSiteSections({ page = 'all' }) {
       </section>
       </>}
 
-      {['partners', 'partners-all', 'all'].includes(page) && <>
+      {['partners', 'partners-all', 'hiring', 'all'].includes(page) && <>
       <section className="public-partners-section" id="partners">
         <div className="public-story-shell">
           <div className="public-partners-heading">
-            <SectionHeading eyebrow="Hiring Partners" title={partnerListPage ? 'All hiring partners.' : 'Hiring partners who move opportunity forward.'} description="Our corporate relationships help connect technical learning with real workplace needs." />
+            <SectionHeading eyebrow={page === 'hiring' ? 'Employers & opportunities' : 'Hiring Partners'} title={partnerListPage ? 'All hiring partners.' : page === 'hiring' ? 'Meet our hiring partners.' : 'Hiring partners who move opportunity forward.'} description={page === 'hiring' ? 'Explore the employers connected to IPCS Global, then browse their current openings below.' : 'Our corporate relationships help connect technical learning with real workplace needs.'} />
             <div className="public-partner-actions"><Link className="public-partner-cta" to="/partners/media?category=clients">Client stories <VideoCamera size={16} /></Link><Link className="public-partner-cta" to="/placements#recruiter-partnerships">Become a partner <ArrowUpRight size={17} /></Link></div>
           </div>
           {partnerListPage && <Link className="public-gallery-back" to="/partners">← Back to partners</Link>}
@@ -888,8 +895,8 @@ export default function PublicSiteSections({ page = 'all' }) {
               ))}
             </div>
           )}
-          {!partnerListPage && partnerTotal > partners.length && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} hiring partners</span><Link to="/partners/all">See all hiring partners <ArrowRight size={16} /></Link></div>}
-          {partnerListPage && partnerNextOffset !== null && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} hiring partners</span><button type="button" onClick={() => loadMore('partners')}>Load more partners <ArrowRight size={16} /></button></div>}
+          {!partnerDirectoryPage && partnerTotal > partners.length && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} hiring partners</span><Link to="/partners/all">See all hiring partners <ArrowRight size={16} /></Link></div>}
+          {partnerDirectoryPage && partnerNextOffset !== null && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} hiring partners</span><button type="button" onClick={() => loadMore('partners')}>Load more partners <ArrowRight size={16} /></button></div>}
         </div>
       </section>
       </>}
@@ -944,7 +951,7 @@ export default function PublicSiteSections({ page = 'all' }) {
       </section>
       </>}
 
-      {page === 'vacancies' && <section className="public-vacancies-section" id="vacancies">
+      {['vacancies', 'hiring'].includes(page) && <section className="public-vacancies-section" id="vacancies">
         <div className="public-story-shell">
           <SectionHeading eyebrow="Career opportunities" title="Current Vacancies" description="Browse current open opportunities shared with IPCS Global, with each role’s company and location in one place." />
           {vacanciesLoading ? <div className="public-vacancy-grid" aria-label="Loading vacancies">{[1, 2, 3, 4].map(item => <div className="public-vacancy-skeleton" key={item} />)}</div>
