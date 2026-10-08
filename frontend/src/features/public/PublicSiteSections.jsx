@@ -379,7 +379,8 @@ export default function PublicSiteSections({ page = 'all' }) {
   const [corporatePhotoGalleryOpen, setCorporatePhotoGalleryOpen] = useState(false);
   const [activeCorporatePhotoIndex, setActiveCorporatePhotoIndex] = useState(null);
   const partnerListPage = page === 'partners-all';
-  const partnerDirectoryPage = ['partners-all', 'hiring'].includes(page);
+  const partnerDirectoryPage = partnerListPage;
+  const partnerPreviewPage = ['home', 'hiring'].includes(page);
   const posterGalleryPage = page === 'placement-gallery';
   const partnerMediaPage = page === 'partners-media';
   const openVideo = item => { setVideoPlaybackError(false); setSelectedVideo(item); };
@@ -394,7 +395,7 @@ export default function PublicSiteSections({ page = 'all' }) {
     ? [['clients', 'Client stories'], ['client-videos', 'Client videos']]
     : [['placement-drive', 'Placement drives'], ['testimonials', 'Student testimonials'], ['talentino', 'Talentino videos'], ['videos', 'All videos']];
   const mediaBasePath = partnerMediaPage ? '/partners/media' : '/placements/media';
-  const partnersLoading = ['partners', 'partners-all', 'hiring', 'all'].includes(page) && !partnersLoaded;
+  const partnersLoading = ['partners', 'partners-all', 'home', 'hiring', 'all'].includes(page) && !partnersLoaded;
   const postersLoading = ['placement', 'placement-gallery', 'all'].includes(page) && !postersLoaded;
   const hasGiftyProfile = placementOfficers.some(member => normalizeTeamName(member.name) === normalizeTeamName(placementTeamLead.name));
   const placementTeamSource = hasGiftyProfile ? placementOfficers : [
@@ -424,7 +425,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   const visibleVacancies = vacancies.filter(vacancy => !/(expired|closed|filled|cancelled|canceled|withdrawn)/i.test(String(vacancy.status || '')));
 
   useEffect(() => {
-    if (!['partners', 'partners-all', 'hiring', 'all'].includes(page)) return undefined;
+    if (!['partners', 'partners-all', 'home', 'hiring', 'all'].includes(page)) return undefined;
     let active = true;
     const limit = partnerDirectoryPage ? 500 : 8;
     const query = partnerDirectoryPage ? '&all=true' : '&random=true';
@@ -459,7 +460,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   }, [page]);
 
   useEffect(() => {
-    if (!['vacancies', 'hiring'].includes(page)) return undefined;
+    if (!['vacancies', 'home', 'hiring'].includes(page)) return undefined;
     let active = true;
     setVacanciesLoading(true);
     publicGet(`${API_BASE}/api/public/openings`)
@@ -867,12 +868,12 @@ export default function PublicSiteSections({ page = 'all' }) {
       </section>
       </>}
 
-      {['partners', 'partners-all', 'hiring', 'all'].includes(page) && <>
+      {['partners', 'partners-all', 'home', 'hiring', 'all'].includes(page) && <>
       <section className="public-partners-section" id="partners">
         <div className="public-story-shell">
           <div className="public-partners-heading">
-            <SectionHeading eyebrow={page === 'hiring' ? 'Employers & opportunities' : 'Hiring Partners'} title={partnerListPage ? 'All hiring partners.' : page === 'hiring' ? 'Meet our hiring partners.' : 'Hiring partners who move opportunity forward.'} description={page === 'hiring' ? 'Explore the employers connected to IPCS Global, then browse their current openings below.' : 'Our corporate relationships help connect technical learning with real workplace needs.'} />
-            <div className="public-partner-actions"><Link className="public-partner-cta" to="/partners/media?category=clients">Client stories <VideoCamera size={16} /></Link><Link className="public-partner-cta" to="/placements#recruiter-partnerships">Become a partner <ArrowUpRight size={17} /></Link></div>
+            <SectionHeading eyebrow="Hiring Partners" title={partnerListPage ? 'All hiring partners.' : partnerPreviewPage ? 'Companies hiring with IPCS.' : 'Hiring partners who move opportunity forward.'} description={partnerPreviewPage ? 'Meet a few of the companies in the IPCS Global hiring network.' : 'Our corporate relationships help connect technical learning with real workplace needs.'} />
+            {!partnerPreviewPage && <div className="public-partner-actions"><Link className="public-partner-cta" to="/partners/media?category=clients">Client stories <VideoCamera size={16} /></Link><Link className="public-partner-cta" to="/placements#recruiter-partnerships">Become a partner <ArrowUpRight size={17} /></Link></div>}
           </div>
           {partnerListPage && <Link className="public-gallery-back" to="/partners">← Back to partners</Link>}
           {partnersLoading ? (
@@ -881,6 +882,26 @@ export default function PublicSiteSections({ page = 'all' }) {
             <div className="public-partners-empty" role="status">The partner directory is temporarily unavailable. Please check back soon.</div>
           ) : partners.length === 0 ? (
             <div className="public-partners-empty">Our corporate partner directory is being updated. Please check back soon.</div>
+          ) : partnerPreviewPage ? (
+            <div className="public-partner-reel" role="region" aria-label="IPCS Global hiring partners">
+              {[0, 1].map(rowIndex => {
+                const rowPartners = partners.filter((_, index) => index % 2 === rowIndex);
+                const lanePartners = rowPartners.length ? rowPartners : partners.slice(0, 1);
+                const repeatedPartners = [...lanePartners, ...lanePartners, ...lanePartners];
+                return <div className="public-partner-marquee" role="group" aria-label={rowIndex === 0 ? 'Hiring partners moving left' : 'Hiring partners moving right'} key={`partner-row-${rowIndex}`}>
+                  <div className={`public-partner-track${rowIndex === 1 ? ' is-right' : ''}`}>
+                    {repeatedPartners.map((partner, index) => <article className="public-partner-card public-partner-marquee-card" key={`${partner.companyName}-${rowIndex}-${index}`} aria-hidden={index >= lanePartners.length || undefined}>
+                      <div className="public-partner-logo-wrap">
+                        <span>{partner.companyName.slice(0, 2).toUpperCase()}</span>
+                        {logoSource(partner.logo) && <img src={logoSource(partner.logo)} alt={`${partner.companyName} logo`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}
+                      </div>
+                      <h3>{partner.companyName}</h3>
+                      {partner.location && <p>{partner.location}</p>}
+                    </article>)}
+                  </div>
+                </div>;
+              })}
+            </div>
           ) : (
             <div className="public-partner-grid">
               {partners.map((partner, index) => (
@@ -895,7 +916,8 @@ export default function PublicSiteSections({ page = 'all' }) {
               ))}
             </div>
           )}
-          {!partnerDirectoryPage && partnerTotal > partners.length && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} hiring partners</span><Link to="/partners/all">See all hiring partners <ArrowRight size={16} /></Link></div>}
+          {!partnerDirectoryPage && !partnerPreviewPage && partnerTotal > partners.length && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} hiring partners</span><Link to="/partners/all">See all hiring partners <ArrowRight size={16} /></Link></div>}
+          {partnerPreviewPage && !partnersLoading && !partnersError && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} hiring partners</span><Link to="/partners/all">View more companies <ArrowRight size={16} /></Link></div>}
           {partnerDirectoryPage && partnerNextOffset !== null && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} hiring partners</span><button type="button" onClick={() => loadMore('partners')}>Load more partners <ArrowRight size={16} /></button></div>}
         </div>
       </section>
@@ -951,13 +973,13 @@ export default function PublicSiteSections({ page = 'all' }) {
       </section>
       </>}
 
-      {['vacancies', 'hiring'].includes(page) && <section className="public-vacancies-section" id="vacancies">
+      {['vacancies', 'home', 'hiring'].includes(page) && <section className={`public-vacancies-section${partnerPreviewPage ? ' is-preview' : ''}`} id="vacancies">
         <div className="public-story-shell">
-          <SectionHeading eyebrow="Career opportunities" title="Current Vacancies" description="Browse current open opportunities shared with IPCS Global, with each role’s company and location in one place." />
+          <SectionHeading eyebrow="Career opportunities" title="Current Vacancies" description={partnerPreviewPage ? 'Explore current roles shared with IPCS Global and find your next opportunity.' : 'Browse current open opportunities shared with IPCS Global, with each role’s company and location in one place.'} />
           {vacanciesLoading ? <div className="public-vacancy-grid" aria-label="Loading vacancies">{[1, 2, 3, 4].map(item => <div className="public-vacancy-skeleton" key={item} />)}</div>
             : vacanciesError ? <div className="public-vacancy-empty" role="status">Current vacancies are temporarily unavailable. Please check back soon.</div>
               : visibleVacancies.length === 0 ? <div className="public-vacancy-empty">There are no active openings at the moment. New opportunities will appear here as they are shared.</div>
-                : <div className="public-vacancy-grid">{visibleVacancies.map((vacancy, index) => {
+                : <div className="public-vacancy-grid">{(partnerPreviewPage ? visibleVacancies.slice(0, 3) : visibleVacancies).map((vacancy, index) => {
                   const logo = logoSource(vacancy.companyLogo);
                   const companyInitials = String(vacancy.company || 'IP').trim().split(/\s+/).slice(0, 2).map(word => word[0]?.toUpperCase()).join('');
                   const isExpired = String(vacancy.status || '').toLowerCase() === 'expired';
@@ -975,6 +997,7 @@ export default function PublicSiteSections({ page = 'all' }) {
                     {vacancy.lastDate && <div className="public-vacancy-deadline">{isExpired ? 'Closed on' : 'Apply by'} <strong>{formatPortalDate(vacancy.lastDate, vacancy.lastDate)}</strong></div>}
                   </article>;
                 })}</div>}
+          {partnerPreviewPage && <div className="public-gallery-more"><span>{vacanciesLoading ? 'Loading current vacancies' : `Showing ${Math.min(3, visibleVacancies.length)} of ${visibleVacancies.length} current vacancies`}</span><Link to="/openings">View more vacancies <ArrowRight size={16} /></Link></div>}
         </div>
       </section>}
       {corporateInquiryOpen && <CorporateTrainingInquiryModal onClose={() => setCorporateInquiryOpen(false)} />}

@@ -415,8 +415,17 @@
 .public-partner-cta { margin-bottom: 31px; padding: 11px 15px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid #dbe6f1; border-radius: 11px; color: #173b67; background: #fff; font-size: .74rem; font-weight: 900; text-decoration: none; white-space: nowrap; }
 .public-partner-actions .public-partner-cta { margin-bottom: 0; }
 .public-partner-cta:hover { border-color: #b7d2ed; color: #155eef; }
+.public-partner-reel { display: grid; gap: 10px; overflow: hidden; margin: 0 -1px; mask-image: linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent); }
+.public-partner-marquee { overflow: hidden; padding: 2px 1px 5px; }
+.public-partner-track { width: max-content; display: flex; gap: 14px; animation: public-partner-drift-left 90s linear infinite; }
+.public-partner-track.is-right { animation-name: public-partner-drift-right; animation-duration: 102s; }
+.public-partner-reel:hover .public-partner-track, .public-partner-reel:focus-within .public-partner-track { animation-play-state: paused; }
+.public-partner-marquee-card { width: 224px; min-height: 176px; height: 176px; flex: 0 0 224px; }
+@keyframes public-partner-drift-left { to { transform: translateX(-33.333%); } }
+@keyframes public-partner-drift-right { from { transform: translateX(-33.333%); } to { transform: translateX(0); } }
 .public-partner-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .public-partner-card { min-height: 225px; padding: 20px 17px; display: flex; flex-direction: column; align-items: center; text-align: center; border: 1px solid #e5ebf2; border-radius: 17px; background: #fff; box-shadow: 0 10px 28px rgba(25, 59, 95, .04); }
+.public-partner-card.public-partner-marquee-card { width: 224px; min-height: 176px; height: 176px; flex: 0 0 224px; }
 .public-partner-logo-wrap { position: relative; width: 66px; height: 61px; margin-bottom: 12px; display: grid; place-items: center; overflow: hidden; border: 1px solid #edf1f6; border-radius: 15px; color: #155eef; background: #f8fbff; font-size: .85rem; font-weight: 900; }
 .public-partner-logo-wrap img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; padding: 7px; background: #fff; }
 .public-partner-card h3 { margin: 0; color: #193450; font-size: .82rem; line-height: 1.4; }
@@ -526,6 +535,7 @@
   .public-partners-heading .public-section-heading { margin-bottom: 13px; }
   .public-partner-actions { justify-content: flex-start; margin-bottom: 20px; }
   .public-partner-cta { margin-bottom: 20px; }
+  .public-partner-card.public-partner-marquee-card { width: 200px; flex-basis: 200px; }
   .public-partner-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .public-gallery-more { align-items: flex-start; flex-direction: column; }
   .public-updates-columns { gap: 35px; }

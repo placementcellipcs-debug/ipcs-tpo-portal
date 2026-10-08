@@ -7,6 +7,7 @@ import { API_BASE } from '../../services/apiConfig';
 import introVideo from '../../assets/media/Intro.mp4';
 import './Login.css';
 import PublicSiteHeader from './PublicSiteHeader';
+import PublicSiteSections from './PublicSiteSections';
 
 const getLandingPath = account => {
   const role = String(account?.role || '').toUpperCase();
@@ -173,6 +174,8 @@ export default function Login() {
           </motion.section>
         )}
       </AnimatePresence>
+
+      {!isLoginPage && <PublicSiteSections page="home" />}
 
       <footer className="portal-footer"><span>© IPCS Global</span><span>Learn · Connect · Grow</span></footer>
     </main>
