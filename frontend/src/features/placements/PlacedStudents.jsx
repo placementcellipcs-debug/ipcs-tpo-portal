@@ -290,7 +290,14 @@ export default function PlacedStudents() {
       setIsAddModalOpen(false);
       setAddForm({ name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', company: '', position: '', status: 'Placed', remarks: '', datePlaced: getTodayPortalDateInput(), packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null });
       fetchData();
-    } catch { alert("Failed to add placement."); } finally { setSavingStatus(false); }
+    } catch (error) {
+      console.error('Failed to add manual placement:', error);
+      const serverMessage = error.response?.data?.message;
+      const message = serverMessage || (error.response
+        ? `The server returned an error (${error.response.status}).`
+        : `${error.message || 'The placement service could not be reached.'} Check your connection and try again.`);
+      alert(`Failed to add placement: ${message}`);
+    } finally { setSavingStatus(false); }
   };
 
   return (
