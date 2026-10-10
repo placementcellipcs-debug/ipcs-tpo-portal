@@ -2636,7 +2636,11 @@ exports.getEvents = (req, res) => {
 // 🚨 RULES 1 & 2: TALENTINO & PLACEMENT DRIVE EVENTS (NEW ARCHITECTURE)
 // =========================================================
 exports.addEvent = async (req, res) => {
-  const { date: rawDate, tpo, branch, type, title, description, time: rawTime, location, userName } = req.body;
+  const { date: rawDate, tpo, branch: rawBranch, type, title, description, time: rawTime, location, userName } = req.body;
+  const branchText = String(rawBranch || '').trim();
+  const branch = /^all(?:\s+branches)?$/i.test(branchText)
+    ? 'All Branches'
+    : branchText || (String(type || '').toLowerCase().includes('placement drive') ? 'All Branches' : '');
   const date = formatIndiaDate(rawDate);
   const time = formatIndiaTime(rawTime);
   try {

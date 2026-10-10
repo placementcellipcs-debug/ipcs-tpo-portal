@@ -12,6 +12,10 @@ import { formatPortalDate, formatPortalTime, parsePortalDateTime } from '../../u
 import { API_BASE } from '../../services/apiConfig';
 
 const parseDate = dateStr => parsePortalDateTime(dateStr);
+const getFirstAssignedBranch = branches => {
+  const values = Array.isArray(branches) ? branches : String(branches || '').split(/[\n,;]+/);
+  return values.map(value => String(value || '').trim()).find(value => value && !/^all(?:\s+branches)?$/i.test(value)) || '';
+};
 
 export default function Events() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -19,6 +23,7 @@ export default function Events() {
   const eventRole = String(tpoData?.role || '').toUpperCase();
   const isDesigner = ['DESIGN', 'MEDIA', 'CREATIVE'].some(part => eventRole.includes(part));
   const canManageEvents = tpoData?.accessType === 'superadmin' || eventRole.includes('TPO') || eventRole.includes('PLACEMENT OFFICER');
+  const defaultTalentinoBranch = getFirstAssignedBranch(tpoData?.assignedBranchesArray);
   
   const [events, setEvents] = useState([]);
   const [branchList, setBranchList] = useState([]); 
@@ -35,7 +40,7 @@ export default function Events() {
   const [eventActionNotice, setEventActionNotice] = useState(null);
   
   const [newEvent, setNewEvent] = useState({ 
-    date: '', time: '', branch: tpoData?.assignedBranchesArray?.[0] || 'All Branches', 
+    date: '', time: '', branch: 'All Branches',
     type: 'Placement Drive', title: '', description: '', location: '' 
   });
   const [posterFile, setPosterFile] = useState(null);
@@ -90,7 +95,9 @@ export default function Events() {
     try {
       const formData = new FormData();
       formData.append('tpo', tpoData?.name || 'Unknown');
-      Object.keys(newEvent).forEach(key => formData.append(key, newEvent[key]));
+      const eventData = { ...newEvent };
+      if (/^all(?:\s+branches)?$/i.test(String(eventData.branch || '').trim())) eventData.branch = 'All Branches';
+      Object.keys(eventData).forEach(key => formData.append(key, eventData[key]));
       if (posterFile) formData.append('posterFile', posterFile);
 
       const res = await axios.post(`${API_BASE}/api/tpo/events/add`, formData, {
@@ -99,7 +106,7 @@ export default function Events() {
 
       if (res.data.success) {
         setIsModalOpen(false);
-        setNewEvent({ date: '', time: '', branch: tpoData?.assignedBranchesArray?.[0] || 'All Branches', type: 'Placement Drive', title: '', description: '', location: '' });
+        setNewEvent({ date: '', time: '', branch: 'All Branches', type: 'Placement Drive', title: '', description: '', location: '' });
         setPosterFile(null);
         fetchEvents(); 
       }
@@ -381,7 +388,16 @@ export default function Events() {
             <div className="event-form-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '15px', marginBottom: '15px' }}>
               <div className="form-group">
                 <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '5px', fontWeight: 'bold' }}>Event Type *</label>
-                <select className="sleek-input" style={{ width: '100%' }} value={newEvent.type} onChange={e => setNewEvent({...newEvent, type: e.target.value})}>
+                <select className="sleek-input" style={{ width: '100%' }} value={newEvent.type} onChange={e => {
+                  const type = e.target.value;
+                  setNewEvent(current => ({
+                    ...current,
+                    type,
+                    branch: type === 'Talentino' && /^all(?:\s+branches)?$/i.test(String(current.branch || '').trim())
+                      ? defaultTalentinoBranch || current.branch
+                      : current.branch
+                  }));
+                }}>
                   <option value="Placement Drive">Placement Drive</option>
                   <option value="Talentino">Talentino</option>
                 </select>
