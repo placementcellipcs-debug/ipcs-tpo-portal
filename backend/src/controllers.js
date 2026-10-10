@@ -2558,6 +2558,8 @@ const serializeEvent = row => ({
   location: getValByHeader(row, ['eventhappeningin', 'location']),
   poster: getValByHeader(row, ['posterlink', 'poster']),
   status: getExactEventValue(row, ['status']) || 'Scheduled',
+  mailStatus: getExactEventValue(row, ['mailstatus']) || 'PENDING',
+  mailError: getExactEventValue(row, ['mailerror']),
   statusUpdatedAt: getExactEventValue(row, ['statusupdatedat']),
   statusUpdatedBy: getExactEventValue(row, ['statusupdatedby']),
   statusReason: getExactEventValue(row, ['statusreason'])
@@ -2685,6 +2687,8 @@ exports.addEvent = async (req, res) => {
       'Created_At': timestamp,
       'Created_By': userName || tpo,
       'Mail_Status': 'PENDING',
+      'Mail_Sent_At': '',
+      'Mail_Error': '',
       'Status': 'Scheduled'
     };
 
@@ -2871,50 +2875,58 @@ exports.addEvent = async (req, res) => {
       };
     }
 
-    if (mailOptions) {
-      try {
-        await sendMailAndLog(mailOptions, { name: branch, email: mailOptions.to, type: 'Event Notification' });
-        
-        const getH = (str) => newRow._worksheet.headerValues.find(h => (h||'').toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-        const updateData = {};
-        const mailStatusH = getH('mailstatus');
-        const mailSentAtH = getH('mailsentat');
-        
-        if (mailStatusH) updateData[mailStatusH] = 'SENT';
-        if (mailSentAtH) updateData[mailSentAtH] = formatIndiaTimestamp();
-        
-        if (Object.keys(updateData).length > 0) {
-           newRow.assign(updateData);
-           await newRow.save();
-        }
-        
-      } catch (mailErr) {
-        const getH = (str) => newRow._worksheet.headerValues.find(h => (h||'').toLowerCase().replace(/[^a-z0-9]/g, '') === str.toLowerCase().replace(/[^a-z0-9]/g, ''));
-        const updateData = {};
-        const mailStatusH = getH('mailstatus');
-        const mailErrorH = getH('mailerror');
-        
-        if (mailStatusH) updateData[mailStatusH] = 'FAILED';
-        if (mailErrorH) updateData[mailErrorH] = mailErr.message;
-        
-        if (Object.keys(updateData).length > 0) {
-           newRow.assign(updateData);
-           await newRow.save();
-        }
-      }
-    }
     const eventCache = getCache();
     if (eventCache) eventCache.events = [...(eventCache.events || []).filter(row => String(getValByHeader(row, ['eventid'])) !== String(eventId)), newRow];
-    refreshCache(); 
-    
-    // 🚨 Check if the mail Options existed but failed to send
-    if (mailOptions && newRow.get(newRow._worksheet.headerValues.find(h => (h||'').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mailstatus')) === 'FAILED') {
-      const errorReason = newRow.get(newRow._worksheet.headerValues.find(h => (h||'').toLowerCase().replace(/[^a-z0-9]/g, '') === 'mailerror')) || 'Unknown timeout';
-      // Returns success: true so the event saves and the modal closes, but triggers a warning popup text
-      return res.json({ success: true, message: `⚠️ EVENT SAVED, BUT EMAILS FAILED TO SEND! Reason: ${errorReason}`, eventId: eventId });
+    void refreshCache().catch(error => console.error('Event cache refresh failed:', error));
+
+    if (mailOptions) {
+      // Keep email provider timeouts out of the event-save request. The event is
+      // already persisted, so delivery status is updated on the saved row later.
+      void (async () => {
+        let deliveryError = null;
+        try {
+          await sendMailAndLog(mailOptions, { name: branch, email: mailOptions.to, type: 'Event Notification' });
+        } catch (mailErr) {
+          deliveryError = mailErr;
+        }
+
+        const normalizeHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        const headerFor = name => newRow._worksheet.headerValues.find(header => normalizeHeader(header) === normalizeHeader(name));
+        const updateData = {};
+        const mailStatusH = headerFor('mailstatus');
+        const mailSentAtH = headerFor('mailsentat');
+        const mailErrorH = headerFor('mailerror');
+
+        if (mailStatusH) updateData[mailStatusH] = deliveryError ? 'FAILED' : 'SENT';
+        if (mailSentAtH && !deliveryError) updateData[mailSentAtH] = formatIndiaTimestamp();
+        if (mailErrorH) updateData[mailErrorH] = deliveryError ? deliveryError.message : '';
+
+        if (Object.keys(updateData).length) {
+          try {
+            newRow.assign(updateData);
+            await newRow.save();
+          } catch (statusErr) {
+            console.error('Could not update event mail status:', statusErr);
+          }
+        }
+
+        const latestCache = getCache();
+        if (latestCache) {
+          latestCache.events = [...(latestCache.events || []).filter(row => String(getValByHeader(row, ['eventid'])) !== String(eventId)), newRow];
+        }
+
+        if (deliveryError) console.error(`Event ${eventId} was saved, but notification delivery failed:`, deliveryError);
+      })().catch(error => console.error(`Unexpected event notification error for ${eventId}:`, error));
     }
 
-    res.json({ success: true, message: "Event added and emails sent successfully!", eventId: eventId });
+    return res.json({
+      success: true,
+      message: mailOptions
+        ? 'Event saved. Email notification is being attempted in the background.'
+        : 'Event saved.',
+      mailStatus: mailOptions ? 'PENDING' : 'NOT_REQUIRED',
+      eventId
+    });
   } catch (error) { 
     console.error("Event add error:", error);
     res.status(500).json({ success: false, message: error.message }); 

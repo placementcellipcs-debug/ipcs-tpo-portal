@@ -461,12 +461,14 @@ async function logMailToSheet(receiverName, receiverMail, mailType, subject, sta
 const transporterIPv4 = nodemailer.createTransport({ 
   pool: true, maxConnections: 1, maxMessages: 100,
   host: 'smtp.gmail.com', port: 465, secure: true, family: 4, 
+  connectionTimeout: 12000, greetingTimeout: 12000, socketTimeout: 20000,
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
 });
 
 const transporterIPv6 = nodemailer.createTransport({ 
   pool: true, maxConnections: 1, maxMessages: 100,
   host: 'smtp.gmail.com', port: 465, secure: true, family: 6, 
+  connectionTimeout: 12000, greetingTimeout: 12000, socketTimeout: 20000,
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
 });
 

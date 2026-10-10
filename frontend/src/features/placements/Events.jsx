@@ -66,6 +66,36 @@ export default function Events() {
     }
   };
 
+  const monitorEventNotification = async eventId => {
+    if (!eventId) return;
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await new Promise(resolve => window.setTimeout(resolve, 5000));
+      try {
+        const response = await axios.get(`${API_BASE}/api/tpo/events`);
+        const event = (response.data?.events || []).find(item => item.eventId === eventId);
+        const status = String(event?.mailStatus || '').toUpperCase();
+        if (status === 'SENT') {
+          setEventActionNotice({ type: 'success', message: 'Event saved and notification email sent.' });
+          return;
+        }
+        if (status === 'FAILED') {
+          setEventActionNotice({
+            type: 'warning',
+            message: `Event saved, but the notification email failed: ${event.mailError || 'Check the Event sheet mail status.'}`
+          });
+          return;
+        }
+      } catch (error) {
+        console.warn('Could not check event notification status:', error);
+        return;
+      }
+    }
+    setEventActionNotice({
+      type: 'warning',
+      message: 'Event saved. Email delivery is still pending; check the Event sheet Mail_Status column.'
+    });
+  };
+
   const fetchBranches = async () => {
     try {
       const res = await axios.get(`${API_BASE}/api/tpo/branches`);
@@ -91,6 +121,7 @@ export default function Events() {
       return alert("Please fill in the Event Title, Date, and Event Type.");
     }
     
+    setEventActionNotice(null);
     setIsSaving(true);
     try {
       const formData = new FormData();
@@ -104,14 +135,21 @@ export default function Events() {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
 
+      if (!res.data?.success) throw new Error(res.data?.message || 'The event could not be saved.');
       if (res.data.success) {
         setIsModalOpen(false);
+        setEventActionNotice({
+          type: res.data.mailStatus === 'FAILED' ? 'warning' : 'success',
+          message: res.data.message || 'Event saved.'
+        });
         setNewEvent({ date: '', time: '', branch: 'All Branches', type: 'Placement Drive', title: '', description: '', location: '' });
         setPosterFile(null);
         fetchEvents(); 
+        if (res.data.mailStatus === 'PENDING') void monitorEventNotification(res.data.eventId);
       }
-    } catch {
-      alert("Failed to save event");
+    } catch (error) {
+      const message = error.response?.data?.message || error.message || 'The event could not be saved.';
+      setEventActionNotice({ type: 'error', message: `Event save failed: ${message}` });
     } finally {
       setIsSaving(false);
     }
@@ -429,6 +467,8 @@ export default function Events() {
                 <input type="file" accept="image/*" className="sleek-input" style={{ width: '100%', padding: '8px' }} onChange={e => setPosterFile(e.target.files[0])} />
               </div>
             )}
+
+            {eventActionNotice?.type === 'error' && <div role="alert" style={{ marginBottom: '16px', padding: '12px 14px', borderRadius: '10px', border: '1px solid rgba(248,113,113,.35)', background: 'rgba(127,29,29,.2)', color: '#fecaca' }}>{eventActionNotice.message}</div>}
 
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '1.5rem' }}>
               <button className="btn-secondary" style={{ background: 'transparent', border: '1px solid #334155', color: '#f8fafc', padding: '10px 20px', borderRadius: '10px', cursor: 'pointer', fontWeight: 'bold' }} onClick={() => setIsModalOpen(false)}>Cancel</button>
