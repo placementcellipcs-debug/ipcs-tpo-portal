@@ -3430,10 +3430,11 @@ exports.getPublicPartners = async (req, res) => {
 
     rows.forEach(row => {
       const companyName = getValByHeader(row, ['companyname', 'company']).trim();
-      if (!companyName) return;
+      const logo = getValByHeader(row, ['companylogo', 'logo']).trim();
+      if (!companyName || !logo || /^(?:n\/?a|none|no logo|not available)$/i.test(logo)) return;
       partners.push({
         companyName,
-        logo: getValByHeader(row, ['companylogo', 'logo']).trim(),
+        logo,
         location: getValByHeader(row, ['companylocation', 'location']).trim()
       });
     });
@@ -3770,33 +3771,22 @@ exports.getPublicOpenings = async (_req, res) => {
       normalizePlacementText(getValByHeader(row, ['companyname', 'company'])),
       getValByHeader(row, ['companylogo', 'logo']).trim()
     ]).filter(([name, logo]) => name && logo));
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const uniqueOpenings = new Map();
+    const openings = [];
 
-    rows.forEach(row => {
+    rows.forEach((row, index) => {
       const company = getValByHeader(row, ['companyname', 'company']).trim();
       const position = getValByHeader(row, ['position', 'role', 'jobtitle']).trim();
       const location = getValByHeader(row, ['openingat(location)', 'location', 'city']).trim();
-      const sourceStatus = getValByHeader(row, ['status']).trim() || 'Open';
       const lastDate = getValByHeader(row, ['lastdate', 'applicationdeadline']).trim();
-      const deadline = safeParseDate(lastDate);
-      if (!company || !position || /(inactive|cancelled|canceled|withdrawn|deleted|no longer available)/i.test(sourceStatus)) return;
-      const key = [company, position, location].map(normalizePlacementText).join('|');
-      const isExpired = /(closed|filled|expired)/i.test(sourceStatus) || Boolean(deadline && deadline < today);
-      const status = isExpired ? 'Expired' : 'Open';
-      if (status !== 'Open') return;
-      const existing = uniqueOpenings.get(key);
-      if (existing && (existing.status === 'Open' || status === 'Expired')) return;
-      uniqueOpenings.set(key, {
-        id: getValByHeader(row, ['jobid', 'id']).trim(),
+      if (!company || !position) return;
+      openings.push({
+        id: getValByHeader(row, ['jobid', 'id']).trim() || `newsletter-${index + 1}`,
         company,
         companyLogo: getValByHeader(row, ['companylogo', 'logo']).trim() || companyLogos.get(normalizePlacementText(company)) || '',
         position,
         location,
         mode: getValByHeader(row, ['workmode', 'mode']).trim(),
         lastDate,
-        status,
         course: getValByHeader(row, ['course', 'program']).trim(),
         description: getValByHeader(row, ['description', 'jobdescription', 'roleoverview']).trim(),
         qualification: getValByHeader(row, ['qualification', 'eligibility', 'educationalqualification']).trim(),
@@ -3805,7 +3795,7 @@ exports.getPublicOpenings = async (_req, res) => {
       });
     });
 
-    res.json({ success: true, openings: [...uniqueOpenings.values()] });
+    res.json({ success: true, openings });
   } catch (err) {
     console.error('Error reading public openings:', err.message);
     res.status(503).json({ success: false, openings: [], message: 'Vacancies are temporarily unavailable.' });

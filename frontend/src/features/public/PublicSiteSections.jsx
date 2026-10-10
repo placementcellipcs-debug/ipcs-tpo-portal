@@ -7,6 +7,9 @@ import { API_BASE } from '../../services/apiConfig';
 import { formatPortalDate } from '../../utils/dateFormat';
 import './PublicSiteSections.css';
 import giftyPhoto from '../../assets/Team IPCS/Ms. Gifty KP.png';
+import isoQualityImage from '../../assets/recognition/iso-quality.svg';
+import educationExcellenceImage from '../../assets/recognition/education-excellence.svg';
+import trainingAwardImage from '../../assets/recognition/training-award.svg';
 
 const placementTeamLead = {
   name: 'Ms. Gifty KP',
@@ -50,10 +53,10 @@ const aboutBrands = [
 ];
 
 const companyAwards = [
-  { title: 'ISO 9001:2015', detail: 'Certified quality management' },
-  { title: 'Certificate of Excellence', detail: 'In Education' },
-  { title: 'Best Training Institute', detail: 'Award · 2014' },
-  { title: 'TÜV SÜD Corporation Partner', detail: 'Recognition · 2020, 2022 & 2025' }
+  { title: 'ISO 9001:2015', detail: 'Certified quality management', image: isoQualityImage, imageAlt: 'Quality certification document with verification seal' },
+  { title: 'Certificate of Excellence', detail: 'In Education', image: educationExcellenceImage, imageAlt: 'Education excellence medal' },
+  { title: 'Best Training Institute', detail: 'Award · 2014', image: trainingAwardImage, imageAlt: 'Training achievement trophy' },
+  { title: 'TÜV SÜD Corporation Partner', detail: 'Recognition · 2020, 2022 & 2025', image: 'https://campaigns.ipcsglobal.com/wp-content/uploads/2025/06/TUV-SUD-1-scaled.png', imageAlt: 'TÜV SÜD cooperation partner mark' }
 ];
 
 const placementTeamProfiles = [
@@ -422,7 +425,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   });
   const placementTeamLeadProfile = placementTeam.find(person => normalizeTeamName(person.name) === normalizeTeamName(placementTeamLead.name));
   const placementTeamMembers = placementTeam.filter(person => person !== placementTeamLeadProfile);
-  const visibleVacancies = vacancies.filter(vacancy => !/(expired|closed|filled|cancelled|canceled|withdrawn)/i.test(String(vacancy.status || '')));
+  const allOpenings = vacancies;
 
   useEffect(() => {
     if (!['partners', 'partners-all', 'home', 'hiring', 'all'].includes(page)) return undefined;
@@ -434,8 +437,9 @@ export default function PublicSiteSections({ page = 'all' }) {
         if (!active) return;
         if (!response.data?.success) throw new Error('Partner directory unavailable');
         setPartnersError(false);
-        setPartners(Array.isArray(response.data.partners) ? response.data.partners : []);
-        setPartnerTotal(Number(response.data.total) || 0);
+        const partnersWithLogos = (Array.isArray(response.data.partners) ? response.data.partners : []).filter(partner => Boolean(logoSource(partner.logo)));
+        setPartners(partnersWithLogos);
+        setPartnerTotal(Number(response.data.total) || partnersWithLogos.length);
         setPartnerNextOffset(response.data.nextOffset ?? null);
       })
       .catch(() => { if (active) setPartnersError(true); })
@@ -483,7 +487,10 @@ export default function PublicSiteSections({ page = 'all' }) {
       .then(response => {
         if (!active) return;
         if (!response.data?.success) throw new Error('Magazine library unavailable');
-        setMagazines(Array.isArray(response.data.magazines) ? response.data.magazines : []);
+        const nameSortedMagazines = (Array.isArray(response.data.magazines) ? response.data.magazines : [])
+          .slice()
+          .sort((first, second) => String(first.name || '').localeCompare(String(second.name || ''), undefined, { numeric: true, sensitivity: 'base' }));
+        setMagazines(nameSortedMagazines);
         setMagazinesError(false);
       })
       .catch(() => { if (active) setMagazinesError(true); })
@@ -721,7 +728,7 @@ export default function PublicSiteSections({ page = 'all' }) {
           </div>
           <section className="public-awards-section" aria-labelledby="public-awards-title">
             <div className="public-brand-heading"><span>AWARDED FOR EXCELLENCE</span><h3 id="public-awards-title">Standards and recognition.</h3></div>
-            <div className="public-awards-grid">{companyAwards.map((award, index) => <article key={award.title}><span className="public-award-index">0{index + 1}</span><span className="public-award-star"><Star size={19} weight="fill" /></span><h4>{award.title}</h4><p>{award.detail}</p></article>)}</div>
+            <div className="public-awards-grid">{companyAwards.map((award, index) => <article key={award.title}><span className="public-award-index">0{index + 1}</span><img className="public-award-art" src={award.image} alt={award.imageAlt} loading="lazy" /><h4>{award.title}</h4><p>{award.detail}</p></article>)}</div>
           </section>
           <div className="public-values-row">
             <div><span className="public-value-icon"><Compass size={17} weight="fill" /></span><span><b>Our Mission</b><small>Help job aspirants and recruiters meet through practical learning and technology solutions that build real capability.</small></span></div>
@@ -872,7 +879,7 @@ export default function PublicSiteSections({ page = 'all' }) {
       <section className="public-partners-section" id="partners">
         <div className="public-story-shell">
           <div className="public-partners-heading">
-            <SectionHeading eyebrow="Hiring Partners" title={partnerListPage ? 'All hiring partners.' : partnerPreviewPage ? 'Companies hiring with IPCS.' : 'Hiring partners who move opportunity forward.'} description={partnerPreviewPage ? 'Meet a few of the companies in the IPCS Global hiring network.' : 'Our corporate relationships help connect technical learning with real workplace needs.'} />
+            <SectionHeading eyebrow="Hiring Partners" title={partnerListPage ? 'All hiring partners.' : partnerPreviewPage ? 'Our hiring network.' : 'Hiring partners who move opportunity forward.'} description={partnerPreviewPage ? 'Meet companies in the IPCS Global hiring network.' : 'Our corporate relationships help connect technical learning with real workplace needs.'} />
             {!partnerPreviewPage && <div className="public-partner-actions"><Link className="public-partner-cta" to="/partners/media?category=clients">Client stories <VideoCamera size={16} /></Link><Link className="public-partner-cta" to="/placements#recruiter-partnerships">Become a partner <ArrowUpRight size={17} /></Link></div>}
           </div>
           {partnerListPage && <Link className="public-gallery-back" to="/partners">← Back to partners</Link>}
@@ -892,8 +899,7 @@ export default function PublicSiteSections({ page = 'all' }) {
                   <div className={`public-partner-track${rowIndex === 1 ? ' is-right' : ''}`}>
                     {repeatedPartners.map((partner, index) => <article className="public-partner-card public-partner-marquee-card" key={`${partner.companyName}-${rowIndex}-${index}`} aria-hidden={index >= lanePartners.length || undefined}>
                       <div className="public-partner-logo-wrap">
-                        <span>{partner.companyName.slice(0, 2).toUpperCase()}</span>
-                        {logoSource(partner.logo) && <img src={logoSource(partner.logo)} alt={`${partner.companyName} logo`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}
+                        <img src={logoSource(partner.logo)} alt={`${partner.companyName} logo`} loading="lazy" onError={event => { event.currentTarget.closest('.public-partner-card')?.classList.add('is-logo-unavailable'); }} />
                       </div>
                       <h3>{partner.companyName}</h3>
                       {partner.location && <p>{partner.location}</p>}
@@ -907,8 +913,7 @@ export default function PublicSiteSections({ page = 'all' }) {
               {partners.map((partner, index) => (
                 <article className="public-partner-card" key={`${partner.companyName}-${index}`}>
                   <div className="public-partner-logo-wrap">
-                    <span>{partner.companyName.slice(0, 2).toUpperCase()}</span>
-                    {logoSource(partner.logo) && <img src={logoSource(partner.logo)} alt={`${partner.companyName} logo`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}
+                    <img src={logoSource(partner.logo)} alt={`${partner.companyName} logo`} loading="lazy" onError={event => { event.currentTarget.closest('.public-partner-card')?.classList.add('is-logo-unavailable'); }} />
                   </div>
                   <h3>{partner.companyName}</h3>
                   {partner.location && <p>{partner.location}</p>}
@@ -975,29 +980,27 @@ export default function PublicSiteSections({ page = 'all' }) {
 
       {['vacancies', 'home', 'hiring'].includes(page) && <section className={`public-vacancies-section${partnerPreviewPage ? ' is-preview' : ''}`} id="vacancies">
         <div className="public-story-shell">
-          <SectionHeading eyebrow="Career opportunities" title="Current Vacancies" description={partnerPreviewPage ? 'Explore current roles shared with IPCS Global and find your next opportunity.' : 'Browse current open opportunities shared with IPCS Global, with each role’s company and location in one place.'} />
-          {vacanciesLoading ? <div className="public-vacancy-grid" aria-label="Loading vacancies">{[1, 2, 3, 4].map(item => <div className="public-vacancy-skeleton" key={item} />)}</div>
-            : vacanciesError ? <div className="public-vacancy-empty" role="status">Current vacancies are temporarily unavailable. Please check back soon.</div>
-              : visibleVacancies.length === 0 ? <div className="public-vacancy-empty">There are no active openings at the moment. New opportunities will appear here as they are shared.</div>
-                : <div className="public-vacancy-grid">{(partnerPreviewPage ? visibleVacancies.slice(0, 3) : visibleVacancies).map((vacancy, index) => {
+          <SectionHeading eyebrow="Career opportunities" title="Opportunities shared with IPCS." description={partnerPreviewPage ? 'Explore roles shared with IPCS Global and find your next opportunity.' : 'Browse roles shared through the IPCS Global newsletter, with each company and location in one place.'} />
+          {vacanciesLoading ? <div className="public-vacancy-grid" aria-label="Loading openings">{[1, 2, 3, 4].map(item => <div className="public-vacancy-skeleton" key={item} />)}</div>
+            : vacanciesError ? <div className="public-vacancy-empty" role="status">Career opportunities are temporarily unavailable. Please check back soon.</div>
+              : allOpenings.length === 0 ? <div className="public-vacancy-empty">No newsletter openings are available right now.</div>
+                : <div className="public-vacancy-grid">{(partnerPreviewPage ? allOpenings.slice(0, 3) : allOpenings).map((vacancy, index) => {
                   const logo = logoSource(vacancy.companyLogo);
                   const companyInitials = String(vacancy.company || 'IP').trim().split(/\s+/).slice(0, 2).map(word => word[0]?.toUpperCase()).join('');
-                  const isExpired = String(vacancy.status || '').toLowerCase() === 'expired';
                   return <article className="public-vacancy-card" key={`${vacancy.id || 'opening'}-${index}`}>
                     <div className="public-vacancy-company">
                       <div className="public-vacancy-logo"><span>{companyInitials || 'IP'}</span>{logo && <img src={logo} alt={`${vacancy.company} logo`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}</div>
                       <div className="public-vacancy-company-copy"><span className="public-vacancy-label">Hiring Company</span><h3 title={vacancy.company}>{vacancy.company}</h3></div>
-                      <span className={`public-vacancy-status ${isExpired ? 'expired' : 'open'}`}>{isExpired ? 'Expired' : 'Open'}</span>
                     </div>
                     <h4>{vacancy.position}</h4>
                     <div className="public-vacancy-details">
                       {vacancy.location && <span><Buildings size={16} /><span>{vacancy.location}</span></span>}
                       {vacancy.mode && <span><Briefcase size={16} /><span>{vacancy.mode}</span></span>}
                     </div>
-                    {vacancy.lastDate && <div className="public-vacancy-deadline">{isExpired ? 'Closed on' : 'Apply by'} <strong>{formatPortalDate(vacancy.lastDate, vacancy.lastDate)}</strong></div>}
+                    {vacancy.lastDate && <div className="public-vacancy-deadline">Listed deadline <strong>{formatPortalDate(vacancy.lastDate, vacancy.lastDate)}</strong></div>}
                   </article>;
                 })}</div>}
-          {partnerPreviewPage && <div className="public-gallery-more"><span>{vacanciesLoading ? 'Loading current vacancies' : `Showing ${Math.min(3, visibleVacancies.length)} of ${visibleVacancies.length} current vacancies`}</span><Link to="/openings">View more vacancies <ArrowRight size={16} /></Link></div>}
+          {partnerPreviewPage && <div className="public-gallery-more"><span>{vacanciesLoading ? 'Loading openings' : `Showing ${Math.min(3, allOpenings.length)} of ${allOpenings.length} openings`}</span><Link to="/openings">View more openings <ArrowRight size={16} /></Link></div>}
         </div>
       </section>}
       {corporateInquiryOpen && <CorporateTrainingInquiryModal onClose={() => setCorporateInquiryOpen(false)} />}

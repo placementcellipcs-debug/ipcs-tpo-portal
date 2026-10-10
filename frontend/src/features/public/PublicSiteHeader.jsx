@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { ArrowRight, List, X } from '@phosphor-icons/react';
+import { ArrowRight, ArrowUpRight, List, X } from '@phosphor-icons/react';
 import ipcsLogo from '../../assets/brand/ipcs-logo.png';
 
 const links = [
@@ -36,6 +36,7 @@ export default function PublicSiteHeader() {
           const className = `portal-nav-link${active ? ' active' : ''}`;
           return <Link key={link.label} className={className} to={link.to} aria-current={active ? 'page' : undefined} onClick={() => setMenuOpen(false)}>{link.label}</Link>;
         })}
+        <a className="portal-hire-link" href="mailto:placementcell.ipcs@gmail.com?subject=Hiring%20requirements%20for%20IPCS%20students&body=Hello%20IPCS%20Global%20Placement%20Team%2C%0A%0AWe%20would%20like%20to%20hire%20IPCS%20students.%20Our%20requirements%20are%3A%0A" onClick={() => setMenuOpen(false)}>Hire from us <ArrowUpRight size={16} /></a>
       </nav>
       <div className="portal-header-actions">
         <Link className="portal-login-button" to="/login" onClick={() => setMenuOpen(false)}>Employee Login <ArrowRight size={17} weight="bold" /></Link>

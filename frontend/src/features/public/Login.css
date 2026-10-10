@@ -4,6 +4,8 @@
   --portal-blue: #155eef;
   --portal-cyan: #38bdf8;
   min-height: 100vh;
+  display: flex;
+  flex-direction: column;
   position: relative;
   overflow: visible;
   isolation: isolate;
@@ -38,6 +40,8 @@ body:has(.public-portal),
 .portal-nav { display: flex; align-items: center; gap: 38px; }
 .portal-nav-link { padding: 9px 0; color: #526176; border: 0; background: transparent; text-decoration: none; font: inherit; font-size: .91rem; font-weight: 700; cursor: pointer; transition: color .18s ease; }
 .portal-nav-link:hover, .portal-nav-link.active { color: #102b54; }
+.portal-hire-link { min-height: 40px; padding: 0 15px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid #cce6e8; border-radius: 11px; color: #0d657d; background: #effafb; font-size: .8rem; font-weight: 850; text-decoration: none; white-space: nowrap; transition: transform .2s ease, background .2s ease, border-color .2s ease; }
+.portal-hire-link:hover { transform: translateY(-1px); border-color: #92d1d4; background: #e5f7f7; }
 .portal-login-button, .portal-primary-button, .portal-secondary-button {
   min-height: 48px;
   border-radius: 12px;
@@ -56,7 +60,7 @@ body:has(.public-portal),
 .portal-primary-button { padding: 0 23px; color: #fff; background: linear-gradient(100deg, #155eef, #087fc8); border: 0; box-shadow: 0 12px 24px rgba(21, 94, 239, .2); }
 .portal-secondary-button { padding: 0 19px; color: #183658; background: rgba(255,255,255,.78); border: 1px solid rgba(20, 53, 92, .15); }
 .portal-login-button:hover, .portal-primary-button:hover:not(:disabled), .portal-secondary-button:hover { transform: translateY(-2px); box-shadow: 0 14px 28px rgba(21, 65, 120, .17); }
-.portal-login-button:focus-visible, .portal-primary-button:focus-visible, .portal-secondary-button:focus-visible, .portal-nav-link:focus-visible, .portal-menu-toggle:focus-visible, .login-back:focus-visible { outline: 3px solid rgba(21, 94, 239, .35); outline-offset: 3px; }
+.portal-login-button:focus-visible, .portal-primary-button:focus-visible, .portal-secondary-button:focus-visible, .portal-nav-link:focus-visible, .portal-hire-link:focus-visible, .portal-menu-toggle:focus-visible, .login-back:focus-visible { outline: 3px solid rgba(21, 94, 239, .35); outline-offset: 3px; }
 .portal-primary-button:disabled { opacity: .72; cursor: wait; }
 
 .portal-home {
@@ -118,7 +122,7 @@ body:has(.public-portal),
 .portal-login-error { margin-top: 5px; padding: 11px 12px; border: 1px solid #fecaca; border-radius: 9px; color: #b42318; background: #fff1f0; font-size: .8rem; line-height: 1.5; }
 .login-submit { width: 100%; margin-top: 12px; }
 .portal-login-note { margin-top: 23px; padding-top: 17px; border-top: 1px solid #edf0f5; color: #8a96a7; text-align: center; font-size: .72rem; }
-.portal-footer { width: min(1280px, calc(100% - 72px)); min-height: 60px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(15, 35, 64, .08); color: #8895a7; font-size: .72rem; font-weight: 700; letter-spacing: .03em; }
+.portal-footer { width: min(1280px, calc(100% - 72px)); min-height: 60px; flex: 0 0 auto; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(15, 35, 64, .08); color: #8895a7; font-size: .72rem; font-weight: 700; letter-spacing: .03em; }
 .login-intro { position: fixed; inset: 0; z-index: 99999; display: flex; align-items: center; justify-content: center; overflow: hidden; background: #000; transition: opacity 1s ease-in-out; }
 .login-intro video { display: block; width: 100vw; height: 100vh; height: 100dvh; min-width: 100%; min-height: 100%; object-fit: cover; object-position: center center; background: #000; }
 @media (orientation: portrait) { .login-intro video { object-position: center center; } }
@@ -153,6 +157,7 @@ body:has(.public-portal),
   .portal-nav.is-open { display: flex; }
   .portal-nav-link { display: flex; width: 100%; min-height: 40px; padding: 9px 11px; border-radius: 8px; font-size: .82rem; text-align: left; }
   .portal-nav-link:hover, .portal-nav-link.active { background: #f1f6ff; }
+  .portal-hire-link { min-height: 40px; margin-top: 5px; }
   .portal-login-button { min-height: 42px; padding: 0 14px; font-size: .82rem; }
   .portal-login-button { gap: 5px; padding: 0 8px; font-size: .7rem; }
   .portal-header-actions { gap: 5px; margin-left: 0; }

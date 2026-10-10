@@ -125,7 +125,7 @@ export default function Login() {
               <p>Connecting future-ready talent in industrial automation, embedded systems, IoT, and digital technology with opportunities around the world.</p>
               <div className="portal-home-actions">
                 <Link className="portal-primary-button" to="/placements">Explore placements <ArrowRight size={19} weight="bold" /></Link>
-                <Link className="portal-secondary-button" to="/placements#recruiter-partnerships"><UsersThree size={19} /> Recruiter partnerships</Link>
+                <a className="portal-secondary-button" href="mailto:placementcell.ipcs@gmail.com?subject=Hiring%20requirements%20for%20IPCS%20students&body=Hello%20IPCS%20Global%20Placement%20Team%2C%0A%0AWe%20would%20like%20to%20hire%20IPCS%20students.%20Our%20requirements%20are%3A%0A"><UsersThree size={19} /> Hire from IPCS</a>
               </div>
               <div className="portal-trust-line"><span className="portal-trust-dot" /> Skills, academics, and career opportunities in one place</div>
             </div>
