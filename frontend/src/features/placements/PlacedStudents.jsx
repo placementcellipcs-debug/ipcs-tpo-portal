@@ -43,9 +43,10 @@ export default function PlacedStudents() {
   
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isTpo = upperRole.includes('TPO') || upperRole.includes('PLACEMENT OFFICER');
+  const isPlacementTeam = upperRole.includes('PLACEMENT TEAM');
   const isAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
-  const canViewPlacementDashboard = isAdmin || isTpo;
-  const canEditPlacement = isTpo; 
+  const canViewPlacementDashboard = isAdmin || isTpo || isPlacementTeam;
+  const canEditPlacement = isTpo || isPlacementTeam || isAdmin;
 
   const isRth = upperRole.includes('RTH') || upperRole.includes('REGIONAL TECHNICAL HEAD');
   const isTth = upperRole.includes('TTH') || upperRole.includes('TERRITORY TECHNICAL HEAD');
@@ -62,7 +63,7 @@ export default function PlacedStudents() {
   const assignedBranchesArray = Array.isArray(tpoData?.assignedBranchesArray)
     ? tpoData.assignedBranchesArray.map(branch => String(branch).trim().toLowerCase()).filter(Boolean)
     : String(tpoData?.assignedBranchesArray || '').split(/[\n,;]+/).map(branch => branch.trim().replace(/^\d+\.\s*/, '').toLowerCase()).filter(Boolean);
-  const hasAssignedBranch = branch => assignedBranchesArray.includes('all') || assignedBranchesArray.some(assigned => {
+  const hasAssignedBranch = branch => isPlacementTeam || assignedBranchesArray.includes('all') || assignedBranchesArray.some(assigned => {
     const rowBranch = String(branch || '').trim().toLowerCase();
     return rowBranch && (rowBranch === assigned || rowBranch.includes(assigned) || assigned.includes(rowBranch));
   });

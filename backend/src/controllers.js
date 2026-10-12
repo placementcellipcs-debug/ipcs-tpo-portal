@@ -537,7 +537,7 @@ exports.login = async (req, res) => {
           empId: getValByHeader(row, ['empid', 'employeeid']),
           target: getValByHeader(row, ['target', 'targetofthemonth'])
         };
-        role = 'TPO';
+        role = getValByHeader(row, ['role', 'portalrole']) || 'TPO';
         course = foundUser.assignedcourses || 'All Courses';
         department = foundUser.department;
         userName = getValByHeader(row, ['tponame', 'name']) || 'TPO User';
@@ -651,9 +651,17 @@ exports.login = async (req, res) => {
   }
 };
 
+// The central Placement Team works across branch boundaries. Keep this
+// exception local to placement workflows; other portal modules remain scoped.
+const isCentralPlacementTeam = user => /\bPLACEMENT\s+TEAM\b/i.test(String(user?.role || ''));
+const hasPlacementAccess = (branch, course, user) => isCentralPlacementTeam(user) || hasAccess(
+  branch, course, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department
+);
+
 exports.getDashboardStats = async (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, department } = req.body;
-  const checkAccess = (rBranch, rCourse) => hasAccess(rBranch, rCourse, role, assignedBranchesArray, assignedCourse, department);
+  const placementUser = req.portalUser || { role, assignedBranchesArray, assignedCourse, department };
+  const checkAccess = (rBranch, rCourse) => hasPlacementAccess(rBranch, rCourse, placementUser);
 
   const cache = getCache();
   let studentCount = 0, pendingApps = 0, placedCount = 0, activeVacs = 0;
@@ -724,6 +732,7 @@ exports.getDashboardStats = async (req, res) => {
 
 exports.getStudents = (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
+  const placementUser = req.portalUser || { role, assignedBranchesArray, assignedCourse };
   const cache = getCache();
   let students = []; let stats = { total: 0, pending: 0, notResponding: 0, noNeed: 0, branchCounts: {}, courseCounts: {} };
 
@@ -731,7 +740,7 @@ exports.getStudents = (req, res) => {
     const branch = getValByHeader(row, ['branch']) || 'Unknown';
     const course = getValByHeader(row, ['course']) || 'Unknown';
 
-    if (hasAccess(branch, course, role, assignedBranchesArray, assignedCourse, req.portalUser?.department)) {
+    if (hasPlacementAccess(branch, course, placementUser)) {
       stats.total++;
       
       const pStatus = (getValByHeader(row, ['placementstat', 'placementstatus']) || 'Pending').toString().trim();
@@ -775,7 +784,7 @@ exports.updateStudent = async (req, res) => {
   const user = req.portalUser;
   const role = String(user?.role || '').toUpperCase();
   const isAdmin = user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
-  const isPlacementEditor = isAdmin || role === 'TPO' || role.includes('PLACEMENT OFFICER');
+  const isPlacementEditor = isAdmin || role === 'TPO' || role.includes('PLACEMENT OFFICER') || isCentralPlacementTeam(user);
   const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(role) || /(^|[^A-Z0-9])TL([^A-Z0-9]|$)/.test(role);
   const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(role) || role === 'REGIONAL TECHNICAL HEAD';
   const isTth = /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(role) || role === 'TERRITORY TECHNICAL HEAD';
@@ -792,7 +801,7 @@ exports.updateStudent = async (req, res) => {
     if (rows.length > 0) {
       const studentBranch = getValByHeader(rows[0], ['branch']) || '';
       const studentCourse = getValByHeader(rows[0], ['course']) || '';
-      if (!hasAccess(studentBranch, studentCourse, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) {
+      if (!hasPlacementAccess(studentBranch, studentCourse, user)) {
         return res.status(403).json({ success: false, message: 'This student is outside your branch or course assignment.' });
       }
       const headers = stuSheet.headerValues.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
@@ -999,7 +1008,8 @@ exports.getApplications = async (req, res) => {
   const cache = getCache();
   const portalUser = req.portalUser || {};
   const trackerRole = String(portalUser.role || role || '').toUpperCase();
-  const restrictToPlacementOfficer = portalUser.accessType !== 'superadmin' && /(^|\b)(TPO|PLACEMENT OFFICER)(\b|$)/i.test(trackerRole);
+  const centralPlacementTeam = isCentralPlacementTeam(portalUser);
+  const restrictToPlacementOfficer = !centralPlacementTeam && portalUser.accessType !== 'superadmin' && /(^|\b)(TPO|PLACEMENT OFFICER)(\b|$)/i.test(trackerRole);
   const signedInOfficer = normalizePlacementText(portalUser.name);
   const ownedJobIds = new Set((cache.vacancies || [])
     .filter(row => signedInOfficer && normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame'])) === signedInOfficer)
@@ -1040,7 +1050,7 @@ exports.getApplications = async (req, res) => {
     const branch = sourceBranch || 'Unknown';
     const course = getValByHeader(row, ['course']) || 'Unknown';
     const belongsToOfficer = belongsToSignedInOfficer(row);
-    const withinAssignedScope = hasAccess(branch, course, role, assignedBranchesArray, assignedCourse, department);
+    const withinAssignedScope = hasPlacementAccess(branch, course, portalUser);
     if (belongsToOfficer && (withinAssignedScope || (restrictToPlacementOfficer && !sourceBranch))) {
       const roll = getValByHeader(row, ['roll']) || ''; 
       const jobId = getValByHeader(row, ['jobid']) || '';
@@ -1123,7 +1133,7 @@ exports.updateApplication = async (req, res) => {
     const sourceRow = rows[0];
     const sourceBranch = getValByHeader(sourceRow, ['branch']);
     const sourceCourse = getValByHeader(sourceRow, ['course']);
-    if (!hasAccess(sourceBranch, sourceCourse, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department)) {
+    if (!hasPlacementAccess(sourceBranch, sourceCourse, user)) {
       return res.status(403).json({ success: false, message: 'This application is outside your branch or course assignment.' });
     }
     if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
@@ -1344,7 +1354,7 @@ exports.updatePlacementLog = async (req, res) => {
     }
 
     const row = rows[0];
-    if (!hasAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']), user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department)) {
+    if (!hasPlacementAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']), user)) {
       return res.status(403).json({ success: false, message: 'This placement is outside your branch or course assignment.' });
     }
 
@@ -1400,7 +1410,7 @@ exports.addApplication = async (req, res) => {
   
   const user = req.portalUser;
   const tpoName = user?.name || '';
-  if (!hasAccess(appData.branch, appData.course, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department)) {
+  if (!hasPlacementAccess(appData.branch, appData.course, user)) {
     return res.status(403).json({ success: false, message: 'This student is outside your branch or course assignment.' });
   }
   try {
@@ -2385,8 +2395,10 @@ exports.getReports = async (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, department } = req.body;
   const checkAccess = (rBranch, rCourse) => hasAccess(rBranch, rCourse, role, assignedBranchesArray, assignedCourse, department);
   const reportUser = req.portalUser || {};
+  const checkPlacementReportAccess = (rBranch, rCourse) => hasPlacementAccess(rBranch, rCourse, reportUser);
   const reportRole = String(reportUser.role || role || '').toUpperCase();
   const reportOfficer = normalizePlacementText(reportUser.name);
+  const isCentralTeamReportUser = isCentralPlacementTeam(reportUser);
   const isAdminReportUser = reportUser.accessType === 'superadmin' || reportRole.includes('ADMIN') || ['GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(reportRole);
 
   if (!getCache()) await refreshCache();
@@ -2395,7 +2407,7 @@ exports.getReports = async (req, res) => {
   const cache = getCache();
   
   (cache.students || []).forEach(row => {
-    if(!checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) return;
+    if(!checkPlacementReportAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) return;
     students.push({ 
       name: getValByHeader(row, ['name']), 
       roll: getValByHeader(row, ['rollnumber', 'roll']), 
@@ -2408,7 +2420,7 @@ exports.getReports = async (req, res) => {
   });
   
   (cache.applications || []).forEach(row => {
-    if(!checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) return;
+    if(!checkPlacementReportAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) return;
     applications.push({ name: getValByHeader(row, ['studentname', 'name']), roll: getValByHeader(row, ['rollnumber', 'roll']), jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']), date: getValByHeader(row, ['timestamp']), status: getValByHeader(row, ['status']), remarks: getValByHeader(row, ['remarks']), tpoName: getValByHeader(row, ['placementofficer']), branch: getValByHeader(row, ['branch']), course: getValByHeader(row, ['course']) });
   });
   
@@ -2428,7 +2440,7 @@ exports.getReports = async (req, res) => {
       try { 
         const rowData = row.toObject();
         // Strict mapping to ensure global view processes properly
-        if(checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) {
+        if(checkPlacementReportAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) {
           tpoLogs.push({ ...rowData, rowNumber: row.rowNumber, sourceSheet: 'TPO_Log' });
         }
       } catch(e) {}
@@ -2442,8 +2454,8 @@ exports.getReports = async (req, res) => {
       if (/^\s*(?:yes|true|1)\s*$/i.test(getValByHeader(row, ['tpoactionlog']))) return;
       const status = normalizePlacementText(getValByHeader(row, ['status']));
       const placementOfficer = normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame']));
-      const belongsToReportUser = isAdminReportUser
-        ? checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))
+      const belongsToReportUser = (isCentralTeamReportUser || isAdminReportUser)
+        ? checkPlacementReportAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))
         : Boolean(reportOfficer && placementOfficer === reportOfficer);
       if (status !== 'placed' || !studentName || !companyName || !belongsToReportUser) return;
       try {
