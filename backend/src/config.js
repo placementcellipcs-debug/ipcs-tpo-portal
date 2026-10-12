@@ -472,14 +472,78 @@ const transporterIPv6 = nodemailer.createTransport({
   auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
 });
 
-const missingMailSettings = [
-  !process.env.APPS_SCRIPT_EMAIL_URL && 'APPS_SCRIPT_EMAIL_URL',
-  (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) && 'EMAIL_USER/EMAIL_PASS'
+async function sendViaResend(mailOptions, recipients) {
+  const apiKey = process.env.RESEND_API_KEY;
+  if (!apiKey) throw new Error('RESEND_API_KEY is not configured.');
+
+  const from = process.env.RESEND_FROM || mailOptions.from || process.env.EMAIL_USER;
+  if (!from) throw new Error('Set RESEND_FROM to a verified sender address.');
+
+  const splitRecipients = value => String(value || '').split(',').map(email => email.trim()).filter(Boolean);
+  const payload = {
+    from,
+    to: splitRecipients(recipients.to),
+    subject: mailOptions.subject || 'IPCS Global notification',
+    html: mailOptions.html || ''
+  };
+
+  const cc = splitRecipients(recipients.cc);
+  const bcc = splitRecipients(recipients.bcc);
+  if (cc.length) payload.cc = cc;
+  if (bcc.length) payload.bcc = bcc;
+  if (mailOptions.text) payload.text = mailOptions.text;
+  if (mailOptions.replyTo) payload.reply_to = mailOptions.replyTo;
+
+  if (Array.isArray(mailOptions.attachments) && mailOptions.attachments.length) {
+    payload.attachments = mailOptions.attachments.map(attachment => {
+      const item = { filename: attachment.filename || 'attachment' };
+      if (attachment.content !== undefined && attachment.content !== null) {
+        const content = Buffer.isBuffer(attachment.content)
+          ? attachment.content
+          : Buffer.from(String(attachment.content), attachment.encoding === 'base64' ? 'base64' : 'utf8');
+        item.content = content.toString('base64');
+      } else if (attachment.contentBytes) {
+        item.content = Buffer.isBuffer(attachment.contentBytes)
+          ? attachment.contentBytes.toString('base64')
+          : String(attachment.contentBytes);
+      } else if (attachment.href || attachment.path) {
+        item.path = attachment.href || attachment.path;
+      } else {
+        throw new Error(`Attachment ${item.filename} has no content or path.`);
+      }
+      if (attachment.contentType) item.content_type = attachment.contentType;
+      return item;
+    });
+  }
+
+  try {
+    const response = await axios.post('https://api.resend.com/emails', payload, {
+      timeout: 30000,
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
+    });
+    if (!response.data?.id) throw new Error(response.data?.message || 'Resend did not return an email ID.');
+    return response.data;
+  } catch (error) {
+    const providerMessage = error.response?.data?.message || error.response?.data?.error;
+    const detail = providerMessage ? `: ${providerMessage}` : '';
+    throw new Error(`Resend API ${error.response?.status || 'request'} failed${detail}`);
+  }
+}
+
+const configuredMailProviders = [
+  process.env.APPS_SCRIPT_EMAIL_URL && 'Apps Script',
+  process.env.RESEND_API_KEY && 'Resend HTTPS',
+  process.env.EMAIL_USER && process.env.EMAIL_PASS && 'Gmail SMTP'
 ].filter(Boolean);
-if (missingMailSettings.length) {
-  console.error(`[MAIL CONFIG] Missing runtime settings: ${missingMailSettings.join(', ')}`);
+if (configuredMailProviders.length) {
+  console.log(`[MAIL CONFIG] Configured delivery providers: ${configuredMailProviders.join(', ')}.`);
 } else {
-  console.log('[MAIL CONFIG] Apps Script sender and Gmail SMTP fallback are configured.');
+  console.error('[MAIL CONFIG] No delivery provider is configured. Set APPS_SCRIPT_EMAIL_URL, RESEND_API_KEY, or EMAIL_USER and EMAIL_PASS.');
+}
+if (!process.env.RESEND_API_KEY) {
+  console.warn('[MAIL CONFIG] RESEND_API_KEY is not configured; HTTPS email fallback is unavailable.');
+} else if (!process.env.RESEND_FROM) {
+  console.warn('[MAIL CONFIG] RESEND_FROM is not configured; Resend will use the message sender, which must be verified in Resend.');
 }
 
 async function sendIPCSMail(mailOptions, logDetails) {
@@ -509,9 +573,12 @@ async function sendIPCSMail(mailOptions, logDetails) {
 
     let success = false;
     const deliveryErrors = [];
+    const hasResendFallback = Boolean(process.env.RESEND_API_KEY);
+    const totalAttempts = hasResendFallback ? 4 : 3;
+    let attemptNumber = 1;
 
     try {
-      console.log(`➡️  [1/3] Attempting Google Apps Script...`);
+      console.log(`➡️  [${attemptNumber++}/${totalAttempts}] Attempting Google Apps Script...`);
       if (!process.env.APPS_SCRIPT_EMAIL_URL) throw new Error('APPS_SCRIPT_EMAIL_URL is not configured on this API service.');
       const res = await axios.post(process.env.APPS_SCRIPT_EMAIL_URL, appsPayload, { timeout: 30000 });
       if (!res.data || !res.data.success) throw new Error(res.data?.error || "Apps Script rejected payload");
@@ -521,26 +588,43 @@ async function sendIPCSMail(mailOptions, logDetails) {
       const message = `Apps Script Failed: ${err1.message}`;
       deliveryErrors.push(message);
       console.log(`❌ ${message}`);
-      
-      try {
-        console.log(`➡️  [2/3] Attempting SMTP (IPv4)...`);
-        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) throw new Error('EMAIL_USER and EMAIL_PASS must both be configured for SMTP fallback.');
-        await transporterIPv4.sendMail({ ...mailOptions, to: formattedTo, cc: formattedCc, bcc: formattedBcc });
-        success = true;
-        console.log(`✅ SMTP IPv4 Success!`);
-      } catch (err2) {
-        const message = `SMTP IPv4 Failed: ${err2.message}`;
-        deliveryErrors.push(message);
-        console.log(`❌ ${message}`);
-        
+
+      if (hasResendFallback) {
         try {
-          console.log(`➡️  [3/3] Attempting SMTP (IPv6)...`);
+          console.log(`➡️  [${attemptNumber++}/${totalAttempts}] Attempting HTTPS email delivery (Resend)...`);
+          await sendViaResend(mailOptions, { to: formattedTo, cc: formattedCc, bcc: formattedBcc });
+          success = true;
+          console.log('✅ Resend HTTPS Success!');
+        } catch (err2) {
+          const message = `Resend HTTPS Failed: ${err2.message}`;
+          deliveryErrors.push(message);
+          console.log(`❌ ${message}`);
+        }
+      }
+
+      if (!success) {
+        try {
+          console.log(`➡️  [${attemptNumber++}/${totalAttempts}] Attempting SMTP (IPv4)...`);
+          if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) throw new Error('EMAIL_USER and EMAIL_PASS must both be configured for SMTP fallback.');
+          await transporterIPv4.sendMail({ ...mailOptions, to: formattedTo, cc: formattedCc, bcc: formattedBcc });
+          success = true;
+          console.log(`✅ SMTP IPv4 Success!`);
+        } catch (err3) {
+          const message = `SMTP IPv4 Failed: ${err3.message}`;
+          deliveryErrors.push(message);
+          console.log(`❌ ${message}`);
+        }
+      }
+
+      if (!success) {
+        try {
+          console.log(`➡️  [${attemptNumber++}/${totalAttempts}] Attempting SMTP (IPv6)...`);
           if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) throw new Error('EMAIL_USER and EMAIL_PASS must both be configured for SMTP fallback.');
           await transporterIPv6.sendMail({ ...mailOptions, to: formattedTo, cc: formattedCc, bcc: formattedBcc });
           success = true;
           console.log(`✅ SMTP IPv6 Success!`);
-        } catch (err3) {
-          const message = `SMTP IPv6 Failed: ${err3.message}`;
+        } catch (err4) {
+          const message = `SMTP IPv6 Failed: ${err4.message}`;
           deliveryErrors.push(message);
           console.log(`❌ ${message}`);
         }
