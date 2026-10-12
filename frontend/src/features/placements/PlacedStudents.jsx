@@ -261,10 +261,15 @@ export default function PlacedStudents() {
       if (editForm.offerLetterFile) formData.append('offerLetterFile', editForm.offerLetterFile);
 
       const updatePath = selectedApp.sourceSheet === 'TPO_Log' ? 'update-log' : 'update';
-      await axios.post(`${API_BASE}/api/tpo/applications/${updatePath}`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      const response = await axios.post(`${API_BASE}/api/tpo/applications/${updatePath}`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      if (!response.data?.success) throw new Error(response.data?.message || 'The placement update was rejected.');
       setIsEditModalOpen(false);
+      if (response.data.warning) alert(`Placement updated. ${response.data.warning}`);
       fetchData();
-    } catch { alert("Failed to save placement updates."); } finally { setSavingStatus(false); }
+    } catch (error) {
+      const message = error.response?.data?.message || error.message || 'The placement service could not be reached.';
+      alert(`Failed to save placement updates: ${message}`);
+    } finally { setSavingStatus(false); }
   };
 
   const submitAdd = async () => {
@@ -286,9 +291,11 @@ export default function PlacedStudents() {
       formData.append('appData', JSON.stringify(addForm));
       if (addForm.offerLetterFile) formData.append('offerLetterFile', addForm.offerLetterFile);
 
-      await axios.post(`${API_BASE}/api/tpo/applications/add`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      const response = await axios.post(`${API_BASE}/api/tpo/applications/add`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
+      if (!response.data?.success) throw new Error(response.data?.message || 'The placement could not be added.');
       setIsAddModalOpen(false);
       setAddForm({ name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', company: '', position: '', status: 'Placed', remarks: '', datePlaced: getTodayPortalDateInput(), packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null });
+      if (response.data.warning) alert(`Placement added. ${response.data.warning}`);
       fetchData();
     } catch (error) {
       console.error('Failed to add manual placement:', error);

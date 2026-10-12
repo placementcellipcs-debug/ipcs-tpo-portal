@@ -2,11 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, Brain, Check, CheckCircle, Clock, Fire, Lightbulb, Sparkle, Trophy, X } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../../layouts/Layout';
+import AdditionalMiniGame from './extra-games/AdditionalMiniGames';
+import { EXTRA_GAMES } from './extra-games/AdditionalGameCatalog';
+import './extra-games/AdditionalMiniGames.css';
 import './BrainGym.css';
 
 const STORE_KEY = 'ipcs-mind-gym-v1';
 const PILLARS = ['Memory', 'Attention', 'Language', 'Math', 'Speed', 'Flexibility', 'Problem Solving'];
-const GAMES = [
+const BASE_GAMES = [
   { id: 'pinpoint', title: 'Pinpoint', pillar: 'Language', kind: 'Word association', description: 'Find the one idea that connects five clues. Earlier guesses earn more points.', color: 'violet', icon: '✳' },
   { id: 'crossclimb', title: 'Crossclimb', pillar: 'Language', kind: 'Word ladder', description: 'Build a ladder by changing exactly one letter at each step.', color: 'blue', icon: '↟' },
   { id: 'queens', title: 'Queens', pillar: 'Problem Solving', kind: 'Logic grid', description: 'Place one crown in every row, column, and colored region. Crowns cannot touch.', color: 'rose', icon: '♛' },
@@ -20,6 +23,19 @@ const GAMES = [
   { id: 'quickmath', title: 'Quick Math', pillar: 'Math', kind: 'Mental arithmetic', description: 'Decide whether each rapid equation is true or false.', color: 'lime', icon: '±' },
   { id: 'rapidmatch', title: 'Rapid Match', pillar: 'Speed', kind: 'Processing speed', description: 'Compare each symbol with the one immediately before it.', color: 'purple', icon: '⇄' },
   { id: 'sorting', title: 'Sorting Shift', pillar: 'Flexibility', kind: 'Task switching', description: 'Switch sorting rules between shape and color as the prompt changes.', color: 'gold', icon: '⤨' },
+];
+const EXTRA_COLORS = ['blue', 'teal', 'rose', 'amber', 'cyan', 'green', 'orange', 'purple'];
+const GAMES = [
+  ...BASE_GAMES,
+  ...EXTRA_GAMES.map((item, index) => ({
+    ...item,
+    title: item.name,
+    pillar: item.category,
+    kind: `${item.category} challenge`,
+    description: item.summary,
+    libraryIcon: '✦',
+    color: EXTRA_COLORS[index % EXTRA_COLORS.length],
+  })),
 ];
 
 const PINPOINTS = [
@@ -180,7 +196,7 @@ export default function BrainGym() {
             <article><span><CheckCircle size={18} weight="fill" /> Today’s circuit</span><strong>{dailyProgress}<small>/5</small></strong><em>{profile.lastCircuit === todayKey ? 'Complete · +50 XP' : 'Complete all five to keep your streak'}</em></article>
           </section>
           <section className="mind-gym-pillar-panel"><div className="mind-gym-section-heading"><div><span>YOUR PERSONAL PROFILE</span><h3>Seven ways to train</h3></div><p>Scores are private to this device and reflect your practice here.</p></div><div className="mind-pillar-grid">{PILLARS.map((pillar, index) => { const stats = profile.pillars[pillar] || { attempts: 0, wins: 0, points: 0 }; const score = stats.attempts ? Math.round((stats.wins / stats.attempts) * 100) : 0; return <article key={pillar} className={`pillar-card pillar-${index + 1}`}><span>{String(index + 1).padStart(2, '0')} / PILLAR</span><b>{pillar}</b><div><i style={{ width: `${score}%` }} /></div><small>{stats.attempts ? `${score}% personal round success` : 'Ready to explore'}</small></article>; })}</div></section>
-          <section className="mind-game-section"><div className="mind-gym-section-heading"><div><span>THE GAME LIBRARY</span><h3>Pick your next challenge</h3></div><p>Short rounds; your level adjusts after three wins in a row.</p></div><div className="mind-game-grid">{GAMES.map(item => { const stats = profile.games[item.id]; const level = clamp(Math.max(weekdayLevel(today), stats?.level || 1), 1, 5); const inCircuit = circuitGames.includes(item.id); return <button key={item.id} className={`mind-game-card game-${item.color}`} onClick={() => playGame(item.id)}><div className="mind-game-card-top"><span className="mind-game-icon">{item.icon}</span><span className="mind-game-level">LEVEL {level}</span></div><span className="mind-game-kind">{item.kind} · {item.pillar}</span><b>{item.title}</b><p>{item.description}</p><span className="mind-game-card-bottom">{inCircuit ? 'In today’s circuit' : stats ? `${stats.plays} rounds · ${stats.wins} wins` : 'Ready when you are'}<ArrowRight size={16} /></span></button>; })}</div></section>
+          <section className="mind-game-section"><div className="mind-gym-section-heading"><div><span>THE GAME LIBRARY</span><h3>Pick your next challenge</h3></div><p>{GAMES.length} games · short rounds with adjustable difficulty.</p></div><div className="mind-game-grid">{GAMES.map(item => { const stats = profile.games[item.id]; const level = clamp(Math.max(weekdayLevel(today), stats?.level || 1), 1, 5); const inCircuit = circuitGames.includes(item.id); return <button key={item.id} className={`mind-game-card game-${item.color}`} onClick={() => playGame(item.id)}><div className="mind-game-card-top"><span className="mind-game-icon">{item.libraryIcon || item.icon}</span><span className="mind-game-level">LEVEL {level}</span></div><span className="mind-game-kind">{item.kind} · {item.pillar}</span><b>{item.title}</b><p>{item.description}</p><span className="mind-game-card-bottom">{inCircuit ? 'In today’s circuit' : stats ? `${stats.plays} rounds · ${stats.wins} wins` : 'Ready when you are'}<ArrowRight size={16} /></span></button>; })}</div></section>
           <section className="mind-gym-badge-panel"><div className="mind-badge-heading"><Trophy size={21} /><span><b>Practice badges</b><small>Milestones earned through your personal practice.</small></span></div><div className="mind-badge-list">{badges.map(badge => <div key={badge.name} className={badge.earned ? 'earned' : ''}><span>{badge.earned ? <CheckCircle size={17} weight="fill" /> : <Sparkle size={16} />}</span><b>{badge.name}</b><small>{badge.hint}</small></div>)}</div><div className="mind-badge-footer"><Lightbulb size={18} /> Your game progress stays on this device. Game levels adjust after streaks; this is a personal practice score, not a clinical assessment.<button onClick={() => navigate('/career-hub')}>News &amp; Blog <ArrowRight size={15} /></button></div></section>
         </>}
       </main>
@@ -200,11 +216,11 @@ function GameSession({ game, level, onExit, onResult, onNext, circuitStep, circu
   return <section className="mind-play-shell">
     <div className="mind-play-header"><button onClick={onExit} className="mind-back-button"><ArrowLeft size={17} /> GamePal</button><div>{circuitTotal > 0 && <span className="mind-circuit-step">CHALLENGE {circuitStep} / {circuitTotal}</span>}<h2>{game.title}</h2><p>{game.description}</p></div><span className="mind-level-pill">LEVEL {level}</span></div>
     {circuitTotal > 0 && <div className="mind-circuit-progress"><span style={{ width: `${((circuitStep - 1) / circuitTotal) * 100}%` }} /><small><Clock size={14} /> {Math.floor(Math.max(0, 300 - elapsed) / 60)}:{String(Math.max(0, 300 - elapsed) % 60).padStart(2, '0')} left in your five-minute warm-up</small></div>}
-    {result ? <div className={`mind-round-result ${result.won ? 'is-win' : 'is-try-again'}`}><span className="mind-result-icon">{result.won ? <CheckCircle size={34} weight="fill" /> : <Sparkle size={33} weight="fill" />}</span><div><span>{result.won ? 'ROUND COMPLETE' : 'GOOD PRACTICE'}</span><h3>{result.won ? 'Nice work.' : 'Keep building your skill.'}</h3><p>{result.message || (result.won ? 'Your score has been added to your personal profile.' : 'Your round is recorded. The next puzzle will give you another try.')}</p></div><strong>+{Math.max(5, result.score || 0) + (result.won ? 15 : 0)} XP</strong><button className="mind-primary-button" onClick={onNext}>{circuitTotal && circuitStep < circuitTotal ? 'Next challenge' : 'Back to GamePal'}<ArrowRight size={17} /></button></div> : <div className="mind-game-stage"><GameEngine gameId={game.id} level={level} finish={finish} /></div>}
+    {result ? <div className={`mind-round-result ${result.won ? 'is-win' : 'is-try-again'}`}><span className="mind-result-icon">{result.won ? <CheckCircle size={34} weight="fill" /> : <Sparkle size={33} weight="fill" />}</span><div><span>{result.won ? 'ROUND COMPLETE' : 'GOOD PRACTICE'}</span><h3>{result.won ? 'Nice work.' : 'Keep building your skill.'}</h3><p>{result.message || (result.won ? 'Your score has been added to your personal profile.' : 'Your round is recorded. The next puzzle will give you another try.')}</p></div><strong>+{Math.max(5, result.score || 0) + (result.won ? 15 : 0)} XP</strong><button className="mind-primary-button" onClick={onNext}>{circuitTotal && circuitStep < circuitTotal ? 'Next challenge' : 'Back to GamePal'}<ArrowRight size={17} /></button></div> : <div className="mind-game-stage"><GameEngine gameId={game.id} level={level} finish={finish} onExit={onExit} /></div>}
   </section>;
 }
 
-function GameEngine({ gameId, level, finish }) {
+function GameEngine({ gameId, level, finish, onExit }) {
   if (gameId === 'pinpoint') return <PinpointGame level={level} finish={finish} />;
   if (gameId === 'crossclimb') return <CrossclimbGame level={level} finish={finish} />;
   if (gameId === 'queens') return <QueensGame finish={finish} />;
@@ -217,7 +233,21 @@ function GameEngine({ gameId, level, finish }) {
   if (gameId === 'stroop') return <StroopGame level={level} finish={finish} />;
   if (gameId === 'quickmath') return <QuickMathGame level={level} finish={finish} />;
   if (gameId === 'rapidmatch') return <RapidMatchGame level={level} finish={finish} />;
-  return <SortingGame level={level} finish={finish} />;
+  if (gameId === 'sorting') return <SortingGame level={level} finish={finish} />;
+  const extraGame = EXTRA_GAMES.find(item => item.id === gameId);
+  if (!extraGame) return null;
+  return <AdditionalMiniGame
+    game={extraGame}
+    initialLevel={level}
+    onComplete={(name, category, score, accuracy, duration) => finish({
+      score,
+      accuracy,
+      duration,
+      won: Number(score) > 0,
+      message: `${name} complete · ${score} points · ${accuracy}% accuracy.`,
+    })}
+    onExit={onExit}
+  />;
 }
 
 function PinpointGame({ level, finish }) {

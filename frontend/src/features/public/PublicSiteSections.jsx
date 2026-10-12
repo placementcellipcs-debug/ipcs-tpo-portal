@@ -383,7 +383,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   const [activeCorporatePhotoIndex, setActiveCorporatePhotoIndex] = useState(null);
   const partnerListPage = page === 'partners-all';
   const partnerDirectoryPage = partnerListPage;
-  const partnerPreviewPage = ['home', 'hiring'].includes(page);
+  const partnerPreviewPage = page === 'hiring';
   const posterGalleryPage = page === 'placement-gallery';
   const partnerMediaPage = page === 'partners-media';
   const openVideo = item => { setVideoPlaybackError(false); setSelectedVideo(item); };
@@ -398,7 +398,7 @@ export default function PublicSiteSections({ page = 'all' }) {
     ? [['clients', 'Client stories'], ['client-videos', 'Client videos']]
     : [['placement-drive', 'Placement drives'], ['testimonials', 'Student testimonials'], ['talentino', 'Talentino videos'], ['videos', 'All videos']];
   const mediaBasePath = partnerMediaPage ? '/partners/media' : '/placements/media';
-  const partnersLoading = ['partners', 'partners-all', 'home', 'hiring', 'all'].includes(page) && !partnersLoaded;
+  const partnersLoading = ['partners', 'partners-all', 'hiring', 'all'].includes(page) && !partnersLoaded;
   const postersLoading = ['placement', 'placement-gallery', 'all'].includes(page) && !postersLoaded;
   const hasGiftyProfile = placementOfficers.some(member => normalizeTeamName(member.name) === normalizeTeamName(placementTeamLead.name));
   const placementTeamSource = hasGiftyProfile ? placementOfficers : [
@@ -428,7 +428,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   const allOpenings = vacancies;
 
   useEffect(() => {
-    if (!['partners', 'partners-all', 'home', 'hiring', 'all'].includes(page)) return undefined;
+    if (!['partners', 'partners-all', 'hiring', 'all'].includes(page)) return undefined;
     let active = true;
     const limit = partnerDirectoryPage ? 500 : 8;
     const query = partnerDirectoryPage ? '&all=true' : '&random=true';
@@ -464,7 +464,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   }, [page]);
 
   useEffect(() => {
-    if (!['vacancies', 'home', 'hiring'].includes(page)) return undefined;
+    if (!['vacancies', 'hiring'].includes(page)) return undefined;
     let active = true;
     setVacanciesLoading(true);
     publicGet(`${API_BASE}/api/public/openings`)
@@ -875,7 +875,7 @@ export default function PublicSiteSections({ page = 'all' }) {
       </section>
       </>}
 
-      {['partners', 'partners-all', 'home', 'hiring', 'all'].includes(page) && <>
+      {['partners', 'partners-all', 'hiring', 'all'].includes(page) && <>
       <section className="public-partners-section" id="partners">
         <div className="public-story-shell">
           <div className="public-partners-heading">
@@ -978,7 +978,7 @@ export default function PublicSiteSections({ page = 'all' }) {
       </section>
       </>}
 
-      {['vacancies', 'home', 'hiring'].includes(page) && <section className={`public-vacancies-section${partnerPreviewPage ? ' is-preview' : ''}`} id="vacancies">
+      {['vacancies', 'hiring'].includes(page) && <section className={`public-vacancies-section${partnerPreviewPage ? ' is-preview' : ''}`} id="vacancies">
         <div className="public-story-shell">
           <SectionHeading eyebrow="Career opportunities" title="Opportunities shared with IPCS." description={partnerPreviewPage ? 'Explore roles shared with IPCS Global and find your next opportunity.' : 'Browse roles shared through the IPCS Global newsletter, with each company and location in one place.'} />
           {vacanciesLoading ? <div className="public-vacancy-grid" aria-label="Loading openings">{[1, 2, 3, 4].map(item => <div className="public-vacancy-skeleton" key={item} />)}</div>

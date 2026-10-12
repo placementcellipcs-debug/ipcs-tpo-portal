@@ -1311,10 +1311,16 @@ exports.updateApplication = async (req, res) => {
     }
 
     // 🚨 DESIGN PORTAL AUTO-TRIGGER: Sends the student to Media Team if Placed/Joined
-    await autoCreateDesignTask({ ...fullApp, name: sName, roll: sRoll, email: sMail, course: sCourse, branch: sBranch, company: sCompany, position: sPosition, status });
+    let designTaskWarning = '';
+    try {
+      await autoCreateDesignTask({ ...fullApp, name: sName, roll: sRoll, email: sMail, course: sCourse, branch: sBranch, company: sCompany, position: sPosition, status });
+    } catch (error) {
+      console.error('Placement saved, but the Design Portal task could not be created:', error.message);
+      designTaskWarning = `The placement was saved, but its Design Portal task could not be created: ${error.message}`;
+    }
 
     refreshCache();
-    res.json({ success: true, message: "Updated!", statusHistory: nextHistory, warning: [emailWarning, actionLogWarning].filter(Boolean).join(' ') });
+    res.json({ success: true, message: "Updated!", statusHistory: nextHistory, warning: [emailWarning, actionLogWarning, designTaskWarning].filter(Boolean).join(' ') });
   } catch (error) { 
     console.error(error);
     res.status(500).json({ success: false, message: `Update Failed: ${error.message}` }); 
@@ -1455,9 +1461,15 @@ exports.addApplication = async (req, res) => {
       .catch(error => console.error('Manual placement email failed:', error.message));
 
     // 🚨 DESIGN PORTAL AUTO-TRIGGER: Sends the manual addition to the Media Team
-    await autoCreateDesignTask({ ...appData, status: appData.status || 'Placed' });
+    let designTaskWarning = '';
+    try {
+      await autoCreateDesignTask({ ...appData, status: appData.status || 'Placed' });
+    } catch (error) {
+      console.error('Placement saved, but the Design Portal task could not be created:', error.message);
+      designTaskWarning = `The placement was saved, but its Design Portal task could not be created: ${error.message}`;
+    }
 
-    refreshCache(); res.json({ success: true, updated: Boolean(existingApplication), rowNumber: existingApplication?.rowNumber || null, message: existingApplication ? 'Existing placement updated.' : 'Placement added manually.' });
+    refreshCache(); res.json({ success: true, updated: Boolean(existingApplication), rowNumber: existingApplication?.rowNumber || null, message: existingApplication ? 'Existing placement updated.' : 'Placement added manually.', warning: designTaskWarning });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
@@ -2944,7 +2956,7 @@ const updateEventStatus = async (req, res, nextStatus) => {
     if (!parsedDate || Number.isNaN(parsedDate.getTime()) || parsedDate.toISOString().slice(0, 10) !== requestedDate) {
       return res.status(400).json({ success: false, message: 'Choose a valid new event date.' });
     }
-    if (requestedTime && !/^\d{2}:\d{2}$/.test(requestedTime)) {
+    if (requestedTime && !/^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(requestedTime)) {
       return res.status(400).json({ success: false, message: 'Choose a valid event time.' });
     }
   }
