@@ -11,6 +11,14 @@ import { formatPortalDate, formatPortalTime, parsePortalDateTime } from '../../u
 
 import { API_BASE } from '../../services/apiConfig';
 
+const MAIN_PLACEMENT_COURSES = [
+  'Information technology (IT)',
+  'BMS AND CCTV',
+  'Embedded and IoT',
+  'Industrial Automation',
+  'Digital Marketing'
+];
+
 const parseDate = dateStr => parsePortalDateTime(dateStr);
 const getFirstAssignedBranch = branches => {
   const values = Array.isArray(branches) ? branches : String(branches || '').split(/[\n,;]+/);
@@ -41,7 +49,7 @@ export default function Events() {
   
   const [newEvent, setNewEvent] = useState({ 
     date: '', time: '', branch: 'All Branches',
-    type: 'Placement Drive', title: '', description: '', location: '' 
+    type: 'Placement Drive', title: '', description: '', location: '', course: ''
   });
   const [posterFile, setPosterFile] = useState(null);
 
@@ -85,6 +93,10 @@ export default function Events() {
           });
           return;
         }
+        if (status === 'QUEUED') {
+          setEventActionNotice({ type: 'warning', message: 'Event saved. Its notification email is queued and will retry automatically.' });
+          return;
+        }
       } catch (error) {
         console.warn('Could not check event notification status:', error);
         return;
@@ -117,8 +129,8 @@ export default function Events() {
   }, [canManageEvents]);
 
   const handleSaveEvent = async () => {
-    if (!newEvent.title || !newEvent.date || !newEvent.type) {
-      return alert("Please fill in the Event Title, Date, and Event Type.");
+    if (!newEvent.title || !newEvent.date || !newEvent.type || (newEvent.type === 'Placement Drive' && !newEvent.course)) {
+      return alert("Please fill in the Event Title, Date, Event Type, and Course for placement drives.");
     }
     
     setEventActionNotice(null);
@@ -142,7 +154,7 @@ export default function Events() {
           type: res.data.mailStatus === 'FAILED' ? 'warning' : 'success',
           message: res.data.message || 'Event saved.'
         });
-        setNewEvent({ date: '', time: '', branch: 'All Branches', type: 'Placement Drive', title: '', description: '', location: '' });
+        setNewEvent({ date: '', time: '', branch: 'All Branches', type: 'Placement Drive', title: '', description: '', location: '', course: '' });
         setPosterFile(null);
         fetchEvents(); 
         if (res.data.mailStatus === 'PENDING') void monitorEventNotification(res.data.eventId);
@@ -376,7 +388,7 @@ export default function Events() {
                       
                       <div className="neo-ac-content">
                         <h4 className="neo-ac-title">{e.title}</h4>
-                        <p className="neo-ac-desc">{e.type}</p>
+                        <p className="neo-ac-desc">{e.type}{e.course ? ` • ${e.course}` : ''}</p>
                         {String(e.status || 'Scheduled').toLowerCase() !== 'scheduled' && <span className={`event-status-pill ${String(e.status).toLowerCase() === 'cancelled' ? 'cancelled' : 'rescheduled'}`}>{e.status}</span>}
                         
                         <div className="neo-ac-footer">
@@ -431,6 +443,7 @@ export default function Events() {
                   setNewEvent(current => ({
                     ...current,
                     type,
+                    course: type === 'Placement Drive' ? current.course : '',
                     branch: type === 'Talentino' && /^all(?:\s+branches)?$/i.test(String(current.branch || '').trim())
                       ? defaultTalentinoBranch || current.branch
                       : current.branch
@@ -445,6 +458,16 @@ export default function Events() {
                 <input type="text" className="sleek-input" style={{ width: '100%' }} value={newEvent.location} onChange={e => setNewEvent({...newEvent, location: e.target.value})} placeholder="e.g. Bangalore Branch, Online" />
               </div>
             </div>
+
+            {newEvent.type === 'Placement Drive' && (
+              <div className="form-group" style={{ marginBottom: '15px' }}>
+                <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '5px', fontWeight: 'bold' }}>Eligible Course *</label>
+                <select className="sleek-input" style={{ width: '100%' }} value={newEvent.course} onChange={e => setNewEvent({ ...newEvent, course: e.target.value })} required>
+                  <option value="">Select a course</option>
+                  {MAIN_PLACEMENT_COURSES.map(course => <option key={course} value={course}>{course}</option>)}
+                </select>
+              </div>
+            )}
 
             <div className="form-group" style={{ marginBottom: '15px' }}>
               <label style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '5px', fontWeight: 'bold' }}>Eligible Branch</label>
@@ -514,6 +537,10 @@ export default function Events() {
                 </div>
                 <div style={{ color: '#cbd5e1', fontSize: '0.85rem', marginTop: '4px' }}>Branch: {String(viewEventModal.branch || 'Global')}</div>
               </div>
+              {viewEventModal.course && <div style={{ background: '#1e293b', padding: '15px', borderRadius: '12px' }}>
+                <div style={{ fontSize: '0.7rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', marginBottom: '5px' }}>Eligible Course</div>
+                <div style={{ color: '#fff', fontSize: '0.95rem', fontWeight: 600 }}>{String(viewEventModal.course)}</div>
+              </div>}
             </div>
 
             {viewEventModal.description && (

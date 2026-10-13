@@ -13,7 +13,7 @@ const assetControllers = require('./src/assetControllers');
 const careerHubControllers = require('./src/careerHubControllers');
 
 // 🚨 IMPORT CACHES EXACTLY ONCE
-const { getCache } = require('./src/config');
+const { getCache, startEmailWorker } = require('./src/config');
 const { isAssetCacheReady } = require('./src/assetConfig');
 
 const app = express();
@@ -378,4 +378,7 @@ cron.schedule('00 08 * * *', async () => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 IPCS Backend is running on http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 IPCS Backend is running on http://localhost:${PORT}`);
+  startEmailWorker();
+});

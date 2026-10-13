@@ -192,16 +192,19 @@ export default function Clients() {
       const response = await axios.post(`${API_BASE}/api/tpo/clients/request-mou`, {
         rowNumber: client.rowNumber, companyEmail: client.email, companyName: client.companyName, mouApiBase: API_BASE
       });
-      if (response.data?.success !== true || response.data?.mailSent !== true) {
+      const mailQueued = response.data?.mailQueued === true;
+      if (response.data?.success !== true || (response.data?.mailSent !== true && !mailQueued)) {
         throw new Error(response.data?.message || 'The MOU email was not sent.');
       }
       const updatedClients = (Array.isArray(clients) ? clients : []).map(item =>
-        String(item.rowNumber) === String(client.rowNumber) ? { ...item, mailStatus: 'Request Sent' } : item
+        String(item.rowNumber) === String(client.rowNumber) ? { ...item, mailStatus: mailQueued ? 'Request Queued' : 'Request Sent' } : item
       );
       setClients(updatedClients);
       localStorage.setItem(clientCacheKey, JSON.stringify(updatedClients));
       if (response.data.statusUpdated === false) {
-        showToast(response.data.message || 'Email sent, but the sheet status did not update. Check before resending.', 'error');
+        showToast(response.data.message || 'Email status could not be updated. Check before resending.', 'error');
+      } else if (mailQueued) {
+        showToast(`MOU email queued for delivery to ${client.companyName}.`);
       } else {
         showToast(`Email sent successfully to ${client.companyName}!`);
       }
@@ -348,8 +351,8 @@ export default function Clients() {
                             <button className="mou-btn edit-btn" onClick={() => openEditModal(c)}>
                               <PencilSimple size={18} weight="bold" /> Edit
                             </button>
-                            <button type="button" className={`mou-btn request-btn ${c.mailStatus === 'Request Sent' ? 'sent' : ''}`} onClick={() => sendRequest(c)} disabled={sendingRequest === String(c.rowNumber)}>
-                              {sendingRequest === String(c.rowNumber) ? <><CircleNotch className="ph-spin" size={18} /> Sending…</> : <><PaperPlaneRight size={18} weight="fill" /> {c.mailStatus === 'Request Sent' ? 'Resend' : 'Send MOU'}</>}
+                            <button type="button" className={`mou-btn request-btn ${c.mailStatus === 'Request Sent' ? 'sent' : ''}`} onClick={() => sendRequest(c)} disabled={sendingRequest === String(c.rowNumber) || c.mailStatus === 'Request Queued'}>
+                              {sendingRequest === String(c.rowNumber) ? <><CircleNotch className="ph-spin" size={18} /> Sending…</> : c.mailStatus === 'Request Queued' ? <><Clock size={18} /> Queued</> : <><PaperPlaneRight size={18} weight="fill" /> {c.mailStatus === 'Request Sent' ? 'Resend' : 'Send MOU'}</>}
                             </button>
                           </div>
                         ) : (

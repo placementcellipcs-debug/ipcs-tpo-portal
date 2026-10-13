@@ -72,6 +72,7 @@ export default function CertificateSign() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [completionEmailSent, setCompletionEmailSent] = useState(true);
+  const [completionEmailQueued, setCompletionEmailQueued] = useState(false);
 
   const currentDate = formatPortalDate(new Date());
 
@@ -164,6 +165,7 @@ export default function CertificateSign() {
       const res = await axios.post(`${signingApiBase}/api/tpo/clients/submit-mou`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       if(res.data.success) {
         setCompletionEmailSent(res.data.emailSent !== false);
+        setCompletionEmailQueued(res.data.emailQueued === true);
         setIsSuccess(true);
       }
     } catch (error) {
@@ -205,7 +207,7 @@ export default function CertificateSign() {
     <div style={{ minHeight: '100vh', background: '#f8fafc', color: '#333', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '20px', textAlign: 'center' }}>
       <CheckCircle size={80} color="#10b981" weight="fill" style={{ marginBottom: '20px' }} />
       <h1 style={{ color: '#0f172a', marginBottom: '10px' }}>Agreement Successfully Signed</h1>
-      <p style={{ color: '#475569', fontSize: '1.1rem' }}>{isSuccess && !completionEmailSent ? 'Thank you for partnering with IPCS Global. Your signed agreement has been saved, but the email notification could not be sent. Please contact IPCS for your final copy.' : 'Thank you for partnering with IPCS Global. Your agreement has been submitted. Please contact IPCS if you need another copy.'}</p>
+      <p style={{ color: '#475569', fontSize: '1.1rem' }}>{completionEmailQueued ? 'Thank you for partnering with IPCS Global. Your signed agreement has been saved, and the email notification is queued for delivery.' : isSuccess && !completionEmailSent ? 'Thank you for partnering with IPCS Global. Your signed agreement has been saved, but the email notification could not be sent. Please contact IPCS for your final copy.' : 'Thank you for partnering with IPCS Global. Your agreement has been submitted. Please contact IPCS if you need another copy.'}</p>
     </div>
   );
 

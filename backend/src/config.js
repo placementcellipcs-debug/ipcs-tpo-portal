@@ -3,9 +3,9 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
 const { google } = require('googleapis');
-const nodemailer = require('nodemailer');
 const axios = require('axios');
 const { formatIndiaTimestamp } = require('./utils/dateTime');
+const { createEmailService } = require('./emailService');
 
 const serviceAccountAuth = new JWT({
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -442,209 +442,13 @@ const getSuperAdminEmails = () => {
   }).filter(Boolean);
 };
 
-async function logMailToSheet(receiverName, receiverMail, mailType, subject, status) {
-  try {
-    const sheet = doc.sheetsByTitle["Mail"];
-    if (sheet) {
-      await sheet.addRow({
-        'TimeStamp': formatIndiaTimestamp(),
-        'Reciver Name': receiverName || 'Unknown',
-        'Reciver Mail': receiverMail || 'Unknown',
-        'Mail Type': mailType || 'System Alert',
-        'Subject': subject || 'Notification',
-        'Status': status || 'Sent'
-      });
-    }
-  } catch (e) { console.error("Failed to log mail to sheet:", e); }
+const emailService = createEmailService({ doc, drive, loadDocInfo, refreshCache, formatIndiaTimestamp });
+
+async function sendIPCSMail(mailOptions, sendDetails) {
+  const category = String(sendDetails?.category || 'placement').trim().toLowerCase();
+  console.log(`[MAIL DISPATCH] Category: ${category} | Subject: ${mailOptions.subject || '(no subject)'}`);
+  return emailService.sendMail(mailOptions, sendDetails || { category });
 }
-
-const transporterIPv4 = nodemailer.createTransport({ 
-  pool: true, maxConnections: 1, maxMessages: 100,
-  host: 'smtp.gmail.com', port: 465, secure: true, family: 4, 
-  connectionTimeout: 12000, greetingTimeout: 12000, socketTimeout: 20000,
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
-});
-
-const transporterIPv6 = nodemailer.createTransport({ 
-  pool: true, maxConnections: 1, maxMessages: 100,
-  host: 'smtp.gmail.com', port: 465, secure: true, family: 6, 
-  connectionTimeout: 12000, greetingTimeout: 12000, socketTimeout: 20000,
-  auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
-});
-
-async function sendViaResend(mailOptions, recipients) {
-  const apiKey = process.env.RESEND_API_KEY;
-  if (!apiKey) throw new Error('RESEND_API_KEY is not configured.');
-
-  const from = process.env.RESEND_FROM || mailOptions.from || process.env.EMAIL_USER;
-  if (!from) throw new Error('Set RESEND_FROM to a verified sender address.');
-
-  const splitRecipients = value => String(value || '').split(',').map(email => email.trim()).filter(Boolean);
-  const payload = {
-    from,
-    to: splitRecipients(recipients.to),
-    subject: mailOptions.subject || 'IPCS Global notification',
-    html: mailOptions.html || ''
-  };
-
-  const cc = splitRecipients(recipients.cc);
-  const bcc = splitRecipients(recipients.bcc);
-  if (cc.length) payload.cc = cc;
-  if (bcc.length) payload.bcc = bcc;
-  if (mailOptions.text) payload.text = mailOptions.text;
-  if (mailOptions.replyTo) payload.reply_to = mailOptions.replyTo;
-
-  if (Array.isArray(mailOptions.attachments) && mailOptions.attachments.length) {
-    payload.attachments = mailOptions.attachments.map(attachment => {
-      const item = { filename: attachment.filename || 'attachment' };
-      if (attachment.content !== undefined && attachment.content !== null) {
-        const content = Buffer.isBuffer(attachment.content)
-          ? attachment.content
-          : Buffer.from(String(attachment.content), attachment.encoding === 'base64' ? 'base64' : 'utf8');
-        item.content = content.toString('base64');
-      } else if (attachment.contentBytes) {
-        item.content = Buffer.isBuffer(attachment.contentBytes)
-          ? attachment.contentBytes.toString('base64')
-          : String(attachment.contentBytes);
-      } else if (attachment.href || attachment.path) {
-        item.path = attachment.href || attachment.path;
-      } else {
-        throw new Error(`Attachment ${item.filename} has no content or path.`);
-      }
-      if (attachment.contentType) item.content_type = attachment.contentType;
-      return item;
-    });
-  }
-
-  try {
-    const response = await axios.post('https://api.resend.com/emails', payload, {
-      timeout: 30000,
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' }
-    });
-    if (!response.data?.id) throw new Error(response.data?.message || 'Resend did not return an email ID.');
-    return response.data;
-  } catch (error) {
-    const providerMessage = error.response?.data?.message || error.response?.data?.error;
-    const detail = providerMessage ? `: ${providerMessage}` : '';
-    throw new Error(`Resend API ${error.response?.status || 'request'} failed${detail}`);
-  }
-}
-
-const configuredMailProviders = [
-  process.env.APPS_SCRIPT_EMAIL_URL && 'Apps Script',
-  process.env.RESEND_API_KEY && 'Resend HTTPS',
-  process.env.EMAIL_USER && process.env.EMAIL_PASS && 'Gmail SMTP'
-].filter(Boolean);
-if (configuredMailProviders.length) {
-  console.log(`[MAIL CONFIG] Configured delivery providers: ${configuredMailProviders.join(', ')}.`);
-} else {
-  console.error('[MAIL CONFIG] No delivery provider is configured. Set APPS_SCRIPT_EMAIL_URL, RESEND_API_KEY, or EMAIL_USER and EMAIL_PASS.');
-}
-if (!process.env.RESEND_API_KEY) {
-  console.warn('[MAIL CONFIG] RESEND_API_KEY is not configured; HTTPS email fallback is unavailable.');
-} else if (!process.env.RESEND_FROM) {
-  console.warn('[MAIL CONFIG] RESEND_FROM is not configured; Resend will use the message sender, which must be verified in Resend.');
-}
-
-async function sendIPCSMail(mailOptions, logDetails) {
-  try {
-    const cleanEmails = (val) => {
-      if (!val) return '';
-      if (Array.isArray(val)) val = val.join(',');
-      return val.split(',').map(e => e.trim()).filter(e => e.length > 5 && e.includes('@')).join(',');
-    };
-
-    const formattedTo = cleanEmails(mailOptions.to) || 'placementcell.ipcs@gmail.com';
-    const formattedCc = cleanEmails(mailOptions.cc);
-    const formattedBcc = cleanEmails(mailOptions.bcc);
-
-    console.log(`\n📧 [MAIL DISPATCH] Subject: ${mailOptions.subject}`);
-    
-    // 🚨 THIS IS THE FIX: ALLOW ICS AND PDF MIME TYPES TO PASS SAFELY
-    const appsPayload = { to: formattedTo, cc: formattedCc, bcc: formattedBcc, subject: mailOptions.subject, html: mailOptions.html, attachments: [] };
-    if (mailOptions.attachments && Array.isArray(mailOptions.attachments)) {
-      mailOptions.attachments.forEach(att => {
-        if (att.content || att.contentBytes) { 
-          const bufferToUse = att.content || Buffer.from(att.contentBytes, 'base64');
-          appsPayload.attachments.push({ filename: att.filename, mimeType: att.contentType || 'application/pdf', contentBytes: bufferToUse.toString('base64') }); 
-        } else if (att.href) { appsPayload.attachments.push({ filename: att.filename, href: att.href }); }
-      });
-    }
-
-    let success = false;
-    const deliveryErrors = [];
-    const hasResendFallback = Boolean(process.env.RESEND_API_KEY);
-    const totalAttempts = hasResendFallback ? 4 : 3;
-    let attemptNumber = 1;
-
-    try {
-      console.log(`➡️  [${attemptNumber++}/${totalAttempts}] Attempting Google Apps Script...`);
-      if (!process.env.APPS_SCRIPT_EMAIL_URL) throw new Error('APPS_SCRIPT_EMAIL_URL is not configured on this API service.');
-      const res = await axios.post(process.env.APPS_SCRIPT_EMAIL_URL, appsPayload, { timeout: 30000 });
-      if (!res.data || !res.data.success) throw new Error(res.data?.error || "Apps Script rejected payload");
-      success = true;
-      console.log(`✅ Apps Script Success!`);
-    } catch (err1) {
-      const message = `Apps Script Failed: ${err1.message}`;
-      deliveryErrors.push(message);
-      console.log(`❌ ${message}`);
-
-      if (hasResendFallback) {
-        try {
-          console.log(`➡️  [${attemptNumber++}/${totalAttempts}] Attempting HTTPS email delivery (Resend)...`);
-          await sendViaResend(mailOptions, { to: formattedTo, cc: formattedCc, bcc: formattedBcc });
-          success = true;
-          console.log('✅ Resend HTTPS Success!');
-        } catch (err2) {
-          const message = `Resend HTTPS Failed: ${err2.message}`;
-          deliveryErrors.push(message);
-          console.log(`❌ ${message}`);
-        }
-      }
-
-      if (!success) {
-        try {
-          console.log(`➡️  [${attemptNumber++}/${totalAttempts}] Attempting SMTP (IPv4)...`);
-          if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) throw new Error('EMAIL_USER and EMAIL_PASS must both be configured for SMTP fallback.');
-          await transporterIPv4.sendMail({ ...mailOptions, to: formattedTo, cc: formattedCc, bcc: formattedBcc });
-          success = true;
-          console.log(`✅ SMTP IPv4 Success!`);
-        } catch (err3) {
-          const message = `SMTP IPv4 Failed: ${err3.message}`;
-          deliveryErrors.push(message);
-          console.log(`❌ ${message}`);
-        }
-      }
-
-      if (!success) {
-        try {
-          console.log(`➡️  [${attemptNumber++}/${totalAttempts}] Attempting SMTP (IPv6)...`);
-          if (!process.env.EMAIL_USER || !process.env.EMAIL_PASS) throw new Error('EMAIL_USER and EMAIL_PASS must both be configured for SMTP fallback.');
-          await transporterIPv6.sendMail({ ...mailOptions, to: formattedTo, cc: formattedCc, bcc: formattedBcc });
-          success = true;
-          console.log(`✅ SMTP IPv6 Success!`);
-        } catch (err4) {
-          const message = `SMTP IPv6 Failed: ${err4.message}`;
-          deliveryErrors.push(message);
-          console.log(`❌ ${message}`);
-        }
-      }
-    }
-
-    if (!success) {
-      throw new Error(`All email delivery methods failed. ${deliveryErrors.join(' | ')}`);
-    }
-
-    if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, 'Success');
-    return true;
-
-  } catch (err) {
-    console.error("🚨 WATERFALL EXHAUSTED: Mail Dispatch Completely Failed.");
-    if (logDetails) await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, `Failed: ${err.message}`);
-    throw err; 
-  }
-}
-
 const APPS_SCRIPT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyAJWuQlO7Ie3e-hsWkr965tZD3vfTBG5E9oBxFMleXBNi5ocSTnilPmFYzDXgQ-cOcbw/exec";
 async function uploadToDrive(file, folderId) {
   try {
@@ -658,7 +462,7 @@ async function uploadToDrive(file, folderId) {
 
 module.exports = { 
   doc, drive, google, serviceAccountAuth, getCache, refreshCache, loadDocInfo, hasAccess, getFuzzyHeader,
-  sendIPCSMail, uploadToDrive,
+  sendIPCSMail, startEmailWorker: emailService.startWorker, processEmailQueue: emailService.processQueue, uploadToDrive,
   getTpoEmail, getBranchManagerEmail, getAllTpoEmails, getAllBranchManagerEmails, getSuperAdminEmails,
   getUserEmailById
 };

@@ -228,7 +228,7 @@ export default function JobTracker() {
     try {
       const response = await axios.post(`${API_BASE}/api/tpo/applications/email-student`, { rowNumber: emailTarget.rowNumber, sourceType: emailTarget.sourceType, roll: emailTarget.roll, subject: emailForm.subject, message: emailForm.message });
       if (!response.data?.success) throw new Error(response.data?.message || 'Email could not be sent.');
-      setEmailTarget(null); setNotice({ tone: 'success', text: response.data.message || 'Email sent.' });
+      setEmailTarget(null); setNotice({ tone: response.data.queued ? 'warning' : 'success', text: response.data.message || 'Email sent.' });
     } catch (error) {
       setNotice({ tone: 'error', text: error.response?.data?.message || error.message || 'Email could not be sent.' });
     } finally { setEmailSaving(false); }

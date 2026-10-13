@@ -284,11 +284,15 @@ const logMailToSheet = async (receiverName, receiverMail, mailType, subject, sta
 
 const sendMailAndLog = async (mailOptions, logDetails) => {
   try {
-    await sendIPCSMail(mailOptions);
-    await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, 'Success');
-    return true;
+    const result = await sendIPCSMail(mailOptions, {
+      category: logDetails?.category || 'placement',
+      queueContext: logDetails?.queueContext,
+      logDetails
+    });
+    await logMailToSheet(logDetails?.name, logDetails?.email, logDetails?.type, mailOptions.subject, result?.queued ? `Queued: ${result.queueId}` : 'Success');
+    return result || { queued: false };
   } catch (err) {
-    await logMailToSheet(logDetails.name, logDetails.email, logDetails.type, mailOptions.subject, `Failed: ${err.message}`);
+    await logMailToSheet(logDetails?.name, logDetails?.email, logDetails?.type, mailOptions.subject, `Failed: ${err.message}`);
     console.error("Mail Dispatch Error:", err);
     throw err;
   }
@@ -489,14 +493,14 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
   }
 
   if (subject && html) {
-    await sendMailAndLog({
+    return sendMailAndLog({
       from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`,
       to: studentData.email,
       cc: ccList,
       subject: subject,
       html: html,
       attachments: attachments 
-    }, { name: studentData.name, email: studentData.email, type: mailType });
+    }, { name: studentData.name, email: studentData.email, type: mailType, category: 'recruitment' });
   }
 };
 
@@ -871,7 +875,7 @@ exports.updateStudent = async (req, res) => {
                 </div>
               </div>
             `;
-            sendMailAndLog({ from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`, to: sEmail, subject: `Welcome to IPCS Placements! Your Profile is Active [Ref: ${refId}]`, html: html }, { name: sName, email: sEmail, type: 'Course Completion Welcome' })
+            sendMailAndLog({ from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`, to: sEmail, subject: `Welcome to IPCS Placements! Your Profile is Active [Ref: ${refId}]`, html: html }, { name: sName, email: sEmail, type: 'Course Completion Welcome', category: 'portal' })
               .catch(error => console.error('Student welcome email failed:', error.message));
          }
       }
@@ -1579,11 +1583,14 @@ exports.addDirectInterview = async (req, res) => {
     }
 
     let emailSent = false;
+    let emailQueued = false;
     let emailWarning = '';
     if (studentData.email) {
       try {
-        await checkAndSendStudentMails({ ...studentData, company: String(company).trim(), position: String(position).trim(), jobId: resolvedJobId, tpoName }, 'Interview Scheduled', { date: cleanInterviewDate, time: cleanInterviewTime, venue: interviewVenue }, user?.email || '');
-        emailSent = true;
+        const mailResult = await checkAndSendStudentMails({ ...studentData, company: String(company).trim(), position: String(position).trim(), jobId: resolvedJobId, tpoName }, 'Interview Scheduled', { date: cleanInterviewDate, time: cleanInterviewTime, venue: interviewVenue }, user?.email || '');
+        emailQueued = Boolean(mailResult?.queued);
+        emailSent = !emailQueued;
+        if (emailQueued) emailWarning = 'Interview recorded; the invitation email is queued for delivery.';
       } catch (error) {
         emailWarning = `The interview was recorded, but the email could not be sent: ${error.message}`;
       }
@@ -1592,7 +1599,7 @@ exports.addDirectInterview = async (req, res) => {
     }
 
     await refreshCache();
-    return res.json({ success: true, emailSent, warning: emailWarning, message: emailWarning || 'Interview added to Opening_Applied and TPO_Log; invitation sent.' });
+    return res.json({ success: true, emailSent, emailQueued, warning: emailWarning, message: emailWarning || 'Interview added to Opening_Applied and TPO_Log; invitation sent.' });
   } catch (error) {
     console.error('Direct interview creation failed:', error);
     return res.status(500).json({ success: false, message: `Could not create the interview referral: ${error.message}` });
@@ -1657,8 +1664,8 @@ exports.emailStudent = async (req, res) => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(422).json({ success: false, message: 'A valid candidate email address is not available on this record.' });
     const safeMessage = escapePlacementMailHtml(message).replace(/\r?\n/g, '<br>');
     const html = `<div style="margin:0 auto;max-width:640px;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#334155;background:#fff"><div style="padding:22px 28px;background:#0f172a;border-bottom:4px solid #7c3aed"><div style="font-size:12px;letter-spacing:.16em;color:#93c5fd;font-weight:700">IPCS GLOBAL • PLACEMENT CELL</div><h1 style="margin:10px 0 0;color:#fff;font-size:21px">Placement update</h1></div><div style="padding:26px 28px;font-size:15px;line-height:1.7"><p>Dear ${escapePlacementMailHtml(name)},</p><p>${safeMessage}</p><div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;color:#475569">Regards,<br><strong style="color:#0f172a">${escapePlacementMailHtml(user?.name || 'Placement Officer')}</strong><br>IPCS Global Placement Cell</div></div></div>`;
-    await sendMailAndLog({ from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`, to: email, subject: String(subject).trim(), html }, { name, email, type: 'TPO Student Email' });
-    return res.json({ success: true, message: `Email sent to ${name}.` });
+    const mailResult = await sendMailAndLog({ from: `"IPCS Placement Cell" <${process.env.EMAIL_USER}>`, to: email, subject: String(subject).trim(), html }, { name, email, type: 'TPO Student Email', category: 'placement' });
+    return res.json({ success: true, queued: Boolean(mailResult?.queued), message: mailResult?.queued ? `Email to ${name} was queued for delivery.` : `Email sent to ${name}.` });
   } catch (error) {
     console.error('TPO student email failed:', error);
     return res.status(500).json({ success: false, message: `Email could not be sent: ${error.message}` });
@@ -2536,6 +2543,14 @@ exports.getTalentino = (req, res) => {
   res.json({ success: true, dates: Array.from(dates).sort().reverse(), records: records.reverse(), sessions: sessions.reverse() });
 };
 
+const MAIN_PLACEMENT_COURSES = [
+  'Information technology (IT)',
+  'BMS AND CCTV',
+  'Embedded and IoT',
+  'Industrial Automation',
+  'Digital Marketing'
+];
+
 const normalizeEventHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 const findEventHeader = (headers, aliases) => {
@@ -2575,6 +2590,7 @@ const serializeEvent = row => ({
   date: formatIndiaDate(getValByHeader(row, ['dateoftheevent', 'date'])),
   tpo: getValByHeader(row, ['tpo', 'placementofficer']),
   branch: getValByHeader(row, ['branch']),
+  course: getValByHeader(row, ['course', 'eligiblecourse']),
   type: getValByHeader(row, ['event', 'type']),
   title: getValByHeader(row, ['title']),
   description: getValByHeader(row, ['descripation', 'description']),
@@ -2635,9 +2651,10 @@ const buildEventStatusEmail = (event, status, details) => {
   const scheduleRows = cancelled
     ? `<tr><td style="padding:8px 0;color:#64748b;width:34%">Scheduled for</td><td style="padding:8px 0;color:#0f172a;font-weight:700">${oldSchedule}</td></tr>`
     : `<tr><td style="padding:8px 0;color:#64748b;width:34%">Previous schedule</td><td style="padding:8px 0;color:#64748b;text-decoration:line-through">${oldSchedule}</td></tr><tr><td style="padding:8px 0;color:#64748b">New schedule</td><td style="padding:8px 0;color:#0f172a;font-weight:700">${escapeEventHtml(event.date || 'TBD')} • ${escapeEventHtml(event.time || 'Time to be confirmed')}</td></tr>`;
+  const courseRow = event.course ? `<tr><td style="padding:8px 0;color:#64748b">Eligible course</td><td style="padding:8px 0;color:#0f172a">${escapeEventHtml(event.course)}</td></tr>` : '';
   const reason = String(details.reason || '').trim();
   const reasonBlock = reason ? `<div style="margin:18px 0;padding:14px 16px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px"><div style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:#64748b;font-weight:700;margin-bottom:5px">${cancelled ? 'Reason for cancellation' : 'Update note'}</div><div style="color:#334155;white-space:pre-line">${escapeEventHtml(reason)}</div></div>` : '';
-  const html = `<div style="margin:0 auto;max-width:640px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#334155"><div style="padding:24px 28px;background:#0f172a;border-bottom:5px solid ${accent};text-align:center"><div style="font-size:12px;letter-spacing:.18em;color:#93c5fd;font-weight:700">IPCS GLOBAL • PLACEMENT CELL</div><h1 style="margin:12px 0 4px;color:#fff;font-size:24px">${heading}</h1><div style="color:#cbd5e1;font-size:13px">Event reference: ${escapeEventHtml(event.eventId || event.eventKey || 'IPCS Event')}</div></div><div style="padding:28px;line-height:1.65;font-size:15px"><p style="margin:0 0 14px;color:#0f172a;font-weight:700">Dear Team,</p><p style="margin:0 0 20px">${intro}</p><div style="padding:18px 20px;background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid ${accent};border-radius:10px"><div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#64748b;font-weight:700;margin-bottom:8px">${escapeEventHtml(event.type || 'Event')}</div><div style="font-size:20px;line-height:1.3;font-weight:700;color:#0f172a;margin-bottom:10px">${escapeEventHtml(event.title || 'IPCS event')}</div><table style="width:100%;border-collapse:collapse;font-size:14px">${scheduleRows}<tr><td style="padding:8px 0;color:#64748b">Branch</td><td style="padding:8px 0;color:#0f172a">${escapeEventHtml(event.branch || 'All Branches')}</td></tr><tr><td style="padding:8px 0;color:#64748b">Location</td><td style="padding:8px 0;color:#0f172a">${escapeEventHtml(event.location || 'To be confirmed')}</td></tr><tr><td style="padding:8px 0;color:#64748b">Coordinator</td><td style="padding:8px 0;color:#0f172a">${escapeEventHtml(event.tpo || 'Placement Team')}</td></tr></table></div>${reasonBlock}<p style="margin:22px 0 0">Please contact the Placement Cell if any coordination is required.</p><div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;color:#475569;font-size:14px">Regards,<br><strong style="color:#0f172a">Placement Team</strong><br><strong style="color:#7c3aed">IPCS Global</strong></div></div></div>`;
+  const html = `<div style="margin:0 auto;max-width:640px;background:#fff;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#334155"><div style="padding:24px 28px;background:#0f172a;border-bottom:5px solid ${accent};text-align:center"><div style="font-size:12px;letter-spacing:.18em;color:#93c5fd;font-weight:700">IPCS GLOBAL • PLACEMENT CELL</div><h1 style="margin:12px 0 4px;color:#fff;font-size:24px">${heading}</h1><div style="color:#cbd5e1;font-size:13px">Event reference: ${escapeEventHtml(event.eventId || event.eventKey || 'IPCS Event')}</div></div><div style="padding:28px;line-height:1.65;font-size:15px"><p style="margin:0 0 14px;color:#0f172a;font-weight:700">Dear Team,</p><p style="margin:0 0 20px">${intro}</p><div style="padding:18px 20px;background:#f8fafc;border:1px solid #e2e8f0;border-left:4px solid ${accent};border-radius:10px"><div style="font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:#64748b;font-weight:700;margin-bottom:8px">${escapeEventHtml(event.type || 'Event')}</div><div style="font-size:20px;line-height:1.3;font-weight:700;color:#0f172a;margin-bottom:10px">${escapeEventHtml(event.title || 'IPCS event')}</div><table style="width:100%;border-collapse:collapse;font-size:14px">${scheduleRows}${courseRow}<tr><td style="padding:8px 0;color:#64748b">Branch</td><td style="padding:8px 0;color:#0f172a">${escapeEventHtml(event.branch || 'All Branches')}</td></tr><tr><td style="padding:8px 0;color:#64748b">Location</td><td style="padding:8px 0;color:#0f172a">${escapeEventHtml(event.location || 'To be confirmed')}</td></tr><tr><td style="padding:8px 0;color:#64748b">Coordinator</td><td style="padding:8px 0;color:#0f172a">${escapeEventHtml(event.tpo || 'Placement Team')}</td></tr></table></div>${reasonBlock}<p style="margin:22px 0 0">Please contact the Placement Cell if any coordination is required.</p><div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;color:#475569;font-size:14px">Regards,<br><strong style="color:#0f172a">Placement Team</strong><br><strong style="color:#7c3aed">IPCS Global</strong></div></div></div>`;
   const subjectPrefix = cancelled ? 'EVENT CANCELLED' : 'EVENT RESCHEDULED';
   return {
     subject: `[${subjectPrefix}] ${event.title || 'IPCS Event'} | ${event.eventId || event.eventKey || 'Event update'}`,
@@ -2663,6 +2680,11 @@ exports.getEvents = (req, res) => {
 // =========================================================
 exports.addEvent = async (req, res) => {
   const { date: rawDate, tpo, branch: rawBranch, type, title, description, time: rawTime, location, userName } = req.body;
+  const rawCourse = String(req.body?.course || '').trim();
+  const course = MAIN_PLACEMENT_COURSES.find(item => item.toLowerCase() === rawCourse.toLowerCase()) || '';
+  if (String(type || '').toLowerCase().includes('placement drive') && !course) {
+    return res.status(400).json({ success: false, message: 'Choose one of the five main courses for this placement drive.' });
+  }
   const branchText = String(rawBranch || '').trim();
   const branch = /^all(?:\s+branches)?$/i.test(branchText)
     ? 'All Branches'
@@ -2701,6 +2723,7 @@ exports.addEvent = async (req, res) => {
       'Date of the Event': date, 
       'TPO': tpo, 
       'Branch': branch, 
+      'Course': course,
       'Event': type, 
       'Title': title, 
       'Descripation': description || '', 
@@ -2765,6 +2788,7 @@ exports.addEvent = async (req, res) => {
                   <tr><td style="padding: 6px 0; color: #64748b;">Time:</td><td style="padding: 6px 0; color: #0f1523; font-weight: bold;">${time || 'TBD'}</td></tr>
                   <tr><td style="padding: 6px 0; color: #64748b;">Location / Mode:</td><td style="padding: 6px 0; color: #0284c7; font-weight: bold;">${location || 'Venue / Online'}</td></tr>
                   <tr><td style="padding: 6px 0; color: #64748b;">Eligible Branch:</td><td style="padding: 6px 0; color: #0f1523;">${branch || 'All Branches'}</td></tr>
+                  <tr><td style="padding: 6px 0; color: #64748b;">Eligible Course:</td><td style="padding: 6px 0; color: #0f1523;">${escapeEventHtml(course)}</td></tr>
                   <tr><td style="padding: 6px 0; color: #64748b; vertical-align: top;">Description:</td><td style="padding: 6px 0; color: #334155; white-space: pre-line;">${formattedDesc}</td></tr>
                 </table>
               </div>
@@ -2908,8 +2932,16 @@ exports.addEvent = async (req, res) => {
       // already persisted, so delivery status is updated on the saved row later.
       void (async () => {
         let deliveryError = null;
+        let mailResult = null;
         try {
-          await sendMailAndLog(mailOptions, { name: branch, email: mailOptions.to, type: 'Event Notification' });
+          mailResult = await sendMailAndLog(mailOptions, {
+            name: branch,
+            email: mailOptions.to,
+            type: 'Event Notification',
+            category: evType.includes('talentino') ? 'portal' : 'placement',
+            queueContext: { eventId, statusPrefix: '' }
+          });
+          if (mailResult?.queued) deliveryError = null;
         } catch (mailErr) {
           deliveryError = mailErr;
         }
@@ -2921,8 +2953,8 @@ exports.addEvent = async (req, res) => {
         const mailSentAtH = headerFor('mailsentat');
         const mailErrorH = headerFor('mailerror');
 
-        if (mailStatusH) updateData[mailStatusH] = deliveryError ? 'FAILED' : 'SENT';
-        if (mailSentAtH && !deliveryError) updateData[mailSentAtH] = formatIndiaTimestamp();
+        if (mailStatusH) updateData[mailStatusH] = deliveryError ? 'FAILED' : mailResult?.queued ? 'QUEUED' : 'SENT';
+        if (mailSentAtH && !deliveryError && !mailResult?.queued) updateData[mailSentAtH] = formatIndiaTimestamp();
         if (mailErrorH) updateData[mailErrorH] = deliveryError ? deliveryError.message : '';
 
         if (Object.keys(updateData).length) {
@@ -3024,18 +3056,26 @@ const updateEventStatus = async (req, res, nextStatus) => {
     await eventRow.save();
 
     let emailSent = false;
+    let emailQueued = false;
     let emailError = '';
     try {
       const mailContent = buildEventStatusEmail(serializeEvent(eventRow), nextStatus, { reason, previousDate, previousTime });
-      await sendMailAndLog({
+      const mailResult = await sendMailAndLog({
         from: `"IPCS Global Placement Cell" <${process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com'}>`,
         to: recipients.to,
         cc: recipients.cc,
         bcc: recipients.bcc,
         subject: mailContent.subject,
         html: mailContent.html
-      }, { name: event.branch || event.title, email: [recipients.to, recipients.cc, recipients.bcc].filter(Boolean).join(','), type: `${nextStatus} Event Notification` });
-      emailSent = true;
+      }, {
+        name: event.branch || event.title,
+        email: [recipients.to, recipients.cc, recipients.bcc].filter(Boolean).join(','),
+        type: `${nextStatus} Event Notification`,
+        category: String(event.type || '').toLowerCase().includes('talentino') ? 'portal' : 'placement',
+        queueContext: { eventId: event.eventId || event.eventKey, statusPrefix: `${nextStatus.toUpperCase()} NOTICE` }
+      });
+      emailQueued = Boolean(mailResult?.queued);
+      emailSent = !emailQueued;
     } catch (mailError) {
       emailError = String(mailError?.message || 'The email service did not accept the notification.');
       console.error(`[EVENT] ${nextStatus} notification failed for ${event.eventId || event.eventKey}:`, mailError);
@@ -3044,7 +3084,7 @@ const updateEventStatus = async (req, res, nextStatus) => {
     const mailStatusHeader = findEventHeader(headers, ['mailstatus']);
     const mailErrorHeader = findEventHeader(headers, ['mailerror']);
     const mailUpdates = {};
-    if (mailStatusHeader) mailUpdates[mailStatusHeader] = `${nextStatus.toUpperCase()} NOTICE ${emailSent ? 'SENT' : 'FAILED'}`;
+    if (mailStatusHeader) mailUpdates[mailStatusHeader] = `${nextStatus.toUpperCase()} NOTICE ${emailQueued ? 'QUEUED' : emailSent ? 'SENT' : 'FAILED'}`;
     if (mailErrorHeader) mailUpdates[mailErrorHeader] = emailError;
     if (Object.keys(mailUpdates).length) {
       eventRow.assign(mailUpdates);
@@ -3058,10 +3098,13 @@ const updateEventStatus = async (req, res, nextStatus) => {
     return res.json({
       success: true,
       emailSent,
+      emailQueued,
       event: updatedEvent,
       message: emailSent
         ? `Event ${nextStatus.toLowerCase()} and notification email sent.`
-        : `Event ${nextStatus.toLowerCase()}, but the notification email could not be sent: ${emailError}`
+        : emailQueued
+          ? `Event ${nextStatus.toLowerCase()}; notification email queued for retry.`
+          : `Event ${nextStatus.toLowerCase()}, but the notification email could not be sent: ${emailError}`
     });
   } catch (error) {
     console.error(`Event ${nextStatus.toLowerCase()} error:`, error);
@@ -3190,7 +3233,7 @@ exports.runDailyCron = async () => {
       subject: `Applicant Resumes: ${position} Opening [Ref: ${jobId}]`,
       html: html,
       attachments: attachments
-    }, { name: companyName, email: companyEmail, type: 'Resume Delivery' }); 
+    }, { name: companyName, email: companyEmail, type: 'Resume Delivery', category: 'company' });
     
     console.log(`✅ Sent to ${companyName}. Pausing 5 seconds...`);
     await new Promise(resolve => setTimeout(resolve, 5000));
@@ -3350,7 +3393,7 @@ exports.runDailyCron = async () => {
       cc: ccList,
       subject: `Today's Drive Registrations: ${title} [Ref: ${dId}]`,
       html: html
-    }, { name: tpoName, email: toEmail, type: 'Drive Registrations Summary' }); 
+    }, { name: tpoName, email: toEmail, type: 'Drive Registrations Summary', category: 'recruitment' });
     
     console.log(`✅ Sent Drive Summary to ${tpoName}. Pausing 5 seconds...`);
     await new Promise(resolve => setTimeout(resolve, 5000));
@@ -3594,13 +3637,24 @@ exports.submitCorporateTrainingInquiry = async (req, res) => {
 
     let internalEmailStatus = 'Sent';
     try {
-      await sendMailAndLog({
+      const mailResult = await sendMailAndLog({
         from: `"IPCS Global Corporate Training" <${senderEmail}>`,
         to: recipient,
         replyTo: email,
         subject: `Corporate Training Inquiry · ${safeCompanySubject}`,
         html
-      }, { name: `${name} · ${company}`, email, type: 'Corporate Training Inquiry' });
+      }, {
+        name: `${name} · ${company}`,
+        email,
+        type: 'Corporate Training Inquiry',
+        category: 'company',
+        queueContext: {
+          sheetName: 'Corporate Training Inquiries', idHeader: 'Inquiry ID', idValue: inquiryId,
+          statusHeader: 'Internal Email Status', failedValuePrefix: 'Failed: ',
+          statusValues: { SENT: 'Sent' }
+        }
+      });
+      if (mailResult?.queued) internalEmailStatus = 'Queued';
     } catch (mailError) {
       internalEmailStatus = `Failed: ${mailError.message}`.slice(0, 500);
       console.error('Corporate training inquiry was stored, but its internal alert failed:', mailError.message);
@@ -3752,14 +3806,29 @@ exports.assignCorporateTrainingInquiry = async (req, res) => {
 
     const subjectBranch = branchName.replace(/[\r\n]+/g, ' ').slice(0, 100);
     try {
-      await sendMailAndLog({
+      const mailResult = await sendMailAndLog({
         from: `"IPCS Global Corporate Training" <${process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com'}>`,
         to: branchEmail,
         cc: ['ajith@ipcsglobal.com', 'rakesh@ipcsglobal.com', 'gifty@ipcsglobal.com'],
         replyTo: inquiry.email,
         subject: `Corporate Training Inquiry Assigned · ${subjectBranch}`,
         html: buildCorporateTrainingAssignmentEmail(inquiry, branchName)
-      }, { name: `${branchName} · ${inquiry.company}`, email: branchEmail, type: 'Corporate Training Assignment' });
+      }, {
+        name: `${branchName} · ${inquiry.company}`,
+        email: branchEmail,
+        type: 'Corporate Training Assignment',
+        category: 'company',
+        queueContext: {
+          sheetName: 'Corporate Training Inquiries', idHeader: 'Inquiry ID', idValue: inquiryId,
+          statusHeader: 'Notification Status', sentAtHeader: 'Notification Sent At', failedValuePrefix: 'Failed: ',
+          statusValues: { SENT: 'Sent' }
+        }
+      });
+      if (mailResult?.queued) {
+        row.set('Notification Status', 'Queued');
+        await row.save();
+        return res.json({ success: true, inquiry: toCorporateTrainingInquiry(row), queued: true, message: `Assigned to ${branchName}; the branch notification is queued for delivery.` });
+      }
     } catch (mailError) {
       row.set('Notification Status', `Failed: ${mailError.message}`.slice(0, 500));
       try { await row.save(); }
@@ -4364,7 +4433,23 @@ exports.requestMou = async (req, res) => {
       html: `<div style="font-family: Arial, sans-serif; color: #333; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden;"><div style="background-color: #0f1523; padding: 20px; text-align: center; border-bottom: 4px solid #8b5cf6;"><h2 style="color: #ffffff; margin: 0;">IPCS HIRING PARTNERSHIP</h2></div><div style="padding: 30px;"><p>Dear ${safeCompanyName} Team,</p><p>We are thrilled to welcome you as a Preferred Hiring Partner with IPCS Global!</p><p>To finalize our association, please review and digitally sign your Confirmation of Hiring Partnership by clicking the secure button below. You will be able to upload your company logo and authorized signature directly on the document.</p><p style="font-size: 13px; color: #64748b;">Reference: <strong>${signingReference}</strong></p><div style="text-align: center; margin: 40px 0;"><a href="${signingLink}" style="background-color: #10b981; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px;">Review &amp; Sign</a></div><p style="font-size: 13px; color: #64748b;">If the button does not work, <a href="${signingLink}" style="color: #0369a1; font-weight: bold;">open your secure signing page</a>.</p></div></div>`
     };
     try {
-      await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Request' });
+      const mailResult = await sendMailAndLog(mailOptions, {
+        name: companyName,
+        email: companyEmail,
+        type: 'MOU Request',
+        category: 'company',
+        queueContext: {
+          sheetName: 'Clients', rowNumber: clientRow.rowNumber,
+          statusHeader: mailStatusHeader,
+          statusValues: { SENT: 'Request Sent', FAILED: 'Failed' }
+        }
+      });
+      if (mailResult?.queued) {
+        clientRow.assign({ [mailStatusHeader]: 'Request Queued' });
+        await clientRow.save();
+        refreshCache();
+        return res.json({ success: true, mailSent: false, mailQueued: true, statusUpdated: true, queueId: mailResult.queueId });
+      }
     } catch (mailError) {
       try {
         clientRow.assign({ [mailStatusHeader]: 'Failed' });
@@ -4436,6 +4521,7 @@ exports.submitMou = async (req, res) => {
     const hDocStat = getSafeH(['documentstatus', 'docstatus']); if(hDocStat) updateObj[hDocStat] = 'Completed';
     const hMou = getSafeH(['mou', 'moulink']); if(hMou) updateObj[hMou] = pdfLink;
     const hLogo = getSafeH(['companylogo', 'logo']); if(hLogo && logoLink) updateObj[hLogo] = logoLink;
+    const hMailStatus = getSafeH(['mailstatus']); if(hMailStatus) updateObj[hMailStatus] = 'Completion Email Pending';
     clientRow.assign(updateObj);
     await clientRow.save();
 
@@ -4467,14 +4553,35 @@ exports.submitMou = async (req, res) => {
       attachments: [{ filename: `${companyName.replace(/\s+/g, '_')}_Agreement.pdf`, content: certFile.buffer }]
     };
     let emailSent = true;
+    let emailQueued = false;
     try {
-      await sendMailAndLog(mailOptions, { name: companyName, email: companyEmail, type: 'MOU Completion' });
+      const mailResult = await sendMailAndLog(mailOptions, {
+        name: companyName,
+        email: companyEmail,
+        type: 'MOU Completion',
+        category: 'company',
+        queueContext: {
+          sheetName: 'Clients', rowNumber: clientRow.rowNumber,
+          statusHeader: hMailStatus || 'Mail Status',
+          statusValues: { SENT: 'Completion Email Sent', FAILED: 'Completion Email Failed' }
+        }
+      });
+      emailQueued = Boolean(mailResult?.queued);
+      emailSent = !emailQueued;
+      if (hMailStatus) {
+        clientRow.set(hMailStatus, emailQueued ? 'Completion Email Queued' : 'Completion Email Sent');
+        await clientRow.save();
+      }
     } catch (mailError) {
       emailSent = false;
+      if (hMailStatus) {
+        clientRow.set(hMailStatus, 'Completion Email Failed');
+        await clientRow.save().catch(statusError => console.error('Could not save MOU completion email status:', statusError.message));
+      }
       console.error('MOU was saved, but completion email failed:', mailError.message);
     }
     refreshCache();
-    res.json({ success: true, pdfLink, emailSent });
+    res.json({ success: true, pdfLink, emailSent, emailQueued });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
