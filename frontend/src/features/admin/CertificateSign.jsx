@@ -13,8 +13,7 @@ import ipcsSignature from '../../assets/brand/ipcs-signature.png';
 
 const KNOWN_SIGNING_API_HOSTS = new Set([
   'api-placement.ipcsglobal.info',
-  'api-talenzo.ipcsglobal.info',
-  'ipcs-tpo-portal-u0l6.onrender.com'
+  'api-talenzo.ipcsglobal.info'
 ]);
 
 const normalizeTrustedSigningApiBase = value => {
@@ -25,8 +24,10 @@ const normalizeTrustedSigningApiBase = value => {
     const candidate = new URL(rawValue, window.location.origin);
     const host = candidate.hostname.toLowerCase();
     const configuredOrigin = new URL(API_BASE, window.location.origin).origin;
-    const isLocalConfiguredApi = candidate.origin === configuredOrigin && ['localhost', '127.0.0.1'].includes(host);
-    if ((candidate.protocol === 'https:' && (host.endsWith('.ipcsglobal.info') || KNOWN_SIGNING_API_HOSTS.has(host))) || isLocalConfiguredApi) return candidate.origin;
+    const isLocalFrontend = ['localhost', '127.0.0.1'].includes(window.location.hostname);
+    const isLocalConfiguredApi = candidate.origin === configuredOrigin && isLocalFrontend && ['localhost', '127.0.0.1'].includes(host);
+    const isDevelopmentRenderApi = isLocalFrontend && candidate.protocol === 'https:' && host.endsWith('.onrender.com');
+    if ((candidate.protocol === 'https:' && (host.endsWith('.ipcsglobal.info') || KNOWN_SIGNING_API_HOSTS.has(host) || isDevelopmentRenderApi)) || isLocalConfiguredApi) return candidate.origin;
   } catch { /* Ignore invalid or untrusted service URLs. */ }
   return '';
 };
@@ -42,7 +43,6 @@ const getSigningApiCandidates = () => {
 
   const candidates = [
     API_BASE,
-    'https://ipcs-tpo-portal-u0l6.onrender.com',
     'https://api-placement.ipcsglobal.info',
     'https://api-talenzo.ipcsglobal.info'
   ].map(normalizeTrustedSigningApiBase).filter(Boolean);

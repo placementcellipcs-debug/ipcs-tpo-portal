@@ -11,7 +11,7 @@ export const API_BASE =
   import.meta.env.VITE_API_BASE || 
   (isLocal 
     ? 'http://localhost:5000' 
-    : 'https://api-talenzo.ipcsglobal.info');
+    : 'https://api-placement.ipcstalenzo.com');
 
 if (typeof window !== 'undefined' && !window.__ipcsSessionInterceptorInstalled) {
   axios.interceptors.request.use((config) => {
