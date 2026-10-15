@@ -2,6 +2,7 @@ const axios = require('axios');
 const nodemailer = require('nodemailer');
 const { createCipheriv, createDecipheriv, createHash, randomBytes } = require('crypto');
 const { Readable } = require('stream');
+const { createMailReportService } = require('./mailReportService');
 
 const SENDER_CONFIG = {
   placement: {
@@ -48,7 +49,7 @@ const USAGE_HEADERS = [
 ];
 const MAX_CELL_CHARS = 45000;
 
-const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndiaTimestamp }) => {
+const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndiaTimestamp, sheetsApi, getSpreadsheetIdForSheetName }) => {
   const transports = new Map();
   let queueSheetPromise = null;
   let usageSheetPromise = null;
@@ -343,7 +344,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     }
   };
 
-  const recordUsage = async (sender, provider, recipientCount, appScriptRemaining = '') => {
+  const recordUsage = async (sender, provider, recipientCount, appScriptRemaining = '', emailCategory = sender.emailCategory) => {
     const sentAt = new Date().toISOString();
     try {
       const current = await getUsageSnapshot(sender.category);
@@ -352,7 +353,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
       await sheet.addRow({
         ID: randomBytes(12).toString('hex'),
         SenderKey: sender.category,
-        EmailCategory: sender.emailCategory,
+        EmailCategory: emailCategory,
         SenderEmail: sender.email,
         Provider: provider,
         RecipientCount: recipientCount,
@@ -366,13 +367,13 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     }
   };
 
-  const recordQuotaObservation = async (sender, provider, appScriptRemaining = '') => {
+  const recordQuotaObservation = async (sender, provider, appScriptRemaining = '', emailCategory = sender.emailCategory) => {
     const current = await getUsageSnapshot(sender.category);
     const sheet = await getUsageSheet();
     await sheet.addRow({
       ID: randomBytes(12).toString('hex'),
       SenderKey: sender.category,
-      EmailCategory: sender.emailCategory,
+      EmailCategory: emailCategory,
       SenderEmail: sender.email,
       Provider: `quota-exhausted:${provider}`,
       RecipientCount: 0,
@@ -492,10 +493,10 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     return command === 'DATA';
   };
 
-  const sendThroughAccount = async (sender, mail, recipientCount) => {
+  const sendThroughAccount = async (sender, mail, recipientCount, emailCategory) => {
     const usage = await getUsageSnapshot(sender.category);
     if (usage.trackedRemaining < recipientCount) {
-      await recordQuotaObservation(sender, 'portal-cap');
+      await recordQuotaObservation(sender, 'portal-cap', '', emailCategory);
       throw Object.assign(new Error(`${sender.email} reached the portal quota safety cap of ${accountRecipientCap} recipients in the rolling 24-hour window.`), {
         code: 'QUOTA_EXCEEDED', retryable: true
       });
@@ -506,18 +507,25 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     if (appsScript.url && appsScript.secret) {
       try {
         const result = await sendViaAppsScript(sender, mail);
-        await recordUsage(sender, result.provider, recipientCount, result.remainingRecipients);
+        await recordUsage(sender, result.provider, recipientCount, result.remainingRecipients, emailCategory);
         return { ...result, senderKey: sender.category, senderEmail: sender.email };
       } catch (error) {
         if (isQuotaError(error)) {
-          await recordQuotaObservation(sender, 'apps-script', error.remainingRecipients);
-          throw error;
-        }
-        if (isAmbiguousDelivery(error)) {
+          try {
+            await recordQuotaObservation(sender, 'apps-script', error.remainingRecipients, emailCategory);
+          } catch (logError) {
+            console.error(`[MAIL QUOTA] Could not record Apps Script quota status for ${sender.email}:`, logError.message);
+          }
+          // Apps Script reported that it did not accept this message because
+          // its recipient quota is exhausted. Try this Gmail account's SMTP
+          // routes before moving to the shared fallback sender.
+          providerErrors.push(error);
+        } else if (isAmbiguousDelivery(error)) {
           error.ambiguousDelivery = true;
           throw error;
+        } else {
+          providerErrors.push(error);
         }
-        providerErrors.push(error);
       }
     }
 
@@ -534,11 +542,11 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     for (const family of [4, 6]) {
       try {
         const result = await getTransport(sender, family).sendMail(message);
-        await recordUsage(sender, `smtp-ipv${family}`, recipientCount);
+        await recordUsage(sender, `smtp-ipv${family}`, recipientCount, '', emailCategory);
         return { provider: `smtp-ipv${family}`, messageId: result.messageId || '', senderKey: sender.category, senderEmail: sender.email };
       } catch (error) {
         if (isQuotaError(error)) {
-          await recordQuotaObservation(sender, `smtp-ipv${family}`);
+          await recordQuotaObservation(sender, `smtp-ipv${family}`, '', emailCategory);
           throw error;
         }
         if (isAmbiguousDelivery(error)) {
@@ -560,12 +568,13 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     if (!splitAddresses(mail.to).length) throw new Error('A valid recipient email address is required.');
     if (!String(mail.subject || '').trim()) throw new Error('An email subject is required.');
     const recipientCount = countRecipients(mail);
+    const emailCategory = sender.emailCategory;
     const attempts = [];
     const senderKeys = sender.category === 'fallback' ? ['fallback'] : [sender.category, 'fallback'];
 
     for (const senderKey of senderKeys) {
       try {
-        return await withSenderLock(senderKey, () => sendThroughAccount(getSender(senderKey), mail, recipientCount));
+        return await withSenderLock(senderKey, () => sendThroughAccount(getSender(senderKey), mail, recipientCount, emailCategory));
       } catch (error) {
         if (isAmbiguousDelivery(error)) {
           throw new Error(`Delivery outcome is uncertain for ${getSender(senderKey).email}. Check its Sent folder and the recipient before retrying. Original error: ${error.message}`);
@@ -868,7 +877,23 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     return workerTimer;
   };
 
-  return { sendMail, processQueue, startWorker };
+  const mailReportService = createMailReportService({
+    doc,
+    sheetsApi,
+    getSpreadsheetIdForSheetName,
+    loadDocInfo,
+    senderConfig: SENDER_CONFIG,
+    sendMail
+  });
+
+  return {
+    sendMail,
+    processQueue,
+    startWorker,
+    refreshMailDashboard: mailReportService.refreshDashboard,
+    sendScheduledMailReport: mailReportService.sendScheduledReport,
+    startMailDashboardRefresh: mailReportService.startDashboardRefresh
+  };
 };
 
 module.exports = { createEmailService, SENDER_CONFIG };

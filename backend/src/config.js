@@ -46,7 +46,7 @@ const sheetGroups = {
     'Attendance_Corrections', 'Audit_Log'
   ],
   operations: [
-    'Issues', 'Contact', 'User', 'Branches', 'Mail', 'EmailQueue', 'EmailQuotaUsage', 'Security_Logs',
+    'Issues', 'Contact', 'User', 'Branches', 'Mail', 'EmailQueue', 'EmailQuotaUsage', 'Mail_Usage_Dashboard', 'Mail_Usage_History', 'Security_Logs',
     'Auth_Sessions', 'Password_Reset_Tokens', 'Trainer/TL_Log'
   ],
 };
@@ -654,7 +654,15 @@ const getSuperAdminEmails = () => {
   }).filter(Boolean);
 };
 
-const emailService = createEmailService({ doc, drive, loadDocInfo, refreshCache, formatIndiaTimestamp });
+const emailService = createEmailService({
+  doc,
+  drive,
+  loadDocInfo,
+  refreshCache,
+  formatIndiaTimestamp,
+  sheetsApi: google.sheets({ version: 'v4', auth: serviceAccountAuth }),
+  getSpreadsheetIdForSheetName
+});
 
 async function sendIPCSMail(mailOptions, sendDetails) {
   const category = String(sendDetails?.category || 'placement').trim().toLowerCase();
@@ -675,7 +683,11 @@ async function uploadToDrive(file, folderId) {
 module.exports = { 
   doc, drive, google, serviceAccountAuth, getCache, refreshCache, loadDocInfo, hasAccess, getFuzzyHeader,
   getSpreadsheetIdForSheetName, getActiveSpreadsheetIds, ensureSpreadsheetDateFormats,
-  sendIPCSMail, startEmailWorker: emailService.startWorker, processEmailQueue: emailService.processQueue, uploadToDrive,
+  sendIPCSMail, startEmailWorker: emailService.startWorker, processEmailQueue: emailService.processQueue,
+  startMailDashboardRefresh: emailService.startMailDashboardRefresh,
+  refreshMailDashboard: emailService.refreshMailDashboard,
+  sendScheduledMailReport: emailService.sendScheduledMailReport,
+  uploadToDrive,
   getTpoEmail, getBranchManagerEmail, getAllTpoEmails, getAllBranchManagerEmails, getSuperAdminEmails,
   getUserEmailById
 };

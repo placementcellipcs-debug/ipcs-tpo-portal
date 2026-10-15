@@ -13,7 +13,12 @@ const assetControllers = require('./src/assetControllers');
 const careerHubControllers = require('./src/careerHubControllers');
 
 // 🚨 IMPORT CACHES EXACTLY ONCE
-const { getCache, startEmailWorker } = require('./src/config');
+const {
+  getCache,
+  startEmailWorker,
+  startMailDashboardRefresh,
+  sendScheduledMailReport
+} = require('./src/config');
 const { isAssetCacheReady } = require('./src/assetConfig');
 
 const app = express();
@@ -376,6 +381,35 @@ cron.schedule('00 08 * * *', async () => {
   scheduled: true,
   timezone: "Asia/Kolkata"
 });
+
+// Mail dashboards refresh independently of outgoing mail. The reports include
+// the previous complete day/month/year and use the same sender failover path.
+startMailDashboardRefresh();
+
+const reportRecipients = String(process.env.MAIL_REPORT_RECIPIENTS ?? 'giftyipcsglobal@gmail.com').trim();
+const mailReportsEnabled = String(process.env.MAIL_REPORTS_ENABLED ?? 'true').toLowerCase() !== 'false';
+if (mailReportsEnabled && reportRecipients) {
+  const scheduleMailReport = (envKey, fallbackCron, period) => {
+    const expression = String(process.env[envKey] || fallbackCron).trim();
+    if (!cron.validate(expression)) {
+      console.error(`[MAIL REPORT] Invalid ${envKey} cron expression; ${period} report schedule was not registered.`);
+      return;
+    }
+    cron.schedule(expression, async () => {
+      try {
+        await sendScheduledMailReport(period);
+      } catch (error) {
+        console.error(`[MAIL REPORT] ${period} report could not be sent:`, error.message);
+      }
+    }, { scheduled: true, timezone: 'Asia/Kolkata' });
+    console.log(`[MAIL REPORT] ${period} report scheduled with ${envKey} (${expression}, Asia/Kolkata).`);
+  };
+  scheduleMailReport('MAIL_REPORT_DAILY_CRON', '15 8 * * *', 'daily');
+  scheduleMailReport('MAIL_REPORT_MONTHLY_CRON', '30 8 1 * *', 'monthly');
+  scheduleMailReport('MAIL_REPORT_YEARLY_CRON', '0 9 1 1 *', 'yearly');
+} else {
+  console.log('[MAIL REPORT] Scheduled report emails are disabled or no recipient is configured.');
+}
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
