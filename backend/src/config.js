@@ -103,10 +103,12 @@ const doc = {
     return allDocuments.flatMap(spreadsheet => spreadsheet.sheetsByIndex || []);
   },
   loadInfo: async () => Promise.all(allDocuments.map(spreadsheet => spreadsheet.loadInfo())),
-  addSheet: options => {
+  addSheet: async options => {
     const spreadsheet = getPreferredDocumentForSheet(options?.title);
     if (!spreadsheet) throw new Error('No Google Sheets document is configured. Set the spreadsheet IDs in the backend environment.');
-    return spreadsheet.addSheet(options);
+    const sheet = await spreadsheet.addSheet(options);
+    docInfoCachedUntil = 0;
+    return sheet;
   },
 };
 const getSpreadsheetIdForSheetName = title => spreadsheetGroupIds[getSheetGroup(title)] || legacySpreadsheetId;
@@ -123,21 +125,31 @@ let cacheRefreshRequested = false;
 let scheduledCacheRetryTimer = null;
 let consecutiveCacheRefreshFailures = 0;
 let docInfoLoading = null;
+let docInfoCachedUntil = 0;
+const docInfoCacheMs = Math.max(15000, Number(process.env.SHEETS_METADATA_CACHE_MS) || 60000);
 let spreadsheetDateFormatPromise = null;
 
 const getCache = () => globalCache;
 async function loadDocInfo() {
+  if (Date.now() < docInfoCachedUntil) return;
   if (!docInfoLoading) {
     docInfoLoading = Promise.allSettled(allDocuments.map(spreadsheet => spreadsheet.loadInfo())).then(results => {
       const failures = results.filter(result => result.status === 'rejected');
       if (failures.length === results.length && failures.length) throw failures[0].reason;
       failures.forEach(result => console.warn('Could not load one configured spreadsheet:', result.reason?.message || result.reason));
+      docInfoCachedUntil = Date.now() + docInfoCacheMs;
+    }).catch(error => {
+      // Avoid retrying all workbook metadata requests on every API call while
+      // Google Sheets is rate limiting this service account.
+      docInfoCachedUntil = Date.now() + Math.min(docInfoCacheMs, 15000);
+      throw error;
     });
   }
+  const pendingLoad = docInfoLoading;
   try {
-    return await docInfoLoading;
+    return await pendingLoad;
   } finally {
-    docInfoLoading = null;
+    if (docInfoLoading === pendingLoad) docInfoLoading = null;
   }
 }
 

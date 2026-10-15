@@ -68,9 +68,25 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
   const unpersistedUsage = [];
 
   const normalizeHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const isValidAddress = address => {
+    const atIndex = address.indexOf('@');
+    if (atIndex < 1 || atIndex !== address.lastIndexOf('@')) return false;
+    const local = address.slice(0, atIndex);
+    const domain = address.slice(atIndex + 1);
+    if (!/^[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+$/i.test(local) || local.startsWith('.') || local.endsWith('.') || local.includes('..')) return false;
+    const labels = domain.split('.');
+    return labels.length > 1 && labels.every(label => /^[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?$/i.test(label));
+  };
   const splitAddresses = value => {
-    const values = Array.isArray(value) ? value : String(value || '').split(',');
-    return [...new Set(values.map(item => String(item || '').trim()).filter(item => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item)))];
+    const values = Array.isArray(value) ? value : String(value || '').split(/[;,]+/);
+    const unique = new Map();
+    for (const item of values) {
+      // Sheet and form values sometimes include sentence punctuation, e.g.
+      // "support@example.com.". Remove delimiters before validating/sending.
+      const address = String(item || '').trim().replace(/[\s.,;]+$/, '');
+      if (isValidAddress(address)) unique.set(address.toLowerCase(), address);
+    }
+    return [...unique.values()];
   };
   const cleanRecipients = value => splitAddresses(value).join(',');
   const queueEncryptionKey = () => {
@@ -150,7 +166,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     to: cleanRecipients(mailOptions.to),
     cc: cleanRecipients(mailOptions.cc),
     bcc: cleanRecipients(mailOptions.bcc),
-    replyTo: cleanRecipients(mailOptions.replyTo) || String(mailOptions.replyTo || '').trim(),
+    replyTo: cleanRecipients(mailOptions.replyTo),
     subject: String(mailOptions.subject || ''),
     text: mailOptions.text ? String(mailOptions.text) : '',
     html: mailOptions.html ? String(mailOptions.html) : '',
@@ -684,6 +700,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
       to: cleanRecipients(mailOptions.to),
       cc: cleanRecipients(mailOptions.cc),
       bcc: cleanRecipients(mailOptions.bcc),
+      replyTo: cleanRecipients(mailOptions.replyTo),
       fromName: formatSenderName(mailOptions.from)
     };
     try {
