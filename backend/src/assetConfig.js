@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
+const { google } = require('googleapis');
 
 const serviceAccountAuth = new JWT({
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -18,28 +19,44 @@ const getAssetCache = () => assetCache;
 const isAssetCacheReady = () => assetCache !== null;
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-async function fetchSheetWithRetry(sheet, retries = 3) {
-  if (!sheet) return [];
-  const backoffs = [10000, 30000, 60000]; // 🚨 10s, 30s, 60s delays for 429 limits
-  for (let i = 0; i < retries; i++) {
+async function fetchAssetBatchWithRetry(sheetsApi, spreadsheetId, ranges, retries = 3) {
+  const backoffs = [10000, 30000, 60000];
+  for (let attempt = 0; attempt < retries; attempt += 1) {
     try {
-      return await sheet.getRows();
+      return await sheetsApi.spreadsheets.values.batchGet({
+        spreadsheetId,
+        ranges,
+        valueRenderOption: 'FORMATTED_VALUE',
+      });
     } catch (error) {
-      // 🚨 SAFELY CATCH EMPTY SHEETS INSTEAD OF CRASHING
-      if (error.message && error.message.includes('No values in the header row')) {
-        console.warn(`⚠️ Sheet "${sheet.title}" is empty. Skipping.`);
-        return [];
-      }
-      if (error.response && error.response.status === 429) {
-        const waitTime = backoffs[i] || 60000;
-        console.warn(`⚠️ Google API Rate Limit Hit (429) on Asset DB "${sheet.title}". Retrying in ${waitTime}ms...`);
-        await delay(waitTime);
-      } else {
-        throw error;
-      }
+      if (error.response?.status !== 429 || attempt === retries - 1) throw error;
+      const waitTime = backoffs[attempt] || backoffs[backoffs.length - 1];
+      console.warn(`⚠️ Google Sheets quota is busy while refreshing the Asset DB. Retrying in ${waitTime}ms...`);
+      await delay(waitTime);
     }
   }
   return [];
+}
+
+function rowsFromValues(sheet, values) {
+  const headers = (values?.[0] || []).map(value => String(value ?? '').trim());
+  if (!headers.some(Boolean)) return [];
+  // Keep google-spreadsheet consumers on this worksheet aligned with the
+  // headers from the same batch response; getRows() would add one request per tab.
+  sheet._headerValues = headers;
+  return values.slice(1).map((rawData, index) => ({
+    _rawData: rawData,
+    rowNumber: index + 2,
+    get(header) {
+      const columnIndex = headers.indexOf(header);
+      return columnIndex < 0 ? undefined : (rawData[columnIndex] ?? '');
+    },
+    toObject() {
+      return Object.fromEntries(headers
+        .map((header, columnIndex) => [header, rawData[columnIndex] ?? ''])
+        .filter(([header]) => Boolean(header)));
+    },
+  }));
 }
 
 async function refreshAssetCache() {
@@ -50,6 +67,7 @@ async function refreshAssetCache() {
   isFetching = true;
   try {
     await assetDoc.loadInfo();
+    const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
     
     const getSheetFuzzy = (keyword) => {
       const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -63,22 +81,27 @@ async function refreshAssetCache() {
       'vendors', 'documents', 'history', 'audits', 'audititems', 'disposals'
     ];
 
+    const selectedSheets = sheetKeys.map(key => getSheetFuzzy(key));
+    const existingSheets = selectedSheets.filter(Boolean);
+    const ranges = existingSheets.map(sheet => `'${String(sheet.title).replace(/'/g, "''")}'!A1:ZZ`);
+    const response = ranges.length
+      ? await fetchAssetBatchWithRetry(sheetsApi, assetDoc.spreadsheetId, ranges)
+      : { data: { valueRanges: [] } };
+    const valueRanges = response.data?.valueRanges || [];
     const fetchedData = {};
-    for (const key of sheetKeys) {
-      const sheet = getSheetFuzzy(key);
-      if (sheet) {
-        fetchedData[key] = await fetchSheetWithRetry(sheet);
-      } else {
-        fetchedData[key] = [];
-      }
-      await delay(1000);
-    }
+    let responseIndex = 0;
+    sheetKeys.forEach((key, index) => {
+      const sheet = selectedSheets[index];
+      fetchedData[key] = sheet
+        ? rowsFromValues(sheet, valueRanges[responseIndex++]?.values || [])
+        : [];
+    });
 
     assetCache = fetchedData;
     console.log("📦 Asset Management Cache successfully synced with Google Sheets!");
   } catch (err) { 
     console.error("❌ Asset Management Cache sync failed:", err.message); 
-    setTimeout(refreshAssetCache, 15000);
+    setTimeout(refreshAssetCache, err.response?.status === 429 ? 60000 : 15000);
   } finally {
     isFetching = false;
     if (refreshRequested) {

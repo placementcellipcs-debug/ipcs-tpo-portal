@@ -237,8 +237,20 @@ function clearCacheRetry() {
   scheduledCacheRetryTimer = null;
 }
 
-function createCachedRows(sheet, values) {
-  const headers = sheet.headerValues || [];
+function setWorksheetHeaderValues(sheet, values) {
+  const headers = (Array.isArray(values) ? values : []).map(value => String(value ?? '').trim());
+  // google-spreadsheet only populates headerValues through loadHeaderRow(),
+  // which would issue one extra API read per tab. Cache the headers from the
+  // batchGet response instead, so worksheet and cached-row consumers share the
+  // same headers without making more Google Sheets requests.
+  if (sheet) sheet._headerValues = headers;
+  return headers;
+}
+
+function createCachedRows(sheet, values, headerValues) {
+  const headers = Array.isArray(headerValues)
+    ? setWorksheetHeaderValues(sheet, headerValues)
+    : (sheet.headerValues || []);
   return (values || []).map((rawData, index) => ({
     _worksheet: sheet,
     _rawData: rawData,
@@ -309,15 +321,30 @@ async function performCacheRefresh() {
 
     const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
     const readSpreadsheetGroup = async (spreadsheetId, indexes) => {
-      const ranges = indexes.map(index => {
+      const selectedSheets = new Set(indexes.map(index => sheetsToFetch[index]));
+      const additionalHeaderSheets = (documentsById.get(spreadsheetId)?.sheetsByIndex || [])
+        .filter(sheet => !selectedSheets.has(sheet) && !Array.isArray(sheet._headerValues));
+      const dataRanges = indexes.map(index => {
         const title = String(sheetsToFetch[index].title).replace(/'/g, "''");
-        return `'${title}'!A2:ZZ`;
+        return `'${title}'!A1:ZZ`;
+      });
+      const headerRanges = additionalHeaderSheets.map(sheet => {
+        const title = String(sheet.title).replace(/'/g, "''");
+        return `'${title}'!1:1`;
       });
       try {
-        const response = await fetchCacheBatch(sheetsApi, spreadsheetId, ranges);
+        // Fetch cached-tab contents and any other tab headers together. This
+        // avoids the per-tab loadHeaderRow reads that exhausted Sheets quota
+        // after splitting the old workbook into multiple spreadsheets.
+        const response = await fetchCacheBatch(sheetsApi, spreadsheetId, [...dataRanges, ...headerRanges]);
         const valueRanges = response.data.valueRanges || [];
         indexes.forEach((index, rangeIndex) => {
-          fetchedData[index] = createCachedRows(sheetsToFetch[index], valueRanges[rangeIndex]?.values || []);
+          const sheetValues = valueRanges[rangeIndex]?.values || [];
+          const headers = setWorksheetHeaderValues(sheetsToFetch[index], sheetValues[0] || []);
+          fetchedData[index] = createCachedRows(sheetsToFetch[index], sheetValues.slice(1), headers);
+        });
+        additionalHeaderSheets.forEach((sheet, index) => {
+          setWorksheetHeaderValues(sheet, valueRanges[indexes.length + index]?.values?.[0] || []);
         });
       } catch (error) {
         indexes.forEach(index => {
