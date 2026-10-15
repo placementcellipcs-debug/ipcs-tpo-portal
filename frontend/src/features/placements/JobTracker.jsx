@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import {
-  ArrowRight, Briefcase, Buildings, CalendarBlank, CaretDown, CaretRight, CheckCircle, Clock,
+  ArrowClockwise, ArrowRight, Briefcase, Buildings, CalendarBlank, CaretDown, CaretRight, CheckCircle, Clock,
   CircleNotch, EnvelopeSimple, FilePdf, FloppyDisk, MagnifyingGlass,
   MapPinLine, PaperPlaneTilt, Phone, Plus, Sparkle, Users, WarningCircle, WhatsappLogo, X
 } from '@phosphor-icons/react';
@@ -18,7 +18,7 @@ const STATUS_OPTIONS = [
   'Interview Not Attended', 'No Response from Student', 'Got Offer', 'Placed',
   'Student Not Interested', 'Student Rejected Offer', 'Company Rejected'
 ];
-const FILTERS = ['All records', 'Needs follow-up', 'Interviews', 'Applications', 'Drive registrations', 'Offers & placements'];
+const FILTERS = ['All records', 'Needs follow-up', 'Interviews', 'Applications', 'Drive registrations', 'Offers & placements', 'Incomplete details'];
 const dateValue = value => {
   if (!value) return 0;
   return parsePortalDateTime(value)?.getTime() || 0;
@@ -87,7 +87,10 @@ export default function JobTracker() {
   const isStrictTpo = (role.includes('TPO') || role.includes('PLACEMENT OFFICER')) && account?.accessType !== 'superadmin';
   const [applications, setApplications] = useState([]);
   const [drives, setDrives] = useState([]);
+  const reloadInFlight = useRef(false);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [notice, setNotice] = useState(null);
   const [query, setQuery] = useState('');
@@ -107,22 +110,30 @@ export default function JobTracker() {
   const [collapsedGroups, setCollapsedGroups] = useState({});
 
   const reloadRecords = useCallback(async () => {
-    const [appResult, driveResult] = await Promise.allSettled([
-      axios.post(`${API_BASE}/api/tpo/applications`, { assignedBranchesArray: account?.assignedBranchesArray, tpoName: account?.name, role: account?.role, assignedCourse: account?.assignedCourse }),
-      axios.get(`${API_BASE}/api/tpo/drives`)
-    ]);
-    const errors = [];
-    if (appResult.status === 'fulfilled' && appResult.value.data?.success) {
-      // The API scopes these records to the signed-in officer's owned job IDs
-      // and their existing branch/course permissions.
-      setApplications(appResult.value.data.applications || []);
-    } else {
-      errors.push(appResult.status === 'rejected' ? appResult.reason?.response?.data?.message || appResult.reason?.message : appResult.value?.data?.message || 'Applications could not be loaded.');
+    if (reloadInFlight.current) return false;
+    reloadInFlight.current = true;
+    setRefreshing(true);
+    try {
+      const [appResult, driveResult] = await Promise.allSettled([
+        axios.post(`${API_BASE}/api/tpo/applications`, { assignedBranchesArray: account?.assignedBranchesArray, tpoName: account?.name, role: account?.role, assignedCourse: account?.assignedCourse }),
+        axios.get(`${API_BASE}/api/tpo/drives`)
+      ]);
+      const errors = [];
+      if (appResult.status === 'fulfilled' && appResult.value.data?.success) setApplications(appResult.value.data.applications || []);
+      else errors.push(appResult.status === 'rejected' ? appResult.reason?.response?.data?.message || appResult.reason?.message : appResult.value?.data?.message || 'Applications could not be loaded.');
+      if (driveResult.status === 'fulfilled' && driveResult.value.data?.success) setDrives(driveResult.value.data.drives || []);
+      else errors.push(driveResult.status === 'rejected' ? driveResult.reason?.response?.data?.message || driveResult.reason?.message : driveResult.value?.data?.message || 'Drive registrations could not be loaded.');
+      setLoadError(errors.join(' '));
+      const cacheTime = appResult.status === 'fulfilled' && appResult.value.data?.lastSyncedAt
+        ? appResult.value.data.lastSyncedAt
+        : driveResult.status === 'fulfilled' ? driveResult.value.data?.lastSyncedAt : '';
+      const parsedCacheTime = cacheTime ? new Date(cacheTime) : new Date();
+      setLastSyncedAt(Number.isNaN(parsedCacheTime.getTime()) ? new Date() : parsedCacheTime);
+      return errors.length === 0;
+    } finally {
+      reloadInFlight.current = false;
+      setRefreshing(false);
     }
-    if (driveResult.status === 'fulfilled' && driveResult.value.data?.success) setDrives(driveResult.value.data.drives || []);
-    else errors.push(driveResult.status === 'rejected' ? driveResult.reason?.response?.data?.message || driveResult.reason?.message : driveResult.value?.data?.message || 'Drive registrations could not be loaded.');
-    setLoadError(errors.length === 2 ? errors.join(' ') : errors[0] || '');
-    return errors.length === 0;
   }, [account]);
 
   useEffect(() => {
@@ -134,10 +145,12 @@ export default function JobTracker() {
     let active = true;
     setLoading(true);
     reloadRecords().finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
+    const refreshTimer = window.setInterval(() => { void reloadRecords(); }, 60_000);
+    return () => { active = false; window.clearInterval(refreshTimer); };
   }, [account, isStrictTpo, reloadRecords]);
 
   const records = useMemo(() => makeRecords(applications, drives), [applications, drives]);
+  const incompleteCount = records.filter(record => !record.name || !record.email || !record.phone || !record.resume).length;
   const courses = useMemo(() => [...new Set(records.map(item => item.course).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [records]);
   const visibleRecords = useMemo(() => records.filter(record => {
     const text = query.trim().toLowerCase();
@@ -154,6 +167,7 @@ export default function JobTracker() {
     if (filter === 'Applications') matchesFilter = record.sourceType === 'application';
     if (filter === 'Drive registrations') matchesFilter = record.sourceType === 'drive';
     if (filter === 'Offers & placements') matchesFilter = /offer|placed|joined/i.test(status);
+    if (filter === 'Incomplete details') matchesFilter = !record.name || !record.email || !record.phone || !record.resume;
     return matchesQuery && matchesCourse && matchesMonth && matchesFilter;
   }).sort((a, b) => dateValue(b.appliedAt) - dateValue(a.appliedAt)), [records, query, course, month, filter]);
   const visibleGroups = useMemo(() => groupRecords(visibleRecords), [visibleRecords]);
@@ -180,7 +194,7 @@ export default function JobTracker() {
       const url = record.sourceType === 'application' ? '/api/tpo/applications/update' : '/api/tpo/drives/update';
       const payload = record.sourceType === 'application'
         ? { rowNumber: record.rowNumber, status, remarks, fullApp: record, currentUserEmail: account?.email || '', interviewDate: extra.interviewDate ?? record.interviewDate ?? '', interviewTime: extra.interviewTime ?? record.interviewTime ?? '', interviewVenue: extra.interviewVenue ?? record.interviewVenue ?? '' }
-        : { rowNumber: record.rowNumber, studentStatus: status, remarks, interviewDate: extra.interviewDate ?? record.interviewDate ?? '', interviewTime: extra.interviewTime ?? record.interviewTime ?? '', interviewVenue: extra.interviewVenue ?? record.interviewVenue ?? '' };
+        : { rowNumber: record.rowNumber, driveId: record.driveId, roll: record.roll, name: record.name, regDate: record.regDate, studentStatus: status, remarks, interviewDate: extra.interviewDate ?? record.interviewDate ?? '', interviewTime: extra.interviewTime ?? record.interviewTime ?? '', interviewVenue: extra.interviewVenue ?? record.interviewVenue ?? '' };
       const response = await axios.post(`${API_BASE}${url}`, payload);
       if (!response.data?.success) throw new Error(response.data?.message || 'The update could not be saved.');
       updateLocalRecord(record, { status, remarks, ...extra, statusHistory: response.data.statusHistory });
@@ -251,9 +265,11 @@ export default function JobTracker() {
         <div className="tracker-kpi kpi-outcome"><span><CheckCircle size={18} /> OFFERS &amp; PLACEMENTS</span><strong>{placedCount}</strong><small>Positive hiring outcomes</small></div>
       </section>
 
+      {incompleteCount > 0 && <button type="button" className="tracker-data-alert" onClick={() => setFilter('Incomplete details')}><WarningCircle size={18} /><span><strong>{incompleteCount} record{incompleteCount === 1 ? '' : 's'} need a data check</strong><small>Missing a student name, email, phone number, or resume link. Select to review.</small></span><ArrowRight size={17} /></button>}
+
       <section className="tracker-board">
-        <header className="tracker-board-heading"><div><span className="tracker-section-label">LIVE REGISTER</span><h2>Placement pipeline <small>{visibleRecords.length} shown</small></h2></div><div className="tracker-board-tools"><label className="tracker-search"><MagnifyingGlass size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Find student, company, role, or ID" /></label><label className="tracker-month"><CalendarBlank size={17} /><input type="month" value={month} onChange={event => setMonth(event.target.value)} aria-label="Filter by month" /></label></div></header>
-        <div className="tracker-filter-row" role="tablist" aria-label="Pipeline filters">{FILTERS.map(label => <button type="button" role="tab" aria-selected={filter === label} key={label} className={filter === label ? 'active' : ''} onClick={() => setFilter(label)}>{label}<span>{label === 'All records' ? records.length : label === 'Needs follow-up' ? followUps : label === 'Interviews' ? upcomingInterviews : label === 'Applications' ? applications.length : label === 'Drive registrations' ? drives.filter(item => Number.isInteger(Number(item.rowNumber)) && Number(item.rowNumber) >= 2).length : placedCount}</span></button>)}<label className="tracker-course-filter"><Briefcase size={15} /><select value={course} onChange={event => setCourse(event.target.value)} aria-label="Filter by course"><option value="All">All courses</option>{courses.map(value => <option key={value} value={value}>{value}</option>)}</select></label></div>
+        <header className="tracker-board-heading"><div><span className="tracker-section-label">LIVE REGISTER</span><h2>Placement pipeline <small>{visibleRecords.length} shown</small></h2></div><div className="tracker-board-tools"><div className="tracker-sync"><button type="button" onClick={() => void reloadRecords()} disabled={refreshing} aria-label="Refresh placement records" title="Refresh placement records">{refreshing ? <CircleNotch className="ph-spin" size={17} /> : <ArrowClockwise size={17} />}<span>{refreshing ? 'Refreshing' : 'Refresh'}</span></button><small>{lastSyncedAt ? `Updated ${lastSyncedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Waiting to sync'}</small></div><label className="tracker-search"><MagnifyingGlass size={18} /><input value={query} onChange={event => setQuery(event.target.value)} placeholder="Find student, company, role, or ID" /></label><label className="tracker-month"><CalendarBlank size={17} /><input type="month" value={month} onChange={event => setMonth(event.target.value)} aria-label="Filter by month" /></label></div></header>
+        <div className="tracker-filter-row" role="tablist" aria-label="Pipeline filters">{FILTERS.map(label => <button type="button" role="tab" aria-selected={filter === label} key={label} className={filter === label ? 'active' : ''} onClick={() => setFilter(label)}>{label}<span>{label === 'All records' ? records.length : label === 'Needs follow-up' ? followUps : label === 'Interviews' ? upcomingInterviews : label === 'Applications' ? applications.length : label === 'Drive registrations' ? drives.filter(item => Number.isInteger(Number(item.rowNumber)) && Number(item.rowNumber) >= 2).length : label === 'Incomplete details' ? incompleteCount : placedCount}</span></button>)}<label className="tracker-course-filter"><Briefcase size={15} /><select value={course} onChange={event => setCourse(event.target.value)} aria-label="Filter by course"><option value="All">All courses</option>{courses.map(value => <option key={value} value={value}>{value}</option>)}</select></label></div>
         {notice && <motion.div className={`tracker-notice ${notice.tone}`} initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} role={notice.tone === 'error' ? 'alert' : 'status'}><span>{notice.tone === 'error' ? <WarningCircle size={18} /> : notice.tone === 'warning' ? <WarningCircle size={18} /> : <CheckCircle size={18} />}{notice.text}</span><button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message"><X size={16} /></button></motion.div>}
         {loadError && <div className="tracker-load-warning"><WarningCircle size={16} /> {loadError} <button type="button" onClick={() => { setLoading(true); reloadRecords().finally(() => setLoading(false)); }}>Retry</button></div>}
         {!loading && visibleRecords.length > 0 && <div className="tracker-origin-legend" aria-label="Record type legend"><span className="origin-application"><i /> Job application with Job ID</span><span className="origin-drive"><i /> Placement drive</span><span className="origin-manual"><i /> Manual addition</span></div>}
@@ -267,7 +283,7 @@ export default function JobTracker() {
                 const remarks = edited.remarks ?? record.remarks ?? '';
                 const busy = Boolean(saving[record.recordKey]);
                 return <article key={record.recordKey} className="tracker-record">
-                  <div className="tracker-student-cell"><div className="tracker-avatar">{initials(record.name)}</div><div className="tracker-student-copy"><strong>{record.name || 'Student name missing'}</strong><span>{[record.roll, record.branch, record.course].filter(Boolean).join(' · ')}</span><div className="tracker-tags"><span className={`${record.originType}-tag`}>{record.originType === 'drive' ? 'DRIVE REGISTRATION' : record.originType === 'manual' ? 'MANUAL ADDITION' : 'JOB APPLICATION · JOB ID'}</span></div><div className="tracker-quicklinks">{record.phone && <a href={`https://wa.me/91${String(record.phone).replace(/\D/g, '')}`} target="_blank" rel="noreferrer" title="Open WhatsApp"><WhatsappLogo size={14} weight="fill" /> Chat</a>}{record.resume && <a href={getDrivePdf(record.resume)} target="_blank" rel="noreferrer" title="Open resume"><FilePdf size={14} weight="fill" /> Resume</a>}</div></div></div>
+                  <div className="tracker-student-cell"><div className="tracker-avatar">{initials(record.name)}</div><div className="tracker-student-copy"><strong>{record.name || 'Student name missing'}</strong><span>{[record.roll, record.branch, record.course].filter(Boolean).join(' · ') || 'Branch and course not recorded'}</span><div className="tracker-tags"><span className={`${record.originType}-tag`}>{record.originType === 'drive' ? 'DRIVE REGISTRATION' : record.originType === 'manual' ? 'MANUAL ADDITION' : 'JOB APPLICATION · JOB ID'}</span></div><div className="tracker-quicklinks">{record.phone && <a href={`https://wa.me/91${String(record.phone).replace(/\D/g, '')}`} target="_blank" rel="noreferrer" title="Open WhatsApp"><WhatsappLogo size={14} weight="fill" /> Chat</a>}{record.email && <a href={`mailto:${record.email}`} title="Email student"><EnvelopeSimple size={14} /> Email</a>}{record.resume && <a href={getDrivePdf(record.resume)} target="_blank" rel="noreferrer" title="Open resume"><FilePdf size={14} weight="fill" /> Resume</a>}{(!record.email || !record.phone || !record.resume) && <span className="tracker-incomplete-pill">Missing: {[!record.email && 'email', !record.phone && 'phone', !record.resume && 'resume'].filter(Boolean).join(', ')}</span>}</div></div></div>
                   <div className="tracker-interview-cell"><span className="tracker-applied-date">{prettyDate(record.appliedAt)}</span>{isInterview(record.status) ? <button type="button" className="tracker-interview-summary" onClick={() => setDetailsRecord(record)}><CalendarBlank size={15} /><span>{record.interviewDate ? prettyDate(record.interviewDate) : 'Interview details missing'}{record.interviewTime ? ` · ${formatPortalTime(record.interviewTime)}` : ''}</span><ArrowRight size={14} /></button> : <span className="tracker-source-caption">{record.sourceType === 'drive' ? `Drive · ${record.driveId || 'registered'}` : `Applied · ${record.jobId || 'opening'}`}</span>}</div>
                   <div className="tracker-status-cell"><div className="tracker-status-line"><select aria-label={`Update status for ${record.name}`} className={`tracker-status-select tone-${getStatusTone(status)}`} value={status} onChange={event => { const next = event.target.value; setEdit(record, 'status', next); if (isInterview(next)) openSchedule(record, next); }}><option value={status}>{status}</option>{STATUS_OPTIONS.filter(option => option !== status).map(option => <option key={option} value={option}>{option}</option>)}</select><button type="button" className="tracker-history-link" onClick={() => setDetailsRecord(record)}>Timeline <ArrowRight size={13} /></button></div><textarea rows={2} value={remarks} onChange={event => setEdit(record, 'remarks', event.target.value)} placeholder="Add an internal remark…" aria-label={`Remarks for ${record.name}`} /></div>
                   <div className="tracker-actions">{record.phone && <a className="tracker-icon-action call" href={callHref(record.phone)} title={`Call ${record.name}`}><Phone size={16} /><span>Call</span></a>}<button type="button" className="tracker-icon-action schedule" onClick={() => openSchedule(record)} title={isInterview(record.status) ? 'Edit interview schedule' : 'Schedule interview'}><CalendarBlank size={16} /><span>{isInterview(record.status) ? 'Reschedule' : 'Schedule'}</span></button><button type="button" className="tracker-icon-action mail" onClick={() => openEmail(record)} title="Compose email to student"><EnvelopeSimple size={16} /><span>Email</span></button><button type="button" className="tracker-save-action" disabled={busy} onClick={() => saveRecord(record)}>{busy ? <CircleNotch className="ph-spin" size={17} /> : <FloppyDisk size={16} />}{busy ? 'Saving' : 'Save'}</button><button type="button" className="tracker-mobile-details" onClick={() => setDetailsRecord(record)}>Details</button></div>
@@ -325,6 +341,7 @@ export default function JobTracker() {
       @media(max-width:430px){.tracker-hero h1{font-size:2.35rem}.tracker-eyebrow{font-size:.53rem;letter-spacing:.1em}.tracker-hero-actions{align-items:flex-start;flex-direction:column;gap:10px}.tracker-board-tools{align-items:stretch;flex-direction:column}.tracker-search,.tracker-month{width:100%;min-height:40px}.tracker-modal-grid{grid-template-columns:1fr}.tracker-modal .wide-field{grid-column:auto}.tracker-student-options button{grid-template-columns:29px minmax(0,1fr)}.tracker-student-options small{grid-column:2}.tracker-modal-footer{flex-wrap:wrap}.tracker-modal-footer>*{flex:1}.tracker-detail-summary{align-items:flex-start;flex-direction:column}.tracker-timeline-heading{flex-direction:column;gap:2px}}
       @media(prefers-reduced-motion:reduce){.tracker-live-dot{animation:none}.tracker-record,.tracker-primary-action{transition:none}}
       .tracker-origin-legend{display:flex;flex-wrap:wrap;gap:8px;margin:12px 20px 0}.tracker-origin-legend>span{display:inline-flex;align-items:center;gap:6px;padding:6px 9px;border:1px solid rgba(148,163,184,.12);border-radius:9px;color:#90a1b7;font-size:.59rem;font-weight:750}.tracker-origin-legend i{width:7px;height:7px;border-radius:50%;background:#38bdf8;box-shadow:0 0 9px currentColor}.tracker-origin-legend .origin-drive i{background:#a78bfa}.tracker-origin-legend .origin-manual i{background:#fb923c}.tracker-opening-group.origin-drive{border-color:rgba(167,139,250,.2)}.tracker-opening-group.origin-manual{border-color:rgba(251,146,60,.2)}.tracker-opening-mark.manual{border-color:rgba(251,146,60,.25);background:rgba(249,115,22,.1);color:#fdba74}.tracker-opening-group.origin-manual .tracker-opening-header{background:radial-gradient(ellipse at 0 0,rgba(249,115,22,.08),transparent 55%),rgba(15,23,42,.3)}.tracker-opening-group.origin-drive .tracker-opening-header{background:radial-gradient(ellipse at 0 0,rgba(139,92,246,.09),transparent 55%),rgba(15,23,42,.3)}.tracker-tags .manual-tag,.tracker-source-pill.manual{border-color:rgba(251,146,60,.25);background:rgba(249,115,22,.09);color:#fdba74}.tracker-group-toggle{width:34px;height:34px;flex:0 0 34px;display:grid;place-items:center;border:1px solid rgba(148,163,184,.15);border-radius:10px;background:rgba(2,8,23,.24);color:#9fb0c4;cursor:pointer;transition:background .17s,border-color .17s,color .17s}.tracker-group-toggle:hover{border-color:rgba(103,232,249,.3);background:rgba(14,165,233,.1);color:#a5f3fc}
+      .tracker-sync{display:grid;justify-items:center;gap:4px;flex:0 0 auto}.tracker-sync>button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:0 12px;border:1px solid rgba(103,232,249,.19);border-radius:10px;background:rgba(8,145,178,.09);color:#a5f3fc;font:inherit;font-size:.68rem;font-weight:750;cursor:pointer}.tracker-sync>button:disabled{opacity:.6;cursor:wait}.tracker-sync>small{color:#74869d;font-size:.56rem}.tracker-data-alert{width:100%;display:flex;align-items:center;gap:12px;margin:0 0 16px;padding:12px 15px;border:1px solid rgba(251,191,36,.2);border-radius:13px;background:linear-gradient(100deg,rgba(120,76,10,.14),rgba(16,24,39,.62));color:#fcd34d;text-align:left;cursor:pointer}.tracker-data-alert>span{display:grid;gap:3px;flex:1}.tracker-data-alert strong{color:#fef3c7;font-size:.73rem}.tracker-data-alert small{color:#c4ad7b;font-size:.62rem}.tracker-incomplete-pill{display:inline-flex;align-items:center;padding:3px 6px;border:1px solid rgba(251,191,36,.18);border-radius:7px;background:rgba(120,76,10,.12);color:#fcd34d;font-size:.54rem;font-weight:700}.tracker-filter-row{overflow-x:auto}.tracker-filter-row>button{white-space:nowrap}@media(max-width:760px){.tracker-data-alert{align-items:flex-start}.tracker-sync{width:100%;display:flex;align-items:center;justify-content:space-between}.tracker-sync>small{font-size:.6rem}}
     `}</style>
   </Layout>;
 }

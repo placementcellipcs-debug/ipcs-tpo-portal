@@ -26,6 +26,7 @@ const ExamsHub = lazy(() => import('../features/learning/ExamsHub'));
 const Branches = lazy(() => import('../features/placements/Branches'));
 const SecurityActivity = lazy(() => import('../features/admin/SecurityActivity'));
 const CorporateTrainingInquiries = lazy(() => import('../features/admin/CorporateTrainingInquiries'));
+const HiringInquiries = lazy(() => import('../features/admin/HiringInquiries'));
 const PublicSitePage = lazy(() => import('../features/public/PublicSitePage'));
 
 // ASSET MANAGEMENT (ERP)
@@ -69,12 +70,12 @@ function App() {
         <Route path="/placements" element={<PublicSitePage page="placement" />} />
         <Route path="/placements/posters" element={<PublicSitePage page="placement-gallery" />} />
         <Route path="/placements/media" element={<PublicSitePage page="placement-media" />} />
-        <Route path="/hiring" element={<PublicSitePage page="hiring" />} />
+        <Route path="/hiring" element={<Navigate to="/placements#vacancies" replace />} />
         <Route path="/partners" element={<PublicSitePage page="partners" />} />
         <Route path="/partners/all" element={<PublicSitePage page="partners-all" />} />
         <Route path="/partners/media" element={<PublicSitePage page="partners-media" />} />
         <Route path="/updates" element={<PublicSitePage page="updates" />} />
-        <Route path="/openings" element={<PublicSitePage page="vacancies" />} />
+        <Route path="/openings" element={<Navigate to="/placements#vacancies" replace />} />
         <Route path="/recruiter" element={<Navigate to="/placements#recruiter-partnerships" replace />} />
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/career-hub" element={<CareerHub />} />
@@ -102,6 +103,7 @@ function App() {
         <Route path="/exams/talentino" element={<TalentinoExams />} />
         <Route path="/security-logs" element={<SecurityActivity />} />
         <Route path="/admin/corporate-training" element={<CorporateTrainingInquiries />} />
+        <Route path="/hiring-inquiries" element={<HiringInquiries />} />
         
         {/* ASSET MANAGEMENT ERP ROUTES */}
         <Route path="/assets" element={<AssetList />} />

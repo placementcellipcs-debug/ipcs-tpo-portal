@@ -186,6 +186,7 @@ export default function Layout({ children }) {
   const isAssetManager = userRole.includes('ASSET') || sheetAccess.includes('asset');
   const isDesigner = userRole.includes('DESIGN') || userRole.includes('MEDIA') || userRole.includes('CREATIVE');
   const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('SYSTEM ADMIN') || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
+  const isHiringInboxOwner = String(tpoData.email || '').trim().toLowerCase() === 'gifty@ipcsglobal.com';
   const isDesignerWorkspace = isDesigner && !isSuperAdmin;
   const isAssetWorkspace = isAssetManager && !isSuperAdmin;
   
@@ -338,6 +339,7 @@ export default function Layout({ children }) {
                 {showReports && <div className={`pd-nav-item ${isActive('/reports') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/reports')}><ChartBar size={22} weight={isActive('/reports') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Reports</span></div>}
                 <div className={`pd-nav-item ${isActive('/placed') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/placed')}><Trophy size={22} weight={isActive('/placed') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Placed Students</span></div>
                 {showStudentApps && <div className={`pd-nav-item ${isActive('/applications') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/applications')}><ListChecks size={22} weight={isActive('/applications') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Student Apps</span></div>}
+                {isHiringInboxOwner && <div className={`pd-nav-item ${isActive('/hiring-inquiries') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/hiring-inquiries')}><Briefcase size={22} weight={isActive('/hiring-inquiries') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Hire from us requests</span></div>}
                 <div className={`pd-nav-item ${isActive('/vacancies') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/vacancies')}><Briefcase size={22} weight={isActive('/vacancies') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Vacancies</span></div>
                 {canViewPlacementDrives && (!isTpo || isSuperAdmin) && <div className={`pd-nav-item ${isActive('/placement-drives') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}><IdentificationCard size={22} weight={isActive('/placement-drives') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Placement Drives</span></div>}
                 {canViewClients && <div className={`pd-nav-item ${isActive('/clients') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/clients')}><Handshake size={22} weight={isActive('/clients') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Clients & Partners</span></div>}

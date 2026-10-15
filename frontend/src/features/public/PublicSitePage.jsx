@@ -7,8 +7,13 @@ import './Login.css';
 export default function PublicSitePage({ page }) {
   const location = useLocation();
   useEffect(() => {
-    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
-  }, [location.pathname, location.search]);
+    if (location.hash) {
+      const id = decodeURIComponent(location.hash.slice(1));
+      document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    } else {
+      window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    }
+  }, [location.pathname, location.search, location.hash]);
 
   return (
     <main className="public-portal">

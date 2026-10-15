@@ -75,7 +75,7 @@ function parseUserAgent(ua = '') {
 }
 
 const { 
-  doc, drive, google, serviceAccountAuth, getCache, refreshCache, loadDocInfo, hasAccess, getFuzzyHeader,
+  doc, drive, google, serviceAccountAuth, getCache, refreshCache, loadDocInfo, getSpreadsheetIdForSheetName, hasAccess, getFuzzyHeader,
   sendIPCSMail, uploadToDrive
 } = require('./config');
 
@@ -280,6 +280,26 @@ const logMailToSheet = async (receiverName, receiverMail, mailType, subject, sta
   } catch (e) {
     console.error("Failed to log mail to sheet:", e);
   }
+};
+
+const resumeDeliveryMemory = new Map();
+const getResumeDeliveryReference = jobId => String(jobId || '').trim().toLowerCase();
+const wasResumeDeliveryHandled = (jobId, cache) => {
+  const key = getResumeDeliveryReference(jobId);
+  if (!key) return false;
+  const local = resumeDeliveryMemory.get(key);
+  if (local?.status === 'sent' || local?.status === 'review') return true;
+  if (local?.status === 'queued') {
+    if (Date.now() - local.at < 24 * 60 * 60 * 1000) return true;
+    resumeDeliveryMemory.delete(key);
+  }
+  const reference = `[Ref: ${String(jobId).trim()}]`.toLowerCase();
+  const logged = (cache?.mails || []).filter(row =>
+    String(getValByHeader(row, ['mailtype', 'type']) || '').toLowerCase().includes('resume delivery') &&
+    String(getValByHeader(row, ['subject']) || '').toLowerCase().includes(reference)
+  ).sort((left, right) => Number(right.rowNumber || 0) - Number(left.rowNumber || 0));
+  const latestStatus = String(getValByHeader(logged[0], ['status']) || '').toLowerCase();
+  return Boolean(latestStatus && (/uncertain|check its sent folder/.test(latestStatus) || (!latestStatus.startsWith('failed:') && /success|sent|queued/.test(latestStatus))));
 };
 
 const sendMailAndLog = async (mailOptions, logDetails) => {
@@ -1027,6 +1047,21 @@ exports.getApplications = async (req, res) => {
   };
   
   const sourceData = cache.applications || [];
+  const studentByRoll = new Map();
+  const studentsByName = new Map();
+  (cache.students || []).forEach(student => {
+    const rollKey = normalizePlacementText(getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+    const nameKey = normalizePlacementText(getValByHeader(student, ['studentname', 'name']));
+    if (rollKey && !studentByRoll.has(rollKey)) studentByRoll.set(rollKey, student);
+    if (nameKey) studentsByName.set(nameKey, [...(studentsByName.get(nameKey) || []), student]);
+  });
+  const studentForApplication = row => {
+    const rollKey = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+    if (rollKey && studentByRoll.has(rollKey)) return studentByRoll.get(rollKey);
+    const nameKey = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+    const matches = nameKey ? studentsByName.get(nameKey) || [] : [];
+    return matches.length === 1 ? matches[0] : null;
+  };
   const historyKeyFor = row => [
     getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']) || getValByHeader(row, ['studentname', 'name']),
     getValByHeader(row, ['companyname', 'company']),
@@ -1050,31 +1085,25 @@ exports.getApplications = async (req, res) => {
   });
 
   sourceData.forEach((row) => {
-    const sourceBranch = getValByHeader(row, ['branch']);
-    const branch = sourceBranch || 'Unknown';
-    const course = getValByHeader(row, ['course']) || 'Unknown';
-    const belongsToOfficer = belongsToSignedInOfficer(row);
-    const withinAssignedScope = hasPlacementAccess(branch, course, portalUser);
-    if (belongsToOfficer && (withinAssignedScope || (restrictToPlacementOfficer && !sourceBranch))) {
-      const roll = getValByHeader(row, ['roll']) || ''; 
-      const jobId = getValByHeader(row, ['jobid']) || '';
-      let phone = getValByHeader(row, ['contact', 'phone']) || '';
-      let email = getValByHeader(row, ['mail', 'email']) || '';
-      let resume = getValByHeader(row, ['resume', 'cv']) || '';
-      let qual = getValByHeader(row, ['qual']) || '';
-
-      if (!phone || !email) {
-        const studentData = (cache.students || []).find(s => {
-          const sRoll = getValByHeader(s, ['roll', 'rollnumber', 'ipcsrollnumber']);
-          return sRoll && sRoll === roll;
-        });
-        if (studentData) {
-          if (!phone) phone = getValByHeader(studentData, ['phone', 'contact']) || '';
-          if (!email) email = getValByHeader(studentData, ['mailid', 'email']) || '';
-          if (!resume) resume = getValByHeader(studentData, ['resume', 'cv']) || '';
-          if (!qual) qual = getValByHeader(studentData, ['qual', 'qualification']) || '';
-        }
-      }
+      const studentData = studentForApplication(row);
+      const roll = getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']) || (studentData && getValByHeader(studentData, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])) || '';
+      const sourceBranch = getValByHeader(row, ['branch']) || (studentData && getValByHeader(studentData, ['branch', 'sittingbranch'])) || '';
+      const branch = sourceBranch || 'Unknown';
+      const course = getValByHeader(row, ['course']) || (studentData && getValByHeader(studentData, ['course', 'program'])) || 'Unknown';
+      const jobId = getValByHeader(row, ['jobid', 'job id']) || '';
+      const belongsToOfficer = belongsToSignedInOfficer(row);
+      const withinAssignedScope = hasPlacementAccess(branch, course, portalUser);
+      // TPOs need to collaborate on all applications in their assigned branch,
+      // rather than seeing only openings whose owner text exactly matches them.
+      // Rows without a branch are visible only when the TPO owns the opening.
+      const allowedForTracker = restrictToPlacementOfficer
+        ? withinAssignedScope || (!sourceBranch && belongsToOfficer)
+        : withinAssignedScope;
+      if (allowedForTracker) {
+      const phone = getValByHeader(row, ['contact', 'phone', 'mobilenumber']) || (studentData && getValByHeader(studentData, ['phone', 'contact', 'mobilenumber'])) || '';
+      const email = getValByHeader(row, ['mailid', 'studentemail', 'email', 'mail']) || (studentData && getValByHeader(studentData, ['mailid', 'email', 'mail'])) || '';
+      const resume = getValByHeader(row, ['resume', 'cv']) || (studentData && getValByHeader(studentData, ['resume', 'cv'])) || '';
+      const qual = getValByHeader(row, ['qualification', 'qual']) || (studentData && getValByHeader(studentData, ['qualification', 'qual'])) || '';
 
       const status = getValByHeader(row, ['status']) || 'Applied';
       const remarks = getValByHeader(row, ['remarks']) || '';
@@ -1097,12 +1126,12 @@ exports.getApplications = async (req, res) => {
         statusHistory = [placementHistoryEntry({ status, remarks, interviewDate, interviewTime, interviewVenue, changedBy: tpoName || 'Placement team', changedAt: getValByHeader(row, ['timestamp', 'date', 'time']), event: 'Current record' })];
       }
       appsList.push({
-        rowNumber: row.rowNumber, recordType: 'application', origin: getValByHeader(row, ['entrysource', 'recordorigin', 'origin']), name: getValByHeader(row, ['name', 'studentname']) || '', roll, branch, course, qual: qual || 'Not Specified', jobId, company: getValByHeader(row, ['company', 'companyname']) || 'Unknown Company', position: getValByHeader(row, ['position', 'role']) || 'Unknown Position', date: getValByHeader(row, ['time', 'date', 'timestamp']) || '', status, remarks, statusHistory, interviewDate, interviewTime, interviewVenue, tpoName, phone, email, resume, datePlaced: getValByHeader(row, ['dateplaced']) || '', packageLpa: getValByHeader(row, ['package']) || '', offerLetter: getValByHeader(row, ['offerletter']) || '', joiningStatus: getValByHeader(row, ['joiningstatus']) || ''
+        rowNumber: row.rowNumber, recordType: 'application', origin: getValByHeader(row, ['entrysource', 'recordorigin', 'origin']), name: getValByHeader(row, ['studentname', 'name', 'candidate']) || (studentData && getValByHeader(studentData, ['studentname', 'name'])) || '', roll, branch, course, qual: qual || 'Not Specified', jobId, company: getValByHeader(row, ['companyname', 'company']) || 'Unknown Company', position: getValByHeader(row, ['position', 'role']) || 'Unknown Position', date: getValByHeader(row, ['timestamp', 'date', 'time']) || '', status, remarks, statusHistory, interviewDate, interviewTime, interviewVenue, tpoName, phone, email, resume, datePlaced: getValByHeader(row, ['dateplaced']) || '', packageLpa: getValByHeader(row, ['package']) || '', offerLetter: getValByHeader(row, ['offerletter']) || '', joiningStatus: getValByHeader(row, ['joiningstatus']) || ''
       });
     }
   });
   
-  res.json({ success: true, applications: appsList });
+  res.json({ success: true, applications: appsList, lastSyncedAt: cache.cacheUpdatedAt || '' });
 };
 
 exports.updateApplication = async (req, res) => {
@@ -1124,20 +1153,56 @@ exports.updateApplication = async (req, res) => {
 
   try {
     const appSheet = doc.sheetsByTitle["Opening_Applied"];
-    if (!appSheet || isNaN(rowNumber)) return res.status(400).json({ success: false, message: "Invalid payload or sheet missing." });
+    const requestedRoll = normalizePlacementText(fullApp.roll);
+    const requestedName = normalizePlacementText(fullApp.name);
+    const requestedJobId = normalizePlacementText(fullApp.jobId);
+    const requestedCompany = normalizePlacementText(fullApp.company);
+    const requestedPosition = normalizePlacementText(fullApp.position);
+    const hasRecordIdentity = Boolean(requestedRoll || requestedName) && Boolean(requestedJobId || requestedCompany || requestedPosition);
+    if (!appSheet || (!Number.isInteger(rowNumber) && !hasRecordIdentity)) return res.status(400).json({ success: false, message: "Invalid payload or sheet missing." });
     await ensurePlacementHeaders(appSheet, placementTrackingHeaders);
 
-    const rows = await appSheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    
-    if (!rows || rows.length === 0) {
+    let sourceRow = null;
+    if (hasRecordIdentity) {
+      const sheetRows = await appSheet.getRows();
+      const matches = sheetRows.filter(row => {
+        const roll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+        const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+        const jobId = normalizePlacementText(getValByHeader(row, ['jobid', 'job id']));
+        const company = normalizePlacementText(getValByHeader(row, ['companyname', 'company']));
+        const position = normalizePlacementText(getValByHeader(row, ['position', 'role']));
+        const studentMatches = requestedRoll ? roll === requestedRoll : name === requestedName;
+        return studentMatches
+          && (!requestedJobId || jobId === requestedJobId)
+          && (!requestedCompany || company === requestedCompany)
+          && (!requestedPosition || position === requestedPosition);
+      });
+      sourceRow = matches.length === 1
+        ? matches[0]
+        : matches.find(row => Number(row.rowNumber) === rowNumber) || null;
+      if (matches.length > 1 && !sourceRow) return res.status(409).json({ success: false, message: 'This application matches multiple rows. Refresh the tracker and try again.' });
+    } else if (Number.isInteger(rowNumber) && rowNumber >= 2) {
+      sourceRow = (await appSheet.getRows({ offset: rowNumber - 2, limit: 1 }))[0] || null;
+    }
+
+    if (!sourceRow) {
       return res.status(404).json({ success: false, message: "Application record not found in Google Sheets." });
     }
 
     const user = req.portalUser;
-    const sourceRow = rows[0];
     const sourceBranch = getValByHeader(sourceRow, ['branch']);
     const sourceCourse = getValByHeader(sourceRow, ['course']);
-    if (!hasPlacementAccess(sourceBranch, sourceCourse, user)) {
+    const rowRoll = normalizePlacementText(getValByHeader(sourceRow, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+    const rowName = normalizePlacementText(getValByHeader(sourceRow, ['studentname', 'name']));
+    const linkedStudent = (getCache()?.students || []).find(student => {
+      const studentRoll = normalizePlacementText(getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+      return rowRoll && studentRoll === rowRoll;
+    }) || ((getCache()?.students || []).filter(student => rowName && normalizePlacementText(getValByHeader(student, ['studentname', 'name'])) === rowName).length === 1
+      ? (getCache()?.students || []).find(student => normalizePlacementText(getValByHeader(student, ['studentname', 'name'])) === rowName)
+      : null);
+    const accessBranch = sourceBranch || (linkedStudent && getValByHeader(linkedStudent, ['branch', 'sittingbranch'])) || '';
+    const accessCourse = sourceCourse || (linkedStudent && getValByHeader(linkedStudent, ['course', 'program'])) || '';
+    if (!hasPlacementAccess(accessBranch, accessCourse, user)) {
       return res.status(403).json({ success: false, message: 'This application is outside your branch or course assignment.' });
     }
     if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
@@ -1158,22 +1223,22 @@ exports.updateApplication = async (req, res) => {
     };
 
     const oldStatusH = getSafeH(['status']);
-    const oldStatus = oldStatusH ? getValByHeader(rows[0], ['status']) : '';
-    const oldRemarks = getValByHeader(rows[0], ['remarks']);
-    const oldInterviewDate = getValByHeader(rows[0], ['interviewdate']);
-    const oldInterviewTime = getValByHeader(rows[0], ['interviewtime', 'intervewtime']);
-    const oldInterviewVenue = getValByHeader(rows[0], ['interviewvenue']);
-    const oldDatePlaced = getValByHeader(rows[0], ['dateplaced']);
-    const oldPackage = getValByHeader(rows[0], ['package', 'packagelpa']);
-    const oldJoiningStatus = getValByHeader(rows[0], ['joiningstatus']);
-    const oldOfferLetter = getValByHeader(rows[0], ['offerletter', 'offerletterstatus']);
+    const oldStatus = oldStatusH ? getValByHeader(sourceRow, ['status']) : '';
+    const oldRemarks = getValByHeader(sourceRow, ['remarks']);
+    const oldInterviewDate = getValByHeader(sourceRow, ['interviewdate']);
+    const oldInterviewTime = getValByHeader(sourceRow, ['interviewtime', 'intervewtime']);
+    const oldInterviewVenue = getValByHeader(sourceRow, ['interviewvenue']);
+    const oldDatePlaced = getValByHeader(sourceRow, ['dateplaced']);
+    const oldPackage = getValByHeader(sourceRow, ['package', 'packagelpa']);
+    const oldJoiningStatus = getValByHeader(sourceRow, ['joiningstatus']);
+    const oldOfferLetter = getValByHeader(sourceRow, ['offerletter', 'offerletterstatus']);
 
     // Treat the selected sheet row as the source of placement identity; the
     // browser's fullApp payload is only presentation data and is not trusted.
-    const sName = getValByHeader(sourceRow, ['name', 'studentname']) || fullApp.name || '';
+    const sName = getValByHeader(sourceRow, ['studentname', 'name']) || fullApp.name || '';
     const sContact = getValByHeader(sourceRow, ['contact', 'phone']) || fullApp.phone || '';
     const sMail = getValByHeader(sourceRow, ['mailid', 'email']) || fullApp.email || '';
-    const sRoll = getValByHeader(sourceRow, ['rollnumber', 'rollno']) || fullApp.roll || '';
+    const sRoll = getValByHeader(sourceRow, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']) || fullApp.roll || '';
     const sCourse = sourceCourse || fullApp.course || '';
     const sBranch = sourceBranch || fullApp.branch || '';
     const sQual = getValByHeader(sourceRow, ['qualification', 'qual']) || fullApp.qual || '';
@@ -1227,15 +1292,15 @@ exports.updateApplication = async (req, res) => {
     recordActionChange('Offer letter', oldOfferLetter, nextOfferLetter, Boolean(offerLetterLink));
     const changedAt = formatIndiaTimestamp();
     const nextHistory = appendPlacementHistory({
-      row: rows[0], oldStatus, status: nextStatus, oldRemarks, remarks: nextRemarks,
+      row: sourceRow, oldStatus, status: nextStatus, oldRemarks, remarks: nextRemarks,
       oldInterviewDate, interviewDate: nextInterviewDate, oldInterviewTime, interviewTime: nextInterviewTime,
       oldInterviewVenue, interviewVenue: nextInterviewVenue, changedBy: user?.name || 'Placement team', changedAt
     });
     const historyHeader = getSafeH(['statushistory']);
     if (historyHeader) updateObj[historyHeader] = JSON.stringify(nextHistory);
 
-    rows[0].assign(updateObj); 
-    await rows[0].save(); 
+    sourceRow.assign(updateObj);
+    await sourceRow.save();
     
     try {
       const logSheet = doc.sheetsByTitle["TPO_Log"];
@@ -2159,7 +2224,7 @@ const canManageVacancyRow = (user, row) => Boolean(
 
 const writeVacancyCellChanges = async (sheet, row, headers, changes, actorName) => {
   if (!changes.length) return;
-  const spreadsheetId = process.env.SPREADSHEET_ID;
+  const spreadsheetId = getSpreadsheetIdForSheetName('NewsLetter');
   const rowNumber = Number(row.rowNumber);
   const sheetId = Number(sheet.sheetId);
   if (!spreadsheetId || !Number.isSafeInteger(rowNumber) || rowNumber < 2 || !Number.isSafeInteger(sheetId)) {
@@ -3118,13 +3183,22 @@ exports.rescheduleEvent = (req, res) => updateEventStatus(req, res, 'Rescheduled
 // =========================================================
 // 🚨 RULE 3: CRON HELPER (RESUME DELIVERY & DRIVE SUMMARY)
 // =========================================================
-exports.runDailyCron = async () => {
+let dailyCronPromise = null;
+const runDailyCronTasks = async ({ resumeOnly = false } = {}) => {
   console.log("🚨 [CRON] Starting Daily Automated Tasks...");
-  const cache = getCache();
-  if (!cache || !cache.vacancies || cache.vacancies.length === 0) {
-      console.warn("⚠️ [CRON] Cache is empty or currently syncing. Aborting cron job.");
-      return;
+  let cache = getCache();
+  if (!cache?.cacheUpdatedAt || !Array.isArray(cache?.vacancies)) {
+      await refreshCache();
+      cache = getCache();
+      if (!cache?.cacheUpdatedAt || !Array.isArray(cache?.vacancies)) throw new Error('Placement records are still syncing; automated mail was not run.');
   }
+  const cacheAgeMs = Date.now() - Date.parse(cache.cacheUpdatedAt);
+  if (Number.isFinite(cacheAgeMs) && cacheAgeMs > 3 * 60 * 1000) {
+    await refreshCache();
+    cache = getCache();
+  }
+  if (!cache?.cacheUpdatedAt || !Array.isArray(cache?.vacancies)) throw new Error('Placement records are still syncing; automated mail was not run.');
+  const resumeSummary = { dueJobs: 0, sent: 0, queued: 0, alreadyHandled: 0, skipped: [], failed: [] };
 
   // ------------------------------------------------------------------
   // 🕒 TIME SETUP (IST)
@@ -3134,14 +3208,12 @@ exports.runDailyCron = async () => {
   const today = new Date();
   const todayStr = formatter.format(today); // e.g. "2026-09-14"
 
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yStr = formatter.format(yesterday); // e.g. "2026-09-13"
+  const yStr = formatter.format(new Date(Date.now() - 24 * 60 * 60 * 1000));
 
   // ==================================================================
   // 📌 TASK 1: YESTERDAY'S EXPIRED JOB RESUMES TO COMPANIES
   // ==================================================================
-  console.log(`🚨 [CRON-TASK 1] Target Date for Expired Jobs: ${yStr}`);
+  console.log(`🚨 [CRON-TASK 1] Sending resume summaries for openings past their deadline (today ${todayStr}; yesterday ${yStr}).`);
 
   const expiredJobs = cache.vacancies.filter(v => {
     const lastDateKey = getValByHeader(v, ['lastdate', 'last date', 'column17', 'interviewdate', 'interview date']);
@@ -3149,12 +3221,23 @@ exports.runDailyCron = async () => {
 
     try {
       const parsedDate = safeParseDate(lastDateKey);
-      if (!isNaN(parsedDate.getTime())) { return formatter.format(parsedDate) === yStr; }
+      if (parsedDate && !isNaN(parsedDate.getTime())) { return formatter.format(parsedDate) < todayStr; }
       return false;
     } catch(e) { return false; }
   });
 
-  console.log(`🚨 [CRON-TASK 1] Found ${expiredJobs.length} expired jobs matching ${yStr}.`);
+  resumeSummary.dueJobs = expiredJobs.length;
+  console.log(`🚨 [CRON-TASK 1] Found ${expiredJobs.length} opening(s) past their deadline.`);
+
+  const resumeStudentByRoll = new Map();
+  const resumeStudentsByName = new Map();
+  (cache.students || []).forEach(student => {
+    const roll = normalizePlacementText(getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+    const name = normalizePlacementText(getValByHeader(student, ['studentname', 'name']));
+    if (roll && !resumeStudentByRoll.has(roll)) resumeStudentByRoll.set(roll, student);
+    if (name) resumeStudentsByName.set(name, [...(resumeStudentsByName.get(name) || []), student]);
+  });
+  const escapeMailHtml = value => String(value || '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 
   for (let job of expiredJobs) {
     const jobId = getValByHeader(job, ['jobid', 'id']) || '';
@@ -3162,27 +3245,45 @@ exports.runDailyCron = async () => {
     const companyName = getValByHeader(job, ['companyname', 'company']) || '';
     const position = getValByHeader(job, ['position', 'role']) || '';
 
-    if (!companyEmail) continue;
+    if (!jobId) {
+      resumeSummary.skipped.push({ company: companyName || 'Unknown company', reason: 'Opening has no Job ID.' });
+      continue;
+    }
+    if (wasResumeDeliveryHandled(jobId, cache)) {
+      resumeSummary.alreadyHandled += 1;
+      continue;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(companyEmail)) {
+      resumeSummary.skipped.push({ jobId, company: companyName || 'Unknown company', reason: 'Company email is missing or invalid.' });
+      continue;
+    }
 
     const cleanTargetJobId = jobId.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
-    const applicants = cache.applications.filter(app => {
+    const applicants = (cache.applications || []).filter(app => {
       const appJobId = (getValByHeader(app, ['jobid']) || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
       return appJobId === cleanTargetJobId && cleanTargetJobId !== '';
     });
 
-    if (applicants.length === 0) continue;
+    if (applicants.length === 0) {
+      resumeSummary.skipped.push({ jobId, company: companyName || 'Unknown company', reason: 'No applications match this Job ID.' });
+      continue;
+    }
 
     const tpoName = getValByHeader(job, ['placementofficer']);
     const tpoEmail = getTpoEmailByName(tpoName);
 
     let tableRows = ''; let attachments = [];
     applicants.forEach((appRow, index) => {
-      const info = { 
-        name: getValByHeader(appRow, ['name', 'studentname']) || '', 
-        phone: getValByHeader(appRow, ['contact', 'phone']) || '', 
-        email: getValByHeader(appRow, ['mail', 'email', 'mailid']) || '', 
-        qual: getValByHeader(appRow, ['qual', 'qualification']) || '', 
-        resume: getValByHeader(appRow, ['resume', 'cv']) || '' 
+      const appRoll = normalizePlacementText(getValByHeader(appRow, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+      const appName = normalizePlacementText(getValByHeader(appRow, ['studentname', 'name']));
+      const sameNameStudents = resumeStudentsByName.get(appName) || [];
+      const student = (appRoll && resumeStudentByRoll.get(appRoll)) || (sameNameStudents.length === 1 ? sameNameStudents[0] : null);
+      const info = {
+        name: getValByHeader(appRow, ['studentname', 'name']) || (student && getValByHeader(student, ['studentname', 'name'])) || 'Student',
+        phone: getValByHeader(appRow, ['contact', 'phone', 'mobilenumber']) || (student && getValByHeader(student, ['phone', 'contact', 'mobilenumber'])) || '',
+        email: getValByHeader(appRow, ['mailid', 'studentemail', 'email', 'mail']) || (student && getValByHeader(student, ['mailid', 'email', 'mail'])) || '',
+        qual: getValByHeader(appRow, ['qualification', 'qual']) || (student && getValByHeader(student, ['qualification', 'qual'])) || '',
+        resume: getValByHeader(appRow, ['resume', 'cv']) || (student && getValByHeader(student, ['resume', 'cv'])) || ''
       };
       
       let resumeBtn = 'N/A';
@@ -3194,7 +3295,7 @@ exports.runDailyCron = async () => {
             attachments.push({ filename: `${info.name.replace(/\s+/g, '_')}_Resume.pdf`, href: `https://drive.google.com/uc?export=download&id=${driveId}` });
         } else { resumeBtn = `<a href="${info.resume}">Link</a>`; }
       }
-      tableRows += `<tr><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${index+1}</td><td style="padding:10px;border:1px solid #cbd5e1;"><b>${info.name}</b></td><td style="padding:10px;border:1px solid #cbd5e1;">${info.phone}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.email}</td><td style="padding:10px;border:1px solid #cbd5e1;">${info.qual}</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${resumeBtn}</td></tr>`;
+      tableRows += `<tr><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${index+1}</td><td style="padding:10px;border:1px solid #cbd5e1;"><b>${escapeMailHtml(info.name)}</b></td><td style="padding:10px;border:1px solid #cbd5e1;">${escapeMailHtml(info.phone)}</td><td style="padding:10px;border:1px solid #cbd5e1;">${escapeMailHtml(info.email)}</td><td style="padding:10px;border:1px solid #cbd5e1;">${escapeMailHtml(info.qual)}</td><td style="padding:10px;border:1px solid #cbd5e1;text-align:center;">${resumeBtn}</td></tr>`;
     });
 
     const html = `
@@ -3203,9 +3304,9 @@ exports.runDailyCron = async () => {
           <h2 style="color: #ffffff; margin: 0; letter-spacing: 1px;">APPLICANT RESUMES</h2>
         </div>
         <div style="padding: 30px; background-color: #ffffff;">
-          <p style="font-size: 16px; margin-top: 0;">Dear <b>${companyName}</b> Hiring Team,</p>
+          <p style="font-size: 16px; margin-top: 0;">Dear <b>${escapeMailHtml(companyName)}</b> Hiring Team,</p>
           <p style="font-size: 15px; line-height: 1.6; color: #475569;">Greetings from IPCS Global Placement Cell.</p>
-          <p style="font-size: 15px; line-height: 1.6; color: #475569;">Please find attached the consolidated list of pre-screened resumes for the <b>${position}</b> opening (Ref: ${jobId}).</p>
+          <p style="font-size: 15px; line-height: 1.6; color: #475569;">Please find the consolidated list of applicants and their resumes for the <b>${escapeMailHtml(position)}</b> opening (Ref: ${escapeMailHtml(jobId)}).</p>
           
           <table style="width: 100%; border-collapse: collapse; margin-top: 25px;">
             <thead>
@@ -3226,17 +3327,36 @@ exports.runDailyCron = async () => {
       </div>
     `;
 
-    await sendMailAndLog({
-      from: `"IPCS Corporate Relations" <${process.env.EMAIL_USER}>`, 
-      to: companyEmail,
-      cc: tpoEmail || '',
-      subject: `Applicant Resumes: ${position} Opening [Ref: ${jobId}]`,
-      html: html,
-      attachments: attachments
-    }, { name: companyName, email: companyEmail, type: 'Resume Delivery', category: 'company' });
-    
-    console.log(`✅ Sent to ${companyName}. Pausing 5 seconds...`);
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    try {
+      const delivery = await sendMailAndLog({
+        from: `"IPCS Corporate Relations" <${process.env.EMAIL_USER}>`,
+        to: companyEmail,
+        cc: tpoEmail || '',
+        subject: `Applicant Resumes: ${position} Opening [Ref: ${jobId}]`,
+        html,
+        attachments
+      }, { name: companyName, email: companyEmail, type: 'Resume Delivery', category: 'company' });
+      if (delivery?.queued) {
+        resumeSummary.queued += 1;
+        resumeDeliveryMemory.set(getResumeDeliveryReference(jobId), { status: 'queued', at: Date.now() });
+        console.log(`📥 Resume email for ${jobId} was queued for retry.`);
+      } else {
+        resumeSummary.sent += 1;
+        resumeDeliveryMemory.set(getResumeDeliveryReference(jobId), { status: 'sent', at: Date.now() });
+        console.log(`✅ Resume email sent to ${companyName} (${jobId}).`);
+      }
+    } catch (error) {
+      const reason = String(error.message || error);
+      if (/uncertain|check its sent folder/i.test(reason)) resumeDeliveryMemory.set(getResumeDeliveryReference(jobId), { status: 'review', at: Date.now() });
+      resumeSummary.failed.push({ jobId, company: companyName || 'Unknown company', reason });
+      console.error(`❌ Resume email failed for ${jobId} (${companyName}):`, error.message);
+    }
+    await new Promise(resolve => setTimeout(resolve, 1500));
+  }
+
+  if (resumeOnly) {
+    console.log('[RESUME DELIVERY] Run summary:', JSON.stringify(resumeSummary));
+    return { resumes: resumeSummary };
   }
 
 
@@ -3399,13 +3519,32 @@ exports.runDailyCron = async () => {
     await new Promise(resolve => setTimeout(resolve, 5000));
   }
 
+  console.log('[RESUME DELIVERY] Run summary:', JSON.stringify(resumeSummary));
   console.log("🎉 All Cron automated tasks completed successfully!");
+  return { resumes: resumeSummary };
+};
+
+exports.runDailyCron = options => {
+  if (dailyCronPromise) return dailyCronPromise;
+  dailyCronPromise = runDailyCronTasks(options).finally(() => { dailyCronPromise = null; });
+  return dailyCronPromise;
 };
 
 exports.triggerDailyCron = async (req, res) => {
   try {
-    await exports.runDailyCron();
-    res.json({ success: true, message: "Manual Resume Delivery process completed!" });
+    const role = String(req.portalUser?.role || '').toUpperCase();
+    if (!req.portalUser || !(req.portalUser.accessType === 'superadmin' || /TPO|PLACEMENT OFFICER|PLACEMENT TEAM|ADMIN/.test(role))) {
+      return res.status(req.portalUser ? 403 : 401).json({ success: false, message: 'A placement team session is required to trigger resume delivery.' });
+    }
+    const result = await exports.runDailyCron({ resumeOnly: true });
+    const report = result?.resumes || { dueJobs: 0, sent: 0, queued: 0, alreadyHandled: 0, skipped: [], failed: [] };
+    res.json({
+      success: true,
+      message: report.sent || report.queued
+        ? `Resume delivery checked: ${report.sent} sent, ${report.queued} queued, ${report.alreadyHandled} already handled.`
+        : `Resume delivery checked: no new email sent. ${report.dueJobs} expired opening(s) were examined.`,
+      report
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -3847,6 +3986,252 @@ exports.assignCorporateTrainingInquiry = async (req, res) => {
   } catch (error) {
     console.error('Could not assign corporate training inquiry:', error.message);
     res.status(500).json({ success: false, message: 'The corporate training inquiry could not be assigned.' });
+  }
+};
+
+const HIRING_INQUIRY_HEADERS = [
+  'Inquiry ID', 'Submitted At', 'Company', 'Website', 'Contact Person', 'Email', 'Phone', 'Location',
+  'Position', 'Course / Skills', 'Opening Count', 'Work Mode', 'Last Date', 'Qualification', 'Experience',
+  'Salary', 'Gender Preference', 'Job Description', 'Notes', 'Status', 'Assigned TPO', 'Assigned TPO Email',
+  'Assigned At', 'Assigned By', 'Notification Status', 'Notification Sent At', 'Internal Email Status'
+];
+
+const getHiringInquirySheet = async () => {
+  await loadDocInfo();
+  let sheet = doc.sheetsByTitle['Hiring Inquiries'];
+  if (!sheet) {
+    try {
+      sheet = await doc.addSheet({ title: 'Hiring Inquiries', headerValues: HIRING_INQUIRY_HEADERS });
+    } catch (error) {
+      await loadDocInfo();
+      sheet = doc.sheetsByTitle['Hiring Inquiries'];
+      if (!sheet) throw error;
+    }
+  }
+  await sheet.loadHeaderRow();
+  const normalized = new Set((sheet.headerValues || []).map(value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '')));
+  const missing = HIRING_INQUIRY_HEADERS.filter(value => !normalized.has(value.toLowerCase().replace(/[^a-z0-9]/g, '')));
+  if (missing.length) await sheet.setHeaderRow([...(sheet.headerValues || []), ...missing]);
+  return sheet;
+};
+
+const toHiringInquiry = row => Object.fromEntries([
+  ['inquiryId', ['inquiryid']], ['submittedAt', ['submittedat']], ['company', ['company']], ['website', ['website']],
+  ['contactPerson', ['contactperson', 'name']], ['email', ['email']], ['phone', ['phone']], ['location', ['location']],
+  ['position', ['position', 'role']], ['courseSkills', ['courseskills']], ['openingCount', ['openingcount']],
+  ['workMode', ['workmode']], ['lastDate', ['lastdate', 'deadline']], ['qualification', ['qualification']],
+  ['experience', ['experience']], ['salary', ['salary']], ['genderPreference', ['genderpreference']],
+  ['jobDescription', ['jobdescription', 'requirements']], ['notes', ['notes']], ['status', ['status']],
+  ['assignedTpo', ['assignedtpo']], ['assignedTpoEmail', ['assignedtpoemail']], ['assignedAt', ['assignedat']],
+  ['assignedBy', ['assignedby']], ['notificationStatus', ['notificationstatus']],
+  ['notificationSentAt', ['notificationsentat']], ['internalEmailStatus', ['internalemailstatus']]
+].map(([key, aliases]) => [key, getValByHeader(row, aliases)]));
+
+const cleanHiringSubjectPart = value => String(value || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 120);
+const sanitizeHiringWebsite = value => {
+  const raw = String(value || '').trim().slice(0, 240);
+  if (!raw) return '';
+  try {
+    const parsed = new URL(raw);
+    return ['http:', 'https:'].includes(parsed.protocol) ? parsed.toString() : '';
+  } catch {
+    return '';
+  }
+};
+
+const getHiringTpoOptions = () => {
+  const contacts = getCache()?.contacts || [];
+  const seen = new Set();
+  return contacts.map(row => ({
+    name: getValByHeader(row, ['tponame', 'name', 'placementofficer']).trim(),
+    email: getValByHeader(row, ['mailid', 'email']).trim(),
+    branches: getValByHeader(row, ['assignedbranches', 'sittingbranch']).trim(),
+    status: getValByHeader(row, ['status', 'tpostatus']).trim().toLowerCase()
+  })).filter(item => {
+    const key = item.email.toLowerCase();
+    if (!item.name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item.email) || seen.has(key) || /^(inactive|disabled|removed|terminated|left)$/.test(item.status)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+exports.submitHiringInquiry = async (req, res) => {
+  const input = req.body || {};
+  if (String(input.websiteTrap || '').trim()) return res.status(201).json({ success: true });
+
+  const fields = {
+    company: String(input.company || '').trim().slice(0, 160),
+    website: sanitizeHiringWebsite(input.companyWebsite),
+    contactPerson: String(input.contactPerson || '').trim().slice(0, 120),
+    email: String(input.email || '').trim().slice(0, 254),
+    phone: String(input.phone || '').trim().slice(0, 40),
+    location: String(input.location || '').trim().slice(0, 160),
+    position: String(input.position || '').trim().slice(0, 160),
+    courseSkills: String(input.courseSkills || '').trim().slice(0, 240),
+    openingCount: String(input.openingCount || '').trim().slice(0, 40),
+    workMode: String(input.workMode || '').trim().slice(0, 80),
+    lastDate: String(input.lastDate || '').trim().slice(0, 40),
+    qualification: String(input.qualification || '').trim().slice(0, 240),
+    experience: String(input.experience || '').trim().slice(0, 160),
+    salary: String(input.salary || '').trim().slice(0, 120),
+    genderPreference: String(input.genderPreference || '').trim().slice(0, 100),
+    jobDescription: String(input.jobDescription || '').trim().slice(0, 4000),
+    notes: String(input.notes || '').trim().slice(0, 2000)
+  };
+  if (!fields.company || !fields.contactPerson || !fields.position || !fields.courseSkills || !fields.openingCount ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email) || !fields.phone) {
+    return res.status(400).json({ success: false, message: 'Enter the company, contact details, role, course or skills, and number of openings.' });
+  }
+
+  const escape = escapeCorporateInquiryHtml;
+  const inquiryId = `HI-${Date.now()}-${randomBytes(4).toString('hex').toUpperCase()}`;
+  const submittedAt = formatIndiaTimestamp();
+  const safeCompany = cleanHiringSubjectPart(fields.company).slice(0, 100);
+  const detailRows = [
+    ['Company', fields.company], ['Website', fields.website], ['Contact person', fields.contactPerson],
+    ['Email', fields.email], ['Phone / WhatsApp', fields.phone], ['Location', fields.location],
+    ['Role', fields.position], ['Course / skills', fields.courseSkills], ['Openings', fields.openingCount],
+    ['Work mode', fields.workMode], ['Last date', fields.lastDate], ['Qualification', fields.qualification],
+    ['Experience', fields.experience], ['Salary', fields.salary], ['Gender preference', fields.genderPreference]
+  ].filter(([, value]) => value);
+  const description = escape(fields.jobDescription).replace(/\r?\n/g, '<br>') || 'No job description provided.';
+  const notes = escape(fields.notes).replace(/\r?\n/g, '<br>') || 'No additional notes provided.';
+  const emailHtml = `
+    <div style="max-width:700px;margin:24px auto;border:1px solid #dce6ef;border-radius:18px;overflow:hidden;font-family:Arial,sans-serif;color:#18314d;background:#fff">
+      <div style="padding:24px 28px;background:#102b4a;color:#fff;border-bottom:4px solid #39c8bd"><div style="font-size:11px;font-weight:bold;letter-spacing:2px;color:#9fdedb">IPCS GLOBAL · PLACEMENTS</div><h1 style="margin:10px 0 0;font-size:22px">New hiring inquiry</h1></div>
+      <div style="padding:26px 28px"><p style="margin:0 0 18px;color:#53677d;line-height:1.65">A company submitted a hiring request. Reference: ${escape(inquiryId)}</p>
+      <table style="width:100%;border-collapse:collapse;font-size:14px">${detailRows.map(([label, value]) => `<tr><th style="width:190px;padding:11px 12px;border:1px solid #e1e8ef;background:#f5f8fb;text-align:left;color:#52667c">${escape(label)}</th><td style="padding:11px 12px;border:1px solid #e1e8ef;color:#18314d">${escape(value)}</td></tr>`).join('')}</table>
+      <h2 style="margin:23px 0 8px;font-size:15px;color:#173955">Role details</h2><div style="padding:14px;border:1px solid #e1e8ef;border-radius:10px;background:#fafcfe;font-size:14px;line-height:1.7">${description}</div>
+      <h2 style="margin:20px 0 8px;font-size:15px;color:#173955">Additional notes</h2><div style="padding:14px;border:1px solid #e1e8ef;border-radius:10px;background:#fafcfe;font-size:14px;line-height:1.7">${notes}</div>
+      <p style="margin:22px 0 0;color:#718197;font-size:12px">Reply to this email to contact ${escape(fields.contactPerson)} directly.</p></div></div>`;
+
+  try {
+    const sheet = await getHiringInquirySheet();
+    await sheet.addRow({
+      'Inquiry ID': inquiryId, 'Submitted At': submittedAt, Company: fields.company, Website: fields.website,
+      'Contact Person': fields.contactPerson, Email: fields.email, Phone: fields.phone, Location: fields.location,
+      Position: fields.position, 'Course / Skills': fields.courseSkills, 'Opening Count': fields.openingCount,
+      'Work Mode': fields.workMode, 'Last Date': fields.lastDate, Qualification: fields.qualification,
+      Experience: fields.experience, Salary: fields.salary, 'Gender Preference': fields.genderPreference,
+      'Job Description': fields.jobDescription, Notes: fields.notes, Status: 'New', 'Assigned TPO': '',
+      'Assigned TPO Email': '', 'Assigned At': '', 'Assigned By': '', 'Notification Status': 'Not assigned',
+      'Notification Sent At': '', 'Internal Email Status': 'Pending'
+    });
+
+    let internalEmailStatus = 'Sent';
+    try {
+      const mailResult = await sendMailAndLog({
+        to: 'gifty@ipcsglobal.com', replyTo: fields.email,
+        subject: `New hiring inquiry · ${safeCompany} · ${cleanHiringSubjectPart(fields.position)}`,
+        html: emailHtml
+      }, {
+        name: `${fields.company} · ${fields.contactPerson}`, email: 'gifty@ipcsglobal.com',
+        type: 'Hiring Inquiry', category: 'placement',
+        queueContext: { sheetName: 'Hiring Inquiries', idHeader: 'Inquiry ID', idValue: inquiryId,
+          statusHeader: 'Internal Email Status', failedValuePrefix: 'Failed: ', statusValues: { SENT: 'Sent' } }
+      });
+      if (mailResult?.queued) internalEmailStatus = 'Queued';
+    } catch (mailError) {
+      internalEmailStatus = `Failed: ${mailError.message}`.slice(0, 500);
+      console.error('Hiring inquiry was stored, but its Gifty notification failed:', mailError.message);
+    }
+    try {
+      const storedRow = (await sheet.getRows()).find(row => getValByHeader(row, ['inquiryid']) === inquiryId);
+      if (storedRow) { storedRow.set('Internal Email Status', internalEmailStatus); await storedRow.save(); }
+    } catch (statusError) {
+      console.error('Could not update hiring inquiry email status:', statusError.message);
+    }
+    return res.status(201).json({ success: true, message: 'Your hiring request has been received by the IPCS Global placement team.' });
+  } catch (error) {
+    console.error('Hiring inquiry could not be stored:', error.message);
+    return res.status(503).json({ success: false, message: 'We could not save your hiring request right now. Please try again later.' });
+  }
+};
+
+exports.getHiringInquiryTpos = (_req, res) => {
+  res.json({ success: true, tpos: getHiringTpoOptions() });
+};
+
+exports.getHiringInquiries = async (_req, res) => {
+  try {
+    const sheet = await getHiringInquirySheet();
+    const inquiries = (await sheet.getRows()).map(toHiringInquiry).filter(item => item.inquiryId).reverse();
+    res.json({ success: true, inquiries });
+  } catch (error) {
+    console.error('Could not load hiring inquiries:', error.message);
+    res.status(503).json({ success: false, inquiries: [], message: 'Hiring inquiries are temporarily unavailable.' });
+  }
+};
+
+const buildHiringAssignmentEmail = inquiry => {
+  const escape = escapeCorporateInquiryHtml;
+  const details = [
+    ['Company', inquiry.company], ['Website', inquiry.website], ['Contact person', inquiry.contactPerson],
+    ['Email', inquiry.email], ['Phone / WhatsApp', inquiry.phone], ['Location', inquiry.location],
+    ['Role', inquiry.position], ['Course / skills', inquiry.courseSkills], ['Openings', inquiry.openingCount],
+    ['Work mode', inquiry.workMode], ['Last date', inquiry.lastDate], ['Qualification', inquiry.qualification],
+    ['Experience', inquiry.experience], ['Salary', inquiry.salary], ['Gender preference', inquiry.genderPreference]
+  ].filter(([, value]) => value);
+  const description = escape(inquiry.jobDescription).replace(/\r?\n/g, '<br>') || 'No job description provided.';
+  const notes = escape(inquiry.notes).replace(/\r?\n/g, '<br>') || 'No additional notes provided.';
+  return `<div style="max-width:700px;margin:24px auto;border:1px solid #dce6ef;border-radius:18px;overflow:hidden;font-family:Arial,sans-serif;color:#18314d;background:#fff"><div style="padding:24px 28px;background:#102b4a;color:#fff;border-bottom:4px solid #39c8bd"><div style="font-size:11px;font-weight:bold;letter-spacing:2px;color:#9fdedb">IPCS GLOBAL · PLACEMENTS</div><h1 style="margin:10px 0 0;font-size:22px">Hiring request assigned to you</h1></div><div style="padding:26px 28px"><p style="margin:0 0 18px;color:#53677d;line-height:1.65">Please contact the company and coordinate candidates for this opening. Reference: ${escape(inquiry.inquiryId)}</p><table style="width:100%;border-collapse:collapse;font-size:14px">${details.map(([label, value]) => `<tr><th style="width:190px;padding:11px 12px;border:1px solid #e1e8ef;background:#f5f8fb;text-align:left;color:#52667c">${escape(label)}</th><td style="padding:11px 12px;border:1px solid #e1e8ef;color:#18314d">${escape(value)}</td></tr>`).join('')}</table><h2 style="margin:23px 0 8px;font-size:15px;color:#173955">Role details</h2><div style="padding:14px;border:1px solid #e1e8ef;border-radius:10px;background:#fafcfe;font-size:14px;line-height:1.7">${description}</div><h2 style="margin:20px 0 8px;font-size:15px;color:#173955">Additional notes</h2><div style="padding:14px;border:1px solid #e1e8ef;border-radius:10px;background:#fafcfe;font-size:14px;line-height:1.7">${notes}</div></div></div>`;
+};
+
+exports.assignHiringInquiry = async (req, res) => {
+  const inquiryId = String(req.body?.inquiryId || '').trim();
+  const tpoName = String(req.body?.tpoName || '').trim();
+  if (!inquiryId || !tpoName) return res.status(400).json({ success: false, message: 'Choose a placement officer.' });
+  try {
+    const tpo = getHiringTpoOptions().find(item => item.name.toLowerCase() === tpoName.toLowerCase());
+    if (!tpo) return res.status(400).json({ success: false, message: 'Choose a TPO from the active placement contact list.' });
+    const sheet = await getHiringInquirySheet();
+    const row = (await sheet.getRows()).find(item => getValByHeader(item, ['inquiryid']) === inquiryId);
+    if (!row) return res.status(404).json({ success: false, message: 'This hiring inquiry could not be found.' });
+    const inquiry = toHiringInquiry(row);
+    if (inquiry.assignedTpo === tpo.name && inquiry.notificationStatus === 'Sent' && inquiry.assignedTpoEmail.toLowerCase() === tpo.email.toLowerCase()) {
+      return res.json({ success: true, alreadyAssigned: true, inquiry, message: `This inquiry is already assigned to ${tpo.name}.` });
+    }
+    if (inquiry.assignedTpo === tpo.name && String(inquiry.notificationStatus).toLowerCase() === 'sending') {
+      return res.status(409).json({ success: false, message: 'The assignment email is already being processed. Refresh before retrying.' });
+    }
+
+    row.set('Status', 'Assigned');
+    row.set('Assigned TPO', tpo.name);
+    row.set('Assigned TPO Email', tpo.email);
+    row.set('Assigned At', formatIndiaTimestamp());
+    row.set('Assigned By', String(req.portalUser?.name || req.portalUser?.email || 'Gifty').slice(0, 120));
+    row.set('Notification Status', 'Sending');
+    await row.save();
+
+    try {
+      const mailResult = await sendMailAndLog({
+        to: tpo.email, cc: 'gifty@ipcsglobal.com', replyTo: inquiry.email,
+        subject: `Hiring request assigned · ${cleanHiringSubjectPart(inquiry.company)} · ${cleanHiringSubjectPart(inquiry.position)}`,
+        html: buildHiringAssignmentEmail(inquiry)
+      }, {
+        name: `${tpo.name} · ${inquiry.company}`, email: tpo.email,
+        type: 'Hiring Inquiry Assignment', category: 'company',
+        queueContext: { sheetName: 'Hiring Inquiries', idHeader: 'Inquiry ID', idValue: inquiryId,
+          statusHeader: 'Notification Status', sentAtHeader: 'Notification Sent At', failedValuePrefix: 'Failed: ',
+          statusValues: { SENT: 'Sent' } }
+      });
+      if (mailResult?.queued) {
+        row.set('Notification Status', 'Queued');
+        await row.save();
+        return res.json({ success: true, inquiry: toHiringInquiry(row), queued: true, message: `Assigned to ${tpo.name}; the email is queued for delivery.` });
+      }
+      row.set('Notification Status', 'Sent');
+      row.set('Notification Sent At', formatIndiaTimestamp());
+      await row.save();
+      return res.json({ success: true, inquiry: toHiringInquiry(row), message: `Assigned to ${tpo.name}; the company and opening details were emailed.` });
+    } catch (mailError) {
+      row.set('Notification Status', `Failed: ${mailError.message}`.slice(0, 500));
+      try { await row.save(); } catch (statusError) { console.error('Could not record hiring assignment email failure:', statusError.message); }
+      return res.json({ success: true, inquiry: toHiringInquiry(row), warning: `The inquiry was assigned, but the email could not be sent: ${mailError.message}` });
+    }
+  } catch (error) {
+    console.error('Could not assign hiring inquiry:', error.message);
+    res.status(500).json({ success: false, message: 'The hiring inquiry could not be assigned.' });
   }
 };
 
@@ -5307,20 +5692,26 @@ exports.getDrives = async (req, res) => {
     const user = req.portalUser;
     const role = String(user?.role || '').toUpperCase();
     const canSeeAll = canManageEveryDrive(user);
-    const isBranchManager = isBranchManagerUser(user);
     const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
-    const includeAllTpoDrives = isTpo && String(req.query?.scope || '').toLowerCase() === 'all';
     if (!canSeeAll && !isTpo && !isBranchManager) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
 
-    await loadDocInfo();
-    const registrationSheet = doc.sheetsByTitle['Drive_Registration'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('driveregistration'));
-    if (!registrationSheet) return res.status(503).json({ success: false, message: 'The Drive Registration sheet is unavailable.' });
-    const registrationRows = await registrationSheet.getRows();
+    let cache = getCache();
+    if (!cache || !Array.isArray(cache.drives)) {
+      await refreshCache();
+      cache = getCache();
+    }
+    if (!cache || !Array.isArray(cache.drives)) return res.status(503).json({ success: false, message: 'Placement drive records are still syncing. Please retry shortly.' });
+    const registrationRows = cache.drives;
     const signedInName = normalizePlacementText(user?.name);
-    const cache = getCache() || {};
-    const eventRows = Array.isArray(cache.events) && cache.events.length
-      ? cache.events
-      : await (doc.sheetsByTitle['Event'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('event')))?.getRows() || [];
+    const eventRows = Array.isArray(cache.events) ? cache.events : [];
+    const studentByRoll = new Map();
+    const studentsByName = new Map();
+    (cache.students || []).forEach(student => {
+      const roll = normalizePlacementText(getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+      const name = normalizePlacementText(getValByHeader(student, ['studentname', 'name']));
+      if (roll && !studentByRoll.has(roll)) studentByRoll.set(roll, student);
+      if (name) studentsByName.set(name, [...(studentsByName.get(name) || []), student]);
+    });
     const eventsMap = new Map();
     
     // 1. SMART EVENT MAPPING: Grab ALL Placement Drives so even empty ones exist
@@ -5348,32 +5739,31 @@ exports.getDrives = async (req, res) => {
       const eventInfo = eventsMap.get(normalizePlacementText(dId)) || {};
       const studentName = getValByHeader(row, ['name', 'studentname']);
       const studentRoll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
-      const registrationStudent = (cache.students || []).find(student => {
-        const sourceRoll = normalizePlacementText(getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
-        const sourceName = normalizePlacementText(getValByHeader(student, ['name', 'studentname']));
-        return (studentRoll && sourceRoll === studentRoll) || (studentName && sourceName === normalizePlacementText(studentName));
-      });
+      const registrationStudent = (studentRoll && studentByRoll.get(studentRoll)) || (() => {
+        const matches = studentsByName.get(normalizePlacementText(studentName)) || [];
+        return matches.length === 1 ? matches[0] : null;
+      })();
       const registrationOwner = getValByHeader(row, ['placementofficer', 'tponame', 'createdby', 'tpo']);
       const driveOwner = registrationOwner || eventInfo.tpo || '';
       const rowBranch = getValByHeader(row, ['branch', 'sittingbranch']) || (registrationStudent && getValByHeader(registrationStudent, ['branch', 'sittingbranch'])) || eventInfo.branch || eventInfo.location;
       const rowCourse = getValByHeader(row, ['course']) || (registrationStudent && getValByHeader(registrationStudent, ['course', 'program'])) || eventInfo.course;
-      if (isBranchManager && !hasAccess(rowBranch, rowCourse, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) return;
-      if (!includeAllTpoDrives && !canSeeAll && !isBranchManager && driveOwner && normalizePlacementText(driveOwner) !== signedInName) return;
-      if (!includeAllTpoDrives && !canSeeAll && !isBranchManager && !driveOwner && !userHasBranch(user, rowBranch)) return;
+      const withinAssignedScope = hasPlacementAccess(rowBranch, rowCourse, user);
+      const ownedUnscopedDrive = isTpo && driveOwner && normalizePlacementText(driveOwner) === signedInName && !rowBranch;
+      if (!canSeeAll && !withinAssignedScope && !ownedUnscopedDrive) return;
       // Mark that this drive has at least one student
       if (eventInfo.hasApplicants !== undefined) eventInfo.hasApplicants = true;
 
       drivesData.push({
         rowNumber: row.rowNumber,
         driveId: dId,
-        name: studentName || '',
-        roll: getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']) || '',
-        phone: getValByHeader(row, ['contact', 'phone']) || '',
-        email: getValByHeader(row, ['mailid', 'email']) || '',
+        name: studentName || (registrationStudent && getValByHeader(registrationStudent, ['studentname', 'name'])) || '',
+        roll: getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']) || (registrationStudent && getValByHeader(registrationStudent, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])) || '',
+        phone: getValByHeader(row, ['contact', 'phone', 'mobilenumber']) || (registrationStudent && getValByHeader(registrationStudent, ['contact', 'phone', 'mobilenumber'])) || '',
+        email: getValByHeader(row, ['mailid', 'studentemail', 'email', 'mail']) || (registrationStudent && getValByHeader(registrationStudent, ['mailid', 'email', 'mail'])) || '',
         course: rowCourse || '',
         branch: rowBranch || '',
-        resume: getValByHeader(row, ['resume']) || '',
-        qual: getValByHeader(row, ['qualification']) || '',
+        resume: getValByHeader(row, ['resume', 'cv']) || (registrationStudent && getValByHeader(registrationStudent, ['resume', 'cv'])) || '',
+        qual: getValByHeader(row, ['qualification', 'qual']) || (registrationStudent && getValByHeader(registrationStudent, ['qualification', 'qual'])) || '',
         regStatus: getValByHeader(row, ['status']) || '',
         regDate: getValByHeader(row, ['registeddate', 'timestamp', 'date']) || '',
         studentStatus: getValByHeader(row, ['studentstatus']) || '',
@@ -5401,9 +5791,9 @@ exports.getDrives = async (req, res) => {
 
     // 3. 🚨 INJECT EMPTY DRIVES: If a drive has 0 students, send a "Dummy" row so it still shows up!
     eventsMap.forEach((eventInfo, dId) => {
-      if (isBranchManager && !userHasBranch(user, eventInfo.branch || eventInfo.location)) return;
-      if (!includeAllTpoDrives && !canSeeAll && !isBranchManager && eventInfo.tpo && normalizePlacementText(eventInfo.tpo) !== signedInName) return;
-      if (!includeAllTpoDrives && !canSeeAll && !isBranchManager && !eventInfo.tpo && !userHasBranch(user, eventInfo.branch || eventInfo.location)) return;
+      const withinAssignedScope = hasPlacementAccess(eventInfo.branch || eventInfo.location, eventInfo.course, user);
+      const ownedUnscopedDrive = isTpo && eventInfo.tpo && normalizePlacementText(eventInfo.tpo) === signedInName && !eventInfo.branch;
+      if (!canSeeAll && !withinAssignedScope && !ownedUnscopedDrive) return;
       if (!eventInfo.hasApplicants) {
         drivesData.push({
           rowNumber: `empty-${dId}`,
@@ -5416,7 +5806,7 @@ exports.getDrives = async (req, res) => {
       }
     });
     
-    res.json({ success: true, drives: drivesData.reverse() });
+    res.json({ success: true, drives: drivesData.reverse(), lastSyncedAt: cache.cacheUpdatedAt || '' });
   } catch (err) { 
     res.status(500).json({ success: false, message: err.message }); 
   }
@@ -5426,12 +5816,36 @@ exports.updateDriveStatus = async (req, res) => {
   const { rowNumber, studentStatus, remarks, interviewDate, interviewTime, interviewVenue } = req.body;
   try {
     const numericRow = Number(rowNumber);
-    if (!Number.isInteger(numericRow) || numericRow < 2) return res.status(400).json({ success: false, message: 'A valid registration row is required.' });
+    const requestedDriveId = normalizePlacementText(req.body.driveId);
+    const requestedRoll = normalizePlacementText(req.body.roll);
+    const requestedName = normalizePlacementText(req.body.name);
+    const requestedRegDate = normalizePlacementText(req.body.regDate);
+    const hasRecordIdentity = Boolean(requestedDriveId && (requestedRoll || requestedName));
+    if ((!Number.isInteger(numericRow) || numericRow < 2) && !hasRecordIdentity) return res.status(400).json({ success: false, message: 'A valid registration record is required.' });
     await loadDocInfo();
     const sheet = doc.sheetsByTitle['Drive_Registration'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('driveregistration'));
     if (!sheet) return res.status(503).json({ success: false, message: 'The Drive Registration sheet is unavailable.' });
     await ensurePlacementHeaders(sheet, ['Student Status', 'Student Remarks', ...placementTrackingHeaders]);
-    const rows = await sheet.getRows({ offset: numericRow - 2, limit: 1 });
+    let rows;
+    if (hasRecordIdentity) {
+      const sheetRows = await sheet.getRows();
+      const matchingRows = sheetRows.filter(row => {
+        const driveId = normalizePlacementText(getValByHeader(row, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(row, ['eventid', 'event_id', 'companyname']));
+        const roll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+        const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+        return driveId === requestedDriveId
+          && (requestedRoll ? roll === requestedRoll : name === requestedName);
+      });
+      const dateMatchedRows = requestedRegDate ? matchingRows.filter(row => normalizePlacementText(getValByHeader(row, ['registeddate', 'timestamp', 'date'])) === requestedRegDate) : [];
+      const identityMatches = dateMatchedRows.length ? dateMatchedRows : matchingRows;
+      const matchedRow = identityMatches.length === 1
+        ? identityMatches[0]
+        : identityMatches.find(row => Number(row.rowNumber) === numericRow) || null;
+      if (identityMatches.length > 1 && !matchedRow) return res.status(409).json({ success: false, message: 'This drive registration matches multiple rows. Refresh the tracker and try again.' });
+      rows = matchedRow ? [matchedRow] : [];
+    } else {
+      rows = await sheet.getRows({ offset: numericRow - 2, limit: 1 });
+    }
     if (!rows.length) return res.status(404).json({ success: false, message: 'Registration row was not found.' });
 
     const user = req.portalUser;
@@ -5462,7 +5876,7 @@ exports.updateDriveStatus = async (req, res) => {
     } else if (!canSeeAll) {
       const driveId = normalizePlacementText(getValByHeader(rows[0], ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(rows[0], ['eventid', 'event_id', 'companyname']));
       const registrationOwner = getValByHeader(rows[0], ['placementofficer', 'tponame', 'createdby', 'tpo']);
-      if (registrationOwner && normalizePlacementText(registrationOwner) !== normalizePlacementText(user?.name)) {
+      if (!isTpo && registrationOwner && normalizePlacementText(registrationOwner) !== normalizePlacementText(user?.name)) {
         return res.status(403).json({ success: false, message: 'You can only update registrations for your own placement drives.' });
       }
       const matchingDrive = (getCache()?.events || []).find(event => {
@@ -5471,10 +5885,10 @@ exports.updateDriveStatus = async (req, res) => {
         return type.includes('drive') && eventDriveId === driveId;
       });
       const driveOwner = getValByHeader(matchingDrive, ['tpo', 'tponame', 'placementofficer', 'createdby']);
-      if (!registrationOwner && driveOwner && normalizePlacementText(driveOwner) !== normalizePlacementText(user?.name)) {
+      if (!isTpo && !registrationOwner && driveOwner && normalizePlacementText(driveOwner) !== normalizePlacementText(user?.name)) {
         return res.status(403).json({ success: false, message: 'You can only update registrations for your own placement drives.' });
       }
-      if (!registrationOwner && !driveOwner) {
+      if (!isTpo && !registrationOwner && !driveOwner) {
         const registrationBranch = getValByHeader(rows[0], ['branch', 'sittingbranch']);
         const eventBranch = getValByHeader(matchingDrive, ['branch', 'sittingbranch', 'eventhappeningin', 'location']);
         if (!userHasBranch(user, registrationBranch || eventBranch)) {
@@ -5490,7 +5904,8 @@ exports.updateDriveStatus = async (req, res) => {
       });
       const branch = getValByHeader(rows[0], ['branch', 'sittingbranch']) || getValByHeader(registrationStudent, ['branch', 'sittingbranch']) || getValByHeader(matchingDrive, ['branch', 'sittingbranch', 'eventhappeningin', 'location']);
       const course = getValByHeader(rows[0], ['course']) || getValByHeader(registrationStudent, ['course', 'program']) || getValByHeader(matchingDrive, ['course', 'assignedcourse']);
-      if (isTpo && !hasAccess(branch, course, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) {
+      const ownedUnscopedDrive = isTpo && !branch && normalizePlacementText(registrationOwner || driveOwner) === normalizePlacementText(user?.name);
+      if (isTpo && !hasPlacementAccess(branch, course, user) && !ownedUnscopedDrive) {
         return res.status(403).json({ success: false, message: 'This registration is outside your assigned branch or course.' });
       }
     }
@@ -5750,7 +6165,7 @@ exports.getTrainerLogs = (req, res) => {
 exports.addTrainerLog = async (req, res) => {
   try {
     const { branch, trainerName, course, studentCount, present, absentees, feedbacks } = req.body;
-    const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('trainer'));
+    const sheet = doc.sheetsByTitle['Trainer/TL_Log'] || doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '') === 'trainertllog');
     if (!sheet) return res.status(404).json({ success: false, message: "Trainer Log sheet missing." });
     const h = sheet.headerValues;
     
@@ -5773,7 +6188,8 @@ exports.addTrainerLog = async (req, res) => {
 exports.updateTrainerLog = async (req, res) => {
   const { rowNumber, resignations, vacancy, tuv, mockTest } = req.body;
   try {
-    const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('trainer'));
+    const sheet = doc.sheetsByTitle['Trainer/TL_Log'] || doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '') === 'trainertllog');
+    if (!sheet) return res.status(404).json({ success: false, message: 'Trainer Log sheet missing.' });
     const rows = await sheet.getRows({ offset: parseInt(rowNumber) - 2, limit: 1 });
     if (rows.length > 0) {
       const h = sheet.headerValues;

@@ -101,6 +101,9 @@ const requireSession = (policy = 'portal') => (req, res, next) => {
   if (policy === 'portal-admin' && !isAdmin) {
     return res.status(403).json({ success: false, message: 'System administrator access is required for this action.' });
   }
+  if (policy === 'hiring-inquiries' && String(user.email || '').trim().toLowerCase() !== 'gifty@ipcsglobal.com') {
+    return res.status(403).json({ success: false, message: 'Only Gifty can view and assign company hiring inquiries.' });
+  }
   if (policy === 'placement-drive' && !isAdmin && !role.includes('ADMIN') && !isBranchManager(role) && !role.includes('TPO') && !role.includes('PLACEMENT OFFICER')) {
     return res.status(403).json({ success: false, message: 'Placement Drives are available only to Placement Officers, administrators, and Branch Managers.' });
   }
@@ -215,6 +218,10 @@ app.get('/api/public/partners', controllers.getPublicPartners);
 app.get('/api/public/placement-team', controllers.getPublicPlacementTeam);
 app.get('/api/public/openings', controllers.getPublicOpenings);
 app.post('/api/public/corporate-training-inquiries', controllers.submitCorporateTrainingInquiry);
+app.post('/api/public/hiring-inquiries', controllers.submitHiringInquiry);
+app.get('/api/placement/hiring-inquiries', requireSession('hiring-inquiries'), controllers.getHiringInquiries);
+app.get('/api/placement/hiring-inquiries/tpos', requireSession('hiring-inquiries'), controllers.getHiringInquiryTpos);
+app.post('/api/placement/hiring-inquiries/assign', requireSession('hiring-inquiries'), controllers.assignHiringInquiry);
 app.get('/api/public/mou/:token', controllers.getMouByToken);
 app.get('/api/public/placement-posters', controllers.getPublicPlacementPosters);
 app.get('/api/public/placement-posters/:fileId', controllers.streamPublicPlacementPoster);
@@ -230,18 +237,10 @@ app.post('/api/tpo/profile/update-photo', upload.single('photo'), controllers.up
 app.post('/api/tpo/profile/update-password', controllers.updatePassword);
 app.get('/api/tpo/drives', requireSession('placement-drive'), controllers.getDrives);
 app.post('/api/tpo/drives/update', requireSession('placement-drive'), controllers.updateDriveStatus);
-app.get('/api/tpo/trigger-resumes', controllers.triggerDailyCron);
+app.get('/api/tpo/trigger-resumes', requireSession('portal'), controllers.triggerDailyCron);
 
 // 🚨 INSTANT TEST ROUTE: Trigger both daily tasks manually anytime
-app.get('/api/tpo/test-daily-mail', async (req, res) => {
-  try {
-    console.log("⚡ Manual trigger requested via browser...");
-    await controllers.runDailyCron();
-    res.json({ success: true, message: "Daily Cron execution triggered! Check your terminal and inbox." });
-  } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
-  }
-});
+app.get('/api/tpo/test-daily-mail', requireSession('portal'), controllers.triggerDailyCron);
 
 // ---------------------------------------------------------
 // ADMIN ROUTES
@@ -382,4 +381,11 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 IPCS Backend is running on http://localhost:${PORT}`);
   startEmailWorker();
+  // Also recover overdue resume deliveries after deploys/restarts that missed
+  // the 08:00 IST cron tick. Mail-log idempotency prevents a second send.
+  setTimeout(() => {
+    controllers.runDailyCron({ resumeOnly: true })
+      .then(result => console.log('[RESUME DELIVERY] Startup catch-up complete:', JSON.stringify(result?.resumes || {})))
+      .catch(error => console.error('[RESUME DELIVERY] Startup catch-up could not run:', error.message));
+  }, 60_000);
 });

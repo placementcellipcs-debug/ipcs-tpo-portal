@@ -587,7 +587,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     if (!context?.eventId && !context?.sheetName) return;
     try {
       await loadDocInfo();
-      const allowedSheets = new Set(['Event', 'Clients', 'Corporate Training Inquiries']);
+      const allowedSheets = new Set(['Event', 'Clients', 'Corporate Training Inquiries', 'Hiring Inquiries']);
       if (context.sheetName && !allowedSheets.has(context.sheetName)) return;
       const sheet = doc.sheetsByTitle[context.sheetName || 'Event'];
       if (!sheet) return;

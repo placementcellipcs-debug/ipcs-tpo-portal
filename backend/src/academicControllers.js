@@ -1,15 +1,6 @@
-const { JWT } = require('google-auth-library');
-const { GoogleSpreadsheet } = require('google-spreadsheet');
-const { getCache, hasAccess } = require('./config');
+const { doc: academicDoc, getCache, hasAccess, loadDocInfo } = require('./config');
 const { formatIndiaTimestamp } = require('./utils/dateTime');
 
-const serviceAccountAuth = new JWT({
-  email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-  key: process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') : '',
-  scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-});
-
-const academicDoc = new GoogleSpreadsheet('1mhTuK_3dXLKk1DcUCTA7KFWHiCKirwmYP6l7wMLYPlo', serviceAccountAuth);
 let loadPromise;
 let cachedData;
 let cachedAt = 0;
@@ -60,7 +51,7 @@ const FIELD_HEADERS = {
 const normalize = (value) => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 async function loadAcademicDoc() {
-  if (!loadPromise) loadPromise = academicDoc.loadInfo();
+  if (!loadPromise) loadPromise = loadDocInfo().catch(error => { loadPromise = null; throw error; });
   await loadPromise;
 }
 

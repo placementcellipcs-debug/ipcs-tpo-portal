@@ -266,6 +266,67 @@ function CorporateTrainingInquiryModal({ onClose }) {
   </div>, document.body);
 }
 
+const EMPTY_HIRING_FORM = {
+  company: '', companyWebsite: '', contactPerson: '', email: '', phone: '', location: '', position: '',
+  courseSkills: '', openingCount: '', workMode: '', lastDate: '', qualification: '', experience: '',
+  salary: '', genderPreference: '', jobDescription: '', notes: '', websiteTrap: ''
+};
+
+function HireFromUsForm() {
+  const [form, setForm] = useState(EMPTY_HIRING_FORM);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [error, setError] = useState('');
+  const updateField = event => setForm(current => ({ ...current, [event.target.name]: event.target.value }));
+  const submitInquiry = async event => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError('');
+    try {
+      const response = await axios.post(`${API_BASE}/api/public/hiring-inquiries`, form);
+      if (!response.data?.success) throw new Error(response.data?.message || 'We could not send the hiring request. Please try again.');
+      setSubmitted(true);
+      setForm(EMPTY_HIRING_FORM);
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || requestError.message || 'We could not send the hiring request. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return <section className="public-hire-inquiry-section" id="hire-from-us">
+    <div className="public-story-shell">
+      <div className="public-hire-inquiry-card">
+        <div className="public-hire-inquiry-intro"><span className="public-corporate-eyebrow">HIRE IPCS STUDENTS</span><h2>Tell us about your opening.</h2><p>Share the role and the skills you need. Our placement team will review the request, connect you with the right TPO, and coordinate suitable candidates.</p><div className="public-hire-inquiry-points"><span><CheckCircle size={16} weight="fill" /> One placement team contact</span><span><CheckCircle size={16} weight="fill" /> Course and skill matching</span><span><CheckCircle size={16} weight="fill" /> Interview coordination</span></div></div>
+        {submitted ? <div className="public-corporate-inquiry-success" role="status"><span><CheckCircle size={28} weight="fill" /></span><h3>Your hiring request is with our placement team.</h3><p>Thank you. We’ll contact you using the details you provided.</p><button type="button" className="public-corporate-primary" onClick={() => setSubmitted(false)}>Submit another request</button></div> : <form className="public-corporate-inquiry-form public-hire-inquiry-form" onSubmit={submitInquiry}>
+          <div className="public-corporate-inquiry-grid">
+            <label>Company name *<input name="company" value={form.company} onChange={updateField} autoComplete="organization" maxLength={160} required /></label>
+            <label>Company website<input name="companyWebsite" type="url" value={form.companyWebsite} onChange={updateField} autoComplete="url" maxLength={240} placeholder="https://" /></label>
+            <label>Contact person *<input name="contactPerson" value={form.contactPerson} onChange={updateField} autoComplete="name" maxLength={120} required /></label>
+            <label>Work email *<input name="email" type="email" value={form.email} onChange={updateField} autoComplete="email" maxLength={254} required /></label>
+            <label>Phone / WhatsApp *<input name="phone" type="tel" value={form.phone} onChange={updateField} autoComplete="tel" maxLength={40} required /></label>
+            <label>Job location<input name="location" value={form.location} onChange={updateField} autoComplete="address-level2" maxLength={160} /></label>
+            <label>Position / role *<input name="position" value={form.position} onChange={updateField} maxLength={160} required /></label>
+            <label>Course or skills needed *<input name="courseSkills" value={form.courseSkills} onChange={updateField} maxLength={240} placeholder="e.g. Industrial Automation, PLC, SCADA" required /></label>
+            <label>Number of openings *<input name="openingCount" type="number" min="1" max="10000" value={form.openingCount} onChange={updateField} required /></label>
+            <label>Work mode<select name="workMode" value={form.workMode} onChange={updateField}><option value="">Choose work mode</option>{['Work at Office', 'Hybrid', 'Remote', 'Field / Site'].map(mode => <option key={mode} value={mode}>{mode}</option>)}</select></label>
+            <label>Application deadline<input name="lastDate" type="date" value={form.lastDate} onChange={updateField} /></label>
+            <label>Qualification<input name="qualification" value={form.qualification} onChange={updateField} maxLength={240} /></label>
+            <label>Experience needed<input name="experience" value={form.experience} onChange={updateField} maxLength={160} placeholder="e.g. Fresher or 1–2 years" /></label>
+            <label>Salary / range<input name="salary" value={form.salary} onChange={updateField} maxLength={120} /></label>
+            <label>Gender preference, if any<input name="genderPreference" value={form.genderPreference} onChange={updateField} maxLength={100} /></label>
+            <label className="public-corporate-inquiry-message">Job description / responsibilities<textarea name="jobDescription" value={form.jobDescription} onChange={updateField} rows={4} maxLength={4000} placeholder="Describe the work, required skills, and selection process." /></label>
+            <label className="public-corporate-inquiry-message">Additional notes<textarea name="notes" value={form.notes} onChange={updateField} rows={3} maxLength={2000} placeholder="Preferred interview dates, joining timeline, or anything else we should know." /></label>
+          </div>
+          <label className="public-corporate-inquiry-trap" aria-hidden="true">Website<input name="websiteTrap" value={form.websiteTrap} onChange={updateField} tabIndex={-1} autoComplete="off" /></label>
+          {error && <p className="public-corporate-inquiry-error" role="alert">{error}</p>}
+          <footer><span>We’ll use this information to respond to your hiring request and coordinate with the assigned placement officer.</span><button type="submit" className="public-corporate-primary" disabled={submitting}>{submitting ? 'Sending…' : 'Send hiring request'} <ArrowRight size={17} /></button></footer>
+        </form>}
+      </div>
+    </div>
+  </section>;
+}
+
 function SectionHeading({ eyebrow, title, description, align = 'left' }) {
   return (
     <div className={`public-section-heading align-${align}`}>
@@ -356,6 +417,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   const [vacancies, setVacancies] = useState([]);
   const [vacanciesLoading, setVacanciesLoading] = useState(false);
   const [vacanciesError, setVacanciesError] = useState(false);
+  const [visibleVacancyCount, setVisibleVacancyCount] = useState(8);
   const [partnersLoaded, setPartnersLoaded] = useState(false);
   const [partnersError, setPartnersError] = useState(false);
   const [partnerTotal, setPartnerTotal] = useState(0);
@@ -384,6 +446,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   const partnerListPage = page === 'partners-all';
   const partnerDirectoryPage = partnerListPage;
   const partnerPreviewPage = page === 'hiring';
+  const placementLandingPage = page === 'placement';
   const posterGalleryPage = page === 'placement-gallery';
   const partnerMediaPage = page === 'partners-media';
   const openVideo = item => { setVideoPlaybackError(false); setSelectedVideo(item); };
@@ -398,7 +461,7 @@ export default function PublicSiteSections({ page = 'all' }) {
     ? [['clients', 'Client stories'], ['client-videos', 'Client videos']]
     : [['placement-drive', 'Placement drives'], ['testimonials', 'Student testimonials'], ['talentino', 'Talentino videos'], ['videos', 'All videos']];
   const mediaBasePath = partnerMediaPage ? '/partners/media' : '/placements/media';
-  const partnersLoading = ['partners', 'partners-all', 'hiring', 'all'].includes(page) && !partnersLoaded;
+  const partnersLoading = ['partners', 'partners-all', 'hiring', 'placement', 'all'].includes(page) && !partnersLoaded;
   const postersLoading = ['placement', 'placement-gallery', 'all'].includes(page) && !postersLoaded;
   const hasGiftyProfile = placementOfficers.some(member => normalizeTeamName(member.name) === normalizeTeamName(placementTeamLead.name));
   const placementTeamSource = hasGiftyProfile ? placementOfficers : [
@@ -428,10 +491,11 @@ export default function PublicSiteSections({ page = 'all' }) {
   const allOpenings = vacancies;
 
   useEffect(() => {
-    if (!['partners', 'partners-all', 'hiring', 'all'].includes(page)) return undefined;
+    if (!['partners', 'partners-all', 'hiring', 'placement', 'all'].includes(page)) return undefined;
     let active = true;
-    const limit = partnerDirectoryPage ? 500 : 8;
-    const query = partnerDirectoryPage ? '&all=true' : '&random=true';
+    const loadFullPartnerList = partnerDirectoryPage || placementLandingPage;
+    const limit = loadFullPartnerList ? 500 : 8;
+    const query = loadFullPartnerList ? '&all=true' : '&random=true';
     publicGet(`${API_BASE}/api/public/partners?limit=${limit}&offset=0${query}`)
       .then(response => {
         if (!active) return;
@@ -445,7 +509,7 @@ export default function PublicSiteSections({ page = 'all' }) {
       .catch(() => { if (active) setPartnersError(true); })
       .finally(() => { if (active) setPartnersLoaded(true); });
     return () => { active = false; };
-  }, [page, partnerDirectoryPage]);
+  }, [page, partnerDirectoryPage, placementLandingPage]);
 
   useEffect(() => {
     if (!['about', 'all'].includes(page)) return undefined;
@@ -464,9 +528,10 @@ export default function PublicSiteSections({ page = 'all' }) {
   }, [page]);
 
   useEffect(() => {
-    if (!['vacancies', 'hiring'].includes(page)) return undefined;
+    if (!['vacancies', 'hiring', 'placement'].includes(page)) return undefined;
     let active = true;
     setVacanciesLoading(true);
+    setVisibleVacancyCount(8);
     publicGet(`${API_BASE}/api/public/openings`)
       .then(response => {
         if (!active) return;
@@ -782,7 +847,7 @@ export default function PublicSiteSections({ page = 'all' }) {
             </article>
           </div>
           {page === 'placement' && <section className="public-recruiter-panel" id="recruiter-partnerships">
-            <div className="public-recruiter-intro"><span className="public-card-kicker">RECRUITER PARTNERSHIPS · OPEN ACCESS</span><h3>Work with IPCS to meet career-ready talent.</h3><p>Explore the placement program and partnership process here. Recruiters can review public information without creating an account; private MOU signing links are issued directly by IPCS.</p><Link className="public-recruiter-link" to="/partners">Meet our hiring partners <ArrowRight size={16} /></Link></div>
+            <div className="public-recruiter-intro"><span className="public-card-kicker">RECRUITER PARTNERSHIPS · OPEN ACCESS</span><h3>Work with IPCS to meet career-ready talent.</h3><p>Explore the placement program and partnership process here. Recruiters can review public information without creating an account; private MOU signing links are issued directly by IPCS.</p><Link className="public-recruiter-link" to="#partners">Meet our hiring partners <ArrowRight size={16} /></Link></div>
             <div className="public-recruiter-steps">{[
               ['01', 'Align on hiring needs', 'Discuss candidate profiles, roles, and the recruitment plan.'],
               ['02', 'Review the agreement', 'IPCS sends an authorized representative a private MOU link.'],
@@ -875,7 +940,7 @@ export default function PublicSiteSections({ page = 'all' }) {
       </section>
       </>}
 
-      {['partners', 'partners-all', 'hiring', 'all'].includes(page) && <>
+      {['partners', 'partners-all', 'hiring', 'placement', 'all'].includes(page) && <>
       <section className="public-partners-section" id="partners">
         <div className="public-story-shell">
           <div className="public-partners-heading">
@@ -978,13 +1043,13 @@ export default function PublicSiteSections({ page = 'all' }) {
       </section>
       </>}
 
-      {['vacancies', 'hiring'].includes(page) && <section className={`public-vacancies-section${partnerPreviewPage ? ' is-preview' : ''}`} id="vacancies">
+      {['vacancies', 'hiring', 'placement'].includes(page) && <section className={`public-vacancies-section${partnerPreviewPage ? ' is-preview' : ''}`} id="vacancies">
         <div className="public-story-shell">
           <SectionHeading eyebrow="Career opportunities" title="Opportunities shared with IPCS." description={partnerPreviewPage ? 'Explore roles shared with IPCS Global and find your next opportunity.' : 'Browse roles shared through the IPCS Global newsletter, with each company and location in one place.'} />
           {vacanciesLoading ? <div className="public-vacancy-grid" aria-label="Loading openings">{[1, 2, 3, 4].map(item => <div className="public-vacancy-skeleton" key={item} />)}</div>
             : vacanciesError ? <div className="public-vacancy-empty" role="status">Career opportunities are temporarily unavailable. Please check back soon.</div>
               : allOpenings.length === 0 ? <div className="public-vacancy-empty">No newsletter openings are available right now.</div>
-                : <div className="public-vacancy-grid">{(partnerPreviewPage ? allOpenings.slice(0, 3) : allOpenings).map((vacancy, index) => {
+                : <div className="public-vacancy-grid">{(partnerPreviewPage ? allOpenings.slice(0, 3) : placementLandingPage ? allOpenings.slice(0, visibleVacancyCount) : allOpenings).map((vacancy, index) => {
                   const logo = logoSource(vacancy.companyLogo);
                   const companyInitials = String(vacancy.company || 'IP').trim().split(/\s+/).slice(0, 2).map(word => word[0]?.toUpperCase()).join('');
                   return <article className="public-vacancy-card" key={`${vacancy.id || 'opening'}-${index}`}>
@@ -1000,9 +1065,11 @@ export default function PublicSiteSections({ page = 'all' }) {
                     {vacancy.lastDate && <div className="public-vacancy-deadline">Listed deadline <strong>{formatPortalDate(vacancy.lastDate, vacancy.lastDate)}</strong></div>}
                   </article>;
                 })}</div>}
+          {placementLandingPage && allOpenings.length > visibleVacancyCount && <div className="public-gallery-more"><span>Showing {Math.min(visibleVacancyCount, allOpenings.length)} of {allOpenings.length} openings</span><button type="button" onClick={() => setVisibleVacancyCount(count => Math.min(count + 8, allOpenings.length))}>Show more openings <ArrowRight size={16} /></button></div>}
           {partnerPreviewPage && <div className="public-gallery-more"><span>{vacanciesLoading ? 'Loading openings' : `Showing ${Math.min(3, allOpenings.length)} of ${allOpenings.length} openings`}</span><Link to="/openings">View more openings <ArrowRight size={16} /></Link></div>}
         </div>
       </section>}
+      {placementLandingPage && <HireFromUsForm />}
       {corporateInquiryOpen && <CorporateTrainingInquiryModal onClose={() => setCorporateInquiryOpen(false)} />}
       {selectedVideo && createPortal(<div className="public-video-modal" role="presentation" onClick={event => { if (event.target === event.currentTarget) setSelectedVideo(null); }}>
         <section className="public-video-dialog" role="dialog" aria-modal="true" aria-label={selectedVideo.name}>

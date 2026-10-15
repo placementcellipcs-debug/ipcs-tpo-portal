@@ -13,20 +13,127 @@ const serviceAccountAuth = new JWT({
   scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'],
 });
 
-const doc = new GoogleSpreadsheet(process.env.SPREADSHEET_ID, serviceAccountAuth);
+const legacySpreadsheetId = String(process.env.SPREADSHEET_ID || '').trim();
+const defaultSpreadsheetIds = {
+  students: '14WvBO50cY66NLQVQXs1OrR-jcOD6AQSKz9Yya60KG3o',
+  placements: '1eSMP6u8G11ErXOYS1XTU0qR4RvyCNcFQtP19dHkNz5c',
+  learning: '18alS1bVj33kZ8wX7VcQiwrPzLSfOyQWkc8fRooTD7Nk',
+  operations: '1qLS3e0xJX0IVhNoGFGM8uPtet7mxI6QHzpz-AwfoBnI',
+};
+const configuredLearningSpreadsheetId = String(process.env.LEARNING_SPREADSHEET_ID || defaultSpreadsheetIds.learning).trim();
+// The previous academic controller used this workbook directly, so preserve
+// that existing setup even when ACADEMIC_SPREADSHEET_ID is not in Render.
+const legacyAcademicSpreadsheetId = String(
+  process.env.ACADEMIC_SPREADSHEET_ID || '1mhTuK_3dXLKk1DcUCTA7KFWHiCKirwmYP6l7wMLYPlo'
+).trim();
+const spreadsheetGroupIds = {
+  students: String(process.env.STUDENT_DATA_SPREADSHEET_ID || defaultSpreadsheetIds.students).trim(),
+  placements: String(process.env.PLACEMENT_SPREADSHEET_ID || defaultSpreadsheetIds.placements).trim(),
+  learning: configuredLearningSpreadsheetId || legacySpreadsheetId,
+  operations: String(process.env.OPERATIONS_SPREADSHEET_ID || defaultSpreadsheetIds.operations).trim(),
+};
+const learningUsesLegacySources = Boolean(legacySpreadsheetId) && configuredLearningSpreadsheetId === legacySpreadsheetId;
+
+const normalizeSheetTitle = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const sheetGroups = {
+  students: ['Data', 'Student_Diary', 'Leave_Applications'],
+  placements: ['NewsLetter', 'Event', 'Drive_Registration', 'Opening_Applied', 'Clients', 'TPO_Log', 'TPO_Stats', 'Corporate Training Inquiries', 'Hiring Inquiries'],
+  learning: [
+    'Talentino_Schedule', 'Talentino_Attendance', 'Courses', 'Study_Materials', 'StudyMaterials',
+    'Tech_Questions', 'Tech_Results', 'Aptitude_Questions', 'Aptitude_Results', 'Talentino_Questions', 'Talentino_Results',
+    'Training', 'Batches', 'Topics', 'Sessions', 'Attendance', 'Topic_Progress', 'Diary', 'Trainer_Remarks',
+    'Assignments', 'Assessments', 'Assessment_Results', 'Activities', 'Certificate_Requests', 'Certificates',
+    'Attendance_Corrections', 'Audit_Log'
+  ],
+  operations: [
+    'Issues', 'Contact', 'User', 'Branches', 'Mail', 'EmailQueue', 'EmailQuotaUsage', 'Security_Logs',
+    'Auth_Sessions', 'Password_Reset_Tokens', 'Trainer/TL_Log'
+  ],
+};
+const sheetGroupByNormalizedTitle = new Map(
+  Object.entries(sheetGroups).flatMap(([group, titles]) => titles.map(title => [normalizeSheetTitle(title), group]))
+);
+const getSheetGroup = title => sheetGroupByNormalizedTitle.get(normalizeSheetTitle(title)) || 'placements';
+const documentsById = new Map();
+const getDocument = spreadsheetId => {
+  if (!spreadsheetId) return null;
+  let spreadsheet = documentsById.get(spreadsheetId);
+  if (!spreadsheet) {
+    spreadsheet = new GoogleSpreadsheet(spreadsheetId, serviceAccountAuth);
+    documentsById.set(spreadsheetId, spreadsheet);
+  }
+  return spreadsheet;
+};
+const uniqueDocuments = spreadsheetIds => [...new Set(spreadsheetIds.filter(Boolean))].map(getDocument);
+const documentsByGroup = {
+  students: uniqueDocuments([spreadsheetGroupIds.students]),
+  placements: uniqueDocuments([spreadsheetGroupIds.placements]),
+  learning: learningUsesLegacySources
+    ? uniqueDocuments([legacySpreadsheetId, legacyAcademicSpreadsheetId])
+    : uniqueDocuments([configuredLearningSpreadsheetId]),
+  operations: uniqueDocuments([spreadsheetGroupIds.operations]),
+};
+const allDocuments = [...new Set(Object.values(documentsByGroup).flat())];
+const legacyAcademicOnlyLearningTabs = new Set([
+  'Training', 'Batches', 'Topics', 'Sessions', 'Attendance', 'Topic_Progress', 'Diary', 'Trainer_Remarks',
+  'Assignments', 'Assessments', 'Assessment_Results', 'Activities', 'Certificate_Requests', 'Certificates',
+  'Attendance_Corrections', 'Audit_Log'
+].map(normalizeSheetTitle));
+const getPreferredDocumentForSheet = title => {
+  const group = getSheetGroup(title);
+  if (group === 'learning' && learningUsesLegacySources && legacyAcademicOnlyLearningTabs.has(normalizeSheetTitle(title))) {
+    return getDocument(legacyAcademicSpreadsheetId) || documentsByGroup.learning[0];
+  }
+  return documentsByGroup[group]?.[0] || documentsByGroup.placements?.[0] || allDocuments[0];
+};
+
+const doc = {
+  get sheetsByTitle() {
+    const sheets = {};
+    for (const [group, spreadsheets] of Object.entries(documentsByGroup)) {
+      for (const spreadsheet of spreadsheets) {
+        for (const [title, sheet] of Object.entries(spreadsheet.sheetsByTitle || {})) {
+          if (getSheetGroup(title) === group || !sheets[title]) sheets[title] = sheet;
+        }
+      }
+    }
+    return sheets;
+  },
+  get sheetsByIndex() {
+    return allDocuments.flatMap(spreadsheet => spreadsheet.sheetsByIndex || []);
+  },
+  loadInfo: async () => Promise.all(allDocuments.map(spreadsheet => spreadsheet.loadInfo())),
+  addSheet: options => {
+    const spreadsheet = getPreferredDocumentForSheet(options?.title);
+    if (!spreadsheet) throw new Error('No Google Sheets document is configured. Set the spreadsheet IDs in the backend environment.');
+    return spreadsheet.addSheet(options);
+  },
+};
+const getSpreadsheetIdForSheetName = title => spreadsheetGroupIds[getSheetGroup(title)] || legacySpreadsheetId;
+const getActiveSpreadsheetIds = () => [...new Set([
+  ...Object.values(spreadsheetGroupIds),
+  ...(learningUsesLegacySources ? [legacyAcademicSpreadsheetId] : [])
+].filter(Boolean))];
 const drive = google.drive({ version: 'v3', auth: serviceAccountAuth });
 
 let globalCache = null;
 let isFetching = false;
 let cacheRefreshPromise = null;
-let lastCacheRefreshStartedAt = 0;
-let scheduledCacheRefreshTimer = null;
+let cacheRefreshRequested = false;
+let scheduledCacheRetryTimer = null;
+let consecutiveCacheRefreshFailures = 0;
 let docInfoLoading = null;
 let spreadsheetDateFormatPromise = null;
 
 const getCache = () => globalCache;
 async function loadDocInfo() {
-  if (!docInfoLoading) docInfoLoading = doc.loadInfo();
+  if (!docInfoLoading) {
+    docInfoLoading = Promise.allSettled(allDocuments.map(spreadsheet => spreadsheet.loadInfo())).then(results => {
+      const failures = results.filter(result => result.status === 'rejected');
+      if (failures.length === results.length && failures.length) throw failures[0].reason;
+      failures.forEach(result => console.warn('Could not load one configured spreadsheet:', result.reason?.message || result.reason));
+    });
+  }
   try {
     return await docInfoLoading;
   } finally {
@@ -37,59 +144,67 @@ async function loadDocInfo() {
 async function ensureSpreadsheetDateFormats() {
   if (!spreadsheetDateFormatPromise) {
     spreadsheetDateFormatPromise = (async () => {
-      const spreadsheetId = process.env.SPREADSHEET_ID;
-      if (!spreadsheetId) return;
-      await loadDocInfo();
+      // Formatting is a one-time startup operation per process. Allow operators
+      // to disable it explicitly, but do not require a Render flag for newly
+      // split workbooks to receive consistent formats.
+      if (String(process.env.APPLY_SPREADSHEET_DATE_FORMATS || '').toLowerCase() === 'false') return [];
 
       const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
-      const metadata = await sheetsApi.spreadsheets.get({
-        spreadsheetId,
-        fields: 'sheets(properties(sheetId,title,gridProperties(columnCount)))'
-      });
-      const sheets = metadata.data?.sheets || [];
-      const ranges = sheets.map(({ properties }) => `'${String(properties?.title || '').replace(/'/g, "''")}'!1:1`);
-      const headerResponse = ranges.length
-        ? await sheetsApi.spreadsheets.values.batchGet({ spreadsheetId, ranges, valueRenderOption: 'FORMATTED_VALUE' })
-        : { data: { valueRanges: [] } };
-      const headerRows = headerResponse.data?.valueRanges || [];
-      const requests = [{
-        updateSpreadsheetProperties: {
-          properties: { locale: 'en_GB', timeZone: 'Asia/Kolkata' },
-          fields: 'locale,timeZone'
-        }
-      }];
-
-      sheets.forEach(({ properties }, sheetIndex) => {
-        const headerCells = headerRows[sheetIndex]?.values?.[0] || [];
-        headerCells.forEach((header, columnIndex) => {
-          const key = String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-          if (!key) return;
-          let numberFormat = null;
-          if (/(timestamp|datetime|createdat|updatedat|submittedat|modifiedat|dateandtime)/.test(key)) {
-            numberFormat = { type: 'DATE_TIME', pattern: 'dd/MM/yyyy HH:mm:ss' };
-          } else if (/(^|)(time|interviewtime|starttime|endtime|checkintime|checkouttime)$/.test(key)) {
-            numberFormat = { type: 'TIME', pattern: 'HH:mm:ss' };
-          } else if (/(date|birthday|dob|deadline|expiry|warranty|purchasedate|dateplaced)/.test(key)) {
-            numberFormat = { type: 'DATE', pattern: 'dd/MM/yyyy' };
+      const summaries = [];
+      for (const spreadsheetId of getActiveSpreadsheetIds()) {
+        const metadata = await sheetsApi.spreadsheets.get({ spreadsheetId, fields: 'sheets(properties(sheetId,title,gridProperties(rowCount,columnCount)))' });
+        const sheets = metadata.data?.sheets || [];
+        const ranges = sheets.map(({ properties }) => `'${String(properties?.title || '').replace(/'/g, "''")}'!1:1`);
+        const headerResponse = ranges.length
+          ? await sheetsApi.spreadsheets.values.batchGet({ spreadsheetId, ranges, valueRenderOption: 'FORMATTED_VALUE' })
+          : { data: { valueRanges: [] } };
+        const headerRows = headerResponse.data?.valueRanges || [];
+        const requests = [{
+          updateSpreadsheetProperties: {
+            properties: { locale: 'en_GB', timeZone: 'Asia/Kolkata' },
+            fields: 'locale,timeZone'
           }
-          if (!numberFormat) return;
-          requests.push({
-            repeatCell: {
-              range: {
-                sheetId: properties.sheetId,
-                startRowIndex: 1,
-                startColumnIndex: columnIndex,
-                endColumnIndex: columnIndex + 1
-              },
-              cell: { userEnteredFormat: { numberFormat } },
-              fields: 'userEnteredFormat.numberFormat'
+        }];
+        let formattedColumns = 0;
+
+        sheets.forEach(({ properties }, sheetIndex) => {
+          const headerCells = headerRows[sheetIndex]?.values?.[0] || [];
+          headerCells.forEach((header, columnIndex) => {
+            const key = String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (!key) return;
+            let numberFormat = null;
+            const isDateTime = /(timestamp|datetime|dateandtime|createdat|updatedat|submittedat|modifiedat|sentat|assignedat|loggedat|resolvedat|approvedat|rejectedat|publishedat|lastupdated|lastlogin|checkinat|checkoutat|addedat|changedat|notificationat)/.test(key) ||
+              (/date/.test(key) && /time/.test(key));
+            if (isDateTime) {
+              numberFormat = { type: 'DATE_TIME', pattern: 'dd/MM/yyyy HH:mm:ss' };
+            } else if (/time/.test(key)) {
+              numberFormat = { type: 'TIME', pattern: 'HH:mm:ss' };
+            } else if (/(date|birthday|dob|deadline|expiry|warranty|purchasedate|dateplaced|validuntil|duedate)/.test(key)) {
+              numberFormat = { type: 'DATE', pattern: 'dd/MM/yyyy' };
             }
+            if (!numberFormat) return;
+            formattedColumns += 1;
+            requests.push({
+              repeatCell: {
+                range: {
+                  sheetId: properties.sheetId,
+                  startRowIndex: 1,
+                  endRowIndex: Math.max(2, Number(properties.gridProperties?.rowCount) || 1000),
+                  startColumnIndex: columnIndex,
+                  endColumnIndex: columnIndex + 1
+                },
+                cell: { userEnteredFormat: { numberFormat } },
+                fields: 'userEnteredFormat.numberFormat'
+              }
+            });
           });
         });
-      });
 
-      await sheetsApi.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
-      console.log(`🗓️ Applied DD/MM/YYYY date formats to ${sheets.length} spreadsheet tabs.`);
+        await sheetsApi.spreadsheets.batchUpdate({ spreadsheetId, requestBody: { requests } });
+        summaries.push({ spreadsheetId, tabCount: sheets.length, formattedColumns });
+        console.log(`🗓️ Applied DD/MM/YYYY, HH:MM:SS, and combined timestamp formats across ${formattedColumns} columns in ${sheets.length} spreadsheet tabs.`);
+      }
+      return summaries;
     })().catch(error => {
       spreadsheetDateFormatPromise = null;
       throw error;
@@ -97,30 +212,51 @@ async function ensureSpreadsheetDateFormats() {
   }
   return spreadsheetDateFormatPromise;
 }
-const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+async function fetchCacheBatch(sheetsApi, spreadsheetId, ranges) {
+  return sheetsApi.spreadsheets.values.batchGet({
+    spreadsheetId,
+    ranges,
+    valueRenderOption: 'FORMATTED_VALUE',
+  });
+}
 
-async function fetchSheetWithRetry(sheet, retries = 3) {
-  if (!sheet) return [];
-  const backoffs = [60000, 120000]; // Let the per-minute quota window reset, then back off further.
-  for (let i = 0; i < retries; i++) {
-    try {
-      return await sheet.getRows();
-    } catch (error) {
-      if (error.response && error.response.status === 429) {
-        if (i === retries - 1) break;
-        const waitTime = (backoffs[i] || 120000) + Math.floor(Math.random() * 5000);
-        console.warn(`⚠️ Google API Rate Limit Hit (429) on "${sheet.title}". Retrying in ${waitTime}ms after quota backoff...`);
-        await delay(waitTime);
-      } else {
-        throw error;
-      }
-    }
-  }
-  throw new Error(`Failed to fetch sheet "${sheet.title}" after ${retries} retries due to rate limits.`);
+function scheduleCacheRetry() {
+  if (scheduledCacheRetryTimer) return;
+  consecutiveCacheRefreshFailures += 1;
+  const waitMs = consecutiveCacheRefreshFailures === 1 ? 60000 : 120000;
+  console.warn(`⚠️ Cache refresh will retry in ${Math.round(waitMs / 1000)} seconds.`);
+  scheduledCacheRetryTimer = setTimeout(() => {
+    scheduledCacheRetryTimer = null;
+    refreshCache();
+  }, waitMs);
+}
+
+function clearCacheRetry() {
+  consecutiveCacheRefreshFailures = 0;
+  if (scheduledCacheRetryTimer) clearTimeout(scheduledCacheRetryTimer);
+  scheduledCacheRetryTimer = null;
+}
+
+function createCachedRows(sheet, values) {
+  const headers = sheet.headerValues || [];
+  return (values || []).map((rawData, index) => ({
+    _worksheet: sheet,
+    _rawData: rawData,
+    rowNumber: index + 2,
+    get(header) {
+      const columnIndex = headers.indexOf(header);
+      return columnIndex < 0 ? undefined : (rawData[columnIndex] ?? '');
+    },
+    toObject() {
+      return Object.fromEntries(headers
+        .map((header, columnIndex) => [header, rawData[columnIndex] ?? ''])
+        .filter(([header]) => Boolean(header)));
+    },
+  }));
 }
 
 async function performCacheRefresh() {
-  if (isFetching) return;
+  if (isFetching) return false;
   isFetching = true;
   try {
     await loadDocInfo();
@@ -142,7 +278,7 @@ async function performCacheRefresh() {
       getSheetFuzzy("StudyMaterials"), getSheetFuzzy("TechQuestions"), getSheetFuzzy("TechResults"),
       getSheetFuzzy("AptitudeQuestions"), getSheetFuzzy("AptitudeResults"), getSheetFuzzy("TalentinoQuestions"), getSheetFuzzy("TalentinoResults"),
       getSheetFuzzy("Courses"), getSheetFuzzy("DriveRegistration"), getSheetFuzzy("Contact"), getSheetFuzzy("User"), getSheetFuzzy("Branches"), getSheetFuzzy("Mail"),
-      getSheetFuzzy("trainer"), getSheetFuzzy("security"), getSheetFuzzy("TPOStats")
+      doc.sheetsByTitle['Trainer/TL_Log'] || getSheetFuzzy("TrainerTLLog"), getSheetFuzzy("security"), getSheetFuzzy("TPOStats")
     ];
 
     const cacheFields = [
@@ -158,47 +294,71 @@ async function performCacheRefresh() {
     };
     const previousCache = globalCache || {};
     const cacheFailedSheets = [];
-    const fetchAndKeepCache = async index => {
-      const sheet = sheetsToFetch[index];
-      const field = cacheFields[index];
+    const fetchedData = new Array(sheetsToFetch.length);
+    const groupedIndexes = new Map();
+    sheetsToFetch.forEach((sheet, index) => {
+      if (!sheet) {
+        cacheFailedSheets.push(cacheFields[index]);
+        fetchedData[index] = previousCache[cacheFields[index]] || emptyCache[cacheFields[index]];
+        return;
+      }
+      const spreadsheetId = getSpreadsheetIdForSheetName(sheet.title);
+      if (!groupedIndexes.has(spreadsheetId)) groupedIndexes.set(spreadsheetId, []);
+      groupedIndexes.get(spreadsheetId).push(index);
+    });
+
+    const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
+    const readSpreadsheetGroup = async (spreadsheetId, indexes) => {
+      const ranges = indexes.map(index => {
+        const title = String(sheetsToFetch[index].title).replace(/'/g, "''");
+        return `'${title}'!A2:ZZ`;
+      });
       try {
-        if (!sheet) throw new Error('Sheet was not found.');
-        const rows = await fetchSheetWithRetry(sheet, 2);
-        globalCache = { ...emptyCache, ...globalCache, [field]: rows };
-        return rows;
+        const response = await fetchCacheBatch(sheetsApi, spreadsheetId, ranges);
+        const valueRanges = response.data.valueRanges || [];
+        indexes.forEach((index, rangeIndex) => {
+          fetchedData[index] = createCachedRows(sheetsToFetch[index], valueRanges[rangeIndex]?.values || []);
+        });
       } catch (error) {
-        cacheFailedSheets.push(sheet?.title || field);
-        console.error(`⚠️ Could not refresh "${sheet?.title || field}"; keeping its previous cache:`, error.message);
-        const rows = Array.isArray(globalCache?.[field]) ? globalCache[field] : (previousCache[field] || []);
-        globalCache = { ...emptyCache, ...globalCache, [field]: rows };
-        return rows;
+        indexes.forEach(index => {
+          const sheet = sheetsToFetch[index];
+          const field = cacheFields[index];
+          cacheFailedSheets.push(sheet?.title || field);
+          fetchedData[index] = Array.isArray(previousCache[field]) ? previousCache[field] : emptyCache[field];
+        });
+        console.error(`⚠️ Could not refresh workbook group ${spreadsheetId}; keeping its previous cached tabs:`, error.message);
       }
     };
 
-    // Load account records first so a quota error on an unrelated tab cannot
-    // prevent staff from logging in after a cold start.
-    const [contactRows, userRows] = await Promise.all([fetchAndKeepCache(18), fetchAndKeepCache(19)]);
+    // Load account records in their own batch so login is ready even if a
+    // larger log tab fails to refresh. This is still one API read for both.
+    const operationsSpreadsheetId = spreadsheetGroupIds.operations;
+    if (groupedIndexes.has(operationsSpreadsheetId)) {
+      const operationIndexes = groupedIndexes.get(operationsSpreadsheetId);
+      const authIndexes = operationIndexes.filter(index => index === 18 || index === 19);
+      await readSpreadsheetGroup(operationsSpreadsheetId, authIndexes);
+      groupedIndexes.delete(operationsSpreadsheetId);
+      const remainingOperationIndexes = operationIndexes.filter(index => index !== 18 && index !== 19);
+      if (remainingOperationIndexes.length) await readSpreadsheetGroup(operationsSpreadsheetId, remainingOperationIndexes);
+    }
+    const contactRows = fetchedData[18] || previousCache.contacts || [];
+    const userRows = fetchedData[19] || previousCache.users || [];
     globalCache = {
       ...emptyCache,
       ...previousCache,
-      ...globalCache,
       contacts: contactRows,
       users: userRows,
       authCacheReady: true,
-      authSheetsHealthy: { contacts: !cacheFailedSheets.includes(sheetsToFetch[18]?.title || 'contacts'), users: !cacheFailedSheets.includes(sheetsToFetch[19]?.title || 'users') }
+      authSheetsHealthy: {
+        contacts: !cacheFailedSheets.includes(sheetsToFetch[18]?.title || 'contacts'),
+        users: !cacheFailedSheets.includes(sheetsToFetch[19]?.title || 'users'),
+      },
     };
 
-    // Keep a small amount of concurrency while avoiding a multi-minute cold
-    // start from serial sheet reads. The cache is the read path for requests;
-    // individual dashboard and list endpoints should not fetch these tabs again.
-    const fetchedData = new Array(sheetsToFetch.length);
-    fetchedData[18] = contactRows;
-    fetchedData[19] = userRows;
-    const remainingIndexes = sheetsToFetch.map((_, index) => index).filter(index => index !== 18 && index !== 19);
-    for (let i = 0; i < remainingIndexes.length; i += 5) {
-      const batch = remainingIndexes.slice(i, i + 5);
-      const rows = await Promise.all(batch.map(fetchAndKeepCache));
-      batch.forEach((index, offset) => { fetchedData[index] = rows[offset]; });
+    // One batchGet per workbook replaces a separate Google API read for every
+    // cache tab. Requests still use the four workbook-specific tab groups.
+    for (const [spreadsheetId, indexes] of groupedIndexes) {
+      await readSpreadsheetGroup(spreadsheetId, indexes);
     }
 
     const [
@@ -238,42 +398,55 @@ async function performCacheRefresh() {
       securityLogs: securityRows,
       tpoStats: tpoStatsRows,
       authCacheReady: true,
-      authSheetsHealthy: globalCache.authSheetsHealthy
+      authSheetsHealthy: globalCache.authSheetsHealthy,
+      cacheUpdatedAt: new Date().toISOString()
     };
     
     if (cacheFailedSheets.length) {
       console.warn(`⚠️ Cache refresh completed with ${cacheFailedSheets.length} unavailable sheet(s): ${[...new Set(cacheFailedSheets)].join(', ')}`);
+      scheduleCacheRetry();
     } else {
+      clearCacheRetry();
       console.log("✅ Cache successfully synced with Google Sheets!");
     }
     isFetching = false;
+    return cacheFailedSheets.length === 0;
   } catch (err) { 
     console.error("❌ Cache sync failed:", err.message); 
     isFetching = false;
-    if (!globalCache) { setTimeout(refreshCache, 5000); }
+    scheduleCacheRetry();
+    return false;
   }
 }
 
 function refreshCache() {
-  if (cacheRefreshPromise) return cacheRefreshPromise;
-  const minimumRefreshGapMs = 120000;
-  const earliestNextRefresh = lastCacheRefreshStartedAt + minimumRefreshGapMs;
-  if (globalCache && Date.now() < earliestNextRefresh) {
-    if (!scheduledCacheRefreshTimer) {
-      scheduledCacheRefreshTimer = setTimeout(() => {
-        scheduledCacheRefreshTimer = null;
-        refreshCache();
-      }, earliestNextRefresh - Date.now());
-    }
-    return Promise.resolve();
+  if (cacheRefreshPromise) {
+    // If a sheet write happens during a refresh, run one more pass as soon as
+    // the current pass finishes so the cache can't remain one write behind.
+    cacheRefreshRequested = true;
+    return cacheRefreshPromise;
   }
-  lastCacheRefreshStartedAt = Date.now();
-  cacheRefreshPromise = performCacheRefresh().finally(() => { cacheRefreshPromise = null; });
-  return cacheRefreshPromise;
+  const currentRefresh = performCacheRefresh();
+  cacheRefreshPromise = currentRefresh;
+  currentRefresh.then(succeeded => {
+    cacheRefreshPromise = null;
+    if (cacheRefreshRequested) {
+      cacheRefreshRequested = false;
+      // A successful pass can immediately catch a write that landed mid-read.
+      // Failed passes use the scheduled one- or two-minute retry instead.
+      if (succeeded) refreshCache();
+    }
+  }).catch(error => {
+    cacheRefreshPromise = null;
+    console.error('Unexpected cache refresh error:', error.message);
+  });
+  return currentRefresh;
 }
 
 refreshCache();
-setInterval(refreshCache, 300000); 
+// Pick up manual Google Sheets edits within two minutes. Writes made through
+// the portal request an immediate refresh rather than waiting for this poll.
+setInterval(refreshCache, 120000);
 
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
@@ -462,6 +635,7 @@ async function uploadToDrive(file, folderId) {
 
 module.exports = { 
   doc, drive, google, serviceAccountAuth, getCache, refreshCache, loadDocInfo, hasAccess, getFuzzyHeader,
+  getSpreadsheetIdForSheetName, getActiveSpreadsheetIds, ensureSpreadsheetDateFormats,
   sendIPCSMail, startEmailWorker: emailService.startWorker, processEmailQueue: emailService.processQueue, uploadToDrive,
   getTpoEmail, getBranchManagerEmail, getAllTpoEmails, getAllBranchManagerEmails, getSuperAdminEmails,
   getUserEmailById
