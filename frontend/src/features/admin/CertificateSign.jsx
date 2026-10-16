@@ -12,6 +12,7 @@ import ipcsLogo from '../../assets/brand/ipcs-logo.png';
 import ipcsSignature from '../../assets/brand/ipcs-signature.png';
 
 const KNOWN_SIGNING_API_HOSTS = new Set([
+  'api-placement.ipcstalenzo.com',
   'api-placement.ipcsglobal.info',
   'api-talenzo.ipcsglobal.info'
 ]);
