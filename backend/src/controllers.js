@@ -3211,23 +3211,23 @@ const runDailyCronTasks = async ({ resumeOnly = false } = {}) => {
   const yStr = formatter.format(new Date(Date.now() - 24 * 60 * 60 * 1000));
 
   // ==================================================================
-  // 📌 TASK 1: YESTERDAY'S EXPIRED JOB RESUMES TO COMPANIES
+  // 📌 TASK 1: SEND RESUMES ONLY FOR OPENINGS WHOSE DEADLINE WAS YESTERDAY
   // ==================================================================
-  console.log(`🚨 [CRON-TASK 1] Sending resume summaries for openings past their deadline (today ${todayStr}; yesterday ${yStr}).`);
+  console.log(`🚨 [CRON-TASK 1] Sending resume summaries for openings with a deadline of yesterday only (today ${todayStr}; yesterday ${yStr}).`);
 
-  const expiredJobs = cache.vacancies.filter(v => {
+  const yesterdayJobs = cache.vacancies.filter(v => {
     const lastDateKey = getValByHeader(v, ['lastdate', 'last date', 'column17', 'interviewdate', 'interview date']);
     if (!lastDateKey) return false;
 
     try {
       const parsedDate = safeParseDate(lastDateKey);
-      if (parsedDate && !isNaN(parsedDate.getTime())) { return formatter.format(parsedDate) < todayStr; }
+      if (parsedDate && !isNaN(parsedDate.getTime())) { return formatter.format(parsedDate) === yStr; }
       return false;
     } catch(e) { return false; }
   });
 
-  resumeSummary.dueJobs = expiredJobs.length;
-  console.log(`🚨 [CRON-TASK 1] Found ${expiredJobs.length} opening(s) past their deadline.`);
+  resumeSummary.dueJobs = yesterdayJobs.length;
+  console.log(`🚨 [CRON-TASK 1] Found ${yesterdayJobs.length} opening(s) with yesterday's deadline.`);
 
   const resumeStudentByRoll = new Map();
   const resumeStudentsByName = new Map();
@@ -3239,7 +3239,7 @@ const runDailyCronTasks = async ({ resumeOnly = false } = {}) => {
   });
   const escapeMailHtml = value => String(value || '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
 
-  for (let job of expiredJobs) {
+  for (let job of yesterdayJobs) {
     const jobId = getValByHeader(job, ['jobid', 'id']) || '';
     const companyEmail = getValByHeader(job, ['companymailid', 'companyemail']) || ''; 
     const companyName = getValByHeader(job, ['companyname', 'company']) || '';
@@ -3542,7 +3542,7 @@ exports.triggerDailyCron = async (req, res) => {
       success: true,
       message: report.sent || report.queued
         ? `Resume delivery checked: ${report.sent} sent, ${report.queued} queued, ${report.alreadyHandled} already handled.`
-        : `Resume delivery checked: no new email sent. ${report.dueJobs} expired opening(s) were examined.`,
+        : `Resume delivery checked: no new email sent. ${report.dueJobs} opening(s) with yesterday's deadline were examined.`,
       report
     });
   } catch (error) {

@@ -415,8 +415,8 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 IPCS Backend is running on http://localhost:${PORT}`);
   startEmailWorker();
-  // Also recover overdue resume deliveries after deploys/restarts that missed
-  // the 08:00 IST cron tick. Mail-log idempotency prevents a second send.
+  // Recover only yesterday's resume deliveries after deploys/restarts that
+  // missed the 08:00 IST cron tick; older deadlines are never backfilled.
   setTimeout(() => {
     controllers.runDailyCron({ resumeOnly: true })
       .then(result => console.log('[RESUME DELIVERY] Startup catch-up complete:', JSON.stringify(result?.resumes || {})))
