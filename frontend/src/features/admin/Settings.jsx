@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
-import { Camera, ShieldCheck, User, LockKey, CircleNotch, CheckCircle, WarningCircle, PaintBrush, X, Crop, MagnifyingGlassPlus, MagnifyingGlassMinus } from '@phosphor-icons/react';
+import { Camera, User, CircleNotch, CheckCircle, WarningCircle, PaintBrush, X, Crop, MagnifyingGlassPlus, MagnifyingGlassMinus } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig'; // 🚨 Imports your smart URL!
 import { ACCENT_OPTIONS, applyAppearance, readAppearance, saveAppearance } from '../../services/appearance';
@@ -166,11 +166,9 @@ export default function Settings() {
   const [tpoData, setTpoData] = useState(tpoDataStr ? JSON.parse(tpoDataStr) : null);
   
   const [activeTab, setActiveTab] = useState('profile');
-  const [passwords, setPasswords] = useState({ current: '', new: '', confirm: '' });
   const [message, setMessage] = useState({ text: '', type: '' });
   const [appearance, setAppearance] = useState(readAppearance);
   const [appearanceNotice, setAppearanceNotice] = useState('');
-  const [isUpdating, setIsUpdating] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [photoToCrop, setPhotoToCrop] = useState(null);
 
@@ -186,40 +184,10 @@ export default function Settings() {
 
   if (!tpoData) return null;
 
-  // 🚨 SECURITY LOCK: Check if user is Super Admin
-  const isSuperAdmin = tpoData.accessType === 'superadmin';
-
   const getDriveImage = (url) => {
     if (!url || typeof url !== 'string') return null;
     const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
     return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : url;
-  };
-
-  const handlePasswordUpdate = async (e) => {
-    e.preventDefault();
-    if (passwords.new !== passwords.confirm) {
-      return setMessage({ text: "New passwords do not match", type: 'error' });
-    }
-    
-    setIsUpdating(true);
-    setMessage({ text: '', type: '' });
-
-    try {
-      const response = await axios.post(`${API_BASE}/api/tpo/profile/update-password`, {
-        email: tpoData.email || '',
-        loginId: tpoData.loginId || '',
-        newPassword: passwords.new
-      });
-
-      if (response.data.success) {
-        setMessage({ text: "Password updated successfully! Please use it on your next login.", type: 'success' });
-        setPasswords({ current: '', new: '', confirm: '' });
-      }
-    } catch (error) {
-      setMessage({ text: error.response?.data?.message || "Failed to update password", type: 'error' });
-    } finally {
-      setIsUpdating(false);
-    }
   };
 
   const handlePhotoSelection = (e) => {
@@ -288,15 +256,6 @@ export default function Settings() {
               <PaintBrush size={20} weight={activeTab === 'appearance' ? 'fill' : 'regular'} /> Appearance
             </button>
 
-            {/* 🚨 ONLY VISIBLE TO SUPER ADMINS */}
-            {isSuperAdmin && (
-              <button 
-                onClick={() => { setActiveTab('security'); setMessage({text:'', type:''}); }}
-                style={{ padding: '15px 20px', borderRadius: '12px', border: 'none', background: activeTab === 'security' ? 'rgba(56, 189, 248, 0.1)' : 'transparent', color: activeTab === 'security' ? 'var(--accent-primary)' : 'var(--text-muted)', textAlign: 'left', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', transition: '0.2s', borderLeft: activeTab === 'security' ? '3px solid var(--accent-primary)' : '3px solid transparent' }}
-              >
-                <LockKey size={20} weight={activeTab === 'security' ? "fill" : "regular"} /> Security
-              </button>
-            )}
           </div>
 
           <div style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2.5rem' }}>
@@ -399,53 +358,6 @@ export default function Settings() {
                 </section>
 
                 {appearanceNotice && <p className="appearance-saved" role="status"><CheckCircle size={17} weight="fill" />{appearanceNotice}</p>}
-              </div>
-            )}
-
-            {activeTab === 'security' && isSuperAdmin && (
-              <div className="fade-in">
-                <h2 style={{ fontSize: '1.4rem', margin: '0 0 25px 0', borderBottom: '1px solid var(--card-border)', paddingBottom: '15px' }}>Security & Authentication</h2>
-                
-                <form onSubmit={handlePasswordUpdate}>
-                  <div style={{ display: 'grid', gap: '20px', marginBottom: '30px' }}>
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>New Password</label>
-                      <input 
-                        type="password" 
-                        className="sleek-input" 
-                        style={{ width: '100%' }} 
-                        value={passwords.new}
-                        onChange={(e) => setPasswords({...passwords, new: e.target.value})}
-                        required
-                        minLength={6}
-                      />
-                    </div>
-                    
-                    <div>
-                      <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: '8px' }}>Confirm New Password</label>
-                      <input 
-                        type="password" 
-                        className="sleek-input" 
-                        style={{ width: '100%' }} 
-                        value={passwords.confirm}
-                        onChange={(e) => setPasswords({...passwords, confirm: e.target.value})}
-                        required
-                        minLength={6}
-                      />
-                    </div>
-                  </div>
-
-                  <div style={{ background: 'rgba(56, 189, 248, 0.05)', padding: '15px', borderRadius: '8px', display: 'flex', gap: '15px', alignItems: 'center', border: '1px solid rgba(56, 189, 248, 0.2)', marginBottom: '25px' }}>
-                    <ShieldCheck size={32} color="var(--accent-primary)" weight="fill" style={{ flexShrink: 0 }} />
-                    <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)', lineHeight: '1.5' }}>
-                      Updating your password will sync immediately to the secure Google Sheets backend. Make sure to use a strong password with at least 6 characters.
-                    </div>
-                  </div>
-
-                  <button type="submit" className="btn-action" style={{ width: 'auto', background: 'var(--accent-primary)', color: '#0f172a', padding: '0.8rem 2rem', fontWeight: 'bold' }} disabled={isUpdating}>
-                    {isUpdating ? <CircleNotch size={20} className="ph-spin" /> : 'Update Password'}
-                  </button>
-                </form>
               </div>
             )}
 

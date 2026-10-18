@@ -1,55 +1,6 @@
 const { createHash, createHmac, randomBytes, timingSafeEqual } = require('crypto');
-
-const SESSION_TOKEN_PREFIX = 'IPCS_SESS_V1';
-const SESSION_TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-const getPortalSessionSigningKey = () => {
-  const secret = process.env.AUTH_SESSION_SECRET || process.env.GOOGLE_PRIVATE_KEY;
-  if (!secret) return null;
-  return createHash('sha256').update('IPCS:TPO:SESSION:V1\0').update(String(secret)).digest();
-};
-
-const createPortalSessionToken = sessionUser => {
-  const signingKey = getPortalSessionSigningKey();
-  if (!signingKey) throw new Error('Configure AUTH_SESSION_SECRET or GOOGLE_PRIVATE_KEY to sign staff sessions.');
-  const issuedAt = Date.now();
-  const encodedClaims = Buffer.from(JSON.stringify({
-    version: 1,
-    issuedAt,
-    expiresAt: issuedAt + SESSION_TOKEN_TTL_MS,
-    user: sessionUser
-  })).toString('base64url');
-  const unsignedToken = `${SESSION_TOKEN_PREFIX}.${encodedClaims}`;
-  const signature = createHmac('sha256', signingKey).update(unsignedToken).digest('base64url');
-  return `${unsignedToken}.${signature}`;
-};
-
-const readPortalSessionToken = (email, token) => {
-  const cleanEmail = String(email || '').trim().toLowerCase();
-  const cleanToken = String(token || '');
-  if (!cleanEmail || cleanToken.length > 8192) return null;
-  const [prefix, encodedClaims, suppliedSignature, extra] = cleanToken.split('.');
-  if (prefix !== SESSION_TOKEN_PREFIX || !encodedClaims || !suppliedSignature || extra !== undefined) return null;
-
-  const signingKey = getPortalSessionSigningKey();
-  if (!signingKey) return null;
-  const unsignedToken = `${prefix}.${encodedClaims}`;
-  const expectedSignature = Buffer.from(createHmac('sha256', signingKey).update(unsignedToken).digest('base64url'));
-  const actualSignature = Buffer.from(suppliedSignature);
-  if (actualSignature.length !== expectedSignature.length || !timingSafeEqual(actualSignature, expectedSignature)) return null;
-
-  try {
-    const claims = JSON.parse(Buffer.from(encodedClaims, 'base64url').toString('utf8'));
-    const now = Date.now();
-    const user = claims?.user;
-    if (claims?.version !== 1 || !Number.isFinite(claims.issuedAt) || !Number.isFinite(claims.expiresAt)) return null;
-    if (claims.issuedAt > now + 60_000 || claims.expiresAt <= now || claims.expiresAt - claims.issuedAt > SESSION_TOKEN_TTL_MS) return null;
-    if (String(user?.email || '').trim().toLowerCase() !== cleanEmail) return null;
-    return user;
-  } catch {
-    return null;
-  }
-};
+const { hashPassword, verifyPassword, isPasswordHash, validatePassword } = require('./passwords');
+const { SESSION_TOKEN_TTL_MS, getAccountVersion, createPortalSessionToken, readPortalSessionToken } = require('./sessionTokens');
 
 function parseUserAgent(ua = '') {
   let browser = 'Unknown Browser';
@@ -81,6 +32,7 @@ const {
 
 const { autoCreateDesignTask } = require('./designControllers');
 const { normalizePlacementText, placementIdentity, latestPlacementRows } = require('./placementRecords');
+const { calculateDashboardPlacementCounts } = require('./dashboardStats');
 const { formatIndiaTimestamp, formatIndiaDate, formatIndiaTime } = require('./utils/dateTime');
 
 const FOLDER_OFFER_LETTERS = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5';
@@ -105,6 +57,73 @@ const getValByHeader = (row, headerOptions) => {
     }
   }
   return '';
+};
+
+const accountAuthState = (row, passwordOverride) => ({
+  email: getValByHeader(row, ['email', 'mailid', 'mail']).toLowerCase(),
+  loginId: getValByHeader(row, ['loginid', 'userid', 'user_id', 'employeeid', 'username']).toLowerCase(),
+  password: passwordOverride === undefined ? getValByHeader(row, ['password']) : String(passwordOverride),
+  role: getValByHeader(row, ['role', 'portalrole']).toUpperCase(),
+  access: getValByHeader(row, ['access', 'accesstype']).toUpperCase(),
+  status: getValByHeader(row, ['status']).toUpperCase(),
+  sittingBranch: getValByHeader(row, ['sittingbranch', 'branch']).toLowerCase(),
+  assignedBranches: getValByHeader(row, ['assignedbranches']).toLowerCase(),
+  assignedCourses: getValByHeader(row, ['assignedcourses', 'assignedcourse', 'course']).toLowerCase(),
+  department: getValByHeader(row, ['department']).toUpperCase(),
+});
+
+const isAccountEnabled = row => !['INACTIVE', 'DISABLED', 'LEFT', 'TERMINATED', 'SUSPENDED', 'REVOKED'].includes(
+  getValByHeader(row, ['status']).toUpperCase()
+);
+
+const getCurrentAccountRow = (email, cache = getCache()) => {
+  const identity = String(email || '').trim().toLowerCase();
+  if (!identity || !cache?.authCacheReady) return null;
+  const rows = [...(cache.contacts || []), ...(cache.users || [])];
+  return rows.find(row => {
+    const state = accountAuthState(row);
+    return (state.email || state.loginId) === identity;
+  }) || null;
+};
+
+const migrateLegacyPassword = async (cachedRow, legacyPassword, suppliedPassword) => {
+  const worksheet = cachedRow?._worksheet;
+  const rowNumber = Number(cachedRow?.rowNumber);
+  if (!worksheet || !Number.isInteger(rowNumber) || rowNumber < 2 || typeof worksheet.getRows !== 'function') {
+    return { password: legacyPassword };
+  }
+
+  const headers = worksheet.headerValues || [];
+  const passwordHeader = headers.find(header => String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'password');
+  if (!passwordHeader) return { password: legacyPassword };
+
+  let saved = false;
+  try {
+    const liveRows = await worksheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    const liveRow = liveRows[0];
+    if (!liveRow) return { changed: true };
+    const currentPassword = getValByHeader(liveRow, ['password']);
+    if (currentPassword !== legacyPassword) {
+      // Another login may have migrated this same legacy password while this
+      // request was waiting. Accept that concurrent migration if it matches.
+      if (isPasswordHash(currentPassword) && await verifyPassword(suppliedPassword, currentPassword)) {
+        cachedRow.assign({ [passwordHeader]: currentPassword });
+        return { password: currentPassword, migrated: true };
+      }
+      return { changed: true };
+    }
+
+    const hashedPassword = await hashPassword(suppliedPassword, { allowShortLegacy: true });
+    liveRow.assign({ [passwordHeader]: hashedPassword });
+    await liveRow.save();
+    saved = true;
+    cachedRow.assign({ [passwordHeader]: hashedPassword });
+    return { password: hashedPassword, migrated: true };
+  } catch (error) {
+    if (saved) return { cacheStale: true };
+    console.warn('[AUTH] Could not migrate a legacy password on login:', error.message);
+    return { password: legacyPassword };
+  }
 };
 
 const normalizeBranch = (branch) => (branch || '').toLowerCase().replace(/branch/g, '').trim();
@@ -537,8 +556,10 @@ exports.login = async (req, res) => {
     }
 
     const cleanInput = (email || '').toString().trim().toLowerCase();
-    const cleanPass = (password || '').toString().trim();
+    const cleanPass = password === undefined || password === null ? '' : String(password);
     let foundUser = null; 
+    let accountRow = null;
+    let storedPassword = '';
     let role = 'TPO'; 
     let course = 'All'; 
     let userName = '';
@@ -548,7 +569,9 @@ exports.login = async (req, res) => {
       const sheetMail = getValByHeader(row, ['mailid', 'email']).toLowerCase();
       const sheetPass = getValByHeader(row, ['password']);
       
-      if (sheetMail === cleanInput && sheetPass === cleanPass && cleanInput !== '') {
+      if (sheetMail === cleanInput && cleanInput !== '' && cleanPass !== '' && isAccountEnabled(row) && await verifyPassword(cleanPass, sheetPass)) {
+        accountRow = row;
+        storedPassword = sheetPass;
         foundUser = {
           email: getValByHeader(row, ['mailid', 'email']) || cleanInput,
           sittingbranch: getValByHeader(row, ['sittingbranch']),
@@ -576,7 +599,9 @@ exports.login = async (req, res) => {
         const sheetLoginId = getValByHeader(row, ['loginid']).toLowerCase();
         const sheetPass = getValByHeader(row, ['password']);
         
-        if ((sheetUsername === cleanInput || sheetMail === cleanInput || sheetLoginId === cleanInput) && sheetPass === cleanPass && cleanInput !== '') {
+        if ((sheetUsername === cleanInput || sheetMail === cleanInput || sheetLoginId === cleanInput) && cleanInput !== '' && cleanPass !== '' && isAccountEnabled(row) && await verifyPassword(cleanPass, sheetPass)) {
+          accountRow = row;
+          storedPassword = sheetPass;
           foundUser = {
             email: getValByHeader(row, ['mailid', 'email']) || cleanInput,
             sittingbranch: getValByHeader(row, ['sittingbranch']),
@@ -603,6 +628,13 @@ exports.login = async (req, res) => {
         return res.status(503).json({ success: false, message: 'Login records are temporarily unavailable. Please retry shortly.' });
       }
       return res.status(401).json({ success: false, message: "Invalid Login ID or Password." });
+    }
+
+    if (!isPasswordHash(storedPassword)) {
+      const migration = await migrateLegacyPassword(accountRow, storedPassword, cleanPass);
+      if (migration.changed) return res.status(401).json({ success: false, message: 'This account password changed. Sign in with the latest password.' });
+      if (migration.cacheStale) return res.status(503).json({ success: false, message: 'Your account is being secured. Please retry in a moment.' });
+      storedPassword = migration.password || storedPassword;
     }
 
     const parseAssignments = value => String(value || '').split(/[\n,;]+/).map(item => item.trim().replace(/^\d+\.\s*/, '').toLowerCase()).filter(item => item && !/^(?:[-–—]|n\/a|none)$/i.test(item));
@@ -640,7 +672,14 @@ exports.login = async (req, res) => {
       empId: foundUser.empId || '',
       target: foundUser.target || '0'
     };
-    const sessionToken = createPortalSessionToken(sessionUser);
+    const accountVersion = getAccountVersion(accountAuthState(accountRow, storedPassword));
+    if (invalidatedAccountVersions.has(sessionKey)) {
+      const invalidatedVersion = invalidatedAccountVersions.get(sessionKey);
+      if (!invalidatedVersion || invalidatedVersion !== accountVersion) {
+        return res.status(503).json({ success: false, message: 'This account was just updated. Please retry after account details finish syncing.' });
+      }
+    }
+    const sessionToken = createPortalSessionToken(sessionUser, accountVersion);
 
     (async () => {
       try {
@@ -688,21 +727,21 @@ exports.getDashboardStats = async (req, res) => {
   const checkAccess = (rBranch, rCourse) => hasPlacementAccess(rBranch, rCourse, placementUser);
 
   const cache = getCache();
-  let studentCount = 0, pendingApps = 0, placedCount = 0, activeVacs = 0;
+  let pendingApps = 0, activeVacs = 0;
   const clientRows = cache.clients || [];
   const totalCompanies = clientRows.reduce((count, row) => {
     const companyName = getValByHeader(row, ['companyname', 'company']).trim();
     return count + (companyName ? 1 : 0);
   }, 0);
 
-  cache.students.forEach(row => { 
-    const branch = getValByHeader(row, ['branch']);
-    const course = getValByHeader(row, ['course']);
-    if (checkAccess(branch, course)) studentCount++; 
-  });
-  
   const logsSource = cache.tpoLogs || [];
   const dedupedLogs = latestPlacementRows(logsSource, getValByHeader);
+  const placementCounts = calculateDashboardPlacementCounts(
+    cache.students || [],
+    dedupedLogs,
+    getValByHeader,
+    row => checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))
+  );
 
   dedupedLogs.forEach(row => {
     const branch = getValByHeader(row, ['branch']);
@@ -710,13 +749,7 @@ exports.getDashboardStats = async (req, res) => {
     
     if (checkAccess(branch, course)) {
       const stat = getValByHeader(row, ['status']).toLowerCase();
-      const joinStat = getValByHeader(row, ['joiningstatus']).toLowerCase();
-      const placeStat = getValByHeader(row, ['placementstatus']).toLowerCase();
-
       if (stat === 'applied') pendingApps++;
-      if (stat.includes('placed') || stat.includes('got offer') || stat.includes('offer') || joinStat.includes('join') || placeStat.includes('placed')) {
-        placedCount++;
-      }
     }
   });
   
@@ -744,9 +777,9 @@ exports.getDashboardStats = async (req, res) => {
   res.json({ 
     success: true, 
     stats: { 
-      totalStudents: studentCount, 
+      totalStudents: placementCounts.totalStudents,
       pendingApps, 
-      placed: placedCount, 
+      placed: placementCounts.placed,
       activeVacancies: activeVacs,
       totalCompanies
     }, 
@@ -4993,7 +5026,6 @@ exports.getAdminUsers = (req, res) => {
             email: email, 
             sittingBranch: getValByHeader(row, ['sittingbranch', 'branch']) || '',
             assignedBranches: getValByHeader(row, ['assignedbranches']) || '',
-            password: getValByHeader(row, ['password']) || '',
             role: getValByHeader(row, ['role']) || 'TPO',
             course: 'All Courses', 
             access: 'View & Edit',
@@ -5021,7 +5053,6 @@ exports.getAdminUsers = (req, res) => {
             email: email, 
             sittingBranch: getValByHeader(row, ['sitting_branch', 'sittingbranch', 'branch']) || '',
             assignedBranches: getValByHeader(row, ['assigned_branches', 'assignedbranches']) || '',
-            password: getValByHeader(row, ['password']) || '',
             role: getValByHeader(row, ['role']) || 'Unassigned',
             course: getValByHeader(row, ['assigned_courses', 'assignedcourses', 'course']) || 'All Courses',
             access: getValByHeader(row, ['access_type', 'accesstype', 'access']) || 'View Only',
@@ -5040,13 +5071,34 @@ exports.getAdminUsers = (req, res) => {
   }
 };
 
+const invalidatedAccountVersions = new Map();
+const invalidateStaffAccountSessions = (email, row = null) => {
+  const identity = String(email || '').trim().toLowerCase();
+  if (!identity) return;
+  invalidatedAccountVersions.set(identity, row ? getAccountVersion(accountAuthState(row)) : null);
+};
+
 exports.addAdminUser = async (req, res) => {
   try {
-    const { userName, contact, email, sittingBranch, assignedBranches, password, role, course, access, empId, target } = req.body;
-    
+    const { userName, contact, email, sittingBranch, assignedBranches, role, course, access, empId, target } = req.body;
+    const password = typeof req.body.newPassword === 'string' ? req.body.newPassword : req.body.password;
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    if (!String(userName || '').trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return res.status(400).json({ success: false, message: 'Enter the employee name and a valid login email.' });
+    }
+    const passwordError = validatePassword(password);
+    if (passwordError) return res.status(400).json({ success: false, message: passwordError });
+    const cache = getCache();
+    if ([...(cache?.contacts || []), ...(cache?.users || [])].some(row => getValByHeader(row, ['email', 'mailid', 'mail']).toLowerCase() === cleanEmail)) {
+      return res.status(409).json({ success: false, message: 'An account already uses this email address.' });
+    }
+
+    await loadDocInfo();
     const sheetName = role === 'TPO' ? "Contact" : "User";
     const s = doc.sheetsByTitle[sheetName]; 
-    const h = s.headerValues;
+    if (!s) return res.status(503).json({ success: false, message: `The ${sheetName} account sheet is unavailable.` });
+    const h = s.headerValues || [];
+    const hashedPassword = await hashPassword(password);
 
     // Bulletproof Header Finder
     const getSafeH = (searchStrs) => {
@@ -5071,14 +5123,14 @@ exports.addAdminUser = async (req, res) => {
       const hEmail = getSafeH(['mailid', 'email']); if(hEmail) newRow[hEmail] = email;
       const hSit = getSafeH(['sittingbranch']); if(hSit) newRow[hSit] = sittingBranch;
       const hAss = getSafeH(['assignedbranches']); if(hAss) newRow[hAss] = assignedBranches;
-      const hPass = getSafeH(['password']); if(hPass) newRow[hPass] = password;
+      const hPass = getSafeH(['password']); if(hPass) newRow[hPass] = hashedPassword;
     } else {
       const hName = getSafeH(['name', 'username']); if(hName) newRow[hName] = userName;
       const hPhone = getSafeH(['contactnumber', 'phone']); if(hPhone) newRow[hPhone] = contact;
       const hEmail = getSafeH(['email', 'mailid']); if(hEmail) newRow[hEmail] = email;
       const hSit = getSafeH(['sittingbranch']); if(hSit) newRow[hSit] = sittingBranch;
       const hAss = getSafeH(['assignedbranches']); if(hAss) newRow[hAss] = assignedBranches;
-      const hPass = getSafeH(['password']); if(hPass) newRow[hPass] = password;
+      const hPass = getSafeH(['password']); if(hPass) newRow[hPass] = hashedPassword;
       const hRole = getSafeH(['role']); if(hRole) newRow[hRole] = role;
       const hCourse = getSafeH(['assignedcourses', 'course']); if(hCourse) newRow[hCourse] = course;
       const hAccess = getSafeH(['accesstype', 'access']); if(hAccess) newRow[hAccess] = access;
@@ -5093,6 +5145,7 @@ exports.addAdminUser = async (req, res) => {
     const hTgt = getSafeH(['targetofthemonth', 'target']); 
     if(hTgt && target !== undefined) newRow[hTgt] = target;
 
+    if (!getSafeH(['password'])) return res.status(500).json({ success: false, message: `The ${sheetName} sheet needs a Password column.` });
     await s.addRow(newRow);
 
     // 🚨 NEW: Sync to TPO_Stats if Target is updated
@@ -5100,7 +5153,7 @@ exports.addAdminUser = async (req, res) => {
       await syncTpoStats(userName, { 'Monthly Target': target });
     }
 
-    refreshCache(); 
+    await refreshCache();
     res.json({ success: true, message: "User added" });
   } catch (err) { 
     res.status(500).json({ success: false, message: err.message }); 
@@ -5109,12 +5162,36 @@ exports.addAdminUser = async (req, res) => {
 
 exports.updateAdminUser = async (req, res) => {
   try {
-    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, password, role, course, access, empId, target } = req.body;
-    const s = doc.sheetsByTitle[sheet]; 
-    const rows = await s.getRows({ offset: rowNumber - 2, limit: 1 });
+    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, role, course, access, empId, target } = req.body;
+    const passwordToSet = typeof req.body.newPassword === 'string' ? req.body.newPassword : (typeof req.body.password === 'string' ? req.body.password : '');
+    const cleanEmail = String(email || '').trim().toLowerCase();
+    const cleanSheet = String(sheet || '');
+    const numericRowNumber = Number(rowNumber);
+    if (!['Contact', 'User'].includes(cleanSheet) || !Number.isInteger(numericRowNumber) || numericRowNumber < 2) {
+      return res.status(400).json({ success: false, message: 'Choose a valid employee account to update.' });
+    }
+    if (!String(userName || '').trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      return res.status(400).json({ success: false, message: 'Enter the employee name and a valid login email.' });
+    }
+    if (passwordToSet) {
+      const passwordError = validatePassword(passwordToSet);
+      if (passwordError) return res.status(400).json({ success: false, message: passwordError });
+    }
+    const cache = getCache();
+    const duplicateEmail = [...(cache?.contacts || []), ...(cache?.users || [])].some(row => {
+      const rowSheet = row._worksheet?.title;
+      return !(rowSheet === cleanSheet && Number(row.rowNumber) === numericRowNumber)
+        && getValByHeader(row, ['email', 'mailid', 'mail']).toLowerCase() === cleanEmail;
+    });
+    if (duplicateEmail) return res.status(409).json({ success: false, message: 'Another account already uses this email address.' });
+
+    await loadDocInfo();
+    const s = doc.sheetsByTitle[cleanSheet];
+    if (!s) return res.status(503).json({ success: false, message: `The ${cleanSheet} account sheet is unavailable.` });
+    const rows = await s.getRows({ offset: numericRowNumber - 2, limit: 1 });
     
     if (rows.length > 0) {
-      const h = s.headerValues;
+      const h = s.headerValues || [];
 
       // Bulletproof Header Finder
       const getSafeH = (searchStrs) => {
@@ -5139,14 +5216,12 @@ exports.updateAdminUser = async (req, res) => {
         const hEmail = getSafeH(['mailid', 'email']); if(hEmail) updateObj[hEmail] = email;
         const hSit = getSafeH(['sittingbranch']); if(hSit) updateObj[hSit] = sittingBranch;
         const hAss = getSafeH(['assignedbranches']); if(hAss) updateObj[hAss] = assignedBranches;
-        const hPass = getSafeH(['password']); if(hPass) updateObj[hPass] = password;
       } else { 
         const hName = getSafeH(['name', 'username']); if(hName) updateObj[hName] = userName;
         const hPhone = getSafeH(['contactnumber', 'phone']); if(hPhone) updateObj[hPhone] = contact;
         const hEmail = getSafeH(['email', 'mailid']); if(hEmail) updateObj[hEmail] = email;
         const hSit = getSafeH(['sittingbranch']); if(hSit) updateObj[hSit] = sittingBranch;
         const hAss = getSafeH(['assignedbranches']); if(hAss) updateObj[hAss] = assignedBranches;
-        const hPass = getSafeH(['password']); if(hPass) updateObj[hPass] = password;
         const hRole = getSafeH(['role']); if(hRole) updateObj[hRole] = role;
         const hCourse = getSafeH(['assignedcourses', 'course']); if(hCourse) updateObj[hCourse] = course;
         const hAccess = getSafeH(['accesstype', 'access']); if(hAccess) updateObj[hAccess] = access;
@@ -5160,15 +5235,24 @@ exports.updateAdminUser = async (req, res) => {
       const hTgt = getSafeH(['targetofthemonth', 'target']); 
       if(hTgt && target !== undefined) updateObj[hTgt] = target;
 
+      if (passwordToSet) {
+        const passwordHeader = getSafeH(['password']);
+        if (!passwordHeader) return res.status(500).json({ success: false, message: `The ${cleanSheet} sheet needs a Password column.` });
+        updateObj[passwordHeader] = await hashPassword(passwordToSet);
+      }
+
+      const previousEmail = getValByHeader(rows[0], ['email', 'mailid', 'mail']).toLowerCase();
       rows[0].assign(updateObj); 
       await rows[0].save(); 
+      invalidateStaffAccountSessions(previousEmail);
+      invalidateStaffAccountSessions(cleanEmail, rows[0]);
 
       // 🚨 NEW: Sync to TPO_Stats if Target is updated
       if (target !== undefined && userName) {
         await syncTpoStats(userName, { 'Monthly Target': target });
       }
 
-      refreshCache(); 
+      await refreshCache();
       res.json({ success: true, message: "User updated" });
     } else { 
       res.status(404).json({ success: false, message: "User row not found" }); 
@@ -5180,18 +5264,25 @@ exports.updateAdminUser = async (req, res) => {
 
 exports.deleteAdminUser = async (req, res) => {
   try {
-    const { sheet, rowNumber } = req.body; 
-    const targetSheet = doc.sheetsByTitle[sheet];
+    const { sheet, rowNumber } = req.body;
+    const cleanSheet = String(sheet || '');
+    const numericRowNumber = Number(rowNumber);
+    if (!['Contact', 'User'].includes(cleanSheet) || !Number.isInteger(numericRowNumber) || numericRowNumber < 2) {
+      return res.status(400).json({ success: false, message: 'Choose a valid employee account to remove.' });
+    }
+    await loadDocInfo();
+    const targetSheet = doc.sheetsByTitle[cleanSheet];
     
     if (!targetSheet) {
       return res.status(404).json({ success: false, message: "Sheet not found" });
     }
     
-    const rows = await targetSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    const rows = await targetSheet.getRows({ offset: numericRowNumber - 2, limit: 1 });
     
     if (rows.length > 0) { 
+      invalidateStaffAccountSessions(getValByHeader(rows[0], ['email', 'mailid', 'mail']));
       await rows[0].delete(); 
-      refreshCache(); 
+      await refreshCache();
       res.json({ success: true, message: "User deleted" }); 
     } else { 
       res.status(404).json({ success: false, message: "User not found" }); 
@@ -5201,82 +5292,25 @@ exports.deleteAdminUser = async (req, res) => {
   }
 };
 
-exports.updatePassword = async (req, res) => {
-  const { email, loginId, newPassword } = req.body;
-  try {
-    const cache = getCache(); 
-    let targetRow = null;
-    
-    const targetEmail = (email || '').toString().trim().toLowerCase();
-    const targetLogin = (loginId || '').toString().trim().toLowerCase();
-
-    // 🚨 Safe lookup function that only checks specific columns
-    const findUserRow = (rows) => {
-      if (!rows) return null;
-      return rows.find(row => {
-        const rEmail = getValByHeader(row, ['email', 'mailid', 'mail']).toLowerCase();
-        const rLogin = getValByHeader(row, ['userid', 'user_id', 'employeeid', 'loginid']).toLowerCase();
-        return (targetEmail && rEmail === targetEmail) || (targetLogin && rLogin === targetLogin);
-      });
-    };
-
-    // Check Contacts (TPOs) first, then Users (Admins/Managers)
-    targetRow = findUserRow(cache.contacts) || findUserRow(cache.users);
-
-    if (targetRow) {
-      const h = targetRow._worksheet.headerValues;
-      const passHeader = getFuzzyHeader(h, 'password') || getFuzzyHeader(h, 'pass');
-      
-      targetRow.assign({ [passHeader]: newPassword });
-      await targetRow.save(); 
-      
-      refreshCache(); 
-      res.json({ success: true, message: "Password updated successfully" });
-    } else { 
-      res.status(404).json({ success: false, message: "User account not found in database." }); 
-    }
-  } catch (err) { 
-    res.status(500).json({ success: false, message: err.message }); 
-  }
-};
-
 exports.updatePhoto = async (req, res) => {
-  const { email, loginId } = req.body;
   try {
     if (!req.file) return res.status(400).json({ success: false, message: "No file provided." });
-    
-    const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS); 
+    const identity = String(req.portalUser?.email || '').trim().toLowerCase();
+    if (!identity) return res.status(401).json({ success: false, message: 'Sign in again before updating your profile photo.' });
     const cache = getCache(); 
-    let targetRow = null;
-    
-    const targetEmail = (email || '').toString().trim().toLowerCase();
-    const targetLogin = (loginId || '').toString().trim().toLowerCase();
+    const targetRow = getCurrentAccountRow(identity, cache);
+    if (!targetRow) return res.status(404).json({ success: false, message: 'Your account could not be found.' });
+    const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS);
 
-    // 🚨 Safe lookup function
-    const findUserRow = (rows) => {
-      if (!rows) return null;
-      return rows.find(row => {
-        const rEmail = getValByHeader(row, ['email', 'mailid', 'mail']).toLowerCase();
-        const rLogin = getValByHeader(row, ['userid', 'user_id', 'employeeid', 'loginid']).toLowerCase();
-        return (targetEmail && rEmail === targetEmail) || (targetLogin && rLogin === targetLogin);
-      });
-    };
+    const h = targetRow._worksheet.headerValues;
+    let photoHeader = h.find(hd => hd.toLowerCase().includes('photo') || hd.toLowerCase().includes('profile'));
+    if (!photoHeader) photoHeader = 'Profile_Photo_URL';
 
-    targetRow = findUserRow(cache.contacts) || findUserRow(cache.users);
-
-    if (targetRow) {
-      const h = targetRow._worksheet.headerValues; 
-      let photoHeader = h.find(hd => hd.toLowerCase().includes('photo') || hd.toLowerCase().includes('profile'));
-      if (!photoHeader) photoHeader = 'Profile_Photo_URL'; // Fallback
-
-      targetRow.assign({ [photoHeader]: photoLink }); 
-      await targetRow.save(); 
+    targetRow.assign({ [photoHeader]: photoLink });
+    await targetRow.save();
       
-      refreshCache(); 
-      res.json({ success: true, photoUrl: photoLink });
-    } else { 
-      res.status(404).json({ success: false, message: "User not found." }); 
-    }
+    await refreshCache();
+    res.json({ success: true, photoUrl: photoLink });
   } catch (error) { 
     res.status(500).json({ success: false, message: error.message }); 
   }
@@ -5693,6 +5727,7 @@ exports.getDrives = async (req, res) => {
     const role = String(user?.role || '').toUpperCase();
     const canSeeAll = canManageEveryDrive(user);
     const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
+    const isBranchManager = isBranchManagerUser(user);
     if (!canSeeAll && !isTpo && !isBranchManager) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
 
     let cache = getCache();
@@ -6251,16 +6286,27 @@ exports.getSessionUser = (email, sessionToken) => {
   const cleanEmail = String(email || '').trim().toLowerCase();
   if (!cleanEmail || !sessionToken) return null;
 
-  // Signed sessions are independent of process memory, so restarts and
-  // load balancing between API instances do not invalidate active users.
-  return readPortalSessionToken(cleanEmail, sessionToken);
+  const row = getCurrentAccountRow(cleanEmail);
+  if (!row || !isAccountEnabled(row)) return null;
+  const currentVersion = getAccountVersion(accountAuthState(row));
+  const expectedVersion = invalidatedAccountVersions.has(cleanEmail)
+    ? invalidatedAccountVersions.get(cleanEmail)
+    : currentVersion;
+  if (!expectedVersion || expectedVersion !== currentVersion) return null;
+  return readPortalSessionToken(cleanEmail, sessionToken, expectedVersion);
 };
 
 // =========================================================
 // 🚨 SUBMIT TPO ACTIVITY STATS
 // =========================================================
 exports.updateTpoActivity = async (req, res) => {
-  const { tpoName, companiesVisited, branchVideos, branchPosters } = req.body;
+  const { companiesVisited, branchVideos, branchPosters } = req.body;
+  const tpoName = String(req.portalUser?.name || '').trim();
+  if (!tpoName) return res.status(401).json({ success: false, message: 'Sign in again before submitting activity.' });
+  const values = [companiesVisited, branchVideos, branchPosters];
+  if (values.some(value => value === undefined || value === null || value === '' || !Number.isFinite(Number(value)) || Number(value) < 0)) {
+    return res.status(400).json({ success: false, message: 'Enter a zero or positive number for each activity count.' });
+  }
   try {
     await syncTpoStats(tpoName, {
       'Companies Visited': companiesVisited,

@@ -6,12 +6,12 @@ import {
 import Layout from '../../layouts/Layout';
 
 import { API_BASE } from '../../services/apiConfig';
+import { isPortalAdminAccount } from '../../utils/roleAccess';
 
 export default function Branches() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
-  const userRole = (tpoData?.role || '').toUpperCase();
-  const isSuperAdmin = tpoData?.accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
+  const isSuperAdmin = isPortalAdminAccount(tpoData);
 
   const [branches, setBranches] = useState([]);
   const [loading, setLoading] = useState(true);

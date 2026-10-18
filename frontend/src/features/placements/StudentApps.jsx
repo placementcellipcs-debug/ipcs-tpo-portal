@@ -11,6 +11,7 @@ import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
 import StatusBadge from '../../components/StatusBadge';
 import { formatPortalDate, formatPortalDateTime, formatPortalTime, parsePortalDateTime } from '../../utils/dateFormat';
+import { isPortalAdminAccount } from '../../utils/roleAccess';
 
 const normalizeStatus = value => String(value || 'Applied').trim() || 'Applied';
 const getStatusCategory = value => {
@@ -78,8 +79,7 @@ export default function StudentApps() {
 
   const upperRole = String(tpoData?.role || '').toUpperCase();
   const isTpoRole = upperRole.includes('TPO') || upperRole.includes('PLACEMENT OFFICER');
-  const accessType = String(tpoData?.accessType || '').toLowerCase();
-  const isSuperAdmin = accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('HEAD') || upperRole.includes('MANAGER');
+  const isSuperAdmin = isPortalAdminAccount(tpoData);
   const isCourseSpecific = upperRole.includes('RTH') || upperRole.includes('TTH') || upperRole.includes('TRAINER') || upperRole.includes('TECHNICAL LEAD');
   const displayCourse = tpoData?.assignedCourse || '';
   const allowedBranches = useMemo(() => Array.isArray(tpoData?.assignedBranchesArray)

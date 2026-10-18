@@ -6,6 +6,7 @@ const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
 const cron = require('node-cron');
+const { getRole, hasRoleToken, isPortalAdmin, getPolicyDenial } = require('./src/rolePolicy');
 
 // 🚨 IMPORT CONTROLLERS EXACTLY ONCE
 const controllers = require('./src/controllers');
@@ -22,6 +23,43 @@ const {
 const { isAssetCacheReady } = require('./src/assetConfig');
 
 const app = express();
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+
+const loginAttempts = new Map();
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_MAX_ATTEMPTS = 10;
+const loginRateLimit = (req, res, next) => {
+  const now = Date.now();
+  const identity = String(req.body?.email || '').trim().toLowerCase().slice(0, 254);
+  const address = String(req.ip || req.socket?.remoteAddress || 'unknown').slice(0, 100);
+  const key = `${address}:${identity}`;
+  const previous = loginAttempts.get(key);
+  if (!previous || previous.resetAt <= now) {
+    loginAttempts.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    res.on('finish', () => { if (res.statusCode >= 200 && res.statusCode < 300) loginAttempts.delete(key); });
+    return next();
+  }
+  if (previous.count >= LOGIN_MAX_ATTEMPTS) {
+    res.set('Retry-After', String(Math.max(1, Math.ceil((previous.resetAt - now) / 1000))));
+    return res.status(429).json({ success: false, message: 'Too many sign-in attempts. Wait a little and try again.' });
+  }
+  previous.count += 1;
+  res.on('finish', () => { if (res.statusCode >= 200 && res.statusCode < 300) loginAttempts.delete(key); });
+  next();
+};
+const loginRateLimitCleanup = setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of loginAttempts) if (entry.resetAt <= now) loginAttempts.delete(key);
+}, 5 * 60 * 1000);
+loginRateLimitCleanup.unref?.();
+
+app.use((req, res, next) => {
+  res.set('X-Content-Type-Options', 'nosniff');
+  res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
+  if (req.secure) res.set('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+  next();
+});
 
 // 🚨 DYNAMIC CORS CONFIGURATION
 const allowedOrigins = [
@@ -62,7 +100,7 @@ const parseVacancyLogo = (req, res, next) => vacancyLogoUpload(req, res, error =
 // ---------------------------------------------------------
 // AUTHENTICATION ROUTES
 // ---------------------------------------------------------
-app.post('/api/auth/login', controllers.login);
+app.post('/api/auth/login', loginRateLimit, controllers.login);
 app.post('/api/auth/verify-session', controllers.verifySession);
 
 // 🚨 GLOBAL CACHE MIDDLEWARE
@@ -79,74 +117,18 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
-const getRole = user => String(user?.role || '').toUpperCase();
-const hasRoleToken = (role, token) => new RegExp(`(^|[^A-Z0-9])${token}([^A-Z0-9]|$)`).test(role);
-const isPortalAdmin = user => user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(getRole(user));
-const isBranchManager = role => role === 'BM' || role.includes('BRANCH MANAGER');
-const isTechnicalScoped = user => {
-  const role = getRole(user);
-  const technicalRole = hasRoleToken(role, 'RTH') || role.includes('REGIONAL TECHNICAL HEAD') || hasRoleToken(role, 'TTH') || role.includes('TERRITORY TECHNICAL HEAD') || /TECH(?:NICAL)?\s+LEAD/.test(role) || hasRoleToken(role, 'TL');
-  const academicTrainer = role.includes('TRAINER') && (!String(user?.department || '').trim() || String(user.department).trim().toUpperCase() === 'ACADEMIC');
-  return technicalRole || academicTrainer;
-};
 const requireSession = (policy = 'portal') => (req, res, next) => {
   const user = controllers.getSessionUser(req.get('x-ipcs-email'), req.get('x-ipcs-session-token'));
   if (!user) return res.status(401).json({ success: false, message: 'Sign in again to continue.' });
+  const denial = getPolicyDenial(user, { policy, method: req.method, path: req.path, baseUrl: req.baseUrl });
+  if (denial) return res.status(denial.status).json({ success: false, message: denial.message });
   const role = getRole(user);
   const isAdmin = isPortalAdmin(user);
-  const hasAssetAccess = role.includes('ASSET') || String(user.accessType || '').toLowerCase().includes('asset');
-  const isTl = /TECH(?:NICAL)?\s+LEAD/.test(role) || hasRoleToken(role, 'TL');
-
-  if (policy === 'assets' && !isAdmin && !isBranchManager(role) && !hasAssetAccess) {
-    return res.status(403).json({ success: false, message: 'Asset Management is not available for this role.' });
-  }
-  if (policy === 'asset-admin' && !isAdmin && !hasAssetAccess) {
-    return res.status(403).json({ success: false, message: 'Asset manager access is required for this action.' });
-  }
-  if (policy === 'portal-admin' && !isAdmin) {
-    return res.status(403).json({ success: false, message: 'System administrator access is required for this action.' });
-  }
-  if (policy === 'hiring-inquiries' && String(user.email || '').trim().toLowerCase() !== 'gifty@ipcsglobal.com') {
-    return res.status(403).json({ success: false, message: 'Only Gifty can view and assign company hiring inquiries.' });
-  }
-  if (policy === 'placement-drive' && !isAdmin && !role.includes('ADMIN') && !isBranchManager(role) && !role.includes('TPO') && !role.includes('PLACEMENT OFFICER')) {
-    return res.status(403).json({ success: false, message: 'Placement Drives are available only to Placement Officers, administrators, and Branch Managers.' });
-  }
-  if (policy === 'design' && !isAdmin && !['DESIGN', 'MEDIA', 'CREATIVE'].some(part => role.includes(part))) {
-    return res.status(403).json({ success: false, message: 'Media & Design Studio is not available for this role.' });
-  }
-  if (policy === 'events-write' && !isAdmin && !role.includes('TPO') && !role.includes('PLACEMENT OFFICER')) {
-    return res.status(403).json({ success: false, message: 'Event management is not available for this role.' });
-  }
-  if (policy === 'vacancies-write' && (isAdmin || (!role.includes('TPO') && !role.includes('PLACEMENT OFFICER')))) {
-    return res.status(403).json({ success: false, message: 'Only placement officers can add vacancies.' });
-  }
-  if (policy === 'academic') {
-    return res.status(404).json({ success: false, message: 'Training & Academics is temporarily unavailable.' });
-  }
-  if (policy === 'clients' && (hasRoleToken(role, 'RTH') || role.includes('REGIONAL TECHNICAL HEAD') || /TECH(?:NICAL)?\s+LEAD/.test(role) || hasRoleToken(role, 'TL') || role.includes('TRAINER') || hasRoleToken(role, 'TTH'))) {
-    return res.status(403).json({ success: false, message: 'Clients & Partners is not available for this role.' });
-  }
-  if (policy === 'learning' && !isAdmin && !isTechnicalScoped(user)) {
-    return res.status(403).json({ success: false, message: 'Study materials are not available for this role.' });
-  }
-  if (policy === 'learning-write' && !isAdmin) {
-    return res.status(403).json({ success: false, message: 'Administrator access is required to manage study materials.' });
-  }
-  if (policy === 'exam-manager' && !isAdmin && !(hasRoleToken(role, 'RTH') || role.includes('REGIONAL TECHNICAL HEAD'))) {
-    return res.status(403).json({ success: false, message: 'Regional Technical Head or administrator access is required to manage technical questions.' });
-  }
-  if (policy === 'exams' && !isAdmin && isTl && !(req.method === 'GET' && req.path === '/results' && req.baseUrl === '/api/exams')) {
-    return res.status(403).json({ success: false, message: 'Technical Leads can view technical exam results only.' });
-  }
-  if (policy === 'exams' && !isAdmin && !isTechnicalScoped(user) && !role.includes('TPO') && !role.includes('PLACEMENT OFFICER')) {
-    return res.status(403).json({ success: false, message: 'Exam access is not available for this role.' });
-  }
   req.portalUser = user;
   if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
-    req.body = { ...req.body, userName: user.name, userEmail: user.email, currentUserEmail: user.email };
+    req.body = { ...req.body, actorName: user.name, userEmail: user.email, currentUserEmail: user.email };
     if (req.baseUrl.startsWith('/api/tpo/')) {
-      req.body = { ...req.body, assignedBranchesArray: user.assignedBranchesArray, role: user.role, assignedCourse: user.assignedCourse, department: user.department };
+      req.body = { ...req.body, userName: user.name, assignedBranchesArray: user.assignedBranchesArray, role: user.role, assignedCourse: user.assignedCourse, department: user.department };
     }
     if (req.baseUrl === '/api/tpo/clients') {
       const canSeeAll = isAdmin || role.includes('MANAGER') || role === 'BM' || role.includes('BRANCH MANAGER');
@@ -238,8 +220,7 @@ app.post('/api/tpo/clients/update', upload.single('logoFile'), controllers.updat
 app.post('/api/tpo/clients/request-mou', controllers.requestMou);
 app.post('/api/tpo/clients/submit-mou', upload.any(), controllers.submitMou);
 app.post('/api/tpo/clients/add', upload.single('logoFile'), controllers.addClient);
-app.post('/api/tpo/profile/update-photo', upload.single('photo'), controllers.updatePhoto);
-app.post('/api/tpo/profile/update-password', controllers.updatePassword);
+app.post('/api/tpo/profile/update-photo', requireSession('portal'), upload.single('photo'), controllers.updatePhoto);
 app.get('/api/tpo/drives', requireSession('placement-drive'), controllers.getDrives);
 app.post('/api/tpo/drives/update', requireSession('placement-drive'), controllers.updateDriveStatus);
 app.get('/api/tpo/trigger-resumes', requireSession('portal'), controllers.triggerDailyCron);
@@ -301,7 +282,7 @@ app.get('/api/talentino-exams/results', controllers.getTalExamResults);
 app.post('/api/talentino-exams/questions/add', requireSession('portal-admin'), controllers.addTalExamQuestion);
 app.post('/api/talentino-exams/questions/update', requireSession('portal-admin'), controllers.updateTalExamQuestion);
 app.post('/api/talentino-exams/questions/delete', requireSession('portal-admin'), controllers.deleteTalExamQuestion);
-app.post('/api/tpo/activity', controllers.updateTpoActivity);
+app.post('/api/tpo/activity', requireSession('portal'), controllers.updateTpoActivity);
 
 // ---------------------------------------------------------
 // 🚨 ASSET MANAGEMENT (ERP) ROUTES

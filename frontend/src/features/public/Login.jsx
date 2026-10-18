@@ -55,7 +55,7 @@ export default function Login() {
     setError('');
 
     try {
-      const res = await axios.post(`${API_BASE}/api/auth/login`, { email: loginId, password });
+      const res = await axios.post(`${API_BASE}/api/auth/login`, { email: loginId, password }, { timeout: 30000 });
       if (!res.data.success) {
         setError(res.data.message || 'Login failed. Please check your credentials.');
         setLoading(false);
@@ -73,7 +73,10 @@ export default function Login() {
       }
     } catch (err) {
       console.error('Login Error:', err);
-      setError(err.response?.data?.message || 'Server connection failed. Please check your internet and try again.');
+      const message = err.code === 'ECONNABORTED'
+        ? 'Sign-in timed out. Please try again in a moment.'
+        : err.response?.data?.message || 'Server connection failed. Please check your internet and try again.';
+      setError(message);
       setLoading(false);
     }
   };

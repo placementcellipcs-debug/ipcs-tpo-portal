@@ -60,12 +60,14 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
   const usageSheetName = String(process.env.MAIL_USAGE_SHEET || 'EmailQuotaUsage').trim() || 'EmailQuotaUsage';
   const accountRecipientCap = Math.max(1, Number(process.env.MAIL_ACCOUNT_DAILY_RECIPIENT_CAP) || 100);
   const quotaWindowMs = 24 * 60 * 60 * 1000;
+  const usageSnapshotTtlMs = 30 * 1000;
   const maxAttempts = Math.max(1, Number(process.env.MAIL_MAX_ATTEMPTS) || 8);
   const baseDelaySeconds = Math.max(10, Number(process.env.MAIL_RETRY_BASE_SECONDS) || 60);
   const quotaDelaySeconds = Math.max(baseDelaySeconds, Number(process.env.MAIL_QUOTA_RETRY_SECONDS) || 3600);
-  const workerIntervalMs = Math.max(5000, Number(process.env.MAIL_WORKER_INTERVAL_MS) || 15000);
+  const workerIntervalMs = Math.max(60_000, Number(process.env.MAIL_WORKER_INTERVAL_MS) || 60_000);
   const categoryAliases = Object.fromEntries(Object.entries(SENDER_CONFIG).map(([key, sender]) => [sender.emailCategory.toLowerCase(), key]));
   const senderQueues = new Map();
+  const usageSnapshots = new Map();
   const unpersistedUsage = [];
 
   const normalizeHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -308,18 +310,25 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
 
   const getUsageSnapshot = async senderKey => {
     const sender = getSender(senderKey);
-    const sheet = await getUsageSheet();
-    const rows = await sheet.getRows();
-    const cutoff = Date.now() - quotaWindowMs;
-    const sheetUsage = rows.reduce((total, row) => {
-      if (String(row.get('SenderKey') || '').trim().toLowerCase() !== senderKey.toLowerCase()) return total;
-      const sentAt = Date.parse(row.get('SentAt') || '');
-      if (!Number.isFinite(sentAt) || sentAt < cutoff) return total;
-      return total + Math.max(0, Number(row.get('RecipientCount')) || 0);
-    }, 0);
+    const now = Date.now();
+    let snapshot = usageSnapshots.get(senderKey);
+    if (!snapshot || snapshot.expiresAt <= now) {
+      const sheet = await getUsageSheet();
+      const rows = await sheet.getRows();
+      const cutoff = now - quotaWindowMs;
+      const sheetUsedRecipients = rows.reduce((total, row) => {
+        if (String(row.get('SenderKey') || '').trim().toLowerCase() !== senderKey.toLowerCase()) return total;
+        const sentAt = Date.parse(row.get('SentAt') || '');
+        if (!Number.isFinite(sentAt) || sentAt < cutoff) return total;
+        return total + Math.max(0, Number(row.get('RecipientCount')) || 0);
+      }, 0);
+      snapshot = { sheetUsedRecipients, expiresAt: now + usageSnapshotTtlMs };
+      usageSnapshots.set(senderKey, snapshot);
+    }
+    const cutoff = now - quotaWindowMs;
     const memoryUsage = unpersistedUsage.reduce((total, entry) =>
       entry.senderKey === senderKey && entry.sentAt >= cutoff ? total + entry.recipientCount : total, 0);
-    const usedRecipients = sheetUsage + memoryUsage;
+    const usedRecipients = snapshot.sheetUsedRecipients + memoryUsage;
     return {
       senderKey,
       emailCategory: sender.emailCategory,
@@ -361,8 +370,14 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
         AppsScriptRemaining: appScriptRemaining === '' ? '' : Math.max(0, Number(appScriptRemaining) || 0),
         SentAt: sentAt
       });
+      const snapshot = usageSnapshots.get(sender.category);
+      if (snapshot) {
+        snapshot.sheetUsedRecipients += recipientCount;
+        snapshot.expiresAt = Date.now() + usageSnapshotTtlMs;
+      }
     } catch (error) {
       unpersistedUsage.push({ senderKey: sender.category, recipientCount, sentAt: Date.parse(sentAt) });
+      usageSnapshots.delete(sender.category);
       console.error(`[MAIL QUOTA] Delivery succeeded via ${provider}, but usage could not be saved for ${sender.email}:`, error.message);
     }
   };

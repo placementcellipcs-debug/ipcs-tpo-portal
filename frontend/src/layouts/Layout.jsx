@@ -13,6 +13,7 @@ import {
 import { API_BASE } from '../services/apiConfig';
 import { applyAppearance, readAppearance } from '../services/appearance';
 import { formatPortalDateTime, parsePortalDateTime } from '../utils/dateFormat';
+import { isPortalAdminAccount } from '../utils/roleAccess';
 
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
@@ -99,7 +100,7 @@ export default function Layout({ children }) {
     applyAppearance(readAppearance());
     
     const userRole = (tpoData?.role || '').toUpperCase();
-    const isSuperAdmin = tpoData?.accessType === 'superadmin' || userRole.includes('SYSTEM ADMIN') || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
+    const isSuperAdmin = isPortalAdminAccount(tpoData);
     const isCourseSpecific = userRole.includes('RTH') || userRole.includes('TTH') || userRole.includes('TRAINER') || userRole.includes('TECHNICAL LEAD');
     const myCourse = getStandardCourse(tpoData?.assignedCourse);
 
@@ -178,6 +179,7 @@ export default function Layout({ children }) {
   const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('REGIONAL TECHNICAL HEAD');
   const isTth = /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('TERRITORY TECHNICAL HEAD');
   const isTrainer = userRole.includes('TRAINER');
+  const isAcademicTrainer = isTrainer && (!String(tpoData?.department || '').trim() || String(tpoData.department).trim().toUpperCase() === 'ACADEMIC');
   const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(userRole) || /(^|[^A-Z0-9])TL([^A-Z0-9]|$)/.test(userRole);
   const isBranchManager = userRole === 'BM' || userRole.includes('BRANCH MANAGER');
   const isTerritoryManager = userRole.includes('TERRITORY MANAGER') || /(^|[^A-Z0-9])TM([^A-Z0-9]|$)/.test(userRole);
@@ -185,7 +187,7 @@ export default function Layout({ children }) {
   
   const isAssetManager = userRole.includes('ASSET') || sheetAccess.includes('asset');
   const isDesigner = userRole.includes('DESIGN') || userRole.includes('MEDIA') || userRole.includes('CREATIVE');
-  const isSuperAdmin = tpoData.accessType === 'superadmin' || userRole.includes('SYSTEM ADMIN') || userRole.includes('GENERAL MANAGER') || userRole.includes('ZONAL PLACEMENT HEAD') || userRole === 'TECHNICAL HEAD';
+  const isSuperAdmin = isPortalAdminAccount(tpoData);
   const isHiringInboxOwner = String(tpoData.email || '').trim().toLowerCase() === 'gifty@ipcsglobal.com';
   const isDesignerWorkspace = isDesigner && !isSuperAdmin;
   const isAssetWorkspace = isAssetManager && !isSuperAdmin;
@@ -200,7 +202,8 @@ export default function Layout({ children }) {
   const showTracker = (isTpo && !isSuperAdmin) && showPlacementAndAcademic;
   const showReports = (isSuperAdmin || isTpo) && showPlacementAndAcademic; 
   const showManageAdmin = isSuperAdmin;
-  const showStudyMaterials = (isSuperAdmin || isRth || isTth || isTechnicalLead || isTrainer) && showPlacementAndAcademic;
+  const showStudyMaterials = (isSuperAdmin || isRth || isTth || isTechnicalLead || isAcademicTrainer) && showPlacementAndAcademic;
+  const showExams = (isSuperAdmin || isTpo || isRth || isTth || isTechnicalLead || isAcademicTrainer) && showPlacementAndAcademic;
   const showStudentApps = isTpo && !isSuperAdmin && showPlacementAndAcademic;
   const showIssues = (isTpo || isSuperAdmin || ((isBranchManager || isRth) && showPlacementAndAcademic) || userRole.includes('ZONAL')) && showPlacementAndAcademic;
 
@@ -351,7 +354,7 @@ export default function Layout({ children }) {
                 <div className={`pd-nav-item ${isActive('/events') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} weight={isActive('/events') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Events</span></div>
                 <div className={`pd-nav-item ${isActive('/talentino') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/talentino')}><UserCheck size={22} weight={isActive('/talentino') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Talentino</span></div>
                 {showStudyMaterials && <div className={`pd-nav-item ${isActive('/study-materials') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/study-materials')}><Book size={22} weight={isActive('/study-materials') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Study Materials</span></div>}
-                {(!userRole.includes('MANAGER') || isRth || isTth || isTechnicalLead || isTrainer) && !isTpo && <div className={`pd-nav-item ${isActive('/exams') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/exams')}><FileText size={22} weight={isActive('/exams') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Exams Hub</span></div>}
+                {showExams && <div className={`pd-nav-item ${isActive('/exams') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/exams')}><FileText size={22} weight={isActive('/exams') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Exams Hub</span></div>}
                 </div>
 
               </>
@@ -400,9 +403,9 @@ export default function Layout({ children }) {
                 </div>
                 <div className={`pd-nav-item ${location.pathname === '/assets/assignments' ? 'active' : ''}`} onClick={() => handleNav('/assets/assignments')}><UserCheck size={22} /><span>Assignments &amp; Reassignments</span></div>
                 <div className={`pd-nav-item ${location.pathname === '/assets/retired' ? 'active' : ''}`} onClick={() => handleNav('/assets/retired')}><ClockCounterClockwise size={22} /><span>Retired Assets</span></div>
-                <div className={`pd-nav-item ${isActive('/assets/add') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/add')}>
+                {(isSuperAdmin || isAssetManager) && <div className={`pd-nav-item ${isActive('/assets/add') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/add')}>
                   <Plus size={22} weight={isActive('/assets/add') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Register Asset</span>
-                </div>
+                </div>}
                 <div className={`pd-nav-item ${isActive('/assets/inventory') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/inventory')}>
                   <Package size={22} weight={isActive('/assets/inventory') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Consumables</span>
                 </div>
@@ -412,9 +415,9 @@ export default function Layout({ children }) {
                 <div className={`pd-nav-item ${isActive('/assets/maintenance') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/maintenance')}>
                   <Wrench size={22} weight={isActive('/assets/maintenance') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Maintenance</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/assets/settings') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/settings')}>
+                {isSuperAdmin && <div className={`pd-nav-item ${isActive('/assets/settings') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/settings')}>
                   <Gear size={22} weight={isActive('/assets/settings') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Vendors &amp; Settings</span>
-                </div>
+                </div>}
                 </div>
               </>
             )}

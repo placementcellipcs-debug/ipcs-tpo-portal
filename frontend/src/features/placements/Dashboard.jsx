@@ -13,6 +13,7 @@ import {
 import Layout from '../../layouts/Layout';
 import { formatPortalDate, parsePortalDateTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
+import { isPortalAdminAccount } from '../../utils/roleAccess';
 
 function DashboardTooltip({ active, payload, label, selectedYear }) {
   if (!active || !payload?.length) return null;
@@ -44,10 +45,19 @@ export default function Dashboard() {
   
   const userRole = String(tpoData?.role || '').toUpperCase();
   const accessType = String(tpoData?.accessType || '').toLowerCase();
-  const isSuperAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || userRole.includes('HEAD') || userRole.includes('MANAGER');
-  const showReports = isSuperAdmin || userRole === 'TPO';
-  const isTpo = userRole.includes('TPO') || isSuperAdmin; 
+  const isSuperAdmin = isPortalAdminAccount(tpoData);
   const isPlacementOfficer = userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER');
+  const showReports = isSuperAdmin || isPlacementOfficer;
+  const showTracker = isPlacementOfficer && !isSuperAdmin;
+  const isDesigner = ['DESIGN', 'MEDIA', 'CREATIVE'].some(token => userRole.includes(token));
+  const isAssetWorkspace = !isSuperAdmin && (userRole.includes('ASSET') || accessType.includes('asset'));
+  const canViewTalentino = !isDesigner && !isAssetWorkspace;
+  const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('REGIONAL TECHNICAL HEAD');
+  const isTth = /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('TERRITORY TECHNICAL HEAD');
+  const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(userRole) || /(^|[^A-Z0-9])TL([^A-Z0-9]|$)/.test(userRole);
+  const isAcademicTrainer = userRole.includes('TRAINER') && (!String(tpoData?.department || '').trim() || String(tpoData.department).trim().toUpperCase() === 'ACADEMIC');
+  const canViewStudyMaterials = isSuperAdmin || isRth || isTth || isTechnicalLead || isAcademicTrainer;
+  const canViewExams = isSuperAdmin || isPlacementOfficer || isRth || isTth || isTechnicalLead || isAcademicTrainer;
   const isBranchManager = userRole === 'BM' || userRole.includes('BRANCH MANAGER');
   const isPlacementDriveAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || ['GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(userRole);
   const canViewPlacementDrives = isPlacementDriveAdmin || isBranchManager || isPlacementOfficer;
@@ -487,12 +497,12 @@ export default function Dashboard() {
             <button type="button" className="qa-box" onClick={() => navigate('/students')}><span className="qa-icon blue"><Users weight="fill" /></span><span>Student Directory</span></button>
             <button type="button" className="qa-box" onClick={() => navigate('/vacancies')}><span className="qa-icon orange"><Briefcase weight="fill" /></span><span>Open Vacancies</span></button>
             <button type="button" className="qa-box" onClick={() => navigate('/events')}><span className="qa-icon pink"><CalendarCheck weight="fill" /></span><span>Upcoming Events</span></button>
-            <button type="button" className="qa-box" onClick={() => navigate('/exams')}><span className="qa-icon purple"><NotePencil weight="fill" /></span><span>Exam Centre</span></button>
-            <button type="button" className="qa-box" onClick={() => navigate('/study-materials')}><span className="qa-icon teal"><BookOpen weight="fill" /></span><span>Study Materials</span></button>
+            {canViewExams && <button type="button" className="qa-box" onClick={() => navigate('/exams')}><span className="qa-icon purple"><NotePencil weight="fill" /></span><span>Exam Centre</span></button>}
+            {canViewStudyMaterials && <button type="button" className="qa-box" onClick={() => navigate('/study-materials')}><span className="qa-icon teal"><BookOpen weight="fill" /></span><span>Study Materials</span></button>}
             {canViewHiringPartners && <button type="button" className="qa-box" onClick={() => navigate('/clients')}><span className="qa-icon green"><FolderOpen weight="fill" /></span><span>Hiring Partners</span></button>}
             {canViewPlacementDrives && <button type="button" className="qa-box" onClick={() => navigate('/placement-drives')}><span className="qa-icon purple"><CalendarCheck weight="fill" /></span><span>Placement Drives</span></button>}
-            {isTpo && <button type="button" className="qa-box" onClick={() => navigate('/tracker')}><span className="qa-icon green"><ListChecks weight="fill" /></span><span>Placement Tracker</span></button>}
-            {isTpo && <button type="button" className="qa-box" onClick={() => navigate('/talentino')}><span className="qa-icon yellow"><Users weight="fill" /></span><span>Talentino</span></button>}
+            {showTracker && <button type="button" className="qa-box" onClick={() => navigate('/tracker')}><span className="qa-icon green"><ListChecks weight="fill" /></span><span>Placement Tracker</span></button>}
+            {canViewTalentino && <button type="button" className="qa-box" onClick={() => navigate('/talentino')}><span className="qa-icon yellow"><Users weight="fill" /></span><span>Talentino</span></button>}
             {showReports && <button type="button" className="qa-box" onClick={() => navigate('/reports')}><span className="qa-icon blue"><ChartBar weight="fill" /></span><span>Reports</span></button>}
           </div>
         </div>

@@ -36,7 +36,7 @@ export default function UserManagement() {
   const isGifty = String(tpoData?.email || '').toLowerCase().includes('gifty');
   
   const initialFormState = {
-    sheet: 'User', rowNumber: null, userName: '', email: '', contact: '', password: '', 
+    sheet: 'User', rowNumber: null, userName: '', email: '', contact: '', newPassword: '',
     role: 'Regional Technical Head', course: '', sittingBranch: '', 
     assignedBranches: [], access: 'View Only',
     empId: '', target: '' 
@@ -90,7 +90,7 @@ export default function UserManagement() {
       userName: user.userName,
       email: user.email,
       contact: user.contact,
-      password: user.password,
+      newPassword: '',
       role: user.role,
       course: user.course,
       sittingBranch: user.sittingBranch,
@@ -286,8 +286,6 @@ export default function UserManagement() {
                         {(user.empId || user.target) && (
                           <div className="sc-detail-row"><span>EMP ID / Tgt</span><strong style={{ color: '#a855f7' }}>{user.empId || 'N/A'} / {user.target || '0'}</strong></div>
                         )}
-                        
-                        <div className="sc-detail-row"><span>Password</span><strong style={{ color: 'var(--text-main)' }}>{user.password}</strong></div>
                       </div>
                       
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', width: '100%' }}>
@@ -310,7 +308,7 @@ export default function UserManagement() {
                       <th>User Details</th>
                       <th>Access Level</th>
                       <th>Scope (Course/Branch)</th>
-                      <th>KPIs & Credentials</th>
+                      <th>Employee targets</th>
                       <th style={{ textAlign: 'center' }}>Actions</th>
                     </tr>
                   </thead>
@@ -349,7 +347,6 @@ export default function UserManagement() {
                           </td>
                           <td>
                             <span className="primary-text" style={{ color: '#a855f7', fontWeight: 'bold', fontSize: '0.85rem' }}>ID: {user.empId || 'N/A'} | Tgt: {user.target || '0'}</span>
-                            <span className="sub-text" style={{ fontFamily: 'monospace' }}>Pass: {user.password}</span>
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
@@ -430,8 +427,9 @@ export default function UserManagement() {
                   <input type="text" name="contact" value={formData.contact} onChange={handleInputChange} className="sleek-input" />
                 </div>
                 <div className="form-group">
-                  <label>Password</label>
-                  <input type="text" name="password" value={formData.password} onChange={handleInputChange} className="sleek-input" required />
+                  <label>{isEditMode ? 'Set a new password (optional)' : 'Initial password'}</label>
+                  <input type="password" name="newPassword" value={formData.newPassword} onChange={handleInputChange} className="sleek-input" required={!isEditMode} minLength={12} maxLength={128} autoComplete="new-password" />
+                  <small style={{ display: 'block', color: 'var(--text-muted)', marginTop: '6px' }}>{isEditMode ? 'Leave empty to keep the current password.' : 'Use at least 12 characters. Only administrators can set or reset staff passwords.'}</small>
                 </div>
               </div>
 

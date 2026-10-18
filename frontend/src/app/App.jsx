@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Login from '../features/public/Login';
+import { isPortalAdminAccount } from '../utils/roleAccess';
 
 const Dashboard = lazy(() => import('../features/placements/Dashboard'));
 const StudentsDirectory = lazy(() => import('../features/placements/StudentsDirectory'));
@@ -53,7 +54,7 @@ function PlacementDrivesRoute() {
   let account = null;
   try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Login will handle an invalid session. */ }
   const role = String(account?.role || '').toUpperCase();
-  const isAdmin = account?.accessType === 'superadmin' || role.includes('ADMIN') || role.includes('HEAD') || role.includes('MANAGER');
+  const isAdmin = isPortalAdminAccount(account);
   const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
   return isTpo && !isAdmin ? <Navigate to="/tracker" replace /> : <PlacementDrives />;
 }
