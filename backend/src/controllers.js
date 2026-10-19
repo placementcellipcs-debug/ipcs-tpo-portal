@@ -720,13 +720,43 @@ const isCentralPlacementTeam = user => /\bPLACEMENT\s+TEAM\b/i.test(String(user?
 const hasPlacementAccess = (branch, course, user) => isCentralPlacementTeam(user) || hasAccess(
   branch, course, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department
 );
-// Job Tracker visibility and actions use branch assignments only; a user's
-// assigned course never hides a record in one of their assigned branches.
+// Branch-scoped placement workflows use assigned branches only; course
+// assignments do not hide records in a branch the user can access.
 const hasPlacementBranchAccess = (branch, user) => {
   if (isCentralPlacementTeam(user)) return true;
   const role = String(user?.role || '').toUpperCase();
   if (role.includes('ADMIN') || role === 'GENERAL MANAGER' || role === 'TECHNICAL HEAD' || role === 'ZONAL PLACEMENT HEAD') return true;
   return userHasBranch(user, branch);
+};
+const isPlacementTrackerAdmin = user => {
+  const role = String(user?.role || '').toUpperCase();
+  return user?.accessType === 'superadmin' || isCentralPlacementTeam(user) || role.includes('ADMIN') ||
+    role === 'GENERAL MANAGER' || role === 'TECHNICAL HEAD' || role === 'ZONAL PLACEMENT HEAD';
+};
+const isPlacementTrackerTpo = user => /(^|\b)(TPO|PLACEMENT OFFICER)(\b|$)/i.test(String(user?.role || ''));
+const getOwnedPlacementJobIds = (user, vacancyRows = getCache()?.vacancies || []) => {
+  const officer = normalizePlacementText(user?.name);
+  if (!officer) return new Set();
+  return new Set((vacancyRows || [])
+    .filter(row => normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame'])) === officer)
+    .map(row => normalizePlacementText(getValByHeader(row, ['jobid', 'job id', 'id'])))
+    .filter(Boolean));
+};
+const isOwnedPlacementApplication = (row, user, ownedJobIds = getOwnedPlacementJobIds(user)) => {
+  const officer = normalizePlacementText(user?.name);
+  if (!officer || !row) return false;
+  const rowOfficer = normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']));
+  const jobId = normalizePlacementText(getValByHeader(row, ['jobid', 'job id', 'job_id']));
+  if (jobId && ownedJobIds.has(jobId)) return true;
+  const source = normalizePlacementText(getValByHeader(row, ['entrysource', 'recordorigin', 'origin']));
+  const isManualEntry = /manual|direct|referral/.test(source) || /^(manual-add|direct-referral)$/.test(jobId);
+  return isManualEntry && rowOfficer === officer;
+};
+const canAccessTrackerApplication = (row, user, linkedStudent = null) => {
+  if (isPlacementTrackerAdmin(user)) return true;
+  if (isPlacementTrackerTpo(user)) return isOwnedPlacementApplication(row, user);
+  const branch = getValByHeader(row, ['branch', 'sittingbranch']) || getValByHeader(linkedStudent, ['branch', 'sittingbranch']);
+  return hasPlacementBranchAccess(branch, user);
 };
 
 exports.getDashboardStats = async (req, res) => {
@@ -1073,18 +1103,12 @@ exports.getApplications = async (req, res) => {
   const cache = getCache();
   const portalUser = req.portalUser || {};
   const trackerRole = String(portalUser.role || role || '').toUpperCase();
-  const centralPlacementTeam = isCentralPlacementTeam(portalUser);
-  const restrictToPlacementOfficer = !centralPlacementTeam && portalUser.accessType !== 'superadmin' && /(^|\b)(TPO|PLACEMENT OFFICER)(\b|$)/i.test(trackerRole);
+  const restrictToPlacementOfficer = !isPlacementTrackerAdmin(portalUser) && isPlacementTrackerTpo({ role: trackerRole });
   const signedInOfficer = normalizePlacementText(portalUser.name);
-  const ownedJobIds = new Set((cache.vacancies || [])
-    .filter(row => signedInOfficer && normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame'])) === signedInOfficer)
-    .map(row => normalizePlacementText(getValByHeader(row, ['jobid', 'job id', 'id'])))
-    .filter(Boolean));
+  const ownedJobIds = getOwnedPlacementJobIds(portalUser, cache.vacancies || []);
   const belongsToSignedInOfficer = row => {
     if (!restrictToPlacementOfficer || !signedInOfficer) return !restrictToPlacementOfficer;
-    const rowOfficer = normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']));
-    const jobId = normalizePlacementText(getValByHeader(row, ['jobid', 'job id']));
-    return rowOfficer === signedInOfficer || Boolean(jobId && ownedJobIds.has(jobId));
+    return isOwnedPlacementApplication(row, portalUser, ownedJobIds);
   };
   
   const sourceData = cache.applications || [];
@@ -1134,11 +1158,10 @@ exports.getApplications = async (req, res) => {
       const jobId = getValByHeader(row, ['jobid', 'job id']) || '';
       const belongsToOfficer = belongsToSignedInOfficer(row);
       const withinAssignedScope = hasPlacementBranchAccess(branch, portalUser);
-      // TPOs need to collaborate on all applications in their assigned branch,
-      // rather than seeing only openings whose owner text exactly matches them.
-      // Rows without a branch are visible only when the TPO owns the opening.
+      // TPOs see every applicant for their own openings, regardless of the
+      // student's branch. Admin and non-TPO views retain their usual scope.
       const allowedForTracker = restrictToPlacementOfficer
-        ? withinAssignedScope || (!sourceBranch && belongsToOfficer)
+        ? belongsToOfficer
         : withinAssignedScope;
       if (allowedForTracker) {
       const phone = getValByHeader(row, ['contact', 'phone', 'mobilenumber']) || (studentData && getValByHeader(studentData, ['phone', 'contact', 'mobilenumber'])) || '';
@@ -1241,9 +1264,8 @@ exports.updateApplication = async (req, res) => {
     }) || ((getCache()?.students || []).filter(student => rowName && normalizePlacementText(getValByHeader(student, ['studentname', 'name'])) === rowName).length === 1
       ? (getCache()?.students || []).find(student => normalizePlacementText(getValByHeader(student, ['studentname', 'name'])) === rowName)
       : null);
-    const accessBranch = sourceBranch || (linkedStudent && getValByHeader(linkedStudent, ['branch', 'sittingbranch'])) || '';
-    if (!hasPlacementBranchAccess(accessBranch, user)) {
-      return res.status(403).json({ success: false, message: 'This application is outside your assigned branches.' });
+    if (!canAccessTrackerApplication(sourceRow, user, linkedStudent)) {
+      return res.status(403).json({ success: false, message: 'This application does not belong to one of your openings.' });
     }
     if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
     
@@ -1727,7 +1749,6 @@ exports.emailStudent = async (req, res) => {
     let name = '';
     let email = '';
     let studentRoll = String(roll || '').trim();
-    let branch = '';
     const numericRow = requestedRow;
     if (Number.isInteger(numericRow) && numericRow >= 2 && sourceType === 'drive') {
       const sheet = doc.sheetsByTitle['Drive_Registration'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('driveregistration'));
@@ -1736,34 +1757,40 @@ exports.emailStudent = async (req, res) => {
       name = getValByHeader(row, ['name', 'studentname']) || '';
       email = getValByHeader(row, ['mailid', 'email']) || '';
       studentRoll = getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']) || studentRoll;
-      branch = getValByHeader(row, ['branch', 'sittingbranch']) || '';
       const driveId = normalizePlacementText(getValByHeader(row, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(row, ['eventid', 'event_id', 'companyname']));
       const matchingDrive = (cache?.events || []).find(event => {
         const eventType = getValByHeader(event, ['event', 'type', 'event_type']).toLowerCase();
         const eventId = normalizePlacementText(getValByHeader(event, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(event, ['event_id', 'eventid', 'id', 'title']));
         return eventType.includes('drive') && eventId === driveId;
       });
-      branch ||= getValByHeader(matchingDrive, ['branch', 'sittingbranch', 'eventhappeningin', 'location']) || '';
+      const driveOwner = getValByHeader(matchingDrive, ['tpo', 'tponame', 'placementofficer', 'createdby']) || getValByHeader(row, ['placementofficer', 'tponame', 'createdby', 'tpo']);
+      if (normalizePlacementText(driveOwner) !== normalizePlacementText(user?.name)) {
+        return res.status(403).json({ success: false, message: 'This placement drive was not created by your account.' });
+      }
     } else if (Number.isInteger(numericRow) && numericRow >= 2) {
       const sheet = doc.sheetsByTitle['Opening_Applied'];
       const row = sheet && (await sheet.getRows({ offset: numericRow - 2, limit: 1 }))[0];
       if (!row) return res.status(404).json({ success: false, message: 'The application record was not found.' });
+      if (!canAccessTrackerApplication(row, user)) return res.status(403).json({ success: false, message: 'This application does not belong to one of your openings.' });
       name = getValByHeader(row, ['studentname', 'name']) || '';
       email = getValByHeader(row, ['mailid', 'email']) || '';
       studentRoll = getValByHeader(row, ['rollnumber', 'rollno', 'roll']) || studentRoll;
-      branch = getValByHeader(row, ['branch', 'sittingbranch']) || '';
     }
     const normalizedRoll = normalizePlacementText(studentRoll);
     const student = (cache?.students || []).find(row => normalizedRoll && normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])) === normalizedRoll);
     if (student) {
       name ||= getValByHeader(student, ['name', 'studentname']);
       email ||= getValByHeader(student, ['mailid', 'email']);
-      branch ||= getValByHeader(student, ['branch', 'sittingbranch']);
     }
     if (!name && !studentRoll) return res.status(404).json({ success: false, message: 'Student not found in the placement record or student register.' });
     name ||= 'Student';
-    if (!hasPlacementBranchAccess(branch, user)) {
-      return res.status(403).json({ success: false, message: 'This student is outside your assigned branches or their branch is missing from the record.' });
+    if (!hasRecordRow) {
+      const normalizedRollForAccess = normalizePlacementText(studentRoll);
+      const hasOwnedApplication = (cache?.applications || []).some(row =>
+        normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll'])) === normalizedRollForAccess &&
+        isOwnedPlacementApplication(row, user)
+      );
+      if (!hasOwnedApplication) return res.status(403).json({ success: false, message: 'This student has no application for one of your openings.' });
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(422).json({ success: false, message: 'A valid candidate email address is not available on this record.' });
     const safeMessage = escapePlacementMailHtml(message).replace(/\r?\n/g, '<br>');
@@ -5730,9 +5757,8 @@ exports.deleteTalExamQuestion = async (req, res) => {
 exports.getDrives = async (req, res) => {
   try {
     const user = req.portalUser;
-    const role = String(user?.role || '').toUpperCase();
     const canSeeAll = canManageEveryDrive(user);
-    const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
+    const isTpo = isPlacementTrackerTpo(user);
     const isBranchManager = isBranchManagerUser(user);
     if (!canSeeAll && !isTpo && !isBranchManager) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
 
@@ -5785,12 +5811,12 @@ exports.getDrives = async (req, res) => {
         return matches.length === 1 ? matches[0] : null;
       })();
       const registrationOwner = getValByHeader(row, ['placementofficer', 'tponame', 'createdby', 'tpo']);
-      const driveOwner = registrationOwner || eventInfo.tpo || '';
+      const driveOwner = eventInfo.tpo || registrationOwner || '';
       const rowBranch = getValByHeader(row, ['branch', 'sittingbranch']) || (registrationStudent && getValByHeader(registrationStudent, ['branch', 'sittingbranch'])) || eventInfo.branch || eventInfo.location;
       const rowCourse = getValByHeader(row, ['course']) || (registrationStudent && getValByHeader(registrationStudent, ['course', 'program'])) || eventInfo.course;
       const withinAssignedScope = hasPlacementBranchAccess(rowBranch, user);
-      const ownedUnscopedDrive = isTpo && driveOwner && normalizePlacementText(driveOwner) === signedInName && !rowBranch;
-      if (!canSeeAll && !withinAssignedScope && !ownedUnscopedDrive) return;
+      const ownedDrive = Boolean(signedInName && normalizePlacementText(driveOwner) === signedInName);
+      if (!canSeeAll && (isTpo ? !ownedDrive : !withinAssignedScope)) return;
       // Mark that this drive has at least one student
       if (eventInfo.hasApplicants !== undefined) eventInfo.hasApplicants = true;
 
@@ -5833,8 +5859,8 @@ exports.getDrives = async (req, res) => {
     // 3. 🚨 INJECT EMPTY DRIVES: If a drive has 0 students, send a "Dummy" row so it still shows up!
     eventsMap.forEach((eventInfo, dId) => {
       const withinAssignedScope = hasPlacementBranchAccess(eventInfo.branch || eventInfo.location, user);
-      const ownedUnscopedDrive = isTpo && eventInfo.tpo && normalizePlacementText(eventInfo.tpo) === signedInName && !eventInfo.branch;
-      if (!canSeeAll && !withinAssignedScope && !ownedUnscopedDrive) return;
+      const ownedDrive = Boolean(signedInName && normalizePlacementText(eventInfo.tpo) === signedInName);
+      if (!canSeeAll && (isTpo ? !ownedDrive : !withinAssignedScope)) return;
       if (!eventInfo.hasApplicants) {
         drivesData.push({
           rowNumber: `empty-${dId}`,
@@ -5890,10 +5916,9 @@ exports.updateDriveStatus = async (req, res) => {
     if (!rows.length) return res.status(404).json({ success: false, message: 'Registration row was not found.' });
 
     const user = req.portalUser;
-    const role = String(user?.role || '').toUpperCase();
     const canSeeAll = canManageEveryDrive(user);
     const isBranchManager = isBranchManagerUser(user);
-    const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
+    const isTpo = isPlacementTrackerTpo(user);
     if (!canSeeAll && !isTpo && !isBranchManager) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
     if (isBranchManager) {
       const driveId = normalizePlacementText(getValByHeader(rows[0], ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(rows[0], ['eventid', 'event_id', 'companyname']));
@@ -5910,7 +5935,6 @@ exports.updateDriveStatus = async (req, res) => {
         return (studentRoll && sourceRoll === studentRoll) || (studentName && sourceName === normalizePlacementText(studentName));
       });
       const registrationBranch = getValByHeader(rows[0], ['branch', 'sittingbranch']) || (registrationStudent && getValByHeader(registrationStudent, ['branch', 'sittingbranch'])) || getValByHeader(matchingDrive, ['branch', 'sittingbranch', 'eventhappeningin', 'location']);
-      const registrationCourse = getValByHeader(rows[0], ['course']) || (registrationStudent && getValByHeader(registrationStudent, ['course', 'program'])) || getValByHeader(matchingDrive, ['course', 'assignedcourse']);
       if (!hasPlacementBranchAccess(registrationBranch, user)) {
         return res.status(403).json({ success: false, message: 'This registration is outside your assigned branches.' });
       }
@@ -5926,6 +5950,10 @@ exports.updateDriveStatus = async (req, res) => {
         return type.includes('drive') && eventDriveId === driveId;
       });
       const driveOwner = getValByHeader(matchingDrive, ['tpo', 'tponame', 'placementofficer', 'createdby']);
+      const resolvedDriveOwner = driveOwner || registrationOwner;
+      if (isTpo && normalizePlacementText(resolvedDriveOwner) !== normalizePlacementText(user?.name)) {
+        return res.status(403).json({ success: false, message: 'You can only update registrations for placement drives created by your account.' });
+      }
       if (!isTpo && !registrationOwner && driveOwner && normalizePlacementText(driveOwner) !== normalizePlacementText(user?.name)) {
         return res.status(403).json({ success: false, message: 'You can only update registrations for your own placement drives.' });
       }
@@ -5935,19 +5963,6 @@ exports.updateDriveStatus = async (req, res) => {
         if (!userHasBranch(user, registrationBranch || eventBranch)) {
           return res.status(403).json({ success: false, message: 'You can only update registrations for placement drives assigned to your branch.' });
         }
-      }
-      const registrationStudent = (getCache()?.students || []).find(student => {
-        const sourceRoll = normalizePlacementText(getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
-        const sourceName = normalizePlacementText(getValByHeader(student, ['name', 'studentname']));
-        const rowRoll = normalizePlacementText(getValByHeader(rows[0], ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
-        const rowName = normalizePlacementText(getValByHeader(rows[0], ['name', 'studentname']));
-        return (rowRoll && sourceRoll === rowRoll) || (rowName && sourceName === rowName);
-      });
-      const branch = getValByHeader(rows[0], ['branch', 'sittingbranch']) || getValByHeader(registrationStudent, ['branch', 'sittingbranch']) || getValByHeader(matchingDrive, ['branch', 'sittingbranch', 'eventhappeningin', 'location']);
-      const course = getValByHeader(rows[0], ['course']) || getValByHeader(registrationStudent, ['course', 'program']) || getValByHeader(matchingDrive, ['course', 'assignedcourse']);
-      const ownedUnscopedDrive = isTpo && !branch && normalizePlacementText(registrationOwner || driveOwner) === normalizePlacementText(user?.name);
-      if (isTpo && !hasPlacementBranchAccess(branch, user) && !ownedUnscopedDrive) {
-        return res.status(403).json({ success: false, message: 'This registration is outside your assigned branches.' });
       }
     }
 
