@@ -720,6 +720,14 @@ const isCentralPlacementTeam = user => /\bPLACEMENT\s+TEAM\b/i.test(String(user?
 const hasPlacementAccess = (branch, course, user) => isCentralPlacementTeam(user) || hasAccess(
   branch, course, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department
 );
+// Job Tracker visibility and actions use branch assignments only; a user's
+// assigned course never hides a record in one of their assigned branches.
+const hasPlacementBranchAccess = (branch, user) => {
+  if (isCentralPlacementTeam(user)) return true;
+  const role = String(user?.role || '').toUpperCase();
+  if (role.includes('ADMIN') || role === 'GENERAL MANAGER' || role === 'TECHNICAL HEAD' || role === 'ZONAL PLACEMENT HEAD') return true;
+  return userHasBranch(user, branch);
+};
 
 exports.getDashboardStats = async (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, department } = req.body;
@@ -1125,7 +1133,7 @@ exports.getApplications = async (req, res) => {
       const course = getValByHeader(row, ['course']) || (studentData && getValByHeader(studentData, ['course', 'program'])) || 'Unknown';
       const jobId = getValByHeader(row, ['jobid', 'job id']) || '';
       const belongsToOfficer = belongsToSignedInOfficer(row);
-      const withinAssignedScope = hasPlacementAccess(branch, course, portalUser);
+      const withinAssignedScope = hasPlacementBranchAccess(branch, portalUser);
       // TPOs need to collaborate on all applications in their assigned branch,
       // rather than seeing only openings whose owner text exactly matches them.
       // Rows without a branch are visible only when the TPO owns the opening.
@@ -1234,9 +1242,8 @@ exports.updateApplication = async (req, res) => {
       ? (getCache()?.students || []).find(student => normalizePlacementText(getValByHeader(student, ['studentname', 'name'])) === rowName)
       : null);
     const accessBranch = sourceBranch || (linkedStudent && getValByHeader(linkedStudent, ['branch', 'sittingbranch'])) || '';
-    const accessCourse = sourceCourse || (linkedStudent && getValByHeader(linkedStudent, ['course', 'program'])) || '';
-    if (!hasPlacementAccess(accessBranch, accessCourse, user)) {
-      return res.status(403).json({ success: false, message: 'This application is outside your branch or course assignment.' });
+    if (!hasPlacementBranchAccess(accessBranch, user)) {
+      return res.status(403).json({ success: false, message: 'This application is outside your assigned branches.' });
     }
     if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
     
@@ -1614,7 +1621,7 @@ exports.addDirectInterview = async (req, res) => {
       : userBranches.find(value => !/^all(?: branches)?$/i.test(value)) || userBranches[0] || 'Unknown';
     const studentBranch = String(candidateBranch || '').trim() || defaultBranch;
     const studentCourse = String(candidateCourse || '').trim() || String(user?.assignedCourse || '').trim() || 'Unknown';
-    if (!hasAccess(studentBranch, studentCourse, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) {
+    if (!hasPlacementBranchAccess(studentBranch, user)) {
       return res.status(403).json({ success: false, message: 'The candidate branch is outside your assigned branches.' });
     }
 
@@ -1721,7 +1728,6 @@ exports.emailStudent = async (req, res) => {
     let email = '';
     let studentRoll = String(roll || '').trim();
     let branch = '';
-    let course = '';
     const numericRow = requestedRow;
     if (Number.isInteger(numericRow) && numericRow >= 2 && sourceType === 'drive') {
       const sheet = doc.sheetsByTitle['Drive_Registration'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('driveregistration'));
@@ -1731,9 +1737,13 @@ exports.emailStudent = async (req, res) => {
       email = getValByHeader(row, ['mailid', 'email']) || '';
       studentRoll = getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']) || studentRoll;
       branch = getValByHeader(row, ['branch', 'sittingbranch']) || '';
-      course = getValByHeader(row, ['course']) || '';
-      const owner = getValByHeader(row, ['placementofficer', 'tponame', 'createdby', 'tpo']);
-      if (owner && normalizePlacementText(owner) !== normalizePlacementText(user?.name)) return res.status(403).json({ success: false, message: 'You can only email students on your own placement drives.' });
+      const driveId = normalizePlacementText(getValByHeader(row, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(row, ['eventid', 'event_id', 'companyname']));
+      const matchingDrive = (cache?.events || []).find(event => {
+        const eventType = getValByHeader(event, ['event', 'type', 'event_type']).toLowerCase();
+        const eventId = normalizePlacementText(getValByHeader(event, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(event, ['event_id', 'eventid', 'id', 'title']));
+        return eventType.includes('drive') && eventId === driveId;
+      });
+      branch ||= getValByHeader(matchingDrive, ['branch', 'sittingbranch', 'eventhappeningin', 'location']) || '';
     } else if (Number.isInteger(numericRow) && numericRow >= 2) {
       const sheet = doc.sheetsByTitle['Opening_Applied'];
       const row = sheet && (await sheet.getRows({ offset: numericRow - 2, limit: 1 }))[0];
@@ -1742,9 +1752,6 @@ exports.emailStudent = async (req, res) => {
       email = getValByHeader(row, ['mailid', 'email']) || '';
       studentRoll = getValByHeader(row, ['rollnumber', 'rollno', 'roll']) || studentRoll;
       branch = getValByHeader(row, ['branch', 'sittingbranch']) || '';
-      course = getValByHeader(row, ['course']) || '';
-      const owner = getValByHeader(row, ['placementofficer', 'tponame']);
-      if (owner && normalizePlacementText(owner) !== normalizePlacementText(user?.name)) return res.status(403).json({ success: false, message: 'You can only email students on your own placement records.' });
     }
     const normalizedRoll = normalizePlacementText(studentRoll);
     const student = (cache?.students || []).find(row => normalizedRoll && normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])) === normalizedRoll);
@@ -1752,12 +1759,11 @@ exports.emailStudent = async (req, res) => {
       name ||= getValByHeader(student, ['name', 'studentname']);
       email ||= getValByHeader(student, ['mailid', 'email']);
       branch ||= getValByHeader(student, ['branch', 'sittingbranch']);
-      course ||= getValByHeader(student, ['course', 'program']);
     }
     if (!name && !studentRoll) return res.status(404).json({ success: false, message: 'Student not found in the placement record or student register.' });
     name ||= 'Student';
-    if (!hasAccess(branch || user?.sittingBranch || 'Unknown', course || user?.assignedCourse || 'Unknown', user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) {
-      return res.status(403).json({ success: false, message: 'This student is outside your assigned branch or course.' });
+    if (!hasPlacementBranchAccess(branch, user)) {
+      return res.status(403).json({ success: false, message: 'This student is outside your assigned branches or their branch is missing from the record.' });
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(422).json({ success: false, message: 'A valid candidate email address is not available on this record.' });
     const safeMessage = escapePlacementMailHtml(message).replace(/\r?\n/g, '<br>');
@@ -5782,7 +5788,7 @@ exports.getDrives = async (req, res) => {
       const driveOwner = registrationOwner || eventInfo.tpo || '';
       const rowBranch = getValByHeader(row, ['branch', 'sittingbranch']) || (registrationStudent && getValByHeader(registrationStudent, ['branch', 'sittingbranch'])) || eventInfo.branch || eventInfo.location;
       const rowCourse = getValByHeader(row, ['course']) || (registrationStudent && getValByHeader(registrationStudent, ['course', 'program'])) || eventInfo.course;
-      const withinAssignedScope = hasPlacementAccess(rowBranch, rowCourse, user);
+      const withinAssignedScope = hasPlacementBranchAccess(rowBranch, user);
       const ownedUnscopedDrive = isTpo && driveOwner && normalizePlacementText(driveOwner) === signedInName && !rowBranch;
       if (!canSeeAll && !withinAssignedScope && !ownedUnscopedDrive) return;
       // Mark that this drive has at least one student
@@ -5826,7 +5832,7 @@ exports.getDrives = async (req, res) => {
 
     // 3. 🚨 INJECT EMPTY DRIVES: If a drive has 0 students, send a "Dummy" row so it still shows up!
     eventsMap.forEach((eventInfo, dId) => {
-      const withinAssignedScope = hasPlacementAccess(eventInfo.branch || eventInfo.location, eventInfo.course, user);
+      const withinAssignedScope = hasPlacementBranchAccess(eventInfo.branch || eventInfo.location, user);
       const ownedUnscopedDrive = isTpo && eventInfo.tpo && normalizePlacementText(eventInfo.tpo) === signedInName && !eventInfo.branch;
       if (!canSeeAll && !withinAssignedScope && !ownedUnscopedDrive) return;
       if (!eventInfo.hasApplicants) {
@@ -5905,8 +5911,8 @@ exports.updateDriveStatus = async (req, res) => {
       });
       const registrationBranch = getValByHeader(rows[0], ['branch', 'sittingbranch']) || (registrationStudent && getValByHeader(registrationStudent, ['branch', 'sittingbranch'])) || getValByHeader(matchingDrive, ['branch', 'sittingbranch', 'eventhappeningin', 'location']);
       const registrationCourse = getValByHeader(rows[0], ['course']) || (registrationStudent && getValByHeader(registrationStudent, ['course', 'program'])) || getValByHeader(matchingDrive, ['course', 'assignedcourse']);
-      if (!hasAccess(registrationBranch, registrationCourse, user.role, user.assignedBranchesArray, user.assignedCourse, user.department)) {
-        return res.status(403).json({ success: false, message: 'This registration is outside your assigned branch or course.' });
+      if (!hasPlacementBranchAccess(registrationBranch, user)) {
+        return res.status(403).json({ success: false, message: 'This registration is outside your assigned branches.' });
       }
     } else if (!canSeeAll) {
       const driveId = normalizePlacementText(getValByHeader(rows[0], ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(rows[0], ['eventid', 'event_id', 'companyname']));
@@ -5940,8 +5946,8 @@ exports.updateDriveStatus = async (req, res) => {
       const branch = getValByHeader(rows[0], ['branch', 'sittingbranch']) || getValByHeader(registrationStudent, ['branch', 'sittingbranch']) || getValByHeader(matchingDrive, ['branch', 'sittingbranch', 'eventhappeningin', 'location']);
       const course = getValByHeader(rows[0], ['course']) || getValByHeader(registrationStudent, ['course', 'program']) || getValByHeader(matchingDrive, ['course', 'assignedcourse']);
       const ownedUnscopedDrive = isTpo && !branch && normalizePlacementText(registrationOwner || driveOwner) === normalizePlacementText(user?.name);
-      if (isTpo && !hasPlacementAccess(branch, course, user) && !ownedUnscopedDrive) {
-        return res.status(403).json({ success: false, message: 'This registration is outside your assigned branch or course.' });
+      if (isTpo && !hasPlacementBranchAccess(branch, user) && !ownedUnscopedDrive) {
+        return res.status(403).json({ success: false, message: 'This registration is outside your assigned branches.' });
       }
     }
 
