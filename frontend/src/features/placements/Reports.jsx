@@ -6,6 +6,11 @@ import { API_BASE } from '../../services/apiConfig';
 import { latestPlacementRecords, normalizePlacementText } from '../../utils/placementRecords';
 import { parsePortalDateTime } from '../../utils/dateFormat';
 
+const getVal = (obj, searchStr) => {
+  const key = Object.keys(obj || {}).find(k => k.toLowerCase().replace(/\s/g, '').includes(searchStr.toLowerCase().replace(/\s/g, '')));
+  return key ? obj[key] : '';
+};
+
 export default function Reports() {
   const tpoDataStr = localStorage.getItem('tpoData');
   let tpoData = null;
@@ -118,11 +123,6 @@ export default function Reports() {
     const date = parsePortalDateTime(dateStr);
     if (!date) return false;
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` === monthFilter;
-  };
-
-  const getVal = (obj, searchStr) => {
-    const key = Object.keys(obj).find(k => k.toLowerCase().replace(/\s/g, '').includes(searchStr.toLowerCase().replace(/\s/g, '')));
-    return key ? obj[key] : '';
   };
 
   const isAssignedBranch = (b) => {

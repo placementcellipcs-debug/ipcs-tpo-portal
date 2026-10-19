@@ -398,18 +398,26 @@ function VacanciesContent() {
     fetchAllData();
   }, []);
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayStartMs = today.getTime();
+
   const {
     groupedVacs, uniqueTPOs, uniqueMonths, 
     totalActiveOpenings, totalExpiredOpenings, 
     totalApplicationsCount, uniqueCompaniesCount,
     renderError, appsMap
-  } = useMemo(() => {
+  } = (() => {
     try {
       const safeVacancies = Array.isArray(vacancies) ? vacancies : [];
       const safeApplications = Array.isArray(applications) ? applications : [];
+      const normalizedCourse = String(rawCourse || 'all');
+      const mappedDomains = normalizedCourse.toLowerCase() === 'all courses' || normalizedCourse.toLowerCase() === 'all'
+        ? ['All']
+        : normalizedCourse.split(/[\n,;]+/).map(entry => getStandardCourse(entry.trim())).filter(course => course !== 'Others');
+      const filterDomains = mappedDomains.length ? mappedDomains : ['Others'];
 
-      const todayInner = new Date();
-      todayInner.setHours(0,0,0,0);
+      const todayInner = new Date(todayStartMs);
       
       const appsByJobId = {};
       safeApplications.forEach(app => {
@@ -454,14 +462,15 @@ function VacanciesContent() {
         const matchCourse = courseFilter === 'All' || getStandardCourse(v.course) === getStandardCourse(courseFilter);
         
         let matchTrainerScope = true;
-        if (isCourseSpecific && assignedDomains[0] !== 'All') {
-           matchTrainerScope = assignedDomains.includes(getStandardCourse(v.course));
+        if (isCourseSpecific && filterDomains[0] !== 'All') {
+           matchTrainerScope = filterDomains.includes(getStandardCourse(v.course));
         }
 
         const tabMatch = activeTab === 'Open'
           ? (!isExpired && !isClosed)
           : (isExpired || isClosed);
-        const tpoMatch = hideTpoFilter || tpoFilter === 'All' || rowTpo === tpoFilter;
+        const hideTpoFilterForRole = userRole === 'BM' || userRole.includes('BRANCH MANAGER') || /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('REGIONAL TECHNICAL HEAD');
+        const tpoMatch = hideTpoFilterForRole || tpoFilter === 'All' || rowTpo === tpoFilter;
         
         let monthMatch = true;
         if (monthYearFilter !== 'All') {
@@ -504,11 +513,7 @@ function VacanciesContent() {
         renderError: err.message, appsMap: {}
       };
     }
-  }, [vacancies, applications, searchQuery, courseFilter, tpoFilter, monthYearFilter, activeTab, isCourseSpecific, assignedDomains, hideTpoFilter]);
-
-  // Define today for the renderer
-  const today = new Date();
-  today.setHours(0,0,0,0);
+  })();
 
   return (
     <Layout>

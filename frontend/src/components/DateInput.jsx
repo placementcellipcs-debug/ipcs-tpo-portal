@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { CalendarBlank } from '@phosphor-icons/react';
 import { formatPortalDate } from '../utils/dateFormat';
 

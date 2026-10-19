@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
 import { Buildings, CheckCircle, CircleNotch, EnvelopeSimple, GraduationCap, MagnifyingGlass, PaperPlaneTilt, WarningCircle } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
@@ -22,7 +22,7 @@ const notificationLabel = status => {
 };
 
 export default function CorporateTrainingInquiries() {
-  const user = useMemo(readUser, []);
+  const user = readUser();
   const [inquiries, setInquiries] = useState([]);
   const [branches, setBranches] = useState([]);
   const [branchSelections, setBranchSelections] = useState({});
