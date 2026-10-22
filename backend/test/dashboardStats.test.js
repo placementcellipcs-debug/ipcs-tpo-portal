@@ -46,3 +46,18 @@ test('dashboard excludes placements outside the user’s branch and resolves an 
     placed: 1,
   });
 });
+
+test('dashboard includes students marked placed in the student register even without a matching TPO log', () => {
+  const students = [
+    { Roll_Number: 'R-001', Student_Name: 'Alex K', Branch: 'Kochi', Placement_Status: 'Placed' },
+    { Roll_Number: 'R-002', Student_Name: 'Sam', Branch: 'Kochi', Placement_Status: 'Not Placed' },
+  ];
+  const placements = [
+    { Roll_Number: 'R-001', Student_Name: 'Alex K', Company: 'Company A', Status: 'Placed', Branch: 'Kochi' },
+  ];
+
+  assert.deepEqual(calculateDashboardPlacementCounts(students, placements, getValue), {
+    totalStudents: 2,
+    placed: 1,
+  });
+});

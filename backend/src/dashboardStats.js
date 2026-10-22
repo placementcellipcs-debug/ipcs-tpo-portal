@@ -6,16 +6,24 @@ const studentKeyParts = (row, getValue) => ({
 });
 
 const isPlacementOutcome = (row, getValue) => {
-  const status = normalizePlacementText(getValue(row, ['status']));
-  const joiningStatus = normalizePlacementText(getValue(row, ['joiningstatus']));
-  const placementStatus = normalizePlacementText(getValue(row, ['placementstatus']));
-  return status.includes('placed') || status.includes('offer') || status.includes('join') || joiningStatus.includes('join') || placementStatus.includes('placed');
+  const isPositive = value => {
+    const status = normalizePlacementText(value);
+    if (!status || ['notplaced', 'unplaced', 'notjoined', 'didnotjoin', 'notselected', 'notaccepted', 'rejected', 'declined', 'withdrawn'].some(term => status.includes(term))) return false;
+    return status.includes('placed') || status.includes('offer') || status.includes('join');
+  };
+
+  return [
+    getValue(row, ['status']),
+    getValue(row, ['joiningstatus']),
+    getValue(row, ['placementstatus', 'placementstat', 'placementstatsu']),
+  ].some(isPositive);
 };
 
 const calculateDashboardPlacementCounts = (students, placementRows, getValue, canAccess = () => true) => {
   const eligibleStudents = new Set();
   const rollToStudent = new Map();
   const studentsByName = new Map();
+  const placedStudents = new Set();
 
   (Array.isArray(students) ? students : []).forEach((row, index) => {
     if (!canAccess(row)) return;
@@ -23,6 +31,9 @@ const calculateDashboardPlacementCounts = (students, placementRows, getValue, ca
     const { roll, name } = studentKeyParts(row, getValue);
     const key = roll ? `roll:${roll}` : name ? `name:${name}` : `row:${row?.rowNumber ?? index}`;
     eligibleStudents.add(key);
+    // The student register is also a placement source: staff can update its
+    // Placement Status without a matching TPO_Log row being present.
+    if ((roll || name) && isPlacementOutcome(row, getValue)) placedStudents.add(key);
 
     if (roll) rollToStudent.set(roll, key);
     if (name) {
@@ -38,7 +49,6 @@ const calculateDashboardPlacementCounts = (students, placementRows, getValue, ca
     return nameMatches?.size === 1 ? nameMatches.values().next().value : null;
   };
 
-  const placedStudents = new Set();
   (Array.isArray(placementRows) ? placementRows : []).forEach(row => {
     if (!canAccess(row) || !isPlacementOutcome(row, getValue)) return;
     const studentKey = resolveRegisteredStudent(row);
@@ -48,4 +58,4 @@ const calculateDashboardPlacementCounts = (students, placementRows, getValue, ca
   return { totalStudents: eligibleStudents.size, placed: placedStudents.size };
 };
 
-module.exports = { calculateDashboardPlacementCounts };
+module.exports = { calculateDashboardPlacementCounts, isPlacementOutcome };

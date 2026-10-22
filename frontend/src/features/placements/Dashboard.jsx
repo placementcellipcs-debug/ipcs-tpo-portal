@@ -79,7 +79,7 @@ export default function Dashboard() {
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   
   // Raw Data Storage for Re-Filtering
-  const [rawChartData, setRawChartData] = useState({ students: [], logs: [] });
+  const [rawChartData, setRawChartData] = useState({ applications: [], logs: [] });
 
   const [calendarDate, setCalendarDate] = useState(new Date());
 
@@ -116,7 +116,7 @@ export default function Dashboard() {
   };
 
   // 🚨 SMART CHART PROCESSOR
-  const processChartData = (students, tpoLogs, targetYear) => {
+  const processChartData = (applications, tpoLogs, targetYear) => {
     const yearsSet = new Set();
     
     // Scan all dates to populate the Dropdown with Real Years
@@ -124,8 +124,8 @@ export default function Dashboard() {
       const d = parseDateRobust(log.dateplaced || log.timestamp || log['Date Placed'] || log['TimeStamp']);
       if (d && d.getFullYear() > 2000) yearsSet.add(d.getFullYear());
     });
-    (students || []).forEach(stu => {
-      const d = parseDateRobust(stu.timestamp || stu.date || stu['TimeStamp']);
+    (applications || []).forEach(application => {
+      const d = parseDateRobust(application.date || application.timestamp || application.dateApplied || application.createdAt);
       if (d && d.getFullYear() > 2000) yearsSet.add(d.getFullYear());
     });
 
@@ -138,10 +138,10 @@ export default function Dashboard() {
     const currentYear = targetYear || sortedYears[0] || new Date().getFullYear();
     if (!targetYear && sortedYears[0]) setSelectedYear(sortedYears[0]);
     
-    // 1. Process Applications (From DATA Subsheet)
+    // Applications are individual rows in OpeningApplied, not student records in Data.
     const appsByMonth = Array(12).fill(0);
-    (students || []).forEach(stu => {
-      const d = parseDateRobust(stu.timestamp || stu.date || stu['TimeStamp'] || stu.joiningdate);
+    (applications || []).forEach(application => {
+      const d = parseDateRobust(application.date || application.timestamp || application.dateApplied || application.createdAt);
       if (d && d.getFullYear() === currentYear) {
         appsByMonth[d.getMonth()]++;
       }
@@ -159,16 +159,18 @@ export default function Dashboard() {
       const roll = (getVal('rollnumber') || getVal('roll') || '').trim();
       const name = (getVal('studentname') || getVal('name') || '').trim();
       const company = (getVal('companyname') || getVal('company') || '').trim();
-      const status = (getVal('status') || '').toLowerCase();
-      const joining = (getVal('joiningstatus') || '').toLowerCase();
+      const status = (getVal('status') || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const joining = (getVal('joiningstatus') || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const placementStatus = (getVal('placementstatus') || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const isPositiveOutcome = value => value && !['notplaced', 'unplaced', 'notjoined', 'didnotjoin', 'notselected', 'notaccepted', 'rejected', 'declined', 'withdrawn'].some(term => value.includes(term)) && (value.includes('placed') || value.includes('offer') || value.includes('join'));
 
       // 🚨 CRITICAL FIX: Ignore 1000+ blank rows from Google Sheets returning empty data
       if (!name && !roll && !company) return;
 
       // 🚨 CRITICAL FIX: Only count explicitly placed/joined (Removed Offers)
-      if (status.includes('placed') || joining.includes('join')) {
-         const key = `${roll}_${company}_${name}`.toLowerCase();
-         const d = parseDateRobust(getVal('dateplaced') || getVal('timestamp'));
+      if (isPositiveOutcome(status) || isPositiveOutcome(joining) || isPositiveOutcome(placementStatus)) {
+         const key = `${(roll || name).toLowerCase().replace(/[^a-z0-9]/g, '')}_${company.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+         const d = parseDateRobust(getVal('dateplaced') || getVal('timestamp') || getVal('date'));
 
          if (!dedupedPlaced[key] || (parseDateRobust(dedupedPlaced[key].date) < d)) {
            dedupedPlaced[key] = {
@@ -211,8 +213,8 @@ export default function Dashboard() {
 
   // Re-run chart processing if year changes
   useEffect(() => {
-    if (rawChartData.students.length > 0 || rawChartData.logs.length > 0) {
-      processChartData(rawChartData.students, rawChartData.logs, selectedYear);
+    if (rawChartData.applications.length > 0 || rawChartData.logs.length > 0) {
+      processChartData(rawChartData.applications, rawChartData.logs, selectedYear);
     }
   }, [selectedYear]); // eslint-disable-line react-hooks/exhaustive-deps -- The fetch below processes newly loaded chart data directly.
 
@@ -252,12 +254,12 @@ export default function Dashboard() {
         }
 
         if (reportsRes.data && reportsRes.data.success) {
-          // 🚨 EXTRACTING STUDENTS (DATA SHEET) AND TPO_LOGS
-          const students = reportsRes.data.students || [];
+          // Applications come from OpeningApplied; student roster rows are not applications.
+          const applications = reportsRes.data.applications || [];
           const logs = reportsRes.data.tpoLogs || [];
           
-          setRawChartData({ students, logs });
-          processChartData(students, logs, selectedYear);
+          setRawChartData({ applications, logs });
+          processChartData(applications, logs, selectedYear);
         }
 
       } catch (err) { console.error("Dashboard Fetch Error:", err); } finally { setLoading(false); }

@@ -32,7 +32,7 @@ const {
 
 const { autoCreateDesignTask } = require('./designControllers');
 const { normalizePlacementText, placementIdentity, latestPlacementRows } = require('./placementRecords');
-const { calculateDashboardPlacementCounts } = require('./dashboardStats');
+const { calculateDashboardPlacementCounts, isPlacementOutcome } = require('./dashboardStats');
 const { formatIndiaTimestamp, formatIndiaDate, formatIndiaTime } = require('./utils/dateTime');
 
 const FOLDER_OFFER_LETTERS = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5';
@@ -1032,14 +1032,31 @@ exports.getDashboardStats = async (req, res) => {
     row => checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))
   );
 
-  dedupedLogs.forEach(row => {
-    const branch = getValByHeader(row, ['branch']);
-    const course = getValByHeader(row, ['course']);
-    
-    if (checkAccess(branch, course)) {
-      const stat = getValByHeader(row, ['status']).toLowerCase();
-      if (stat === 'applied') pendingApps++;
-    }
+  const studentByRoll = new Map();
+  const studentsByName = new Map();
+  (cache.students || []).forEach(student => {
+    const roll = normalizePlacementText(getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+    const name = normalizePlacementText(getValByHeader(student, ['studentname', 'name']));
+    if (roll && !studentByRoll.has(roll)) studentByRoll.set(roll, student);
+    if (name) studentsByName.set(name, [...(studentsByName.get(name) || []), student]);
+  });
+  (cache.applications || []).forEach(row => {
+    const name = getValByHeader(row, ['studentname', 'name', 'candidate']);
+    const roll = getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']);
+    const jobId = getValByHeader(row, ['jobid', 'job id']);
+    const company = getValByHeader(row, ['companyname', 'company']);
+    if (!name && !roll && !jobId && !company) return;
+
+    const rollKey = normalizePlacementText(roll);
+    const nameKey = normalizePlacementText(name);
+    const nameMatches = nameKey ? studentsByName.get(nameKey) || [] : [];
+    const student = (rollKey && studentByRoll.get(rollKey)) || (nameMatches.length === 1 ? nameMatches[0] : null);
+    const branch = getValByHeader(row, ['branch', 'sittingbranch']) || getValByHeader(student, ['branch', 'sittingbranch']);
+    const course = getValByHeader(row, ['course', 'program']) || getValByHeader(student, ['course', 'program']);
+    if (!checkAccess(branch, course)) return;
+
+    const status = normalizePlacementText(getValByHeader(row, ['status'])) || 'applied';
+    if (status === 'applied' || status === 'pending') pendingApps++;
   });
   
   const todayStart = safeParseDate(formatIndiaDate(new Date()));
@@ -2805,9 +2822,55 @@ exports.getReports = async (req, res) => {
     });
   });
   
+  const studentsByRoll = new Map();
+  const studentsByName = new Map();
+  (cache.students || []).forEach(student => {
+    const roll = normalizePlacementText(getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+    const name = normalizePlacementText(getValByHeader(student, ['studentname', 'name']));
+    if (roll && !studentsByRoll.has(roll)) studentsByRoll.set(roll, student);
+    if (name) studentsByName.set(name, [...(studentsByName.get(name) || []), student]);
+  });
+  const studentForApplication = row => {
+    const roll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+    if (roll && studentsByRoll.has(roll)) return studentsByRoll.get(roll);
+    const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+    const matches = name ? studentsByName.get(name) || [] : [];
+    return matches.length === 1 ? matches[0] : null;
+  };
+  const vacancyOwnerByJobId = new Map((cache.vacancies || []).map(row => [
+    normalizePlacementText(getValByHeader(row, ['jobid', 'job id', 'id'])),
+    getValByHeader(row, ['placementofficer', 'tpo', 'tponame'])
+  ]).filter(([jobId, owner]) => jobId && owner));
+
   (cache.applications || []).forEach(row => {
-    if(!checkPlacementReportAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) return;
-    applications.push({ name: getValByHeader(row, ['studentname', 'name']), roll: getValByHeader(row, ['rollnumber', 'roll']), jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']), date: getValByHeader(row, ['timestamp']), status: getValByHeader(row, ['status']), remarks: getValByHeader(row, ['remarks']), tpoName: getValByHeader(row, ['placementofficer']), branch: getValByHeader(row, ['branch']), course: getValByHeader(row, ['course']) });
+    const name = getValByHeader(row, ['studentname', 'name', 'candidate']);
+    const roll = getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']);
+    const jobId = getValByHeader(row, ['jobid', 'job id']);
+    const company = getValByHeader(row, ['companyname', 'company']);
+    const position = getValByHeader(row, ['position', 'role']);
+    // Ignore empty padding rows returned by Google Sheets.
+    if (!name && !roll && !jobId && !company && !position) return;
+
+    const student = studentForApplication(row);
+    const branch = getValByHeader(row, ['branch', 'sittingbranch']) || getValByHeader(student, ['branch', 'sittingbranch']);
+    const course = getValByHeader(row, ['course', 'program']) || getValByHeader(student, ['course', 'program']);
+    if (!checkPlacementReportAccess(branch, course)) return;
+
+    const normalizedJobId = normalizePlacementText(jobId);
+    applications.push({
+      rowNumber: row.rowNumber,
+      name: name || getValByHeader(student, ['studentname', 'name']),
+      roll: roll || getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']),
+      jobId,
+      company,
+      position,
+      date: getValByHeader(row, ['timestamp', 'dateapplied', 'applicationdate', 'date', 'time', 'createdat']),
+      status: getValByHeader(row, ['status']),
+      remarks: getValByHeader(row, ['remarks']),
+      tpoName: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || vacancyOwnerByJobId.get(normalizedJobId) || '',
+      branch,
+      course
+    });
   });
   
   (cache.issues || []).forEach(row => {
@@ -2838,12 +2901,11 @@ exports.getReports = async (req, res) => {
       const studentName = getValByHeader(row, ['studentname', 'name']).trim();
       const companyName = getValByHeader(row, ['companyname', 'company']).trim();
       if (/^\s*(?:yes|true|1)\s*$/i.test(getValByHeader(row, ['tpoactionlog']))) return;
-      const status = normalizePlacementText(getValByHeader(row, ['status']));
       const placementOfficer = normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame']));
       const belongsToReportUser = (isCentralTeamReportUser || isAdminReportUser)
         ? checkPlacementReportAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))
         : Boolean(reportOfficer && placementOfficer === reportOfficer);
-      if (status !== 'placed' || !studentName || !companyName || !belongsToReportUser) return;
+      if (!isPlacementOutcome(row, getValByHeader) || !studentName || !companyName || !belongsToReportUser) return;
       try {
         placementReportLogs.push({ ...row.toObject(), rowNumber: row.rowNumber, sourceSheet: 'TPO_Log' });
       } catch (error) {}

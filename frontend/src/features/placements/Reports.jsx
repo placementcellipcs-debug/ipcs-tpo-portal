@@ -26,6 +26,7 @@ export default function Reports() {
   const [monthFilter, setMonthFilter] = useState(currentMonthStr);
 
   const [students, setStudents] = useState([]);
+  const [applications, setApplications] = useState([]);
   const [events, setEvents] = useState([]);
   const [tpoLogs, setTpoLogs] = useState([]); 
   const [placementReportLogs, setPlacementReportLogs] = useState([]);
@@ -55,8 +56,10 @@ export default function Reports() {
         if (!response.data?.success) throw new Error(response.data?.message || 'Could not load report data.');
         const data = response.data;
         const reportStudents = data.students || [];
+        const reportApplications = data.applications || [];
         const reportLogs = data.tpoLogs || [];
         setStudents(reportStudents);
+        setApplications(reportApplications);
         setEvents(data.events || []);
         setTpoLogs(reportLogs);
         setPlacementReportLogs(Array.isArray(data.placementReportLogs) ? data.placementReportLogs : []);
@@ -299,7 +302,13 @@ export default function Reports() {
       return statUser === targetName && statMonth === currentMonthPrefix;
     });
 
-    // Total Applications & Joining Status from TPO Logs
+    // Application totals come from OpeningApplied; TPO_Log is only the status history.
+    const appsForTpo = applications.filter(application => {
+      const owner = normalizePlacementText(getVal(application, 'tponame'));
+      return owner && owner === normalizePlacementText(targetName) && checkMonth(getVal(application, 'date') || getVal(application, 'timestamp'));
+    });
+
+    // Joining Status from TPO Logs
     const logs = placementLogs.filter(log => {
        const logTpo = getVal(log, 'placementofficer').toLowerCase().trim();
        const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
@@ -322,7 +331,7 @@ export default function Reports() {
       drivesConducted: drivesConducted,
       joining: joined,
       notJoining: notJoined,
-      totalApps: logs.length
+      totalApps: appsForTpo.length
     };
   });
 
@@ -433,7 +442,10 @@ export default function Reports() {
                 const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
                 if (!logTpo || logTpo !== normalizePlacementText(targetTpoName)) return false;
 
-                if (normalizePlacementText(getVal(log, 'status')) !== 'placed') return false;
+                const outcome = [getVal(log, 'status'), getVal(log, 'joiningstatus'), getVal(log, 'placementstatus')]
+                  .map(normalizePlacementText);
+                const isPositiveOutcome = value => value && !['notplaced', 'unplaced', 'notjoined', 'didnotjoin', 'notselected', 'notaccepted', 'rejected', 'declined', 'withdrawn'].some(term => value.includes(term)) && (value.includes('placed') || value.includes('offer') || value.includes('join'));
+                if (!outcome.some(isPositiveOutcome)) return false;
                 if (!getVal(log, 'studentname') && !getVal(log, 'name')) return false;
                 if (!getVal(log, 'companyname') && !getVal(log, 'company')) return false;
 
