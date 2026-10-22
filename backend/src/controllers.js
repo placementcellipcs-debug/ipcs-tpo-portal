@@ -274,6 +274,23 @@ const getAllTpoEmails = () => {
   return cache.contacts.map(r => getValByHeader(r, ['mailid', 'email'])).filter(Boolean);
 };
 
+const getDailyReportTpoRecipients = () => {
+  const cache = getCache();
+  const seen = new Set();
+  return (cache?.contacts || []).map(row => ({
+    name: getValByHeader(row, ['tponame', 'name', 'placementofficer']).trim(),
+    email: getValByHeader(row, ['mailid', 'email']).trim(),
+    status: getValByHeader(row, ['status', 'tpostatus']).trim().toLowerCase()
+  })).filter(item => {
+    const emailKey = item.email.toLowerCase();
+    if (!item.name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(item.email)
+      || /^(inactive|disabled|removed|terminated|left|resigned)$/.test(item.status)
+      || emailKey === 'gifty@ipcsglobal.com' || seen.has(emailKey)) return false;
+    seen.add(emailKey);
+    return true;
+  }).map(item => item.email);
+};
+
 const getAllBranchManagerEmails = () => {
   const cache = getCache();
   if (!cache || !cache.users) return [];
@@ -302,6 +319,7 @@ const logMailToSheet = async (receiverName, receiverMail, mailType, subject, sta
 };
 
 const resumeDeliveryMemory = new Map();
+const companyOpeningReportMemory = new Map();
 const getResumeDeliveryReference = jobId => String(jobId || '').trim().toLowerCase();
 const isMailDeliveryUncertain = error => Boolean(error?.ambiguousDelivery)
   || /delivery outcome is uncertain/i.test(String(error?.message || error));
@@ -322,6 +340,83 @@ const wasResumeDeliveryHandled = (jobId, cache) => {
   ).sort((left, right) => Number(right.rowNumber || 0) - Number(left.rowNumber || 0));
   const latestStatus = String(getValByHeader(logged[0], ['status']) || '').toLowerCase();
   return Boolean(latestStatus && (/uncertain|check its sent folder/.test(latestStatus) || (!latestStatus.startsWith('failed:') && /success|sent|queued/.test(latestStatus))));
+};
+
+const wasCompanyOpeningReportHandled = (reportDate, cache) => {
+  const local = companyOpeningReportMemory.get(reportDate);
+  if (['sending', 'sent', 'queued', 'review'].includes(local?.status)) return true;
+  const reportType = 'company resume delivery daily report';
+  const logged = (cache?.mails || []).filter(row =>
+    String(getValByHeader(row, ['mailtype', 'type']) || '').toLowerCase().includes(reportType)
+    && String(getValByHeader(row, ['subject']) || '').includes(reportDate)
+  ).sort((left, right) => Number(right.rowNumber || 0) - Number(left.rowNumber || 0));
+  const latestStatus = String(getValByHeader(logged[0], ['status']) || '').toLowerCase();
+  return Boolean(latestStatus && (/uncertain|review/.test(latestStatus) || /success|sent|queued/.test(latestStatus)));
+};
+
+const sendCompanyOpeningDailyReport = async ({ reportDate, openingRows, cache }) => {
+  if (wasCompanyOpeningReportHandled(reportDate, cache)) {
+    const local = companyOpeningReportMemory.get(reportDate);
+    return { status: local?.status || 'already handled', skipped: true };
+  }
+
+  const giftyEmail = 'gifty@ipcsglobal.com';
+  const tpoEmails = getDailyReportTpoRecipients();
+  const reportRecipients = [giftyEmail, ...tpoEmails];
+  const subject = `[IPCS COMPANY OPENING REPORT] ${reportDate}`;
+  const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[character]);
+  const cellStyle = 'border:1px solid #d7dce5;padding:9px;text-align:left;vertical-align:top';
+  const headerStyle = `${cellStyle};background:#edf2f8;font-weight:700`;
+  const countByStatus = status => openingRows.filter(row => row.deliveryStatus === status).length;
+  const sentCount = countByStatus('Sent');
+  const queuedCount = countByStatus('Queued');
+  const failedCount = openingRows.filter(row => ['Failed', 'Review'].includes(row.deliveryStatus)).length;
+  const rowsHtml = openingRows.length ? openingRows.map(row => `
+    <tr>
+      <td style="${cellStyle}">${escape(row.company || 'Unknown company')}</td>
+      <td style="${cellStyle}">${escape(row.position || 'Unknown position')}</td>
+      <td style="${cellStyle}">${escape(row.lastDate || '—')}</td>
+      <td style="${cellStyle};text-align:center">${Number(row.applicantCount) || 0}</td>
+      <td style="${cellStyle}">${escape(row.tpoName || 'Not assigned')}</td>
+      <td style="${cellStyle}">${escape(row.deliveryStatus || 'Not sent')}</td>
+    </tr>`).join('') : `<tr><td colspan="6" style="${cellStyle};text-align:center">No openings had a deadline yesterday.</td></tr>`;
+  const html = `<div style="font-family:Arial,sans-serif;color:#172033;max-width:1000px;margin:0 auto">
+    <h2>Company resume delivery report</h2>
+    <p>Openings with an application deadline of <strong>${escape(reportDate)}</strong>.</p>
+    <p><strong>${openingRows.length}</strong> opening(s) · <strong>${sentCount}</strong> sent · <strong>${queuedCount}</strong> queued · <strong>${failedCount}</strong> failed or under review.</p>
+    <table style="border-collapse:collapse;width:100%;font-size:13px">
+      <thead><tr>${['Company', 'Position', 'Last date', 'Applied', 'Opening owner (TPO)', 'Company email status'].map(label => `<th style="${headerStyle}">${label}</th>`).join('')}</tr></thead>
+      <tbody>${rowsHtml}</tbody>
+    </table>
+  </div>`;
+
+  companyOpeningReportMemory.set(reportDate, { status: 'sending', at: Date.now() });
+  try {
+    const delivery = await sendMailAndLog({
+      from: `"IPCS Global Placement Team" <${process.env.EMAIL_USER}>`,
+      to: giftyEmail,
+      cc: tpoEmails.join(','),
+      subject,
+      text: `Company resume delivery report for openings whose deadline was ${reportDate}. ${openingRows.length} opening(s), ${sentCount} sent, ${queuedCount} queued, ${failedCount} failed or under review.`,
+      html
+    }, {
+      name: 'Gifty',
+      email: reportRecipients.join(','),
+      type: 'Company Resume Delivery Daily Report',
+      category: 'placement'
+    });
+    const status = delivery?.queued ? 'queued' : 'sent';
+    companyOpeningReportMemory.set(reportDate, { status, at: Date.now() });
+    console.log(`[COMPANY OPENING REPORT] ${reportDate} report ${status}; ${tpoEmails.length} TPO(s) copied.`);
+    return { status, queued: Boolean(delivery?.queued) };
+  } catch (error) {
+    const status = isMailDeliveryUncertain(error) ? 'review' : 'failed';
+    companyOpeningReportMemory.set(reportDate, { status, at: Date.now() });
+    console.error(`[COMPANY OPENING REPORT] ${reportDate} report ${status}:`, error.message);
+    return { status, error: String(error.message || error).slice(0, 500) };
+  }
 };
 
 const sendMailAndLog = async (mailOptions, logDetails) => {
@@ -3334,38 +3429,52 @@ const runDailyCronTasks = async ({ resumeOnly = false } = {}) => {
     if (name) resumeStudentsByName.set(name, [...(resumeStudentsByName.get(name) || []), student]);
   });
   const escapeMailHtml = value => String(value || '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+  const companyOpeningReportRows = [];
 
   for (let job of yesterdayJobs) {
     const jobId = getValByHeader(job, ['jobid', 'id']) || '';
     const companyEmail = getValByHeader(job, ['companymailid', 'companyemail']) || ''; 
     const companyName = getValByHeader(job, ['companyname', 'company']) || '';
     const position = getValByHeader(job, ['position', 'role']) || '';
-
-    if (!jobId) {
-      resumeSummary.skipped.push({ company: companyName || 'Unknown company', reason: 'Opening has no Job ID.' });
-      continue;
-    }
-    if (wasResumeDeliveryHandled(jobId, cache)) {
-      resumeSummary.alreadyHandled += 1;
-      continue;
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(companyEmail)) {
-      resumeSummary.skipped.push({ jobId, company: companyName || 'Unknown company', reason: 'Company email is missing or invalid.' });
-      continue;
-    }
-
+    const lastDate = getValByHeader(job, ['lastdate', 'applicationdeadline']) || '';
+    const tpoName = getValByHeader(job, ['placementofficer', 'tpo', 'tponame']) || 'Not assigned';
     const cleanTargetJobId = jobId.toString().toLowerCase().replace(/[^a-z0-9]/g, '');
     const applicants = (cache.applications || []).filter(app => {
       const appJobId = (getValByHeader(app, ['jobid']) || '').toString().toLowerCase().replace(/[^a-z0-9]/g, '');
       return appJobId === cleanTargetJobId && cleanTargetJobId !== '';
     });
+    const reportRow = {
+      company: companyName,
+      position,
+      lastDate,
+      applicantCount: applicants.length,
+      tpoName,
+      deliveryStatus: 'Not sent'
+    };
+    companyOpeningReportRows.push(reportRow);
+
+    if (!jobId) {
+      reportRow.deliveryStatus = 'Skipped — missing Job ID';
+      resumeSummary.skipped.push({ company: companyName || 'Unknown company', reason: 'Opening has no Job ID.' });
+      continue;
+    }
+    if (wasResumeDeliveryHandled(jobId, cache)) {
+      reportRow.deliveryStatus = 'Already handled';
+      resumeSummary.alreadyHandled += 1;
+      continue;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(companyEmail)) {
+      reportRow.deliveryStatus = 'Skipped — missing or invalid company email';
+      resumeSummary.skipped.push({ jobId, company: companyName || 'Unknown company', reason: 'Company email is missing or invalid.' });
+      continue;
+    }
 
     if (applicants.length === 0) {
+      reportRow.deliveryStatus = 'Skipped — no applicants';
       resumeSummary.skipped.push({ jobId, company: companyName || 'Unknown company', reason: 'No applications match this Job ID.' });
       continue;
     }
 
-    const tpoName = getValByHeader(job, ['placementofficer']);
     const tpoEmail = getTpoEmailByName(tpoName);
 
     let tableRows = ''; let attachments = [];
@@ -3433,22 +3542,35 @@ const runDailyCronTasks = async ({ resumeOnly = false } = {}) => {
         attachments
       }, { name: companyName, email: companyEmail, type: 'Resume Delivery', category: 'company' });
       if (delivery?.queued) {
+        reportRow.deliveryStatus = 'Queued';
         resumeSummary.queued += 1;
         resumeDeliveryMemory.set(getResumeDeliveryReference(jobId), { status: 'queued', at: Date.now() });
         console.log(`📥 Resume email for ${jobId} was queued for retry.`);
       } else {
+        reportRow.deliveryStatus = 'Sent';
         resumeSummary.sent += 1;
         resumeDeliveryMemory.set(getResumeDeliveryReference(jobId), { status: 'sent', at: Date.now() });
         console.log(`✅ Resume email sent to ${companyName} (${jobId}).`);
       }
     } catch (error) {
       const reason = String(error.message || error);
-      if (/uncertain|check its sent folder/i.test(reason)) resumeDeliveryMemory.set(getResumeDeliveryReference(jobId), { status: 'review', at: Date.now() });
+      if (isMailDeliveryUncertain(error)) {
+        reportRow.deliveryStatus = 'Review';
+        resumeDeliveryMemory.set(getResumeDeliveryReference(jobId), { status: 'review', at: Date.now() });
+      } else {
+        reportRow.deliveryStatus = 'Failed';
+      }
       resumeSummary.failed.push({ jobId, company: companyName || 'Unknown company', reason });
       console.error(`❌ Resume email failed for ${jobId} (${companyName}):`, error.message);
     }
     await new Promise(resolve => setTimeout(resolve, 1500));
   }
+
+  resumeSummary.dailyReport = await sendCompanyOpeningDailyReport({
+    reportDate: yStr,
+    openingRows: companyOpeningReportRows,
+    cache
+  });
 
   if (resumeOnly) {
     console.log('[RESUME DELIVERY] Run summary:', JSON.stringify(resumeSummary));
