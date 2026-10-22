@@ -59,11 +59,11 @@ Set `MAIL_QUEUE_ENCRYPTION_KEY` to a stable secret and keep it unchanged while q
 For each email, the backend selects the sender mapped to its category and tries, in order:
 
 1. That account's Apps Script deployment, if configured.
-2. Gmail SMTP over IPv4.
-3. Gmail SMTP over IPv6.
-4. The same three routes using `giftyipcsglobal@gmail.com` if the primary account is out of quota or its providers fail before delivery.
+2. If Apps Script explicitly reports that the primary account has exhausted its recipient quota, the backend skips SMTP for that same account and moves directly to `giftyipcsglobal@gmail.com`.
+3. For other definitive primary-account failures, Gmail SMTP over IPv4 and then IPv6.
+4. The shared fallback account's Apps Script deployment, followed by its SMTP routes if needed.
 
-When Gifty's quota is also exhausted, the message is stored encrypted in the `EmailQueue` sheet. Quota failures are checked again hourly by default; other temporary network failures use the shorter retry interval. Once a sender has room, the queued message is delivered. If a provider's response leaves delivery uncertain, the backend stops failover to avoid sending a duplicate; check that account's Sent folder and the recipient before retrying manually.
+When all configured senders are out of quota, the message is stored encrypted in the `EmailQueue` sheet. Quota failures are checked again hourly by default; other temporary network failures use the shorter retry interval. Once a sender has room, the queued message is delivered. If a provider's response leaves delivery uncertain, the backend marks it for review and does not retry or fail over automatically, because the provider may already have accepted it. Check that account's Sent folder and the recipient before retrying manually. The usage dashboard classifies these outcomes as `Review`.
 
 Successful sends and quota-exhaustion observations are recorded in the `EmailQuotaUsage` sheet, including sender, provider, recipient count, portal-tracked remaining count, and the Apps Script remaining count when Apps Script handled the send. The backend creates both sheets if needed.
 

@@ -531,9 +531,15 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
           } catch (logError) {
             console.error(`[MAIL QUOTA] Could not record Apps Script quota status for ${sender.email}:`, logError.message);
           }
-          // Apps Script reported that it did not accept this message because
-          // its recipient quota is exhausted. Try this Gmail account's SMTP
-          // routes before moving to the shared fallback sender.
+          // A definitive quota rejection means Apps Script did not send the
+          // message. For a primary account, go straight to the shared fallback
+          // instead of attempting SMTP on the already-exhausted account. SMTP
+          // can time out after accepting DATA, which would block safe failover.
+          if (!sender.fallback) {
+            error.retryable = true;
+            error.code = error.code || 'QUOTA_EXCEEDED';
+            throw error;
+          }
           providerErrors.push(error);
         } else if (isAmbiguousDelivery(error)) {
           error.ambiguousDelivery = true;
@@ -592,7 +598,11 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
         return await withSenderLock(senderKey, () => sendThroughAccount(getSender(senderKey), mail, recipientCount, emailCategory));
       } catch (error) {
         if (isAmbiguousDelivery(error)) {
-          throw new Error(`Delivery outcome is uncertain for ${getSender(senderKey).email}. Check its Sent folder and the recipient before retrying. Original error: ${error.message}`);
+          const reviewError = new Error(`Delivery outcome is uncertain for ${getSender(senderKey).email}. Check its Sent folder and the recipient before retrying. Original error: ${error.message}`);
+          reviewError.ambiguousDelivery = true;
+          reviewError.retryable = false;
+          reviewError.code = 'DELIVERY_UNCERTAIN';
+          throw reviewError;
         }
         attempts.push({ senderKey, error });
         console.warn(`[MAIL] ${getSender(senderKey).email} delivery failed; checking the next configured sender: ${error.message}`);
@@ -654,12 +664,18 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
         : rows.find(item => String(item.get(idHeader) || '').trim() === String(context.eventId || context.idValue || '').trim());
       if (!row) return;
       const prefix = String(context.statusPrefix || '').trim();
+      const statusErrorPrefix = status === 'REVIEW'
+        ? String(context.reviewValuePrefix || 'Review: ')
+        : String(context.failedValuePrefix || '');
+      const hasDeliveryError = status === 'FAILED' || status === 'REVIEW';
       const statusText = context.statusValues?.[status]
         || (status === 'FAILED' && context.failedValuePrefix
           ? `${context.failedValuePrefix}${String(errorMessage).slice(0, 500)}`
+          : status === 'REVIEW'
+            ? `${statusErrorPrefix}${String(errorMessage).slice(0, 500)}`
           : `${prefix ? `${prefix} ` : ''}${status}`);
       if (statusHeader) row.set(statusHeader, statusText);
-      if (errorHeader) row.set(errorHeader, status === 'FAILED' ? String(context.failedValuePrefix || '') + String(errorMessage).slice(0, 500) : '');
+      if (errorHeader) row.set(errorHeader, hasDeliveryError ? statusErrorPrefix + String(errorMessage).slice(0, 500) : '');
       if (sentAtHeader && status === 'SENT') row.set(sentAtHeader, formatIndiaTimestamp());
       await row.save();
       if (typeof refreshCache === 'function') void Promise.resolve(refreshCache()).catch(refreshError => console.warn('[MAIL QUEUE] Event cache refresh failed:', refreshError.message));
@@ -782,6 +798,15 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
         }
         if (status !== 'queued') continue;
 
+        // Do not resend jobs left in the queue by an older version after an
+        // ambiguous provider timeout. They must be checked by a person first.
+        if (/delivery outcome is uncertain/i.test(String(row.get('LastError') || ''))) {
+          row.set('Status', 'review');
+          row.set('UpdatedAt', new Date().toISOString());
+          await row.save();
+          continue;
+        }
+
         const dueAt = Date.parse(row.get('NextAttemptAt') || '');
         if (Number.isFinite(dueAt) && dueAt > now) continue;
         const attempts = Number(row.get('Attempts') || 0);
@@ -841,21 +866,22 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
           deliveryResult = await sendNow(category, fromPersistableMail(mail, sender));
         } catch (error) {
           const attempt = attempts + 1;
-          const retryable = isQuotaError(error) || (isRetryable(error) && attempt < maxAttempts);
-          row.set('Status', retryable ? 'queued' : 'failed');
+          const deliveryUncertain = isAmbiguousDelivery(error) || /delivery outcome is uncertain/i.test(String(error.message || error));
+          const retryable = !deliveryUncertain && (isQuotaError(error) || (isRetryable(error) && attempt < maxAttempts));
+          row.set('Status', deliveryUncertain ? 'review' : retryable ? 'queued' : 'failed');
           row.set('LastError', String(error.message || error).slice(0, 1000));
           row.set('UpdatedAt', new Date().toISOString());
           if (retryable) {
             row.set('NextAttemptAt', retryAt(error, attempt));
-          } else {
+          } else if (!deliveryUncertain) {
             const storedPayload = row.get('Payload');
             row.set('Payload', '');
             await deletePayloadFile(storedPayload);
           }
           await row.save();
           if (!retryable) {
-            await appendMailLog(details, `Failed: ${String(error.message || error).slice(0, 500)}`, mail.subject);
-            await updateEventMailStatus(context, 'FAILED', error.message);
+            await appendMailLog(details, `${deliveryUncertain ? 'Review' : 'Failed'}: ${String(error.message || error).slice(0, 500)}`, mail.subject);
+            await updateEventMailStatus(context, deliveryUncertain ? 'REVIEW' : 'FAILED', error.message);
           }
           continue;
         }

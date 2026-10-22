@@ -303,6 +303,9 @@ const logMailToSheet = async (receiverName, receiverMail, mailType, subject, sta
 
 const resumeDeliveryMemory = new Map();
 const getResumeDeliveryReference = jobId => String(jobId || '').trim().toLowerCase();
+const isMailDeliveryUncertain = error => Boolean(error?.ambiguousDelivery)
+  || /delivery outcome is uncertain/i.test(String(error?.message || error));
+const mailErrorStatus = error => isMailDeliveryUncertain(error) ? 'Review' : 'Failed';
 const wasResumeDeliveryHandled = (jobId, cache) => {
   const key = getResumeDeliveryReference(jobId);
   if (!key) return false;
@@ -331,7 +334,7 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
     await logMailToSheet(logDetails?.name, logDetails?.email, logDetails?.type, mailOptions.subject, result?.queued ? `Queued: ${result.queueId}` : 'Success');
     return result || { queued: false };
   } catch (err) {
-    await logMailToSheet(logDetails?.name, logDetails?.email, logDetails?.type, mailOptions.subject, `Failed: ${err.message}`);
+    await logMailToSheet(logDetails?.name, logDetails?.email, logDetails?.type, mailOptions.subject, `${mailErrorStatus(err)}: ${err.message}`);
     console.error("Mail Dispatch Error:", err);
     throw err;
   }
@@ -1745,7 +1748,9 @@ exports.addDirectInterview = async (req, res) => {
         emailSent = !emailQueued;
         if (emailQueued) emailWarning = 'Interview recorded; the invitation email is queued for delivery.';
       } catch (error) {
-        emailWarning = `The interview was recorded, but the email could not be sent: ${error.message}`;
+        emailWarning = isMailDeliveryUncertain(error)
+          ? `The interview was recorded, but email delivery is uncertain. Check the interview sender's Sent folder and the recipient before retrying.`
+          : `The interview was recorded, but the email could not be sent: ${error.message}`;
       }
     } else {
       emailWarning = 'The interview was recorded, but no candidate email was entered, so the invitation was not sent.';
@@ -3210,6 +3215,7 @@ const updateEventStatus = async (req, res, nextStatus) => {
     let emailSent = false;
     let emailQueued = false;
     let emailError = '';
+    let emailReview = false;
     try {
       const mailContent = buildEventStatusEmail(serializeEvent(eventRow), nextStatus, { reason, previousDate, previousTime });
       const mailResult = await sendMailAndLog({
@@ -3230,13 +3236,14 @@ const updateEventStatus = async (req, res, nextStatus) => {
       emailSent = !emailQueued;
     } catch (mailError) {
       emailError = String(mailError?.message || 'The email service did not accept the notification.');
+      emailReview = isMailDeliveryUncertain(mailError);
       console.error(`[EVENT] ${nextStatus} notification failed for ${event.eventId || event.eventKey}:`, mailError);
     }
 
     const mailStatusHeader = findEventHeader(headers, ['mailstatus']);
     const mailErrorHeader = findEventHeader(headers, ['mailerror']);
     const mailUpdates = {};
-    if (mailStatusHeader) mailUpdates[mailStatusHeader] = `${nextStatus.toUpperCase()} NOTICE ${emailQueued ? 'QUEUED' : emailSent ? 'SENT' : 'FAILED'}`;
+    if (mailStatusHeader) mailUpdates[mailStatusHeader] = `${nextStatus.toUpperCase()} NOTICE ${emailQueued ? 'QUEUED' : emailSent ? 'SENT' : emailReview ? 'REVIEW' : 'FAILED'}`;
     if (mailErrorHeader) mailUpdates[mailErrorHeader] = emailError;
     if (Object.keys(mailUpdates).length) {
       eventRow.assign(mailUpdates);
@@ -3256,7 +3263,9 @@ const updateEventStatus = async (req, res, nextStatus) => {
         ? `Event ${nextStatus.toLowerCase()} and notification email sent.`
         : emailQueued
           ? `Event ${nextStatus.toLowerCase()}; notification email queued for retry.`
-          : `Event ${nextStatus.toLowerCase()}, but the notification email could not be sent: ${emailError}`
+          : emailReview
+            ? `Event ${nextStatus.toLowerCase()}, but email delivery is uncertain. Check the sender's Sent folder and recipient before retrying.`
+            : `Event ${nextStatus.toLowerCase()}, but the notification email could not be sent: ${emailError}`
     });
   } catch (error) {
     console.error(`Event ${nextStatus.toLowerCase()} error:`, error);
@@ -3882,7 +3891,7 @@ exports.submitCorporateTrainingInquiry = async (req, res) => {
       });
       if (mailResult?.queued) internalEmailStatus = 'Queued';
     } catch (mailError) {
-      internalEmailStatus = `Failed: ${mailError.message}`.slice(0, 500);
+      internalEmailStatus = `${mailErrorStatus(mailError)}: ${mailError.message}`.slice(0, 500);
       console.error('Corporate training inquiry was stored, but its internal alert failed:', mailError.message);
     }
     try {
@@ -4056,7 +4065,7 @@ exports.assignCorporateTrainingInquiry = async (req, res) => {
         return res.json({ success: true, inquiry: toCorporateTrainingInquiry(row), queued: true, message: `Assigned to ${branchName}; the branch notification is queued for delivery.` });
       }
     } catch (mailError) {
-      row.set('Notification Status', `Failed: ${mailError.message}`.slice(0, 500));
+      row.set('Notification Status', `${mailErrorStatus(mailError)}: ${mailError.message}`.slice(0, 500));
       try { await row.save(); }
       catch (statusError) { console.error('Could not record failed branch notification status:', statusError.message); }
       return res.json({ success: true, inquiry: toCorporateTrainingInquiry(row), warning: `The inquiry was assigned, but the branch email could not be sent: ${mailError.message}` });
@@ -4219,7 +4228,7 @@ exports.submitHiringInquiry = async (req, res) => {
       });
       if (mailResult?.queued) internalEmailStatus = 'Queued';
     } catch (mailError) {
-      internalEmailStatus = `Failed: ${mailError.message}`.slice(0, 500);
+      internalEmailStatus = `${mailErrorStatus(mailError)}: ${mailError.message}`.slice(0, 500);
       console.error('Hiring inquiry was stored, but its Gifty notification failed:', mailError.message);
     }
     try {
@@ -4312,7 +4321,7 @@ exports.assignHiringInquiry = async (req, res) => {
       await row.save();
       return res.json({ success: true, inquiry: toHiringInquiry(row), message: `Assigned to ${tpo.name}; the company and opening details were emailed.` });
     } catch (mailError) {
-      row.set('Notification Status', `Failed: ${mailError.message}`.slice(0, 500));
+      row.set('Notification Status', `${mailErrorStatus(mailError)}: ${mailError.message}`.slice(0, 500));
       try { await row.save(); } catch (statusError) { console.error('Could not record hiring assignment email failure:', statusError.message); }
       return res.json({ success: true, inquiry: toHiringInquiry(row), warning: `The inquiry was assigned, but the email could not be sent: ${mailError.message}` });
     }
@@ -5035,7 +5044,7 @@ exports.submitMou = async (req, res) => {
         queueContext: {
           sheetName: 'Clients', rowNumber: clientRow.rowNumber,
           statusHeader: hMailStatus || 'Mail Status',
-          statusValues: { SENT: 'Completion Email Sent', FAILED: 'Completion Email Failed' }
+          statusValues: { SENT: 'Completion Email Sent', FAILED: 'Completion Email Failed', REVIEW: 'Completion Email Review' }
         }
       });
       emailQueued = Boolean(mailResult?.queued);
@@ -5047,7 +5056,7 @@ exports.submitMou = async (req, res) => {
     } catch (mailError) {
       emailSent = false;
       if (hMailStatus) {
-        clientRow.set(hMailStatus, 'Completion Email Failed');
+        clientRow.set(hMailStatus, `Completion Email ${mailErrorStatus(mailError)}`);
         await clientRow.save().catch(statusError => console.error('Could not save MOU completion email status:', statusError.message));
       }
       console.error('MOU was saved, but completion email failed:', mailError.message);
