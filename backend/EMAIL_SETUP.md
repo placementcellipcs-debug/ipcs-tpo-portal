@@ -52,6 +52,8 @@ Required variable pairs:
 | Portal | `PORTAL_APP_PASSWORD` | `PORTAL_APPS_SCRIPT_URL` | `PORTAL_APPS_SCRIPT_SECRET` |
 | Gifty fallback | `FALLBACK_APP_PASSWORD` | `FALLBACK_APPS_SCRIPT_URL` | `FALLBACK_APPS_SCRIPT_SECRET` |
 
+NodeMailer requires the matching `*_APP_PASSWORD` to be present. Render Free web services block outbound SMTP on ports 25, 465, and 587, so SMTP cannot work on that plan even with valid credentials; see [Render's free service limits](https://render.com/docs/free). The current transport uses port 465.
+
 Set `MAIL_QUEUE_ENCRYPTION_KEY` to a stable secret and keep it unchanged while queued messages exist. Set the production environment too, then restart the backend so it loads the new values.
 
 ## 4. How delivery and failover work
@@ -59,13 +61,14 @@ Set `MAIL_QUEUE_ENCRYPTION_KEY` to a stable secret and keep it unchanged while q
 For each email, the backend selects the sender mapped to its category and tries, in order:
 
 1. That account's Apps Script deployment, if configured.
-2. If Apps Script explicitly reports that the primary account has exhausted its recipient quota, the backend skips SMTP for that same account and moves directly to `giftyipcsglobal@gmail.com`.
-3. For other definitive primary-account failures, Gmail SMTP over IPv4 and then IPv6.
-4. The shared fallback account's Apps Script deployment, followed by its SMTP routes if needed.
+2. Gmail SMTP over IPv4, then IPv6, if Apps Script reports a definitive failure (including a quota rejection) or the backend has a recent quota reading that is too small for the message.
+3. The shared fallback account's Apps Script deployment, followed by its SMTP routes if needed.
+
+An Apps Script quota rejection is definitive: the script refused that message before calling `MailApp.sendEmail`, so the backend may safely try SMTP. An uncertain provider timeout remains different: the provider may have accepted the message, so the backend marks it for review and stops before trying another sender. A recent Apps Script remaining-recipient value is cached for 30 minutes to avoid calling an exhausted endpoint for every message; a message that fits the cached remainder may still use Apps Script.
 
 When all configured senders are out of quota, the message is stored encrypted in the `EmailQueue` sheet. Quota failures are checked again hourly by default; other temporary network failures use the shorter retry interval. Once a sender has room, the queued message is delivered. If a provider's response leaves delivery uncertain, the backend marks it for review and does not retry or fail over automatically, because the provider may already have accepted it. Check that account's Sent folder and the recipient before retrying manually. The usage dashboard classifies these outcomes as `Review`.
 
-Successful sends and quota-exhaustion observations are recorded in the `EmailQuotaUsage` sheet, including sender, provider, recipient count, portal-tracked remaining count, and the Apps Script remaining count when Apps Script handled the send. The backend creates both sheets if needed.
+Successful sends and quota-exhaustion observations are recorded in the `EmailQuotaUsage` sheet, including sender, provider, recipient count, portal-tracked remaining count, and the Apps Script remaining count when Apps Script handled the send. Provider-level results, including failed IPv4/IPv6 attempts, quota rejections, fallback success, and uncertain outcomes, are recorded in `MailDeliveryAttempts` with a shared `DeliveryID`. `Mail` keeps the final user-facing outcome; `EmailQueue` keeps only messages awaiting automatic retry or review. The backend creates these sheets if needed.
 
 ## 5. What “100 per day” means
 

@@ -46,7 +46,7 @@ const sheetGroups = {
     'Attendance_Corrections', 'Audit_Log'
   ],
   operations: [
-    'Issues', 'Contact', 'User', 'Branches', 'Mail', 'EmailQueue', 'EmailQuotaUsage', 'Mail_Usage_Dashboard', 'Mail_Usage_History', 'Security_Logs',
+    'Issues', 'Contact', 'User', 'Branches', 'Mail', 'EmailQueue', 'EmailQuotaUsage', 'MailDeliveryAttempts', 'Mail_Usage_Dashboard', 'Mail_Usage_History', 'Security_Logs',
     'Auth_Sessions', 'Password_Reset_Tokens', 'Trainer/TL_Log'
   ],
 };

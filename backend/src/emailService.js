@@ -47,12 +47,18 @@ const USAGE_HEADERS = [
   'ID', 'SenderKey', 'EmailCategory', 'SenderEmail', 'Provider',
   'RecipientCount', 'TrackedRemaining', 'AppsScriptRemaining', 'SentAt'
 ];
+const ATTEMPT_HEADERS = [
+  'AttemptID', 'DeliveryID', 'Category', 'EmailCategory', 'SenderKey', 'SenderEmail',
+  'Provider', 'Outcome', 'RecipientCount', 'AppsScriptRemaining', 'AttemptedAt',
+  'Subject', 'Error', 'MessageID'
+];
 const MAX_CELL_CHARS = 45000;
 
 const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndiaTimestamp, sheetsApi, getSpreadsheetIdForSheetName }) => {
   const transports = new Map();
   let queueSheetPromise = null;
   let usageSheetPromise = null;
+  let attemptSheetPromise = null;
   let workerTimer = null;
   let workerRunning = false;
 
@@ -68,7 +74,9 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
   const categoryAliases = Object.fromEntries(Object.entries(SENDER_CONFIG).map(([key, sender]) => [sender.emailCategory.toLowerCase(), key]));
   const senderQueues = new Map();
   const usageSnapshots = new Map();
+  const appsScriptQuotaSnapshots = new Map();
   const unpersistedUsage = [];
+  const appsScriptQuotaSnapshotTtlMs = 30 * 60 * 1000;
 
   const normalizeHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const isValidAddress = address => {
@@ -297,6 +305,62 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     return usageSheetPromise;
   };
 
+  const getAttemptSheet = async () => {
+    if (!attemptSheetPromise) {
+      attemptSheetPromise = (async () => {
+        await loadDocInfo();
+        let sheet = doc.sheetsByTitle.MailDeliveryAttempts;
+        if (!sheet) {
+          try {
+            sheet = await doc.addSheet({ title: 'MailDeliveryAttempts', headerValues: ATTEMPT_HEADERS });
+          } catch (error) {
+            await loadDocInfo();
+            sheet = doc.sheetsByTitle.MailDeliveryAttempts;
+            if (!sheet) throw error;
+          }
+        }
+        await sheet.loadHeaderRow();
+        const headers = [...(sheet.headerValues || [])];
+        const missing = ATTEMPT_HEADERS.filter(header => !headers.some(existing => normalizeHeader(existing) === normalizeHeader(header)));
+        if (missing.length) {
+          const requiredColumns = headers.length + missing.length;
+          if ((Number(sheet.columnCount) || 0) < requiredColumns) await sheet.resize({ columnCount: requiredColumns });
+          await sheet.setHeaderRow([...headers, ...missing]);
+          await sheet.loadHeaderRow();
+        }
+        return sheet;
+      })().catch(error => {
+        attemptSheetPromise = null;
+        throw error;
+      });
+    }
+    return attemptSheetPromise;
+  };
+
+  const recordProviderAttempt = async ({ deliveryId, category, sender, provider, outcome, recipientCount, emailCategory, remainingRecipients = '', subject, error = '', messageId = '' }) => {
+    try {
+      const sheet = await getAttemptSheet();
+      await sheet.addRow({
+        AttemptID: randomBytes(12).toString('hex'),
+        DeliveryID: deliveryId,
+        Category: category,
+        EmailCategory: emailCategory,
+        SenderKey: sender.category,
+        SenderEmail: sender.email,
+        Provider: provider,
+        Outcome: outcome,
+        RecipientCount: recipientCount,
+        AppsScriptRemaining: remainingRecipients === '' ? '' : Math.max(0, Number(remainingRecipients) || 0),
+        AttemptedAt: new Date().toISOString(),
+        Subject: String(subject || '').slice(0, 500),
+        Error: String(error?.message || error || '').slice(0, 1500),
+        MessageID: String(messageId || '')
+      });
+    } catch (logError) {
+      console.error(`[MAIL ATTEMPT] Could not record ${provider} ${outcome} for ${sender.email}:`, logError.message);
+    }
+  };
+
   const getAppsScriptConfig = sender => ({
     url: String(process.env[`${sender.prefix}_APPS_SCRIPT_URL`] || '').trim(),
     secret: String(process.env[`${sender.prefix}_APPS_SCRIPT_SECRET`] || '').trim()
@@ -385,6 +449,12 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
   const recordQuotaObservation = async (sender, provider, appScriptRemaining = '', emailCategory = sender.emailCategory) => {
     const current = await getUsageSnapshot(sender.category);
     const sheet = await getUsageSheet();
+    if (provider === 'apps-script' && appScriptRemaining !== '' && Number.isFinite(Number(appScriptRemaining))) {
+      appsScriptQuotaSnapshots.set(sender.category, {
+        remainingRecipients: Math.max(0, Number(appScriptRemaining)),
+        expiresAt: Date.now() + appsScriptQuotaSnapshotTtlMs
+      });
+    }
     await sheet.addRow({
       ID: randomBytes(12).toString('hex'),
       SenderKey: sender.category,
@@ -508,46 +578,90 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     return command === 'DATA';
   };
 
-  const sendThroughAccount = async (sender, mail, recipientCount, emailCategory) => {
+  const sendThroughAccount = async (sender, mail, recipientCount, emailCategory, deliveryId, deliveryCategory) => {
     const usage = await getUsageSnapshot(sender.category);
     if (usage.trackedRemaining < recipientCount) {
       await recordQuotaObservation(sender, 'portal-cap', '', emailCategory);
-      throw Object.assign(new Error(`${sender.email} reached the portal quota safety cap of ${accountRecipientCap} recipients in the rolling 24-hour window.`), {
+      const error = Object.assign(new Error(`${sender.email} reached the portal quota safety cap of ${accountRecipientCap} recipients in the rolling 24-hour window.`), {
         code: 'QUOTA_EXCEEDED', retryable: true
       });
+      await recordProviderAttempt({
+        deliveryId, category: deliveryCategory, sender, provider: 'portal-cap', outcome: 'QUOTA_REJECTED',
+        recipientCount, emailCategory, subject: mail.subject, error
+      });
+      throw error;
     }
 
     const appsScript = getAppsScriptConfig(sender);
     const providerErrors = [];
-    if (appsScript.url && appsScript.secret) {
+    const cachedAppsScriptQuota = appsScriptQuotaSnapshots.get(sender.category);
+    const cachedRemaining = cachedAppsScriptQuota && cachedAppsScriptQuota.expiresAt > Date.now()
+      ? cachedAppsScriptQuota.remainingRecipients
+      : null;
+    if (cachedAppsScriptQuota && cachedAppsScriptQuota.expiresAt <= Date.now()) appsScriptQuotaSnapshots.delete(sender.category);
+
+    if (appsScript.url && appsScript.secret && (cachedRemaining === null || cachedRemaining >= recipientCount)) {
       try {
         const result = await sendViaAppsScript(sender, mail);
+        if (result.remainingRecipients !== undefined && Number.isFinite(Number(result.remainingRecipients))) {
+          appsScriptQuotaSnapshots.set(sender.category, {
+            remainingRecipients: Math.max(0, Number(result.remainingRecipients)),
+            expiresAt: Date.now() + appsScriptQuotaSnapshotTtlMs
+          });
+        }
         await recordUsage(sender, result.provider, recipientCount, result.remainingRecipients, emailCategory);
+        await recordProviderAttempt({
+          deliveryId, category: deliveryCategory, sender, provider: result.provider, outcome: 'SENT',
+          recipientCount, emailCategory, remainingRecipients: result.remainingRecipients,
+          subject: mail.subject, messageId: result.messageId
+        });
         return { ...result, senderKey: sender.category, senderEmail: sender.email };
       } catch (error) {
         if (isQuotaError(error)) {
+          if (error.remainingRecipients !== undefined && Number.isFinite(Number(error.remainingRecipients))) {
+            appsScriptQuotaSnapshots.set(sender.category, {
+              remainingRecipients: Math.max(0, Number(error.remainingRecipients)),
+              expiresAt: Date.now() + appsScriptQuotaSnapshotTtlMs
+            });
+          }
           try {
             await recordQuotaObservation(sender, 'apps-script', error.remainingRecipients, emailCategory);
           } catch (logError) {
             console.error(`[MAIL QUOTA] Could not record Apps Script quota status for ${sender.email}:`, logError.message);
           }
-          // A definitive quota rejection means Apps Script did not send the
-          // message. For a primary account, go straight to the shared fallback
-          // instead of attempting SMTP on the already-exhausted account. SMTP
-          // can time out after accepting DATA, which would block safe failover.
-          if (!sender.fallback) {
-            error.retryable = true;
-            error.code = error.code || 'QUOTA_EXCEEDED';
-            throw error;
-          }
+          error.retryable = true;
+          error.code = error.code || 'QUOTA_EXCEEDED';
+          await recordProviderAttempt({
+            deliveryId, category: deliveryCategory, sender, provider: 'apps-script', outcome: 'QUOTA_REJECTED',
+            recipientCount, emailCategory, remainingRecipients: error.remainingRecipients,
+            subject: mail.subject, error
+          });
           providerErrors.push(error);
         } else if (isAmbiguousDelivery(error)) {
           error.ambiguousDelivery = true;
+          await recordProviderAttempt({
+            deliveryId, category: deliveryCategory, sender, provider: 'apps-script', outcome: 'REVIEW',
+            recipientCount, emailCategory, subject: mail.subject, error
+          });
           throw error;
         } else {
+          await recordProviderAttempt({
+            deliveryId, category: deliveryCategory, sender, provider: 'apps-script', outcome: 'FAILED',
+            recipientCount, emailCategory, subject: mail.subject, error
+          });
           providerErrors.push(error);
         }
       }
+    } else if (appsScript.url && appsScript.secret && cachedRemaining !== null && cachedRemaining < recipientCount) {
+      const error = Object.assign(new Error(`Apps Script quota cache has ${cachedRemaining} recipient(s) left; this message needs ${recipientCount}.`), {
+        code: 'QUOTA_EXCEEDED', retryable: true
+      });
+      providerErrors.push(error);
+      await recordProviderAttempt({
+        deliveryId, category: deliveryCategory, sender, provider: 'apps-script', outcome: 'SKIPPED_KNOWN_QUOTA',
+        recipientCount, emailCategory, remainingRecipients: cachedRemaining,
+        subject: mail.subject, error
+      });
     }
 
     const fromName = mail.fromName || formatSenderName(mail.from) || 'IPCS Global';
@@ -560,22 +674,56 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
       cc: cleanRecipients(mail.cc),
       bcc: cleanRecipients(mail.bcc)
     };
-    for (const family of [4, 6]) {
-      try {
-        const result = await getTransport(sender, family).sendMail(message);
-        await recordUsage(sender, `smtp-ipv${family}`, recipientCount, '', emailCategory);
-        return { provider: `smtp-ipv${family}`, messageId: result.messageId || '', senderKey: sender.category, senderEmail: sender.email };
-      } catch (error) {
-        if (isQuotaError(error)) {
-          await recordQuotaObservation(sender, `smtp-ipv${family}`, '', emailCategory);
-          throw error;
+    if (!sender.appPassword) {
+      const error = new Error(`Configure ${sender.appPasswordEnv || sender.prefix + '_APP_PASSWORD'} for ${sender.category} email.`);
+      providerErrors.push(error);
+      await recordProviderAttempt({
+        deliveryId, category: deliveryCategory, sender, provider: 'smtp-config', outcome: 'FAILED',
+        recipientCount, emailCategory, subject: mail.subject, error
+      });
+    } else {
+      for (const family of [4, 6]) {
+        const provider = `smtp-ipv${family}`;
+        try {
+          const result = await getTransport(sender, family).sendMail(message);
+          await recordUsage(sender, provider, recipientCount, '', emailCategory);
+          await recordProviderAttempt({
+            deliveryId, category: deliveryCategory, sender, provider, outcome: 'SENT',
+            recipientCount, emailCategory, subject: mail.subject, messageId: result.messageId
+          });
+          return { provider, messageId: result.messageId || '', senderKey: sender.category, senderEmail: sender.email };
+        } catch (error) {
+          if (isQuotaError(error)) {
+            try {
+              await recordQuotaObservation(sender, provider, '', emailCategory);
+            } catch (logError) {
+              console.error(`[MAIL QUOTA] Could not record ${provider} quota status for ${sender.email}:`, logError.message);
+            }
+            await recordProviderAttempt({
+              deliveryId, category: deliveryCategory, sender, provider, outcome: 'QUOTA_REJECTED',
+              recipientCount, emailCategory, subject: mail.subject, error
+            });
+            throw error;
+          }
+          if (isAmbiguousDelivery(error)) {
+            error.ambiguousDelivery = true;
+            await recordProviderAttempt({
+              deliveryId, category: deliveryCategory, sender, provider, outcome: 'REVIEW',
+              recipientCount, emailCategory, subject: mail.subject, error
+            });
+            throw error;
+          }
+          await recordProviderAttempt({
+            deliveryId, category: deliveryCategory, sender, provider, outcome: 'FAILED',
+            recipientCount, emailCategory, subject: mail.subject, error
+          });
+          providerErrors.push(error);
         }
-        if (isAmbiguousDelivery(error)) {
-          error.ambiguousDelivery = true;
-          throw error;
-        }
-        providerErrors.push(error);
       }
+    }
+
+    if (providerErrors.length === 0) {
+      providerErrors.push(new Error(`No delivery provider is configured for ${sender.email}.`));
     }
 
     const error = new Error(providerErrors.map(item => item.message).filter(Boolean).join(' | ') || `No delivery provider is configured for ${sender.email}.`);
@@ -584,7 +732,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     throw error;
   };
 
-  const sendNow = async (category, mail) => {
+  const sendNow = async (category, mail, deliveryId = randomBytes(12).toString('hex')) => {
     const sender = getSender(category);
     if (!splitAddresses(mail.to).length) throw new Error('A valid recipient email address is required.');
     if (!String(mail.subject || '').trim()) throw new Error('An email subject is required.');
@@ -595,22 +743,25 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
 
     for (const senderKey of senderKeys) {
       try {
-        return await withSenderLock(senderKey, () => sendThroughAccount(getSender(senderKey), mail, recipientCount, emailCategory));
+        const result = await withSenderLock(senderKey, () => sendThroughAccount(getSender(senderKey), mail, recipientCount, emailCategory, deliveryId, sender.category));
+        return { ...result, deliveryId };
       } catch (error) {
         if (isAmbiguousDelivery(error)) {
           const reviewError = new Error(`Delivery outcome is uncertain for ${getSender(senderKey).email}. Check its Sent folder and the recipient before retrying. Original error: ${error.message}`);
           reviewError.ambiguousDelivery = true;
           reviewError.retryable = false;
           reviewError.code = 'DELIVERY_UNCERTAIN';
+          reviewError.deliveryId = deliveryId;
           throw reviewError;
         }
         attempts.push({ senderKey, error });
-        console.warn(`[MAIL] ${getSender(senderKey).email} delivery failed; checking the next configured sender: ${error.message}`);
+        console.warn(`[MAIL] Delivery ${deliveryId}: ${getSender(senderKey).email} failed; checking the next configured sender: ${error.message}`);
       }
     }
 
     const error = new Error(attempts.map(item => `${getSender(item.senderKey).email}: ${item.error.message}`).join(' | ') || 'No sender account could deliver this email.');
     error.retryable = attempts.some(item => isRetryable(item.error) || item.error?.retryable === true);
+    error.deliveryId = deliveryId;
     if (attempts.every(item => isQuotaError(item.error))) error.code = 'QUOTA_EXCEEDED';
     throw error;
   };
@@ -695,6 +846,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     const id = randomBytes(16).toString('hex');
     const queuedPayload = {
       mail: toPersistableMail(mail),
+      deliveryId: String(sendDetails.deliveryId || id),
       logDetails: {
         name: sendDetails.logDetails?.name || '',
         email: sendDetails.logDetails?.email || '',
@@ -743,12 +895,13 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
       replyTo: cleanRecipients(mailOptions.replyTo),
       fromName: formatSenderName(mailOptions.from)
     };
+    const deliveryId = randomBytes(12).toString('hex');
     try {
-      const result = await sendNow(category, mail);
+      const result = await sendNow(category, mail, deliveryId);
       return { queued: false, ...result };
     } catch (error) {
       if (!isRetryable(error)) throw error;
-      const queued = await queueFailedMail(category, mail, sendDetails, error);
+      const queued = await queueFailedMail(category, mail, { ...sendDetails, deliveryId }, error);
       return { ...queued, provider: 'auto-failover' };
     }
   };
@@ -817,6 +970,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
           type: row.get('MailType')
         };
         let context = {};
+        let deliveryId = String(row.get('ID') || randomBytes(12).toString('hex'));
         try { context = JSON.parse(String(row.get('Context') || '{}')); } catch { context = {}; }
         const createdAt = Date.parse(row.get('CreatedAt') || '');
         let mail;
@@ -824,6 +978,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
         try {
           const queuedPayload = await readPayload(row.get('Payload'));
           mail = queuedPayload.mail || queuedPayload;
+          deliveryId = String(queuedPayload.deliveryId || deliveryId);
           details = queuedPayload.logDetails || details;
           if (queuedPayload.queueContext) context = queuedPayload.queueContext;
           if (isPasswordResetMail(category, mail.subject) && Number.isFinite(createdAt) && now - createdAt > 30 * 60 * 1000) {
@@ -863,7 +1018,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
         let deliveryResult;
         try {
           const sender = getSender(category);
-          deliveryResult = await sendNow(category, fromPersistableMail(mail, sender));
+          deliveryResult = await sendNow(category, fromPersistableMail(mail, sender), deliveryId);
         } catch (error) {
           const attempt = attempts + 1;
           const deliveryUncertain = isAmbiguousDelivery(error) || /delivery outcome is uncertain/i.test(String(error.message || error));
