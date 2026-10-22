@@ -734,6 +734,32 @@ const isPlacementTrackerAdmin = user => {
     role === 'GENERAL MANAGER' || role === 'TECHNICAL HEAD' || role === 'ZONAL PLACEMENT HEAD';
 };
 const isPlacementTrackerTpo = user => /(^|\b)(TPO|PLACEMENT OFFICER)(\b|$)/i.test(String(user?.role || ''));
+const placementOwnerMatchesUser = (owner, user) => {
+  const normalizedOwner = normalizePlacementText(owner);
+  if (!normalizedOwner) return false;
+  return [user?.name, user?.email, user?.username, user?.loginId, user?.employeeId]
+    .some(identity => normalizePlacementText(identity) === normalizedOwner);
+};
+const placementDriveIdentityHeaders = ['driveid', 'drivename', 'eventid', 'title', 'companyname', 'company'];
+const getPlacementDriveIdentifiers = row => [...new Set(placementDriveIdentityHeaders
+  .map(header => normalizePlacementText(getValByHeader(row, [header])))
+  .filter(Boolean))];
+const findPlacementDriveEvent = (events, reference) => {
+  const referenceIds = typeof reference === 'object' && reference
+    ? getPlacementDriveIdentifiers(reference)
+    : [normalizePlacementText(reference)].filter(Boolean);
+  if (!referenceIds.length) return null;
+  return (events || []).find(event =>
+    getValByHeader(event, ['event', 'type', 'event_type']).toLowerCase().includes('drive') &&
+    getPlacementDriveIdentifiers(event).some(id => referenceIds.includes(id))
+  ) || null;
+};
+const getPlacementDriveOwner = row => getValByHeader(row, ['createdby']) || getValByHeader(row, ['tpo', 'tponame', 'placementofficer']);
+const placementDriveOwnedByUser = (row, user) => [
+  getValByHeader(row, ['createdby']),
+  getValByHeader(row, ['tpo', 'tponame']),
+  getValByHeader(row, ['placementofficer'])
+].some(owner => placementOwnerMatchesUser(owner, user));
 const getOwnedPlacementJobIds = (user, vacancyRows = getCache()?.vacancies || []) => {
   const officer = normalizePlacementText(user?.name);
   if (!officer) return new Set();
@@ -743,14 +769,14 @@ const getOwnedPlacementJobIds = (user, vacancyRows = getCache()?.vacancies || []
     .filter(Boolean));
 };
 const isOwnedPlacementApplication = (row, user, ownedJobIds = getOwnedPlacementJobIds(user)) => {
-  const officer = normalizePlacementText(user?.name);
-  if (!officer || !row) return false;
-  const rowOfficer = normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']));
+  if (!row) return false;
   const jobId = normalizePlacementText(getValByHeader(row, ['jobid', 'job id', 'job_id']));
   if (jobId && ownedJobIds.has(jobId)) return true;
-  const source = normalizePlacementText(getValByHeader(row, ['entrysource', 'recordorigin', 'origin']));
-  const isManualEntry = /manual|direct|referral/.test(source) || /^(manual-add|direct-referral)$/.test(jobId);
-  return isManualEntry && rowOfficer === officer;
+  const source = normalizePlacementText(getValByHeader(row, ['entrysource', 'recordorigin', 'origin', 'source']));
+  const isManualEntry = /manual|direct|referral/.test(source) || /^(manualadd|directreferral)$/.test(jobId);
+  const ownedBySignedInOfficer = ['placementofficer', 'tpo', 'tponame', 'createdby']
+    .some(header => placementOwnerMatchesUser(getValByHeader(row, [header]), user));
+  return isManualEntry && ownedBySignedInOfficer;
 };
 const canAccessTrackerApplication = (row, user, linkedStudent = null) => {
   if (isPlacementTrackerAdmin(user)) return true;
@@ -1190,7 +1216,7 @@ exports.getApplications = async (req, res) => {
         statusHistory = [placementHistoryEntry({ status, remarks, interviewDate, interviewTime, interviewVenue, changedBy: tpoName || 'Placement team', changedAt: getValByHeader(row, ['timestamp', 'date', 'time']), event: 'Current record' })];
       }
       appsList.push({
-        rowNumber: row.rowNumber, recordType: 'application', origin: getValByHeader(row, ['entrysource', 'recordorigin', 'origin']), name: getValByHeader(row, ['studentname', 'name', 'candidate']) || (studentData && getValByHeader(studentData, ['studentname', 'name'])) || '', roll, branch, course, qual: qual || 'Not Specified', jobId, company: getValByHeader(row, ['companyname', 'company']) || 'Unknown Company', position: getValByHeader(row, ['position', 'role']) || 'Unknown Position', date: getValByHeader(row, ['timestamp', 'date', 'time']) || '', status, remarks, statusHistory, interviewDate, interviewTime, interviewVenue, tpoName, phone, email, resume, datePlaced: getValByHeader(row, ['dateplaced']) || '', packageLpa: getValByHeader(row, ['package']) || '', offerLetter: getValByHeader(row, ['offerletter']) || '', joiningStatus: getValByHeader(row, ['joiningstatus']) || ''
+        rowNumber: row.rowNumber, recordType: 'application', origin: getValByHeader(row, ['entrysource', 'recordorigin', 'origin', 'source']), name: getValByHeader(row, ['studentname', 'name', 'candidate']) || (studentData && getValByHeader(studentData, ['studentname', 'name'])) || '', roll, branch, course, qual: qual || 'Not Specified', jobId, company: getValByHeader(row, ['companyname', 'company']) || 'Unknown Company', position: getValByHeader(row, ['position', 'role']) || 'Unknown Position', date: getValByHeader(row, ['timestamp', 'date', 'time']) || '', status, remarks, statusHistory, interviewDate, interviewTime, interviewVenue, tpoName, phone, email, resume, datePlaced: getValByHeader(row, ['dateplaced']) || '', packageLpa: getValByHeader(row, ['package']) || '', offerLetter: getValByHeader(row, ['offerletter']) || '', joiningStatus: getValByHeader(row, ['joiningstatus']) || ''
       });
     }
   });
@@ -1757,14 +1783,9 @@ exports.emailStudent = async (req, res) => {
       name = getValByHeader(row, ['name', 'studentname']) || '';
       email = getValByHeader(row, ['mailid', 'email']) || '';
       studentRoll = getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']) || studentRoll;
-      const driveId = normalizePlacementText(getValByHeader(row, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(row, ['eventid', 'event_id', 'companyname']));
-      const matchingDrive = (cache?.events || []).find(event => {
-        const eventType = getValByHeader(event, ['event', 'type', 'event_type']).toLowerCase();
-        const eventId = normalizePlacementText(getValByHeader(event, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(event, ['event_id', 'eventid', 'id', 'title']));
-        return eventType.includes('drive') && eventId === driveId;
-      });
-      const driveOwner = getValByHeader(matchingDrive, ['tpo', 'tponame', 'placementofficer', 'createdby']) || getValByHeader(row, ['placementofficer', 'tponame', 'createdby', 'tpo']);
-      if (normalizePlacementText(driveOwner) !== normalizePlacementText(user?.name)) {
+      const matchingDrive = findPlacementDriveEvent(cache?.events || [], row);
+      const driveOwner = getPlacementDriveOwner(matchingDrive) || getPlacementDriveOwner(row);
+      if (!placementDriveOwnedByUser(matchingDrive, user) && !placementDriveOwnedByUser(row, user) && !placementOwnerMatchesUser(driveOwner, user)) {
         return res.status(403).json({ success: false, message: 'This placement drive was not created by your account.' });
       }
     } else if (Number.isInteger(numericRow) && numericRow >= 2) {
@@ -5769,7 +5790,6 @@ exports.getDrives = async (req, res) => {
     }
     if (!cache || !Array.isArray(cache.drives)) return res.status(503).json({ success: false, message: 'Placement drive records are still syncing. Please retry shortly.' });
     const registrationRows = cache.drives;
-    const signedInName = normalizePlacementText(user?.name);
     const eventRows = Array.isArray(cache.events) ? cache.events : [];
     const studentByRoll = new Map();
     const studentsByName = new Map();
@@ -5780,30 +5800,34 @@ exports.getDrives = async (req, res) => {
       if (name) studentsByName.set(name, [...(studentsByName.get(name) || []), student]);
     });
     const eventsMap = new Map();
+    const eventInfos = [];
     
     // 1. SMART EVENT MAPPING: Grab ALL Placement Drives so even empty ones exist
     eventRows.forEach(row => {
        const type = getValByHeader(row, ['event', 'type', 'event_type']) || '';
-       const dId = getValByHeader(row, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(row, ['event_id', 'eventid', 'id', 'title']) || '';
-       
-       if (dId && type.toLowerCase().includes('drive')) {
-         eventsMap.set(normalizePlacementText(dId), {
-           driveId: dId.trim(),
-           tpo: getValByHeader(row, ['tpo', 'tponame', 'placementofficer', 'createdby']) || '',
+       const identifiers = getPlacementDriveIdentifiers(row);
+       if (identifiers.length && type.toLowerCase().includes('drive')) {
+         const eventInfo = {
+           driveId: getValByHeader(row, ['driveid', 'drivename']) || getValByHeader(row, ['title']) || getValByHeader(row, ['eventid']) || identifiers[0],
+           tpo: getValByHeader(row, ['tpo', 'tponame', 'placementofficer']) || '',
+           owner: getPlacementDriveOwner(row),
+           ownedByUser: placementDriveOwnedByUser(row, user),
            date: getValByHeader(row, ['dateoftheevent', 'date']) || '', 
            location: getValByHeader(row, ['eventhappeningin', 'location']) || '',
            branch: getValByHeader(row, ['branch', 'sittingbranch']) || '',
            course: getValByHeader(row, ['course', 'assignedcourse']) || '',
            hasApplicants: false
-         });
+         };
+         eventInfos.push(eventInfo);
+         identifiers.forEach(identifier => eventsMap.set(identifier, eventInfo));
        }
     });
 
     // 2. Map actual registrations
     const drivesData = [];
     (registrationRows || []).forEach(row => {
-      const dId = getValByHeader(row, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(row, ['eventid', 'event_id', 'companyname']) || '';
-      const eventInfo = eventsMap.get(normalizePlacementText(dId)) || {};
+      const dId = getValByHeader(row, ['driveid', 'drivename', 'eventid']) || getValByHeader(row, ['companyname']) || '';
+      const eventInfo = getPlacementDriveIdentifiers(row).map(identifier => eventsMap.get(identifier)).find(Boolean) || {};
       const studentName = getValByHeader(row, ['name', 'studentname']);
       const studentRoll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
       const registrationStudent = (studentRoll && studentByRoll.get(studentRoll)) || (() => {
@@ -5811,11 +5835,11 @@ exports.getDrives = async (req, res) => {
         return matches.length === 1 ? matches[0] : null;
       })();
       const registrationOwner = getValByHeader(row, ['placementofficer', 'tponame', 'createdby', 'tpo']);
-      const driveOwner = eventInfo.tpo || registrationOwner || '';
+      const driveOwner = eventInfo.owner || registrationOwner || eventInfo.tpo || '';
       const rowBranch = getValByHeader(row, ['branch', 'sittingbranch']) || (registrationStudent && getValByHeader(registrationStudent, ['branch', 'sittingbranch'])) || eventInfo.branch || eventInfo.location;
       const rowCourse = getValByHeader(row, ['course']) || (registrationStudent && getValByHeader(registrationStudent, ['course', 'program'])) || eventInfo.course;
       const withinAssignedScope = hasPlacementBranchAccess(rowBranch, user);
-      const ownedDrive = Boolean(signedInName && normalizePlacementText(driveOwner) === signedInName);
+      const ownedDrive = Boolean(eventInfo.ownedByUser || placementDriveOwnedByUser(row, user));
       if (!canSeeAll && (isTpo ? !ownedDrive : !withinAssignedScope)) return;
       // Mark that this drive has at least one student
       if (eventInfo.hasApplicants !== undefined) eventInfo.hasApplicants = true;
@@ -5857,16 +5881,16 @@ exports.getDrives = async (req, res) => {
     });
 
     // 3. 🚨 INJECT EMPTY DRIVES: If a drive has 0 students, send a "Dummy" row so it still shows up!
-    eventsMap.forEach((eventInfo, dId) => {
+    eventInfos.forEach(eventInfo => {
       const withinAssignedScope = hasPlacementBranchAccess(eventInfo.branch || eventInfo.location, user);
-      const ownedDrive = Boolean(signedInName && normalizePlacementText(eventInfo.tpo) === signedInName);
+      const ownedDrive = eventInfo.ownedByUser;
       if (!canSeeAll && (isTpo ? !ownedDrive : !withinAssignedScope)) return;
       if (!eventInfo.hasApplicants) {
         drivesData.push({
-          rowNumber: `empty-${dId}`,
-          driveId: eventInfo.driveId || dId,
+          rowNumber: `empty-${normalizePlacementText(eventInfo.driveId)}`,
+          driveId: eventInfo.driveId || '',
           name: 'NO_APPLICANTS',
-          driveTpo: eventInfo.tpo,
+          driveTpo: eventInfo.owner || eventInfo.tpo,
           driveDate: eventInfo.date,
           driveLocation: eventInfo.location || eventInfo.branch
         });
@@ -5921,12 +5945,7 @@ exports.updateDriveStatus = async (req, res) => {
     const isTpo = isPlacementTrackerTpo(user);
     if (!canSeeAll && !isTpo && !isBranchManager) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
     if (isBranchManager) {
-      const driveId = normalizePlacementText(getValByHeader(rows[0], ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(rows[0], ['eventid', 'event_id', 'companyname']));
-      const matchingDrive = (getCache()?.events || []).find(event => {
-        const type = getValByHeader(event, ['event', 'type', 'event_type']).toLowerCase();
-        const eventDriveId = normalizePlacementText(getValByHeader(event, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(event, ['event_id', 'eventid', 'id', 'title']));
-        return type.includes('drive') && eventDriveId === driveId;
-      });
+      const matchingDrive = findPlacementDriveEvent(getCache()?.events || [], rows[0]);
       const studentName = getValByHeader(rows[0], ['name', 'studentname']);
       const studentRoll = normalizePlacementText(getValByHeader(rows[0], ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
       const registrationStudent = (getCache()?.students || []).find(student => {
@@ -5939,22 +5958,17 @@ exports.updateDriveStatus = async (req, res) => {
         return res.status(403).json({ success: false, message: 'This registration is outside your assigned branches.' });
       }
     } else if (!canSeeAll) {
-      const driveId = normalizePlacementText(getValByHeader(rows[0], ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(rows[0], ['eventid', 'event_id', 'companyname']));
       const registrationOwner = getValByHeader(rows[0], ['placementofficer', 'tponame', 'createdby', 'tpo']);
       if (!isTpo && registrationOwner && normalizePlacementText(registrationOwner) !== normalizePlacementText(user?.name)) {
         return res.status(403).json({ success: false, message: 'You can only update registrations for your own placement drives.' });
       }
-      const matchingDrive = (getCache()?.events || []).find(event => {
-        const type = getValByHeader(event, ['event', 'type', 'event_type']).toLowerCase();
-        const eventDriveId = normalizePlacementText(getValByHeader(event, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(event, ['event_id', 'eventid', 'id', 'title']));
-        return type.includes('drive') && eventDriveId === driveId;
-      });
-      const driveOwner = getValByHeader(matchingDrive, ['tpo', 'tponame', 'placementofficer', 'createdby']);
-      const resolvedDriveOwner = driveOwner || registrationOwner;
-      if (isTpo && normalizePlacementText(resolvedDriveOwner) !== normalizePlacementText(user?.name)) {
+      const matchingDrive = findPlacementDriveEvent(getCache()?.events || [], rows[0]);
+      const driveOwner = getPlacementDriveOwner(matchingDrive);
+      const resolvedDriveOwner = driveOwner || getPlacementDriveOwner(rows[0]) || registrationOwner;
+      if (isTpo && !placementDriveOwnedByUser(matchingDrive, user) && !placementDriveOwnedByUser(rows[0], user) && !placementOwnerMatchesUser(resolvedDriveOwner, user)) {
         return res.status(403).json({ success: false, message: 'You can only update registrations for placement drives created by your account.' });
       }
-      if (!isTpo && !registrationOwner && driveOwner && normalizePlacementText(driveOwner) !== normalizePlacementText(user?.name)) {
+      if (!isTpo && !registrationOwner && driveOwner && !placementOwnerMatchesUser(driveOwner, user)) {
         return res.status(403).json({ success: false, message: 'You can only update registrations for your own placement drives.' });
       }
       if (!isTpo && !registrationOwner && !driveOwner) {

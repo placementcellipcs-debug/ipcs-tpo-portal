@@ -14,7 +14,11 @@ import ipcsSignature from '../../assets/brand/ipcs-signature.png';
 const KNOWN_SIGNING_API_HOSTS = new Set([
   'api-placement.ipcstalenzo.com',
   'api-placement.ipcsglobal.info',
-  'api-talenzo.ipcsglobal.info'
+  'api-talenzo.ipcsglobal.info',
+  // MOU requests made from the test portal can carry this API in their link.
+  // Accept this one fixed Render host in production so the signing page looks
+  // up the token in the same backend that issued it.
+  'ipcs-tpo-portal-u0l6.onrender.com'
 ]);
 
 const normalizeTrustedSigningApiBase = value => {
@@ -44,6 +48,7 @@ const getSigningApiCandidates = () => {
 
   const candidates = [
     API_BASE,
+    'https://ipcs-tpo-portal-u0l6.onrender.com',
     'https://api-placement.ipcsglobal.info',
     'https://api-talenzo.ipcsglobal.info'
   ].map(normalizeTrustedSigningApiBase).filter(Boolean);
@@ -110,7 +115,10 @@ export default function CertificateSign() {
         }
       }
       if (!isCancelled) {
-        setError(lastErrorMessage || lastError?.response?.data?.message || "We couldn't load the agreement details. Please contact IPCS to request a new signing link.");
+        const isNetworkFailure = !lastError?.response && lastError?.message === 'Network Error';
+        setError(isNetworkFailure
+          ? 'The signing page could not connect to the service that issued this link. Please refresh once; if it still fails, ask IPCS to resend the MOU link.'
+          : lastErrorMessage || lastError?.response?.data?.message || "We couldn't load the agreement details. Please contact IPCS to request a new signing link.");
       }
     };
 

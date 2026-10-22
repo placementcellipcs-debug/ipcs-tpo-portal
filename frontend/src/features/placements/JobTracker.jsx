@@ -50,11 +50,16 @@ const makeRecords = (applications, drives) => [
     const manual = /manual|direct|referral/i.test(String(app.origin || '')) || /^(manual-add|direct-referral)$/i.test(String(app.jobId || ''));
     return { ...app, sourceType: 'application', originType: manual ? 'manual' : 'application', recordKey: `application-${app.rowNumber}`, status: app.status || 'Applied', appliedAt: app.date || '', company: app.company || 'Company not recorded' };
   }),
-  ...drives.filter(row => Number.isInteger(Number(row.rowNumber)) && Number(row.rowNumber) >= 2 && row.name !== 'NO_APPLICANTS').map(row => ({
-    ...row, sourceType: 'drive', originType: 'drive', recordKey: `drive-${row.rowNumber}`, status: row.studentStatus || 'Pending',
-    appliedAt: row.regDate || row.driveDate || '', company: row.driveId || 'Placement drive',
-    position: row.position || 'Placement drive participant', jobId: row.driveId || '', tpoName: row.driveTpo || ''
-  }))
+  ...drives.filter(row => row.name === 'NO_APPLICANTS' || (Number.isInteger(Number(row.rowNumber)) && Number(row.rowNumber) >= 2)).map(row => {
+    const isEmptyDrive = row.name === 'NO_APPLICANTS';
+    return {
+      ...row, name: isEmptyDrive ? '' : row.name, isEmptyDrive,
+      sourceType: 'drive', originType: 'drive', recordKey: `drive-${row.rowNumber}`,
+      status: row.studentStatus || 'Pending', appliedAt: row.regDate || row.driveDate || '',
+      company: row.driveId || 'Placement drive', position: row.position || 'Placement drive participant',
+      jobId: row.driveId || '', tpoName: row.driveTpo || ''
+    };
+  })
 ];
 const groupRecords = records => {
   const groups = new Map();
@@ -70,11 +75,12 @@ const groupRecords = records => {
       driveDate: record.driveDate || '', driveLocation: record.driveLocation || '', records: []
     });
     const group = groups.get(key);
-    group.records.push(record);
+    if (!record.isEmptyDrive) group.records.push(record);
+    else group.emptyDrive = true;
     if (!group.driveDate && record.driveDate) group.driveDate = record.driveDate;
     if (!group.driveLocation && record.driveLocation) group.driveLocation = record.driveLocation;
   });
-  return [...groups.values()].sort((left, right) => dateValue(right.records[0]?.appliedAt) - dateValue(left.records[0]?.appliedAt));
+  return [...groups.values()].sort((left, right) => dateValue(right.records[0]?.appliedAt || right.driveDate) - dateValue(left.records[0]?.appliedAt || left.driveDate));
 };
 const callHref = value => {
   const phone = String(value || '').trim();
@@ -155,7 +161,8 @@ export default function JobTracker() {
   }, [account, isStrictTpo, reloadRecords]);
 
   const records = useMemo(() => makeRecords(applications, drives), [applications, drives]);
-  const incompleteCount = records.filter(record => !record.name || !record.email || !record.phone || !record.resume).length;
+  const candidateRecords = records.filter(record => !record.isEmptyDrive);
+  const incompleteCount = candidateRecords.filter(record => !record.name || !record.email || !record.phone || !record.resume).length;
   const divisionRecords = useMemo(() => records.filter(record => {
     if (division === 'drive') return record.sourceType === 'drive';
     if (division === 'manual') return record.sourceType === 'application' && record.originType === 'manual';
@@ -170,16 +177,25 @@ export default function JobTracker() {
     const matchesMonth = !month || recordMonth === month;
     const status = String(record.status || '');
     let matchesFilter = true;
-    if (filter === 'Needs follow-up') matchesFilter = isFollowUp(status);
-    if (filter === 'Interviews') matchesFilter = isInterview(status);
-    if (filter === 'Offers & placements') matchesFilter = /offer|placed|joined/i.test(status);
-    if (filter === 'Incomplete details') matchesFilter = !record.name || !record.email || !record.phone || !record.resume;
+    if (record.isEmptyDrive) matchesFilter = filter === 'All records';
+    else if (filter === 'Needs follow-up') matchesFilter = isFollowUp(status);
+    else if (filter === 'Interviews') matchesFilter = isInterview(status);
+    else if (filter === 'Offers & placements') matchesFilter = /offer|placed|joined/i.test(status);
+    else if (filter === 'Incomplete details') matchesFilter = !record.name || !record.email || !record.phone || !record.resume;
     return matchesQuery && matchesMonth && matchesFilter;
   }).sort((a, b) => dateValue(b.appliedAt) - dateValue(a.appliedAt)), [divisionRecords, query, month, filter]);
   const visibleGroups = useMemo(() => groupRecords(visibleRecords), [visibleRecords]);
-  const upcomingInterviews = records.filter(record => isInterview(record.status)).length;
-  const followUps = records.filter(record => isFollowUp(record.status)).length;
-  const placedCount = records.filter(record => /offer|placed|joined/i.test(record.status)).length;
+  const getFilterCount = label => {
+    if (label === 'All records') return divisionRecords.length;
+    const candidates = divisionRecords.filter(record => !record.isEmptyDrive);
+    if (label === 'Needs follow-up') return candidates.filter(record => isFollowUp(record.status)).length;
+    if (label === 'Interviews') return candidates.filter(record => isInterview(record.status)).length;
+    if (label === 'Incomplete details') return candidates.filter(record => !record.name || !record.email || !record.phone || !record.resume).length;
+    return candidates.filter(record => /offer|placed|joined/i.test(record.status)).length;
+  };
+  const upcomingInterviews = candidateRecords.filter(record => isInterview(record.status)).length;
+  const followUps = candidateRecords.filter(record => isFollowUp(record.status)).length;
+  const placedCount = candidateRecords.filter(record => /offer|placed|joined/i.test(record.status)).length;
 
   const setEdit = (record, field, value) => setEdits(current => ({ ...current, [record.recordKey]: { ...current[record.recordKey], [field]: value } }));
   const updateLocalRecord = (record, changes) => {
@@ -265,7 +281,7 @@ export default function JobTracker() {
       </motion.section>
 
       <section className="tracker-kpis" aria-label="Placement pipeline overview">
-        <div className="tracker-kpi"><span><Users size={18} /> TRACKED RECORDS</span><strong>{records.length}</strong><small>Applications + drives + manual additions</small></div>
+        <div className="tracker-kpi"><span><Users size={18} /> TRACKED RECORDS</span><strong>{candidateRecords.length}</strong><small>Applications + drive registrations + manual additions</small></div>
         <div className="tracker-kpi kpi-attention"><span><Clock size={18} /> NEEDS FOLLOW-UP</span><strong>{followUps}</strong><small>Applied, pending, or shortlisted</small></div>
         <div className="tracker-kpi kpi-interview"><span><CalendarBlank size={18} /> INTERVIEWS</span><strong>{upcomingInterviews}</strong><small>Scheduled across both sources</small></div>
         <div className="tracker-kpi kpi-outcome"><span><CheckCircle size={18} /> OFFERS &amp; PLACEMENTS</span><strong>{placedCount}</strong><small>Positive hiring outcomes</small></div>
@@ -279,14 +295,14 @@ export default function JobTracker() {
           const count = item.id === 'drive' ? records.filter(record => record.sourceType === 'drive').length : item.id === 'manual' ? records.filter(record => record.originType === 'manual').length : records.filter(record => record.sourceType === 'application' && record.originType !== 'manual').length;
           return <button type="button" role="tab" aria-selected={division === item.id} key={item.id} className={division === item.id ? 'active' : ''} onClick={() => { setDivision(item.id); setFilter('All records'); }}>{item.label}<span>{count}</span></button>;
         })}</div>
-        <div className="tracker-filter-row" role="group" aria-label="Filter this section">{FILTERS.map(label => <button type="button" key={label} className={filter === label ? 'active' : ''} aria-pressed={filter === label} onClick={() => setFilter(label)}>{label}<span>{label === 'All records' ? divisionRecords.length : label === 'Needs follow-up' ? divisionRecords.filter(record => isFollowUp(record.status)).length : label === 'Interviews' ? divisionRecords.filter(record => isInterview(record.status)).length : label === 'Incomplete details' ? divisionRecords.filter(record => !record.name || !record.email || !record.phone || !record.resume).length : divisionRecords.filter(record => /offer|placed|joined/i.test(record.status)).length}</span></button>)}</div>
+        <div className="tracker-filter-row" role="group" aria-label="Filter this section">{FILTERS.map(label => <button type="button" key={label} className={filter === label ? 'active' : ''} aria-pressed={filter === label} onClick={() => setFilter(label)}>{label}<span>{getFilterCount(label)}</span></button>)}</div>
         {notice && <motion.div className={`tracker-notice ${notice.tone}`} initial={{ opacity: 0, y: -5 }} animate={{ opacity: 1, y: 0 }} role={notice.tone === 'error' ? 'alert' : 'status'}><span>{notice.tone === 'error' ? <WarningCircle size={18} /> : notice.tone === 'warning' ? <WarningCircle size={18} /> : <CheckCircle size={18} />}{notice.text}</span><button type="button" onClick={() => setNotice(null)} aria-label="Dismiss message"><X size={16} /></button></motion.div>}
         {loadError && <div className="tracker-load-warning"><WarningCircle size={16} /> {loadError} <button type="button" onClick={() => { setLoading(true); reloadRecords().finally(() => setLoading(false)); }}>Retry</button></div>}
         {!loading && visibleRecords.length > 0 && <div className="tracker-origin-legend" aria-label="Current record section"><span className={`origin-${division}`}><i /> {division === 'drive' ? 'Drive registrations' : division === 'manual' ? 'Records explicitly marked Manual Add' : 'Student job applications'}</span></div>}
         {loading ? <div className="tracker-state"><CircleNotch className="ph-spin" size={30} /><strong>Syncing {DIVISIONS.find(item => item.id === division)?.label.toLowerCase()}</strong><span>{division === 'application' ? 'Loading applicants for your openings…' : division === 'drive' ? 'Loading registrations for your placement drives…' : 'Loading manual additions made from your account…'}</span></div> : visibleGroups.length === 0 ? <div className="tracker-state"><div><MagnifyingGlass size={26} /></div><strong>{divisionRecords.length ? 'No matching records' : division === 'drive' ? 'No placement drive registrations yet' : division === 'manual' ? 'No manual additions yet' : 'No job applications yet'}</strong><span>{divisionRecords.length ? 'Change the filters or search terms.' : division === 'manual' ? 'Manual interview referrals you add will appear in this section only.' : division === 'drive' ? 'Registrations for placement drives created by your account will appear here.' : 'Students from any branch who applied to your openings will appear here.'}</span></div> : <div className="tracker-opening-list">
           {visibleGroups.map((group, groupIndex) => <motion.section layout key={group.key} className={`tracker-opening-group origin-${group.originType}`} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: Math.min(groupIndex * .025, .16), duration: .2 }}>
             <header className="tracker-opening-header"><span className={`tracker-opening-mark ${group.originType}`}><Buildings size={19} /></span><div className="tracker-opening-copy"><span className="tracker-opening-kind">{group.originType === 'drive' ? 'PLACEMENT DRIVE' : group.originType === 'manual' ? 'MANUAL ADDITION' : 'JOB APPLICATION'}</span><h3>{group.company}</h3><p>{group.jobId && <code>{group.jobId}</code>}{group.position && <span>{group.position}</span>}{group.driveDate && <span><CalendarBlank size={13} /> {prettyDate(group.driveDate)}</span>}{group.driveLocation && <span><MapPinLine size={13} /> {group.driveLocation}</span>}</p></div><div className="tracker-opening-count"><strong>{group.records.length}</strong><span>{group.records.length === 1 ? 'candidate' : 'candidates'}</span></div><button className="tracker-group-toggle" type="button" aria-label={`${collapsedGroups[group.key] ? 'Show' : 'Hide'} ${group.company} candidates`} aria-expanded={!collapsedGroups[group.key]} onClick={() => setCollapsedGroups(current => ({ ...current, [group.key]: !current[group.key] }))}>{collapsedGroups[group.key] ? <CaretRight size={17} weight="bold" /> : <CaretDown size={17} weight="bold" />}</button></header>
-            {!collapsedGroups[group.key] && <motion.div className="tracker-opening-candidates" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: .2 }}><div className="tracker-list-header"><span>STUDENT</span><span>APPLIED / INTERVIEW</span><span>STATUS &amp; UPDATE</span><span>ACTIONS</span></div>
+            {!collapsedGroups[group.key] && <motion.div className="tracker-opening-candidates" initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }} transition={{ duration: .2 }}>{group.records.length === 0 ? <div style={{ padding: '18px 12px', color: '#8295ac', fontSize: '.7rem' }}>No students have registered for this drive yet.</div> : <><div className="tracker-list-header"><span>STUDENT</span><span>APPLIED / INTERVIEW</span><span>STATUS &amp; UPDATE</span><span>ACTIONS</span></div>
               {group.records.map(record => {
                 const edited = edits[record.recordKey] || {};
                 const status = edited.status ?? record.status;
@@ -298,7 +314,7 @@ export default function JobTracker() {
                   <div className="tracker-status-cell"><div className="tracker-status-line"><select aria-label={`Update status for ${record.name}`} className={`tracker-status-select tone-${getStatusTone(status)}`} value={status} onChange={event => { const next = event.target.value; setEdit(record, 'status', next); if (isInterview(next)) openSchedule(record, next); }}><option value={status}>{status}</option>{STATUS_OPTIONS.filter(option => option !== status).map(option => <option key={option} value={option}>{option}</option>)}</select><button type="button" className="tracker-history-link" onClick={() => setDetailsRecord(record)}>Timeline <ArrowRight size={13} /></button></div><textarea rows={2} value={remarks} onChange={event => setEdit(record, 'remarks', event.target.value)} placeholder="Add an internal remark…" aria-label={`Remarks for ${record.name}`} /></div>
                   <div className="tracker-actions">{record.phone && <a className="tracker-icon-action call" href={callHref(record.phone)} title={`Call ${record.name}`}><Phone size={16} /><span>Call</span></a>}<button type="button" className="tracker-icon-action schedule" onClick={() => openSchedule(record)} title={isInterview(record.status) ? 'Edit interview schedule' : 'Schedule interview'}><CalendarBlank size={16} /><span>{isInterview(record.status) ? 'Reschedule' : 'Schedule'}</span></button><button type="button" className="tracker-icon-action mail" onClick={() => openEmail(record)} title="Compose email to student"><EnvelopeSimple size={16} /><span>Email</span></button><button type="button" className="tracker-save-action" disabled={busy} onClick={() => saveRecord(record)}>{busy ? <CircleNotch className="ph-spin" size={17} /> : <FloppyDisk size={16} />}{busy ? 'Saving' : 'Save'}</button><button type="button" className="tracker-mobile-details" onClick={() => setDetailsRecord(record)}>Details</button></div>
                 </article>;
-              })}
+              })}</>}
             </motion.div>}
           </motion.section>)}
         </div>}

@@ -30,6 +30,7 @@ export default function Events() {
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
   const eventRole = String(tpoData?.role || '').toUpperCase();
   const isDesigner = ['DESIGN', 'MEDIA', 'CREATIVE'].some(part => eventRole.includes(part));
+  const isTpo = eventRole.includes('TPO') || eventRole.includes('PLACEMENT OFFICER');
   const canManageEvents = tpoData?.accessType === 'superadmin' || eventRole.includes('TPO') || eventRole.includes('PLACEMENT OFFICER');
   const defaultTalentinoBranch = getFirstAssignedBranch(tpoData?.assignedBranchesArray);
   
@@ -233,7 +234,7 @@ export default function Events() {
   };
 
   const isVisibleEvent = (e) => {
-    if (isDesigner) return true;
+    if (isDesigner || isTpo) return true;
     const userBranches = tpoData?.assignedBranchesArray || [];
     const isSuper = tpoData?.accessType === 'superadmin';
     
