@@ -320,7 +320,61 @@ const logMailToSheet = async (receiverName, receiverMail, mailType, subject, sta
 
 const resumeDeliveryMemory = new Map();
 const companyOpeningReportMemory = new Map();
+const RESUME_CACHE_RETRY_DELAY_MS = 75_000;
+const MAX_RESUME_CACHE_RETRIES = 8;
+const RESUME_CACHE_MAX_AGE_MS = 3 * 60 * 1000;
+let resumeMailCacheRetry = { reportDate: '', attempts: 0, timer: null };
 const getResumeDeliveryReference = jobId => String(jobId || '').trim().toLowerCase();
+const getUnavailableResumeMailSheets = cache => {
+  const unavailable = ['vacancies', 'applications', 'mails', 'contacts']
+    .filter(field => cache?.cacheSheetHealth?.[field] !== true);
+  const cacheUpdatedAt = Date.parse(cache?.cacheUpdatedAt || '');
+  if (!Number.isFinite(cacheUpdatedAt) || Date.now() - cacheUpdatedAt > RESUME_CACHE_MAX_AGE_MS) {
+    unavailable.push('fresh cache snapshot');
+  }
+  return unavailable;
+};
+const clearResumeMailCacheRetry = reportDate => {
+  if (resumeMailCacheRetry.reportDate !== reportDate) return;
+  if (resumeMailCacheRetry.timer) clearTimeout(resumeMailCacheRetry.timer);
+  resumeMailCacheRetry = { reportDate, attempts: 0, timer: null };
+};
+const scheduleResumeMailCacheRetry = reportDate => {
+  if (resumeMailCacheRetry.reportDate !== reportDate) {
+    if (resumeMailCacheRetry.timer) clearTimeout(resumeMailCacheRetry.timer);
+    resumeMailCacheRetry = { reportDate, attempts: 0, timer: null };
+  }
+  if (resumeMailCacheRetry.timer) return true;
+  if (resumeMailCacheRetry.attempts >= MAX_RESUME_CACHE_RETRIES) return false;
+
+  resumeMailCacheRetry.attempts += 1;
+  const attempt = resumeMailCacheRetry.attempts;
+  const timer = setTimeout(() => {
+    if (resumeMailCacheRetry.timer === timer) resumeMailCacheRetry.timer = null;
+    const dateFormatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+    });
+    const currentReportDate = dateFormatter.format(new Date(Date.now() - 24 * 60 * 60 * 1000));
+    if (currentReportDate !== reportDate) return;
+
+    const unavailableSheets = getUnavailableResumeMailSheets(getCache());
+    if (unavailableSheets.length) {
+      console.warn(`[RESUME DELIVERY] Mail safety cache still unavailable (${unavailableSheets.join(', ')}); retry ${attempt}/${MAX_RESUME_CACHE_RETRIES} will wait another ${Math.round(RESUME_CACHE_RETRY_DELAY_MS / 1000)} seconds.`);
+      if (!scheduleResumeMailCacheRetry(reportDate)) {
+        console.error(`[RESUME DELIVERY] Automatic retry limit reached for ${reportDate}; no company mail was sent without Mail history.`);
+      }
+      return;
+    }
+
+    console.log(`[RESUME DELIVERY] Mail history recovered; resuming ${reportDate} company-mail catch-up.`);
+    exports.runDailyCron({ resumeOnly: true })
+      .then(result => console.log('[RESUME DELIVERY] Cache-recovery retry complete:', JSON.stringify(result?.resumes || {})))
+      .catch(error => console.error('[RESUME DELIVERY] Cache-recovery retry failed:', error.message));
+  }, RESUME_CACHE_RETRY_DELAY_MS);
+  resumeMailCacheRetry.timer = timer;
+  if (typeof timer.unref === 'function') timer.unref();
+  return true;
+};
 const isMailDeliveryUncertain = error => Boolean(error?.ambiguousDelivery)
   || /delivery outcome is uncertain/i.test(String(error?.message || error));
 const mailErrorStatus = error => isMailDeliveryUncertain(error) ? 'Review' : 'Failed';
@@ -344,20 +398,80 @@ const wasResumeDeliveryHandled = (jobId, cache) => {
 
 const wasCompanyOpeningReportHandled = (reportDate, cache) => {
   const local = companyOpeningReportMemory.get(reportDate);
-  if (['sending', 'sent', 'queued', 'review'].includes(local?.status)) return true;
+  if (local) return true;
   const reportType = 'company resume delivery daily report';
-  const logged = (cache?.mails || []).filter(row =>
+  const hasLoggedReport = rows => (rows || []).some(row =>
     String(getValByHeader(row, ['mailtype', 'type']) || '').toLowerCase().includes(reportType)
     && String(getValByHeader(row, ['subject']) || '').includes(reportDate)
-  ).sort((left, right) => Number(right.rowNumber || 0) - Number(left.rowNumber || 0));
-  const latestStatus = String(getValByHeader(logged[0], ['status']) || '').toLowerCase();
-  return Boolean(latestStatus && (/uncertain|review/.test(latestStatus) || /success|sent|queued/.test(latestStatus)));
+  );
+  if (hasLoggedReport(cache?.mails)) {
+    companyOpeningReportMemory.set(reportDate, { status: 'already handled', at: Date.now() });
+    return true;
+  }
+  return false;
+};
+
+const claimCompanyOpeningDailyReport = async reportDate => {
+  if (companyOpeningReportMemory.has(reportDate)) return { claimed: false, status: 'already handled' };
+  // Set this synchronously before the first await so same-process cron and
+  // startup catch-up calls cannot both proceed to the provider.
+  companyOpeningReportMemory.set(reportDate, { status: 'claiming', at: Date.now() });
+
+  const reportType = 'Company Resume Delivery Daily Report';
+  const subject = `[IPCS COMPANY OPENING REPORT] ${reportDate}`;
+  const sheet = doc.sheetsByTitle['Mail'];
+  if (!sheet) throw new Error('Mail history sheet is unavailable; the daily company report was not sent.');
+
+  const matchesReport = row =>
+    String(getValByHeader(row, ['mailtype', 'type']) || '').toLowerCase().includes(reportType.toLowerCase())
+    && String(getValByHeader(row, ['subject']) || '').includes(reportDate);
+  const rows = await sheet.getRows();
+  const existing = rows.filter(matchesReport);
+  if (existing.length) {
+    companyOpeningReportMemory.set(reportDate, {
+      status: String(getValByHeader(existing[existing.length - 1], ['status']) || 'already handled'),
+      at: Date.now()
+    });
+    return { claimed: false, status: 'already handled' };
+  }
+
+  const reservation = await sheet.addRow({
+    'TimeStamp': formatIndiaTimestamp(),
+    'Reciver Name': 'Gifty',
+    'Reciver Mail': 'gifty@ipcsglobal.com',
+    'Mail Type': reportType,
+    'Subject': subject,
+    'Status': 'Sending'
+  });
+
+  // Verify the persisted reservation and choose the earliest row if two
+  // server instances tried to claim the same report at nearly the same time.
+  const verifiedRows = (await sheet.getRows()).filter(matchesReport)
+    .sort((left, right) => Number(left.rowNumber || 0) - Number(right.rowNumber || 0));
+  if (!verifiedRows.length || Number(verifiedRows[0].rowNumber) !== Number(reservation.rowNumber)) {
+    companyOpeningReportMemory.set(reportDate, { status: 'already handled', at: Date.now() });
+    return { claimed: false, status: 'already handled' };
+  }
+
+  companyOpeningReportMemory.set(reportDate, { status: 'sending', at: Date.now() });
+  return { claimed: true, row: reservation };
 };
 
 const sendCompanyOpeningDailyReport = async ({ reportDate, openingRows, cache }) => {
   if (wasCompanyOpeningReportHandled(reportDate, cache)) {
     const local = companyOpeningReportMemory.get(reportDate);
     return { status: local?.status || 'already handled', skipped: true };
+  }
+
+  let reservation;
+  try {
+    const claim = await claimCompanyOpeningDailyReport(reportDate);
+    if (!claim.claimed) return { status: claim.status, skipped: true };
+    reservation = claim.row;
+  } catch (error) {
+    companyOpeningReportMemory.set(reportDate, { status: 'review', at: Date.now() });
+    console.error(`[COMPANY OPENING REPORT] ${reportDate} could not reserve its one-time send:`, error.message);
+    return { status: 'review', error: String(error.message || error).slice(0, 500) };
   }
 
   const giftyEmail = 'gifty@ipcsglobal.com';
@@ -392,9 +506,8 @@ const sendCompanyOpeningDailyReport = async ({ reportDate, openingRows, cache })
     </table>
   </div>`;
 
-  companyOpeningReportMemory.set(reportDate, { status: 'sending', at: Date.now() });
   try {
-    const delivery = await sendMailAndLog({
+    const delivery = await sendIPCSMail({
       from: `"IPCS Global Placement Team" <${process.env.EMAIL_USER}>`,
       to: giftyEmail,
       cc: tpoEmails.join(','),
@@ -402,17 +515,31 @@ const sendCompanyOpeningDailyReport = async ({ reportDate, openingRows, cache })
       text: `Company resume delivery report for openings whose deadline was ${reportDate}. ${openingRows.length} opening(s), ${sentCount} sent, ${queuedCount} queued, ${failedCount} failed or under review.`,
       html
     }, {
-      name: 'Gifty',
-      email: reportRecipients.join(','),
-      type: 'Company Resume Delivery Daily Report',
-      category: 'placement'
+      category: 'placement',
+      logDetails: {
+        name: 'Gifty',
+        email: reportRecipients.join(','),
+        type: 'Company Resume Delivery Daily Report'
+      }
     });
     const status = delivery?.queued ? 'queued' : 'sent';
+    reservation.set('Status', delivery?.queued ? `Queued: ${delivery.queueId || 'pending delivery'}` : 'Success');
+    try {
+      await reservation.save();
+    } catch (logError) {
+      console.error(`[COMPANY OPENING REPORT] ${reportDate} was accepted by the mail service but its Mail status update failed; the reservation remains in place:`, logError.message);
+    }
     companyOpeningReportMemory.set(reportDate, { status, at: Date.now() });
     console.log(`[COMPANY OPENING REPORT] ${reportDate} report ${status}; ${tpoEmails.length} TPO(s) copied.`);
     return { status, queued: Boolean(delivery?.queued) };
   } catch (error) {
     const status = isMailDeliveryUncertain(error) ? 'review' : 'failed';
+    reservation.set('Status', `${status === 'review' ? 'Review' : 'Failed'}: ${String(error.message || error).slice(0, 500)}`);
+    try {
+      await reservation.save();
+    } catch (logError) {
+      console.error(`[COMPANY OPENING REPORT] ${reportDate} failure status could not be saved; its reservation remains in place:`, logError.message);
+    }
     companyOpeningReportMemory.set(reportDate, { status, at: Date.now() });
     console.error(`[COMPANY OPENING REPORT] ${reportDate} report ${status}:`, error.message);
     return { status, error: String(error.message || error).slice(0, 500) };
@@ -3377,33 +3504,48 @@ exports.rescheduleEvent = (req, res) => updateEventStatus(req, res, 'Rescheduled
 let dailyCronPromise = null;
 const runDailyCronTasks = async ({ resumeOnly = false } = {}) => {
   console.log("🚨 [CRON] Starting Daily Automated Tasks...");
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
+  const today = new Date();
+  const todayStr = formatter.format(today);
+  const yStr = formatter.format(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  const resumeSummary = { dueJobs: 0, sent: 0, queued: 0, alreadyHandled: 0, skipped: [], failed: [] };
+  const blockedResumeMailRun = cacheSnapshot => {
+    const unavailableSheets = getUnavailableResumeMailSheets(cacheSnapshot);
+    if (!unavailableSheets.length) unavailableSheets.push('placement cache');
+    const retryScheduled = scheduleResumeMailCacheRetry(yStr);
+    resumeSummary.blocked = true;
+    resumeSummary.unavailableSheets = unavailableSheets;
+    resumeSummary.retryScheduled = retryScheduled;
+    resumeSummary.message = `Company resume emails were paused because ${unavailableSheets.join(', ')} could not be confirmed. No resume mail was sent without current delivery history. ${retryScheduled ? 'A cache-recovery retry is scheduled.' : 'The automatic retry limit has been reached; the next scheduled run will try again.'}`;
+    console.error(`[RESUME DELIVERY] ${resumeSummary.message}`);
+    return { resumes: resumeSummary };
+  };
+
   let cache = getCache();
   if (!cache?.cacheUpdatedAt || !Array.isArray(cache?.vacancies)) {
       await refreshCache();
       cache = getCache();
-      if (!cache?.cacheUpdatedAt || !Array.isArray(cache?.vacancies)) throw new Error('Placement records are still syncing; automated mail was not run.');
+      if (!cache?.cacheUpdatedAt || !Array.isArray(cache?.vacancies)) return blockedResumeMailRun(cache);
   }
   const cacheAgeMs = Date.now() - Date.parse(cache.cacheUpdatedAt);
-  if (Number.isFinite(cacheAgeMs) && cacheAgeMs > 3 * 60 * 1000) {
+  if (!Number.isFinite(cacheAgeMs) || cacheAgeMs > RESUME_CACHE_MAX_AGE_MS) {
     await refreshCache();
     cache = getCache();
   }
-  if (!cache?.cacheUpdatedAt || !Array.isArray(cache?.vacancies)) throw new Error('Placement records are still syncing; automated mail was not run.');
-  const resumeSummary = { dueJobs: 0, sent: 0, queued: 0, alreadyHandled: 0, skipped: [], failed: [] };
-
-  // ------------------------------------------------------------------
-  // 🕒 TIME SETUP (IST)
-  // ------------------------------------------------------------------
-  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
-  
-  const today = new Date();
-  const todayStr = formatter.format(today); // e.g. "2026-09-14"
-
-  const yStr = formatter.format(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  if (!cache?.cacheUpdatedAt || !Array.isArray(cache?.vacancies)) return blockedResumeMailRun(cache);
+  const unavailableResumeMailSheets = getUnavailableResumeMailSheets(cache);
+  const resumeMailCacheReady = unavailableResumeMailSheets.length === 0;
+  if (resumeMailCacheReady) {
+    clearResumeMailCacheRetry(yStr);
+  } else {
+    blockedResumeMailRun(cache);
+    if (resumeOnly) return { resumes: resumeSummary };
+  }
 
   // ==================================================================
   // 📌 TASK 1: SEND RESUMES ONLY FOR OPENINGS WHOSE DEADLINE WAS YESTERDAY
   // ==================================================================
+  if (resumeMailCacheReady) {
   console.log(`🚨 [CRON-TASK 1] Sending resume summaries for openings with a deadline of yesterday only (today ${todayStr}; yesterday ${yStr}).`);
 
   const yesterdayJobs = cache.vacancies.filter(v => {
@@ -3575,6 +3717,7 @@ const runDailyCronTasks = async ({ resumeOnly = false } = {}) => {
   if (resumeOnly) {
     console.log('[RESUME DELIVERY] Run summary:', JSON.stringify(resumeSummary));
     return { resumes: resumeSummary };
+  }
   }
 
 
@@ -3760,7 +3903,9 @@ exports.triggerDailyCron = async (req, res) => {
       success: true,
       message: report.sent || report.queued
         ? `Resume delivery checked: ${report.sent} sent, ${report.queued} queued, ${report.alreadyHandled} already handled.`
-        : `Resume delivery checked: no new email sent. ${report.dueJobs} opening(s) with yesterday's deadline were examined.`,
+        : report.blocked
+          ? report.message
+          : `Resume delivery checked: no new email sent. ${report.dueJobs} opening(s) with yesterday's deadline were examined.`,
       report
     });
   } catch (error) {

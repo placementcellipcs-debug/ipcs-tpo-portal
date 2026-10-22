@@ -362,7 +362,8 @@ async function performCacheRefresh() {
         indexes.forEach(index => {
           const sheet = sheetsToFetch[index];
           const field = cacheFields[index];
-          cacheFailedSheets.push(sheet?.title || field);
+          cacheFailedSheets.push(field);
+          if (sheet?.title) cacheFailedSheets.push(sheet.title);
           fetchedData[index] = Array.isArray(previousCache[field]) ? previousCache[field] : emptyCache[field];
         });
         console.error(`⚠️ Could not refresh workbook group ${spreadsheetId}; keeping its previous cached tabs:`, error.message);
@@ -410,6 +411,11 @@ async function performCacheRefresh() {
     const trainerLogRows = fetchedData[22] || [];
     const securityRows = fetchedData[23] || [];
     const tpoStatsRows = fetchedData[24] || [];
+    const cacheSheetHealth = Object.fromEntries(cacheFields.map((field, index) => {
+      const sheetTitle = sheetsToFetch[index]?.title;
+      const healthy = !cacheFailedSheets.includes(field) && (!sheetTitle || !cacheFailedSheets.includes(sheetTitle));
+      return [field, healthy];
+    }));
 
     let coursesDict = {};
     const courseSheet = sheetsToFetch[16];
@@ -438,6 +444,7 @@ async function performCacheRefresh() {
       tpoStats: tpoStatsRows,
       authCacheReady: true,
       authSheetsHealthy: globalCache.authSheetsHealthy,
+      cacheSheetHealth,
       cacheUpdatedAt: new Date().toISOString()
     };
     
