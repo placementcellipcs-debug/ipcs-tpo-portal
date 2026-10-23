@@ -3169,20 +3169,75 @@ exports.getReports = async (req, res) => {
   res.json({ success: true, students, applications, issues, talentino, vacancies, events, tpoLogs, placementReportLogs, tpoStats: tpoStatsList });
 };
 
+exports.getPlacedStudents = (req, res) => {
+  const user = req.portalUser || {};
+  const cache = getCache() || {};
+  const records = [];
+
+  for (const row of cache.placedStudents || []) {
+    // The projection is rebuilt from TPO_Log's Status column (N). Keep every
+    // qualifying source row, including multiple placements for one student.
+    if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed') continue;
+
+    const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']);
+    const branch = getValByHeader(row, ['branch', 'sittingbranch']);
+    const course = getValByHeader(row, ['course', 'program']);
+    const allowed = isPlacementTrackerAdmin(user)
+      || (isPlacementTrackerTpo(user)
+        ? placementOwnerMatchesUser(owner, user) || (!owner && hasPlacementBranchAccess(branch, user))
+        : hasPlacementAccess(branch, course, user));
+    if (!allowed) continue;
+
+    try {
+      const sourceRow = Number(getValByHeader(row, ['sourcerow']));
+      records.push({
+        ...row.toObject(),
+        rowNumber: Number.isInteger(sourceRow) && sourceRow >= 2 ? sourceRow : undefined,
+        sourceSheet: 'TPO_Log'
+      });
+    } catch (error) {
+      console.warn('Could not serialize a placed-student TPO_Log row:', error.message);
+    }
+  }
+
+  res.json({ success: true, records });
+};
+
 exports.getTalentino = (req, res) => {
   const actor = req.portalUser || {};
   const { assignedBranchesArray: requestedBranches, role: requestedRole, assignedCourse: requestedCourse } = req.body;
   const assignedBranchesArray = Array.isArray(actor.assignedBranchesArray) ? actor.assignedBranchesArray : requestedBranches;
   const role = actor.role || requestedRole;
   const assignedCourse = actor.assignedCourse || requestedCourse;
-  let records = getCache().tAtt.filter(row => {
+  const cache = getCache() || {};
+  const attendanceRows = Array.isArray(cache.tAtt) ? cache.tAtt : [];
+  const studentRows = Array.isArray(cache.students) ? cache.students : [];
+  const scheduleRows = Array.isArray(cache.tSched) ? cache.tSched : [];
+  const studentsByRoll = new Map();
+  const studentsByName = new Map();
+  const normalizeKey = value => normalizePlacementText(value);
+
+  studentRows.forEach(student => {
+    const roll = normalizeKey(getValByHeader(student, ['roll', 'rollno', 'rollnumber', 'ipcsrollnumber']));
+    const name = normalizeKey(getValByHeader(student, ['name', 'studentname']));
+    if (roll && !studentsByRoll.has(roll)) studentsByRoll.set(roll, student);
+    if (name && !studentsByName.has(name)) studentsByName.set(name, student);
+  });
+
+  const scheduleByDateAndBranch = new Map();
+  scheduleRows.forEach(item => {
+    const date = safeParseDate(getValByHeader(item, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']));
+    const branch = normalizeKey(getValByHeader(item, ['branch', 'sittingbranch']));
+    if (!date || !branch) return;
+    const key = `${branch}|${date.toDateString()}`;
+    if (!scheduleByDateAndBranch.has(key)) scheduleByDateAndBranch.set(key, item);
+  });
+
+  const records = attendanceRows.filter(row => {
     const rowBranch = getValByHeader(row, ['branch']);
     const studentName = getValByHeader(row, ['name', 'student']) || '';
-    const studentRoll = normalizePlacementText(getValByHeader(row, ['roll', 'rollno', 'rollnumber', 'ipcsrollnumber']));
-    const studentData = getCache().students.find(s => {
-      const sheetRoll = normalizePlacementText(getValByHeader(s, ['roll', 'rollno', 'rollnumber', 'ipcsrollnumber']));
-      return (studentRoll && sheetRoll === studentRoll) || normalizePlacementText(getValByHeader(s, ['name', 'studentname'])) === normalizePlacementText(studentName);
-    });
+    const studentRoll = normalizeKey(getValByHeader(row, ['roll', 'rollno', 'rollnumber', 'ipcsrollnumber']));
+    const studentData = (studentRoll && studentsByRoll.get(studentRoll)) || studentsByName.get(normalizeKey(studentName));
     const sCourse = getValByHeader(row, ['course', 'program']) || (studentData ? getValByHeader(studentData, ['course']) : 'Unknown');
     return isPlacementTrackerAdmin(actor) || isPlacementTrackerTpo(actor)
       ? hasPlacementBranchAccess(rowBranch, actor)
@@ -3190,18 +3245,15 @@ exports.getTalentino = (req, res) => {
   }).map(row => {
     const date = getValByHeader(row, ['timestamp', 'date', 'time', 'present check-ins date']);
     const branch = getValByHeader(row, ['branch']);
-    const schedule = (getCache().tSched || []).find(item => {
-      const scheduleDate = getValByHeader(item, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']);
-      const parsedScheduleDate = safeParseDate(scheduleDate);
-      const parsedAttendanceDate = safeParseDate(date);
-      const sameDate = Boolean(parsedScheduleDate && parsedAttendanceDate && parsedScheduleDate.toDateString() === parsedAttendanceDate.toDateString());
-      return sameDate && normalizePlacementText(getValByHeader(item, ['branch', 'sittingbranch'])) === normalizePlacementText(branch);
-    });
+    const parsedAttendanceDate = safeParseDate(date);
+    const schedule = parsedAttendanceDate
+      ? scheduleByDateAndBranch.get(`${normalizeKey(branch)}|${parsedAttendanceDate.toDateString()}`)
+      : undefined;
     return { name: getValByHeader(row, ['name', 'student']), branch, date, rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes', 'remark']), tpo: getValByHeader(row, ['tpo', 'placementofficer', 'conductedby', 'createdby']) || getValByHeader(schedule, ['tpo', 'placementofficer', 'conductedby', 'createdby']), sessionId: getValByHeader(row, ['sessionid', 'eventid', 'event id']) || getValByHeader(schedule, ['sessionid', 'eventid', 'event id']) };
   });
   const upperRole = String(role || '').toUpperCase();
   const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(upperRole) || upperRole.includes('REGIONAL TECHNICAL HEAD');
-  const sessions = (getCache().tSched || []).map(row => {
+  const sessions = scheduleRows.map(row => {
     const branch = getValByHeader(row, ['branch', 'sittingbranch']);
     const course = getValByHeader(row, ['course', 'program', 'assignedcourse']);
     const date = getValByHeader(row, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']);

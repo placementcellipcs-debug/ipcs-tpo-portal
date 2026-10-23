@@ -9,9 +9,10 @@ import { formatPortalDate } from '../../utils/dateFormat';
 const TILE_COLORS = ['var(--accent-primary)', '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 
 export default function Talentino() {
-  // 🚨 FIX: Safe parsing
   const [data, setData] = useState({ dates: [], records: [], sessions: [] });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
   
   const [selectedBranch, setSelectedBranch] = useState(null);
 
@@ -20,29 +21,38 @@ export default function Talentino() {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    // 🚨 FIX: Data fetch isolated inside the hook, dependency array empty
+    let cancelled = false;
     const fetchTalentino = async () => {
-      const localTpoStr = localStorage.getItem('tpoData');
-      if (!localTpoStr) return;
-      const localTpo = JSON.parse(localTpoStr);
-      
+      setLoading(true);
+      setLoadError('');
       try {
+        const localTpoStr = localStorage.getItem('tpoData');
+        if (!localTpoStr) throw new Error('Your sign-in session is missing. Please sign in again.');
+
+        let localTpo;
+        try {
+          localTpo = JSON.parse(localTpoStr);
+        } catch {
+          throw new Error('Your sign-in session is invalid. Please sign in again.');
+        }
+
         const response = await axios.post(`${API_BASE}/api/tpo/talentino`, {
           assignedBranchesArray: localTpo.assignedBranchesArray,
           role: localTpo.role,
           assignedCourse: localTpo.assignedCourse
-        });
-        if (response.data.success) {
-          setData({ dates: response.data.dates || [], records: response.data.records || [], sessions: response.data.sessions || [] });
-        }
+        }, { timeout: 30000 });
+        if (!response.data?.success) throw new Error(response.data?.message || 'Talentino data could not be loaded.');
+        if (!cancelled) setData({ dates: response.data.dates || [], records: response.data.records || [], sessions: response.data.sessions || [] });
       } catch (error) { 
         console.error("Failed to fetch talentino records", error); 
+        if (!cancelled) setLoadError(error.response?.data?.message || error.message || 'Could not load Talentino records. Please try again.');
       } finally { 
-        setLoading(false); 
+        if (!cancelled) setLoading(false);
       }
     };
-    fetchTalentino();
-  }, []); // 🚨 CRITICAL FIX: Stops the loop!
+    void fetchTalentino();
+    return () => { cancelled = true; };
+  }, [reloadKey]);
 
   const getMonthKey = value => {
     const text = String(value || '').trim();
@@ -127,6 +137,11 @@ export default function Talentino() {
           
           {loading ? (
             <div style={{ textAlign: 'center', marginTop: '4rem', color: 'var(--accent-primary)' }}><CircleNotch size={50} className="ph-spin" /></div>
+          ) : loadError ? (
+            <div role="alert" style={{ maxWidth: '620px', margin: '3rem auto', padding: '24px', textAlign: 'center', color: 'var(--text-main)', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '16px' }}>
+              <p style={{ margin: '0 0 16px', color: 'var(--text-muted)' }}>{loadError}</p>
+              <button type="button" onClick={() => setReloadKey(value => value + 1)} style={{ padding: '9px 18px', border: 0, borderRadius: '9px', background: 'var(--accent-primary)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Retry</button>
+            </div>
           ) : <>
             <section className="talentino-dashboard" aria-label="Talentino overview">
               <div className="talentino-dashboard-head"><div><span>SESSION INSIGHTS</span><h2>Talentino Dashboard</h2></div><label>Month <select className="sleek-input" value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="All Months">All Months</option>{months.map(month => <option key={month} value={month}>{monthLabel(month)}</option>)}</select></label></div>

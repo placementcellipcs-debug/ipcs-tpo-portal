@@ -172,6 +172,7 @@ app.use('/api/tpo/students', requireSession('portal'));
 app.use('/api/tpo/dashboard-stats', requireSession('portal'));
 app.use('/api/tpo/applications', requireSession('portal'));
 app.use('/api/tpo/reports', requireSession('portal'));
+app.use('/api/tpo/placed-students', requireSession('portal'));
 app.use('/api/tpo/talentino', requireSession('portal'));
 app.use('/api/tpo/issues', requireSession('portal'));
 app.use('/api/tpo/vacancies', requireSession('portal'));
@@ -207,6 +208,7 @@ app.post('/api/tpo/events/:eventKey/reschedule', requireSession('events-write'),
 app.post('/api/tpo/issues', controllers.getIssues);
 app.post('/api/tpo/issues/update', controllers.updateIssue);
 app.post('/api/tpo/reports', controllers.getReports);
+app.post('/api/tpo/placed-students', controllers.getPlacedStudents);
 app.post('/api/tpo/talentino', controllers.getTalentino);
 app.post('/api/tpo/clients', controllers.getClients);
 app.get('/api/public/partners', controllers.getPublicPartners);

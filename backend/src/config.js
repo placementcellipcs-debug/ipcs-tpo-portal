@@ -1,4 +1,5 @@
 const path = require('path');
+const { createHash } = require('crypto');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
@@ -128,7 +129,7 @@ let docInfoLoading = null;
 let docInfoCachedUntil = 0;
 const docInfoCacheMs = Math.max(15000, Number(process.env.SHEETS_METADATA_CACHE_MS) || 300000);
 let spreadsheetDateFormatPromise = null;
-let placedStudentsMigrationComplete = false;
+let placedStudentsMigrationSignature = '';
 
 const placedStudentsHeaders = [
   'Record Key', 'Student Name', 'Contact', 'Mail ID', 'Roll Number', 'Course', 'Branch', 'Qualification', 'Resume',
@@ -170,76 +171,27 @@ const placementRowValue = (row, aliases) => {
 };
 
 const normalizedPlacementStatus = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-const isNegativePlacementValue = value => {
-  const normalized = normalizedPlacementStatus(value);
-  return Boolean(normalized) && ['notplaced', 'unplaced', 'notjoined', 'didnotjoin', 'notselected', 'notaccepted', 'rejected', 'declined', 'withdrawn'].some(term => normalized.includes(term));
+const tpoLogStatus = row => {
+  const headers = row?._worksheet?.headerValues || [];
+  const normalizedHeaders = headers.map(header => String(header || '').toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const statusIndex = normalizedHeaders[13] === 'status' ? 13 : normalizedHeaders.indexOf('status');
+  const value = statusIndex >= 0 ? row?._rawData?.[statusIndex] : row?._rawData?.[13];
+  return String(value ?? '').trim();
 };
-const isPositivePlacementValue = value => {
-  const normalized = normalizedPlacementStatus(value);
-  return Boolean(normalized) && !isNegativePlacementValue(value) && (normalized.includes('placed') || normalized.includes('offer') || normalized.includes('join'));
-};
-const isPositivePlacementOutcome = (status, joiningStatus) => {
-  // The TPO_Log Status column is authoritative when it explicitly says Placed.
-  if (normalizedPlacementStatus(status) === 'placed') return true;
-  if (isNegativePlacementValue(status) || isNegativePlacementValue(joiningStatus)) return false;
-  return isPositivePlacementValue(status) || isPositivePlacementValue(joiningStatus);
-};
+async function rebuildPlacedStudents(sheet, tpoLogs = []) {
+  const sourceSignature = createHash('sha256')
+    .update(JSON.stringify((tpoLogs || []).map(row => row?._rawData || [])))
+    .digest('hex');
+  if (sourceSignature === placedStudentsMigrationSignature) return null;
 
-const getPlacedMigrationKey = row => {
-  const identity = placementRowValue(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']) || placementRowValue(row, ['studentname', 'name']);
-  if (!identity) return '';
-  return identity.toLowerCase().replace(/[^a-z0-9]/g, '');
-};
-
-const placementTimestamp = row => {
-  const value = placementRowValue(row, ['timestamp', 'updatedat', 'dateplaced', 'date', 'time']);
-  const dayFirst = String(value || '').match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[, T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
-  if (dayFirst) {
-    const [, day, month, year, hour = '0', minute = '0', second = '0'] = dayFirst;
-    const parsed = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)).getTime();
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  const parsed = Date.parse(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
-
-async function migratePlacedStudentsOnce(sheet, tpoLogs = []) {
-  if (placedStudentsMigrationComplete) return null;
-  const latestByPlacement = new Map();
-  for (const row of tpoLogs || []) {
-    const recordKey = getPlacedMigrationKey(row);
-    if (!recordKey) continue;
-    const jobId = normalizedPlacementStatus(placementRowValue(row, ['jobid', 'job id']));
-    const company = normalizedPlacementStatus(placementRowValue(row, ['companyname', 'company']));
-    const position = normalizedPlacementStatus(placementRowValue(row, ['position', 'role']));
-    const placementKey = `${recordKey}|${jobId || (company || position ? `${company}|${position}` : 'general')}`;
-    const current = latestByPlacement.get(placementKey);
-    const currentTime = placementTimestamp(row);
-    const priorTime = current ? placementTimestamp(current) : -1;
-    const isActionLog = /^(yes|true|1)$/i.test(placementRowValue(row, ['tpoactionlog']));
-    const wasActionLog = current && /^(yes|true|1)$/i.test(placementRowValue(current, ['tpoactionlog']));
-    if (!current || currentTime > priorTime || (currentTime === priorTime && (isActionLog && !wasActionLog || isActionLog === wasActionLog && Number(row.rowNumber || 0) < Number(current.rowNumber || 0)))) {
-      latestByPlacement.set(placementKey, row);
-    }
-  }
-
-  const latestPositiveByStudent = new Map();
-  for (const row of latestByPlacement.values()) {
-    const status = placementRowValue(row, ['status']);
-    const joiningStatus = placementRowValue(row, ['joiningstatus']);
-    if (!isPositivePlacementOutcome(status, joiningStatus)) continue;
-    const recordKey = getPlacedMigrationKey(row);
-    const current = latestPositiveByStudent.get(recordKey);
-    if (!current || placementTimestamp(row) > placementTimestamp(current) || (placementTimestamp(row) === placementTimestamp(current) && Number(row.rowNumber || 0) < Number(current.rowNumber || 0))) {
-      latestPositiveByStudent.set(recordKey, row);
-    }
-  }
-
-  const toAdd = [...latestPositiveByStudent.entries()].map(([recordKey, row]) => {
+  const toAdd = (tpoLogs || []).flatMap((row, index) => {
+    // Status in TPO_Log (column N) is the single source of truth. Other
+    // placement and joining fields must not cancel an explicit Placed status.
+    if (normalizedPlacementStatus(tpoLogStatus(row)) !== 'placed') return [];
+    const sourceRow = Number(row?.rowNumber) || index + 2;
+    const recordKey = `TPO_Log:${sourceRow}`;
     const value = aliases => placementRowValue(row, aliases);
-    const status = value(['status']);
-    const joiningStatus = value(['joiningstatus']);
-    return {
+    return [{
       'Record Key': recordKey,
       'Student Name': value(['studentname', 'name', 'candidate']),
       Contact: value(['contact', 'phone', 'mobilenumber']),
@@ -253,16 +205,16 @@ async function migratePlacedStudentsOnce(sheet, tpoLogs = []) {
       'Company Name': value(['companyname', 'company']),
       Position: value(['position', 'role']),
       'Placement Officer': value(['placementofficer', 'tpo', 'tponame', 'createdby']),
-      Status: isPositivePlacementValue(status) ? status : joiningStatus,
+      Status: tpoLogStatus(row),
       Remarks: value(['remarks', 'studentremarks']),
       'DATE PLACED': value(['dateplaced', 'timestamp', 'date', 'time']),
       'PACKAGE (LPA)': value(['package', 'packagelpa']),
       'Joining Status': joiningStatus,
       'Offer Letter': value(['offerletterstatus', 'offerletter']),
       'Source Sheet': 'TPO_Log',
-      'Source Row': row.rowNumber || '',
+      'Source Row': sourceRow,
       'Updated At': value(['timestamp', 'updatedat', 'dateplaced']) || formatIndiaTimestamp()
-    };
+    }];
   });
 
   try {
@@ -270,10 +222,10 @@ async function migratePlacedStudentsOnce(sheet, tpoLogs = []) {
     const spreadsheetId = getSpreadsheetIdForSheetName(sheet.title);
     await sheetsApi.spreadsheets.values.clear({ spreadsheetId, range: `'${sheet.title}'!A2:ZZ` });
     if (toAdd.length) await sheet.addRows(toAdd);
-    placedStudentsMigrationComplete = true;
+    placedStudentsMigrationSignature = sourceSignature;
     return await sheet.getRows();
   } catch (error) {
-    console.error('Could not migrate legacy placed students into Placed_Students:', error.message);
+    console.error('Could not rebuild Placed_Students from TPO_Log:', error.message);
     throw error;
   }
 }
@@ -282,14 +234,19 @@ async function syncPlacedStudent(record = {}) {
   const sheet = await ensurePlacedStudentsSheet();
   await sheet.loadHeaderRow();
   const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const identity = normalize(record.roll || record.rollNumber || record.ipcsRollNumber) || normalize(record.name || record.studentName);
-  if (!identity) throw new Error('A student roll number or name is required to update the placed-student sheet.');
+  const sourceRow = Number(record.sourceRow);
+  const sourceKey = record.sourceSheet === 'TPO_Log' && Number.isInteger(sourceRow) && sourceRow >= 2
+    ? `TPO_Log:${sourceRow}`
+    : '';
+  const identity = sourceKey || normalize(record.roll || record.rollNumber || record.ipcsRollNumber) || normalize(record.name || record.studentName);
+  if (!identity) throw new Error('A TPO_Log source row or student roll number/name is required to update the placed-student sheet.');
   const rows = await sheet.getRows();
-  const existing = rows.find(row => normalize(placementRowValue(row, ['recordkey']) || placementRowValue(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']) || placementRowValue(row, ['studentname', 'name'])) === identity);
-  const positive = isPositivePlacementOutcome(record.status, record.joiningStatus);
+  const existing = rows.find(row => normalize(placementRowValue(row, ['recordkey'])) === normalize(identity)) ||
+    (!sourceKey ? rows.find(row => normalize(placementRowValue(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']) || placementRowValue(row, ['studentname', 'name'])) === identity) : null);
+  const positive = normalizedPlacementStatus(record.status) === 'placed';
   if (!positive) {
     const existingSource = placementRowValue(existing, ['sourcesheet']);
-    const shouldRemove = Boolean(existing && (!record.sourceSheet || existingSource === record.sourceSheet || record.sourceSheet === 'Placed_Students'));
+    const shouldRemove = Boolean(existing && (sourceKey || !record.sourceSheet || existingSource === record.sourceSheet || record.sourceSheet === 'Placed_Students'));
     if (shouldRemove) await existing.delete();
     const latest = await sheet.getRows();
     if (globalCache) globalCache.placedStudents = latest;
@@ -503,6 +460,26 @@ async function performCacheRefresh() {
     
     const getSheetFuzzy = (keyword) => {
       const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const preferredGroup = getSheetGroup(keyword);
+      const preferredDocument = getPreferredDocumentForSheet(keyword);
+      const preferredWorkbookSheets = preferredDocument?.sheetsByIndex || [];
+      const exactPreferred = preferredWorkbookSheets.find(sheet => normalizeSheetTitle(sheet.title) === cleanKeyword);
+      if (exactPreferred) return exactPreferred;
+      const preferredWorkbookMatch = preferredWorkbookSheets.find(sheet =>
+        getSheetGroup(sheet.title) === preferredGroup && normalizeSheetTitle(sheet.title).includes(cleanKeyword)
+      );
+      if (preferredWorkbookMatch) return preferredWorkbookMatch;
+
+      const preferredSheets = Object.entries(doc.sheetsByTitle || {});
+      const exactPreferredGroup = preferredSheets.find(([title]) => normalizeSheetTitle(title) === cleanKeyword);
+      if (exactPreferredGroup) return exactPreferredGroup[1];
+      const groupMatch = preferredSheets.find(([title]) =>
+        getSheetGroup(title) === preferredGroup && normalizeSheetTitle(title).includes(cleanKeyword)
+      );
+      if (groupMatch) return groupMatch[1];
+
+      // Keep supporting legacy sheet aliases, but only after looking in the
+      // workbook group assigned to this data category.
       return doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanKeyword));
     };
 
@@ -627,7 +604,7 @@ async function performCacheRefresh() {
     let placedStudentsRows = fetchedData[25] || [];
     const placedStudentSourcesHealthy = [8, 25].every(index => !cacheFailedSheets.includes(cacheFields[index]));
     if (placedStudentSourcesHealthy) {
-      placedStudentsRows = await migratePlacedStudentsOnce(placedStudentsSheet, fetchedData[8] || []) || placedStudentsRows;
+      placedStudentsRows = await rebuildPlacedStudents(placedStudentsSheet, fetchedData[8] || []) || placedStudentsRows;
     }
     const cacheSheetHealth = Object.fromEntries(cacheFields.map((field, index) => {
       const sheetTitle = sheetsToFetch[index]?.title;

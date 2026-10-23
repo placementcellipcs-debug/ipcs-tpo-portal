@@ -14,6 +14,11 @@ import { normalizePlacementText } from '../../utils/placementRecords';
 
 const TILE_COLORS = ['#3b82f6', 'var(--accent-primary)', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 
+const readTpoData = () => {
+  try { return JSON.parse(localStorage.getItem('tpoData') || 'null'); }
+  catch { return null; }
+};
+
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
   const lower = c.toLowerCase().trim();
@@ -34,12 +39,12 @@ const getDrivePdf = (url) => {
 };
 
 export default function PlacedStudents() {
-  const tpoDataStr = localStorage.getItem('tpoData');
-  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  const tpoData = readTpoData();
   
   const [applications, setApplications] = useState([]);
   const [existingApplications, setExistingApplications] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isTpo = upperRole.includes('TPO') || upperRole.includes('PLACEMENT OFFICER');
@@ -96,74 +101,77 @@ export default function PlacedStudents() {
   }, [isEditModalOpen, isAddModalOpen]);
 
   const fetchData = async () => {
-    const localTpoStr = localStorage.getItem('tpoData');
-    if (!localTpoStr) return;
-    const localTpo = JSON.parse(localTpoStr);
-    if (isDirectBranchRole) {
-      const assigned = Array.isArray(localTpo.assignedBranchesArray) ? localTpo.assignedBranchesArray : String(localTpo.assignedBranchesArray || '').split(/[\n,;]+/);
-      const directBranch = assigned.find(branch => !['all', 'all branches'].includes(String(branch).trim().toLowerCase()));
-      if (directBranch) setSelectedBranch(String(directBranch).trim());
-    }
-    const payload = { 
-      assignedBranchesArray: localTpo.assignedBranchesArray, 
-      tpoName: localTpo.name, 
-      role: localTpo.role, 
-      assignedCourse: localTpo.assignedCourse 
-    };
-
+    setLoading(true);
+    setLoadError('');
     try {
-      setLoading(true);
-      const [appRes, repRes] = await Promise.all([
-        axios.post(`${API_BASE}/api/tpo/applications`, payload),
-        axios.post(`${API_BASE}/api/tpo/reports`, payload)
-      ]);
+      if (!tpoData) throw new Error('Your sign-in session is missing or invalid. Please sign in again.');
+      const localTpo = tpoData;
+      if (isDirectBranchRole) {
+        const assigned = Array.isArray(localTpo.assignedBranchesArray) ? localTpo.assignedBranchesArray : String(localTpo.assignedBranchesArray || '').split(/[\n,;]+/);
+        const directBranch = assigned.find(branch => !['all', 'all branches'].includes(String(branch).trim().toLowerCase()));
+        if (directBranch) setSelectedBranch(String(directBranch).trim());
+      }
+      const payload = {
+        assignedBranchesArray: localTpo.assignedBranchesArray,
+        tpoName: localTpo.name,
+        role: localTpo.role,
+        assignedCourse: localTpo.assignedCourse
+      };
 
-      const sheetApplications = appRes.data?.success && Array.isArray(appRes.data.applications) ? appRes.data.applications : [];
-      setExistingApplications(sheetApplications);
+      // This list is only used to warn about duplicate manual entries. It must
+      // not hold up the source-of-truth TPO_Log records from rendering.
+      void axios.post(`${API_BASE}/api/tpo/applications`, payload, { timeout: 30000 })
+        .then(appRes => {
+          if (appRes.data?.success && Array.isArray(appRes.data.applications)) setExistingApplications(appRes.data.applications);
+        })
+        .catch(error => console.warn('Could not load applications for duplicate checking:', error.message));
 
-      if (repRes.data.success) {
-        const getVal = (row, searchStrs) => {
-          const keys = Object.keys(row);
-          for (let s of searchStrs) {
-            const clean = s.toLowerCase().replace(/[^a-z0-9]/g, '');
-            const found = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === clean);
-            if (found && row[found] && row[found] !== 'N/A') return row[found];
-          }
-          return '';
-        };
+      const placedResponse = await axios.post(`${API_BASE}/api/tpo/placed-students`, payload, { timeout: 30000 });
+      if (!placedResponse.data?.success) throw new Error(placedResponse.data?.message || 'Placed student records could not be loaded.');
 
-        const placedRecords = (repRes.data.placementReportLogs || []).map(row => ({
-          rowNumber: row.rowNumber,
-          sourceSheet: row.sourceSheet || 'Placed_Students',
-          name: getVal(row, ['studentname', 'name']),
-          phone: getVal(row, ['contact', 'phone']),
-          email: getVal(row, ['mailid', 'email']),
-          roll: getVal(row, ['rollnumber', 'roll', 'ipcsroll']),
-          course: getVal(row, ['course']),
-          branch: getVal(row, ['branch']),
-          qual: getVal(row, ['qualification', 'qual']),
-          company: getVal(row, ['companyname', 'company']),
-          position: getVal(row, ['position', 'role']),
-          status: getVal(row, ['status']) || 'Placed',
-          remarks: getVal(row, ['remarks']),
-          datePlaced: getVal(row, ['dateplaced', 'timestamp', 'date']),
-          packageLpa: getVal(row, ['package', 'package(lpa)']),
-          joiningStatus: getVal(row, ['joiningstatus']),
-          offerLetter: getVal(row, ['offerletterstatus', 'offerletter']),
-          tpoName: getVal(row, ['placementofficer', 'tpo']),
-          date: getVal(row, ['dateplaced']),
-          jobId: getVal(row, ['jobid'])
-        }));
-        const finalApps = placedRecords.filter(record => record.name || record.roll);
-        setApplications(finalApps);
-        if (isDirectBranchRole) {
-          const assigned = Array.isArray(localTpo.assignedBranchesArray) ? localTpo.assignedBranchesArray : String(localTpo.assignedBranchesArray || '').split(/[\n,;]+/);
-          const directBranch = finalApps.find(app => hasAssignedBranch(app.branch))?.branch || assigned.find(branch => !['all', 'all branches'].includes(String(branch).trim().toLowerCase()));
-          if (directBranch) setSelectedBranch(directBranch);
+      const getVal = (row, searchStrs) => {
+        const keys = Object.keys(row || {});
+        for (const search of searchStrs) {
+          const clean = search.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const found = keys.find(key => key.toLowerCase().replace(/[^a-z0-9]/g, '') === clean);
+          if (found && row[found] && row[found] !== 'N/A') return row[found];
         }
+        return '';
+      };
+
+      const placedRecords = (placedResponse.data.records || []).map(row => ({
+        rowNumber: row.rowNumber,
+        sourceSheet: row.sourceSheet || 'TPO_Log',
+        name: getVal(row, ['studentname', 'name']),
+        phone: getVal(row, ['contact', 'phone']),
+        email: getVal(row, ['mailid', 'email']),
+        roll: getVal(row, ['rollnumber', 'roll', 'ipcsroll']),
+        course: getVal(row, ['course']),
+        branch: getVal(row, ['branch']),
+        qual: getVal(row, ['qualification', 'qual']),
+        company: getVal(row, ['companyname', 'company']),
+        position: getVal(row, ['position', 'role']),
+        status: getVal(row, ['status']) || 'Placed',
+        remarks: getVal(row, ['remarks']),
+        datePlaced: getVal(row, ['dateplaced', 'timestamp', 'date']),
+        packageLpa: getVal(row, ['package', 'package(lpa)']),
+        joiningStatus: getVal(row, ['joiningstatus']),
+        offerLetter: getVal(row, ['offerletterstatus', 'offerletter']),
+        tpoName: getVal(row, ['placementofficer', 'tpo']),
+        date: getVal(row, ['dateplaced']),
+        jobId: getVal(row, ['jobid'])
+      }));
+      const finalApps = placedRecords.filter(record => record.name || record.roll);
+      setApplications(finalApps);
+      if (isDirectBranchRole) {
+        const assigned = Array.isArray(localTpo.assignedBranchesArray) ? localTpo.assignedBranchesArray : String(localTpo.assignedBranchesArray || '').split(/[\n,;]+/);
+        const directBranch = finalApps.find(app => hasAssignedBranch(app.branch))?.branch || assigned.find(branch => !['all', 'all branches'].includes(String(branch).trim().toLowerCase()));
+        if (directBranch) setSelectedBranch(directBranch);
       }
     } catch (error) { 
       console.error("Failed to load placed applications", error); 
+      const message = error.response?.data?.message || (error.code === 'ECONNABORTED' ? 'Loading placed student records took too long. Please retry.' : error.message);
+      setLoadError(message || 'Placed student records could not be loaded. Please retry.');
     } finally { setLoading(false); }
   };
 
@@ -310,7 +318,7 @@ export default function PlacedStudents() {
                 </button>}
                 <div>
                   <h1 style={{ fontSize: '1.8rem', margin: 0 }}>{selectedBranch} Placements</h1>
-                  <p style={{ color: 'var(--text-muted)', margin: 0 }}>Data sourced directly from TPO_Log</p>
+                  <p style={{ color: 'var(--text-muted)', margin: 0 }}>Records rebuilt from TPO_Log Status (column N)</p>
                 </div>
               </div>
             ) : (
@@ -401,6 +409,11 @@ export default function PlacedStudents() {
           <div style={{ textAlign: 'center', marginTop: '4rem', color: '#10b981' }}>
             <CircleNotch size={50} className="ph-spin" />
             <p style={{ marginTop: '10px', color: 'var(--text-muted)' }}>Loading records from TPO_Log...</p>
+          </div>
+        ) : loadError ? (
+          <div role="alert" style={{ maxWidth: '620px', margin: '3rem auto', padding: '24px', textAlign: 'center', color: 'var(--text-main)', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '16px' }}>
+            <p style={{ margin: '0 0 16px', color: 'var(--text-muted)' }}>{loadError}</p>
+            <button type="button" onClick={fetchData} style={{ padding: '9px 18px', border: 0, borderRadius: '9px', background: 'var(--accent-primary)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Retry</button>
           </div>
         ) : !selectedBranch ? (
           branchList.length === 0 ? (
