@@ -6,20 +6,8 @@ const studentKeyParts = (row, getValue) => ({
 });
 
 const isPlacementOutcome = (row, getValue) => {
-  const isNegative = value => {
-    const status = normalizePlacementText(value);
-    return Boolean(status) && ['notplaced', 'unplaced', 'notjoined', 'didnotjoin', 'notselected', 'notaccepted', 'rejected', 'declined', 'withdrawn'].some(term => status.includes(term));
-  };
-  const isPositive = value => {
-    const status = normalizePlacementText(value);
-    return Boolean(status) && !isNegative(value) && (status.includes('placed') || status.includes('offer') || status.includes('join'));
-  };
-
-  const status = getValue(row, ['status', 'placementstatus', 'placementstat', 'placementstatsu']);
-  const joiningStatus = getValue(row, ['joiningstatus']);
-  // TPO_Log's Status column is authoritative when it explicitly says Placed.
-  if (normalizePlacementText(status) === 'placed') return true;
-  return !isNegative(status) && !isNegative(joiningStatus) && (isPositive(status) || isPositive(joiningStatus));
+  // TPO_Log's Status column is the sole authority for placement counts.
+  return normalizePlacementText(getValue(row, ['status'])) === 'placed';
 };
 
 const calculateDashboardPlacementCounts = (students, placementRows, getValue, canAccess = () => true, canAccessPlacement = canAccess) => {

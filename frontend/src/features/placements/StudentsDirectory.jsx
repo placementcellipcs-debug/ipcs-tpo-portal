@@ -8,6 +8,7 @@ import {
   InstagramLogo, ArrowsClockwise
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import DataSourceStatus from '../../components/DataSourceStatus';
 import { API_BASE } from '../../services/apiConfig';
 import StatusBadge from '../../components/StatusBadge';
 import { parsePortalDateTime } from '../../utils/dateFormat';
@@ -29,11 +30,17 @@ const parseDate = dStr => parsePortalDateTime(dStr);
 
 export default function StudentsDirectory() {
   const tpoDataStr = localStorage.getItem('tpoData');
-  const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
+  const tpoData = (() => {
+    try { return tpoDataStr ? JSON.parse(tpoDataStr) : null; }
+    catch { return null; }
+  })();
   
   const [rawStudents, setRawStudents] = useState([]);
   const [globalStats, setGlobalStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0 });
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [dataMeta, setDataMeta] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
   
   const assignedBranchesArray = Array.isArray(tpoData?.assignedBranchesArray)
     ? tpoData.assignedBranchesArray.map(branch => String(branch).trim().toLowerCase()).filter(Boolean)
@@ -99,41 +106,57 @@ export default function StudentsDirectory() {
   const canSave = canEditAll || canEditAcademic; 
 
   useEffect(() => {
+    let active = true;
     const fetchData = async () => {
       const localTpoStr = localStorage.getItem('tpoData');
-      if (!localTpoStr) return;
-      const localTpo = JSON.parse(localTpoStr);
+      if (!localTpoStr) {
+        setLoadError('Your sign-in session is missing. Please sign in again.');
+        setLoading(false);
+        return;
+      }
+      let localTpo;
+      try { localTpo = JSON.parse(localTpoStr); }
+      catch {
+        setLoadError('Your sign-in session is invalid. Please sign in again.');
+        setLoading(false);
+        return;
+      }
 
       try {
         setLoading(true);
+        setLoadError('');
         const payload = { 
           assignedBranchesArray: localTpo.assignedBranchesArray,
           role: localTpo.role,
           assignedCourse: localTpo.assignedCourse
         };
 
-        const [stuRes, statRes] = await Promise.all([
-          axios.post(`${API_BASE}/api/tpo/students`, payload),
-          axios.post(`${API_BASE}/api/tpo/dashboard-stats`, payload)
+        const [stuResult, statResult] = await Promise.allSettled([
+          axios.post(`${API_BASE}/api/tpo/students`, payload, { timeout: 45000 }),
+          axios.post(`${API_BASE}/api/tpo/dashboard-stats`, payload, { timeout: 45000 })
         ]);
-        
-        if (stuRes.data.success) {
-          const loadedStudents = stuRes.data.students || [];
-          setRawStudents(loadedStudents);
-          if (isDirectBranchRole && loadedStudents.length) {
-            const directBranch = loadedStudents.find(student => hasAssignedBranch(student.branch))?.branch;
-            if (directBranch) setSelectedBranch(directBranch);
-          }
+        if (stuResult.status === 'rejected') throw stuResult.reason;
+        const stuRes = stuResult.value;
+        if (!stuRes.data?.success) throw new Error(stuRes.data?.message || 'Student records could not be loaded.');
+        if (!active) return;
+        setDataMeta(stuRes.data.dataMeta || null);
+        const loadedStudents = stuRes.data.students || [];
+        setRawStudents(loadedStudents);
+        if (isDirectBranchRole && loadedStudents.length) {
+          const directBranch = loadedStudents.find(student => hasAssignedBranch(student.branch))?.branch;
+          if (directBranch) setSelectedBranch(directBranch);
         }
-        if (statRes.data.success) {
-          setGlobalStats(statRes.data.stats);
+        if (statResult.status === 'fulfilled' && statResult.value.data?.success) {
+          setGlobalStats(statResult.value.data.stats || globalStats);
         }
       } catch (error) { 
         console.error('Failed to fetch students', error);
-      } finally { setLoading(false); }
+        if (active) setLoadError(error.response?.data?.message || (error.code === 'ECONNABORTED' ? 'Loading student records took too long. Please retry.' : error.message) || 'Student records could not be loaded.');
+      } finally { if (active) setLoading(false); }
     };
     fetchData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- Load the signed-in account's fixed branch/course scope once on mount.
+    return () => { active = false; };
+  }, [reloadKey]); // eslint-disable-line react-hooks/exhaustive-deps -- Load the signed-in account's fixed branch/course scope on mount and explicit reload.
 
   const resetFilters = () => {
     setSearchQuery(''); setCourseFilter('All'); setMonthFilter(''); setPlacementStatusFilter('All'); setSortOrder('newest');
@@ -288,6 +311,16 @@ export default function StudentsDirectory() {
           </div>
         </div>
 
+        {dataMeta && <DataSourceStatus
+          source={dataMeta.sourceSheet}
+          detail="Student directory records are filtered by the signed-in account's branch and course access."
+          health={dataMeta.sourceHealthy}
+          lastSyncedAt={dataMeta.lastSuccessfulSyncAt}
+          lastAttemptAt={dataMeta.lastRefreshAttemptAt}
+          onRefresh={() => setReloadKey(value => value + 1)}
+          refreshing={loading}
+        />}
+
         {selectedBranch && (
           <div className="universal-kpi-bar" style={{ marginBottom: '1.5rem', gridTemplateColumns: 'repeat(3, 1fr)' }}>
             <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{branchStats.pending}</div><div className="kpi-label">Placement Pending</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}><ClockClockwise weight="fill"/></div></div>
@@ -364,12 +397,14 @@ export default function StudentsDirectory() {
           )}
         </div>
 
+        {loadError && <div role="alert" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '16px', padding: '12px 15px', border: '1px solid rgba(248,113,113,.35)', borderRadius: '10px', color: '#fecaca', background: 'rgba(127,29,29,.2)' }}><span>{loadError}</span><button type="button" onClick={() => setReloadKey(value => value + 1)} disabled={loading} style={{ padding: '7px 12px', borderRadius: '8px', border: '1px solid rgba(248,113,113,.5)', background: 'transparent', color: '#fecaca', cursor: 'pointer' }}>Retry</button></div>}
+
         {loading ? (
           <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--accent-primary)' }}>
             <CircleNotch size={40} className="ph-spin" />
             <p>Fetching registered students...</p>
           </div>
-        ) : !selectedBranch ? (
+        ) : loadError ? null : !selectedBranch ? (
           branchList.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
               No students found. If you just loaded the portal, wait 10 seconds and refresh while Google Sheets syncs.

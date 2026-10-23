@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { CircleNotch, FloppyDisk, CheckCircle, Headset, CaretLeft, User, WarningCircle } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import DataSourceStatus from '../../components/DataSourceStatus';
 
 import { API_BASE } from '../../services/apiConfig';
 import { getStatusTone } from '../../utils/statusTone';
@@ -15,6 +16,8 @@ export default function Issues() {
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [dataMeta, setDataMeta] = useState(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   // View State Management (Dual-View)
   const [selectedBranch, setSelectedBranch] = useState(null);
@@ -24,28 +27,37 @@ export default function Issues() {
   const [savingStatus, setSavingStatus] = useState({});
 
   useEffect(() => {
-    if (!tpoData) return;
+    if (!tpoData) {
+      setLoadError('Your sign-in session is missing or invalid. Please sign in again.');
+      setLoading(false);
+      return undefined;
+    }
+    let active = true;
     const fetchIssues = async () => {
       try {
+        setLoading(true);
         setLoadError('');
         const response = await axios.post(`${API_BASE}/api/tpo/issues`, {
           assignedBranchesArray: tpoData.assignedBranchesArray || [],
           role: tpoData.role,
           assignedCourse: tpoData.assignedCourse
-        });
-        if (response.data.success) {
+        }, { timeout: 30000 });
+        if (!response.data?.success) throw new Error(response.data?.message || 'Issue records could not be loaded.');
+        if (active) {
           // 🚨 SAFE FALLBACK: Guarantees an array is always set
           setIssues(response.data.issues || []);
-        } else setLoadError(response.data.message || 'Issue records could not be loaded.');
+          setDataMeta(response.data.dataMeta || null);
+        }
       } catch (error) { 
         console.error("Failed to fetch issues", error); 
-        setLoadError(error.response?.data?.message || error.message || 'Issue records could not be loaded.');
+        if (active) setLoadError(error.response?.data?.message || (error.code === 'ECONNABORTED' ? 'Loading issues took too long. Please retry.' : error.message) || 'Issue records could not be loaded.');
       } finally { 
-        setLoading(false); 
+        if (active) setLoading(false);
       }
     };
     fetchIssues();
-  }, [tpoData]);
+    return () => { active = false; };
+  }, [tpoData, reloadKey]);
 
   const handleEditChange = (rowNumber, field, value) => {
     setLocalEdits(prev => ({
@@ -122,6 +134,7 @@ export default function Issues() {
           <div className="hero-section">
             <h1 className="hero-title">Issue Resolution Center</h1>
             <p className="hero-subtitle">Select an assigned branch to view and resolve student complaints.</p>
+            {dataMeta && <DataSourceStatus source={dataMeta.sourceSheet} detail="Issues are filtered to the signed-in account's assigned branches and access." health={dataMeta.sourceHealthy} lastSyncedAt={dataMeta.lastSuccessfulSyncAt} lastAttemptAt={dataMeta.lastRefreshAttemptAt} onRefresh={() => setReloadKey(value => value + 1)} refreshing={loading} />}
             
             {loadError ? (
               <div className="status-badge alert"><WarningCircle size={18} weight="fill" /> Issue records are unavailable until the data sync completes.</div>
@@ -139,7 +152,7 @@ export default function Issues() {
           {loading ? (
             <div style={{ textAlign: 'center', marginTop: '4rem', color: 'var(--accent-primary)' }}><CircleNotch size={50} className="ph-spin" /></div>
           ) : loadError ? (
-            <div className="empty-state"><WarningCircle size={42} /><p>{loadError}</p></div>
+            <div className="empty-state"><WarningCircle size={42} /><p>{loadError}</p><button type="button" onClick={() => setReloadKey(value => value + 1)} style={{ marginTop: '10px', padding: '8px 14px', borderRadius: '8px', border: '1px solid var(--card-border)', background: 'var(--card-bg)', color: 'var(--text-main)', cursor: 'pointer' }}>Retry</button></div>
           ) : branchList.length === 0 ? (
             <div className="empty-state">
               <Headset size={56} weight="thin" />
@@ -269,6 +282,8 @@ export default function Issues() {
             <p style={{ color: '#94a3b8', margin: 0, fontSize: '0.95rem' }}>Manage and resolve student complaints for this branch.</p>
           </div>
         </div>
+        {dataMeta && <DataSourceStatus source={dataMeta.sourceSheet} detail="Issues are filtered to the signed-in account's assigned branches and access." health={dataMeta.sourceHealthy} lastSyncedAt={dataMeta.lastSuccessfulSyncAt} lastAttemptAt={dataMeta.lastRefreshAttemptAt} onRefresh={() => setReloadKey(value => value + 1)} refreshing={loading} />}
+        {loadError && <div role="alert" style={{ marginBottom: '14px', padding: '12px 15px', border: '1px solid rgba(248,113,113,.35)', borderRadius: '10px', color: '#fecaca', background: 'rgba(127,29,29,.2)' }}>{loadError} <button type="button" onClick={() => setReloadKey(value => value + 1)} disabled={loading} style={{ marginLeft: '10px', padding: '5px 10px', borderRadius: '7px', border: '1px solid rgba(248,113,113,.5)', background: 'transparent', color: '#fecaca', cursor: 'pointer' }}>Retry</button></div>}
 
         {/* 🚨 PREMIUM CSS GRID LAYOUT */}
         <div className="issue-grid-container">
@@ -282,7 +297,7 @@ export default function Issues() {
           </div>
 
           <div className="issue-list">
-            {activeIssues.length === 0 ? (
+            {loadError ? null : activeIssues.length === 0 ? (
               <div className="empty-state" style={{ padding: '3rem', background: '#111827', borderRadius: '16px', border: '1px solid #1e293b' }}>
                 <CheckCircle size={48} color="#10b981" style={{ marginBottom: '10px' }}/>
                 <p style={{ margin: 0, color: '#94a3b8' }}>All issues are resolved for this branch!</p>

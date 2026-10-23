@@ -7,6 +7,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import DateInput from '../../components/DateInput';
+import DataSourceStatus from '../../components/DataSourceStatus';
 import { formatPortalDate, getTodayPortalDateInput, parsePortalDateTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
 import StatusBadge from '../../components/StatusBadge';
@@ -45,6 +46,7 @@ export default function PlacedStudents() {
   const [existingApplications, setExistingApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [dataMeta, setDataMeta] = useState(null);
   
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isTpo = upperRole.includes('TPO') || upperRole.includes('PLACEMENT OFFICER');
@@ -128,6 +130,7 @@ export default function PlacedStudents() {
 
       const placedResponse = await axios.post(`${API_BASE}/api/tpo/placed-students`, payload, { timeout: 30000 });
       if (!placedResponse.data?.success) throw new Error(placedResponse.data?.message || 'Placed student records could not be loaded.');
+      setDataMeta(placedResponse.data.dataMeta || null);
 
       const getVal = (row, searchStrs) => {
         const keys = Object.keys(row || {});
@@ -161,7 +164,9 @@ export default function PlacedStudents() {
         date: getVal(row, ['dateplaced']),
         jobId: getVal(row, ['jobid'])
       }));
-      const finalApps = placedRecords.filter(record => record.name || record.roll);
+      // Status=Placed in TPO_Log is authoritative, even when the row lacks
+      // a student name or roll number. Keep every source row visible/countable.
+      const finalApps = placedRecords;
       setApplications(finalApps);
       if (isDirectBranchRole) {
         const assigned = Array.isArray(localTpo.assignedBranchesArray) ? localTpo.assignedBranchesArray : String(localTpo.assignedBranchesArray || '').split(/[\n,;]+/);
@@ -336,6 +341,16 @@ export default function PlacedStudents() {
           )}
         </div>
 
+        {dataMeta && <DataSourceStatus
+          source={`${dataMeta.sourceSheet} · ${dataMeta.sourceStatusColumn}`}
+          detail="Each matching source row is shown; placement and joining fields do not override Status."
+          health={dataMeta.sourceHealthy}
+          lastSyncedAt={dataMeta.lastSuccessfulSyncAt}
+          lastAttemptAt={dataMeta.lastRefreshAttemptAt}
+          onRefresh={() => void fetchData()}
+          refreshing={loading}
+        />}
+
         {!selectedBranch && !loading && canViewPlacementDashboard && (
           <section className="placed-overview" aria-label="Placement overview">
             <div><span>Students Placed</span><strong>{globallyFiltered.length}</strong><small>Current filtered view</small></div>
@@ -449,13 +464,13 @@ export default function PlacedStudents() {
                 </div>
 
                 {filteredApps.map((app, i) => (
-                  <div key={i} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1rem 1.5rem', display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 2fr 0.5fr', alignItems: 'center', gap: '15px' }}>
+                  <div key={app.rowNumber || i} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1rem 1.5rem', display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 2fr 0.5fr', alignItems: 'center', gap: '15px' }}>
                     <div>
-                      <strong style={{ display: 'block', color: '#fff', fontSize: '1.05rem', marginBottom: '4px' }}>{app.name}</strong>
+                      <strong style={{ display: 'block', color: '#fff', fontSize: '1.05rem', marginBottom: '4px' }}>{app.name || `Student details missing · row ${app.rowNumber}`}</strong>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{app.roll || 'No Roll #'} • {app.course}</span>
                     </div>
                     <div>
-                      <strong style={{ display: 'block', color: '#fff', fontSize: '1rem', marginBottom: '4px' }}>{app.company}</strong>
+                      <strong style={{ display: 'block', color: '#fff', fontSize: '1rem', marginBottom: '4px' }}>{app.company || 'Company details missing'}</strong>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{app.position || 'Position N/A'}</span>
                     </div>
                     <div>
@@ -495,7 +510,7 @@ export default function PlacedStudents() {
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={(e) => { if(e.target === e.currentTarget) setIsEditModalOpen(false); }}>
           <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: '0 0 5px 0', fontSize: '1.4rem' }}>Update {selectedApp.name}'s Placement</h2>
+              <h2 style={{ margin: '0 0 5px 0', fontSize: '1.4rem' }}>Update {selectedApp.name || 'student'}'s Placement</h2>
               <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsEditModalOpen(false)} />
             </div>
             

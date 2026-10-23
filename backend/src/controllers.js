@@ -32,7 +32,7 @@ const {
 
 const { autoCreateDesignTask } = require('./designControllers');
 const { normalizePlacementText, placementIdentity, latestPlacementRows } = require('./placementRecords');
-const { calculateDashboardPlacementCounts, isPlacementOutcome } = require('./dashboardStats');
+const { calculateDashboardPlacementCounts } = require('./dashboardStats');
 const { formatIndiaTimestamp, formatIndiaDate, formatIndiaTime } = require('./utils/dateTime');
 
 const FOLDER_OFFER_LETTERS = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5';
@@ -1025,7 +1025,12 @@ exports.getDashboardStats = async (req, res) => {
     ? hasPlacementBranchAccess(rBranch, placementUser)
     : hasPlacementAccess(rBranch, rCourse, placementUser);
 
-  const cache = getCache();
+  let cache = getCache();
+  if (!cache) {
+    await refreshCache();
+    cache = getCache();
+  }
+  if (!cache) return res.status(503).json({ success: false, message: 'Dashboard data is still syncing. Please retry shortly.' });
   let pendingApps = 0, activeVacs = 0;
   const clientRows = cache.clients || [];
   const totalCompanies = clientRows.reduce((count, row) => {
@@ -1035,7 +1040,7 @@ exports.getDashboardStats = async (req, res) => {
 
   const placementCounts = calculateDashboardPlacementCounts(
     cache.students || [],
-    cache.placedStudents || [],
+    cache.tpoLogs || [],
     getValByHeader,
     row => checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course'])),
     row => isPlacementTrackerTpo(placementUser)
@@ -1105,13 +1110,18 @@ exports.getDashboardStats = async (req, res) => {
   });
 };
 
-exports.getStudents = (req, res) => {
+exports.getStudents = async (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
   const placementUser = req.portalUser || { role, assignedBranchesArray, assignedCourse };
-  const cache = getCache();
+  let cache = getCache();
+  if (!cache) {
+    await refreshCache();
+    cache = getCache();
+  }
+  if (!cache) return res.status(503).json({ success: false, message: 'Student data is still syncing. Please retry shortly.' });
   let students = []; let stats = { total: 0, pending: 0, notResponding: 0, noNeed: 0, branchCounts: {}, courseCounts: {} };
 
-  cache.students.forEach(row => {
+  (cache.students || []).forEach(row => {
     const branch = getValByHeader(row, ['branch']) || 'Unknown';
     const course = getValByHeader(row, ['course']) || 'Unknown';
 
@@ -1150,7 +1160,17 @@ exports.getStudents = (req, res) => {
       });
     }
   });
-  res.json({ success: true, students: students.reverse(), stats });
+  res.json({
+    success: true,
+    students: students.reverse(),
+    stats,
+    dataMeta: {
+      sourceSheet: 'Data',
+      sourceHealthy: cache.cacheSheetHealth?.students === true,
+      lastRefreshAttemptAt: cache.cacheUpdatedAt || '',
+      lastSuccessfulSyncAt: cache.cacheSheetUpdatedAt?.students || ''
+    }
+  });
 };
 
 exports.updateStudent = async (req, res) => {
@@ -2980,7 +3000,16 @@ exports.getIssues = async (req, res) => {
       remarks: getValByHeader(row, ['remarks']) || '' 
     }));
     
-    res.json({ success: true, issues: issuesList.reverse() });
+    res.json({
+      success: true,
+      issues: issuesList.reverse(),
+      dataMeta: {
+        sourceSheet: 'Issues',
+        sourceHealthy: cache.cacheSheetHealth?.issues === true,
+        lastRefreshAttemptAt: cache.cacheUpdatedAt || '',
+        lastSuccessfulSyncAt: cache.cacheSheetUpdatedAt?.issues || ''
+      }
+    });
   } catch (err) {
     console.error("Get Issues Error:", err);
     res.status(500).json({ success: false, message: err.message });
@@ -3170,17 +3199,39 @@ exports.getReports = async (req, res) => {
     });
   }
 
-  res.json({ success: true, students, applications, issues, talentino, vacancies, events, tpoLogs, placementReportLogs, tpoStats: tpoStatsList });
+  res.json({
+    success: true,
+    students,
+    applications,
+    issues,
+    talentino,
+    vacancies,
+    events,
+    tpoLogs,
+    placementReportLogs,
+    tpoStats: tpoStatsList,
+    dataMeta: {
+      lastRefreshAttemptAt: cache.cacheUpdatedAt || '',
+      sheetLastSuccessfulSyncAt: cache.cacheSheetUpdatedAt || {},
+      sheetHealth: cache.cacheSheetHealth || {},
+      failedSheets: cache.cacheFailedSheets || []
+    }
+  });
 };
 
-exports.getPlacedStudents = (req, res) => {
+exports.getPlacedStudents = async (req, res) => {
   const user = req.portalUser || {};
-  const cache = getCache() || {};
+  let cache = getCache();
+  if (!cache) {
+    await refreshCache();
+    cache = getCache();
+  }
+  if (!cache) return res.status(503).json({ success: false, message: 'Placement data is still syncing. Please retry shortly.' });
   const records = [];
 
-  for (const row of cache.placedStudents || []) {
-    // The projection is rebuilt from TPO_Log's Status column (N). Keep every
-    // qualifying source row, including multiple placements for one student.
+  for (const row of cache.tpoLogs || []) {
+    // TPO_Log is the source of truth. Read it directly so a delayed or failed
+    // Placed_Students projection cannot make this page incomplete.
     if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed') continue;
 
     const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']);
@@ -3192,28 +3243,35 @@ exports.getPlacedStudents = (req, res) => {
         : hasPlacementAccess(branch, course, user));
     if (!allowed) continue;
 
-    try {
-      const sourceRow = Number(getValByHeader(row, ['sourcerow']));
-      records.push({
-        ...row.toObject(),
-        rowNumber: Number.isInteger(sourceRow) && sourceRow >= 2 ? sourceRow : undefined,
-        sourceSheet: 'TPO_Log'
-      });
-    } catch (error) {
-      console.warn('Could not serialize a placed-student TPO_Log row:', error.message);
-    }
+    try { records.push({ ...row.toObject(), rowNumber: row.rowNumber, sourceSheet: 'TPO_Log' }); }
+    catch (error) { console.warn('Could not serialize a placed-student TPO_Log row:', error.message); }
   }
 
-  res.json({ success: true, records });
+  res.json({
+    success: true,
+    records,
+    dataMeta: {
+      sourceSheet: 'TPO_Log',
+      sourceStatusColumn: 'Status (column N)',
+      sourceHealthy: cache.cacheSheetHealth?.tpoLogs === true,
+      lastRefreshAttemptAt: cache.cacheUpdatedAt || '',
+      lastSuccessfulSyncAt: cache.cacheSheetUpdatedAt?.tpoLogs || ''
+    }
+  });
 };
 
-exports.getTalentino = (req, res) => {
+exports.getTalentino = async (req, res) => {
   const actor = req.portalUser || {};
   const { assignedBranchesArray: requestedBranches, role: requestedRole, assignedCourse: requestedCourse } = req.body;
   const assignedBranchesArray = Array.isArray(actor.assignedBranchesArray) ? actor.assignedBranchesArray : requestedBranches;
   const role = actor.role || requestedRole;
   const assignedCourse = actor.assignedCourse || requestedCourse;
-  const cache = getCache() || {};
+  let cache = getCache();
+  if (!cache) {
+    await refreshCache();
+    cache = getCache();
+  }
+  if (!cache) return res.status(503).json({ success: false, message: 'Talentino data is still syncing. Please retry shortly.' });
   const attendanceRows = Array.isArray(cache.tAtt) ? cache.tAtt : [];
   const studentRows = Array.isArray(cache.students) ? cache.students : [];
   const scheduleRows = Array.isArray(cache.tSched) ? cache.tSched : [];
@@ -3271,7 +3329,22 @@ exports.getTalentino = (req, res) => {
   });
   const dates = new Set();
   [...records, ...sessions].forEach(record => { const cleanDate = (record.date || '').split(' ')[0].trim(); if (cleanDate && cleanDate !== 'N/A') dates.add(cleanDate); });
-  res.json({ success: true, dates: Array.from(dates).sort().reverse(), records: records.reverse(), sessions: sessions.reverse() });
+  res.json({
+    success: true,
+    dates: Array.from(dates).sort().reverse(),
+    records: records.reverse(),
+    sessions: sessions.reverse(),
+    dataMeta: {
+      attendanceHealthy: cache.cacheSheetHealth?.tAtt === true,
+      scheduleHealthy: cache.cacheSheetHealth?.tSched === true,
+      studentDirectoryHealthy: cache.cacheSheetHealth?.students === true,
+      lastRefreshAttemptAt: cache.cacheUpdatedAt || '',
+      attendanceLastSuccessfulSyncAt: cache.cacheSheetUpdatedAt?.tAtt || '',
+      scheduleLastSuccessfulSyncAt: cache.cacheSheetUpdatedAt?.tSched || '',
+      visibleAttendanceRows: records.length,
+      visibleScheduledSessions: sessions.length
+    }
+  });
 };
 
 const MAIN_PLACEMENT_COURSES = [

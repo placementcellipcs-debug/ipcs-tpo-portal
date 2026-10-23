@@ -11,6 +11,7 @@ import {
   PieChart, Pie, Cell 
 } from 'recharts';
 import Layout from '../../layouts/Layout';
+import DataSourceStatus from '../../components/DataSourceStatus';
 import { formatPortalDate, parsePortalDateTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
 import { isPortalAdminAccount } from '../../utils/roleAccess';
@@ -66,6 +67,9 @@ export default function Dashboard() {
   const [events, setEvents] = useState([]);
   const [recentPlacements, setRecentPlacements] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState('');
+  const [dashboardReloadKey, setDashboardReloadKey] = useState(0);
+  const [dataMeta, setDataMeta] = useState(null);
   const [greetingTime, setGreetingTime] = useState(() => new Date());
   const [avatarFailed, setAvatarFailed] = useState(false);
 
@@ -147,52 +151,34 @@ export default function Dashboard() {
       }
     });
 
-    // 2. Process Placements (From TPO_Log) with STRICT Deduplication
-    const dedupedPlaced = {};
+    // 2. Count each authoritative TPO_Log Status=Placed row by its placement date.
     const placedByMonth = Array(12).fill(0);
     const placedRecent = [];
     let domCount = {};
 
-    (tpoLogs || []).forEach(log => {
+    (tpoLogs || []).forEach((log, index) => {
       const getVal = (s) => { const key = Object.keys(log).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, ''))); return key ? log[key] : ''; };
 
       const roll = (getVal('rollnumber') || getVal('roll') || '').trim();
       const name = (getVal('studentname') || getVal('name') || '').trim();
       const company = (getVal('companyname') || getVal('company') || '').trim();
       const status = (getVal('status') || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const joining = (getVal('joiningstatus') || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const placementStatus = (getVal('placementstatus') || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const isPositiveOutcome = value => value && !['notplaced', 'unplaced', 'notjoined', 'didnotjoin', 'notselected', 'notaccepted', 'rejected', 'declined', 'withdrawn'].some(term => value.includes(term)) && (value.includes('placed') || value.includes('offer') || value.includes('join'));
+      if (status !== 'placed') return;
 
-      // 🚨 CRITICAL FIX: Ignore 1000+ blank rows from Google Sheets returning empty data
-      if (!name && !roll && !company) return;
-
-      // 🚨 CRITICAL FIX: Only count explicitly placed/joined (Removed Offers)
-      if (isPositiveOutcome(status) || isPositiveOutcome(joining) || isPositiveOutcome(placementStatus)) {
-         const key = `${(roll || name).toLowerCase().replace(/[^a-z0-9]/g, '')}_${company.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
-         const d = parseDateRobust(getVal('dateplaced') || getVal('timestamp') || getVal('date'));
-
-         if (!dedupedPlaced[key] || (parseDateRobust(dedupedPlaced[key].date) < d)) {
-           dedupedPlaced[key] = {
-             name: name,
-             company: company,
-             course: getVal('course'),
-             packageLpa: getVal('package'),
-             status: getVal('status') || 'Placed',
-             date: d
-           };
-         }
-      }
-    });
-
-    Object.values(dedupedPlaced).forEach(p => {
-      let c = getStandardDomain(p.course);
-      domCount[c] = (domCount[c] || 0) + 1;
-
-      if (p.date && p.date.getFullYear() === currentYear) {
-        placedByMonth[p.date.getMonth()]++;
-      }
-      placedRecent.push(p);
+      const d = parseDateRobust(getVal('dateplaced') || getVal('timestamp') || getVal('date'));
+      const course = getVal('course');
+      const domain = getStandardDomain(course);
+      domCount[domain] = (domCount[domain] || 0) + 1;
+      if (d && d.getFullYear() === currentYear) placedByMonth[d.getMonth()]++;
+      placedRecent.push({
+        name: name || roll || 'Student details missing',
+        company: company || 'Company details missing',
+        course,
+        packageLpa: getVal('package'),
+        status: 'Placed',
+        date: d,
+        rowNumber: log.rowNumber || log.rowIdx || index
+      });
     });
 
     // Output mapped Arrays
@@ -234,6 +220,8 @@ export default function Dashboard() {
     const localTpo = JSON.parse(localTpoStr);
 
     const fetchData = async () => {
+      setLoading(true);
+      setDashboardError('');
       try {
         const reqPayload = { 
           assignedBranchesArray: localTpo.assignedBranchesArray || [], 
@@ -244,28 +232,30 @@ export default function Dashboard() {
         };
         
         const [statsRes, reportsRes] = await Promise.all([
-          axios.post(`${API_BASE}/api/tpo/dashboard-stats`, reqPayload),
-          axios.post(`${API_BASE}/api/tpo/reports`, reqPayload)
+          axios.post(`${API_BASE}/api/tpo/dashboard-stats`, reqPayload, { timeout: 45000 }),
+          axios.post(`${API_BASE}/api/tpo/reports`, reqPayload, { timeout: 45000 })
         ]);
         
-        if (statsRes.data && statsRes.data.success) {
-          setStats(statsRes.data.stats || stats);
-          setEvents(statsRes.data.events || []);
-        }
+        if (!statsRes.data?.success) throw new Error(statsRes.data?.message || 'Dashboard summary could not be loaded.');
+        setStats(statsRes.data.stats || stats);
+        setEvents(statsRes.data.events || []);
 
-        if (reportsRes.data && reportsRes.data.success) {
-          // Applications come from OpeningApplied; student roster rows are not applications.
-          const applications = reportsRes.data.applications || [];
-          const logs = reportsRes.data.placementReportLogs || [];
-          
-          setRawChartData({ applications, logs });
-          processChartData(applications, logs, selectedYear);
-        }
+        if (!reportsRes.data?.success) throw new Error(reportsRes.data?.message || 'Dashboard placement trends could not be loaded.');
+        setDataMeta(reportsRes.data.dataMeta || null);
+        // Applications are individual rows in OpeningApplied. Placement trends
+        // count every TPO_Log row whose Status column is exactly Placed.
+        const applications = reportsRes.data.applications || [];
+        const logs = reportsRes.data.placementReportLogs || [];
+        setRawChartData({ applications, logs });
+        processChartData(applications, logs, selectedYear);
 
-      } catch (err) { console.error("Dashboard Fetch Error:", err); } finally { setLoading(false); }
+      } catch (err) {
+        console.error("Dashboard Fetch Error:", err);
+        setDashboardError(err.response?.data?.message || err.message || 'Dashboard data could not be loaded.');
+      } finally { setLoading(false); }
     };
     fetchData();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- Dashboard data is loaded once for the current signed-in account.
+  }, [dashboardReloadKey]); // eslint-disable-line react-hooks/exhaustive-deps -- Dashboard data is loaded for the current signed-in account and on explicit refresh.
 
   const today = new Date();
   today.setHours(0,0,0,0);
@@ -322,6 +312,21 @@ export default function Dashboard() {
             {profilePhoto && !avatarFailed ? <img src={profilePhoto} alt="" onError={() => setAvatarFailed(true)} /> : <span>{firstName.charAt(0).toUpperCase()}</span>}
           </div>
         </section>
+
+        {dashboardError && <div role="alert" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', margin: '0 0 18px', padding: '13px 16px', border: '1px solid rgba(248,113,113,.35)', borderRadius: '10px', color: '#fecaca', background: 'rgba(127,29,29,.2)' }}>
+          <span>Dashboard data could not be refreshed: {dashboardError}</span>
+          <button type="button" onClick={() => setDashboardReloadKey(value => value + 1)} disabled={loading} style={{ padding: '7px 12px', borderRadius: '8px', border: '1px solid rgba(248,113,113,.5)', background: 'transparent', color: '#fecaca', cursor: 'pointer' }}>Retry</button>
+        </div>}
+
+        {dataMeta && <DataSourceStatus
+          source="TPO_Log"
+          detail="Placement trends count each Status = Placed row; the Students Placed card counts unique students."
+          health={dataMeta.sheetHealth?.tpoLogs}
+          lastSyncedAt={dataMeta.sheetLastSuccessfulSyncAt?.tpoLogs}
+          lastAttemptAt={dataMeta.lastRefreshAttemptAt}
+          onRefresh={() => setDashboardReloadKey(value => value + 1)}
+          refreshing={loading}
+        />}
 
         {/* KPI CARDS */}
         <div className="kpi-grid">

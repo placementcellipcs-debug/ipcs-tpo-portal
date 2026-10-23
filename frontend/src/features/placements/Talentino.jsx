@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { CircleNotch, CaretLeft, MagnifyingGlass, Star, GraduationCap } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import DataSourceStatus from '../../components/DataSourceStatus';
 
 import { API_BASE } from '../../services/apiConfig';
 import { formatPortalDate } from '../../utils/dateFormat';
@@ -13,6 +14,7 @@ export default function Talentino() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [dataMeta, setDataMeta] = useState(null);
   
   const [selectedBranch, setSelectedBranch] = useState(null);
 
@@ -42,6 +44,7 @@ export default function Talentino() {
           assignedCourse: localTpo.assignedCourse
         }, { timeout: 30000 });
         if (!response.data?.success) throw new Error(response.data?.message || 'Talentino data could not be loaded.');
+        if (!cancelled) setDataMeta(response.data.dataMeta || null);
         if (!cancelled) setData({ dates: response.data.dates || [], records: response.data.records || [], sessions: response.data.sessions || [] });
       } catch (error) { 
         console.error("Failed to fetch talentino records", error); 
@@ -134,6 +137,15 @@ export default function Talentino() {
         <div className="page-container" style={{ padding: 0 }}>
           <h1 style={{ fontSize: '2.2rem', marginBottom: '5px', textAlign: 'center', marginTop: '20px' }}>Talentino Tracker</h1>
           <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem', textAlign: 'center' }}>Review sessions, participation, and ratings across your assigned branches.</p>
+          {dataMeta && <DataSourceStatus
+            source="Talentino_Attendance and Talentino_Schedule"
+            detail={`${dataMeta.visibleAttendanceRows} attendance record(s) and ${dataMeta.visibleScheduledSessions} session(s) match your access. Attendance sync: ${dataMeta.attendanceHealthy ? 'healthy' : 'not confirmed'}; schedule sync: ${dataMeta.scheduleHealthy ? 'healthy' : 'not confirmed'}.`}
+            health={dataMeta.attendanceHealthy && dataMeta.scheduleHealthy}
+            lastSyncedAt={{ Attendance: dataMeta.attendanceLastSuccessfulSyncAt, Schedule: dataMeta.scheduleLastSuccessfulSyncAt }}
+            lastAttemptAt={dataMeta.lastRefreshAttemptAt}
+            onRefresh={() => setReloadKey(value => value + 1)}
+            refreshing={loading}
+          />}
           
           {loading ? (
             <div style={{ textAlign: 'center', marginTop: '4rem', color: 'var(--accent-primary)' }}><CircleNotch size={50} className="ph-spin" /></div>
@@ -196,6 +208,15 @@ export default function Talentino() {
         <p style={{ color: 'var(--accent-primary)', background: 'color-mix(in srgb, var(--accent-primary) 15%, transparent)', padding: '4px 12px', borderRadius: '4px', display: 'inline-block', marginBottom: '2rem', fontWeight: 'bold' }}>
           Viewing student performance records for {selectedBranch}.
         </p>
+        {dataMeta && <DataSourceStatus
+          source="Talentino_Attendance and Talentino_Schedule"
+          detail={`${dataMeta.visibleAttendanceRows} attendance record(s) and ${dataMeta.visibleScheduledSessions} session(s) match your access. Attendance sync: ${dataMeta.attendanceHealthy ? 'healthy' : 'not confirmed'}; schedule sync: ${dataMeta.scheduleHealthy ? 'healthy' : 'not confirmed'}.`}
+          health={dataMeta.attendanceHealthy && dataMeta.scheduleHealthy}
+          lastSyncedAt={{ Attendance: dataMeta.attendanceLastSuccessfulSyncAt, Schedule: dataMeta.scheduleLastSuccessfulSyncAt }}
+          lastAttemptAt={dataMeta.lastRefreshAttemptAt}
+          onRefresh={() => setReloadKey(value => value + 1)}
+          refreshing={loading}
+        />}
 
         <div style={{ display: 'flex', gap: '15px', marginBottom: '20px', flexWrap: 'wrap', alignItems: 'center' }}>
           <select className="sleek-input" style={{ width: '200px', background: 'var(--card-bg)', border: '1px solid var(--card-border)' }} value={dateFilter} onChange={(e) => setDateFilter(e.target.value)}>

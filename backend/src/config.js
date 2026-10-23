@@ -130,6 +130,8 @@ let docInfoCachedUntil = 0;
 const docInfoCacheMs = Math.max(15000, Number(process.env.SHEETS_METADATA_CACHE_MS) || 300000);
 let spreadsheetDateFormatPromise = null;
 let placedStudentsMigrationSignature = '';
+let placedStudentsBackupSheetId = null;
+let placedStudentsBackupProtected = false;
 
 const placedStudentsHeaders = [
   'Record Key', 'Student Name', 'Contact', 'Mail ID', 'Roll Number', 'Course', 'Branch', 'Qualification', 'Resume',
@@ -178,7 +180,53 @@ const tpoLogStatus = row => {
   const value = statusIndex >= 0 ? row?._rawData?.[statusIndex] : row?._rawData?.[13];
   return String(value ?? '').trim();
 };
-async function rebuildPlacedStudents(sheet, tpoLogs = []) {
+async function backupPlacedStudents(sheet, existingRows = []) {
+  if (!existingRows.length || placedStudentsBackupProtected) return 0;
+  const spreadsheetId = getSpreadsheetIdForSheetName(sheet.title);
+  const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
+  const backupTitle = 'Placed_Students_Backup';
+  let backupSheetId = placedStudentsBackupSheetId || doc.sheetsByTitle[backupTitle]?.sheetId;
+  const snapshotRows = existingRows.length + 1;
+  const snapshotColumns = Math.max(1, (sheet.headerValues || []).length);
+
+  if (!Number.isInteger(backupSheetId)) {
+    const created = await sheetsApi.spreadsheets.batchUpdate({
+      spreadsheetId,
+      requestBody: {
+        requests: [{ addSheet: { properties: {
+          title: backupTitle,
+          hidden: true,
+          gridProperties: { rowCount: snapshotRows, columnCount: snapshotColumns }
+        } } }]
+      }
+    });
+    backupSheetId = created.data?.replies?.[0]?.addSheet?.properties?.sheetId;
+  }
+  if (!Number.isInteger(backupSheetId)) throw new Error('Could not create or locate the Placed_Students backup sheet.');
+  placedStudentsBackupSheetId = backupSheetId;
+
+  await sheetsApi.spreadsheets.batchUpdate({
+    spreadsheetId,
+    requestBody: {
+      requests: [
+        { updateSheetProperties: {
+          properties: { sheetId: backupSheetId, hidden: true, gridProperties: { rowCount: snapshotRows, columnCount: snapshotColumns } },
+          fields: 'hidden,gridProperties.rowCount,gridProperties.columnCount'
+        } },
+        { copyPaste: {
+          source: { sheetId: sheet.sheetId, startRowIndex: 0, endRowIndex: snapshotRows, startColumnIndex: 0, endColumnIndex: snapshotColumns },
+          destination: { sheetId: backupSheetId, startRowIndex: 0, startColumnIndex: 0 },
+          pasteType: 'PASTE_NORMAL',
+          pasteOrientation: 'NORMAL'
+        } }
+      ]
+    }
+  });
+  placedStudentsBackupProtected = true;
+  return existingRows.length;
+}
+
+async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
   const sourceSignature = createHash('sha256')
     .update(JSON.stringify((tpoLogs || []).map(row => row?._rawData || [])))
     .digest('hex');
@@ -220,10 +268,18 @@ async function rebuildPlacedStudents(sheet, tpoLogs = []) {
   try {
     const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
     const spreadsheetId = getSpreadsheetIdForSheetName(sheet.title);
+    const backupCount = await backupPlacedStudents(sheet, existingRows);
+    if (backupCount) console.info(`Backed up ${backupCount} existing Placed_Students rows before rebuild.`);
     await sheetsApi.spreadsheets.values.clear({ spreadsheetId, range: `'${sheet.title}'!A2:ZZ` });
     if (toAdd.length) await sheet.addRows(toAdd);
+    const rebuiltRows = await sheet.getRows();
+    if (rebuiltRows.length !== toAdd.length) {
+      throw new Error(`Rebuild count check failed: TPO_Log has ${toAdd.length} Placed row(s), but Placed_Students contains ${rebuiltRows.length}.`);
+    }
+    console.info(`Placed_Students rebuild count check passed: ${toAdd.length} TPO_Log Placed row(s) = ${rebuiltRows.length} projection row(s).`);
     placedStudentsMigrationSignature = sourceSignature;
-    return await sheet.getRows();
+    placedStudentsBackupProtected = false;
+    return rebuiltRows;
   } catch (error) {
     console.error('Could not rebuild Placed_Students from TPO_Log:', error.message);
     throw error;
@@ -605,13 +661,24 @@ async function performCacheRefresh() {
     let placedStudentsRows = fetchedData[25] || [];
     const placedStudentSourcesHealthy = [8, 25].every(index => !cacheFailedSheets.includes(cacheFields[index]));
     if (placedStudentSourcesHealthy) {
-      placedStudentsRows = await rebuildPlacedStudents(placedStudentsSheet, fetchedData[8] || []) || placedStudentsRows;
+      try {
+        placedStudentsRows = await rebuildPlacedStudents(placedStudentsSheet, fetchedData[8] || [], placedStudentsRows) || placedStudentsRows;
+      } catch (error) {
+        cacheFailedSheets.push('placedStudents');
+        console.error('Placed_Students projection rebuild failed; TPO_Log cache remains available:', error.message);
+      }
     }
     const cacheSheetHealth = Object.fromEntries(cacheFields.map((field, index) => {
       const sheetTitle = sheetsToFetch[index]?.title;
       const healthy = !cacheFailedSheets.includes(field) && (!sheetTitle || !cacheFailedSheets.includes(sheetTitle));
       return [field, healthy];
     }));
+    const cacheRefreshAt = new Date().toISOString();
+    const cacheSheetUpdatedAt = Object.fromEntries(cacheFields.map(field => [
+      field,
+      cacheSheetHealth[field] ? cacheRefreshAt : (previousCache.cacheSheetUpdatedAt?.[field] || '')
+    ]));
+    const uniqueCacheFailedSheets = [...new Set(cacheFailedSheets)];
 
     let coursesDict = {};
     const courseSheet = sheetsToFetch[16];
@@ -642,7 +709,10 @@ async function performCacheRefresh() {
       authCacheReady: true,
       authSheetsHealthy: globalCache.authSheetsHealthy,
       cacheSheetHealth,
-      cacheUpdatedAt: new Date().toISOString()
+      cacheSheetUpdatedAt,
+      cacheFailedSheets: uniqueCacheFailedSheets,
+      cacheRefreshStatus: uniqueCacheFailedSheets.length ? 'partial' : 'success',
+      cacheUpdatedAt: cacheRefreshAt
     };
     
     if (cacheFailedSheets.length) {

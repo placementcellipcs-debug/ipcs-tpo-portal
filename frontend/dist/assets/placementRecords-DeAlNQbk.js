@@ -1,0 +1,1 @@
+var e=e=>String(e||``).toLowerCase().replace(/[^\p{L}\p{N}]/gu,``);export{e as t};

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import DataSourceStatus from '../../components/DataSourceStatus';
 import { API_BASE } from '../../services/apiConfig';
 import { normalizePlacementText } from '../../utils/placementRecords';
 import { parsePortalDateTime } from '../../utils/dateFormat';
@@ -36,6 +37,8 @@ export default function Reports() {
   const [allBranchesList, setAllBranchesList] = useState([]);
   const [reportLoading, setReportLoading] = useState(true);
   const [reportError, setReportError] = useState('');
+  const [reportReloadKey, setReportReloadKey] = useState(0);
+  const [dataMeta, setDataMeta] = useState(null);
   // Replaced hardcoded courses with dynamic state (initialized with the 5 defaults)
   const [mainCourses, setMainCourses] = useState(['Industrial Automation', 'BMS AND CCTV', 'Information technology (IT)', 'Digital Marketing', 'Embedded and IoT']);
 
@@ -50,7 +53,7 @@ export default function Reports() {
     setReportLoading(true);
     setReportError('');
 
-    axios.post(`${API_BASE}/api/tpo/reports`, {})
+    axios.post(`${API_BASE}/api/tpo/reports`, {}, { timeout: 45000 })
       .then(response => {
         if (!active) return;
         if (!response.data?.success) throw new Error(response.data?.message || 'Could not load report data.');
@@ -58,6 +61,7 @@ export default function Reports() {
         const reportStudents = data.students || [];
         const reportApplications = data.applications || [];
         const reportLogs = data.tpoLogs || [];
+        setDataMeta(data.dataMeta || null);
         setStudents(reportStudents);
         setApplications(reportApplications);
         setEvents(data.events || []);
@@ -101,7 +105,7 @@ export default function Reports() {
     });
 
     return () => { active = false; };
-  }, [isSuperAdmin, myName]);
+  }, [isSuperAdmin, myName, reportReloadKey]);
 
   // Course normalizer for matrix alignment
   const getCourse = (c) => {
@@ -140,6 +144,13 @@ export default function Reports() {
   };
 
   const displayMonthName = new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
+  const targetSourceRows = placementReportLogs.filter(log => normalizePlacementText(getVal(log, 'status')) === 'placed');
+  const targetSourceRowsThisMonth = targetSourceRows.filter(log => checkMonth(getVal(log, 'dateplaced') || getVal(log, 'timestamp')));
+  const reportTpoIdentities = new Set(tpoList.flatMap(tpo => [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean)));
+  const currentMonthRowsWithoutMatchedTpo = targetSourceRowsThisMonth.filter(log => !reportTpoIdentities.has(normalizePlacementText(getVal(log, 'placementofficer')))).length;
+  const placedRowsWithoutUsableDate = targetSourceRows.filter(log => !parsePortalDateTime(getVal(log, 'dateplaced') || getVal(log, 'timestamp'))).length;
+  const targetLogHealthy = dataMeta?.sheetHealth?.tpoLogs;
+  const targetLogLastSyncedAt = dataMeta?.sheetLastSuccessfulSyncAt?.tpoLogs || '';
 
   // 1. BRANCH ENROLLMENTS
   const assignedBranches = [...new Set(students.filter(s => isAssignedBranch(s.branch)).map(s => s.branch))].filter(Boolean).sort();
@@ -416,7 +427,17 @@ export default function Reports() {
         </div>
 
         {reportLoading && <div role="status" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px', color: 'var(--text-muted)' }}><CircleNotch className="ph-spin" size={20} />Loading report data…</div>}
-        {reportError && <div role="alert" style={{ marginBottom: '18px', padding: '13px 16px', border: '1px solid rgba(248,113,113,.35)', borderRadius: '10px', color: '#fecaca', background: 'rgba(127,29,29,.2)' }}>Report data could not be loaded: {reportError}</div>}
+        {reportError && <div role="alert" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '18px', padding: '13px 16px', border: '1px solid rgba(248,113,113,.35)', borderRadius: '10px', color: '#fecaca', background: 'rgba(127,29,29,.2)' }}><span>Report data could not be loaded: {reportError}</span><button type="button" onClick={() => setReportReloadKey(value => value + 1)} style={{ padding: '7px 12px', borderRadius: '8px', border: '1px solid rgba(248,113,113,.5)', background: 'transparent', color: '#fecaca', cursor: 'pointer' }}>Retry</button></div>}
+
+        {dataMeta && <DataSourceStatus
+          source="TPO_Log"
+          detail="Monthly target counts use every row with Status = Placed; Date Placed is used, then Timestamp if blank."
+          health={targetLogHealthy}
+          lastSyncedAt={targetLogLastSyncedAt}
+          lastAttemptAt={dataMeta.lastRefreshAttemptAt}
+          onRefresh={() => setReportReloadKey(value => value + 1)}
+          refreshing={reportLoading}
+        />}
 
         <div className="rt-tabs">
           <button className={`rt-tab ${activeTab === 1 ? 'active' : ''}`} onClick={() => setActiveTab(1)}>
@@ -438,6 +459,15 @@ export default function Reports() {
         {/* ========================================================= */}
         {activeTab === 1 && (
           <div className="fade-in">
+            {isSuperAdmin && !reportLoading && tpoList.length > 0 && (
+              <section aria-label="Placement count reconciliation" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '10px', margin: '0 0 22px', padding: '14px', borderRadius: '12px', border: '1px solid var(--card-border)', background: 'var(--card-bg)' }}>
+                <div><small style={{ color: 'var(--text-muted)' }}>TPO_Log Placed rows · {displayMonthName}</small><strong style={{ display: 'block', fontSize: '1.3rem', color: 'var(--text-main)' }}>{targetSourceRowsThisMonth.length}</strong></div>
+                <div><small style={{ color: 'var(--text-muted)' }}>Rows matched to listed TPOs</small><strong style={{ display: 'block', fontSize: '1.3rem', color: 'var(--text-main)' }}>{targetSourceRowsThisMonth.length - currentMonthRowsWithoutMatchedTpo}</strong></div>
+                <div><small style={{ color: 'var(--text-muted)' }}>Rows without a recognized TPO</small><strong style={{ display: 'block', fontSize: '1.3rem', color: currentMonthRowsWithoutMatchedTpo ? '#fbbf24' : 'var(--text-main)' }}>{currentMonthRowsWithoutMatchedTpo}</strong></div>
+                <div><small style={{ color: 'var(--text-muted)' }}>Placed rows missing a usable date · all months</small><strong style={{ display: 'block', fontSize: '1.3rem', color: placedRowsWithoutUsableDate ? '#fbbf24' : 'var(--text-main)' }}>{placedRowsWithoutUsableDate}</strong></div>
+                <p style={{ gridColumn: '1 / -1', margin: 0, color: 'var(--text-muted)', fontSize: '.85rem' }}>This compares source rows with the TPO accounts shown below. Rows without a matching owner or usable date cannot be assigned to a TPO/month total.</p>
+              </section>
+            )}
             {tpoList.map((tpo, idx) => {
               const placedStudentsLog = placementReportLogs.filter(log => {
                 const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
