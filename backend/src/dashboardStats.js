@@ -17,6 +17,8 @@ const isPlacementOutcome = (row, getValue) => {
 
   const status = getValue(row, ['status', 'placementstatus', 'placementstat', 'placementstatsu']);
   const joiningStatus = getValue(row, ['joiningstatus']);
+  // TPO_Log's Status column is authoritative when it explicitly says Placed.
+  if (normalizePlacementText(status) === 'placed') return true;
   return !isNegative(status) && !isNegative(joiningStatus) && (isPositive(status) || isPositive(joiningStatus));
 };
 

@@ -179,6 +179,8 @@ const isPositivePlacementValue = value => {
   return Boolean(normalized) && !isNegativePlacementValue(value) && (normalized.includes('placed') || normalized.includes('offer') || normalized.includes('join'));
 };
 const isPositivePlacementOutcome = (status, joiningStatus) => {
+  // The TPO_Log Status column is authoritative when it explicitly says Placed.
+  if (normalizedPlacementStatus(status) === 'placed') return true;
   if (isNegativePlacementValue(status) || isNegativePlacementValue(joiningStatus)) return false;
   return isPositivePlacementValue(status) || isPositivePlacementValue(joiningStatus);
 };
