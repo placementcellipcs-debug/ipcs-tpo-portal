@@ -16,6 +16,7 @@ const careerHubControllers = require('./src/careerHubControllers');
 // 🚨 IMPORT CACHES EXACTLY ONCE
 const {
   getCache,
+  waitForCacheReady,
   startEmailWorker,
   startMailDashboardRefresh,
   sendScheduledMailReport
@@ -104,12 +105,18 @@ app.post('/api/auth/login', loginRateLimit, controllers.login);
 app.post('/api/auth/verify-session', controllers.verifySession);
 
 // 🚨 GLOBAL CACHE MIDDLEWARE
-app.use('/api', (req, res, next) => {
+app.use('/api', async (req, res, next) => {
   // Public site data has its own Drive/Sheets readiness checks. Keep it available
   // while the larger staff data cache is warming up after a server restart.
   if (req.originalUrl.split('?')[0].startsWith('/api/public/')) return next();
-  if (!getCache()) {
-    return res.status(503).json({ success: false, message: "Server is syncing data from Google Sheets... Please wait 5 seconds and refresh." });
+  let cache = getCache();
+  if (!cache?.cacheUpdatedAt) {
+    await waitForCacheReady();
+    cache = getCache();
+  }
+  if (!cache?.cacheUpdatedAt) {
+    res.set('Retry-After', '5');
+    return res.status(503).json({ success: false, message: 'Portal data is still syncing from Google Sheets. Please try again shortly.' });
   }
   if (req.path.startsWith('/v1/assets') && !isAssetCacheReady()) {
     return res.status(503).json({ success: false, message: "Asset data is still loading from Google Sheets. Please try again shortly." });

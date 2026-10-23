@@ -126,7 +126,7 @@ let scheduledCacheRetryTimer = null;
 let consecutiveCacheRefreshFailures = 0;
 let docInfoLoading = null;
 let docInfoCachedUntil = 0;
-const docInfoCacheMs = Math.max(15000, Number(process.env.SHEETS_METADATA_CACHE_MS) || 60000);
+const docInfoCacheMs = Math.max(15000, Number(process.env.SHEETS_METADATA_CACHE_MS) || 300000);
 let spreadsheetDateFormatPromise = null;
 
 const getCache = () => globalCache;
@@ -373,13 +373,13 @@ async function performCacheRefresh() {
     // Load account records in their own batch so login is ready even if a
     // larger log tab fails to refresh. This is still one API read for both.
     const operationsSpreadsheetId = spreadsheetGroupIds.operations;
+    let remainingOperationIndexes = [];
     if (groupedIndexes.has(operationsSpreadsheetId)) {
       const operationIndexes = groupedIndexes.get(operationsSpreadsheetId);
       const authIndexes = operationIndexes.filter(index => index === 18 || index === 19);
       await readSpreadsheetGroup(operationsSpreadsheetId, authIndexes);
       groupedIndexes.delete(operationsSpreadsheetId);
-      const remainingOperationIndexes = operationIndexes.filter(index => index !== 18 && index !== 19);
-      if (remainingOperationIndexes.length) await readSpreadsheetGroup(operationsSpreadsheetId, remainingOperationIndexes);
+      remainingOperationIndexes = operationIndexes.filter(index => index !== 18 && index !== 19);
     }
     const contactRows = fetchedData[18] || previousCache.contacts || [];
     const userRows = fetchedData[19] || previousCache.users || [];
@@ -395,11 +395,14 @@ async function performCacheRefresh() {
       },
     };
 
-    // One batchGet per workbook replaces a separate Google API read for every
-    // cache tab. Requests still use the four workbook-specific tab groups.
-    for (const [spreadsheetId, indexes] of groupedIndexes) {
-      await readSpreadsheetGroup(spreadsheetId, indexes);
-    }
+    // Workbook groups are independent. Fetch them together so startup and
+    // periodic refreshes do not wait for each spreadsheet in sequence.
+    await Promise.all([
+      ...[...groupedIndexes].map(([spreadsheetId, indexes]) => readSpreadsheetGroup(spreadsheetId, indexes)),
+      ...(remainingOperationIndexes.length
+        ? [readSpreadsheetGroup(operationsSpreadsheetId, remainingOperationIndexes)]
+        : []),
+    ]);
 
     const [
       stuRows, appRows, vacRows, eventRows, issueRows, tSchedRows, tAttRows, clientRows, tpoLogRows, 
@@ -487,6 +490,12 @@ function refreshCache() {
     console.error('Unexpected cache refresh error:', error.message);
   });
   return currentRefresh;
+}
+
+async function waitForCacheReady() {
+  if (globalCache?.cacheUpdatedAt) return true;
+  if (cacheRefreshPromise) await cacheRefreshPromise;
+  return Boolean(globalCache?.cacheUpdatedAt);
 }
 
 refreshCache();
@@ -688,7 +697,7 @@ async function uploadToDrive(file, folderId) {
 }
 
 module.exports = { 
-  doc, drive, google, serviceAccountAuth, getCache, refreshCache, loadDocInfo, hasAccess, getFuzzyHeader,
+  doc, drive, google, serviceAccountAuth, getCache, refreshCache, waitForCacheReady, loadDocInfo, hasAccess, getFuzzyHeader,
   getSpreadsheetIdForSheetName, getActiveSpreadsheetIds, ensureSpreadsheetDateFormats,
   sendIPCSMail, startEmailWorker: emailService.startWorker, processEmailQueue: emailService.processQueue,
   startMailDashboardRefresh: emailService.startMailDashboardRefresh,
