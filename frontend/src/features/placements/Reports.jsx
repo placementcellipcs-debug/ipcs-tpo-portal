@@ -443,13 +443,7 @@ export default function Reports() {
                 const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
                 const identities = [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean);
                 if (!logTpo || !identities.includes(logTpo)) return false;
-
-                const outcome = [getVal(log, 'status'), getVal(log, 'joiningstatus'), getVal(log, 'placementstatus')]
-                  .map(normalizePlacementText);
-                const isPositiveOutcome = value => value && !['notplaced', 'unplaced', 'notjoined', 'didnotjoin', 'notselected', 'notaccepted', 'rejected', 'declined', 'withdrawn'].some(term => value.includes(term)) && (value.includes('placed') || value.includes('offer') || value.includes('join'));
-                if (!outcome.some(isPositiveOutcome)) return false;
-                if (!getVal(log, 'studentname') && !getVal(log, 'name')) return false;
-                if (!getVal(log, 'companyname') && !getVal(log, 'company')) return false;
+                if (normalizePlacementText(getVal(log, 'status')) !== 'placed') return false;
 
                 const dateStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp') || '';
                 return checkMonth(dateStr);

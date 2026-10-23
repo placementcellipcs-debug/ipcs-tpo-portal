@@ -322,10 +322,11 @@ async function loadDocInfo() {
 async function ensureSpreadsheetDateFormats() {
   if (!spreadsheetDateFormatPromise) {
     spreadsheetDateFormatPromise = (async () => {
-      // Formatting is a one-time startup operation per process. Allow operators
-      // to disable it explicitly, but do not require a Render flag for newly
-      // split workbooks to receive consistent formats.
-      if (String(process.env.APPLY_SPREADSHEET_DATE_FORMATS || '').toLowerCase() === 'false') return [];
+      // Sheet formats persist between deployments. Keep this multi-workbook
+      // migration opt-in so startup does not spend Sheets read quota before
+      // loading the portal cache. Set APPLY_SPREADSHEET_DATE_FORMATS=true when
+      // explicitly applying formats to newly added or migrated tabs.
+      if (String(process.env.APPLY_SPREADSHEET_DATE_FORMATS || '').toLowerCase() !== 'true') return [];
 
       const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
       const summaries = [];

@@ -3132,15 +3132,19 @@ exports.getReports = async (req, res) => {
 
   }
 
-  (cache.placedStudents || []).forEach(row => {
-    if (!isPlacementOutcome(row, getValByHeader)) return;
+  // The monthly target report must use the same source and rule as the
+  // placement register: every TPO_Log row whose Status column says "Placed".
+  // Do not depend on the derived Placed_Students cache here; it can be behind
+  // the source sheet during a partial Sheets sync.
+  (cache.tpoLogs || []).forEach(row => {
+    if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed') return;
     const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame']);
     const belongsToUser = isPlacementTrackerTpo(reportUser)
       ? (placementOwnerMatchesUser(owner, reportUser)
         || (!owner && hasPlacementBranchAccess(getValByHeader(row, ['branch']), reportUser)))
       : isCentralTeamReportUser || isAdminReportUser || checkPlacementReportAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']));
     if (!belongsToUser) return;
-    try { placementReportLogs.push({ ...row.toObject(), rowNumber: row.rowNumber, sourceSheet: 'Placed_Students' }); }
+    try { placementReportLogs.push({ ...row.toObject(), rowNumber: row.rowNumber, sourceSheet: 'TPO_Log' }); }
     catch (error) {}
   });
   tpoLogs = latestPlacementRows(tpoLogs, (row, aliases) => {
