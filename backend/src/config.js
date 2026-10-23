@@ -169,10 +169,18 @@ const placementRowValue = (row, aliases) => {
   return '';
 };
 
+const normalizedPlacementStatus = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const isNegativePlacementValue = value => {
+  const normalized = normalizedPlacementStatus(value);
+  return Boolean(normalized) && ['notplaced', 'unplaced', 'notjoined', 'didnotjoin', 'notselected', 'notaccepted', 'rejected', 'declined', 'withdrawn'].some(term => normalized.includes(term));
+};
 const isPositivePlacementValue = value => {
-  const normalized = String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  if (!normalized || ['notplaced', 'unplaced', 'notjoined', 'didnotjoin', 'notselected', 'notaccepted', 'rejected', 'declined', 'withdrawn'].some(term => normalized.includes(term))) return false;
-  return normalized.includes('placed') || normalized.includes('offer') || normalized.includes('join');
+  const normalized = normalizedPlacementStatus(value);
+  return Boolean(normalized) && !isNegativePlacementValue(value) && (normalized.includes('placed') || normalized.includes('offer') || normalized.includes('join'));
+};
+const isPositivePlacementOutcome = (status, joiningStatus) => {
+  if (isNegativePlacementValue(status) || isNegativePlacementValue(joiningStatus)) return false;
+  return isPositivePlacementValue(status) || isPositivePlacementValue(joiningStatus);
 };
 
 const getPlacedMigrationKey = row => {
@@ -181,70 +189,90 @@ const getPlacedMigrationKey = row => {
   return identity.toLowerCase().replace(/[^a-z0-9]/g, '');
 };
 
-async function migratePlacedStudentsOnce(sheet, students = [], applications = [], tpoLogs = []) {
+const placementTimestamp = row => {
+  const value = placementRowValue(row, ['timestamp', 'updatedat', 'dateplaced', 'date', 'time']);
+  const dayFirst = String(value || '').match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[, T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (dayFirst) {
+    const [, day, month, year, hour = '0', minute = '0', second = '0'] = dayFirst;
+    const parsed = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)).getTime();
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+};
+
+async function migratePlacedStudentsOnce(sheet, tpoLogs = []) {
   if (placedStudentsMigrationComplete) return null;
-  const existingRows = await sheet.getRows();
-  const existingKeys = new Set(existingRows.map(row => placementRowValue(row, ['recordkey']) || getPlacedMigrationKey(row)).filter(Boolean));
-  const migrated = new Map();
-  const sources = [
-    ['Data', students],
-    ['Opening_Applied', applications],
-    ['TPO_Log', tpoLogs]
-  ];
-  for (const [sourceSheet, rows] of sources) {
-    for (const row of rows || []) {
-      if (sourceSheet === 'TPO_Log' && /^(yes|true|1)$/i.test(placementRowValue(row, ['tpoactionlog']))) continue;
-      const status = sourceSheet === 'Data'
-        ? placementRowValue(row, ['placementstatus', 'placementstat'])
-        : placementRowValue(row, ['status', 'placementstatus', 'placementstat']);
-      const joiningStatus = placementRowValue(row, ['joiningstatus']);
-      if (!isPositivePlacementValue(status) && !isPositivePlacementValue(joiningStatus)) continue;
-      const identity = placementRowValue(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']) || placementRowValue(row, ['studentname', 'name']);
-      if (!identity) continue;
-      const jobId = placementRowValue(row, ['jobid', 'job id']);
-      const company = placementRowValue(row, ['companyname', 'company']);
-      const position = placementRowValue(row, ['position', 'role']);
-      const recordKey = identity.toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (!recordKey) continue;
-      const value = (aliases) => placementRowValue(row, aliases);
-      const fields = {
-        'Record Key': recordKey,
-        'Student Name': value(['studentname', 'name', 'candidate']),
-        Contact: value(['contact', 'phone', 'mobilenumber']),
-        'Mail ID': value(['mailid', 'studentemail', 'email', 'mail']),
-        'Roll Number': value(['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']),
-        Course: value(['course', 'program']),
-        Branch: value(['branch', 'sittingbranch']),
-        Qualification: value(['qualification', 'qual']),
-        Resume: value(['resume', 'cv']),
-        'Job ID': jobId,
-        'Company Name': company,
-        Position: position,
-        'Placement Officer': value(['placementofficer', 'tpo', 'tponame', 'createdby']),
-        Status: status || joiningStatus || 'Placed',
-        Remarks: value(['remarks', 'studentremarks', 'studentremarks']),
-        'DATE PLACED': value(['dateplaced', 'timestamp', 'date', 'time']),
-        'PACKAGE (LPA)': value(['package', 'packagelpa']),
-        'Joining Status': joiningStatus,
-        'Offer Letter': value(['offerletterstatus', 'offerletter']),
-        'Source Sheet': sourceSheet,
-        'Source Row': row.rowNumber || '',
-        'Updated At': new Date().toISOString()
-      };
-      const current = migrated.get(recordKey) || {};
-      Object.entries(fields).forEach(([key, fieldValue]) => { if (String(fieldValue || '').trim()) current[key] = fieldValue; });
-      current['Record Key'] = recordKey;
-      migrated.set(recordKey, current);
+  const latestByPlacement = new Map();
+  for (const row of tpoLogs || []) {
+    const recordKey = getPlacedMigrationKey(row);
+    if (!recordKey) continue;
+    const jobId = normalizedPlacementStatus(placementRowValue(row, ['jobid', 'job id']));
+    const company = normalizedPlacementStatus(placementRowValue(row, ['companyname', 'company']));
+    const position = normalizedPlacementStatus(placementRowValue(row, ['position', 'role']));
+    const placementKey = `${recordKey}|${jobId || (company || position ? `${company}|${position}` : 'general')}`;
+    const current = latestByPlacement.get(placementKey);
+    const currentTime = placementTimestamp(row);
+    const priorTime = current ? placementTimestamp(current) : -1;
+    const isActionLog = /^(yes|true|1)$/i.test(placementRowValue(row, ['tpoactionlog']));
+    const wasActionLog = current && /^(yes|true|1)$/i.test(placementRowValue(current, ['tpoactionlog']));
+    if (!current || currentTime > priorTime || (currentTime === priorTime && (isActionLog && !wasActionLog || isActionLog === wasActionLog && Number(row.rowNumber || 0) < Number(current.rowNumber || 0)))) {
+      latestByPlacement.set(placementKey, row);
     }
   }
-  const toAdd = [...migrated.entries()].filter(([key]) => !existingKeys.has(key)).map(([, row]) => row);
+
+  const latestPositiveByStudent = new Map();
+  for (const row of latestByPlacement.values()) {
+    const status = placementRowValue(row, ['status']);
+    const joiningStatus = placementRowValue(row, ['joiningstatus']);
+    if (!isPositivePlacementOutcome(status, joiningStatus)) continue;
+    const recordKey = getPlacedMigrationKey(row);
+    const current = latestPositiveByStudent.get(recordKey);
+    if (!current || placementTimestamp(row) > placementTimestamp(current) || (placementTimestamp(row) === placementTimestamp(current) && Number(row.rowNumber || 0) < Number(current.rowNumber || 0))) {
+      latestPositiveByStudent.set(recordKey, row);
+    }
+  }
+
+  const toAdd = [...latestPositiveByStudent.entries()].map(([recordKey, row]) => {
+    const value = aliases => placementRowValue(row, aliases);
+    const status = value(['status']);
+    const joiningStatus = value(['joiningstatus']);
+    return {
+      'Record Key': recordKey,
+      'Student Name': value(['studentname', 'name', 'candidate']),
+      Contact: value(['contact', 'phone', 'mobilenumber']),
+      'Mail ID': value(['mailid', 'studentemail', 'email', 'mail']),
+      'Roll Number': value(['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']),
+      Course: value(['course', 'program']),
+      Branch: value(['branch', 'sittingbranch']),
+      Qualification: value(['qualification', 'qual']),
+      Resume: value(['resume', 'cv']),
+      'Job ID': value(['jobid', 'job id']),
+      'Company Name': value(['companyname', 'company']),
+      Position: value(['position', 'role']),
+      'Placement Officer': value(['placementofficer', 'tpo', 'tponame', 'createdby']),
+      Status: isPositivePlacementValue(status) ? status : joiningStatus,
+      Remarks: value(['remarks', 'studentremarks']),
+      'DATE PLACED': value(['dateplaced', 'timestamp', 'date', 'time']),
+      'PACKAGE (LPA)': value(['package', 'packagelpa']),
+      'Joining Status': joiningStatus,
+      'Offer Letter': value(['offerletterstatus', 'offerletter']),
+      'Source Sheet': 'TPO_Log',
+      'Source Row': row.rowNumber || '',
+      'Updated At': value(['timestamp', 'updatedat', 'dateplaced']) || formatIndiaTimestamp()
+    };
+  });
+
   try {
+    const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
+    const spreadsheetId = getSpreadsheetIdForSheetName(sheet.title);
+    await sheetsApi.spreadsheets.values.clear({ spreadsheetId, range: `'${sheet.title}'!A2:ZZ` });
     if (toAdd.length) await sheet.addRows(toAdd);
     placedStudentsMigrationComplete = true;
-    return toAdd.length ? await sheet.getRows() : existingRows;
+    return await sheet.getRows();
   } catch (error) {
     console.error('Could not migrate legacy placed students into Placed_Students:', error.message);
-    return existingRows;
+    throw error;
   }
 }
 
@@ -256,7 +284,7 @@ async function syncPlacedStudent(record = {}) {
   if (!identity) throw new Error('A student roll number or name is required to update the placed-student sheet.');
   const rows = await sheet.getRows();
   const existing = rows.find(row => normalize(placementRowValue(row, ['recordkey']) || placementRowValue(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']) || placementRowValue(row, ['studentname', 'name'])) === identity);
-  const positive = isPositivePlacementValue(record.status) || isPositivePlacementValue(record.joiningStatus);
+  const positive = isPositivePlacementOutcome(record.status, record.joiningStatus);
   if (!positive) {
     const existingSource = placementRowValue(existing, ['sourcesheet']);
     const shouldRemove = Boolean(existing && (!record.sourceSheet || existingSource === record.sourceSheet || record.sourceSheet === 'Placed_Students'));
@@ -595,9 +623,9 @@ async function performCacheRefresh() {
     const securityRows = fetchedData[23] || [];
     const tpoStatsRows = fetchedData[24] || [];
     let placedStudentsRows = fetchedData[25] || [];
-    const legacyPlacementSourcesHealthy = [0, 1, 8, 25].every(index => !cacheFailedSheets.includes(cacheFields[index]));
-    if (legacyPlacementSourcesHealthy) {
-      placedStudentsRows = await migratePlacedStudentsOnce(placedStudentsSheet, fetchedData[0] || [], fetchedData[1] || [], fetchedData[8] || []) || placedStudentsRows;
+    const placedStudentSourcesHealthy = [8, 25].every(index => !cacheFailedSheets.includes(cacheFields[index]));
+    if (placedStudentSourcesHealthy) {
+      placedStudentsRows = await migratePlacedStudentsOnce(placedStudentsSheet, fetchedData[8] || []) || placedStudentsRows;
     }
     const cacheSheetHealth = Object.fromEntries(cacheFields.map((field, index) => {
       const sheetTitle = sheetsToFetch[index]?.title;

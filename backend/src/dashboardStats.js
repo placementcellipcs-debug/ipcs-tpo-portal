@@ -6,17 +6,18 @@ const studentKeyParts = (row, getValue) => ({
 });
 
 const isPlacementOutcome = (row, getValue) => {
+  const isNegative = value => {
+    const status = normalizePlacementText(value);
+    return Boolean(status) && ['notplaced', 'unplaced', 'notjoined', 'didnotjoin', 'notselected', 'notaccepted', 'rejected', 'declined', 'withdrawn'].some(term => status.includes(term));
+  };
   const isPositive = value => {
     const status = normalizePlacementText(value);
-    if (!status || ['notplaced', 'unplaced', 'notjoined', 'didnotjoin', 'notselected', 'notaccepted', 'rejected', 'declined', 'withdrawn'].some(term => status.includes(term))) return false;
-    return status.includes('placed') || status.includes('offer') || status.includes('join');
+    return Boolean(status) && !isNegative(value) && (status.includes('placed') || status.includes('offer') || status.includes('join'));
   };
 
-  return [
-    getValue(row, ['status']),
-    getValue(row, ['joiningstatus']),
-    getValue(row, ['placementstatus', 'placementstat', 'placementstatsu']),
-  ].some(isPositive);
+  const status = getValue(row, ['status', 'placementstatus', 'placementstat', 'placementstatsu']);
+  const joiningStatus = getValue(row, ['joiningstatus']);
+  return !isNegative(status) && !isNegative(joiningStatus) && (isPositive(status) || isPositive(joiningStatus));
 };
 
 const calculateDashboardPlacementCounts = (students, placementRows, getValue, canAccess = () => true, canAccessPlacement = canAccess) => {
