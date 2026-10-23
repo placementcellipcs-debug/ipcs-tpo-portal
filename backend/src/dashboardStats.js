@@ -19,10 +19,8 @@ const isPlacementOutcome = (row, getValue) => {
   ].some(isPositive);
 };
 
-const calculateDashboardPlacementCounts = (students, placementRows, getValue, canAccess = () => true) => {
+const calculateDashboardPlacementCounts = (students, placementRows, getValue, canAccess = () => true, canAccessPlacement = canAccess) => {
   const eligibleStudents = new Set();
-  const rollToStudent = new Map();
-  const studentsByName = new Map();
   const placedStudents = new Set();
 
   (Array.isArray(students) ? students : []).forEach((row, index) => {
@@ -31,28 +29,13 @@ const calculateDashboardPlacementCounts = (students, placementRows, getValue, ca
     const { roll, name } = studentKeyParts(row, getValue);
     const key = roll ? `roll:${roll}` : name ? `name:${name}` : `row:${row?.rowNumber ?? index}`;
     eligibleStudents.add(key);
-    // The student register is also a placement source: staff can update its
-    // Placement Status without a matching TPO_Log row being present.
-    if ((roll || name) && isPlacementOutcome(row, getValue)) placedStudents.add(key);
-
-    if (roll) rollToStudent.set(roll, key);
-    if (name) {
-      if (!studentsByName.has(name)) studentsByName.set(name, new Set());
-      studentsByName.get(name).add(key);
-    }
   });
 
-  const resolveRegisteredStudent = row => {
+  (Array.isArray(placementRows) ? placementRows : []).forEach((row, index) => {
+    if (!canAccessPlacement(row) || !isPlacementOutcome(row, getValue)) return;
     const { roll, name } = studentKeyParts(row, getValue);
-    if (roll && rollToStudent.has(roll)) return rollToStudent.get(roll);
-    const nameMatches = name ? studentsByName.get(name) : null;
-    return nameMatches?.size === 1 ? nameMatches.values().next().value : null;
-  };
-
-  (Array.isArray(placementRows) ? placementRows : []).forEach(row => {
-    if (!canAccess(row) || !isPlacementOutcome(row, getValue)) return;
-    const studentKey = resolveRegisteredStudent(row);
-    if (studentKey && eligibleStudents.has(studentKey)) placedStudents.add(studentKey);
+    const key = roll ? `roll:${roll}` : name ? `name:${name}` : `row:${row?.rowNumber ?? index}`;
+    placedStudents.add(key);
   });
 
   return { totalStudents: eligibleStudents.size, placed: placedStudents.size };

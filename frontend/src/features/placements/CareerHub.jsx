@@ -29,7 +29,7 @@ export default function CareerHub() {
     setLoading(true);
     setError('');
     try {
-      const response = await axios.get(`${API_BASE}/api/career-hub`);
+      const response = await axios.get(`${API_BASE}/api/career-hub`, { timeout: 12000 });
       if (!response.data?.success) throw new Error(response.data?.message || 'The feed could not be loaded.');
       setCategories(response.data.categories || []);
       setItems(response.data.items || []);

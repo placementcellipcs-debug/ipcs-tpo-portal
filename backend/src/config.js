@@ -37,7 +37,7 @@ const learningUsesLegacySources = Boolean(legacySpreadsheetId) && configuredLear
 const normalizeSheetTitle = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const sheetGroups = {
   students: ['Data', 'Student_Diary', 'Leave_Applications'],
-  placements: ['NewsLetter', 'Event', 'Drive_Registration', 'Opening_Applied', 'Clients', 'TPO_Log', 'TPO_Stats', 'Corporate Training Inquiries', 'Hiring Inquiries'],
+  placements: ['NewsLetter', 'Event', 'Drive_Registration', 'Opening_Applied', 'Clients', 'TPO_Log', 'Placed_Students', 'TPO_Stats', 'Corporate Training Inquiries', 'Hiring Inquiries'],
   learning: [
     'Talentino_Schedule', 'Talentino_Attendance', 'Courses', 'Study_Materials', 'StudyMaterials',
     'Tech_Questions', 'Tech_Results', 'Aptitude_Questions', 'Aptitude_Results', 'Talentino_Questions', 'Talentino_Results',
@@ -128,6 +128,185 @@ let docInfoLoading = null;
 let docInfoCachedUntil = 0;
 const docInfoCacheMs = Math.max(15000, Number(process.env.SHEETS_METADATA_CACHE_MS) || 300000);
 let spreadsheetDateFormatPromise = null;
+let placedStudentsMigrationComplete = false;
+
+const placedStudentsHeaders = [
+  'Record Key', 'Student Name', 'Contact', 'Mail ID', 'Roll Number', 'Course', 'Branch', 'Qualification', 'Resume',
+  'Job ID', 'Company Name', 'Position', 'Placement Officer', 'Status', 'Remarks', 'DATE PLACED', 'PACKAGE (LPA)',
+  'Joining Status', 'Offer Letter', 'Source Sheet', 'Source Row', 'Updated At'
+];
+
+async function ensurePlacedStudentsSheet() {
+  let sheet = doc.sheetsByTitle['Placed_Students'];
+  if (!sheet) {
+    sheet = await doc.addSheet({ title: 'Placed_Students', headerValues: placedStudentsHeaders });
+    return sheet;
+  }
+
+  await sheet.loadHeaderRow();
+  let headers = [...(sheet.headerValues || [])];
+  const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const missing = placedStudentsHeaders.filter(title => !headers.some(header => normalized(header) === normalized(title)));
+  if (missing.length) {
+    const requiredColumns = headers.length + missing.length;
+    if ((Number(sheet.columnCount) || 0) < requiredColumns) await sheet.resize({ columnCount: requiredColumns });
+    headers = [...headers, ...missing];
+    await sheet.setHeaderRow(headers);
+    await sheet.loadHeaderRow();
+  }
+  return sheet;
+}
+
+const placementRowValue = (row, aliases) => {
+  if (!row?._worksheet) return '';
+  const headers = row._worksheet.headerValues || [];
+  const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (const alias of aliases) {
+    const key = normalize(alias);
+    const index = headers.findIndex(header => normalize(header) === key);
+    if (index >= 0 && row._rawData?.[index] !== undefined) return String(row._rawData[index] ?? '').trim();
+  }
+  return '';
+};
+
+const isPositivePlacementValue = value => {
+  const normalized = String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!normalized || ['notplaced', 'unplaced', 'notjoined', 'didnotjoin', 'notselected', 'notaccepted', 'rejected', 'declined', 'withdrawn'].some(term => normalized.includes(term))) return false;
+  return normalized.includes('placed') || normalized.includes('offer') || normalized.includes('join');
+};
+
+const getPlacedMigrationKey = row => {
+  const identity = placementRowValue(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']) || placementRowValue(row, ['studentname', 'name']);
+  if (!identity) return '';
+  return identity.toLowerCase().replace(/[^a-z0-9]/g, '');
+};
+
+async function migratePlacedStudentsOnce(sheet, students = [], applications = [], tpoLogs = []) {
+  if (placedStudentsMigrationComplete) return null;
+  const existingRows = await sheet.getRows();
+  const existingKeys = new Set(existingRows.map(row => placementRowValue(row, ['recordkey']) || getPlacedMigrationKey(row)).filter(Boolean));
+  const migrated = new Map();
+  const sources = [
+    ['Data', students],
+    ['Opening_Applied', applications],
+    ['TPO_Log', tpoLogs]
+  ];
+  for (const [sourceSheet, rows] of sources) {
+    for (const row of rows || []) {
+      if (sourceSheet === 'TPO_Log' && /^(yes|true|1)$/i.test(placementRowValue(row, ['tpoactionlog']))) continue;
+      const status = sourceSheet === 'Data'
+        ? placementRowValue(row, ['placementstatus', 'placementstat'])
+        : placementRowValue(row, ['status', 'placementstatus', 'placementstat']);
+      const joiningStatus = placementRowValue(row, ['joiningstatus']);
+      if (!isPositivePlacementValue(status) && !isPositivePlacementValue(joiningStatus)) continue;
+      const identity = placementRowValue(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']) || placementRowValue(row, ['studentname', 'name']);
+      if (!identity) continue;
+      const jobId = placementRowValue(row, ['jobid', 'job id']);
+      const company = placementRowValue(row, ['companyname', 'company']);
+      const position = placementRowValue(row, ['position', 'role']);
+      const recordKey = identity.toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (!recordKey) continue;
+      const value = (aliases) => placementRowValue(row, aliases);
+      const fields = {
+        'Record Key': recordKey,
+        'Student Name': value(['studentname', 'name', 'candidate']),
+        Contact: value(['contact', 'phone', 'mobilenumber']),
+        'Mail ID': value(['mailid', 'studentemail', 'email', 'mail']),
+        'Roll Number': value(['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']),
+        Course: value(['course', 'program']),
+        Branch: value(['branch', 'sittingbranch']),
+        Qualification: value(['qualification', 'qual']),
+        Resume: value(['resume', 'cv']),
+        'Job ID': jobId,
+        'Company Name': company,
+        Position: position,
+        'Placement Officer': value(['placementofficer', 'tpo', 'tponame', 'createdby']),
+        Status: status || joiningStatus || 'Placed',
+        Remarks: value(['remarks', 'studentremarks', 'studentremarks']),
+        'DATE PLACED': value(['dateplaced', 'timestamp', 'date', 'time']),
+        'PACKAGE (LPA)': value(['package', 'packagelpa']),
+        'Joining Status': joiningStatus,
+        'Offer Letter': value(['offerletterstatus', 'offerletter']),
+        'Source Sheet': sourceSheet,
+        'Source Row': row.rowNumber || '',
+        'Updated At': new Date().toISOString()
+      };
+      const current = migrated.get(recordKey) || {};
+      Object.entries(fields).forEach(([key, fieldValue]) => { if (String(fieldValue || '').trim()) current[key] = fieldValue; });
+      current['Record Key'] = recordKey;
+      migrated.set(recordKey, current);
+    }
+  }
+  const toAdd = [...migrated.entries()].filter(([key]) => !existingKeys.has(key)).map(([, row]) => row);
+  try {
+    if (toAdd.length) await sheet.addRows(toAdd);
+    placedStudentsMigrationComplete = true;
+    return toAdd.length ? await sheet.getRows() : existingRows;
+  } catch (error) {
+    console.error('Could not migrate legacy placed students into Placed_Students:', error.message);
+    return existingRows;
+  }
+}
+
+async function syncPlacedStudent(record = {}) {
+  const sheet = await ensurePlacedStudentsSheet();
+  await sheet.loadHeaderRow();
+  const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const identity = normalize(record.roll || record.rollNumber || record.ipcsRollNumber) || normalize(record.name || record.studentName);
+  if (!identity) throw new Error('A student roll number or name is required to update the placed-student sheet.');
+  const rows = await sheet.getRows();
+  const existing = rows.find(row => normalize(placementRowValue(row, ['recordkey']) || placementRowValue(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']) || placementRowValue(row, ['studentname', 'name'])) === identity);
+  const positive = isPositivePlacementValue(record.status) || isPositivePlacementValue(record.joiningStatus);
+  if (!positive) {
+    const existingSource = placementRowValue(existing, ['sourcesheet']);
+    const shouldRemove = Boolean(existing && (!record.sourceSheet || existingSource === record.sourceSheet || record.sourceSheet === 'Placed_Students'));
+    if (shouldRemove) await existing.delete();
+    const latest = await sheet.getRows();
+    if (globalCache) globalCache.placedStudents = latest;
+    return { removed: shouldRemove };
+  }
+  const values = {
+    'Record Key': identity,
+    'Student Name': record.name || record.studentName || '',
+    Contact: record.phone || record.contact || '',
+    'Mail ID': record.email || record.mailId || '',
+    'Roll Number': record.roll || record.rollNumber || record.ipcsRollNumber || '',
+    Course: record.course || '',
+    Branch: record.branch || '',
+    Qualification: record.qual || record.qualification || '',
+    Resume: record.resume || '',
+    'Job ID': record.jobId || '',
+    'Company Name': record.company || record.companyName || '',
+    Position: record.position || '',
+    'Placement Officer': record.placementOfficer || record.tpoName || '',
+    Status: record.status || record.joiningStatus || 'Placed',
+    Remarks: record.remarks || '',
+    'DATE PLACED': record.datePlaced || record.date || '',
+    'PACKAGE (LPA)': record.packageLpa || record.package || '',
+    'Joining Status': record.joiningStatus || '',
+    'Offer Letter': record.offerLetter || '',
+    'Source Sheet': record.sourceSheet === 'Placed_Students' && existing
+      ? placementRowValue(existing, ['sourcesheet']) || 'Placed_Students'
+      : record.sourceSheet || '',
+    'Source Row': record.sourceRow || '',
+    'Updated At': formatIndiaTimestamp()
+  };
+  const headerByKey = new Map((sheet.headerValues || []).map(header => [normalize(header), header]));
+  const rowData = Object.fromEntries(Object.entries(values).map(([key, value]) => {
+    const header = headerByKey.get(normalize(key));
+    const prior = existing ? placementRowValue(existing, [key]) : '';
+    return [header, value === '' && prior && record.sourceSheet !== 'Placed_Students' ? prior : value];
+  }).filter(([header]) => Boolean(header)));
+  if (existing) {
+    existing.assign(rowData);
+    await existing.save();
+  } else {
+    await sheet.addRow(rowData);
+  }
+  const latest = await sheet.getRows();
+  if (globalCache) globalCache.placedStudents = latest;
+  return { added: !existing, updated: Boolean(existing) };
+}
 
 const getCache = () => globalCache;
 async function loadDocInfo() {
@@ -284,6 +463,7 @@ async function performCacheRefresh() {
   isFetching = true;
   try {
     await loadDocInfo();
+    const placedStudentsSheet = await ensurePlacedStudentsSheet();
     try {
       await ensureSpreadsheetDateFormats();
     } catch (error) {
@@ -302,19 +482,19 @@ async function performCacheRefresh() {
       getSheetFuzzy("StudyMaterials"), getSheetFuzzy("TechQuestions"), getSheetFuzzy("TechResults"),
       getSheetFuzzy("AptitudeQuestions"), getSheetFuzzy("AptitudeResults"), getSheetFuzzy("TalentinoQuestions"), getSheetFuzzy("TalentinoResults"),
       getSheetFuzzy("Courses"), getSheetFuzzy("DriveRegistration"), getSheetFuzzy("Contact"), getSheetFuzzy("User"), getSheetFuzzy("Branches"), getSheetFuzzy("Mail"),
-      doc.sheetsByTitle['Trainer/TL_Log'] || getSheetFuzzy("TrainerTLLog"), getSheetFuzzy("security"), getSheetFuzzy("TPOStats")
+      doc.sheetsByTitle['Trainer/TL_Log'] || getSheetFuzzy("TrainerTLLog"), getSheetFuzzy("security"), getSheetFuzzy("TPOStats"), placedStudentsSheet
     ];
 
     const cacheFields = [
       'students', 'applications', 'vacancies', 'events', 'issues', 'tSched', 'tAtt', 'clients', 'tpoLogs',
       'materials', 'techQuestions', 'techResults', 'aptQuestions', 'aptResults', 'talQuestions', 'talResults',
-      'coursesRows', 'drives', 'contacts', 'users', 'branches', 'mails', 'trainerLogs', 'securityLogs', 'tpoStats'
+      'coursesRows', 'drives', 'contacts', 'users', 'branches', 'mails', 'trainerLogs', 'securityLogs', 'tpoStats', 'placedStudents'
     ];
     const emptyCache = {
       students: [], applications: [], vacancies: [], events: [], issues: [], tSched: [], tAtt: [], clients: [],
       tpoLogs: [], materials: [], techQuestions: [], techResults: [], aptQuestions: [], aptResults: [],
       talQuestions: [], talResults: [], coursesRows: [], drives: [], contacts: [], users: [], branches: [],
-      mails: [], trainerLogs: [], securityLogs: [], tpoStats: [], coursesDict: {}
+      mails: [], trainerLogs: [], securityLogs: [], tpoStats: [], placedStudents: [], coursesDict: {}
     };
     const previousCache = globalCache || {};
     const cacheFailedSheets = [];
@@ -414,6 +594,11 @@ async function performCacheRefresh() {
     const trainerLogRows = fetchedData[22] || [];
     const securityRows = fetchedData[23] || [];
     const tpoStatsRows = fetchedData[24] || [];
+    let placedStudentsRows = fetchedData[25] || [];
+    const legacyPlacementSourcesHealthy = [0, 1, 8, 25].every(index => !cacheFailedSheets.includes(cacheFields[index]));
+    if (legacyPlacementSourcesHealthy) {
+      placedStudentsRows = await migratePlacedStudentsOnce(placedStudentsSheet, fetchedData[0] || [], fetchedData[1] || [], fetchedData[8] || []) || placedStudentsRows;
+    }
     const cacheSheetHealth = Object.fromEntries(cacheFields.map((field, index) => {
       const sheetTitle = sheetsToFetch[index]?.title;
       const healthy = !cacheFailedSheets.includes(field) && (!sheetTitle || !cacheFailedSheets.includes(sheetTitle));
@@ -445,6 +630,7 @@ async function performCacheRefresh() {
       trainerLogs: trainerLogRows,
       securityLogs: securityRows,
       tpoStats: tpoStatsRows,
+      placedStudents: placedStudentsRows,
       authCacheReady: true,
       authSheetsHealthy: globalCache.authSheetsHealthy,
       cacheSheetHealth,
@@ -697,7 +883,7 @@ async function uploadToDrive(file, folderId) {
 }
 
 module.exports = { 
-  doc, drive, google, serviceAccountAuth, getCache, refreshCache, waitForCacheReady, loadDocInfo, hasAccess, getFuzzyHeader,
+  doc, drive, google, serviceAccountAuth, getCache, refreshCache, waitForCacheReady, loadDocInfo, hasAccess, getFuzzyHeader, syncPlacedStudent,
   getSpreadsheetIdForSheetName, getActiveSpreadsheetIds, ensureSpreadsheetDateFormats,
   sendIPCSMail, startEmailWorker: emailService.startWorker, processEmailQueue: emailService.processQueue,
   startMailDashboardRefresh: emailService.startMailDashboardRefresh,

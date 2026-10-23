@@ -256,7 +256,7 @@ export default function Dashboard() {
         if (reportsRes.data && reportsRes.data.success) {
           // Applications come from OpeningApplied; student roster rows are not applications.
           const applications = reportsRes.data.applications || [];
-          const logs = reportsRes.data.tpoLogs || [];
+          const logs = reportsRes.data.placementReportLogs || [];
           
           setRawChartData({ applications, logs });
           processChartData(applications, logs, selectedYear);

@@ -16,6 +16,7 @@ const FEEDS = [
 
 let cachedFeed = null;
 let cachedAt = 0;
+let inFlightFeed = null;
 const CACHE_MS = 10 * 60 * 1000;
 
 const decodeXml = value => String(value || '')
@@ -50,32 +51,42 @@ function parseFeed(xml, feed) {
 }
 
 exports.getCareerFeed = async (req, res) => {
+  if (cachedFeed && Date.now() - cachedAt < CACHE_MS) {
+    return res.json({ success: true, refreshedAt: new Date(cachedAt).toISOString(), categories: FEEDS, items: cachedFeed });
+  }
+
+  if (!inFlightFeed) {
+    inFlightFeed = (async () => {
+      const results = await Promise.allSettled(FEEDS.map(async feed => {
+        const response = await axios.get(makeFeedUrl(feed.query), {
+          timeout: 5000,
+          responseType: 'text',
+          headers: { 'User-Agent': 'IPCS-Staff-CareerHub/1.0' },
+          maxContentLength: 2 * 1024 * 1024
+        });
+        return parseFeed(response.data, feed).slice(0, 8);
+      }));
+
+      const items = results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
+      const unique = [...new Map(items.map(item => [item.link, item])).values()]
+        .sort((a, b) => Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0));
+      if (!unique.length) {
+        if (cachedFeed?.length) return { stale: true, items: cachedFeed, refreshedAt: new Date(cachedAt).toISOString() };
+        throw new Error('No news sources responded with updates.');
+      }
+      cachedFeed = unique;
+      cachedAt = Date.now();
+      return { items: unique, refreshedAt: new Date(cachedAt).toISOString() };
+    })();
+  }
+
   try {
-    if (cachedFeed && Date.now() - cachedAt < CACHE_MS) {
-      return res.json({ success: true, refreshedAt: new Date(cachedAt).toISOString(), categories: FEEDS, items: cachedFeed });
-    }
-
-    const results = await Promise.allSettled(FEEDS.map(async feed => {
-      const response = await axios.get(makeFeedUrl(feed.query), {
-        timeout: 8000,
-        responseType: 'text',
-        headers: { 'User-Agent': 'IPCS-Staff-CareerHub/1.0' },
-        maxContentLength: 2 * 1024 * 1024
-      });
-      return parseFeed(response.data, feed).slice(0, 8);
-    }));
-
-    const items = results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
-    const unique = [...new Map(items.map(item => [item.link, item])).values()]
-      .sort((a, b) => Date.parse(b.publishedAt || 0) - Date.parse(a.publishedAt || 0));
-    if (!unique.length && cachedFeed) {
-      return res.json({ success: true, stale: true, refreshedAt: new Date(cachedAt).toISOString(), categories: FEEDS, items: cachedFeed });
-    }
-    cachedFeed = unique;
-    cachedAt = Date.now();
-    res.json({ success: true, refreshedAt: new Date(cachedAt).toISOString(), categories: FEEDS, items: unique });
+    const feed = await inFlightFeed;
+    return res.json({ success: true, ...feed, categories: FEEDS });
   } catch (error) {
-    if (cachedFeed) return res.json({ success: true, stale: true, refreshedAt: new Date(cachedAt).toISOString(), categories: FEEDS, items: cachedFeed });
-    res.status(502).json({ success: false, message: 'The industry feed is temporarily unavailable. Please try again shortly.' });
+    if (cachedFeed?.length) return res.json({ success: true, stale: true, refreshedAt: new Date(cachedAt).toISOString(), categories: FEEDS, items: cachedFeed });
+    return res.status(502).json({ success: false, message: 'Industry updates could not be reached. Check the connection and try again.' });
+  } finally {
+    inFlightFeed = null;
   }
 };

@@ -190,6 +190,7 @@ app.post('/api/tpo/students/update-student', controllers.updateStudent);
 app.post('/api/tpo/applications', controllers.getApplications);
 app.post('/api/tpo/applications/update', upload.single('offerLetterFile'), controllers.updateApplication);
 app.post('/api/tpo/applications/update-log', upload.single('offerLetterFile'), controllers.updatePlacementLog);
+app.post('/api/tpo/applications/update-placed', upload.single('offerLetterFile'), controllers.updatePlacedStudent);
 app.post('/api/tpo/applications/add', upload.single('offerLetterFile'), controllers.addApplication);
 app.post('/api/tpo/applications/direct-interview', controllers.addDirectInterview);
 app.post('/api/tpo/applications/email-student', controllers.emailStudent);

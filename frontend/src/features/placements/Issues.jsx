@@ -14,6 +14,7 @@ export default function Issues() {
   
   const [issues, setIssues] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
   // View State Management (Dual-View)
   const [selectedBranch, setSelectedBranch] = useState(null);
@@ -26,6 +27,7 @@ export default function Issues() {
     if (!tpoData) return;
     const fetchIssues = async () => {
       try {
+        setLoadError('');
         const response = await axios.post(`${API_BASE}/api/tpo/issues`, {
           assignedBranchesArray: tpoData.assignedBranchesArray || [],
           role: tpoData.role,
@@ -34,9 +36,10 @@ export default function Issues() {
         if (response.data.success) {
           // 🚨 SAFE FALLBACK: Guarantees an array is always set
           setIssues(response.data.issues || []);
-        }
+        } else setLoadError(response.data.message || 'Issue records could not be loaded.');
       } catch (error) { 
         console.error("Failed to fetch issues", error); 
+        setLoadError(error.response?.data?.message || error.message || 'Issue records could not be loaded.');
       } finally { 
         setLoading(false); 
       }
@@ -120,7 +123,9 @@ export default function Issues() {
             <h1 className="hero-title">Issue Resolution Center</h1>
             <p className="hero-subtitle">Select an assigned branch to view and resolve student complaints.</p>
             
-            {totalPending > 0 ? (
+            {loadError ? (
+              <div className="status-badge alert"><WarningCircle size={18} weight="fill" /> Issue records are unavailable until the data sync completes.</div>
+            ) : totalPending > 0 ? (
               <div className="status-badge alert">
                 <WarningCircle size={18} weight="fill" /> You have {totalPending} pending issue(s) awaiting resolution.
               </div>
@@ -133,6 +138,8 @@ export default function Issues() {
           
           {loading ? (
             <div style={{ textAlign: 'center', marginTop: '4rem', color: 'var(--accent-primary)' }}><CircleNotch size={50} className="ph-spin" /></div>
+          ) : loadError ? (
+            <div className="empty-state"><WarningCircle size={42} /><p>{loadError}</p></div>
           ) : branchList.length === 0 ? (
             <div className="empty-state">
               <Headset size={56} weight="thin" />

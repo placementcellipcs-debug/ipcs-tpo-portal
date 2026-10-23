@@ -27,7 +27,7 @@ function parseUserAgent(ua = '') {
 
 const { 
   doc, drive, google, serviceAccountAuth, getCache, refreshCache, loadDocInfo, getSpreadsheetIdForSheetName, hasAccess, getFuzzyHeader,
-  sendIPCSMail, uploadToDrive
+  sendIPCSMail, uploadToDrive, syncPlacedStudent
 } = require('./config');
 
 const { autoCreateDesignTask } = require('./designControllers');
@@ -476,7 +476,11 @@ const sendCompanyOpeningDailyReport = async ({ reportDate, openingRows, cache })
 
   const giftyEmail = 'gifty@ipcsglobal.com';
   const tpoEmails = getDailyReportTpoRecipients();
-  const reportRecipients = [giftyEmail, ...tpoEmails];
+  const ccEmails = [...new Map([...tpoEmails, 'rakesh@ipcsglobal.com']
+    .map(email => String(email || '').trim())
+    .filter(Boolean)
+    .map(email => [email.toLowerCase(), email])).values()];
+  const reportRecipients = [giftyEmail, ...ccEmails];
   const subject = `[IPCS COMPANY OPENING REPORT] ${reportDate}`;
   const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
@@ -510,7 +514,7 @@ const sendCompanyOpeningDailyReport = async ({ reportDate, openingRows, cache })
     const delivery = await sendIPCSMail({
       from: `"IPCS Global Placement Team" <${process.env.EMAIL_USER}>`,
       to: giftyEmail,
-      cc: tpoEmails.join(','),
+      cc: ccEmails.join(','),
       subject,
       text: `Company resume delivery report for openings whose deadline was ${reportDate}. ${openingRows.length} opening(s), ${sentCount} sent, ${queuedCount} queued, ${failedCount} failed or under review.`,
       html
@@ -986,12 +990,16 @@ const placementDriveOwnedByUser = (row, user) => [
   getValByHeader(row, ['placementofficer'])
 ].some(owner => placementOwnerMatchesUser(owner, user));
 const getOwnedPlacementJobIds = (user, vacancyRows = getCache()?.vacancies || []) => {
-  const officer = normalizePlacementText(user?.name);
-  if (!officer) return new Set();
   return new Set((vacancyRows || [])
-    .filter(row => normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame'])) === officer)
+    .filter(row => placementOwnerMatchesUser(getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby', 'owner', 'postedby']), user))
     .map(row => normalizePlacementText(getValByHeader(row, ['jobid', 'job id', 'id'])))
     .filter(Boolean));
+};
+const getPlacementJobOwner = (jobId, vacancyRows = getCache()?.vacancies || []) => {
+  const normalizedJobId = normalizePlacementText(jobId);
+  if (!normalizedJobId) return '';
+  const vacancy = (vacancyRows || []).find(row => normalizePlacementText(getValByHeader(row, ['jobid', 'job id', 'id'])) === normalizedJobId);
+  return vacancy ? getValByHeader(vacancy, ['placementofficer', 'tpo', 'tponame', 'createdby', 'owner', 'postedby']) : '';
 };
 const isOwnedPlacementApplication = (row, user, ownedJobIds = getOwnedPlacementJobIds(user)) => {
   if (!row) return false;
@@ -1013,7 +1021,9 @@ const canAccessTrackerApplication = (row, user, linkedStudent = null) => {
 exports.getDashboardStats = async (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, department } = req.body;
   const placementUser = req.portalUser || { role, assignedBranchesArray, assignedCourse, department };
-  const checkAccess = (rBranch, rCourse) => hasPlacementAccess(rBranch, rCourse, placementUser);
+  const checkAccess = (rBranch, rCourse) => isPlacementTrackerAdmin(placementUser) || isPlacementTrackerTpo(placementUser)
+    ? hasPlacementBranchAccess(rBranch, placementUser)
+    : hasPlacementAccess(rBranch, rCourse, placementUser);
 
   const cache = getCache();
   let pendingApps = 0, activeVacs = 0;
@@ -1023,13 +1033,15 @@ exports.getDashboardStats = async (req, res) => {
     return count + (companyName ? 1 : 0);
   }, 0);
 
-  const logsSource = cache.tpoLogs || [];
-  const dedupedLogs = latestPlacementRows(logsSource, getValByHeader);
   const placementCounts = calculateDashboardPlacementCounts(
     cache.students || [],
-    dedupedLogs,
+    cache.placedStudents || [],
     getValByHeader,
-    row => checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))
+    row => checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course'])),
+    row => isPlacementTrackerTpo(placementUser)
+      ? (placementOwnerMatchesUser(getValByHeader(row, ['placementofficer', 'tpo', 'tponame']), placementUser)
+        || (!getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) && hasPlacementBranchAccess(getValByHeader(row, ['branch']), placementUser)))
+      : checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))
   );
 
   const studentByRoll = new Map();
@@ -1071,7 +1083,7 @@ exports.getDashboardStats = async (req, res) => {
       if (parsedDate && parsedDate < todayStart) isExpired = true;
     }
 
-    if ((status.includes('open') || status.includes('yes')) && !isExpired && checkAccess('All', getValByHeader(row, ['course', 'program']))) {
+    if ((status.includes('open') || status.includes('yes')) && !isExpired && (isPlacementTrackerTpo(placementUser) || checkAccess('All', getValByHeader(row, ['course', 'program'])))) {
       activeVacs++;
     }
   });
@@ -1103,7 +1115,7 @@ exports.getStudents = (req, res) => {
     const branch = getValByHeader(row, ['branch']) || 'Unknown';
     const course = getValByHeader(row, ['course']) || 'Unknown';
 
-    if (hasPlacementAccess(branch, course, placementUser)) {
+    if (hasPlacementBranchAccess(branch, placementUser)) {
       stats.total++;
       
       const pStatus = (getValByHeader(row, ['placementstat', 'placementstatus']) || 'Pending').toString().trim();
@@ -1164,7 +1176,10 @@ exports.updateStudent = async (req, res) => {
     if (rows.length > 0) {
       const studentBranch = getValByHeader(rows[0], ['branch']) || '';
       const studentCourse = getValByHeader(rows[0], ['course']) || '';
-      if (!hasPlacementAccess(studentBranch, studentCourse, user)) {
+      const canEditBranchStudent = isPlacementTrackerTpo(user) || isPlacementTrackerAdmin(user)
+        ? hasPlacementBranchAccess(studentBranch, user)
+        : hasPlacementAccess(studentBranch, studentCourse, user);
+      if (!canEditBranchStudent) {
         return res.status(403).json({ success: false, message: 'This student is outside your branch or course assignment.' });
       }
       const headers = stuSheet.headerValues.map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
@@ -1209,6 +1224,33 @@ exports.updateStudent = async (req, res) => {
       rows[0].assign(updateObj); 
       await rows[0].save(); 
 
+      let placedSheetWarning = '';
+      if (isPlacementEditor && placementStatus !== undefined) {
+        placedSheetWarning = await syncPositivePlacement({
+          name: getValByHeader(rows[0], ['name', 'studentname']),
+          phone: getValByHeader(rows[0], ['phone', 'contact', 'mobilenumber']),
+          email: getValByHeader(rows[0], ['mailid', 'email', 'studentemail']),
+          roll: getValByHeader(rows[0], ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']),
+          course: studentCourse,
+          branch: studentBranch,
+          qual: getValByHeader(rows[0], ['qualification', 'qual']),
+          resume: getValByHeader(rows[0], ['resume', 'cv']),
+          jobId: getValByHeader(rows[0], ['jobid']),
+          company: getValByHeader(rows[0], ['companyname', 'company']),
+          position: getValByHeader(rows[0], ['position', 'role']),
+          placementOfficer: isPlacementTrackerTpo(user)
+            ? user?.name || user?.email || ''
+            : getValByHeader(rows[0], ['placementofficer', 'tpo', 'tponame']) || '',
+          status: placementStatus,
+          joiningStatus: getValByHeader(rows[0], ['joiningstatus']),
+          remarks: getValByHeader(rows[0], ['remarks']),
+          datePlaced: getValByHeader(rows[0], ['dateplaced']),
+          packageLpa: getValByHeader(rows[0], ['package', 'packagelpa']),
+          sourceSheet: 'Data',
+          sourceRow: rows[0].rowNumber
+        });
+      }
+
       if (vacOpen && vacOpen.toString().toLowerCase() === 'yes' && oldVacOpen !== 'yes') {
          let sName = getValByHeader(rows[0], ['name', 'studentname']) || 'Student';
          let sEmail = getValByHeader(rows[0], ['mailid', 'email']);
@@ -1240,7 +1282,7 @@ exports.updateStudent = async (req, res) => {
       }
 
       refreshCache(); 
-      res.json({ success: true, message: "Student record updated!" });
+      res.json({ success: true, message: "Student record updated!", warning: placedSheetWarning });
     } else { res.status(404).json({ success: false, message: "Row not found." }); }
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
@@ -1363,21 +1405,24 @@ const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentCo
   await logSheet.addRow(mapPlacementRowData(logSheet, actionRow), { insert: true });
 };
 
+const syncPositivePlacement = async record => {
+  try {
+    await syncPlacedStudent(record);
+    return '';
+  } catch (error) {
+    console.error('Placement was saved but the Placed_Students sheet could not be updated:', error.message);
+    return `The placement was saved, but the Placed_Students sheet could not be updated: ${error.message}`;
+  }
+};
+
 exports.getApplications = async (req, res) => {
-  const { assignedBranchesArray, role, assignedCourse, department } = req.body;
   if (!getCache()) await refreshCache();
   if (!getCache()) return res.status(503).json({ success: false, message: 'Placement data is still syncing. Please refresh shortly.' });
   let appsList = []; 
   const cache = getCache();
   const portalUser = req.portalUser || {};
-  const trackerRole = String(portalUser.role || role || '').toUpperCase();
-  const restrictToPlacementOfficer = !isPlacementTrackerAdmin(portalUser) && isPlacementTrackerTpo({ role: trackerRole });
-  const signedInOfficer = normalizePlacementText(portalUser.name);
-  const ownedJobIds = getOwnedPlacementJobIds(portalUser, cache.vacancies || []);
-  const belongsToSignedInOfficer = row => {
-    if (!restrictToPlacementOfficer || !signedInOfficer) return !restrictToPlacementOfficer;
-    return isOwnedPlacementApplication(row, portalUser, ownedJobIds);
-  };
+  const scope = String(req.body?.scope || '').toLowerCase();
+  const showBranchRecords = scope === 'branch';
   
   const sourceData = cache.applications || [];
   const studentByRoll = new Map();
@@ -1424,13 +1469,11 @@ exports.getApplications = async (req, res) => {
       const branch = sourceBranch || 'Unknown';
       const course = getValByHeader(row, ['course']) || (studentData && getValByHeader(studentData, ['course', 'program'])) || 'Unknown';
       const jobId = getValByHeader(row, ['jobid', 'job id']) || '';
-      const belongsToOfficer = belongsToSignedInOfficer(row);
       const withinAssignedScope = hasPlacementBranchAccess(branch, portalUser);
-      // TPOs see every applicant for their own openings, regardless of the
-      // student's branch. Admin and non-TPO views retain their usual scope.
-      const allowedForTracker = restrictToPlacementOfficer
-        ? belongsToOfficer
-        : withinAssignedScope;
+      const allowedForTracker = isPlacementTrackerAdmin(portalUser)
+        || (isPlacementTrackerTpo(portalUser)
+          ? (showBranchRecords ? withinAssignedScope : isOwnedPlacementApplication(row, portalUser))
+          : withinAssignedScope);
       if (allowedForTracker) {
       const phone = getValByHeader(row, ['contact', 'phone', 'mobilenumber']) || (studentData && getValByHeader(studentData, ['phone', 'contact', 'mobilenumber'])) || '';
       const email = getValByHeader(row, ['mailid', 'studentemail', 'email', 'mail']) || (studentData && getValByHeader(studentData, ['mailid', 'email', 'mail'])) || '';
@@ -1439,7 +1482,7 @@ exports.getApplications = async (req, res) => {
 
       const status = getValByHeader(row, ['status']) || 'Applied';
       const remarks = getValByHeader(row, ['remarks']) || '';
-      const tpoName = getValByHeader(row, ['placementofficer', 'tponame']) || '';
+      const tpoName = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']) || getPlacementJobOwner(jobId) || '';
       const interviewDate = getValByHeader(row, ['interviewdate']) || '';
       const interviewTime = getValByHeader(row, ['interviewtime', 'intervewtime']) || '';
       const interviewVenue = getValByHeader(row, ['interviewvenue']) || '';
@@ -1576,7 +1619,7 @@ exports.updateApplication = async (req, res) => {
     const sJobId = getValByHeader(sourceRow, ['jobid']) || fullApp.jobId || '';
     const sCompany = getValByHeader(sourceRow, ['companyname', 'company']) || fullApp.company || '';
     const sPosition = getValByHeader(sourceRow, ['position', 'role']) || fullApp.position || '';
-    const sTpo = getValByHeader(sourceRow, ['placementofficer', 'tponame']) || user?.name || '';
+    const sTpo = getValByHeader(sourceRow, ['placementofficer', 'tpo', 'tponame', 'createdby']) || getPlacementJobOwner(sJobId) || user?.name || '';
 
     const updateObj = {};
     if (oldStatusH && status !== undefined) updateObj[oldStatusH] = status;
@@ -1728,8 +1771,16 @@ exports.updateApplication = async (req, res) => {
       designTaskWarning = `The placement was saved, but its Design Portal task could not be created: ${error.message}`;
     }
 
+    const placedSheetWarning = await syncPositivePlacement({
+      name: sName, phone: sContact, email: sMail, roll: sRoll, course: sCourse, branch: sBranch,
+      qual: sQual, resume: sResume, jobId: sJobId, company: sCompany, position: sPosition,
+      placementOfficer: sTpo, status: nextStatus, remarks: nextRemarks, datePlaced: nextDatePlaced,
+      packageLpa: nextPackage, joiningStatus: nextJoiningStatus, offerLetter: nextOfferLetter,
+      sourceSheet: 'Opening_Applied', sourceRow: sourceRow.rowNumber
+    });
+
     refreshCache();
-    res.json({ success: true, message: "Updated!", statusHistory: nextHistory, warning: [emailWarning, actionLogWarning, designTaskWarning].filter(Boolean).join(' ') });
+    res.json({ success: true, message: "Updated!", statusHistory: nextHistory, warning: [emailWarning, actionLogWarning, designTaskWarning, placedSheetWarning].filter(Boolean).join(' ') });
   } catch (error) { 
     console.error(error);
     res.status(500).json({ success: false, message: `Update Failed: ${error.message}` }); 
@@ -1753,7 +1804,13 @@ exports.updatePlacementLog = async (req, res) => {
     }
 
     const row = rows[0];
-    if (!hasPlacementAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']), user)) {
+    const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']);
+    const branch = getValByHeader(row, ['branch']);
+    const course = getValByHeader(row, ['course']);
+    const canEditPlacementLog = isPlacementTrackerTpo(user)
+      ? placementOwnerMatchesUser(owner, user) || (!owner && hasPlacementBranchAccess(branch, user))
+      : hasPlacementAccess(branch, course, user);
+    if (!isPlacementTrackerAdmin(user) && !canEditPlacementLog) {
       return res.status(403).json({ success: false, message: 'This placement is outside your branch or course assignment.' });
     }
 
@@ -1789,10 +1846,84 @@ exports.updatePlacementLog = async (req, res) => {
 
     row.assign(update);
     await row.save();
+    const placedSheetWarning = await syncPositivePlacement({
+      name: getValByHeader(row, ['studentname', 'name']), phone: getValByHeader(row, ['contact', 'phone']),
+      email: getValByHeader(row, ['mailid', 'email']), roll: getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']),
+      course: getValByHeader(row, ['course']), branch: getValByHeader(row, ['branch']),
+      qual: getValByHeader(row, ['qualification', 'qual']), resume: getValByHeader(row, ['resume', 'cv']),
+      jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']),
+      position: getValByHeader(row, ['position', 'role']), placementOfficer: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || user?.name || user?.email || '',
+      status: req.body.status || 'Placed', remarks: req.body.remarks || '', datePlaced: formatIndiaDate(req.body.datePlaced || ''),
+      packageLpa: req.body.packageLpa || '', joiningStatus: req.body.joiningStatus || '',
+      offerLetter: offerLetterLink, sourceSheet: 'TPO_Log', sourceRow: row.rowNumber
+    });
     refreshCache();
-    return res.json({ success: true, message: 'Placement log updated.' });
+    return res.json({ success: true, message: 'Placement log updated.', warning: placedSheetWarning });
   } catch (error) {
     console.error('Placement log update failed:', error);
+    return res.status(500).json({ success: false, message: `Update failed: ${error.message}` });
+  }
+};
+
+exports.updatePlacedStudent = async (req, res) => {
+  const rowNumber = Number.parseInt(req.body?.rowNumber, 10);
+  const user = req.portalUser || {};
+  if (!Number.isInteger(rowNumber) || rowNumber < 2) return res.status(400).json({ success: false, message: 'A valid placed-student row is required.' });
+  try {
+    await loadDocInfo();
+    const sheet = doc.sheetsByTitle['Placed_Students'];
+    if (!sheet) return res.status(503).json({ success: false, message: 'The Placed_Students sheet is unavailable.' });
+    await sheet.loadHeaderRow();
+    const row = (await sheet.getRows({ offset: rowNumber - 2, limit: 1 }))[0];
+    if (!row || Number(row.rowNumber) !== rowNumber) return res.status(404).json({ success: false, message: 'Placed-student row was not found.' });
+    const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame']);
+    const branch = getValByHeader(row, ['branch']);
+    const course = getValByHeader(row, ['course']);
+    const isTpo = isPlacementTrackerTpo(user);
+    const canEditAsTpo = placementOwnerMatchesUser(owner, user) || (!owner && hasPlacementBranchAccess(branch, user));
+    const canEditByRole = isTpo ? canEditAsTpo : hasPlacementAccess(branch, course, user);
+    if (!isPlacementTrackerAdmin(user) && !canEditByRole) {
+      return res.status(403).json({ success: false, message: 'This placement is outside your assigned branches and is not assigned to you.' });
+    }
+    const status = req.body.status ?? getValByHeader(row, ['status']);
+    const joiningStatus = req.body.joiningStatus ?? getValByHeader(row, ['joiningstatus']);
+    const remarks = req.body.remarks ?? getValByHeader(row, ['remarks']);
+    const datePlaced = formatIndiaDate(req.body.datePlaced ?? getValByHeader(row, ['dateplaced']));
+    const packageLpa = req.body.packageLpa ?? getValByHeader(row, ['package', 'packagelpa']);
+    let offerLetter = getValByHeader(row, ['offerletter', 'offerletterstatus']);
+    if (req.file) offerLetter = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
+    const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const headers = sheet.headerValues || [];
+    const update = {};
+    const set = (aliases, value) => {
+      const target = aliases.map(normalize);
+      const header = headers.find(item => target.includes(normalize(item)));
+      if (header && value !== undefined) update[header] = value;
+    };
+    set(['status'], status);
+    set(['joiningstatus'], joiningStatus);
+    set(['remarks'], remarks);
+    set(['dateplaced'], datePlaced);
+    set(['package', 'package(lpa)'], packageLpa);
+    if (offerLetter) set(['offerletter', 'offerletterstatus'], offerLetter);
+    if (isTpo && !owner) set(['placementofficer'], user?.name || user?.email || '');
+    set(['updatedat'], formatIndiaTimestamp());
+    row.assign(update);
+    await row.save();
+    const warning = await syncPositivePlacement({
+      name: getValByHeader(row, ['studentname', 'name']), phone: getValByHeader(row, ['contact', 'phone']),
+      email: getValByHeader(row, ['mailid', 'email']), roll: getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']),
+      course, branch, qual: getValByHeader(row, ['qualification', 'qual']), resume: getValByHeader(row, ['resume', 'cv']),
+      jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']),
+      position: getValByHeader(row, ['position', 'role']), placementOfficer: (isTpo ? user?.name || user?.email : owner) || owner,
+      status, joiningStatus, remarks, datePlaced, packageLpa, offerLetter,
+      sourceSheet: (isTpo && !owner) || !getValByHeader(row, ['sourcesheet']) ? 'Placed_Students' : getValByHeader(row, ['sourcesheet']),
+      sourceRow: getValByHeader(row, ['sourcerow']) || rowNumber
+    });
+    await refreshCache();
+    return res.json({ success: true, message: 'Placed-student record updated.', warning });
+  } catch (error) {
+    console.error('Placed-student update failed:', error);
     return res.status(500).json({ success: false, message: `Update failed: ${error.message}` });
   }
 };
@@ -1809,7 +1940,7 @@ exports.addApplication = async (req, res) => {
   
   const user = req.portalUser;
   const tpoName = user?.name || '';
-  if (!hasPlacementAccess(appData.branch, appData.course, user)) {
+  if (!isPlacementTrackerTpo(user) && !hasPlacementAccess(appData.branch, appData.course, user)) {
     return res.status(403).json({ success: false, message: 'This student is outside your branch or course assignment.' });
   }
   try {
@@ -1833,6 +1964,7 @@ exports.addApplication = async (req, res) => {
       'Qualification': appData.qual || '', 'Resume': appData.resume || '', 'Job ID': 'MANUAL-ADD', 
       'Company Name': appData.company || '', 'Position': appData.position || '', 
       'Placement Officer': tpoName || '', 'Status': appData.status || 'Placed', 
+      'Entry Source': 'Manual Add',
       'Remarks': appData.remarks || '', 'DATE PLACED': formatIndiaDate(appData.datePlaced || ''),
       'PACKAGE (LPA)': appData.packageLpa || '', 'Offer Letter': offerLetterLink, 
       'Joining Status': appData.joiningStatus || '',
@@ -1865,6 +1997,11 @@ exports.addApplication = async (req, res) => {
         await logSheet.addRow(mapPlacementRowData(logSheet, logData));
       }
     }
+
+    const placedSheetWarning = await syncPositivePlacement({
+      ...appData, placementOfficer: tpoName, status: appData.status || 'Placed', sourceSheet: 'Opening_Applied',
+      sourceRow: existingApplication?.rowNumber || ''
+    });
     
     checkAndSendStudentMails({ ...appData, tpoName: tpoName }, appData.status || 'Placed', {}, req.body.currentUserEmail)
       .catch(error => console.error('Manual placement email failed:', error.message));
@@ -1878,7 +2015,7 @@ exports.addApplication = async (req, res) => {
       designTaskWarning = `The placement was saved, but its Design Portal task could not be created: ${error.message}`;
     }
 
-    refreshCache(); res.json({ success: true, updated: Boolean(existingApplication), rowNumber: existingApplication?.rowNumber || null, message: existingApplication ? 'Existing placement updated.' : 'Placement added manually.', warning: designTaskWarning });
+    refreshCache(); res.json({ success: true, updated: Boolean(existingApplication), rowNumber: existingApplication?.rowNumber || null, message: existingApplication ? 'Existing placement updated.' : 'Placement added manually.', warning: [designTaskWarning, placedSheetWarning].filter(Boolean).join(' ') });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
@@ -1889,7 +2026,7 @@ const escapePlacementMailHtml = value => String(value || '').replace(/[&<>"']/g,
 
 exports.addDirectInterview = async (req, res) => {
   const user = req.portalUser;
-  const { candidateName, candidateEmail, candidatePhone, candidateRoll, candidateBranch, candidateCourse, candidateResume, company, position, jobId, interviewDate, interviewTime, interviewVenue, remarks } = req.body || {};
+  const { candidateName, candidateEmail, candidatePhone, candidateRoll, candidateBranch, candidateCourse, candidateResume, company, position, interviewDate, interviewTime, interviewVenue, remarks } = req.body || {};
   if (!isPlacementOfficer(user)) return res.status(403).json({ success: false, message: 'Only a placement officer can create a direct interview referral.' });
   if (!String(candidateName || '').trim() || !String(candidateEmail || '').trim() || !String(company || '').trim() || !String(position || '').trim() || !interviewDate || !interviewTime || !String(interviewVenue || '').trim()) {
     return res.status(400).json({ success: false, message: 'Enter the candidate name and email, then complete the company, position, interview date, time, and venue.' });
@@ -1911,10 +2048,6 @@ exports.addDirectInterview = async (req, res) => {
       : userBranches.find(value => !/^all(?: branches)?$/i.test(value)) || userBranches[0] || 'Unknown';
     const studentBranch = String(candidateBranch || '').trim() || defaultBranch;
     const studentCourse = String(candidateCourse || '').trim() || String(user?.assignedCourse || '').trim() || 'Unknown';
-    if (!hasPlacementBranchAccess(studentBranch, user)) {
-      return res.status(403).json({ success: false, message: 'The candidate branch is outside your assigned branches.' });
-    }
-
     const appSheet = doc.sheetsByTitle['Opening_Applied'];
     const logSheet = doc.sheetsByTitle['TPO_Log'];
     if (!appSheet) return res.status(503).json({ success: false, message: 'The applications sheet is unavailable.' });
@@ -1932,7 +2065,7 @@ exports.addDirectInterview = async (req, res) => {
       qual: '',
       resume: resumeLink
     };
-    const resolvedJobId = String(jobId || '').trim() || 'DIRECT-REFERRAL';
+    const resolvedJobId = 'MANUAL-ADD';
     const normalizedCompany = normalizePlacementText(company);
     const normalizedPosition = normalizePlacementText(position);
     const existing = (await appSheet.getRows()).find(row =>
@@ -2153,7 +2286,8 @@ exports.getVacancies = async (req, res) => {
       // They are not vacancies and must not be exposed as blank cards.
       if (!vacancy.company && !vacancy.position && !vacancy.hasJobId) return false;
       if (!user) return false;
-      return hasAccess('All', vacancy.course, user.role, user.assignedBranchesArray, user.assignedCourse, user.department);
+      return isPlacementTrackerTpo(user)
+        || hasAccess('All', vacancy.course, user.role, user.assignedBranchesArray, user.assignedCourse, user.department);
     });
     res.json({ success: true, vacancies: vacs.reverse(), warning: vacancyReadWarning });
   } catch (err) {
@@ -2741,27 +2875,37 @@ exports.deleteVacancy = async (req, res) => {
   }
 };
 
-exports.getIssues = (req, res) => {
+exports.getIssues = async (req, res) => {
   try {
-    const { assignedBranchesArray, role, assignedCourse } = req.body;
-    const cache = getCache();
+    let cache = getCache();
+    if (!cache) {
+      await refreshCache();
+      cache = getCache();
+    }
+    const user = req.portalUser || {};
     
-    // 🚨 PREVENTS CRASH IF SHEET IS EMPTY OR MISSING
-    if (!cache || !cache.issues) {
-      return res.json({ success: true, issues: [] });
+    if (!cache) return res.status(503).json({ success: false, message: 'Issue data is still syncing. Please refresh shortly.' });
+    if (cache.cacheSheetHealth && !cache.cacheSheetHealth.issues) {
+      return res.status(503).json({ success: false, message: 'The Issues sheet could not be loaded. Please retry after the data sync completes.' });
     }
 
-    let issuesList = cache.issues.filter(row => {
+    let issuesList = (cache.issues || []).filter(row => {
       const rowBranch = getValByHeader(row, ['branch']);
-      const studentName = getValByHeader(row, ['name']) || '';
-      const studentData = (cache.students || []).find(s => (getValByHeader(s, ['name']) || '').toLowerCase().trim() === studentName.toLowerCase().trim());
-      const sCourse = studentData ? getValByHeader(studentData, ['course']) : 'Unknown';
-      return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse, req.portalUser?.department);
+      const studentName = getValByHeader(row, ['studentname', 'name', 'student']) || '';
+      const studentRoll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+      const studentData = (cache.students || []).find(student => {
+        const roll = normalizePlacementText(getValByHeader(student, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+        return (studentRoll && roll === studentRoll) || (studentName && normalizePlacementText(getValByHeader(student, ['studentname', 'name'])) === normalizePlacementText(studentName));
+      });
+      const course = getValByHeader(row, ['course', 'program']) || (studentData ? getValByHeader(studentData, ['course', 'program']) : 'Unknown');
+      return isPlacementTrackerAdmin(user) || isPlacementTrackerTpo(user)
+        ? hasPlacementBranchAccess(rowBranch, user)
+        : hasAccess(rowBranch, course, user.role, user.assignedBranchesArray, user.assignedCourse, user.department);
     }).map(row => ({ 
       rowNumber: row.rowNumber, 
-      name: getValByHeader(row, ['name']) || 'Student', 
+      name: getValByHeader(row, ['studentname', 'name', 'student']) || 'Student',
       branch: getValByHeader(row, ['branch']), 
-      details: getValByHeader(row, ['issuedetails']) || '', 
+      details: getValByHeader(row, ['issuedetails', 'issue', 'details', 'description']) || '',
       status: getValByHeader(row, ['status']) || 'Pending', 
       remarks: getValByHeader(row, ['remarks']) || '' 
     }));
@@ -2785,7 +2929,10 @@ exports.updateIssue = async (req, res) => {
       const studentName = getValByHeader(rows[0], ['name', 'studentname']);
       const student = (getCache()?.students || []).find(row => normalizePlacementText(getValByHeader(row, ['name', 'studentname'])) === normalizePlacementText(studentName));
       const issueCourse = getValByHeader(rows[0], ['course']) || (student && getValByHeader(student, ['course'])) || '';
-      if (!hasAccess(issueBranch, issueCourse, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department)) {
+      const hasIssueAccess = isPlacementTrackerAdmin(user) || isPlacementTrackerTpo(user)
+        ? hasPlacementBranchAccess(issueBranch, user)
+        : hasAccess(issueBranch, issueCourse, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department);
+      if (!hasIssueAccess) {
         return res.status(403).json({ success: false, message: 'This issue is outside your branch or course assignment.' });
       }
       rows[0].assign({ 'Status': status, 'Remarks': remarks }); await rows[0].save(); refreshCache(); res.json({ success: true, message: "Issue updated!" });
@@ -2796,11 +2943,22 @@ exports.updateIssue = async (req, res) => {
 
 exports.getReports = async (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, department } = req.body;
-  const checkAccess = (rBranch, rCourse) => hasAccess(rBranch, rCourse, role, assignedBranchesArray, assignedCourse, department);
   const reportUser = req.portalUser || {};
-  const checkPlacementReportAccess = (rBranch, rCourse) => hasPlacementAccess(rBranch, rCourse, reportUser);
+  const checkAccess = (rBranch, rCourse) => hasAccess(
+    rBranch,
+    rCourse,
+    reportUser.role || role,
+    Array.isArray(reportUser.assignedBranchesArray) ? reportUser.assignedBranchesArray : assignedBranchesArray,
+    reportUser.assignedCourse ?? assignedCourse,
+    reportUser.department ?? department
+  );
+  const checkPlacementReportAccess = (rBranch, rCourse) => isPlacementTrackerAdmin(reportUser) || isPlacementTrackerTpo(reportUser)
+    ? hasPlacementBranchAccess(rBranch, reportUser)
+    : hasPlacementAccess(rBranch, rCourse, reportUser);
+  const checkAssignedBranchAccess = (rBranch, rCourse) => isPlacementTrackerAdmin(reportUser) || isPlacementTrackerTpo(reportUser)
+    ? hasPlacementBranchAccess(rBranch, reportUser)
+    : checkAccess(rBranch, rCourse);
   const reportRole = String(reportUser.role || role || '').toUpperCase();
-  const reportOfficer = normalizePlacementText(reportUser.name);
   const isCentralTeamReportUser = isCentralPlacementTeam(reportUser);
   const isAdminReportUser = reportUser.accessType === 'superadmin' || reportRole.includes('ADMIN') || ['GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(reportRole);
 
@@ -2839,7 +2997,7 @@ exports.getReports = async (req, res) => {
   };
   const vacancyOwnerByJobId = new Map((cache.vacancies || []).map(row => [
     normalizePlacementText(getValByHeader(row, ['jobid', 'job id', 'id'])),
-    getValByHeader(row, ['placementofficer', 'tpo', 'tponame'])
+    getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby', 'owner', 'postedby'])
   ]).filter(([jobId, owner]) => jobId && owner));
 
   (cache.applications || []).forEach(row => {
@@ -2854,9 +3012,10 @@ exports.getReports = async (req, res) => {
     const student = studentForApplication(row);
     const branch = getValByHeader(row, ['branch', 'sittingbranch']) || getValByHeader(student, ['branch', 'sittingbranch']);
     const course = getValByHeader(row, ['course', 'program']) || getValByHeader(student, ['course', 'program']);
-    if (!checkPlacementReportAccess(branch, course)) return;
-
     const normalizedJobId = normalizePlacementText(jobId);
+    const isTpoOpeningReport = isPlacementTrackerTpo(reportUser);
+    if (isTpoOpeningReport && !isOwnedPlacementApplication(row, reportUser)) return;
+    if (!isTpoOpeningReport && !checkPlacementReportAccess(branch, course)) return;
     applications.push({
       rowNumber: row.rowNumber,
       name: name || getValByHeader(student, ['studentname', 'name']),
@@ -2874,15 +3033,21 @@ exports.getReports = async (req, res) => {
   });
   
   (cache.issues || []).forEach(row => {
-    if (checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) issues.push({ name: getValByHeader(row, ['name']), branch: getValByHeader(row, ['branch']), details: getValByHeader(row, ['issuedetails']), status: getValByHeader(row, ['status']), remarks: getValByHeader(row, ['remarks']) }); 
+    if (checkAssignedBranchAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) issues.push({ name: getValByHeader(row, ['name']), branch: getValByHeader(row, ['branch']), details: getValByHeader(row, ['issuedetails']), status: getValByHeader(row, ['status']), remarks: getValByHeader(row, ['remarks']) });
   });
   
   (cache.tAtt || []).forEach(row => {
-    if (checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) talentino.push({ name: getValByHeader(row, ['name']), branch: getValByHeader(row, ['branch']), date: getValByHeader(row, ['check-in', 'date']), rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes']) }); 
+    if (checkAssignedBranchAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) talentino.push({ name: getValByHeader(row, ['name']), branch: getValByHeader(row, ['branch']), date: getValByHeader(row, ['check-in', 'date']), rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes']) });
   });
   
   let vacancies = (cache.vacancies || []).map(row => ({ id: getValByHeader(row, ['jobid', 'id']) || '', company: getValByHeader(row, ['company']) || '', location: getValByHeader(row, ['location']) || '', mode: getValByHeader(row, ['mode']) || '', status: getValByHeader(row, ['status']) || 'Open', course: getValByHeader(row, ['course']) || '', date: getValByHeader(row, ['lastdate', 'date']) || '' }));
-  let events = (cache.events || []).map(row => ({ date: getValByHeader(row, ['date']) || '' }));
+  let events = (cache.events || []).map(row => ({
+    date: getValByHeader(row, ['dateoftheevent', 'date']) || '',
+    tpo: getValByHeader(row, ['createdby', 'tpo', 'placementofficer']) || '',
+    type: getValByHeader(row, ['event', 'type']) || '',
+    title: getValByHeader(row, ['title']) || '',
+    branch: getValByHeader(row, ['branch']) || ''
+  }));
 
   if (cache.tpoLogs) {
     cache.tpoLogs.forEach(row => { 
@@ -2895,22 +3060,19 @@ exports.getReports = async (req, res) => {
       } catch(e) {}
     });
 
-    // Target reports count only actual placements from TPO_Log. TPO-owned
-    // placements are matched by officer even when legacy rows have no branch.
-    cache.tpoLogs.forEach(row => {
-      const studentName = getValByHeader(row, ['studentname', 'name']).trim();
-      const companyName = getValByHeader(row, ['companyname', 'company']).trim();
-      if (/^\s*(?:yes|true|1)\s*$/i.test(getValByHeader(row, ['tpoactionlog']))) return;
-      const placementOfficer = normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame']));
-      const belongsToReportUser = (isCentralTeamReportUser || isAdminReportUser)
-        ? checkPlacementReportAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))
-        : Boolean(reportOfficer && placementOfficer === reportOfficer);
-      if (!isPlacementOutcome(row, getValByHeader) || !studentName || !companyName || !belongsToReportUser) return;
-      try {
-        placementReportLogs.push({ ...row.toObject(), rowNumber: row.rowNumber, sourceSheet: 'TPO_Log' });
-      } catch (error) {}
-    });
   }
+
+  (cache.placedStudents || []).forEach(row => {
+    if (!isPlacementOutcome(row, getValByHeader)) return;
+    const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame']);
+    const belongsToUser = isPlacementTrackerTpo(reportUser)
+      ? (placementOwnerMatchesUser(owner, reportUser)
+        || (!owner && hasPlacementBranchAccess(getValByHeader(row, ['branch']), reportUser)))
+      : isCentralTeamReportUser || isAdminReportUser || checkPlacementReportAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']));
+    if (!belongsToUser) return;
+    try { placementReportLogs.push({ ...row.toObject(), rowNumber: row.rowNumber, sourceSheet: 'Placed_Students' }); }
+    catch (error) {}
+  });
   tpoLogs = latestPlacementRows(tpoLogs, (row, aliases) => {
     const keys = Object.keys(row || {});
     const clean = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -2952,7 +3114,9 @@ exports.getTalentino = (req, res) => {
       return (studentRoll && sheetRoll === studentRoll) || normalizePlacementText(getValByHeader(s, ['name', 'studentname'])) === normalizePlacementText(studentName);
     });
     const sCourse = getValByHeader(row, ['course', 'program']) || (studentData ? getValByHeader(studentData, ['course']) : 'Unknown');
-    return hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse, actor.department);
+    return isPlacementTrackerAdmin(actor) || isPlacementTrackerTpo(actor)
+      ? hasPlacementBranchAccess(rowBranch, actor)
+      : hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse, actor.department);
   }).map(row => {
     const date = getValByHeader(row, ['timestamp', 'date', 'time', 'present check-ins date']);
     const branch = getValByHeader(row, ['branch']);
@@ -3121,6 +3285,9 @@ exports.getEvents = (req, res) => {
 // =========================================================
 exports.addEvent = async (req, res) => {
   const { date: rawDate, tpo, branch: rawBranch, type, title, description, time: rawTime, location, userName } = req.body;
+  const authenticatedUser = req.portalUser || {};
+  const eventTpo = isPlacementTrackerTpo(authenticatedUser) ? authenticatedUser.name || tpo : tpo;
+  const eventCreator = authenticatedUser.name || authenticatedUser.email || userName || tpo;
   const rawCourse = String(req.body?.course || '').trim();
   const course = MAIN_PLACEMENT_COURSES.find(item => item.toLowerCase() === rawCourse.toLowerCase()) || '';
   if (String(type || '').toLowerCase().includes('placement drive') && !course) {
@@ -3162,7 +3329,7 @@ exports.addEvent = async (req, res) => {
     // Prepare row data including new system columns
     const rowData = { 
       'Date of the Event': date, 
-      'TPO': tpo, 
+      'TPO': eventTpo,
       'Branch': branch, 
       'Course': course,
       'Event': type, 
@@ -3173,7 +3340,7 @@ exports.addEvent = async (req, res) => {
       'Poster Link': posterLink,
       'Event_ID': eventId,
       'Created_At': timestamp,
-      'Created_By': userName || tpo,
+      'Created_By': eventCreator,
       'Mail_Status': 'PENDING',
       'Mail_Sent_At': '',
       'Mail_Error': '',
@@ -3461,6 +3628,12 @@ const updateEventStatus = async (req, res, nextStatus) => {
       return Boolean(rowKey && Number(row.rowNumber) === Number(rowKey[1]));
     });
     if (!eventRow) return res.status(404).json({ success: false, message: 'This event could not be found in the Event sheet. Refresh the calendar and try again.' });
+
+    const user = req.portalUser || {};
+    const eventOwner = getValByHeader(eventRow, ['createdby']) || getValByHeader(eventRow, ['tpo', 'tponame', 'placementofficer']);
+    if (isPlacementTrackerTpo(user) && !placementOwnerMatchesUser(eventOwner, user)) {
+      return res.status(403).json({ success: false, message: 'You can cancel or reschedule only events created by your account.' });
+    }
 
     const event = serializeEvent(eventRow);
     const currentStatus = String(event.status || 'Scheduled').trim().toLowerCase();
@@ -3993,9 +4166,8 @@ const isBranchManagerUser = user => {
 
 const canManageClientRow = (user, row) => {
   if (canManageEveryClient(user)) return true;
-  const assignedTo = getValByHeader(row, ['placementofficer', 'tponame']).toLowerCase().trim();
-  const signedInName = String(user?.name || '').toLowerCase().trim();
-  return Boolean(assignedTo && signedInName && assignedTo === signedInName);
+  const assignedTo = getValByHeader(row, ['placementofficer', 'tponame', 'assignedtpo']);
+  return placementOwnerMatchesUser(assignedTo, user);
 };
 
 exports.getClients = async (req, res) => {
@@ -6119,6 +6291,8 @@ exports.getDrives = async (req, res) => {
     const canSeeAll = canManageEveryDrive(user);
     const isTpo = isPlacementTrackerTpo(user);
     const isBranchManager = isBranchManagerUser(user);
+    const scope = String(req.query?.scope || '').toLowerCase();
+    const branchScope = scope === 'branch';
     if (!canSeeAll && !isTpo && !isBranchManager) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
 
     let cache = getCache();
@@ -6173,12 +6347,14 @@ exports.getDrives = async (req, res) => {
         return matches.length === 1 ? matches[0] : null;
       })();
       const registrationOwner = getValByHeader(row, ['placementofficer', 'tponame', 'createdby', 'tpo']);
-      const driveOwner = eventInfo.owner || registrationOwner || eventInfo.tpo || '';
-      const rowBranch = getValByHeader(row, ['branch', 'sittingbranch']) || (registrationStudent && getValByHeader(registrationStudent, ['branch', 'sittingbranch'])) || eventInfo.branch || eventInfo.location;
+      const driveOwner = eventInfo.owner || eventInfo.tpo || registrationOwner || '';
+      const rowBranch = getValByHeader(row, ['branch', 'sittingbranch']) || (registrationStudent && getValByHeader(registrationStudent, ['branch', 'sittingbranch'])) || eventInfo.branch;
       const rowCourse = getValByHeader(row, ['course']) || (registrationStudent && getValByHeader(registrationStudent, ['course', 'program'])) || eventInfo.course;
       const withinAssignedScope = hasPlacementBranchAccess(rowBranch, user);
-      const ownedDrive = Boolean(eventInfo.ownedByUser || placementDriveOwnedByUser(row, user));
-      if (!canSeeAll && (isTpo ? !ownedDrive : !withinAssignedScope)) return;
+      const belongsToOfficer = placementOwnerMatchesUser(driveOwner, user);
+      if (!canSeeAll && (isTpo
+        ? (branchScope ? !withinAssignedScope : !belongsToOfficer)
+        : !withinAssignedScope)) return;
       // Mark that this drive has at least one student
       if (eventInfo.hasApplicants !== undefined) eventInfo.hasApplicants = true;
 
@@ -6220,8 +6396,9 @@ exports.getDrives = async (req, res) => {
 
     // 3. 🚨 INJECT EMPTY DRIVES: If a drive has 0 students, send a "Dummy" row so it still shows up!
     eventInfos.forEach(eventInfo => {
-      const withinAssignedScope = hasPlacementBranchAccess(eventInfo.branch || eventInfo.location, user);
+      const withinAssignedScope = hasPlacementBranchAccess(eventInfo.branch, user);
       const ownedDrive = eventInfo.ownedByUser;
+      if (branchScope) return;
       if (!canSeeAll && (isTpo ? !ownedDrive : !withinAssignedScope)) return;
       if (!eventInfo.hasApplicants) {
         drivesData.push({
@@ -6282,7 +6459,14 @@ exports.updateDriveStatus = async (req, res) => {
     const isBranchManager = isBranchManagerUser(user);
     const isTpo = isPlacementTrackerTpo(user);
     if (!canSeeAll && !isTpo && !isBranchManager) return res.status(403).json({ success: false, message: 'Placement drive tracking is not available for this role.' });
-    if (isBranchManager) {
+    if (isTpo && !canSeeAll) {
+      const matchingDrive = findPlacementDriveEvent(getCache()?.events || [], rows[0]);
+      const registrationOwner = getValByHeader(rows[0], ['placementofficer', 'tponame', 'createdby', 'tpo']);
+      const driveOwner = getPlacementDriveOwner(matchingDrive) || registrationOwner;
+      if (!placementOwnerMatchesUser(driveOwner, user) && !placementOwnerMatchesUser(registrationOwner, user)) {
+        return res.status(403).json({ success: false, message: 'You can update only registrations for your placement drives.' });
+      }
+    } else if (isBranchManager) {
       const matchingDrive = findPlacementDriveEvent(getCache()?.events || [], rows[0]);
       const studentName = getValByHeader(rows[0], ['name', 'studentname']);
       const studentRoll = normalizePlacementText(getValByHeader(rows[0], ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
@@ -6295,18 +6479,14 @@ exports.updateDriveStatus = async (req, res) => {
       if (!hasPlacementBranchAccess(registrationBranch, user)) {
         return res.status(403).json({ success: false, message: 'This registration is outside your assigned branches.' });
       }
-    } else if (!canSeeAll) {
+    } else if (!canSeeAll && !isTpo) {
       const registrationOwner = getValByHeader(rows[0], ['placementofficer', 'tponame', 'createdby', 'tpo']);
-      if (!isTpo && registrationOwner && normalizePlacementText(registrationOwner) !== normalizePlacementText(user?.name)) {
+      if (registrationOwner && normalizePlacementText(registrationOwner) !== normalizePlacementText(user?.name)) {
         return res.status(403).json({ success: false, message: 'You can only update registrations for your own placement drives.' });
       }
       const matchingDrive = findPlacementDriveEvent(getCache()?.events || [], rows[0]);
       const driveOwner = getPlacementDriveOwner(matchingDrive);
-      const resolvedDriveOwner = driveOwner || getPlacementDriveOwner(rows[0]) || registrationOwner;
-      if (isTpo && !placementDriveOwnedByUser(matchingDrive, user) && !placementDriveOwnedByUser(rows[0], user) && !placementOwnerMatchesUser(resolvedDriveOwner, user)) {
-        return res.status(403).json({ success: false, message: 'You can only update registrations for placement drives created by your account.' });
-      }
-      if (!isTpo && !registrationOwner && driveOwner && !placementOwnerMatchesUser(driveOwner, user)) {
+      if (!registrationOwner && driveOwner && !placementOwnerMatchesUser(driveOwner, user)) {
         return res.status(403).json({ success: false, message: 'You can only update registrations for your own placement drives.' });
       }
       if (!isTpo && !registrationOwner && !driveOwner) {
@@ -6348,6 +6528,41 @@ exports.updateDriveStatus = async (req, res) => {
     current.assign(update);
     await current.save();
 
+    let placedSheetWarning = '';
+    const placedStatus = /offer|placed|joined/i.test(String(nextStatus || '')) && !/not joined|not placed|offer rejected/i.test(String(nextStatus || ''));
+    if (placedStatus) {
+      const studentRoll = getValByHeader(current, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']);
+      const studentName = getValByHeader(current, ['name', 'studentname']);
+      const student = (getCache()?.students || []).find(row => {
+        const rowRoll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+        return studentRoll ? rowRoll === normalizePlacementText(studentRoll) : normalizePlacementText(getValByHeader(row, ['name', 'studentname'])) === normalizePlacementText(studentName);
+      });
+      placedSheetWarning = await syncPositivePlacement({
+        name: studentName, phone: getValByHeader(current, ['contact', 'phone']) || getValByHeader(student, ['contact', 'phone']),
+        email: getValByHeader(current, ['mailid', 'email']) || getValByHeader(student, ['mailid', 'email']), roll: studentRoll,
+        course: getValByHeader(current, ['course']) || getValByHeader(student, ['course']),
+        branch: getValByHeader(current, ['branch', 'sittingbranch']) || getValByHeader(student, ['branch', 'sittingbranch']),
+        qual: getValByHeader(current, ['qualification', 'qual']) || getValByHeader(student, ['qualification', 'qual']),
+        resume: getValByHeader(current, ['resume', 'cv']) || getValByHeader(student, ['resume', 'cv']),
+        jobId: `DRIVE - ${getValByHeader(current, ['driveid', 'drivename', 'eventid', 'companyname'])}`,
+        company: getValByHeader(current, ['companyname', 'company', 'driveid', 'drivename']),
+        position: getValByHeader(current, ['position', 'role']) || 'Placement drive participant',
+        placementOfficer: getValByHeader(current, ['placementofficer', 'tpo', 'tponame']) || getPlacementDriveOwner(findPlacementDriveEvent(getCache()?.events || [], current)) || user?.name || user?.email || '',
+        status: nextStatus, joiningStatus: getValByHeader(current, ['joiningstatus']), remarks: nextRemarks,
+        datePlaced: getValByHeader(current, ['dateplaced']), packageLpa: getValByHeader(current, ['package']),
+        sourceSheet: 'Drive_Registration', sourceRow: current.rowNumber
+      });
+    } else {
+      placedSheetWarning = await syncPositivePlacement({
+        name: getValByHeader(current, ['name', 'studentname']),
+        roll: getValByHeader(current, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']),
+        status: nextStatus,
+        joiningStatus: getValByHeader(current, ['joiningstatus']),
+        sourceSheet: 'Drive_Registration',
+        sourceRow: current.rowNumber
+      });
+    }
+
     const actionChanges = [];
     const recordActionChange = (label, before, after, wasProvided = true) => {
       if (!wasProvided || String(before ?? '').trim() === String(after ?? '').trim()) return;
@@ -6371,7 +6586,7 @@ exports.updateDriveStatus = async (req, res) => {
         const driveName = getValByHeader(current, ['driveid', 'drive id', 'eventid', 'event_id', 'companyname']) || 'Placement Drive';
         const actionHistory = nextHistory[nextHistory.length - 1];
         await appendTpoActionLog({
-          changedAt, changedBy: getValByHeader(current, ['placementofficer', 'tpo', 'tponame']) || user?.name,
+          changedAt, changedBy: user?.name || getValByHeader(current, ['placementofficer', 'tpo', 'tponame']),
           studentName, studentContact: getValByHeader(current, ['contact', 'phone']) || getValByHeader(student, ['contact', 'phone']),
           studentEmail: getValByHeader(current, ['mailid', 'email']) || getValByHeader(student, ['mailid', 'email']),
           studentRoll, course: getValByHeader(current, ['course']) || getValByHeader(student, ['course']),
@@ -6409,7 +6624,7 @@ exports.updateDriveStatus = async (req, res) => {
       } else if (String(nextStatus || '').toLowerCase() === 'interview scheduled') emailWarning = 'Interview details were saved, but this student has no email address on file.';
     }
     refreshCache();
-    res.json({ success: true, studentStatus: nextStatus, remarks: nextRemarks, interviewDate: nextInterviewDate, interviewTime: nextInterviewTime, interviewVenue: nextInterviewVenue, statusHistory: nextHistory, warning: [emailWarning, actionLogWarning].filter(Boolean).join(' ') });
+    res.json({ success: true, studentStatus: nextStatus, remarks: nextRemarks, interviewDate: nextInterviewDate, interviewTime: nextInterviewTime, interviewVenue: nextInterviewVenue, statusHistory: nextHistory, warning: [emailWarning, actionLogWarning, placedSheetWarning].filter(Boolean).join(' ') });
   } catch(err) { res.status(500).json({ success: false, message: err.message }); }
 };
 

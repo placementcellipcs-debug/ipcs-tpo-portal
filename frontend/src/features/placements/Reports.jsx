@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
-import { latestPlacementRecords, normalizePlacementText } from '../../utils/placementRecords';
+import { normalizePlacementText } from '../../utils/placementRecords';
 import { parsePortalDateTime } from '../../utils/dateFormat';
 
 const getVal = (obj, searchStr) => {
@@ -18,6 +18,7 @@ export default function Reports() {
   const role = String(tpoData?.role || '').toUpperCase();
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].some(adminRole => role.includes(adminRole));
   const myName = (tpoData?.name || '').toLowerCase().trim();
+  const myIdentities = [tpoData?.name, tpoData?.email].map(normalizePlacementText).filter(Boolean);
   
   const [activeTab, setActiveTab] = useState(1);
 
@@ -28,9 +29,8 @@ export default function Reports() {
   const [students, setStudents] = useState([]);
   const [applications, setApplications] = useState([]);
   const [events, setEvents] = useState([]);
-  const [tpoLogs, setTpoLogs] = useState([]); 
   const [placementReportLogs, setPlacementReportLogs] = useState([]);
-  const placementLogs = useMemo(() => latestPlacementRecords(tpoLogs), [tpoLogs]);
+  const placementLogs = placementReportLogs;
   
   const [tpoList, setTpoList] = useState(() => !isSuperAdmin && tpoData ? [tpoData] : []);
   const [allBranchesList, setAllBranchesList] = useState([]);
@@ -61,7 +61,6 @@ export default function Reports() {
         setStudents(reportStudents);
         setApplications(reportApplications);
         setEvents(data.events || []);
-        setTpoLogs(reportLogs);
         setPlacementReportLogs(Array.isArray(data.placementReportLogs) ? data.placementReportLogs : []);
         setTpoStatsData(data.tpoStats || []);
         setAllBranchesList([...new Set([...reportStudents, ...reportLogs].map(item => item.branch).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
@@ -181,10 +180,10 @@ export default function Reports() {
   placementLogs.forEach(log => {
     const b = getVal(log, 'branch');
     const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
-    const logTpo = getVal(log, 'placementofficer').toLowerCase().trim();
+    const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
     
     // Admins see all, TPOs see only their own placements
-    const hasAccessToLog = isSuperAdmin || (logTpo === myName || logTpo.includes(myName) || myName.includes(logTpo));
+    const hasAccessToLog = isSuperAdmin || !logTpo || myIdentities.includes(logTpo);
 
     if (branchPlaces[b] && checkMonth(dStr) && hasAccessToLog) {
       const stat = (getVal(log, 'status') || '').toLowerCase();
@@ -206,7 +205,7 @@ export default function Reports() {
   // 3. BRANCH VS TPO STATUS
   const branchTPO = {};
   // Determine which TPOs to show as columns based on access level
-  const displayTpos = isSuperAdmin ? tpoList.map(t => t.userName || t.name) : [tpoData.name];
+  const displayTpos = isSuperAdmin ? tpoList.map(t => t.userName || t.name) : [tpoData?.name || tpoData?.email || 'My Placements'];
   
   allBranchesList.forEach(b => {
     branchTPO[b] = { Total: 0 };
@@ -217,7 +216,7 @@ export default function Reports() {
     const b = getVal(log, 'branch');
     const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
     const logTpoRaw = getVal(log, 'placementofficer');
-    const logTpo = logTpoRaw.toLowerCase().trim();
+    const logTpo = normalizePlacementText(logTpoRaw);
 
     if (branchTPO[b] && checkMonth(dStr)) {
       const stat = (getVal(log, 'status') || '').toLowerCase();
@@ -225,8 +224,11 @@ export default function Reports() {
         
         // Find matching column
         const matchedTpoColumn = displayTpos.find(t => {
-           const cleanT = t.toLowerCase().trim();
-           return logTpo === cleanT || logTpo.includes(cleanT) || cleanT.includes(logTpo);
+           const owner = isSuperAdmin
+             ? tpoList.find(person => (person.userName || person.name) === t)
+             : tpoData;
+           const identities = [owner?.userName, owner?.name, owner?.email].map(normalizePlacementText).filter(Boolean);
+           return identities.includes(logTpo);
         });
 
         if (matchedTpoColumn && branchTPO[b][matchedTpoColumn] !== undefined) {
@@ -243,8 +245,8 @@ export default function Reports() {
 
   placementLogs.forEach(log => {
     const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
-    const logTpo = getVal(log, 'placementofficer').toLowerCase().trim();
-    const hasAccessToLog = isSuperAdmin || (logTpo === myName || logTpo.includes(myName) || myName.includes(logTpo));
+    const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
+    const hasAccessToLog = isSuperAdmin || !logTpo || myIdentities.includes(logTpo);
 
     if (!checkMonth(dStr) || !hasAccessToLog) return;
     
@@ -288,6 +290,7 @@ export default function Reports() {
   // TPO ACTIVITY LOGIC
   const tpoActivity = tpoList.map(t => {
     const targetName = (t.userName || t.name || '').toLowerCase().trim();
+    const tpoIdentities = [t.userName, t.name, t.email].map(normalizePlacementText).filter(Boolean);
     
     // 🚨 Find manual stats for this TPO in the selected month
     const currentMonthPrefix = monthFilter; // "YYYY-MM" format
@@ -305,14 +308,14 @@ export default function Reports() {
     // Application totals come from OpeningApplied; TPO_Log is only the status history.
     const appsForTpo = applications.filter(application => {
       const owner = normalizePlacementText(getVal(application, 'tponame'));
-      return owner && owner === normalizePlacementText(targetName) && checkMonth(getVal(application, 'date') || getVal(application, 'timestamp'));
+      return owner && tpoIdentities.includes(owner) && checkMonth(getVal(application, 'date') || getVal(application, 'timestamp'));
     });
 
     // Joining Status from TPO Logs
     const logs = placementLogs.filter(log => {
-       const logTpo = getVal(log, 'placementofficer').toLowerCase().trim();
+       const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
        const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
-       return checkMonth(dStr) && (logTpo === targetName || logTpo.includes(targetName) || targetName.includes(logTpo));
+       return checkMonth(dStr) && tpoIdentities.includes(logTpo);
     });
     
     const joined = logs.filter(log => (getVal(log, 'status') || '').toLowerCase().includes('join')).length;
@@ -320,7 +323,7 @@ export default function Reports() {
     const autoUniqueCompanies = new Set(logs.map(log => normalizePlacementText(getVal(log, 'companyname') || getVal(log, 'company'))).filter(Boolean)).size;
 
     // Drives Conducted from Event Sheet
-    const tpoEvents = events.filter(e => checkMonth(e.date) && ((e.tpo || '').toLowerCase().includes(targetName) || targetName.includes((e.tpo || '').toLowerCase())));
+    const tpoEvents = events.filter(e => checkMonth(e.date) && tpoIdentities.includes(normalizePlacementText(e.tpo)));
     const drivesConducted = tpoEvents.filter(e => (e.type || '').toLowerCase().includes('drive')).length;
 
     return {
@@ -436,11 +439,10 @@ export default function Reports() {
         {activeTab === 1 && (
           <div className="fade-in">
             {tpoList.map((tpo, idx) => {
-              const targetTpoName = (tpo.userName || tpo.name || '').toLowerCase().trim();
-              
               const placedStudentsLog = placementReportLogs.filter(log => {
                 const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
-                if (!logTpo || logTpo !== normalizePlacementText(targetTpoName)) return false;
+                const identities = [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean);
+                if (!logTpo || !identities.includes(logTpo)) return false;
 
                 const outcome = [getVal(log, 'status'), getVal(log, 'joiningstatus'), getVal(log, 'placementstatus')]
                   .map(normalizePlacementText);

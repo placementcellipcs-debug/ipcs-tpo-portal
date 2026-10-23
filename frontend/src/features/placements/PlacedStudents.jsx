@@ -10,7 +10,7 @@ import DateInput from '../../components/DateInput';
 import { formatPortalDate, getTodayPortalDateInput, parsePortalDateTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
 import StatusBadge from '../../components/StatusBadge';
-import { getPlacementIdentity, latestPlacementRecords, normalizePlacementText } from '../../utils/placementRecords';
+import { normalizePlacementText } from '../../utils/placementRecords';
 
 const TILE_COLORS = ['#3b82f6', 'var(--accent-primary)', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
 
@@ -63,7 +63,7 @@ export default function PlacedStudents() {
   const assignedBranchesArray = Array.isArray(tpoData?.assignedBranchesArray)
     ? tpoData.assignedBranchesArray.map(branch => String(branch).trim().toLowerCase()).filter(Boolean)
     : String(tpoData?.assignedBranchesArray || '').split(/[\n,;]+/).map(branch => branch.trim().replace(/^\d+\.\s*/, '').toLowerCase()).filter(Boolean);
-  const hasAssignedBranch = branch => isPlacementTeam || assignedBranchesArray.includes('all') || assignedBranchesArray.some(assigned => {
+  const hasAssignedBranch = branch => isAdmin || isPlacementTeam || assignedBranchesArray.includes('all') || assignedBranchesArray.some(assigned => {
     const rowBranch = String(branch || '').trim().toLowerCase();
     return rowBranch && (rowBranch === assigned || rowBranch.includes(assigned) || assigned.includes(rowBranch));
   });
@@ -122,8 +122,6 @@ export default function PlacedStudents() {
       setExistingApplications(sheetApplications);
 
       if (repRes.data.success) {
-        let logs = repRes.data.tpoLogs || [];
-
         const getVal = (row, searchStrs) => {
           const keys = Object.keys(row);
           for (let s of searchStrs) {
@@ -134,7 +132,9 @@ export default function PlacedStudents() {
           return '';
         };
 
-        let mappedLogs = logs.map(row => ({
+        const placedRecords = (repRes.data.placementReportLogs || []).map(row => ({
+          rowNumber: row.rowNumber,
+          sourceSheet: row.sourceSheet || 'Placed_Students',
           name: getVal(row, ['studentname', 'name']),
           phone: getVal(row, ['contact', 'phone']),
           email: getVal(row, ['mailid', 'email']),
@@ -150,25 +150,11 @@ export default function PlacedStudents() {
           packageLpa: getVal(row, ['package', 'package(lpa)']),
           joiningStatus: getVal(row, ['joiningstatus']),
           offerLetter: getVal(row, ['offerletterstatus', 'offerletter']),
-          tpoName: getVal(row, ['placementofficer', 'tpo'])
+          tpoName: getVal(row, ['placementofficer', 'tpo']),
+          date: getVal(row, ['dateplaced']),
+          jobId: getVal(row, ['jobid'])
         }));
-
-        mappedLogs = latestPlacementRecords(mappedLogs).filter(a => {
-          const s = (a.status || '').toLowerCase();
-          const j = (a.joiningStatus || '').toLowerCase();
-          return s.includes('placed') || s.includes('got offer') || s.includes('join') || s.includes('offer') || j.includes('join');
-        });
-
-        const finalApps = mappedLogs.map(logApp => {
-          const identity = getPlacementIdentity(logApp);
-          const match = identity ? sheetApplications.find(application => getPlacementIdentity(application) === identity) : null;
-          return {
-            ...logApp,
-            rowNumber: match?.rowNumber ?? logApp.rowNumber ?? null,
-            sourceSheet: match ? 'Opening_Applied' : 'TPO_Log'
-          };
-        });
-
+        const finalApps = placedRecords.filter(record => record.name || record.roll);
         setApplications(finalApps);
         if (isDirectBranchRole) {
           const assigned = Array.isArray(localTpo.assignedBranchesArray) ? localTpo.assignedBranchesArray : String(localTpo.assignedBranchesArray || '').split(/[\n,;]+/);
@@ -193,6 +179,9 @@ export default function PlacedStudents() {
     if (isCourseSpecific && assignedCoursesArray[0] !== 'All') {
       if (!assignedCoursesArray.some(ac => getStandardCourse(a.course) === ac)) return false;
     }
+    if (isTpo) return a.tpoName
+      ? [tpoData?.name, tpoData?.email].map(normalizePlacementText).includes(normalizePlacementText(a.tpoName))
+      : hasAssignedBranch(a.branch);
     return hasAssignedBranch(a.branch);
   });
 
@@ -261,7 +250,7 @@ export default function PlacedStudents() {
       formData.append('joiningStatus', editForm.joiningStatus || '');
       if (editForm.offerLetterFile) formData.append('offerLetterFile', editForm.offerLetterFile);
 
-      const updatePath = selectedApp.sourceSheet === 'TPO_Log' ? 'update-log' : 'update';
+      const updatePath = selectedApp.sourceSheet === 'Placed_Students' ? 'update-placed' : selectedApp.sourceSheet === 'TPO_Log' ? 'update-log' : 'update';
       const response = await axios.post(`${API_BASE}/api/tpo/applications/${updatePath}`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       if (!response.data?.success) throw new Error(response.data?.message || 'The placement update was rejected.');
       setIsEditModalOpen(false);
@@ -467,7 +456,7 @@ export default function PlacedStudents() {
                       <div style={{ marginTop: '6px' }}><StatusBadge status={app.joiningStatus || 'Joined'} /></div>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'center' }}>
-                      {canEditPlacement ? (
+                      {canEditPlacement && app.rowNumber ? (
                         <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem', display: 'flex', justifyContent: 'center', gap: '6px' }} onClick={() => openEditModal(app)}>
                           <PencilSimple weight="bold" size={14} /> Edit
                         </button>
