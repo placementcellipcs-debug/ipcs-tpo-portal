@@ -209,7 +209,7 @@ async function rebuildPlacedStudents(sheet, tpoLogs = []) {
       Remarks: value(['remarks', 'studentremarks']),
       'DATE PLACED': value(['dateplaced', 'timestamp', 'date', 'time']),
       'PACKAGE (LPA)': value(['package', 'packagelpa']),
-      'Joining Status': joiningStatus,
+      'Joining Status': value(['joiningstatus']),
       'Offer Letter': value(['offerletterstatus', 'offerletter']),
       'Source Sheet': 'TPO_Log',
       'Source Row': sourceRow,

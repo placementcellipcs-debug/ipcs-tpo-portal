@@ -32,6 +32,7 @@ const logDesignActivity = async (user, designId, action, remarks = '') => {
     await loadDesignDoc();
     const sheet = designDoc.sheetsByTitle["Design_Activity_Log"];
     if (!sheet) return;
+    await sheet.loadHeaderRow();
     const h = sheet.headerValues;
     await sheet.addRow({
       [getFuzzyHeader(h, 'logid')]: `LOG-${Date.now().toString().slice(-6)}`,
