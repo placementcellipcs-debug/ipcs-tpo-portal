@@ -1310,7 +1310,7 @@ exports.updateStudent = async (req, res) => {
 const normalizePlacementHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
 const ensurePlacementHeaders = async (sheet, titles) => {
-  await sheet.loadHeaderRow();
+  if (!Array.isArray(sheet._headerValues) || !sheet._headerValues.length) await sheet.loadHeaderRow();
   let headers = [...(sheet.headerValues || [])];
   const missing = titles.filter(title => !headers.some(header => normalizePlacementHeader(header) === normalizePlacementHeader(title)));
   if (missing.length) {
@@ -1318,7 +1318,7 @@ const ensurePlacementHeaders = async (sheet, titles) => {
     if ((Number(sheet.columnCount) || 0) < requiredColumns) await sheet.resize({ columnCount: requiredColumns });
     headers = [...headers, ...missing];
     await sheet.setHeaderRow(headers);
-    await sheet.loadHeaderRow();
+    sheet._headerValues = headers;
   }
   return [...(sheet.headerValues || [])];
 };
@@ -1339,6 +1339,50 @@ const findPlacementHeader = (headers, aliases) => {
 };
 
 const mapPlacementRowData = (sheet, values) => Object.fromEntries(Object.entries(values).map(([key, value]) => [findPlacementHeader(sheet.headerValues || [], [key]) || key, value]));
+
+const placementColumnName = value => {
+  let column = Number(value) + 1;
+  let name = '';
+  while (column > 0) {
+    const remainder = (column - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    column = Math.floor((column - 1) / 26);
+  }
+  return name;
+};
+
+const updateCachedSheetRow = async (sheet, row, updates) => {
+  const rowNumber = Number(row?.rowNumber);
+  const headers = sheet.headerValues || [];
+  if (!Number.isInteger(rowNumber) || rowNumber < 2 || !headers.length) throw new Error('The cached sheet row is not ready for an update. Refresh the portal and try again.');
+  const data = Object.entries(updates).flatMap(([key, value]) => {
+    const index = headers.findIndex(header => normalizePlacementHeader(header) === normalizePlacementHeader(key));
+    return index < 0 ? [] : [{
+      range: `'${String(sheet.title).replace(/'/g, "''")}'!${placementColumnName(index)}${rowNumber}`,
+      values: [[value ?? '']]
+    }];
+  });
+  if (!data.length) throw new Error(`No matching columns were found to update in ${sheet.title}.`);
+  await google.sheets({ version: 'v4', auth: serviceAccountAuth }).spreadsheets.values.batchUpdate({
+    spreadsheetId: getSpreadsheetIdForSheetName(sheet.title),
+    requestBody: { valueInputOption: 'USER_ENTERED', data }
+  });
+  if (Array.isArray(row._rawData)) {
+    Object.entries(updates).forEach(([key, value]) => {
+      const index = headers.findIndex(header => normalizePlacementHeader(header) === normalizePlacementHeader(key));
+      if (index >= 0) row._rawData[index] = String(value ?? '');
+    });
+  }
+  return row;
+};
+
+const addRowToCache = (field, row) => {
+  const cache = getCache();
+  if (cache && row && Number.isInteger(Number(row.rowNumber))) {
+    const rows = cache[field] || [];
+    if (!rows.some(existing => Number(existing.rowNumber) === Number(row.rowNumber))) cache[field] = [...rows, row];
+  }
+};
 
 const parsePlacementHistory = value => {
   if (!value) return [];
@@ -1453,8 +1497,10 @@ const upsertPlacementTpoLog = async record => {
   ]);
   const targetKey = placementLogRecordKey(record);
   if (!targetKey) throw new Error('A student roll number or name is required to record a placement in TPO_Log.');
-  const rows = await logSheet.getRows();
-  const existing = findLatestCanonicalPlacementLog(rows, targetKey);
+  const cachedRows = getCache()?.tpoLogs || [];
+  const existing = record.tpoLogRow || (Number(record.sourceRow) >= 2
+    ? cachedRows.find(row => Number(row.rowNumber) === Number(record.sourceRow))
+    : null) || findLatestCanonicalPlacementLog(cachedRows, targetKey);
   const value = (key, aliases, fallback = '') => {
     const supplied = record[key];
     if (supplied !== undefined && supplied !== null && String(supplied).trim() !== '') return supplied;
@@ -1489,18 +1535,20 @@ const upsertPlacementTpoLog = async record => {
   };
   await ensurePlacementHeaders(logSheet, Object.keys(logData));
   const rowData = mapPlacementRowData(logSheet, logData);
-  const savedRow = existing ? existing : null;
+  let savedRow = existing || null;
   if (savedRow) {
-    savedRow.assign(rowData);
-    await savedRow.save();
-    return savedRow;
+    await updateCachedSheetRow(logSheet, savedRow, rowData);
+  } else {
+    savedRow = await logSheet.addRow(rowData);
+    addRowToCache('tpoLogs', savedRow);
   }
-  return logSheet.addRow(rowData);
+  return savedRow;
 };
 
 const syncPositivePlacement = async record => {
   try {
-    const logRow = await upsertPlacementTpoLog(record);
+    const { tpoLogRow, ...placementRecord } = record;
+    const logRow = tpoLogRow || await upsertPlacementTpoLog(placementRecord);
     await syncPlacedStudent({
       name: getValByHeader(logRow, ['studentname', 'name']),
       phone: getValByHeader(logRow, ['contact', 'phone']),
@@ -1652,9 +1700,9 @@ exports.updateApplication = async (req, res) => {
     await ensurePlacementHeaders(appSheet, placementTrackingHeaders);
 
     let sourceRow = null;
+    const cachedApplications = getCache()?.applications || [];
     if (hasRecordIdentity) {
-      const sheetRows = await appSheet.getRows();
-      const matches = sheetRows.filter(row => {
+      const matches = cachedApplications.filter(row => {
         const roll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
         const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
         const jobId = normalizePlacementText(getValByHeader(row, ['jobid', 'job id']));
@@ -1671,7 +1719,7 @@ exports.updateApplication = async (req, res) => {
         : matches.find(row => Number(row.rowNumber) === rowNumber) || null;
       if (matches.length > 1 && !sourceRow) return res.status(409).json({ success: false, message: 'This application matches multiple rows. Refresh the tracker and try again.' });
     } else if (Number.isInteger(rowNumber) && rowNumber >= 2) {
-      sourceRow = (await appSheet.getRows({ offset: rowNumber - 2, limit: 1 }))[0] || null;
+      sourceRow = cachedApplications.find(row => Number(row.rowNumber) === rowNumber) || null;
     }
 
     if (!sourceRow) {
@@ -1786,9 +1834,9 @@ exports.updateApplication = async (req, res) => {
     const historyHeader = getSafeH(['statushistory']);
     if (historyHeader) updateObj[historyHeader] = JSON.stringify(nextHistory);
 
-    sourceRow.assign(updateObj);
-    await sourceRow.save();
+    await updateCachedSheetRow(appSheet, sourceRow, updateObj);
     
+    let updatedLogRow = null;
     try {
       const logSheet = doc.sheetsByTitle["TPO_Log"];
       if (logSheet) {
@@ -1827,12 +1875,12 @@ exports.updateApplication = async (req, res) => {
         setLogH('statushistory', JSON.stringify(nextHistory));
 
         const logKey = placementLogRecordKey({ roll: sRoll, name: sName, jobId: sJobId, company: sCompany, position: sPosition });
-        const existingLog = logKey ? findLatestCanonicalPlacementLog(await logSheet.getRows(), logKey) : null;
+        const existingLog = logKey ? findLatestCanonicalPlacementLog(getCache()?.tpoLogs || [], logKey) : null;
         if (existingLog) {
-          existingLog.assign(logObj);
-          await existingLog.save();
+          updatedLogRow = await updateCachedSheetRow(logSheet, existingLog, logObj);
         } else {
-          await logSheet.addRow(logObj);
+          updatedLogRow = await logSheet.addRow(logObj);
+          addRowToCache('tpoLogs', updatedLogRow);
         }
       }
     } catch(e) { console.error('Placement log sync failed:', e.message); }
@@ -1888,7 +1936,8 @@ exports.updateApplication = async (req, res) => {
       qual: sQual, resume: sResume, jobId: sJobId, company: sCompany, position: sPosition,
       placementOfficer: sTpo, status: nextStatus, remarks: nextRemarks, datePlaced: nextDatePlaced,
       packageLpa: nextPackage, joiningStatus: nextJoiningStatus, offerLetter: nextOfferLetter,
-      sourceSheet: 'Opening_Applied', sourceRow: sourceRow.rowNumber
+      sourceSheet: 'TPO_Log', sourceRow: updatedLogRow?.rowNumber,
+      tpoLogRow: updatedLogRow || undefined
     });
 
     refreshCache();
@@ -1967,7 +2016,7 @@ exports.updatePlacementLog = async (req, res) => {
       position: getValByHeader(row, ['position', 'role']), placementOfficer: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || user?.name || user?.email || '',
       status: req.body.status || 'Placed', remarks: req.body.remarks || '', datePlaced: formatIndiaDate(req.body.datePlaced || ''),
       packageLpa: req.body.packageLpa || '', joiningStatus: req.body.joiningStatus || '',
-      offerLetter: offerLetterLink, sourceSheet: 'TPO_Log', sourceRow: row.rowNumber
+      offerLetter: offerLetterLink, sourceSheet: 'TPO_Log', sourceRow: row.rowNumber, tpoLogRow: row
     });
     refreshCache();
     return res.json({ success: true, message: 'Placement log updated.', warning: placedSheetWarning });
@@ -2039,6 +2088,13 @@ exports.addApplication = async (req, res) => {
     return res.status(403).json({ success: false, message: 'This student is outside your branch or course assignment.' });
   }
   try {
+    await loadDocInfo();
+    let cache = getCache();
+    if (!cache) {
+      await refreshCache();
+      cache = getCache();
+    }
+    if (!cache) return res.status(503).json({ success: false, message: 'Placement data is still syncing. Please retry shortly.' });
     let offerLetterLink = '';
     if (req.file) offerLetterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
     
@@ -2046,8 +2102,7 @@ exports.addApplication = async (req, res) => {
     const logSheet = doc.sheetsByTitle["TPO_Log"];
 
     if (!appSheet) return res.status(503).json({ success: false, message: 'The applications sheet is unavailable.' });
-    await ensurePlacementHeaders(appSheet, placementTrackingHeaders);
-    if (logSheet) await ensurePlacementHeaders(logSheet, placementTrackingHeaders);
+    if (!logSheet) return res.status(503).json({ success: false, message: 'The TPO_Log sheet is unavailable.' });
 
     const addedAt = formatIndiaTimestamp();
     const initialHistory = [placementHistoryEntry({ status: appData.status || 'Placed', remarks: appData.remarks || '', changedBy: tpoName || 'Placement team', changedAt: addedAt, event: 'Record created' })];
@@ -2067,32 +2122,40 @@ exports.addApplication = async (req, res) => {
     };
 
     const manualPlacementKey = placementLogRecordKey({ roll: appData.roll, name: appData.name, jobId: 'MANUAL-ADD', company: appData.company, position: appData.position });
-    const applicationRows = await appSheet.getRows();
+    await ensurePlacementHeaders(appSheet, Object.keys(newRowObj));
+    const applicationRows = cache.applications || [];
     const existingApplication = manualPlacementKey
       ? applicationRows.filter(row => getPlacementLogRowKey(row) === manualPlacementKey).sort((left, right) => Number(right.rowNumber || 0) - Number(left.rowNumber || 0))[0] || null
       : null;
+    let savedApplicationRow = existingApplication;
     if (existingApplication) {
-      existingApplication.assign(mapPlacementRowData(appSheet, newRowObj));
-      await existingApplication.save();
+      await updateCachedSheetRow(appSheet, existingApplication, mapPlacementRowData(appSheet, newRowObj));
     } else {
-      await appSheet.addRow(mapPlacementRowData(appSheet, newRowObj));
+      savedApplicationRow = await appSheet.addRow(mapPlacementRowData(appSheet, newRowObj));
+      addRowToCache('applications', savedApplicationRow);
     }
 
-    if (logSheet) {
-      const logData = { ...newRowObj, 'Offer Letter Status': offerLetterLink };
-      delete logData['Offer Letter'];
-      const existingLog = manualPlacementKey ? findLatestCanonicalPlacementLog(await logSheet.getRows(), manualPlacementKey) : null;
-      if (existingLog) {
-        existingLog.assign(mapPlacementRowData(logSheet, logData));
-        await existingLog.save();
-      } else {
-        await logSheet.addRow(mapPlacementRowData(logSheet, logData));
-      }
-    }
-
+    await ensurePlacementHeaders(logSheet, [...Object.keys(newRowObj).filter(key => key !== 'Offer Letter'), 'Offer Letter Status']);
+    const logRow = await upsertPlacementTpoLog({
+      ...appData,
+      jobId: 'MANUAL-ADD',
+      placementOfficer: tpoName,
+      status: appData.status || 'Placed',
+      datePlaced: formatIndiaDate(appData.datePlaced || ''),
+      offerLetter: offerLetterLink,
+      entrySource: 'Manual Add',
+      statusHistory: JSON.stringify(initialHistory)
+    });
     const placedSheetWarning = await syncPositivePlacement({
-      ...appData, placementOfficer: tpoName, status: appData.status || 'Placed', sourceSheet: 'Opening_Applied',
-      sourceRow: existingApplication?.rowNumber || ''
+      ...appData,
+      jobId: 'MANUAL-ADD',
+      placementOfficer: tpoName,
+      status: appData.status || 'Placed',
+      datePlaced: formatIndiaDate(appData.datePlaced || ''),
+      offerLetter: offerLetterLink,
+      sourceSheet: 'TPO_Log',
+      sourceRow: logRow.rowNumber,
+      tpoLogRow: logRow
     });
     
     checkAndSendStudentMails({ ...appData, tpoName: tpoName }, appData.status || 'Placed', {}, req.body.currentUserEmail)
@@ -2107,7 +2170,7 @@ exports.addApplication = async (req, res) => {
       designTaskWarning = `The placement was saved, but its Design Portal task could not be created: ${error.message}`;
     }
 
-    refreshCache(); res.json({ success: true, updated: Boolean(existingApplication), rowNumber: existingApplication?.rowNumber || null, message: existingApplication ? 'Existing placement updated.' : 'Placement added manually.', warning: [designTaskWarning, placedSheetWarning].filter(Boolean).join(' ') });
+    refreshCache(); res.json({ success: true, updated: Boolean(existingApplication), rowNumber: savedApplicationRow?.rowNumber || null, message: existingApplication ? 'Existing placement updated in Opening_Applied, TPO_Log, and Placed_Students.' : 'Placement added to Opening_Applied, TPO_Log, and Placed_Students.', warning: [designTaskWarning, placedSheetWarning].filter(Boolean).join(' ') });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 

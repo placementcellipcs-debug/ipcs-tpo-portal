@@ -146,7 +146,7 @@ async function ensurePlacedStudentsSheet() {
     return sheet;
   }
 
-  await sheet.loadHeaderRow();
+  if (!Array.isArray(sheet._headerValues) || !sheet._headerValues.length) await sheet.loadHeaderRow();
   let headers = [...(sheet.headerValues || [])];
   const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const missing = placedStudentsHeaders.filter(title => !headers.some(header => normalized(header) === normalized(title)));
@@ -155,7 +155,7 @@ async function ensurePlacedStudentsSheet() {
     if ((Number(sheet.columnCount) || 0) < requiredColumns) await sheet.resize({ columnCount: requiredColumns });
     headers = [...headers, ...missing];
     await sheet.setHeaderRow(headers);
-    await sheet.loadHeaderRow();
+    sheet._headerValues = headers;
   }
   return sheet;
 }
@@ -226,6 +226,56 @@ async function backupPlacedStudents(sheet, existingRows = []) {
   return existingRows.length;
 }
 
+const sheetColumnName = value => {
+  let column = Number(value) + 1;
+  let name = '';
+  while (column > 0) {
+    const remainder = (column - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    column = Math.floor((column - 1) / 26);
+  }
+  return name;
+};
+
+async function writePlacedStudentRow(sheet, rowNumber, rowData) {
+  const headers = sheet.headerValues || [];
+  const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const data = Object.entries(rowData).flatMap(([key, value]) => {
+    const columnIndex = headers.findIndex(header => normalized(header) === normalized(key));
+    return columnIndex < 0 ? [] : [{
+      range: `'${String(sheet.title).replace(/'/g, "''")}'!${sheetColumnName(columnIndex)}${rowNumber}`,
+      values: [[value ?? '']]
+    }];
+  });
+  if (!data.length) return;
+  const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
+  await sheetsApi.spreadsheets.values.batchUpdate({
+    spreadsheetId: getSpreadsheetIdForSheetName(sheet.title),
+    requestBody: { valueInputOption: 'USER_ENTERED', data }
+  });
+}
+
+const cachePlacedRow = (sheet, rowNumber, rowData) => {
+  const headers = sheet.headerValues || [];
+  const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const rawData = headers.map(header => {
+    const valueKey = Object.keys(rowData).find(key => normalized(key) === normalized(header));
+    return valueKey === undefined ? '' : String(rowData[valueKey] ?? '');
+  });
+  return {
+    _worksheet: sheet,
+    _rawData: rawData,
+    rowNumber,
+    get(header) {
+      const index = headers.indexOf(header);
+      return index < 0 ? undefined : (rawData[index] ?? '');
+    },
+    toObject() {
+      return Object.fromEntries(headers.map((header, index) => [header, rawData[index] ?? '']).filter(([header]) => Boolean(header)));
+    }
+  };
+};
+
 async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
   const sourceSignature = createHash('sha256')
     .update(JSON.stringify((tpoLogs || []).map(row => row?._rawData || [])))
@@ -271,12 +321,25 @@ async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
     const backupCount = await backupPlacedStudents(sheet, existingRows);
     if (backupCount) console.info(`Backed up ${backupCount} existing Placed_Students rows before rebuild.`);
     await sheetsApi.spreadsheets.values.clear({ spreadsheetId, range: `'${sheet.title}'!A2:ZZ` });
-    if (toAdd.length) await sheet.addRows(toAdd);
-    const rebuiltRows = await sheet.getRows();
-    if (rebuiltRows.length !== toAdd.length) {
-      throw new Error(`Rebuild count check failed: TPO_Log has ${toAdd.length} Placed row(s), but Placed_Students contains ${rebuiltRows.length}.`);
+    if (toAdd.length) {
+      const headers = sheet.headerValues || [];
+      const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const values = toAdd.map(row => headers.map(header => {
+        const key = Object.keys(row).find(candidate => normalized(candidate) === normalized(header));
+        return key === undefined ? '' : row[key];
+      }));
+      const update = await sheetsApi.spreadsheets.values.update({
+        spreadsheetId,
+        range: `'${sheet.title}'!A2:${sheetColumnName(Math.max(0, headers.length - 1))}${toAdd.length + 1}`,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values }
+      });
+      if (Number(update.data?.updatedRows) !== toAdd.length) {
+        throw new Error(`Rebuild count check failed: attempted to write ${toAdd.length} rows, but Sheets confirmed ${update.data?.updatedRows ?? 0}.`);
+      }
     }
-    console.info(`Placed_Students rebuild count check passed: ${toAdd.length} TPO_Log Placed row(s) = ${rebuiltRows.length} projection row(s).`);
+    const rebuiltRows = toAdd.map((row, index) => cachePlacedRow(sheet, index + 2, row));
+    console.info(`Placed_Students rebuild count check passed: TPO_Log has ${toAdd.length} Placed row(s), and Sheets confirmed ${toAdd.length} written row(s).`);
     placedStudentsMigrationSignature = sourceSignature;
     placedStudentsBackupProtected = false;
     return rebuiltRows;
@@ -288,7 +351,6 @@ async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
 
 async function syncPlacedStudent(record = {}) {
   const sheet = await ensurePlacedStudentsSheet();
-  await sheet.loadHeaderRow();
   const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const sourceRow = Number(record.sourceRow);
   const sourceKey = record.sourceSheet === 'TPO_Log' && Number.isInteger(sourceRow) && sourceRow >= 2
@@ -296,16 +358,28 @@ async function syncPlacedStudent(record = {}) {
     : '';
   const identity = sourceKey || normalize(record.roll || record.rollNumber || record.ipcsRollNumber) || normalize(record.name || record.studentName);
   if (!identity) throw new Error('A TPO_Log source row or student roll number/name is required to update the placed-student sheet.');
-  const rows = await sheet.getRows();
+  const rows = Array.isArray(globalCache?.placedStudents) ? globalCache.placedStudents : [];
   const existing = rows.find(row => normalize(placementRowValue(row, ['recordkey'])) === normalize(identity)) ||
     (!sourceKey ? rows.find(row => normalize(placementRowValue(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']) || placementRowValue(row, ['studentname', 'name'])) === identity) : null);
   const positive = normalizedPlacementStatus(record.status) === 'placed';
   if (!positive) {
     const existingSource = placementRowValue(existing, ['sourcesheet']);
     const shouldRemove = Boolean(existing && (sourceKey || !record.sourceSheet || existingSource === record.sourceSheet || record.sourceSheet === 'Placed_Students'));
-    if (shouldRemove) await existing.delete();
-    const latest = await sheet.getRows();
-    if (globalCache) globalCache.placedStudents = latest;
+    if (shouldRemove) {
+      const rowNumber = Number(existing.rowNumber);
+      if (Number.isInteger(rowNumber) && rowNumber >= 2) {
+        const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
+        await sheetsApi.spreadsheets.batchUpdate({
+          spreadsheetId: getSpreadsheetIdForSheetName(sheet.title),
+          requestBody: { requests: [{ deleteDimension: {
+            range: { sheetId: sheet.sheetId, dimension: 'ROWS', startIndex: rowNumber - 1, endIndex: rowNumber }
+          } }] }
+        });
+        if (globalCache) globalCache.placedStudents = rows
+          .filter(row => row !== existing)
+          .map(row => row.rowNumber > rowNumber ? { ...row, rowNumber: row.rowNumber - 1 } : row);
+      }
+    }
     return { removed: shouldRemove };
   }
   const values = {
@@ -341,13 +415,18 @@ async function syncPlacedStudent(record = {}) {
     return [header, value === '' && prior && record.sourceSheet !== 'Placed_Students' ? prior : value];
   }).filter(([header]) => Boolean(header)));
   if (existing) {
-    existing.assign(rowData);
-    await existing.save();
+    await writePlacedStudentRow(sheet, existing.rowNumber, rowData);
+    const headers = sheet.headerValues || [];
+    Object.entries(rowData).forEach(([key, value]) => {
+      const index = headers.findIndex(header => normalize(header) === normalize(key));
+      if (index >= 0) existing._rawData[index] = String(value ?? '');
+    });
   } else {
-    await sheet.addRow(rowData);
+    const addedRow = await sheet.addRow(rowData);
+    if (globalCache && Number.isInteger(Number(addedRow?.rowNumber))) {
+      globalCache.placedStudents = [...rows, cachePlacedRow(sheet, Number(addedRow.rowNumber), rowData)];
+    }
   }
-  const latest = await sheet.getRows();
-  if (globalCache) globalCache.placedStudents = latest;
   return { added: !existing, updated: Boolean(existing) };
 }
 
