@@ -29,6 +29,9 @@ if (!['all', 'api', 'worker'].includes(portalServiceRole)) {
   throw new Error(`Invalid PORTAL_SERVICE_ROLE "${portalServiceRole}". Use all, api, or worker.`);
 }
 const runsBackgroundJobs = portalServiceRole === 'all' || portalServiceRole === 'worker';
+if (runsBackgroundJobs && process.env.NODE_ENV === 'production') {
+  console.warn(`[BACKGROUND JOBS] PORTAL_SERVICE_ROLE=${portalServiceRole} starts a mail worker in this process. No distributed worker lease is configured; keep worker-enabled backend replicas at one.`);
+}
 if (portalServiceRole === 'worker') {
   app.get('/health', (_req, res) => res.json({ success: true, service: 'worker' }));
   app.use((_req, res) => res.status(404).json({ success: false, message: 'This instance runs background jobs only.' }));

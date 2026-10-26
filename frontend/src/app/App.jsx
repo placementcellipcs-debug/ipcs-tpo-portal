@@ -1,6 +1,5 @@
 import { Component, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import Login from '../features/public/Login';
 import { isPortalAdminAccount } from '../utils/roleAccess';
 
 const lazyRoute = importer => lazy(async () => {
@@ -27,6 +26,7 @@ const lazyRoute = importer => lazy(async () => {
   }
 });
 
+const Login = lazyRoute(() => import('../features/public/Login'));
 const Dashboard = lazyRoute(() => import('../features/placements/Dashboard'));
 const StudentsDirectory = lazyRoute(() => import('../features/placements/StudentsDirectory'));
 const JobTracker = lazyRoute(() => import('../features/placements/JobTracker'));

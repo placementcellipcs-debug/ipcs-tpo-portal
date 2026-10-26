@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
@@ -6,31 +6,13 @@ import {
   BookOpen, NotePencil, FolderOpen, ListChecks, Buildings,
   ChartBar, CheckCircle, CaretLeft, CaretRight
 } from '@phosphor-icons/react';
-import { 
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  PieChart, Pie, Cell 
-} from 'recharts';
 import Layout from '../../layouts/Layout';
 import DataSourceStatus from '../../components/DataSourceStatus';
 import { formatPortalDate, parsePortalDateTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
 import { isPortalAdminAccount } from '../../utils/roleAccess';
 
-function DashboardTooltip({ active, payload, label, selectedYear }) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div style={{ background: 'rgba(15, 23, 42, 0.95)', border: '1px solid #334155', padding: '12px', borderRadius: '8px', color: '#fff', boxShadow: '0 10px 25px rgba(0,0,0,0.5)', zIndex: 1000 }}>
-      {label && <p style={{ margin: '0 0 8px 0', borderBottom: '1px solid #334155', paddingBottom: '6px', fontSize: '0.9rem', fontWeight: 'bold' }}>{label} {selectedYear}</p>}
-      {payload.map((entry, index) => (
-        <div key={`${entry.name}-${index}`} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', fontSize: '0.8rem' }}>
-          <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: entry.color }} />
-          <span style={{ color: '#cbd5e1' }}>{entry.name}:</span>
-          <span style={{ fontWeight: 'bold' }}>{entry.value}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
+const DashboardCharts = lazy(() => import('./DashboardCharts'));
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -86,8 +68,6 @@ export default function Dashboard() {
   const [rawChartData, setRawChartData] = useState({ applications: [], logs: [] });
 
   const [calendarDate, setCalendarDate] = useState(new Date());
-
-  const DOMAIN_COLORS = ['#3b82f6', '#10b981', '#a855f7', '#f59e0b', '#ec4899', '#0ea5e9'];
 
   useEffect(() => {
     const timer = setInterval(() => setGreetingTime(new Date()), 60_000);
@@ -190,7 +170,9 @@ export default function Dashboard() {
     }));
 
     setTrendData(newTrend);
-    setDomainData(Object.keys(domCount).map(k => ({ name: k, value: domCount[k] })).sort((a,b) => b.value - a.value).slice(0, 5));
+    // Keep every domain in the breakdown so its row totals reconcile to the
+    // same placement total shown in the dashboard card.
+    setDomainData(Object.keys(domCount).map(k => ({ name: k, value: domCount[k] })).sort((a,b) => b.value - a.value));
 
     setAllPlaced(placedRecent);
     // 🚨 EXPANDED RECENT PLACEMENTS: Now slicing to 10 rows
@@ -267,18 +249,6 @@ export default function Dashboard() {
   
   const upDrivesCount = (events || []).filter(e => String(e?.type||'').toLowerCase().includes('drive') && parseDateRobust(e.date) >= today).length;
 
-  const placementRate = stats.totalStudents > 0 ? (((stats.placedStudents ?? stats.placed) / stats.totalStudents) * 100).toFixed(1) : '0.0';
-
-  const makeSparkline = (color) => {
-    const staticPath = "M 0,15 L 12,12 L 24,18 L 36,10 L 48,16 L 60,8 L 72,14 L 84,6 L 96,12 L 108,4";
-    return (
-      <svg width="100%" height="30" viewBox="0 0 108 25" preserveAspectRatio="none" style={{ marginTop: '10px' }}>
-        <path d={staticPath} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        <path d={`${staticPath} L 108,25 L 0,25 Z`} fill={color} opacity="0.1" />
-      </svg>
-    );
-  };
-
   const prevMonth = () => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1));
   const nextMonth = () => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1));
 
@@ -320,7 +290,7 @@ export default function Dashboard() {
 
         {dataMeta && <DataSourceStatus
           source="TPO_Log"
-          detail="Dashboard totals are global. Placement Records counts TPO_Log rows with Status = Placed (one student may have more than one record); Placement Rate counts unique placed students divided by unique students."
+          detail="The placement total counts every TPO_Log row whose Status is Placed. If a student has two Placed records, both count."
           health={dataMeta.sheetHealth?.tpoLogs}
           lastSyncedAt={dataMeta.sheetLastSuccessfulSyncAt?.tpoLogs}
           lastAttemptAt={dataMeta.lastRefreshAttemptAt}
@@ -332,88 +302,37 @@ export default function Dashboard() {
         <div className="kpi-grid">
           <div className="dash-card">
             <div className="kpi-header"><div className="icon-c blue"><Users weight="fill" size={20}/></div><div><div className="kpi-title">Total Students</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.totalStudents}</div></div></div>
-            <div className="kpi-trend green">↑ Live Database</div>{makeSparkline('#3b82f6')}
+            <div className="kpi-trend green">Student directory total</div>
           </div>
           <div className="dash-card" title="Company records in the Clients sheet">
             <div className="kpi-header"><div className="icon-c teal"><Buildings weight="fill" size={20}/></div><div><div className="kpi-title">Total Companies</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.totalCompanies}</div></div></div>
-            <div className="kpi-trend green">↑ Active Network</div>{makeSparkline('#0ea5e9')}
+            <div className="kpi-trend green">Client records</div>
           </div>
           <div className="dash-card">
             <div className="kpi-header"><div className="icon-c green"><Briefcase weight="fill" size={20}/></div><div><div className="kpi-title">Active Vacancies</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.activeVacancies}</div></div></div>
-            <div className="kpi-trend green">↑ Hiring Now</div>{makeSparkline('#10b981')}
+            <div className="kpi-trend green">Currently open</div>
           </div>
-          <div className="dash-card" title="Count of TPO_Log rows where Status = Placed. One student may have more than one placement record.">
-            <div className="kpi-header"><div className="icon-c purple"><Trophy weight="fill" size={20}/></div><div><div className="kpi-title">Placement Records</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div></div></div>
-            <div className="kpi-trend green">↑ Growing Pipeline</div>{makeSparkline('#a855f7')}
-          </div>
-          <div className="dash-card" title="Unique students with at least one TPO_Log Status = Placed record divided by unique students in Data.">
-            <div className="kpi-header"><div className="icon-c orange"><ChartBar weight="fill" size={20}/></div><div><div className="kpi-title">Placement Rate</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : `${placementRate}%`}</div></div></div>
-            <div className="kpi-trend green">Unique placed students / total students</div>{makeSparkline('#f59e0b')}
+          <div className="dash-card" title="Total placement count: every TPO_Log row marked Placed counts, including more than one row for the same student.">
+            <div className="kpi-header"><div className="icon-c purple"><Trophy weight="fill" size={20}/></div><div><div className="kpi-title">Total Placements</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div></div></div>
+            <div className="kpi-trend green">Every Placed row counts</div>
           </div>
           <div className="dash-card">
             <div className="kpi-header"><div className="icon-c pink"><CalendarCheck weight="fill" size={20}/></div><div><div className="kpi-title">Upcoming Drives</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : upDrivesCount}</div></div></div>
-            <div className="kpi-trend green">↑ Scheduled Events</div>{makeSparkline('#ec4899')}
+            <div className="kpi-trend green">Scheduled drive events</div>
           </div>
         </div>
 
-        {/* MAIN CHARTS */}
-        <div className="grid-3-col">
-          
-          <div className="dash-card span-2-col" style={{ display: 'flex', flexDirection: 'column' }}>
-            <div className="card-top">
-              <h3>Placement Trends</h3>
-              {/* 🚨 DYNAMIC YEAR SELECTOR */}
-              <select className="mini-select" value={selectedYear} onChange={(e) => setSelectedYear(Number(e.target.value))}>
-                {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
-            </div>
-            
-            <div style={{ flex: 1, width: '100%', minHeight: '260px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="colorApps" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="var(--accent-primary)" stopOpacity={0.3}/><stop offset="95%" stopColor="var(--accent-primary)" stopOpacity={0}/></linearGradient>
-                    <linearGradient id="colorPl" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#10b981" stopOpacity={0.3}/><stop offset="95%" stopColor="#10b981" stopOpacity={0}/></linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
-                  <XAxis dataKey="m" stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis stroke="#64748b" tick={{ fill: '#64748b', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<DashboardTooltip selectedYear={selectedYear} />} />
-                  <Area type="monotone" dataKey="Applications" stroke="var(--accent-primary)" strokeWidth={2} fillOpacity={1} fill="url(#colorApps)" activeDot={{ r: 5, fill: 'var(--accent-primary)', strokeWidth: 0 }} />
-                  <Area type="monotone" dataKey="Placed" stroke="#10b981" strokeWidth={2} fillOpacity={1} fill="url(#colorPl)" activeDot={{ r: 5, fill: '#10b981', strokeWidth: 0 }} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-
-          <div className="dash-card">
-            <h3>Placements by Domain</h3>
-            <div style={{ width: '100%', height: '170px', position: 'relative', marginTop: '10px' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Tooltip content={<DashboardTooltip selectedYear={selectedYear} />} />
-                  <Pie data={domainData.length > 0 ? domainData : [{name: 'No Data', value: 1}]} cx="50%" cy="50%" innerRadius={55} outerRadius={80} paddingAngle={3} dataKey="value" stroke="none">
-                    {(domainData.length > 0 ? domainData : [{name: 'No Data'}]).map((e, i) => <Cell key={`c-${i}`} fill={DOMAIN_COLORS[i % DOMAIN_COLORS.length]} /> )}
-                  </Pie>
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="donut-center">
-                <div className="donut-val">{stats.placed}</div>
-                <div className="donut-lbl">Total</div>
-              </div>
-            </div>
-            
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '15px' }}>
-              {domainData.length === 0 ? <div style={{textAlign:'center', color:'#64748b', fontSize:'0.8rem'}}>No data available</div> : 
-                domainData.map((d, i) => (
-                <div key={d.name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: '#cbd5e1' }}><span style={{ width: '8px', height: '8px', borderRadius: '2px', background: DOMAIN_COLORS[i % DOMAIN_COLORS.length] }}></span>{d.name}</div>
-                  <div style={{ color: '#fff', fontWeight: 'bold' }}>{d.value}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+        {/* Charts load after the page shell so the dashboard can become usable sooner. */}
+        <Suspense fallback={<div className="dash-card" role="status" style={{ minHeight: 300, justifyContent: 'center', color: 'var(--text-muted)', marginBottom: 20 }}>Loading placement charts…</div>}>
+          <DashboardCharts
+            trendData={trendData}
+            domainData={domainData}
+            availableYears={availableYears}
+            selectedYear={selectedYear}
+            setSelectedYear={setSelectedYear}
+            placementTotal={stats.placed}
+          />
+        </Suspense>
 
         {/* RECENT PLACEMENTS & CALENDAR EVENTS GRID */}
         <div className="grid-3-col">

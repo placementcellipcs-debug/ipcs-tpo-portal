@@ -1108,7 +1108,6 @@ exports.getDashboardStats = async (req, res) => {
       // Count every TPO_Log row whose Status is exactly Placed, matching the
       // source-of-truth rule used by the monthly placement report.
       placed: totalPlacementRecords,
-      placedStudents: placementCounts.placed,
       activeVacancies: activeVacs,
       totalCompanies
     }, 
@@ -2184,6 +2183,8 @@ exports.addApplication = async (req, res) => {
   
   const user = req.portalUser;
   const tpoName = user?.name || '';
+  const saveProgress = [];
+  let failedAt = 'Preparing placement';
   if (!isPlacementTrackerTpo(user) && !hasPlacementAccess(appData.branch, appData.course, user)) {
     return res.status(403).json({ success: false, message: 'This student is outside your branch or course assignment.' });
   }
@@ -2229,13 +2230,16 @@ exports.addApplication = async (req, res) => {
       : null;
     const previousManualStatus = existingApplication ? getValByHeader(existingApplication, ['status']) : '';
     let savedApplicationRow = existingApplication;
+    failedAt = 'Opening_Applied';
     if (existingApplication) {
       await updateCachedSheetRow(appSheet, existingApplication, mapPlacementRowData(appSheet, newRowObj));
     } else {
       savedApplicationRow = await appSheet.addRow(mapPlacementRowData(appSheet, newRowObj));
       addRowToCache('applications', savedApplicationRow);
     }
+    saveProgress.push('Opening_Applied');
 
+    failedAt = 'TPO_Log';
     await ensurePlacementHeaders(logSheet, [...Object.keys(newRowObj).filter(key => key !== 'Offer Letter'), 'Offer Letter Status']);
     const logRow = await upsertPlacementTpoLog({
       ...appData,
@@ -2247,6 +2251,9 @@ exports.addApplication = async (req, res) => {
       entrySource: 'Manual Add',
       statusHistory: JSON.stringify(initialHistory)
     });
+    saveProgress.push('TPO_Log');
+
+    failedAt = 'Placed_Students';
     const placedSheetWarning = await syncPositivePlacement({
       ...appData,
       jobId: 'MANUAL-ADD',
@@ -2258,6 +2265,7 @@ exports.addApplication = async (req, res) => {
       sourceRow: logRow.rowNumber,
       tpoLogRow: logRow
     });
+    if (!placedSheetWarning) saveProgress.push('Placed_Students');
 
     let placementAuditWarning = '';
     try {
@@ -2287,8 +2295,26 @@ exports.addApplication = async (req, res) => {
       designTaskWarning = `The placement was saved, but its Design Portal task could not be created: ${error.message}`;
     }
 
-    refreshCache(); res.json({ success: true, updated: Boolean(existingApplication), rowNumber: savedApplicationRow?.rowNumber || null, message: existingApplication ? 'Existing placement updated in Opening_Applied, TPO_Log, and Placed_Students.' : 'Placement added to Opening_Applied, TPO_Log, and Placed_Students.', warning: [designTaskWarning, placedSheetWarning, placementAuditWarning].filter(Boolean).join(' ') });
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+    refreshCache(); res.json({
+      success: true,
+      updated: Boolean(existingApplication),
+      rowNumber: savedApplicationRow?.rowNumber || null,
+      message: existingApplication ? 'Existing placement updated in Opening_Applied, TPO_Log, and Placed_Students.' : 'Placement added to Opening_Applied, TPO_Log, and Placed_Students.',
+      savedSheets: saveProgress,
+      pendingSheets: placedSheetWarning ? ['Placed_Students'] : [],
+      recoveryAvailable: Boolean(placedSheetWarning),
+      warning: [designTaskWarning, placedSheetWarning, placementAuditWarning].filter(Boolean).join(' ')
+    });
+  } catch (error) {
+    console.error(`Manual placement save failed during ${failedAt}:`, error);
+    res.status(500).json({
+      success: false,
+      message: `${error.message} Progress: ${saveProgress.length ? saveProgress.join(', ') : 'no sheet save was confirmed'}. Failed during ${failedAt}.`,
+      savedSheets: saveProgress,
+      failedAt,
+      recoveryAvailable: saveProgress.includes('Opening_Applied')
+    });
+  }
 };
 
 const isPlacementOfficer = user => /(^|\b)(TPO|PLACEMENT OFFICER)(\b|$)/i.test(String(user?.role || ''));
@@ -3496,18 +3522,19 @@ exports.refreshPlacementReconciliation = async (_req, res) => {
   try {
     await refreshCache();
     const cache = getCache();
-    const requiredSheetsHealthy = ['tpoLogs', 'placedStudents', 'applications']
-      .every(sheet => cache?.cacheSheetHealth?.[sheet] === true);
-    if (!cache || !requiredSheetsHealthy) {
+    const sourceHealthy = cache?.cacheSheetHealth?.tpoLogs === true;
+    if (!cache || !sourceHealthy) {
       return res.status(503).json({
         success: false,
-        message: 'A fresh read of TPO_Log, Placed_Students, and Opening_Applied could not be confirmed. No reconciliation repair was run.',
+        message: 'A fresh read of the authoritative TPO_Log could not be confirmed. No reconciliation repair was run.',
         failedSheets: cache?.cacheFailedSheets || []
       });
     }
     return res.json({
       success: true,
-      message: 'Placement source sheets refreshed successfully.',
+      message: cache.cacheFailedSheets?.length
+        ? `TPO_Log refreshed. Some supporting sheets could not refresh: ${cache.cacheFailedSheets.join(', ')}.`
+        : 'TPO_Log and supporting placement sheets refreshed successfully.',
       refreshedAt: cache.cacheUpdatedAt || '',
       failedSheets: cache.cacheFailedSheets || []
     });
