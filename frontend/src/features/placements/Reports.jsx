@@ -5,6 +5,7 @@ import Layout from '../../layouts/Layout';
 import DataSourceStatus from '../../components/DataSourceStatus';
 import { API_BASE } from '../../services/apiConfig';
 import { normalizePlacementText } from '../../utils/placementRecords';
+import { isPlacedStatus, placementOutcome } from '../../utils/placementMetrics';
 import { parsePortalDateTime } from '../../utils/dateFormat';
 
 const getVal = (obj, searchStr) => {
@@ -144,7 +145,7 @@ export default function Reports() {
   };
 
   const displayMonthName = new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
-  const targetSourceRows = placementReportLogs.filter(log => normalizePlacementText(getVal(log, 'status')) === 'placed');
+  const targetSourceRows = placementReportLogs.filter(log => isPlacedStatus(getVal(log, 'status')));
   const targetSourceRowsThisMonth = targetSourceRows.filter(log => checkMonth(getVal(log, 'dateplaced') || getVal(log, 'timestamp')));
   const reportTpoIdentities = new Set(tpoList.flatMap(tpo => [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean)));
   const currentMonthRowsWithoutMatchedTpo = targetSourceRowsThisMonth.filter(log => !reportTpoIdentities.has(normalizePlacementText(getVal(log, 'placementofficer')))).length;
@@ -197,8 +198,8 @@ export default function Reports() {
     const hasAccessToLog = isSuperAdmin || !logTpo || myIdentities.includes(logTpo);
 
     if (branchPlaces[b] && checkMonth(dStr) && hasAccessToLog) {
-      const stat = (getVal(log, 'status') || '').toLowerCase();
-      if(stat.includes('placed') || stat.includes('join') || stat.includes('offer')) {
+      const outcome = placementOutcome(getVal(log, 'status'), getVal(log, 'joiningstatus'));
+      if (outcome.placed) {
         const c = getCourse(getVal(log, 'course'));
         if (branchPlaces[b][c] !== undefined) {
           branchPlaces[b][c]++;
@@ -230,8 +231,8 @@ export default function Reports() {
     const logTpo = normalizePlacementText(logTpoRaw);
 
     if (branchTPO[b] && checkMonth(dStr)) {
-      const stat = (getVal(log, 'status') || '').toLowerCase();
-      if(stat.includes('placed') || stat.includes('join') || stat.includes('offer')) {
+      const outcome = placementOutcome(getVal(log, 'status'), getVal(log, 'joiningstatus'));
+      if (outcome.placed) {
         
         // Find matching column
         const matchedTpoColumn = displayTpos.find(t => {
@@ -252,7 +253,7 @@ export default function Reports() {
 
   // 4. PIPELINE TRACKER
   const pipeline = {};
-  mainCourses.concat(['Others']).forEach(c => pipeline[c] = { placed: 0, joined: 0, notJoined: 0 });
+  mainCourses.concat(['Others']).forEach(c => pipeline[c] = { placed: 0, joined: 0, offers: 0, notJoined: 0 });
 
   placementLogs.forEach(log => {
     const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
@@ -263,11 +264,11 @@ export default function Reports() {
     
     const c = getCourse(getVal(log, 'course'));
     if (!pipeline[c]) return;
-    const stat = (getVal(log, 'status') || '').toLowerCase();
-    
-    if (stat.includes('placed') || stat.includes('offer')) pipeline[c].placed++;
-    else if (stat.includes('join')) { pipeline[c].placed++; pipeline[c].joined++; }
-    else if (stat.includes('reject') || stat.includes('not attend')) pipeline[c].notJoined++;
+    const outcome = placementOutcome(getVal(log, 'status'), getVal(log, 'joiningstatus'));
+    if (outcome.placed) pipeline[c].placed++;
+    if (outcome.joined) pipeline[c].joined++;
+    if (outcome.offer) pipeline[c].offers++;
+    if (outcome.notJoined) pipeline[c].notJoined++;
   });
 
   // 5. PENDING STUDENTS
@@ -329,8 +330,8 @@ export default function Reports() {
        return checkMonth(dStr) && tpoIdentities.includes(logTpo);
     });
     
-    const joined = logs.filter(log => (getVal(log, 'status') || '').toLowerCase().includes('join')).length;
-    const notJoined = logs.filter(log => (getVal(log, 'status') || '').toLowerCase().includes('reject') || (getVal(log, 'status') || '').toLowerCase().includes('not attend')).length;
+    const joined = logs.filter(log => placementOutcome(getVal(log, 'status'), getVal(log, 'joiningstatus')).joined).length;
+    const notJoined = logs.filter(log => placementOutcome(getVal(log, 'status'), getVal(log, 'joiningstatus')).notJoined).length;
     const autoUniqueCompanies = new Set(logs.map(log => normalizePlacementText(getVal(log, 'companyname') || getVal(log, 'company'))).filter(Boolean)).size;
 
     // Drives Conducted from Event Sheet
@@ -473,7 +474,7 @@ export default function Reports() {
                 const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
                 const identities = [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean);
                 if (!logTpo || !identities.includes(logTpo)) return false;
-                if (normalizePlacementText(getVal(log, 'status')) !== 'placed') return false;
+                if (!isPlacedStatus(getVal(log, 'status'))) return false;
 
                 const dateStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp') || '';
                 return checkMonth(dateStr);
@@ -703,8 +704,9 @@ export default function Reports() {
                   <thead>
                     <tr>
                       <th>Course Name</th>
-                      <th style={{ color: '#10b981' }}>Total Placed</th>
+                      <th style={{ color: '#10b981' }}>Status = Placed</th>
                       <th>Students Joined</th>
+                      <th>Offers</th>
                       <th>Not Joined</th>
                     </tr>
                   </thead>
@@ -716,6 +718,7 @@ export default function Reports() {
                           <td>{c}</td>
                           <td style={{ color: '#10b981', fontWeight: 'bold' }} className={d.placed === 0 ? 'dt-zero' : ''}>{d.placed}</td>
                           <td className={d.joined === 0 ? 'dt-zero' : ''}>{d.joined}</td>
+                          <td className={d.offers === 0 ? 'dt-zero' : ''}>{d.offers}</td>
                           <td className={d.notJoined === 0 ? 'dt-zero' : ''}>{d.notJoined}</td>
                         </tr>
                       );

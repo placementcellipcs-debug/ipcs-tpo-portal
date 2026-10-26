@@ -50,6 +50,7 @@ const PlacementDrives = lazyRoute(() => import('../features/placements/Placement
 const ExamsHub = lazyRoute(() => import('../features/learning/ExamsHub'));
 const Branches = lazyRoute(() => import('../features/placements/Branches'));
 const SecurityActivity = lazyRoute(() => import('../features/admin/SecurityActivity'));
+const PlacementReconciliation = lazyRoute(() => import('../features/admin/PlacementReconciliation'));
 const CorporateTrainingInquiries = lazyRoute(() => import('../features/admin/CorporateTrainingInquiries'));
 const HiringInquiries = lazyRoute(() => import('../features/admin/HiringInquiries'));
 const PublicSitePage = lazyRoute(() => import('../features/public/PublicSitePage'));
@@ -96,6 +97,16 @@ function UnknownRoute() {
   let account = null;
   try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Treat invalid session data as signed out. */ }
   return <Navigate to={account ? '/dashboard' : '/login'} replace />;
+}
+
+function AcademicUnavailable() {
+  return (
+    <main role="status" style={{ minHeight: '100vh', display: 'grid', placeContent: 'center', gap: 12, padding: 24, background: '#08090f', color: '#f8fafc', fontFamily: 'Inter, sans-serif', textAlign: 'center' }}>
+      <h1 style={{ margin: 0, fontSize: 28 }}>Training &amp; Academics is temporarily unavailable</h1>
+      <p style={{ margin: 0, color: '#94a3b8' }}>This section is paused while the module is being restored. Your other portal sections are still available.</p>
+      <a href="/dashboard" style={{ justifySelf: 'center', marginTop: 8, padding: '10px 18px', borderRadius: 8, background: '#0ea5e9', color: '#fff', textDecoration: 'none' }}>Back to dashboard</a>
+    </main>
+  );
 }
 
 class RouteErrorBoundary extends Component {
@@ -172,6 +183,7 @@ function RoutedContent() {
         <Route path="/exams/aptitude" element={<Aptitude />} />
         <Route path="/exams/talentino" element={<TalentinoExams />} />
         <Route path="/security-logs" element={<SecurityActivity />} />
+        <Route path="/placement-reconciliation" element={<PlacementReconciliation />} />
         <Route path="/admin/corporate-training" element={<CorporateTrainingInquiries />} />
         <Route path="/hiring-inquiries" element={<HiringInquiries />} />
         
@@ -197,11 +209,11 @@ function RoutedContent() {
         <Route path="/media/logs" element={<MediaLogs />} />
         <Route path="/media/settings" element={<MediaSettings />} />
 
-        {/* Training & Academics is temporarily hidden for every role. */}
-        <Route path="/trainer" element={<Navigate to="/dashboard" replace />} />
+        {/* Training & Academics is temporarily unavailable for every role. */}
+        <Route path="/trainer" element={<AcademicUnavailable />} />
         <Route path="/academic/brain-gym" element={<Navigate to="/game-pal" replace />} />
-        <Route path="/academic" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/academic/*" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/academic" element={<AcademicUnavailable />} />
+        <Route path="/academic/*" element={<AcademicUnavailable />} />
         <Route path="/game-pal" element={<BrainGym />} />
         <Route path="*" element={<UnknownRoute />} />
       </Routes>

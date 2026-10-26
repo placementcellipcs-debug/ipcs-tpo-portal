@@ -1,5 +1,4 @@
 const path = require('path');
-const { createHash } = require('crypto');
 require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
@@ -48,7 +47,7 @@ const sheetGroups = {
   ],
   operations: [
     'Issues', 'Contact', 'User', 'Branches', 'Mail', 'EmailQueue', 'EmailQuotaUsage', 'MailDeliveryAttempts', 'Mail_Usage_Dashboard', 'Mail_Usage_History', 'Security_Logs',
-    'Auth_Sessions', 'Password_Reset_Tokens', 'Trainer/TL_Log'
+    'Auth_Sessions', 'Password_Reset_Tokens', 'Trainer/TL_Log', 'Placement_Audit_Log'
   ],
 };
 const sheetGroupByNormalizedTitle = new Map(
@@ -129,9 +128,7 @@ let docInfoLoading = null;
 let docInfoCachedUntil = 0;
 const docInfoCacheMs = Math.max(15000, Number(process.env.SHEETS_METADATA_CACHE_MS) || 300000);
 let spreadsheetDateFormatPromise = null;
-let placedStudentsMigrationSignature = '';
 let placedStudentsBackupSheetId = null;
-let placedStudentsBackupProtected = false;
 
 const placedStudentsHeaders = [
   'Record Key', 'Student Name', 'Contact', 'Mail ID', 'Roll Number', 'Course', 'Branch', 'Qualification', 'Resume',
@@ -181,7 +178,7 @@ const tpoLogStatus = row => {
   return String(value ?? '').trim();
 };
 async function backupPlacedStudents(sheet, existingRows = []) {
-  if (!existingRows.length || placedStudentsBackupProtected) return 0;
+  if (!existingRows.length) return 0;
   const spreadsheetId = getSpreadsheetIdForSheetName(sheet.title);
   const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
   const backupTitle = 'Placed_Students_Backup';
@@ -222,7 +219,6 @@ async function backupPlacedStudents(sheet, existingRows = []) {
       ]
     }
   });
-  placedStudentsBackupProtected = true;
   return existingRows.length;
 }
 
@@ -277,11 +273,6 @@ const cachePlacedRow = (sheet, rowNumber, rowData) => {
 };
 
 async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
-  const sourceSignature = createHash('sha256')
-    .update(JSON.stringify((tpoLogs || []).map(row => row?._rawData || [])))
-    .digest('hex');
-  if (sourceSignature === placedStudentsMigrationSignature) return null;
-
   const toAdd = (tpoLogs || []).flatMap((row, index) => {
     // Status in TPO_Log (column N) is the single source of truth. Other
     // placement and joining fields must not cancel an explicit Placed status.
@@ -311,9 +302,21 @@ async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
       'Offer Letter': value(['offerletterstatus', 'offerletter']),
       'Source Sheet': 'TPO_Log',
       'Source Row': sourceRow,
-      'Updated At': value(['timestamp', 'updatedat', 'dateplaced']) || formatIndiaTimestamp()
+      'Updated At': value(['timestamp', 'updatedat', 'dateplaced'])
     }];
   });
+
+  const headers = sheet.headerValues || [];
+  const normalizedHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const valuesForRecord = record => headers.map(header => {
+    const key = Object.keys(record).find(candidate => normalizedHeader(candidate) === normalizedHeader(header));
+    return key === undefined ? '' : String(record[key] ?? '');
+  });
+  const desiredProjection = toAdd.map(valuesForRecord);
+  const currentProjection = (existingRows || []).map(row => headers.map(header => String(placementRowValue(row, [header]) ?? '')));
+  if (JSON.stringify(currentProjection) === JSON.stringify(desiredProjection)) {
+    return null;
+  }
 
   try {
     const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
@@ -322,12 +325,7 @@ async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
     if (backupCount) console.info(`Backed up ${backupCount} existing Placed_Students rows before rebuild.`);
     await sheetsApi.spreadsheets.values.clear({ spreadsheetId, range: `'${sheet.title}'!A2:ZZ` });
     if (toAdd.length) {
-      const headers = sheet.headerValues || [];
-      const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      const values = toAdd.map(row => headers.map(header => {
-        const key = Object.keys(row).find(candidate => normalized(candidate) === normalized(header));
-        return key === undefined ? '' : row[key];
-      }));
+      const values = desiredProjection;
       const update = await sheetsApi.spreadsheets.values.update({
         spreadsheetId,
         range: `'${sheet.title}'!A2:${sheetColumnName(Math.max(0, headers.length - 1))}${toAdd.length + 1}`,
@@ -340,13 +338,24 @@ async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
     }
     const rebuiltRows = toAdd.map((row, index) => cachePlacedRow(sheet, index + 2, row));
     console.info(`Placed_Students rebuild count check passed: TPO_Log has ${toAdd.length} Placed row(s), and Sheets confirmed ${toAdd.length} written row(s).`);
-    placedStudentsMigrationSignature = sourceSignature;
-    placedStudentsBackupProtected = false;
     return rebuiltRows;
   } catch (error) {
     console.error('Could not rebuild Placed_Students from TPO_Log:', error.message);
     throw error;
   }
+}
+
+async function rebuildPlacedStudentsFromTpoLogs() {
+  await loadDocInfo();
+  const cache = globalCache;
+  if (!cache || cache.cacheSheetHealth?.tpoLogs !== true) {
+    throw new Error('TPO_Log is not confirmed healthy in the current cache. Refresh it successfully before rebuilding the placed-student projection.');
+  }
+  const sheet = await ensurePlacedStudentsSheet();
+  const existingRows = await sheet.getRows();
+  const desiredCount = (cache.tpoLogs || []).filter(row => normalizedPlacementStatus(tpoLogStatus(row)) === 'placed').length;
+  const rebuiltRows = await rebuildPlacedStudents(sheet, cache.tpoLogs || [], existingRows);
+  return { rebuilt: Array.isArray(rebuiltRows), sourceCount: desiredCount, projectionCount: Array.isArray(rebuiltRows) ? rebuiltRows.length : existingRows.length };
 }
 
 async function syncPlacedStudent(record = {}) {
@@ -1041,7 +1050,7 @@ async function uploadToDrive(file, folderId) {
 
 module.exports = { 
   doc, drive, google, serviceAccountAuth, getCache, refreshCache, waitForCacheReady, loadDocInfo, hasAccess, getFuzzyHeader, syncPlacedStudent,
-  getSpreadsheetIdForSheetName, getActiveSpreadsheetIds, ensureSpreadsheetDateFormats,
+  getSpreadsheetIdForSheetName, getActiveSpreadsheetIds, ensureSpreadsheetDateFormats, rebuildPlacedStudentsFromTpoLogs,
   sendIPCSMail, startEmailWorker: emailService.startWorker, processEmailQueue: emailService.processQueue,
   startMailDashboardRefresh: emailService.startMailDashboardRefresh,
   refreshMailDashboard: emailService.refreshMailDashboard,

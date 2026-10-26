@@ -1,4 +1,5 @@
 const { normalizePlacementText } = require('./placementRecords');
+const { isPlacedStatus } = require('./placementMetrics');
 
 const studentKeyParts = (row, getValue) => ({
   roll: normalizePlacementText(getValue(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])),
@@ -7,7 +8,7 @@ const studentKeyParts = (row, getValue) => ({
 
 const isPlacementOutcome = (row, getValue) => {
   // TPO_Log's Status column is the sole authority for placement counts.
-  return normalizePlacementText(getValue(row, ['status'])) === 'placed';
+  return isPlacedStatus(getValue(row, ['status']));
 };
 
 const countPlacementRecords = (placementRows, getValue, canAccessPlacement = () => true) =>

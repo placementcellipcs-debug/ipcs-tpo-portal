@@ -4,7 +4,7 @@ import axios from 'axios';
 import { 
   Bell, X, SquaresFour, Trophy, ListChecks, ShieldCheck,
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
-  Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin,
+  Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin, ClipboardText,
   WarningCircle, Barcode, Package, ArrowsLeftRight, Wrench, Plus,
   Headset, SignOut,
   Kanban, ImageSquare, ShareNetwork, CheckCircle, ClockCounterClockwise, SlidersHorizontal,
@@ -440,6 +440,9 @@ export default function Layout({ children }) {
                 </div>
                 <div className={`pd-nav-item ${isActive('/security-logs') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/security-logs')}>
                   <ShieldCheck size={22} weight={isActive('/security-logs') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Security Logs</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/placement-reconciliation') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/placement-reconciliation')}>
+                  <ClipboardText size={22} weight={isActive('/placement-reconciliation') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Placement Reconciliation</span>
                 </div>
                 </div>
               </>

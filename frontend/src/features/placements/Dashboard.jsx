@@ -267,7 +267,7 @@ export default function Dashboard() {
   
   const upDrivesCount = (events || []).filter(e => String(e?.type||'').toLowerCase().includes('drive') && parseDateRobust(e.date) >= today).length;
 
-  const placementRate = stats.totalStudents > 0 ? ((stats.placed / stats.totalStudents) * 100).toFixed(1) : '0.0';
+  const placementRate = stats.totalStudents > 0 ? (((stats.placedStudents ?? stats.placed) / stats.totalStudents) * 100).toFixed(1) : '0.0';
 
   const makeSparkline = (color) => {
     const staticPath = "M 0,15 L 12,12 L 24,18 L 36,10 L 48,16 L 60,8 L 72,14 L 84,6 L 96,12 L 108,4";
@@ -320,7 +320,7 @@ export default function Dashboard() {
 
         {dataMeta && <DataSourceStatus
           source="TPO_Log"
-          detail="Dashboard totals are global for all users: total students counts unique student records, and Total Placements counts every TPO_Log row with Status = Placed."
+          detail="Dashboard totals are global. Placement Records counts TPO_Log rows with Status = Placed (one student may have more than one record); Placement Rate counts unique placed students divided by unique students."
           health={dataMeta.sheetHealth?.tpoLogs}
           lastSyncedAt={dataMeta.sheetLastSuccessfulSyncAt?.tpoLogs}
           lastAttemptAt={dataMeta.lastRefreshAttemptAt}
@@ -342,13 +342,13 @@ export default function Dashboard() {
             <div className="kpi-header"><div className="icon-c green"><Briefcase weight="fill" size={20}/></div><div><div className="kpi-title">Active Vacancies</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.activeVacancies}</div></div></div>
             <div className="kpi-trend green">↑ Hiring Now</div>{makeSparkline('#10b981')}
           </div>
-          <div className="dash-card">
-            <div className="kpi-header"><div className="icon-c purple"><Trophy weight="fill" size={20}/></div><div><div className="kpi-title">Total Placements</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div></div></div>
+          <div className="dash-card" title="Count of TPO_Log rows where Status = Placed. One student may have more than one placement record.">
+            <div className="kpi-header"><div className="icon-c purple"><Trophy weight="fill" size={20}/></div><div><div className="kpi-title">Placement Records</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div></div></div>
             <div className="kpi-trend green">↑ Growing Pipeline</div>{makeSparkline('#a855f7')}
           </div>
-          <div className="dash-card">
+          <div className="dash-card" title="Unique students with at least one TPO_Log Status = Placed record divided by unique students in Data.">
             <div className="kpi-header"><div className="icon-c orange"><ChartBar weight="fill" size={20}/></div><div><div className="kpi-title">Placement Rate</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : `${placementRate}%`}</div></div></div>
-            <div className="kpi-trend green">↑ Global Average</div>{makeSparkline('#f59e0b')}
+            <div className="kpi-trend green">Unique placed students / total students</div>{makeSparkline('#f59e0b')}
           </div>
           <div className="dash-card">
             <div className="kpi-header"><div className="icon-c pink"><CalendarCheck weight="fill" size={20}/></div><div><div className="kpi-title">Upcoming Drives</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : upDrivesCount}</div></div></div>

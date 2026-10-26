@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { calculateDashboardPlacementCounts } = require('../src/dashboardStats');
+const { calculateDashboardPlacementCounts, countPlacementRecords } = require('../src/dashboardStats');
 
 const getValue = (row, aliases) => {
   for (const alias of aliases) {
@@ -10,7 +10,7 @@ const getValue = (row, aliases) => {
   return '';
 };
 
-test('dashboard counts unique placed students who exist in the visible student register', () => {
+test('dashboard helper counts unique students while counting only exact Placed statuses', () => {
   const students = [
     { Roll_Number: 'R-001', Student_Name: 'Alex K', Branch: 'Kochi', Course: 'Digital Marketing' },
     { Roll_Number: 'R-001', Student_Name: 'Alex K', Branch: 'Kochi', Course: 'Digital Marketing' },
@@ -27,7 +27,7 @@ test('dashboard counts unique placed students who exist in the visible student r
 
   assert.deepEqual(calculateDashboardPlacementCounts(students, placements, getValue, canAccess), {
     totalStudents: 2,
-    placed: 1,
+    placed: 2,
   });
 });
 
@@ -43,8 +43,19 @@ test('dashboard excludes placements outside the user’s branch and resolves an 
 
   assert.deepEqual(calculateDashboardPlacementCounts(students, placements, getValue, row => row.Branch === 'Kochi'), {
     totalStudents: 2,
-    placed: 1,
+    placed: 0,
   });
+});
+
+test('dashboard headline counts placement rows and excludes offers and joining outcomes', () => {
+  const placements = [
+    { Status: 'Placed' },
+    { Status: 'Placed' },
+    { Status: 'Offer' },
+    { Status: 'Joined' },
+    { Status: 'Not Joined' },
+  ];
+  assert.equal(countPlacementRecords(placements, getValue), 2);
 });
 
 test('dashboard includes students marked placed in the student register even without a matching TPO log', () => {

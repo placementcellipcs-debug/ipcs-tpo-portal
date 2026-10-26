@@ -27,12 +27,15 @@ function parseUserAgent(ua = '') {
 
 const { 
   doc, drive, google, serviceAccountAuth, getCache, refreshCache, loadDocInfo, getSpreadsheetIdForSheetName, hasAccess, getFuzzyHeader,
-  sendIPCSMail, uploadToDrive, syncPlacedStudent
+  sendIPCSMail, uploadToDrive, syncPlacedStudent, rebuildPlacedStudentsFromTpoLogs
 } = require('./config');
 
 const { autoCreateDesignTask } = require('./designControllers');
 const { normalizePlacementText, placementIdentity, latestPlacementRows } = require('./placementRecords');
 const { calculateDashboardPlacementCounts, countPlacementRecords } = require('./dashboardStats');
+const { buildPlacementReconciliation } = require('./placementReconciliation');
+const { PLACEMENT_AUDIT_SHEET, PLACEMENT_AUDIT_HEADERS, createPlacementAuditEvent } = require('./placementAudit');
+const { createTalentinoSessionResolver } = require('./talentinoSessionMatch');
 const { formatIndiaTimestamp, formatIndiaDate, formatIndiaTime } = require('./utils/dateTime');
 
 const FOLDER_OFFER_LETTERS = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5';
@@ -1040,7 +1043,7 @@ exports.getDashboardStats = async (req, res) => {
 
   const placementCounts = calculateDashboardPlacementCounts(
     cache.students || [],
-    [],
+    cache.tpoLogs || [],
     getValByHeader,
     // These headline KPIs are global for every signed-in dashboard. The API
     // returns only totals here; detailed student records remain role-scoped.
@@ -1105,6 +1108,7 @@ exports.getDashboardStats = async (req, res) => {
       // Count every TPO_Log row whose Status is exactly Placed, matching the
       // source-of-truth rule used by the monthly placement report.
       placed: totalPlacementRecords,
+      placedStudents: placementCounts.placed,
       activeVacancies: activeVacs,
       totalCompanies
     }, 
@@ -1341,6 +1345,17 @@ const findPlacementHeader = (headers, aliases) => {
 };
 
 const mapPlacementRowData = (sheet, values) => Object.fromEntries(Object.entries(values).map(([key, value]) => [findPlacementHeader(sheet.headerValues || [], [key]) || key, value]));
+
+const appendPlacementAudit = async event => {
+  await loadDocInfo();
+  let sheet = doc.sheetsByTitle[PLACEMENT_AUDIT_SHEET];
+  if (!sheet) sheet = await doc.addSheet({ title: PLACEMENT_AUDIT_SHEET, headerValues: PLACEMENT_AUDIT_HEADERS });
+  await ensurePlacementHeaders(sheet, PLACEMENT_AUDIT_HEADERS);
+  return sheet.addRow(event);
+};
+const placementAuditChanges = fields => (fields || [])
+  .filter(([, before, after]) => String(before ?? '').trim() !== String(after ?? '').trim())
+  .map(([label, before, after]) => `${label}: ${String(before || '—').trim()} → ${String(after || '—').trim()}`);
 
 const placementColumnName = value => {
   let column = Number(value) + 1;
@@ -1839,6 +1854,7 @@ exports.updateApplication = async (req, res) => {
     await updateCachedSheetRow(appSheet, sourceRow, updateObj);
     
     let updatedLogRow = null;
+    let tpoLogSyncWarning = '';
     try {
       const logSheet = doc.sheetsByTitle["TPO_Log"];
       if (logSheet) {
@@ -1884,8 +1900,13 @@ exports.updateApplication = async (req, res) => {
           updatedLogRow = await logSheet.addRow(logObj);
           addRowToCache('tpoLogs', updatedLogRow);
         }
+      } else {
+        tpoLogSyncWarning = 'The application was saved, but TPO_Log is unavailable. Retry this status update after the placement log is restored.';
       }
-    } catch(e) { console.error('Placement log sync failed:', e.message); }
+    } catch(e) {
+      console.error('Placement log sync failed:', e.message);
+      tpoLogSyncWarning = `The application was saved, but its TPO_Log update failed: ${e.message}. Retry the same status update to complete it.`;
+    }
 
     let actionLogWarning = '';
     if (actionChanges.length) {
@@ -1941,9 +1962,29 @@ exports.updateApplication = async (req, res) => {
       sourceSheet: 'TPO_Log', sourceRow: updatedLogRow?.rowNumber,
       tpoLogRow: updatedLogRow || undefined
     });
+    if (!placedSheetWarning) tpoLogSyncWarning = '';
+    else if (tpoLogSyncWarning) tpoLogSyncWarning = 'The initial TPO_Log write failed and the retry did not complete all placement sync steps. Check Placement Reconciliation before retrying.';
+
+    let placementAuditWarning = '';
+    if (actionChanges.length) {
+      try {
+        await appendPlacementAudit(createPlacementAuditEvent({
+          actor: req.portalUser,
+          action: actionChanges.map(change => change.split(':')[0]).join(', '),
+          previousStatus: oldStatus,
+          newStatus: nextStatus,
+          record: { name: sName, roll: sRoll, jobId: sJobId, company: sCompany, position: sPosition, entrySource: getValByHeader(sourceRow, ['entrysource', 'recordorigin', 'origin']) || 'Job Application' },
+          details: actionChanges.join('\n'),
+          changedAt
+        }));
+      } catch (error) {
+        console.error('Placement audit history could not be saved:', error.message);
+        placementAuditWarning = `The placement update was saved, but its change history could not be recorded: ${error.message}`;
+      }
+    }
 
     refreshCache();
-    res.json({ success: true, message: "Updated!", statusHistory: nextHistory, warning: [emailWarning, actionLogWarning, designTaskWarning, placedSheetWarning].filter(Boolean).join(' ') });
+    res.json({ success: true, message: "Updated!", statusHistory: nextHistory, warning: [emailWarning, tpoLogSyncWarning, actionLogWarning, designTaskWarning, placedSheetWarning, placementAuditWarning].filter(Boolean).join(' ') });
   } catch (error) { 
     console.error(error);
     res.status(500).json({ success: false, message: `Update Failed: ${error.message}` }); 
@@ -1967,6 +2008,12 @@ exports.updatePlacementLog = async (req, res) => {
     }
 
     const row = rows[0];
+    const previousStatus = getValByHeader(row, ['status']);
+    const previousRemarks = getValByHeader(row, ['remarks']);
+    const previousDatePlaced = getValByHeader(row, ['dateplaced']);
+    const previousPackage = getValByHeader(row, ['package', 'packagelpa']);
+    const previousJoiningStatus = getValByHeader(row, ['joiningstatus']);
+    const previousOfferLetter = getValByHeader(row, ['offerletterstatus', 'offerletter']);
     const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']);
     const branch = getValByHeader(row, ['branch']);
     const course = getValByHeader(row, ['course']);
@@ -2009,6 +2056,16 @@ exports.updatePlacementLog = async (req, res) => {
 
     row.assign(update);
     await row.save();
+    const newStatus = req.body.status || 'Placed';
+    const newRemarks = req.body.remarks || '';
+    const newDatePlaced = formatIndiaDate(req.body.datePlaced || '');
+    const newPackage = req.body.packageLpa || '';
+    const newJoiningStatus = req.body.joiningStatus || '';
+    const changedFields = placementAuditChanges([
+      ['Status', previousStatus, newStatus], ['Remarks', previousRemarks, newRemarks],
+      ['Date placed', previousDatePlaced, newDatePlaced], ['Package', previousPackage, newPackage],
+      ['Joining status', previousJoiningStatus, newJoiningStatus], ['Offer letter', previousOfferLetter, offerLetterLink]
+    ]);
     const placedSheetWarning = await syncPositivePlacement({
       name: getValByHeader(row, ['studentname', 'name']), phone: getValByHeader(row, ['contact', 'phone']),
       email: getValByHeader(row, ['mailid', 'email']), roll: getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']),
@@ -2020,8 +2077,23 @@ exports.updatePlacementLog = async (req, res) => {
       packageLpa: req.body.packageLpa || '', joiningStatus: req.body.joiningStatus || '',
       offerLetter: offerLetterLink, sourceSheet: 'TPO_Log', sourceRow: row.rowNumber, tpoLogRow: row
     });
+    let auditWarning = '';
+    try {
+      await appendPlacementAudit(createPlacementAuditEvent({
+        actor: user,
+        action: 'Placement log updated',
+        previousStatus,
+        newStatus: req.body.status || 'Placed',
+        record: { name: getValByHeader(row, ['studentname', 'name']), roll: getValByHeader(row, ['rollnumber', 'rollno', 'roll']), jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']), position: getValByHeader(row, ['position', 'role']), entrySource: getValByHeader(row, ['entrysource']) },
+        details: changedFields.join('\n') || 'No tracked placement fields changed.',
+        changedAt: formatIndiaTimestamp()
+      }));
+    } catch (error) {
+      console.error('Placement audit history could not be saved:', error.message);
+      auditWarning = `The placement was updated, but its change history could not be recorded: ${error.message}`;
+    }
     refreshCache();
-    return res.json({ success: true, message: 'Placement log updated.', warning: placedSheetWarning });
+    return res.json({ success: true, message: 'Placement log updated.', warning: [placedSheetWarning, auditWarning].filter(Boolean).join(' ') });
   } catch (error) {
     console.error('Placement log update failed:', error);
     return res.status(500).json({ success: false, message: `Update failed: ${error.message}` });
@@ -2049,6 +2121,12 @@ exports.updatePlacedStudent = async (req, res) => {
       return res.status(403).json({ success: false, message: 'This placement is outside your assigned branches and is not assigned to you.' });
     }
     const status = req.body.status ?? getValByHeader(row, ['status']);
+    const previousStatus = getValByHeader(row, ['status']);
+    const previousJoiningStatus = getValByHeader(row, ['joiningstatus']);
+    const previousRemarks = getValByHeader(row, ['remarks']);
+    const previousDatePlaced = getValByHeader(row, ['dateplaced']);
+    const previousPackage = getValByHeader(row, ['package', 'packagelpa']);
+    const previousOfferLetter = getValByHeader(row, ['offerletter', 'offerletterstatus']);
     const joiningStatus = req.body.joiningStatus ?? getValByHeader(row, ['joiningstatus']);
     const remarks = req.body.remarks ?? getValByHeader(row, ['remarks']);
     const datePlaced = formatIndiaDate(req.body.datePlaced ?? getValByHeader(row, ['dateplaced']));
@@ -2066,8 +2144,28 @@ exports.updatePlacedStudent = async (req, res) => {
       statusHistory: getValByHeader(row, ['statushistory'])
     });
     if (warning) return res.status(503).json({ success: false, message: warning });
+    const changedFields = placementAuditChanges([
+      ['Status', previousStatus, status], ['Joining status', previousJoiningStatus, joiningStatus],
+      ['Remarks', previousRemarks, remarks], ['Date placed', previousDatePlaced, datePlaced],
+      ['Package', previousPackage, packageLpa], ['Offer letter', previousOfferLetter, offerLetter]
+    ]);
+    let auditWarning = '';
+    try {
+      await appendPlacementAudit(createPlacementAuditEvent({
+        actor: user,
+        action: 'Placed-student record updated',
+        previousStatus,
+        newStatus: status,
+        record: { name: getValByHeader(row, ['studentname', 'name']), roll: getValByHeader(row, ['rollnumber', 'rollno', 'roll']), jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']), position: getValByHeader(row, ['position', 'role']), entrySource: getValByHeader(row, ['entrysource']) },
+        details: changedFields.join('\n') || 'No tracked placement fields changed.',
+        changedAt: formatIndiaTimestamp()
+      }));
+    } catch (error) {
+      console.error('Placement audit history could not be saved:', error.message);
+      auditWarning = `The placement was updated, but its change history could not be recorded: ${error.message}`;
+    }
     await refreshCache();
-    return res.json({ success: true, message: 'Placed-student record updated.', warning });
+    return res.json({ success: true, message: 'Placed-student record updated.', warning: auditWarning });
   } catch (error) {
     console.error('Placed-student update failed:', error);
     return res.status(500).json({ success: false, message: `Update failed: ${error.message}` });
@@ -2129,6 +2227,7 @@ exports.addApplication = async (req, res) => {
     const existingApplication = manualPlacementKey
       ? applicationRows.filter(row => getPlacementLogRowKey(row) === manualPlacementKey).sort((left, right) => Number(right.rowNumber || 0) - Number(left.rowNumber || 0))[0] || null
       : null;
+    const previousManualStatus = existingApplication ? getValByHeader(existingApplication, ['status']) : '';
     let savedApplicationRow = existingApplication;
     if (existingApplication) {
       await updateCachedSheetRow(appSheet, existingApplication, mapPlacementRowData(appSheet, newRowObj));
@@ -2159,6 +2258,22 @@ exports.addApplication = async (req, res) => {
       sourceRow: logRow.rowNumber,
       tpoLogRow: logRow
     });
+
+    let placementAuditWarning = '';
+    try {
+      await appendPlacementAudit(createPlacementAuditEvent({
+        actor: user,
+        action: existingApplication ? 'Manual placement updated' : 'Manual placement added',
+        previousStatus: previousManualStatus,
+        newStatus: appData.status || 'Placed',
+        record: { name: appData.name, roll: appData.roll, jobId: 'MANUAL-ADD', company: appData.company, position: appData.position, entrySource: 'Manual Add' },
+        details: 'Manual placement written to Opening_Applied, TPO_Log, and Placed_Students.',
+        changedAt: addedAt
+      }));
+    } catch (error) {
+      console.error('Placement audit history could not be saved:', error.message);
+      placementAuditWarning = `The placement was saved, but its change history could not be recorded: ${error.message}`;
+    }
     
     checkAndSendStudentMails({ ...appData, tpoName: tpoName }, appData.status || 'Placed', {}, req.body.currentUserEmail)
       .catch(error => console.error('Manual placement email failed:', error.message));
@@ -2172,7 +2287,7 @@ exports.addApplication = async (req, res) => {
       designTaskWarning = `The placement was saved, but its Design Portal task could not be created: ${error.message}`;
     }
 
-    refreshCache(); res.json({ success: true, updated: Boolean(existingApplication), rowNumber: savedApplicationRow?.rowNumber || null, message: existingApplication ? 'Existing placement updated in Opening_Applied, TPO_Log, and Placed_Students.' : 'Placement added to Opening_Applied, TPO_Log, and Placed_Students.', warning: [designTaskWarning, placedSheetWarning].filter(Boolean).join(' ') });
+    refreshCache(); res.json({ success: true, updated: Boolean(existingApplication), rowNumber: savedApplicationRow?.rowNumber || null, message: existingApplication ? 'Existing placement updated in Opening_Applied, TPO_Log, and Placed_Students.' : 'Placement added to Opening_Applied, TPO_Log, and Placed_Students.', warning: [designTaskWarning, placedSheetWarning, placementAuditWarning].filter(Boolean).join(' ') });
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
 
@@ -2265,6 +2380,22 @@ exports.addDirectInterview = async (req, res) => {
       }
     }
 
+    let placementAuditWarning = '';
+    try {
+      await appendPlacementAudit(createPlacementAuditEvent({
+        actor: user,
+        action: 'Manual interview referral added',
+        previousStatus: '',
+        newStatus: 'Interview Scheduled',
+        record: { name: studentData.name, roll: studentData.roll, jobId: resolvedJobId, company: String(company).trim(), position: String(position).trim(), entrySource: 'Manual Add' },
+        details: `Interview scheduled for ${cleanInterviewDate} at ${cleanInterviewTime}.`,
+        changedAt: createdAt
+      }));
+    } catch (error) {
+      console.error('Placement audit history could not be saved:', error.message);
+      placementAuditWarning = `The interview was recorded, but its change history could not be saved: ${error.message}`;
+    }
+
     let emailSent = false;
     let emailQueued = false;
     let emailWarning = '';
@@ -2284,7 +2415,8 @@ exports.addDirectInterview = async (req, res) => {
     }
 
     await refreshCache();
-    return res.json({ success: true, emailSent, emailQueued, warning: emailWarning, message: emailWarning || 'Interview added to Opening_Applied and TPO_Log; invitation sent.' });
+    const warning = [emailWarning, placementAuditWarning].filter(Boolean).join(' ');
+    return res.json({ success: true, emailSent, emailQueued, warning, message: warning || 'Interview added to Opening_Applied and TPO_Log; invitation sent.' });
   } catch (error) {
     console.error('Direct interview creation failed:', error);
     return res.status(500).json({ success: false, message: `Could not create the interview referral: ${error.message}` });
@@ -3325,6 +3457,164 @@ exports.getPlacedStudents = async (req, res) => {
   });
 };
 
+exports.getPlacementReconciliation = async (req, res) => {
+  try {
+    let cache = getCache();
+    if (!cache) {
+      await refreshCache();
+      cache = getCache();
+    }
+    if (!cache) return res.status(503).json({ success: false, message: 'Placement data is still syncing. Please retry shortly.' });
+    const reconciliation = buildPlacementReconciliation({
+      tpoLogs: cache.tpoLogs,
+      placedStudents: cache.placedStudents,
+      applications: cache.applications,
+      getValue: getValByHeader
+    });
+    return res.json({
+      success: true,
+      reconciliation,
+      dataMeta: {
+        sourceSheet: 'TPO_Log',
+        projectionSheet: 'Placed_Students',
+        sourceHealthy: cache.cacheSheetHealth?.tpoLogs === true,
+        projectionHealthy: cache.cacheSheetHealth?.placedStudents === true,
+        sourceLastSuccessfulSyncAt: cache.cacheSheetUpdatedAt?.tpoLogs || '',
+        projectionLastSuccessfulSyncAt: cache.cacheSheetUpdatedAt?.placedStudents || '',
+        lastRefreshAttemptAt: cache.cacheUpdatedAt || '',
+        refreshStatus: cache.cacheRefreshStatus || 'unknown',
+        failedSheets: cache.cacheFailedSheets || []
+      }
+    });
+  } catch (error) {
+    console.error('Placement reconciliation failed:', error);
+    return res.status(500).json({ success: false, message: `Could not reconcile placement records: ${error.message}` });
+  }
+};
+
+exports.refreshPlacementReconciliation = async (_req, res) => {
+  try {
+    await refreshCache();
+    const cache = getCache();
+    const requiredSheetsHealthy = ['tpoLogs', 'placedStudents', 'applications']
+      .every(sheet => cache?.cacheSheetHealth?.[sheet] === true);
+    if (!cache || !requiredSheetsHealthy) {
+      return res.status(503).json({
+        success: false,
+        message: 'A fresh read of TPO_Log, Placed_Students, and Opening_Applied could not be confirmed. No reconciliation repair was run.',
+        failedSheets: cache?.cacheFailedSheets || []
+      });
+    }
+    return res.json({
+      success: true,
+      message: 'Placement source sheets refreshed successfully.',
+      refreshedAt: cache.cacheUpdatedAt || '',
+      failedSheets: cache.cacheFailedSheets || []
+    });
+  } catch (error) {
+    console.error('Placement reconciliation refresh failed:', error);
+    return res.status(503).json({ success: false, message: `Could not refresh placement sheets: ${error.message}` });
+  }
+};
+
+exports.repairManualPlacementSaves = async (req, res) => {
+  try {
+    await refreshCache();
+    const cache = getCache();
+    if (!cache || cache.cacheSheetHealth?.applications !== true || cache.cacheSheetHealth?.tpoLogs !== true) {
+      return res.status(503).json({ success: false, message: 'Opening_Applied and TPO_Log must both sync successfully before retrying partial manual saves.' });
+    }
+    const missing = buildPlacementReconciliation({
+      tpoLogs: cache.tpoLogs,
+      placedStudents: cache.placedStudents,
+      applications: cache.applications,
+      getValue: getValByHeader
+    }).missingManualLogRows;
+    if (!missing.length) return res.json({ success: true, repaired: 0, message: 'No incomplete manual placement saves were found.' });
+
+    let repaired = 0;
+    for (const missingRow of missing) {
+      const row = (cache.applications || []).find(item => Number(item.rowNumber) === Number(missingRow.rowNumber));
+      if (!row) continue;
+      const logRow = await upsertPlacementTpoLog({
+        name: getValByHeader(row, ['studentname', 'name']),
+        phone: getValByHeader(row, ['contact', 'phone']),
+        email: getValByHeader(row, ['mailid', 'email']),
+        roll: getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']),
+        course: getValByHeader(row, ['course', 'program']),
+        branch: getValByHeader(row, ['branch', 'sittingbranch']),
+        qual: getValByHeader(row, ['qualification', 'qual']),
+        resume: getValByHeader(row, ['resume', 'cv']),
+        jobId: getValByHeader(row, ['jobid', 'job id']) || 'MANUAL-ADD',
+        company: getValByHeader(row, ['companyname', 'company']),
+        position: getValByHeader(row, ['position', 'role']),
+        placementOfficer: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']),
+        status: getValByHeader(row, ['status']),
+        remarks: getValByHeader(row, ['remarks']),
+        datePlaced: getValByHeader(row, ['dateplaced']),
+        packageLpa: getValByHeader(row, ['package', 'packagelpa']),
+        joiningStatus: getValByHeader(row, ['joiningstatus']),
+        offerLetter: getValByHeader(row, ['offerletterstatus', 'offerletter']),
+        entrySource: 'Manual Add',
+        statusHistory: getValByHeader(row, ['statushistory'])
+      });
+      await syncPositivePlacement({ sourceSheet: 'TPO_Log', sourceRow: logRow.rowNumber, tpoLogRow: logRow });
+      repaired += 1;
+    }
+    await refreshCache();
+    return res.json({ success: true, repaired, message: `Retried ${repaired} incomplete manual placement save(s).` });
+  } catch (error) {
+    console.error('Partial manual placement recovery failed:', error);
+    return res.status(500).json({ success: false, message: `Manual placement recovery stopped: ${error.message}` });
+  }
+};
+
+exports.rebuildPlacedStudentProjection = async (req, res) => {
+  try {
+    await refreshCache();
+    const result = await rebuildPlacedStudentsFromTpoLogs();
+    await refreshCache();
+    return res.json({
+      success: true,
+      result,
+      message: `Verified Placed_Students against ${result.sourceCount} current TPO_Log rows. The normal source refresh backs up and rebuilds the projection if it detects a mismatch.`
+    });
+  } catch (error) {
+    console.error('Placed_Students rebuild request failed:', error);
+    return res.status(503).json({ success: false, message: error.message || 'Could not rebuild Placed_Students.' });
+  }
+};
+
+exports.getPlacementAudit = async (req, res) => {
+  try {
+    await loadDocInfo();
+    const sheet = doc.sheetsByTitle[PLACEMENT_AUDIT_SHEET];
+    if (!sheet) return res.json({ success: true, available: false, logs: [] });
+    const rows = await sheet.getRows();
+    const logs = rows.slice(-200).reverse().map(row => ({
+      eventId: getValByHeader(row, ['eventid']),
+      timestamp: getValByHeader(row, ['timestamp']),
+      actorName: getValByHeader(row, ['actorname']),
+      actorEmail: getValByHeader(row, ['actoremail']),
+      actorRole: getValByHeader(row, ['actorrole']),
+      action: getValByHeader(row, ['action']),
+      previousStatus: getValByHeader(row, ['previousstatus']),
+      newStatus: getValByHeader(row, ['newstatus']),
+      studentName: getValByHeader(row, ['studentname']),
+      roll: getValByHeader(row, ['rollnumber']),
+      jobId: getValByHeader(row, ['jobid']),
+      company: getValByHeader(row, ['company']),
+      position: getValByHeader(row, ['position']),
+      entrySource: getValByHeader(row, ['entrysource']),
+      details: getValByHeader(row, ['details'])
+    }));
+    return res.json({ success: true, available: true, logs });
+  } catch (error) {
+    console.error('Placement audit history could not be read:', error);
+    return res.status(500).json({ success: false, message: `Could not load placement change history: ${error.message}` });
+  }
+};
+
 exports.getTalentino = async (req, res) => {
   const actor = req.portalUser || {};
   const { assignedBranchesArray: requestedBranches, role: requestedRole, assignedCourse: requestedCourse } = req.body;
@@ -3351,14 +3641,7 @@ exports.getTalentino = async (req, res) => {
     if (name && !studentsByName.has(name)) studentsByName.set(name, student);
   });
 
-  const scheduleByDateAndBranch = new Map();
-  scheduleRows.forEach(item => {
-    const date = safeParseDate(getValByHeader(item, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']));
-    const branch = normalizeKey(getValByHeader(item, ['branch', 'sittingbranch']));
-    if (!date || !branch) return;
-    const key = `${branch}|${date.toDateString()}`;
-    if (!scheduleByDateAndBranch.has(key)) scheduleByDateAndBranch.set(key, item);
-  });
+  const resolveSession = createTalentinoSessionResolver(scheduleRows, getValByHeader, safeParseDate);
 
   const records = attendanceRows.filter(row => {
     const rowBranch = getValByHeader(row, ['branch']);
@@ -3372,11 +3655,9 @@ exports.getTalentino = async (req, res) => {
   }).map(row => {
     const date = getValByHeader(row, ['timestamp', 'date', 'time', 'present check-ins date']);
     const branch = getValByHeader(row, ['branch']);
-    const parsedAttendanceDate = safeParseDate(date);
-    const schedule = parsedAttendanceDate
-      ? scheduleByDateAndBranch.get(`${normalizeKey(branch)}|${parsedAttendanceDate.toDateString()}`)
-      : undefined;
-    return { name: getValByHeader(row, ['name', 'student']), branch, date, rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes', 'remark']), tpo: getValByHeader(row, ['tpo', 'placementofficer', 'conductedby', 'createdby']) || getValByHeader(schedule, ['tpo', 'placementofficer', 'conductedby', 'createdby']), sessionId: getValByHeader(row, ['sessionid', 'eventid', 'event id']) || getValByHeader(schedule, ['sessionid', 'eventid', 'event id']) };
+    const match = resolveSession(row);
+    const schedule = match.session;
+    return { name: getValByHeader(row, ['name', 'student']), branch, date, rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes', 'remark']), tpo: getValByHeader(row, ['tpo', 'placementofficer', 'conductedby', 'createdby']) || getValByHeader(schedule, ['tpo', 'placementofficer', 'conductedby', 'createdby']), sessionId: getValByHeader(row, ['sessionid', 'eventid', 'event id']) || getValByHeader(schedule, ['sessionid', 'eventid', 'event id']), sessionMatchType: match.matchType };
   });
   const upperRole = String(role || '').toUpperCase();
   const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(upperRole) || upperRole.includes('REGIONAL TECHNICAL HEAD');
@@ -4001,7 +4282,7 @@ exports.rescheduleEvent = (req, res) => updateEventStatus(req, res, 'Rescheduled
 // 🚨 RULE 3: CRON HELPER (RESUME DELIVERY & DRIVE SUMMARY)
 // =========================================================
 let dailyCronPromise = null;
-const runDailyCronTasks = async ({ resumeOnly = false } = {}) => {
+const runDailyCronTasks = async ({ resumeOnly = false, companyReportOnly = false } = {}) => {
   console.log("🚨 [CRON] Starting Daily Automated Tasks...");
   const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' });
   const today = new Date();
@@ -4038,7 +4319,7 @@ const runDailyCronTasks = async ({ resumeOnly = false } = {}) => {
     clearResumeMailCacheRetry(yStr);
   } else {
     blockedResumeMailRun(cache);
-    if (resumeOnly) return { resumes: resumeSummary };
+    if (resumeOnly || companyReportOnly) return { resumes: resumeSummary };
   }
 
   // ==================================================================
@@ -4113,6 +4394,11 @@ const runDailyCronTasks = async ({ resumeOnly = false } = {}) => {
     if (applicants.length === 0) {
       reportRow.deliveryStatus = 'Skipped — no applicants';
       resumeSummary.skipped.push({ jobId, company: companyName || 'Unknown company', reason: 'No applications match this Job ID.' });
+      continue;
+    }
+
+    if (companyReportOnly) {
+      reportRow.deliveryStatus = wasResumeDeliveryHandled(jobId, cache) ? 'Already handled' : 'Not sent — report-only run';
       continue;
     }
 
@@ -4207,13 +4493,15 @@ const runDailyCronTasks = async ({ resumeOnly = false } = {}) => {
     await new Promise(resolve => setTimeout(resolve, 1500));
   }
 
-  resumeSummary.dailyReport = await sendCompanyOpeningDailyReport({
-    reportDate: yStr,
-    openingRows: companyOpeningReportRows,
-    cache
-  });
+  if (!resumeOnly) {
+    resumeSummary.dailyReport = await sendCompanyOpeningDailyReport({
+      reportDate: yStr,
+      openingRows: companyOpeningReportRows,
+      cache
+    });
+  }
 
-  if (resumeOnly) {
+  if (resumeOnly || companyReportOnly) {
     console.log('[RESUME DELIVERY] Run summary:', JSON.stringify(resumeSummary));
     return { resumes: resumeSummary };
   }
@@ -4393,8 +4681,9 @@ exports.runDailyCron = options => {
 exports.triggerDailyCron = async (req, res) => {
   try {
     const role = String(req.portalUser?.role || '').toUpperCase();
-    if (!req.portalUser || !(req.portalUser.accessType === 'superadmin' || /TPO|PLACEMENT OFFICER|PLACEMENT TEAM|ADMIN/.test(role))) {
-      return res.status(req.portalUser ? 403 : 401).json({ success: false, message: 'A placement team session is required to trigger resume delivery.' });
+    const isAdmin = req.portalUser?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
+    if (!req.portalUser || !isAdmin) {
+      return res.status(req.portalUser ? 403 : 401).json({ success: false, message: 'Only a portal administrator can trigger resume delivery.' });
     }
     const result = await exports.runDailyCron({ resumeOnly: true });
     const report = result?.resumes || { dueJobs: 0, sent: 0, queued: 0, alreadyHandled: 0, skipped: [], failed: [] };
@@ -4409,6 +4698,25 @@ exports.triggerDailyCron = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+exports.triggerCompanyOpeningReport = async (req, res) => {
+  try {
+    const role = String(req.portalUser?.role || '').toUpperCase();
+    const isAdmin = req.portalUser?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
+    if (!req.portalUser || !isAdmin) return res.status(req.portalUser ? 403 : 401).json({ success: false, message: 'Only a portal administrator can send the company opening report.' });
+    const result = await exports.runDailyCron({ companyReportOnly: true });
+    const report = result?.resumes || {};
+    const status = report.dailyReport?.status || (report.blocked ? 'blocked' : 'not sent');
+    return res.json({
+      success: !report.blocked,
+      status,
+      message: report.blocked ? report.message : `Company report status: ${status}. Resume delivery was not triggered.`
+    });
+  } catch (error) {
+    console.error('Administrator company report trigger failed:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Could not send the company report.' });
   }
 };
 

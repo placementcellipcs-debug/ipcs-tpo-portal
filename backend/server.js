@@ -24,6 +24,15 @@ const {
 const { isAssetCacheReady } = require('./src/assetConfig');
 
 const app = express();
+const portalServiceRole = String(process.env.PORTAL_SERVICE_ROLE || 'all').trim().toLowerCase();
+if (!['all', 'api', 'worker'].includes(portalServiceRole)) {
+  throw new Error(`Invalid PORTAL_SERVICE_ROLE "${portalServiceRole}". Use all, api, or worker.`);
+}
+const runsBackgroundJobs = portalServiceRole === 'all' || portalServiceRole === 'worker';
+if (portalServiceRole === 'worker') {
+  app.get('/health', (_req, res) => res.json({ success: true, service: 'worker' }));
+  app.use((_req, res) => res.status(404).json({ success: false, message: 'This instance runs background jobs only.' }));
+}
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 
@@ -233,10 +242,10 @@ app.post('/api/tpo/clients/add', upload.single('logoFile'), controllers.addClien
 app.post('/api/tpo/profile/update-photo', requireSession('portal'), upload.single('photo'), controllers.updatePhoto);
 app.get('/api/tpo/drives', requireSession('placement-drive'), controllers.getDrives);
 app.post('/api/tpo/drives/update', requireSession('placement-drive'), controllers.updateDriveStatus);
-app.get('/api/tpo/trigger-resumes', requireSession('portal'), controllers.triggerDailyCron);
+app.get('/api/tpo/trigger-resumes', requireSession('portal-admin'), controllers.triggerDailyCron);
 
 // 🚨 INSTANT TEST ROUTE: Trigger both daily tasks manually anytime
-app.get('/api/tpo/test-daily-mail', requireSession('portal'), controllers.triggerDailyCron);
+app.get('/api/tpo/test-daily-mail', requireSession('portal-admin'), controllers.triggerDailyCron);
 
 // ---------------------------------------------------------
 // ADMIN ROUTES
@@ -250,6 +259,13 @@ app.get('/api/admin/courses', controllers.getCourses);
 app.post('/api/admin/courses/add', controllers.addCourse);
 app.post('/api/admin/courses/delete', controllers.deleteCourse); 
 app.get('/api/admin/security-logs', controllers.getSecurityLogs);
+app.get('/api/admin/placement-reconciliation', controllers.getPlacementReconciliation);
+app.post('/api/admin/placement-reconciliation/refresh', controllers.refreshPlacementReconciliation);
+app.post('/api/admin/placement-reconciliation/repair-manual-saves', controllers.repairManualPlacementSaves);
+app.post('/api/admin/placement-reconciliation/rebuild', controllers.rebuildPlacedStudentProjection);
+app.get('/api/admin/placement-audit', controllers.getPlacementAudit);
+app.post('/api/admin/trigger-resume-delivery', controllers.triggerDailyCron);
+app.post('/api/admin/company-opening-report', controllers.triggerCompanyOpeningReport);
 app.get('/api/admin/corporate-training-inquiries', controllers.getCorporateTrainingInquiries);
 app.post('/api/admin/corporate-training-inquiries/assign', controllers.assignCorporateTrainingInquiry);
 app.get('/api/admin/branches', controllers.getBranches);
@@ -364,22 +380,25 @@ app.post('/api/academic/diary/add', academicControllers.addDiaryEntry);
 // SERVER INITIALIZATION & SCHEDULED AUTOMATIONS
 // ---------------------------------------------------------
 
-// ⏰ AUTOMATED CRON: Triggers every day at 8:00 AM IST
-cron.schedule('00 08 * * *', async () => {
-  console.log("⏰ [08:00 AM IST] Executing Daily Automated Tasks...");
-  await controllers.runDailyCron();
-}, {
-  scheduled: true,
-  timezone: "Asia/Kolkata"
-});
+if (runsBackgroundJobs) {
+  // ⏰ AUTOMATED CRON: Triggers every day at 8:00 AM IST
+  cron.schedule('00 08 * * *', async () => {
+    console.log("⏰ [08:00 AM IST] Executing Daily Automated Tasks...");
+    await controllers.runDailyCron();
+  }, {
+    scheduled: true,
+    timezone: "Asia/Kolkata"
+  });
 
-// Mail dashboards refresh independently of outgoing mail. The reports include
-// the previous complete day/month/year and use the same sender failover path.
-startMailDashboardRefresh();
+  // Mail dashboards refresh independently of outgoing mail.
+  startMailDashboardRefresh();
+} else {
+  console.log(`[BACKGROUND JOBS] Disabled for PORTAL_SERVICE_ROLE=${portalServiceRole}; this instance serves portal requests only.`);
+}
 
 const reportRecipients = String(process.env.MAIL_REPORT_RECIPIENTS ?? 'giftyipcsglobal@gmail.com').trim();
 const mailReportsEnabled = String(process.env.MAIL_REPORTS_ENABLED ?? 'true').toLowerCase() !== 'false';
-if (mailReportsEnabled && reportRecipients) {
+if (runsBackgroundJobs && mailReportsEnabled && reportRecipients) {
   const scheduleMailReport = (envKey, fallbackCron, period) => {
     const expression = String(process.env[envKey] || fallbackCron).trim();
     if (!cron.validate(expression)) {
@@ -405,12 +424,14 @@ if (mailReportsEnabled && reportRecipients) {
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 IPCS Backend is running on http://localhost:${PORT}`);
-  startEmailWorker();
-  // Recover only yesterday's resume deliveries after deploys/restarts that
-  // missed the 08:00 IST cron tick; older deadlines are never backfilled.
-  setTimeout(() => {
-    controllers.runDailyCron({ resumeOnly: true })
-      .then(result => console.log('[RESUME DELIVERY] Startup catch-up complete:', JSON.stringify(result?.resumes || {})))
-      .catch(error => console.error('[RESUME DELIVERY] Startup catch-up could not run:', error.message));
-  }, 60_000);
+  if (runsBackgroundJobs) {
+    startEmailWorker();
+    // Recover only yesterday's resume deliveries after deploys/restarts that
+    // missed the scheduled run; the resume-only mode does not send the company report.
+    setTimeout(() => {
+      controllers.runDailyCron({ resumeOnly: true })
+        .then(result => console.log('[RESUME DELIVERY] Startup catch-up complete:', JSON.stringify(result?.resumes || {})))
+        .catch(error => console.error('[RESUME DELIVERY] Startup catch-up could not run:', error.message));
+    }, 60_000);
+  }
 });
