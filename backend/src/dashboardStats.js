@@ -10,6 +10,10 @@ const isPlacementOutcome = (row, getValue) => {
   return normalizePlacementText(getValue(row, ['status'])) === 'placed';
 };
 
+const countPlacementRecords = (placementRows, getValue, canAccessPlacement = () => true) =>
+  (Array.isArray(placementRows) ? placementRows : []).reduce((count, row) =>
+    count + (canAccessPlacement(row) && isPlacementOutcome(row, getValue) ? 1 : 0), 0);
+
 const calculateDashboardPlacementCounts = (students, placementRows, getValue, canAccess = () => true, canAccessPlacement = canAccess) => {
   const eligibleStudents = new Set();
   const placedStudents = new Set();
@@ -32,4 +36,4 @@ const calculateDashboardPlacementCounts = (students, placementRows, getValue, ca
   return { totalStudents: eligibleStudents.size, placed: placedStudents.size };
 };
 
-module.exports = { calculateDashboardPlacementCounts, isPlacementOutcome };
+module.exports = { calculateDashboardPlacementCounts, countPlacementRecords, isPlacementOutcome };

@@ -32,7 +32,7 @@ const {
 
 const { autoCreateDesignTask } = require('./designControllers');
 const { normalizePlacementText, placementIdentity, latestPlacementRows } = require('./placementRecords');
-const { calculateDashboardPlacementCounts } = require('./dashboardStats');
+const { calculateDashboardPlacementCounts, countPlacementRecords } = require('./dashboardStats');
 const { formatIndiaTimestamp, formatIndiaDate, formatIndiaTime } = require('./utils/dateTime');
 
 const FOLDER_OFFER_LETTERS = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5';
@@ -1040,14 +1040,14 @@ exports.getDashboardStats = async (req, res) => {
 
   const placementCounts = calculateDashboardPlacementCounts(
     cache.students || [],
-    cache.tpoLogs || [],
+    [],
     getValByHeader,
-    row => checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course'])),
-    row => isPlacementTrackerTpo(placementUser)
-      ? (placementOwnerMatchesUser(getValByHeader(row, ['placementofficer', 'tpo', 'tponame']), placementUser)
-        || (!getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) && hasPlacementBranchAccess(getValByHeader(row, ['branch']), placementUser)))
-      : checkAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))
+    // These headline KPIs are global for every signed-in dashboard. The API
+    // returns only totals here; detailed student records remain role-scoped.
+    () => true,
+    () => true
   );
+  const totalPlacementRecords = countPlacementRecords(cache.tpoLogs || [], getValByHeader);
 
   const studentByRoll = new Map();
   const studentsByName = new Map();
@@ -1102,7 +1102,9 @@ exports.getDashboardStats = async (req, res) => {
     stats: { 
       totalStudents: placementCounts.totalStudents,
       pendingApps, 
-      placed: placementCounts.placed,
+      // Count every TPO_Log row whose Status is exactly Placed, matching the
+      // source-of-truth rule used by the monthly placement report.
+      placed: totalPlacementRecords,
       activeVacancies: activeVacs,
       totalCompanies
     }, 

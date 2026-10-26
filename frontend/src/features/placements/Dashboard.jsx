@@ -320,7 +320,7 @@ export default function Dashboard() {
 
         {dataMeta && <DataSourceStatus
           source="TPO_Log"
-          detail="Placement trends count each Status = Placed row; the Students Placed card counts unique students."
+          detail="Dashboard totals are global for all users: total students counts unique student records, and Total Placements counts every TPO_Log row with Status = Placed."
           health={dataMeta.sheetHealth?.tpoLogs}
           lastSyncedAt={dataMeta.sheetLastSuccessfulSyncAt?.tpoLogs}
           lastAttemptAt={dataMeta.lastRefreshAttemptAt}
@@ -343,7 +343,7 @@ export default function Dashboard() {
             <div className="kpi-trend green">↑ Hiring Now</div>{makeSparkline('#10b981')}
           </div>
           <div className="dash-card">
-            <div className="kpi-header"><div className="icon-c purple"><Trophy weight="fill" size={20}/></div><div><div className="kpi-title">Students Placed</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div></div></div>
+            <div className="kpi-header"><div className="icon-c purple"><Trophy weight="fill" size={20}/></div><div><div className="kpi-title">Total Placements</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div></div></div>
             <div className="kpi-trend green">↑ Growing Pipeline</div>{makeSparkline('#a855f7')}
           </div>
           <div className="dash-card">
