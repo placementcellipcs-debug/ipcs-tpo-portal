@@ -32,7 +32,7 @@ const {
 
 const { autoCreateDesignTask } = require('./designControllers');
 const { normalizePlacementText, placementIdentity, latestPlacementRows } = require('./placementRecords');
-const { calculateDashboardPlacementCounts, countPlacementRecords } = require('./dashboardStats');
+const { calculateDashboardPlacementCounts } = require('./dashboardStats');
 const { buildPlacementReconciliation } = require('./placementReconciliation');
 const { PLACEMENT_AUDIT_SHEET, PLACEMENT_AUDIT_HEADERS, createPlacementAuditEvent } = require('./placementAudit');
 const { createTalentinoSessionResolver } = require('./talentinoSessionMatch');
@@ -917,7 +917,7 @@ exports.login = async (req, res) => {
       try {
         const sheet = doc.sheetsByIndex.find(s => s.title.replace(/\s/g, '').toLowerCase().includes('security_logs'));
         if (sheet) {
-          const rawIp = req.headers['x-forwarded-for']?.split(',')[0] || req.socket.remoteAddress || 'Unknown IP';
+          const rawIp = req.ip || req.socket?.remoteAddress || 'Unknown IP';
           const cleanIp = rawIp.replace('::ffff:', '').trim();
           const uaInfo = parseUserAgent(req.headers['user-agent'] || '');
 
@@ -1050,7 +1050,6 @@ exports.getDashboardStats = async (req, res) => {
     () => true,
     () => true
   );
-  const totalPlacementRecords = countPlacementRecords(cache.tpoLogs || [], getValByHeader);
 
   const studentByRoll = new Map();
   const studentsByName = new Map();
@@ -1107,7 +1106,7 @@ exports.getDashboardStats = async (req, res) => {
       pendingApps, 
       // Count every TPO_Log row whose Status is exactly Placed, matching the
       // source-of-truth rule used by the monthly placement report.
-      placed: totalPlacementRecords,
+      placed: placementCounts.placed,
       activeVacancies: activeVacs,
       totalCompanies
     }, 
@@ -2338,6 +2337,8 @@ exports.addDirectInterview = async (req, res) => {
     try { if (!['http:', 'https:'].includes(new URL(resumeLink).protocol)) throw new Error('protocol'); }
     catch { return res.status(422).json({ success: false, message: 'The resume link must be a valid http or https URL.' }); }
   }
+  const saveProgress = [];
+  let failedAt = 'Preparing interview';
   try {
     await loadDocInfo();
     const userBranches = [...(Array.isArray(user?.assignedBranchesArray) ? user.assignedBranchesArray : []), ...String(user?.assignedBranches || '').split(/[\n,;]+/)].map(value => String(value || '').trim()).filter(Boolean);
@@ -2349,7 +2350,8 @@ exports.addDirectInterview = async (req, res) => {
     const appSheet = doc.sheetsByTitle['Opening_Applied'];
     const logSheet = doc.sheetsByTitle['TPO_Log'];
     if (!appSheet) return res.status(503).json({ success: false, message: 'The applications sheet is unavailable.' });
-    if (logSheet) await ensurePlacementHeaders(logSheet, placementTrackingHeaders);
+    if (!logSheet) return res.status(503).json({ success: false, message: 'The TPO_Log sheet is unavailable. No interview was added.' });
+    await ensurePlacementHeaders(logSheet, placementTrackingHeaders);
 
     const tpoName = user?.name || getValByHeader(user, ['name']) || 'Placement Officer';
     const cleanName = String(candidateName).trim();
@@ -2366,7 +2368,9 @@ exports.addDirectInterview = async (req, res) => {
     const resolvedJobId = 'MANUAL-ADD';
     const normalizedCompany = normalizePlacementText(company);
     const normalizedPosition = normalizePlacementText(position);
-    const existing = (await appSheet.getRows()).find(row =>
+    const directLogKey = placementLogRecordKey({ roll: studentData.roll, name: studentData.name, jobId: resolvedJobId, company: String(company).trim(), position: String(position).trim() });
+    const [applicationRows, logRows] = await Promise.all([appSheet.getRows(), logSheet.getRows()]);
+    const existingApplication = applicationRows.find(row =>
       (cleanRoll
         ? normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'roll'])) === normalizePlacementText(cleanRoll)
         : normalizePlacementText(getValByHeader(row, ['studentname', 'name'])) === normalizePlacementText(cleanName)) &&
@@ -2374,7 +2378,8 @@ exports.addDirectInterview = async (req, res) => {
       normalizePlacementText(getValByHeader(row, ['position', 'role'])) === normalizedPosition &&
       normalizePlacementText(getValByHeader(row, ['jobid'])) === normalizePlacementText(resolvedJobId)
     );
-    if (existing) return res.status(409).json({ success: false, message: 'This student already has a record for that company, position, and opening. Open the existing record to update or reschedule it.' });
+    const existingLog = directLogKey ? findLatestCanonicalPlacementLog(logRows, directLogKey) : null;
+    if (existingApplication && existingLog) return res.status(409).json({ success: false, message: 'This student already has a record for that company, position, and opening. Open the existing record to update or reschedule it.' });
 
     const createdAt = formatIndiaTimestamp();
     const history = [placementHistoryEntry({ status: 'Interview Scheduled', remarks, interviewDate: cleanInterviewDate, interviewTime: cleanInterviewTime, interviewVenue, changedBy: tpoName, changedAt: createdAt, event: 'Direct interview referral created' })];
@@ -2388,23 +2393,28 @@ exports.addDirectInterview = async (req, res) => {
       'Status History': JSON.stringify(history)
     };
     await ensurePlacementHeaders(appSheet, Object.keys(rowData));
-    await appSheet.addRow(mapPlacementRowData(appSheet, rowData));
-
-    if (logSheet) {
-      const logData = { ...rowData, 'Offer Letter Status': '' };
-      delete logData['Offer Letter'];
-      await ensurePlacementHeaders(logSheet, Object.keys(logData));
-      const directLogKey = placementLogRecordKey({ roll: studentData.roll, name: studentData.name, jobId: resolvedJobId, company: String(company).trim(), position: String(position).trim() });
-      const existingLog = directLogKey ? findLatestCanonicalPlacementLog(await logSheet.getRows(), directLogKey) : null;
-      if (existingLog) {
-        const logHistory = appendPlacementHistory({ row: existingLog, oldStatus: getValByHeader(existingLog, ['status']), status: 'Interview Scheduled', oldRemarks: getValByHeader(existingLog, ['remarks']), remarks, oldInterviewDate: getValByHeader(existingLog, ['interviewdate']), interviewDate: cleanInterviewDate, oldInterviewTime: getValByHeader(existingLog, ['interviewtime', 'intervewtime']), interviewTime: cleanInterviewTime, oldInterviewVenue: getValByHeader(existingLog, ['interviewvenue']), interviewVenue, changedBy: tpoName, changedAt: createdAt });
-        logData['Status History'] = JSON.stringify(logHistory);
-        existingLog.assign(mapPlacementRowData(logSheet, logData));
-        await existingLog.save();
-      } else {
-        await logSheet.addRow(mapPlacementRowData(logSheet, logData));
-      }
+    failedAt = 'Opening_Applied';
+    if (existingApplication) {
+      existingApplication.assign(mapPlacementRowData(appSheet, rowData));
+      await existingApplication.save();
+    } else {
+      await appSheet.addRow(mapPlacementRowData(appSheet, rowData));
     }
+    saveProgress.push('Opening_Applied');
+
+    const logData = { ...rowData, 'Offer Letter Status': '' };
+    delete logData['Offer Letter'];
+    failedAt = 'TPO_Log';
+    await ensurePlacementHeaders(logSheet, Object.keys(logData));
+    if (existingLog) {
+      const logHistory = appendPlacementHistory({ row: existingLog, oldStatus: getValByHeader(existingLog, ['status']), status: 'Interview Scheduled', oldRemarks: getValByHeader(existingLog, ['remarks']), remarks, oldInterviewDate: getValByHeader(existingLog, ['interviewdate']), interviewDate: cleanInterviewDate, oldInterviewTime: getValByHeader(existingLog, ['interviewtime', 'intervewtime']), interviewTime: cleanInterviewTime, oldInterviewVenue: getValByHeader(existingLog, ['interviewvenue']), interviewVenue, changedBy: tpoName, changedAt: createdAt });
+      logData['Status History'] = JSON.stringify(logHistory);
+      existingLog.assign(mapPlacementRowData(logSheet, logData));
+      await existingLog.save();
+    } else {
+      await logSheet.addRow(mapPlacementRowData(logSheet, logData));
+    }
+    saveProgress.push('TPO_Log');
 
     let placementAuditWarning = '';
     try {
@@ -2442,10 +2452,16 @@ exports.addDirectInterview = async (req, res) => {
 
     await refreshCache();
     const warning = [emailWarning, placementAuditWarning].filter(Boolean).join(' ');
-    return res.json({ success: true, emailSent, emailQueued, warning, message: warning || 'Interview added to Opening_Applied and TPO_Log; invitation sent.' });
+    return res.json({ success: true, emailSent, emailQueued, savedSheets: saveProgress, warning, message: warning || 'Interview added to Opening_Applied and TPO_Log; invitation sent.' });
   } catch (error) {
-    console.error('Direct interview creation failed:', error);
-    return res.status(500).json({ success: false, message: `Could not create the interview referral: ${error.message}` });
+    console.error(`Direct interview creation failed during ${failedAt}:`, error);
+    return res.status(500).json({
+      success: false,
+      message: `Could not create the interview referral: ${error.message} Progress: ${saveProgress.length ? saveProgress.join(', ') : 'no sheet save was confirmed'}. Failed during ${failedAt}.`,
+      savedSheets: saveProgress,
+      failedAt,
+      recoveryAvailable: saveProgress.includes('Opening_Applied')
+    });
   }
 };
 
@@ -5770,9 +5786,13 @@ exports.getPublicMagazines = async (_req, res) => {
 };
 
 exports.getClientById = (req, res) => {
-  const targetRow = parseInt(req.params.id);
-  const row = getCache().clients.find(r => r.rowNumber === targetRow);
+  const targetRow = Number(req.params.id);
+  if (!Number.isSafeInteger(targetRow) || targetRow < 2) return res.status(404).json({ success: false, message: 'Client not found' });
+  const clients = getCache()?.clients;
+  if (!Array.isArray(clients)) return res.status(503).json({ success: false, message: 'Client records are still loading. Please retry shortly.' });
+  const row = clients.find(r => Number(r.rowNumber) === targetRow);
   if (!row) return res.status(404).json({ success: false, message: "Client not found" });
+  if (!canManageClientRow(req.portalUser, row)) return res.status(404).json({ success: false, message: 'Client not found' });
 
   res.json({ success: true, client: { 
     rowNumber: row.rowNumber, 
@@ -5786,6 +5806,8 @@ exports.getClientById = (req, res) => {
 };
 
 const LEGACY_MOU_TOKEN_HASH_HEADER = 'MOU Signing Token Hash';
+const MOU_TOKEN_EXPIRY_HEADER = 'MOU Signing Expires At';
+const MOU_SIGNING_TTL_MS = 14 * 24 * 60 * 60 * 1000;
 const hashLegacyMouSigningToken = token => createHash('sha256').update(String(token || '')).digest('hex');
 const deriveMouSigningKey = secret => createHash('sha256').update('IPCS:MOU:LINK:V2\0').update(String(secret)).digest();
 const getMouSigningKeys = () => {
@@ -5865,6 +5887,20 @@ const findClientByMouToken = async (sheet, token) => {
     const rows = await sheet.getRows({ offset: rowNumber - 2, limit: 1 });
     const row = rows.find(item => Number(item.rowNumber) === rowNumber) || null;
     if (!row) console.warn(`[MOU] Valid signing token points to missing Clients row ${rowNumber}.`);
+    if (row) {
+      const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const tokenHashHeader = (sheet.headerValues || []).find(header => normalized(header) === normalized(LEGACY_MOU_TOKEN_HASH_HEADER));
+      const expiryHeader = (sheet.headerValues || []).find(header => normalized(header) === normalized(MOU_TOKEN_EXPIRY_HEADER));
+      const storedHash = String(tokenHashHeader ? row.get(tokenHashHeader) || '' : '').trim().toLowerCase();
+      if (storedHash) {
+        if (!/^[a-f0-9]{64}$/.test(storedHash)) return null;
+        const actualHash = Buffer.from(storedHash, 'hex');
+        const suppliedHash = Buffer.from(hashLegacyMouSigningToken(cleanToken), 'hex');
+        if (actualHash.length !== suppliedHash.length || !timingSafeEqual(actualHash, suppliedHash)) return null;
+      }
+      const expiresAt = String(expiryHeader ? row.get(expiryHeader) || '' : '').trim();
+      if (expiresAt && (!Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now())) return null;
+    }
     return row;
   }
 
@@ -5979,7 +6015,12 @@ exports.requestMou = async (req, res) => {
     let headers = [...(sheet.headerValues || [])];
     const normalizeHeader = header => String(header || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     let mailStatusHeader = headers.find(header => normalizeHeader(header) === 'mailstatus');
-    const missingHeaders = mailStatusHeader ? [] : ['Mail Status'];
+    const normalizedNames = headers.map(normalizeHeader);
+    const missingHeaders = [
+      ...(!mailStatusHeader ? ['Mail Status'] : []),
+      ...(!normalizedNames.includes(normalizeHeader(LEGACY_MOU_TOKEN_HASH_HEADER)) ? [LEGACY_MOU_TOKEN_HASH_HEADER] : []),
+      ...(!normalizedNames.includes(normalizeHeader(MOU_TOKEN_EXPIRY_HEADER)) ? [MOU_TOKEN_EXPIRY_HEADER] : [])
+    ];
     if (missingHeaders.length) {
       const requiredColumnCount = headers.length + missingHeaders.length;
       const currentColumnCount = Number(sheet.columnCount) || 0;
@@ -5992,6 +6033,9 @@ exports.requestMou = async (req, res) => {
       mailStatusHeader = headers.find(header => normalizeHeader(header) === 'mailstatus');
     }
     if (!mailStatusHeader) return res.status(500).json({ success: false, message: 'The Clients sheet is missing the Mail Status column.' });
+    const tokenHashHeader = headers.find(header => normalizeHeader(header) === normalizeHeader(LEGACY_MOU_TOKEN_HASH_HEADER));
+    const tokenExpiryHeader = headers.find(header => normalizeHeader(header) === normalizeHeader(MOU_TOKEN_EXPIRY_HEADER));
+    if (!tokenHashHeader || !tokenExpiryHeader) return res.status(500).json({ success: false, message: 'The Clients sheet is missing MOU signing security columns.' });
     const rows = await sheet.getRows({ offset: rowNumber - 2, limit: 1 });
     if (!rows.length || Number(rows[0].rowNumber) !== rowNumber) return res.status(404).json({ success: false, message: 'Client record was not found.' });
     const clientRow = rows[0];
@@ -6000,8 +6044,13 @@ exports.requestMou = async (req, res) => {
     const companyName = getValByHeader(clientRow, ['companyname', 'company']);
     if (!companyEmail || !companyName) return res.status(400).json({ success: false, message: 'This client needs a company name and email before an MOU can be sent.' });
     const signingToken = createMouSigningId(rowNumber);
+    const signingExpiresAt = new Date(Date.now() + MOU_SIGNING_TTL_MS).toISOString();
     const signingReference = `IPCS-${rowNumber}`;
-    clientRow.assign({ [mailStatusHeader]: 'Sending' });
+    clientRow.assign({
+      [mailStatusHeader]: 'Sending',
+      [tokenHashHeader]: hashLegacyMouSigningToken(signingToken),
+      [tokenExpiryHeader]: signingExpiresAt
+    });
     await clientRow.save();
     const signingApiOrigin = getMouSigningApiOrigin(req);
     const signingApiQuery = signingApiOrigin ? `?api=${encodeURIComponent(signingApiOrigin)}` : '';
@@ -6069,9 +6118,18 @@ exports.submitMou = async (req, res) => {
       return res.status(409).json({ success: false, message: 'This agreement has already been submitted.' });
     }
 
-    const certFile = (req.files || []).find(f => f.fieldname === 'certificatePdf');
-    const logoFile = (req.files || []).find(f => f.fieldname === 'logoFile');
+    const uploadedFiles = Object.values(req.files || {}).flat();
+    const certFile = uploadedFiles.find(f => f.fieldname === 'certificatePdf');
+    const logoFile = uploadedFiles.find(f => f.fieldname === 'logoFile');
     if (!certFile) return res.status(400).json({ success: false, message: "PDF missing" });
+    if (!certFile.buffer?.subarray(0, 5).equals(Buffer.from('%PDF-'))) {
+      return res.status(415).json({ success: false, message: 'The agreement file must be a valid PDF.' });
+    }
+    if (logoFile && !(
+      logoFile.buffer?.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+      || logoFile.buffer?.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))
+      || logoFile.buffer?.subarray(0, 4).toString('ascii') === 'RIFF' && logoFile.buffer?.subarray(8, 12).toString('ascii') === 'WEBP'
+    )) return res.status(415).json({ success: false, message: 'The company logo must be a valid PNG, JPEG, or WebP image.' });
 
     const companyName = getValByHeader(clientRow, ['companyname', 'company']) || 'Hiring Partner';
     const companyEmail = getValByHeader(clientRow, ['companymailid', 'companyemail', 'mailid', 'email']) || '';
@@ -6079,6 +6137,11 @@ exports.submitMou = async (req, res) => {
     const tpoEmail = getTpoEmailByName(tpoName);
 
     const pdfLink = await uploadToDrive(certFile, FOLDER_MOU_CERTIFICATES);
+    let parsedPdfUrl;
+    try { parsedPdfUrl = new URL(pdfLink); } catch { return res.status(502).json({ success: false, message: 'The agreement upload returned an invalid file link.' }); }
+    if (parsedPdfUrl.protocol !== 'https:' || !['drive.google.com', 'docs.google.com'].includes(parsedPdfUrl.hostname.toLowerCase())) {
+      return res.status(502).json({ success: false, message: 'The agreement upload returned an untrusted file link.' });
+    }
     let logoLink = null;
     if (logoFile) { logoLink = await uploadToDrive(logoFile, FOLDER_CLIENT_LOGOS); }
 
@@ -6103,11 +6166,16 @@ exports.submitMou = async (req, res) => {
     const hMou = getSafeH(['mou', 'moulink']); if(hMou) updateObj[hMou] = pdfLink;
     const hLogo = getSafeH(['companylogo', 'logo']); if(hLogo && logoLink) updateObj[hLogo] = logoLink;
     const hMailStatus = getSafeH(['mailstatus']); if(hMailStatus) updateObj[hMailStatus] = 'Completion Email Pending';
+    const hTokenHash = getSafeH([LEGACY_MOU_TOKEN_HASH_HEADER]); if(hTokenHash) updateObj[hTokenHash] = '';
+    const hTokenExpiry = getSafeH([MOU_TOKEN_EXPIRY_HEADER]); if(hTokenExpiry) updateObj[hTokenExpiry] = '';
     clientRow.assign(updateObj);
     await clientRow.save();
 
     const zonalManagerEmail = 'giftyipcsglobal@gmail.com';
     const refId = Math.floor(10000 + Math.random() * 90000); 
+    const safeCompanyName = escapeCorporateInquiryHtml(companyName);
+    const safePdfLink = escapeCorporateInquiryHtml(pdfLink);
+    const safeAttachmentName = `${companyName.replace(/[\\/:*?"<>|\r\n]+/g, '_').slice(0, 120) || 'Hiring_Partner'}_Agreement.pdf`;
     const mailOptions = {
       from: `"IPCS Placement Portal" <${process.env.EMAIL_USER}>`,
       to: [companyEmail, zonalManagerEmail, tpoEmail].filter(Boolean).join(','),
@@ -6118,11 +6186,11 @@ exports.submitMou = async (req, res) => {
             <h2 style="color: #ffffff; margin: 0; font-size: 22px; letter-spacing: 1px;">PARTNERSHIP CONFIRMED</h2>
           </div>
           <div style="padding: 30px; background-color: #ffffff;">
-            <p style="font-size: 16px; margin-top: 0;">Dear <b>${companyName}</b> Team,</p>
+            <p style="font-size: 16px; margin-top: 0;">Dear <b>${safeCompanyName}</b> Team,</p>
             <p style="font-size: 15px; line-height: 1.6; color: #475569;">The Hiring Partnership Confirmation has been digitally signed and successfully processed. We are incredibly excited to officially partner with you!</p>
             <p style="font-size: 15px; line-height: 1.6; color: #475569;">You can securely view and download your official, countersigned partnership agreement below:</p>
             <div style="text-align: center; margin: 35px 0;">
-              <a href="${pdfLink}" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">View Official Agreement</a>
+              <a href="${safePdfLink}" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">View Official Agreement</a>
             </div>
             <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
               <p style="margin: 0 0 5px 0;">Regards,</p>
@@ -6131,7 +6199,7 @@ exports.submitMou = async (req, res) => {
           </div>
         </div>
       `,
-      attachments: [{ filename: `${companyName.replace(/\s+/g, '_')}_Agreement.pdf`, content: certFile.buffer }]
+      attachments: [{ filename: safeAttachmentName, content: certFile.buffer }]
     };
     let emailSent = true;
     let emailQueued = false;

@@ -30,6 +30,7 @@ const createMailReportService = ({
   let isRefreshing = false;
   let sheetIdsPromise = null;
   let chartsInitialized = false;
+  const scheduledReportRunsInFlight = new Set();
 
   const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const timeParts = new Intl.DateTimeFormat('en-GB', {
@@ -701,7 +702,7 @@ const createMailReportService = ({
     return `<div style="font-family:Arial,sans-serif;color:#172033"><h2>IPCS mail report — ${escapeHtml(period)} (${escapeHtml(bounds.label)})</h2><p>The primary account uses Apps Script first. If it explicitly reports quota exhaustion, the system switches directly to the shared fallback account. Other definitive primary failures may try Gmail SMTP IPv4/IPv6 first. Ambiguous outcomes are marked for review to avoid duplicate sends.</p><h3>Sender quota snapshot</h3><table style="${tableStyle}"><thead><tr>${['Sender', 'Recipients today', 'This month', 'This year', 'Live Apps Script remaining', 'Tracked remaining (24h)'].map(label => `<th style="${headerStyle}">${label}</th>`).join('')}</tr></thead><tbody>${senderRows || '<tr><td colspan="6">No sender data yet</td></tr>'}</tbody></table><h3>Report-period and queue counts</h3><table style="${tableStyle}"><thead><tr><th style="${headerStyle}">Metric</th><th style="${headerStyle}">Count</th></tr></thead><tbody>${metricTable}</tbody></table><h3>Mail category breakdown</h3><table style="${tableStyle}"><thead><tr>${['Category', 'Messages', 'Recipients'].map(label => `<th style="${headerStyle}">${label}</th>`).join('')}</tr></thead><tbody>${categories || '<tr><td colspan="3">No category data for this period</td></tr>'}</tbody></table><h3>Mail log counts by mail type</h3><table style="${tableStyle}"><thead><tr>${['Mail type', 'Sent', 'Queued', 'Failed', 'Review'].map(label => `<th style="${headerStyle}">${label}</th>`).join('')}</tr></thead><tbody>${mailTypes || '<tr><td colspan="5">No mail log events for this period</td></tr>'}</tbody></table><h3>Delivery providers</h3><table style="${tableStyle}"><thead><tr>${['Sender', 'Provider / quota observation', 'Messages', 'Recipients', 'Quota blocks'].map(label => `<th style="${headerStyle}">${label}</th>`).join('')}</tr></thead><tbody>${providers || '<tr><td colspan="5">No delivered email records for this period</td></tr>'}</tbody></table><p>Live quota is read from Apps Script. Gmail SMTP does not expose an exact remaining-quota API; the tracked remaining count is a portal estimate based on the configured rolling 24-hour cap. Mail log outcomes and queue states are separate lifecycle counts and may describe the same message at different stages. Totals cover records retained in the mail sheets.</p></div>`;
   };
 
-  const sendScheduledReport = async period => {
+  const sendScheduledReportOnce = async period => {
     const recipient = String(process.env.MAIL_REPORT_RECIPIENTS || 'giftyipcsglobal@gmail.com').trim();
     const recipients = recipient.split(/[;,]+/).map(value => value.trim()).filter(Boolean);
     if (String(process.env.MAIL_REPORTS_ENABLED || 'true').toLowerCase() === 'false' || !recipients.length) {
@@ -716,17 +717,30 @@ const createMailReportService = ({
     const senders = configuredSenders();
     const dashboard = await buildDashboardValues(sources, senders, now);
     const subject = `[IPCS MAIL REPORT] ${period.toUpperCase()} — ${bounds.label}`;
+    const reportType = `${period} mail report`;
+    const mailSheet = await ensureSheet('Mail', MAIL_HEADERS);
+    const existingRows = await mailSheet.getRows();
+    const previousRun = existingRows.find(row =>
+      String(row.get('Subject') || '').trim() === subject
+      && String(row.get('Mail Type') || '').trim().toLowerCase() === reportType.toLowerCase()
+      && /^(success|queued:|review|sending)/i.test(String(row.get('Status') || '').trim())
+    );
+    if (previousRun) {
+      console.warn(`[MAIL REPORT] ${period} report ${bounds.key} was already reserved or handled; skipping duplicate send.`);
+      return { skipped: true, duplicate: true, period, key: bounds.key };
+    }
+    const reservation = await mailSheet.addRow({
+      TimeStamp: formatIndiaDateTime(new Date()),
+      'Reciver Name': 'Gifty',
+      'Reciver Mail': recipients.join(','),
+      'Mail Type': reportType,
+      Subject: subject,
+      Status: 'Sending'
+    });
     const logOutcome = async status => {
       try {
-        const mailSheet = doc.sheetsByTitle.Mail || await ensureSheet('Mail', MAIL_HEADERS);
-        await mailSheet.addRow({
-          TimeStamp: formatIndiaDateTime(new Date()),
-          'Reciver Name': 'Gifty',
-          'Reciver Mail': recipients.join(','),
-          'Mail Type': `${period} mail report`,
-          Subject: subject,
-          Status: status
-        });
+        reservation.assign({ TimeStamp: formatIndiaDateTime(new Date()), Status: status });
+        await reservation.save();
       } catch (error) {
         console.error('[MAIL REPORT] Could not add report outcome to the Mail sheet:', error.message);
       }
@@ -748,6 +762,19 @@ const createMailReportService = ({
     await logOutcome(result.queued ? `Queued: ${result.queueId}` : 'Success');
     console.log(`[MAIL REPORT] Sent ${period} report for ${bounds.label} via ${result.provider || 'queue'}${result.queued ? ` (queued ${result.queueId})` : ''}.`);
     return { ...result, period, key: bounds.key };
+  };
+
+  const sendScheduledReport = async period => {
+    const now = new Date();
+    const bounds = reportPeriodBounds(period, now);
+    const key = `${period}:${bounds.key}`;
+    if (scheduledReportRunsInFlight.has(key)) return { skipped: true, duplicate: true, period, key: bounds.key };
+    scheduledReportRunsInFlight.add(key);
+    try {
+      return await sendScheduledReportOnce(period);
+    } finally {
+      scheduledReportRunsInFlight.delete(key);
+    }
   };
 
   const startDashboardRefresh = () => {

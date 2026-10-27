@@ -9,6 +9,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import DataSourceStatus from '../../components/DataSourceStatus';
+import SafeAvatar from '../../components/SafeAvatar';
 import { API_BASE } from '../../services/apiConfig';
 import StatusBadge from '../../components/StatusBadge';
 import { parsePortalDateTime } from '../../utils/dateFormat';
@@ -177,10 +178,13 @@ export default function StudentsDirectory() {
   const renderAvatar = (url, name) => {
     const fixedUrl = getDriveImage(url);
     const initial = name ? name.charAt(0).toUpperCase() : '?';
-    if (!fixedUrl || fixedUrl === 'N/A') return <span style={{ fontSize: '1.4rem', fontWeight: 'bold' }}>{initial}</span>;
     return (
-      <img src={fixedUrl} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-        onError={(e) => { e.target.style.display='none'; e.target.parentNode.innerHTML = `<span style="font-size: 1.4rem; font-weight: bold;">${initial}</span>`; }} 
+      <SafeAvatar
+        src={fixedUrl === 'N/A' ? '' : fixedUrl}
+        alt={name || 'Student'}
+        initial={initial}
+        imageStyle={{ width: '100%', height: '100%', objectFit: 'cover' }}
+        fallbackStyle={{ fontSize: '1.4rem', fontWeight: 'bold' }}
       />
     );
   };

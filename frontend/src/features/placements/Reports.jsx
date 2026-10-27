@@ -132,6 +132,11 @@ export default function Reports() {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` === monthFilter;
   };
 
+  const getPlacementDate = row => ['dateplaced', 'timestamp', 'date']
+    .map(field => parsePortalDateTime(getVal(row, field)))
+    .find(Boolean) || null;
+  const checkPlacementMonth = row => checkMonth(getPlacementDate(row));
+
   const isAssignedBranch = (b) => {
     if (!tpoData) return false;
     const assignedBranches = Array.isArray(tpoData.assignedBranchesArray)
@@ -146,10 +151,10 @@ export default function Reports() {
 
   const displayMonthName = new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
   const targetSourceRows = placementReportLogs.filter(log => isPlacedStatus(getVal(log, 'status')));
-  const targetSourceRowsThisMonth = targetSourceRows.filter(log => checkMonth(getVal(log, 'dateplaced') || getVal(log, 'timestamp')));
+  const targetSourceRowsThisMonth = targetSourceRows.filter(checkPlacementMonth);
   const reportTpoIdentities = new Set(tpoList.flatMap(tpo => [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean)));
   const currentMonthRowsWithoutMatchedTpo = targetSourceRowsThisMonth.filter(log => !reportTpoIdentities.has(normalizePlacementText(getVal(log, 'placementofficer')))).length;
-  const placedRowsWithoutUsableDate = targetSourceRows.filter(log => !parsePortalDateTime(getVal(log, 'dateplaced') || getVal(log, 'timestamp'))).length;
+  const placedRowsWithoutUsableDate = targetSourceRows.filter(log => !getPlacementDate(log)).length;
   const targetLogHealthy = dataMeta?.sheetHealth?.tpoLogs;
   const targetLogLastSyncedAt = dataMeta?.sheetLastSuccessfulSyncAt?.tpoLogs || '';
 
@@ -191,13 +196,12 @@ export default function Reports() {
 
   placementLogs.forEach(log => {
     const b = getVal(log, 'branch');
-    const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
     const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
     
     // Admins see all, TPOs see only their own placements
     const hasAccessToLog = isSuperAdmin || !logTpo || myIdentities.includes(logTpo);
 
-    if (branchPlaces[b] && checkMonth(dStr) && hasAccessToLog) {
+    if (branchPlaces[b] && checkPlacementMonth(log) && hasAccessToLog) {
       const outcome = placementOutcome(getVal(log, 'status'), getVal(log, 'joiningstatus'));
       if (outcome.placed) {
         const c = getCourse(getVal(log, 'course'));
@@ -476,8 +480,7 @@ export default function Reports() {
                 if (!logTpo || !identities.includes(logTpo)) return false;
                 if (!isPlacedStatus(getVal(log, 'status'))) return false;
 
-                const dateStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp') || '';
-                return checkMonth(dateStr);
+                return checkPlacementMonth(log);
               });
 
               const counts = { Others: 0 };

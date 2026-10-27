@@ -88,7 +88,11 @@ const allowedOrigins = [
 app.use(cors({
   origin: function (origin, callback) {
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+    const configuredOrigins = String(process.env.CORS_ALLOWED_ORIGINS || '')
+      .split(',')
+      .map(value => value.trim())
+      .filter(Boolean);
+    if ([...allowedOrigins, ...configuredOrigins].includes(origin)) {
       return callback(null, true);
     } else {
       return callback(new Error('Blocked by CORS'));
@@ -99,9 +103,35 @@ app.use(cors({
   exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length']
 }));
 
-app.use(express.json());
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
-const vacancyLogoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } }).single('companyLogo');
+app.use(express.json({ limit: '1mb' }));
+const memoryStorage = multer.memoryStorage();
+const upload = multer({ storage: memoryStorage, limits: {
+  fileSize: 50 * 1024 * 1024,
+  files: 5,
+  fields: 40,
+  parts: 45,
+  fieldNameSize: 100,
+  fieldSize: 256 * 1024,
+  fieldNestingDepth: 5
+} });
+const vacancyLogoUpload = multer({ storage: memoryStorage, limits: {
+  fileSize: 10 * 1024 * 1024,
+  files: 1,
+  fields: 30,
+  parts: 31,
+  fieldNameSize: 100,
+  fieldSize: 256 * 1024,
+  fieldNestingDepth: 5
+} }).single('companyLogo');
+const mouUpload = multer({ storage: memoryStorage, limits: {
+  fileSize: 10 * 1024 * 1024,
+  files: 2,
+  fields: 12,
+  parts: 14,
+  fieldNameSize: 80,
+  fieldSize: 16 * 1024,
+  fieldNestingDepth: 3
+} }).fields([{ name: 'certificatePdf', maxCount: 1 }, { name: 'logoFile', maxCount: 1 }]);
 const parseVacancyLogo = (req, res, next) => vacancyLogoUpload(req, res, error => {
   if (error) {
     const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
@@ -109,11 +139,49 @@ const parseVacancyLogo = (req, res, next) => vacancyLogoUpload(req, res, error =
   }
   next();
 });
+const parseMouUploads = (req, res, next) => mouUpload(req, res, error => {
+  if (error) {
+    const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
+    return res.status(status).json({ success: false, message: status === 413 ? 'Each MOU file must be 10 MB or smaller.' : 'The MOU upload has an invalid file or field count.' });
+  }
+  next();
+});
+
+const createIpRateLimiter = ({ windowMs, max, message }) => {
+  const entries = new Map();
+  const cleanup = setInterval(() => {
+    const now = Date.now();
+    for (const [key, entry] of entries) if (entry.resetAt <= now) entries.delete(key);
+  }, Math.min(windowMs, 5 * 60 * 1000));
+  cleanup.unref?.();
+  return (req, res, next) => {
+    const now = Date.now();
+    const key = String(req.ip || req.socket?.remoteAddress || 'unknown').slice(0, 100);
+    let entry = entries.get(key);
+    if (!entry || entry.resetAt <= now) {
+      if (entries.size >= 10000) {
+        for (const [candidate, value] of entries) if (value.resetAt <= now) entries.delete(candidate);
+        if (entries.size >= 10000) entries.delete(entries.keys().next().value);
+      }
+      entry = { count: 0, resetAt: now + windowMs };
+      entries.set(key, entry);
+    }
+    if (entry.count >= max) {
+      res.set('Retry-After', String(Math.max(1, Math.ceil((entry.resetAt - now) / 1000))));
+      return res.status(429).json({ success: false, message });
+    }
+    entry.count += 1;
+    next();
+  };
+};
+const publicInquiryRateLimit = createIpRateLimiter({ windowMs: 15 * 60 * 1000, max: 5, message: 'Too many inquiry submissions. Please wait and try again.' });
+const mouSubmitRateLimit = createIpRateLimiter({ windowMs: 60 * 60 * 1000, max: 10, message: 'Too many signing attempts. Please wait and try again.' });
+const loginAddressRateLimit = createIpRateLimiter({ windowMs: LOGIN_WINDOW_MS, max: 30, message: 'Too many sign-in attempts from this network. Wait and try again.' });
 
 // ---------------------------------------------------------
 // AUTHENTICATION ROUTES
 // ---------------------------------------------------------
-app.post('/api/auth/login', loginRateLimit, controllers.login);
+app.post('/api/auth/login', loginAddressRateLimit, loginRateLimit, controllers.login);
 app.post('/api/auth/verify-session', controllers.verifySession);
 
 // 🚨 GLOBAL CACHE MIDDLEWARE
@@ -226,8 +294,8 @@ app.post('/api/tpo/clients', controllers.getClients);
 app.get('/api/public/partners', controllers.getPublicPartners);
 app.get('/api/public/placement-team', controllers.getPublicPlacementTeam);
 app.get('/api/public/openings', controllers.getPublicOpenings);
-app.post('/api/public/corporate-training-inquiries', controllers.submitCorporateTrainingInquiry);
-app.post('/api/public/hiring-inquiries', controllers.submitHiringInquiry);
+app.post('/api/public/corporate-training-inquiries', publicInquiryRateLimit, controllers.submitCorporateTrainingInquiry);
+app.post('/api/public/hiring-inquiries', publicInquiryRateLimit, controllers.submitHiringInquiry);
 app.get('/api/placement/hiring-inquiries', requireSession('hiring-inquiries'), controllers.getHiringInquiries);
 app.get('/api/placement/hiring-inquiries/tpos', requireSession('hiring-inquiries'), controllers.getHiringInquiryTpos);
 app.post('/api/placement/hiring-inquiries/assign', requireSession('hiring-inquiries'), controllers.assignHiringInquiry);
@@ -240,7 +308,7 @@ app.get('/api/public/magazines', controllers.getPublicMagazines);
 app.get('/api/tpo/clients/:id', controllers.getClientById);
 app.post('/api/tpo/clients/update', upload.single('logoFile'), controllers.updateClient);
 app.post('/api/tpo/clients/request-mou', controllers.requestMou);
-app.post('/api/tpo/clients/submit-mou', upload.any(), controllers.submitMou);
+app.post('/api/tpo/clients/submit-mou', mouSubmitRateLimit, parseMouUploads, controllers.submitMou);
 app.post('/api/tpo/clients/add', upload.single('logoFile'), controllers.addClient);
 app.post('/api/tpo/profile/update-photo', requireSession('portal'), upload.single('photo'), controllers.updatePhoto);
 app.get('/api/tpo/drives', requireSession('placement-drive'), controllers.getDrives);

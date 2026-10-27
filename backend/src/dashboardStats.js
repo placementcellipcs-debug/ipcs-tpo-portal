@@ -1,11 +1,6 @@
 const { normalizePlacementText } = require('./placementRecords');
 const { isPlacedStatus } = require('./placementMetrics');
 
-const studentKeyParts = (row, getValue) => ({
-  roll: normalizePlacementText(getValue(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])),
-  name: normalizePlacementText(getValue(row, ['studentname', 'name'])),
-});
-
 const isPlacementOutcome = (row, getValue) => {
   // TPO_Log's Status column is the sole authority for placement counts.
   return isPlacedStatus(getValue(row, ['status']));
@@ -17,24 +12,20 @@ const countPlacementRecords = (placementRows, getValue, canAccessPlacement = () 
 
 const calculateDashboardPlacementCounts = (students, placementRows, getValue, canAccess = () => true, canAccessPlacement = canAccess) => {
   const eligibleStudents = new Set();
-  const placedStudents = new Set();
 
   (Array.isArray(students) ? students : []).forEach((row, index) => {
     if (!canAccess(row)) return;
-
-    const { roll, name } = studentKeyParts(row, getValue);
-    const key = roll ? `roll:${roll}` : name ? `name:${name}` : `row:${row?.rowNumber ?? index}`;
-    eligibleStudents.add(key);
+    const roll = normalizePlacementText(getValue(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+    const name = normalizePlacementText(getValue(row, ['studentname', 'name']));
+    eligibleStudents.add(roll ? `roll:${roll}` : name ? `name:${name}` : `row:${row?.rowNumber ?? index}`);
   });
 
-  (Array.isArray(placementRows) ? placementRows : []).forEach((row, index) => {
-    if (!canAccessPlacement(row) || !isPlacementOutcome(row, getValue)) return;
-    const { roll, name } = studentKeyParts(row, getValue);
-    const key = roll ? `roll:${roll}` : name ? `name:${name}` : `row:${row?.rowNumber ?? index}`;
-    placedStudents.add(key);
-  });
-
-  return { totalStudents: eligibleStudents.size, placed: placedStudents.size };
+  return {
+    totalStudents: eligibleStudents.size,
+    // Every TPO_Log row marked Placed is one placement, including repeat rows
+    // for a student who has more than one placement record.
+    placed: countPlacementRecords(placementRows, getValue, canAccessPlacement)
+  };
 };
 
 module.exports = { calculateDashboardPlacementCounts, countPlacementRecords, isPlacementOutcome };

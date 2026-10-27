@@ -5,13 +5,19 @@ import axios from 'axios';
 // 2. If running locally (localhost), use localhost:5000.
 // 3. In Production, point directly to your main live API domain.
 
-const isLocal = typeof window !== 'undefined' && window.location.hostname.includes('localhost');
+const hostname = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : '';
+const isLocal = ['localhost', '127.0.0.1', '::1'].includes(hostname);
+const isKnownProductionPortal = [
+  'placement.ipcstalenzo.com',
+  'talenzo.ipcsglobal.info',
+  'ipcs-tpo-portal.vercel.app'
+].includes(hostname);
 
 export const API_BASE = 
   import.meta.env.VITE_API_BASE || 
   (isLocal 
     ? 'http://localhost:5000' 
-    : 'https://api-placement.ipcstalenzo.com');
+    : isKnownProductionPortal ? 'https://api-placement.ipcstalenzo.com' : '');
 
 if (typeof window !== 'undefined' && !window.__ipcsSessionInterceptorInstalled) {
   axios.interceptors.request.use((config) => {

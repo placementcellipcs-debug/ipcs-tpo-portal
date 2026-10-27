@@ -6,6 +6,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
+import SafeAvatar from '../../components/SafeAvatar';
 
 const TILE_COLORS = ['#10b981', '#3b82f6', 'var(--accent-primary)', '#f59e0b', '#ec4899', '#0ea5e9', '#ef4444', '#f43f5e'];
 
@@ -268,12 +269,13 @@ export default function UserManagement() {
                   return (
                     <div className="student-card" key={i}>
                       <div className="sc-avatar" style={{ border: 'none', background: 'var(--accent-primary)', color: '#0f172a' }}>
-                        {photoUrl ? (
-                          <img 
-                            src={photoUrl} alt={user.userName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                            onError={(e) => { e.target.style.display='none'; e.target.parentNode.innerHTML = `<span style="font-size: 1.5rem; font-weight: bold;">${initial}</span>`; }} 
-                          />
-                        ) : initial}
+                        <SafeAvatar
+                          src={photoUrl}
+                          alt={user.userName || 'User'}
+                          initial={initial}
+                          imageStyle={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                          fallbackStyle={{ fontSize: '1.5rem', fontWeight: 'bold' }}
+                        />
                       </div>
                       <div className="sc-name">{user.userName || 'Unnamed User'}</div>
                       <div className="sc-roll" style={{ textTransform: 'none', color: 'var(--text-muted)' }}>{user.email || 'No Email'}</div>
@@ -323,12 +325,13 @@ export default function UserManagement() {
                           <td>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                               <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(56, 189, 248, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent-primary)', fontWeight: 'bold', border: '1px solid #0284c7', overflow: 'hidden', flexShrink: 0 }}>
-                                {photoUrl ? (
-                                  <img 
-                                    src={photoUrl} alt={user.userName} style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
-                                    onError={(e) => { e.target.style.display='none'; e.target.parentNode.innerHTML = `<span style="font-size: 1rem; font-weight: bold;">${initial}</span>`; }} 
-                                  />
-                                ) : initial}
+                                <SafeAvatar
+                                  src={photoUrl}
+                                  alt={user.userName || 'User'}
+                                  initial={initial}
+                                  imageStyle={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                  fallbackStyle={{ fontSize: '1rem', fontWeight: 'bold' }}
+                                />
                               </div>
                               <div>
                                 <span className="primary-text" style={{ fontSize: '1rem' }}>{user.userName || 'Unnamed User'}</span>

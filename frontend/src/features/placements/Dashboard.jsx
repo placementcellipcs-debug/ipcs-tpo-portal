@@ -145,7 +145,9 @@ export default function Dashboard() {
       const status = (getVal('status') || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       if (status !== 'placed') return;
 
-      const d = parseDateRobust(getVal('dateplaced') || getVal('timestamp') || getVal('date'));
+      const d = [getVal('dateplaced'), getVal('timestamp'), getVal('date')]
+        .map(parseDateRobust)
+        .find(Boolean) || null;
       const course = getVal('course');
       const domain = getStandardDomain(course);
       domCount[domain] = (domCount[domain] || 0) + 1;

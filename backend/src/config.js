@@ -53,7 +53,16 @@ const sheetGroups = {
 const sheetGroupByNormalizedTitle = new Map(
   Object.entries(sheetGroups).flatMap(([group, titles]) => titles.map(title => [normalizeSheetTitle(title), group]))
 );
-const getSheetGroup = title => sheetGroupByNormalizedTitle.get(normalizeSheetTitle(title)) || 'placements';
+const getSheetGroup = title => {
+  const normalized = normalizeSheetTitle(title);
+  const exact = sheetGroupByNormalizedTitle.get(normalized);
+  if (exact) return exact;
+  if (normalized.length < 4) return null;
+  const possibleGroups = new Set([...sheetGroupByNormalizedTitle.entries()]
+    .filter(([knownTitle]) => knownTitle.includes(normalized))
+    .map(([, group]) => group));
+  return possibleGroups.size === 1 ? [...possibleGroups][0] : null;
+};
 const documentsById = new Map();
 const getDocument = spreadsheetId => {
   if (!spreadsheetId) return null;
@@ -610,22 +619,26 @@ async function performCacheRefresh() {
       const preferredWorkbookSheets = preferredDocument?.sheetsByIndex || [];
       const exactPreferred = preferredWorkbookSheets.find(sheet => normalizeSheetTitle(sheet.title) === cleanKeyword);
       if (exactPreferred) return exactPreferred;
-      const preferredWorkbookMatch = preferredWorkbookSheets.find(sheet =>
+      const preferredWorkbookMatches = preferredWorkbookSheets.filter(sheet =>
         getSheetGroup(sheet.title) === preferredGroup && normalizeSheetTitle(sheet.title).includes(cleanKeyword)
       );
-      if (preferredWorkbookMatch) return preferredWorkbookMatch;
+      if (preferredWorkbookMatches.length === 1) return preferredWorkbookMatches[0];
 
       const preferredSheets = Object.entries(doc.sheetsByTitle || {});
       const exactPreferredGroup = preferredSheets.find(([title]) => normalizeSheetTitle(title) === cleanKeyword);
       if (exactPreferredGroup) return exactPreferredGroup[1];
-      const groupMatch = preferredSheets.find(([title]) =>
+      const groupMatches = preferredSheets.filter(([title]) =>
         getSheetGroup(title) === preferredGroup && normalizeSheetTitle(title).includes(cleanKeyword)
       );
-      if (groupMatch) return groupMatch[1];
+      if (groupMatches.length === 1) return groupMatches[0][1];
 
-      // Keep supporting legacy sheet aliases, but only after looking in the
-      // workbook group assigned to this data category.
-      return doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanKeyword));
+      // Keep legacy aliases only when the requested name resolves to one
+      // unambiguous tab. Never silently route an unknown or duplicate tab.
+      const fallbackMatches = doc.sheetsByIndex.filter(sheet =>
+        normalizeSheetTitle(sheet.title).includes(cleanKeyword)
+        && (!preferredGroup || getSheetGroup(sheet.title) === preferredGroup)
+      );
+      return fallbackMatches.length === 1 ? fallbackMatches[0] : null;
     };
 
     const sheetsToFetch = [
