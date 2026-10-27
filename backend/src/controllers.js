@@ -1299,7 +1299,7 @@ exports.updateStudent = async (req, res) => {
                   <p style="font-size: 15px; line-height: 1.6; color: #475569;">Congratulations! Your trainer has confirmed your exceptional performance.</p>
                   <p style="font-size: 15px; line-height: 1.6; color: #475569;"><b>Your placement portal access is now fully active.</b> You can now browse active vacancies and apply directly for job openings.</p>
                   <div style="text-align: center; margin: 35px 0;">
-                    <a href="https://placement.ipcstalenzo.com" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">Access Placement Portal</a>
+                    <a href="https://ipcstalenzo.com" style="background-color: #0284c7; color: white; padding: 14px 28px; text-decoration: none; font-weight: bold; border-radius: 6px; font-size: 16px; display: inline-block;">Access Placement Portal</a>
                   </div>
                   <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e2e8f0; font-size: 13px; color: #64748b;">
                     <p style="margin: 0 0 5px 0;">Regards,</p>
@@ -4005,7 +4005,7 @@ exports.addEvent = async (req, res) => {
               
               <div style="background-color: #eff6ff; border: 1px solid #bfdbfe; padding: 15px; border-radius: 8px; text-align: center; margin: 20px 0;">
                 <p style="margin: 0; font-size: 15px; color: #1e3a8a;">
-                  &#127760; <b>Student Portal:</b> <a href="https://placement.ipcstalenzo.com" target="_blank" style="color: #0284c7; font-weight: bold; text-decoration: underline;">placement.ipcstalenzo.com</a>
+                  &#127760; <b>Student Portal:</b> <a href="https://ipcstalenzo.com" target="_blank" style="color: #0284c7; font-weight: bold; text-decoration: underline;">ipcstalenzo.com</a>
                 </p>
               </div>
 
