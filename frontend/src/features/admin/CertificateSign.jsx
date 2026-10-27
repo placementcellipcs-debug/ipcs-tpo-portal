@@ -97,6 +97,8 @@ export default function CertificateSign() {
   const [client, setClient] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [canRetry, setCanRetry] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   // Editable Form Fields
   const [employerName, setEmployerName] = useState('');
@@ -124,13 +126,17 @@ export default function CertificateSign() {
 
   useEffect(() => {
     let isCancelled = false;
+    const controller = new AbortController();
     const loadAgreement = async () => {
       let lastError = null;
       let lastErrorMessage = '';
+      setCanRetry(false);
       for (const apiBase of getSigningApiCandidates()) {
+        if (isCancelled) return;
         try {
           const response = await axios.get(`${apiBase}/api/public/mou/${encodeURIComponent(id)}`, {
-            timeout: 7000
+            timeout: 60000,
+            signal: controller.signal
           });
           if (!response.data?.success || !response.data?.client) {
             lastErrorMessage = response.data?.message || 'Agreement details were not found on this service.';
@@ -149,22 +155,32 @@ export default function CertificateSign() {
           }
           return;
         } catch (requestError) {
+          if (isCancelled) return;
           lastError = requestError;
           lastErrorMessage = requestError.response?.data?.message || requestError.message;
           console.warn(`MOU lookup did not succeed on ${apiBase}:`, lastErrorMessage);
         }
       }
       if (!isCancelled) {
+        const isTimeout = ['ECONNABORTED', 'ETIMEDOUT'].includes(lastError?.code)
+          || /timeout/i.test(String(lastError?.message || ''));
         const isNetworkFailure = !lastError?.response && lastError?.message === 'Network Error';
-        setError(isNetworkFailure
-          ? 'The signing page could not connect to the service that issued this link. Please refresh once; if it still fails, ask IPCS to resend the MOU link.'
-          : lastErrorMessage || lastError?.response?.data?.message || "We couldn't load the agreement details. Please contact IPCS to request a new signing link.");
+        const status = Number(lastError?.response?.status);
+        const isTemporaryServerError = status >= 500 || status === 429;
+        setCanRetry(isTimeout || isNetworkFailure || isTemporaryServerError);
+        if (isTimeout) {
+          setError('The signing service took too long to respond. It may be waking up. Please wait a moment and try again; your agreement has not been submitted.');
+        } else if (isNetworkFailure) {
+          setError('The signing page could not connect to the service that issued this link. Check your connection and try again.');
+        } else {
+          setError(lastError?.response?.data?.message || lastErrorMessage || "We couldn't load the agreement details. Please contact IPCS to request a new signing link.");
+        }
       }
     };
 
     loadAgreement().finally(() => { if (!isCancelled) setLoading(false); });
-    return () => { isCancelled = true; };
-  }, [id]);
+    return () => { isCancelled = true; controller.abort(); };
+  }, [id, loadAttempt]);
 
   const handleImageUpload = (e, setPreviewFunc, setFileState) => {
     const file = e.target.files[0];
@@ -276,14 +292,20 @@ export default function CertificateSign() {
   if (loading) return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: '#026fc2' }}>
       <CircleNotch size={50} className="ph-spin" />
-      <p style={{ marginTop: '15px', color: '#333', fontWeight: 'bold' }}>Loading Agreement Data...</p>
+      <p style={{ marginTop: '15px', color: '#333', fontWeight: 'bold' }}>Connecting to the signing service…</p>
+      <p style={{ margin: '4px 20px 0', maxWidth: 520, color: '#64748b', textAlign: 'center' }}>This can take up to a minute while the service wakes up. Keep this page open.</p>
     </div>
   );
   
   if (error || !client) return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', color: '#ef4444' }}>
       <WarningCircle size={60} weight="fill" style={{ marginBottom: '20px' }}/>
-      <h2>{error || "Client Data Missing"}</h2>
+      <h2 style={{ maxWidth: 680, padding: '0 20px', textAlign: 'center' }}>{error || "Client Data Missing"}</h2>
+      {canRetry && <button
+        type="button"
+        onClick={() => { setError(null); setLoading(true); setCanRetry(false); setLoadAttempt(attempt => attempt + 1); }}
+        style={{ marginTop: 12, padding: '11px 20px', border: 0, borderRadius: 8, background: '#026fc2', color: '#fff', fontWeight: 700, cursor: 'pointer' }}
+      >Try again</button>}
     </div>
   );
 
