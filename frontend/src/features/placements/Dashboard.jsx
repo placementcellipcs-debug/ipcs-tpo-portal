@@ -4,10 +4,9 @@ import axios from 'axios';
 import { 
   Users, Briefcase, Trophy, CalendarCheck, CircleNotch, 
   BookOpen, NotePencil, FolderOpen, ListChecks, Buildings,
-  ChartBar, CheckCircle, CaretLeft, CaretRight
+  ChartBar, CheckCircle, CaretLeft, CaretRight, Percent
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
-import DataSourceStatus from '../../components/DataSourceStatus';
 import { formatPortalDate, parsePortalDateTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
 import { isPortalAdminAccount } from '../../utils/roleAccess';
@@ -51,7 +50,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [dashboardError, setDashboardError] = useState('');
   const [dashboardReloadKey, setDashboardReloadKey] = useState(0);
-  const [dataMeta, setDataMeta] = useState(null);
   const [greetingTime, setGreetingTime] = useState(() => new Date());
   const [avatarFailed, setAvatarFailed] = useState(false);
 
@@ -114,13 +112,14 @@ export default function Dashboard() {
     });
 
     const sortedYears = Array.from(yearsSet).sort((a,b) => b - a);
-    if (sortedYears.length > 0 && availableYears.length === 1 && availableYears[0] === new Date().getFullYear()) {
-       setAvailableYears(sortedYears);
-    }
-    
-    // Auto-select most recent year if not selected
-    const currentYear = targetYear || sortedYears[0] || new Date().getFullYear();
-    if (!targetYear && sortedYears[0]) setSelectedYear(sortedYears[0]);
+    if (sortedYears.length > 0) setAvailableYears(sortedYears);
+
+    // Keep the chart on a year that actually has source records. This also
+    // handles older datasets when the current calendar year has no activity.
+    const currentYear = sortedYears.length > 0 && !sortedYears.includes(targetYear)
+      ? sortedYears[0]
+      : targetYear || sortedYears[0] || new Date().getFullYear();
+    if (currentYear !== targetYear) setSelectedYear(currentYear);
     
     // Applications are individual rows in OpeningApplied, not student records in Data.
     const appsByMonth = Array(12).fill(0);
@@ -225,7 +224,6 @@ export default function Dashboard() {
         setEvents(statsRes.data.events || []);
 
         if (!reportsRes.data?.success) throw new Error(reportsRes.data?.message || 'Dashboard placement trends could not be loaded.');
-        setDataMeta(reportsRes.data.dataMeta || null);
         // Applications are individual rows in OpeningApplied. Placement trends
         // count every TPO_Log row whose Status column is exactly Placed.
         const applications = reportsRes.data.applications || [];
@@ -250,6 +248,9 @@ export default function Dashboard() {
   }).sort((a,b) => (parseDateRobust(a.date)?.getTime()||0) - (parseDateRobust(b.date)?.getTime()||0)).slice(0, 4);
   
   const upDrivesCount = (events || []).filter(e => String(e?.type||'').toLowerCase().includes('drive') && parseDateRobust(e.date) >= today).length;
+  const placementRate = Number(stats.totalStudents) > 0
+    ? (Number(stats.placed || 0) / Number(stats.totalStudents)) * 100
+    : 0;
 
   const prevMonth = () => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() - 1, 1));
   const nextMonth = () => setCalendarDate(new Date(calendarDate.getFullYear(), calendarDate.getMonth() + 1, 1));
@@ -290,16 +291,6 @@ export default function Dashboard() {
           <button type="button" onClick={() => setDashboardReloadKey(value => value + 1)} disabled={loading} style={{ padding: '7px 12px', borderRadius: '8px', border: '1px solid rgba(248,113,113,.5)', background: 'transparent', color: '#fecaca', cursor: 'pointer' }}>Retry</button>
         </div>}
 
-        {dataMeta && <DataSourceStatus
-          source="TPO_Log"
-          detail="The placement total counts every TPO_Log row whose Status is Placed. If a student has two Placed records, both count."
-          health={dataMeta.sheetHealth?.tpoLogs}
-          lastSyncedAt={dataMeta.sheetLastSuccessfulSyncAt?.tpoLogs}
-          lastAttemptAt={dataMeta.lastRefreshAttemptAt}
-          onRefresh={() => setDashboardReloadKey(value => value + 1)}
-          refreshing={loading}
-        />}
-
         {/* KPI CARDS */}
         <div className="kpi-grid">
           <div className="dash-card">
@@ -314,9 +305,13 @@ export default function Dashboard() {
             <div className="kpi-header"><div className="icon-c green"><Briefcase weight="fill" size={20}/></div><div><div className="kpi-title">Active Vacancies</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.activeVacancies}</div></div></div>
             <div className="kpi-trend green">Currently open</div>
           </div>
-          <div className="dash-card" title="Total placement count: every TPO_Log row marked Placed counts, including more than one row for the same student.">
+          <div className="dash-card" title="All-time placement total.">
             <div className="kpi-header"><div className="icon-c purple"><Trophy weight="fill" size={20}/></div><div><div className="kpi-title">Total Placements</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div></div></div>
-            <div className="kpi-trend green">Every Placed row counts</div>
+            <div className="kpi-trend green">All-time total</div>
+          </div>
+          <div className="dash-card" title="Total placement records divided by the total student directory count. Repeat placement records count in the numerator.">
+            <div className="kpi-header"><div className="icon-c orange"><Percent weight="bold" size={20}/></div><div><div className="kpi-title">Placement Rate</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : `${placementRate.toFixed(1)}%`}</div></div></div>
+            <div className="kpi-trend green">Placements ÷ students</div>
           </div>
           <div className="dash-card">
             <div className="kpi-header"><div className="icon-c pink"><CalendarCheck weight="fill" size={20}/></div><div><div className="kpi-title">Upcoming Drives</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : upDrivesCount}</div></div></div>

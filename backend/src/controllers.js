@@ -62,6 +62,14 @@ const getValByHeader = (row, headerOptions) => {
   return '';
 };
 
+const getFirstNonEmptyValByHeader = (row, headerOptions) => {
+  for (const header of headerOptions) {
+    const value = getValByHeader(row, [header]);
+    if (String(value ?? '').trim()) return String(value).trim();
+  }
+  return '';
+};
+
 const accountAuthState = (row, passwordOverride) => ({
   email: getValByHeader(row, ['email', 'mailid', 'mail']).toLowerCase(),
   loginId: getValByHeader(row, ['loginid', 'userid', 'user_id', 'employeeid', 'username']).toLowerCase(),
@@ -3361,7 +3369,10 @@ exports.getReports = async (req, res) => {
       jobId,
       company,
       position,
-      date: getValByHeader(row, ['timestamp', 'dateapplied', 'applicationdate', 'date', 'time', 'createdat']),
+      // A sheet may have a Timestamp column that is blank for an older row
+      // while Date Applied or another date field is populated. Pick the first
+      // non-empty value so the monthly application trend does not drop it.
+      date: getFirstNonEmptyValByHeader(row, ['timestamp', 'dateapplied', 'applicationdate', 'appliedat', 'createdat', 'submittedat', 'date', 'time']),
       status: getValByHeader(row, ['status']),
       remarks: getValByHeader(row, ['remarks']),
       tpoName: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || vacancyOwnerByJobId.get(normalizedJobId) || '',
