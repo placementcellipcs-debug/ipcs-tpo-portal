@@ -24,6 +24,7 @@ const shortcuts = [
   { title: 'Item register', detail: 'Search every tracked item', path: '/assets/register', icon: Barcode, tone: 'blue' },
   { title: 'Email center', detail: 'Send an asset summary', path: '/assets/mail', icon: EnvelopeSimple, tone: 'amber' }
 ];
+const categoryPalette = ['#37d9c2', '#9292ff', '#ffae63', '#ff76a9', '#61b8ff', '#b69bff', '#c3e86a'];
 
 export default function AssetDashboard() {
   const [stats, setStats] = useState(emptyStats);
@@ -82,6 +83,8 @@ export default function AssetDashboard() {
         </section>
 
         <section className="asset-dashboard-panel asset-branch-panel"><div className="asset-panel-heading"><div><span>WHERE ITEMS ARE</span><h2>Branch inventory</h2></div><Buildings size={20} /></div>{stats.branches?.length ? <div className="asset-branch-list">{stats.branches.slice(0, 7).map(branch => { const share = total ? Math.max(2, Math.round(Number(branch.value || 0) / total * 100)) : 0; return <div className="asset-branch-row" key={branch.name}><div><b>{branch.name}</b><span>{Number(branch.value || 0).toLocaleString('en-IN')} items</span></div><div className="asset-branch-meter"><i style={{ width: `${share}%` }} /></div></div>; })}</div> : <div className="asset-dashboard-empty">No branch inventory is available in this account’s scope.</div>}<Link className="asset-panel-link" to="/assets/branches">Explore branches <ArrowRight size={15} /></Link></section>
+
+        <section className="asset-dashboard-panel asset-category-panel"><div className="asset-panel-heading"><div><span>PORTFOLIO MIX</span><h2>Items by category</h2></div><Package size={20} /></div>{stats.categories?.length ? <div className="asset-category-list">{stats.categories.slice(0, 7).map((category, index) => { const peak = Math.max(...stats.categories.map(item => Number(item.value || 0)), 1); const count = Number(category.value || 0); return <div className="asset-category-row" key={category.name}><div><span className="asset-category-dot" style={{ '--category-color': categoryPalette[index % categoryPalette.length] }} /><b>{category.name}</b><strong>{count.toLocaleString('en-IN')}</strong></div><div className="asset-category-meter"><i style={{ width: `${Math.max(3, count / peak * 100)}%`, '--category-color': categoryPalette[index % categoryPalette.length] }} /></div></div>; })}</div> : <div className="asset-dashboard-empty">Category totals will appear as assets are registered.</div>}</section>
 
         <section className="asset-dashboard-panel asset-activity-panel"><div className="asset-panel-heading"><div><span>RECENT CHANGES</span><h2>Tracking feed</h2></div><Link to="/assets/activity">View all <ArrowRight size={14} /></Link></div>{stats.recentActivity?.length ? <div className="asset-feed-list">{stats.recentActivity.slice(0, 5).map((entry, index) => <article key={`${entry.historyId || entry.assetId}-${index}`}><span className="asset-feed-icon"><Activity size={16} /></span><div><b>{actionTitle(entry.action)}</b><small>{entry.assetId} · {entry.branch || 'Branch'}</small></div><time>{formatPortalDateTime(entry.timestamp, String(entry.timestamp || ''))}</time></article>)}</div> : <div className="asset-dashboard-empty">New asset actions will appear here as they are recorded.</div>}</section>
 

@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Pulse as Activity, ArrowLeft, ArrowsLeftRight, Barcode, Buildings, CaretLeft, ChartBar,
   ClockCounterClockwise, Cube, EnvelopeSimple, Gear, ListChecks, ListPlus, Package,
-  QrCode, SignOut, UserCircle, UserCheck, Wrench, X, ClipboardText
+  QrCode, SignOut, UserCircle, UserCheck, Wrench, X, ClipboardText, SlidersHorizontal
 } from '@phosphor-icons/react';
 import './AssetPortalShell.css';
 
@@ -21,12 +21,19 @@ const links = [
   { label: 'Retired items', to: '/assets/retired', icon: ClockCounterClockwise, group: 'OPERATIONS' },
   { label: 'Email reports', to: '/assets/mail', icon: EnvelopeSimple, group: 'OPERATIONS' },
   { label: 'Register an item', to: '/assets/add', icon: ListPlus, managerOnly: true, group: 'ADMINISTRATION' },
-  { label: 'System settings', to: '/assets/settings', icon: Gear, adminOnly: true, group: 'ADMINISTRATION' }
+  { label: 'Workspace settings', to: '/assets/settings', icon: SlidersHorizontal, group: 'PREFERENCES' },
+  { label: 'Asset setup', to: '/assets/setup', icon: Gear, adminOnly: true, group: 'ADMINISTRATION' }
 ];
 
 const readAccount = () => {
-  try { return JSON.parse(localStorage.getItem('tpoData') || '{}'); }
+  try { return JSON.parse(localStorage.getItem('tpoData') || '{}') || {}; }
   catch { return {}; }
+};
+
+const getDriveImage = value => {
+  if (!value || typeof value !== 'string') return '';
+  const match = value.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
+  return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : value;
 };
 
 const isAdminAccount = account => {
@@ -37,7 +44,13 @@ const isAdminAccount = account => {
 
 export default function AssetPortalShell({ children, user }) {
   const navigate = useNavigate();
-  const account = user || readAccount();
+  const [account, setAccount] = useState(user || readAccount());
+  useEffect(() => { if (user) setAccount(user); }, [user]);
+  useEffect(() => {
+    const refreshAccount = () => setAccount(readAccount());
+    window.addEventListener('portal-account-updated', refreshAccount);
+    return () => window.removeEventListener('portal-account-updated', refreshAccount);
+  }, []);
   const role = String(account.role || '').toUpperCase();
   const isAdmin = isAdminAccount(account);
   const isBranchManager = role === 'BM' || role.includes('BRANCH MANAGER');
@@ -45,6 +58,7 @@ export default function AssetPortalShell({ children, user }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const displayName = account.name || account.email || 'Staff member';
   const initials = displayName.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+  const photoUrl = getDriveImage(account.photo || account.profilePhoto);
 
   const closeNav = () => setMobileNavOpen(false);
   const signOut = () => {
@@ -63,12 +77,12 @@ export default function AssetPortalShell({ children, user }) {
         </div>
 
         <div className="asset-portal-account">
-          <span className="asset-portal-avatar">{initials || <UserCircle size={20} />}</span>
+          <span className="asset-portal-avatar">{photoUrl ? <img src={photoUrl} alt="" /> : initials || <UserCircle size={20} />}</span>
           <span className="asset-portal-account-copy"><b>{displayName}</b><small>{account.role || 'Asset workspace'}</small></span>
         </div>
 
         <nav className="asset-portal-nav">
-          {['WORKSPACE', 'TRACKING', 'OPERATIONS', 'ADMINISTRATION'].map(group => {
+          {['WORKSPACE', 'TRACKING', 'OPERATIONS', 'PREFERENCES', 'ADMINISTRATION'].map(group => {
             const visibleLinks = links.filter(link => link.group === group && (!link.managerOnly || canManage) && (!link.adminOnly || isAdmin));
             return visibleLinks.length ? <section className="asset-nav-group" key={group}>
               <span className="asset-portal-nav-label">{group}</span>
@@ -92,7 +106,7 @@ export default function AssetPortalShell({ children, user }) {
         <header className="asset-portal-topbar">
           <button type="button" className="asset-portal-menu" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><ListChecks size={20} /></button>
           <div className="asset-portal-crumb"><span>IPCS OPERATIONS</span><CaretLeft size={14} /><b>Asset Management</b></div>
-          <div className="asset-portal-top-account"><span>{account.sittingBranch || 'All permitted branches'}</span><span className="asset-portal-avatar small">{initials || <UserCircle size={17} />}</span></div>
+          <div className="asset-portal-top-account"><span>{account.sittingBranch || 'All permitted branches'}</span><span className="asset-portal-avatar small">{photoUrl ? <img src={photoUrl} alt="" /> : initials || <UserCircle size={17} />}</span></div>
         </header>
         <div className="asset-portal-content">{children}</div>
       </div>

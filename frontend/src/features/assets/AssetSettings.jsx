@@ -112,6 +112,7 @@ export default function AssetSettings() {
         {/* NAVIGATION TABS */}
         <div className="glass-panel control-action-bar" style={{ display: 'flex', gap: '15px', marginBottom: '30px' }}>
           <button className={`premium-tab ${activeTab === 'categories' ? 'active' : ''}`} onClick={() => setActiveTab('categories')}><Tag size={18} /> Categories & Tags</button>
+          <button className={`premium-tab ${activeTab === 'subcategories' ? 'active' : ''}`} onClick={() => setActiveTab('subcategories')}><Tag size={18} /> Subcategories</button>
           <button className={`premium-tab ${activeTab === 'locations' ? 'active' : ''}`} onClick={() => setActiveTab('locations')}><MapPin size={18} /> Branch Locations</button>
           <button className={`premium-tab ${activeTab === 'vendors' ? 'active' : ''}`} onClick={() => setActiveTab('vendors')}><Storefront size={18} /> Hardware Vendors</button>
         </div>
@@ -150,6 +151,26 @@ export default function AssetSettings() {
                     );
                   })}
                 </div>
+              </>
+            )}
+
+            {/* 2. LOCATIONS WORKSPACE */}
+            {activeTab === 'subcategories' && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', gap: '14px', flexWrap: 'wrap' }}>
+                  <div><h2 style={{ fontSize: '1.2rem', color: '#fff', margin: 0 }}>Subcategory library</h2><p style={{ color: '#94a3b8', margin: '6px 0 0', fontSize: '.85rem' }}>Keep similar assets grouped under a parent category, such as Computers → Laptops.</p></div>
+                  <button className="premium-btn primary" onClick={() => openModal('subcategory')} disabled={!dbData.categories.length}><Plus size={16} weight="bold"/> Add Subcategory</button>
+                </div>
+                {!dbData.categories.length ? <p style={{ color: '#94a3b8' }}>Create a category first, then add subcategories under it.</p> : <div className="bento-grid">
+                  {dbData.categories.map(cat => {
+                    const subs = dbData.subcategories.filter(item => item.categoryid === cat.categoryid);
+                    return <div key={cat.categoryid} className="config-card glass-panel hover-lift">
+                      <div className="cc-header"><div className="cc-icon" style={{ background: 'rgba(168, 85, 247, 0.16)', color: '#c7a3ff' }}><Tag weight="fill"/></div><span className="badge-purple">{subs.length} subcategories</span></div>
+                      <h3 className="cc-title">{cat.categoryname}</h3><p className="cc-desc">Parent category · {cat.type}</p>
+                      <div className="cc-tags">{subs.length ? subs.map((item, index) => <span key={`${cat.categoryid}-${index}`} className="small-tag">{item.name}</span>) : <span className="small-tag">No subcategories yet</span>}</div>
+                    </div>;
+                  })}
+                </div>}
               </>
             )}
 

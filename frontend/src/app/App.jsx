@@ -64,6 +64,7 @@ const Inventory = lazyRoute(() => import('../features/assets/Inventory'));
 const AssetTransfers = lazyRoute(() => import('../features/assets/AssetTransfers'));
 const AssetMaintenance = lazyRoute(() => import('../features/assets/AssetMaintenance'));
 const AssetSettings = lazyRoute(() => import('../features/assets/AssetSettings'));
+const AssetPreferences = lazyRoute(() => import('../features/assets/AssetPreferences'));
 const AssetApprovals = lazyRoute(() => import('../features/assets/AssetApprovals'));
 const AssetQrCenter = lazyRoute(() => import('../features/assets/AssetQrCenter'));
 const AssetMailCenter = lazyRoute(() => import('../features/assets/AssetMailCenter'));
@@ -236,7 +237,8 @@ function RoutedContent() {
           <Route path="qr" element={<AssetQrCenter />} />
           <Route path="mail" element={<AssetMailCenter />} />
           <Route path="activity" element={<AssetActivity />} />
-          <Route path="settings" element={<AssetSystemSettingsAccessRoute><AssetSettings /></AssetSystemSettingsAccessRoute>} />
+          <Route path="settings" element={<AssetPreferences />} />
+          <Route path="setup" element={<AssetSystemSettingsAccessRoute><AssetSettings /></AssetSystemSettingsAccessRoute>} />
           <Route path="*" element={<Navigate to="/assets/dashboard" replace />} />
         </Route>
 
