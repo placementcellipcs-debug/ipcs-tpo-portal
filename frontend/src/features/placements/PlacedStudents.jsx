@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { 
   CircleNotch, Plus, PencilSimple, X, FloppyDisk, 
-  CaretLeft, ArrowsClockwise, FilePdf
+  CaretLeft, ArrowsClockwise, FilePdf, Trash
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import DateInput from '../../components/DateInput';
@@ -82,6 +82,7 @@ export default function PlacedStudents() {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [selectedApp, setSelectedApp] = useState(null);
   const [savingStatus, setSavingStatus] = useState(false);
+  const [deletingRow, setDeletingRow] = useState(null);
 
   const [editForm, setEditForm] = useState({});
   const [addForm, setAddForm] = useState({ 
@@ -151,6 +152,7 @@ export default function PlacedStudents() {
         joiningStatus: getVal(row, ['joiningstatus']),
         offerLetter: getVal(row, ['offerletterstatus', 'offerletter']),
         tpoName: getVal(row, ['placementofficer', 'tpo']),
+        tpoActionLog: getVal(row, ['tpoactionlog']),
         date: getVal(row, ['dateplaced']),
         jobId: getVal(row, ['jobid'])
       }));
@@ -270,6 +272,36 @@ export default function PlacedStudents() {
       const message = error.response?.data?.message || error.message || 'The placement service could not be reached.';
       alert(`Failed to save placement updates: ${message}`);
     } finally { setSavingStatus(false); }
+  };
+
+  const deletePlacement = async app => {
+    if (!app?.rowNumber) return alert('This placement does not have a TPO_Log row reference. Refresh the list and try again.');
+    const confirmed = window.confirm(
+      `Delete ${app.name || 'this student'}'s placement at ${app.company || 'this company'}? This removes the placement from TPO_Log and its matching Opening_Applied row, then refreshes Placed_Students. This cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setDeletingRow(app.rowNumber);
+    try {
+      const response = await axios.post(`${API_BASE}/api/tpo/placed-students/delete`, {
+        rowNumber: app.rowNumber,
+        expected: {
+          name: app.name,
+          roll: app.roll,
+          jobId: app.jobId,
+          company: app.company,
+          position: app.position
+        }
+      }, { timeout: 60000 });
+      if (!response.data?.success) throw new Error(response.data?.message || 'The placement delete was rejected.');
+      await fetchData();
+      if (response.data.warning) alert(`Placement deleted. ${response.data.warning}`);
+    } catch (error) {
+      const message = error.response?.data?.message || error.message || 'The placement service could not be reached.';
+      alert(`Could not delete placement: ${message}`);
+    } finally {
+      setDeletingRow(null);
+    }
   };
 
   const submitAdd = async () => {
@@ -441,12 +473,12 @@ export default function PlacedStudents() {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 2fr 0.5fr', padding: '0 1.5rem', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.5px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 2fr minmax(150px, 1.2fr)', padding: '0 1.5rem', color: 'var(--text-muted)', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.5px' }}>
                   <span>STUDENT DETAILS</span><span>COMPANY & POSITION</span><span>PLACED DATE & LPA</span><span>STATUS & JOINING</span><span style={{ textAlign: 'center' }}>ACTION</span>
                 </div>
 
                 {filteredApps.map((app, i) => (
-                  <div key={app.rowNumber || i} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1rem 1.5rem', display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 2fr 0.5fr', alignItems: 'center', gap: '15px' }}>
+                  <div key={app.rowNumber || i} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1rem 1.5rem', display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 2fr minmax(150px, 1.2fr)', alignItems: 'center', gap: '15px' }}>
                     <div>
                       <strong style={{ display: 'block', color: '#fff', fontSize: '1.05rem', marginBottom: '4px' }}>{app.name || `Student details missing · row ${app.rowNumber}`}</strong>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{app.roll || 'No Roll #'} • {app.course}</span>
@@ -465,11 +497,26 @@ export default function PlacedStudents() {
                       <StatusBadge status={app.status || 'Placed'} />
                       <div style={{ marginTop: '6px' }}><StatusBadge status={app.joiningStatus || 'Joined'} /></div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
                       {canEditPlacement && app.rowNumber ? (
-                        <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.8rem', display: 'flex', justifyContent: 'center', gap: '6px' }} onClick={() => openEditModal(app)}>
-                          <PencilSimple weight="bold" size={14} /> Edit
-                        </button>
+                        <>
+                          <button className="btn-secondary" style={{ padding: '6px 12px', fontSize: '0.8rem', display: 'flex', justifyContent: 'center', gap: '6px' }} onClick={() => openEditModal(app)}>
+                            <PencilSimple weight="bold" size={14} /> Edit
+                          </button>
+                          {!/^(yes|true|1)$/i.test(String(app.tpoActionLog || '').trim()) && (
+                            <button
+                              className="btn-secondary"
+                              style={{ padding: '6px 10px', fontSize: '0.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.4)' }}
+                              onClick={() => deletePlacement(app)}
+                              disabled={Boolean(deletingRow)}
+                              aria-label={`Delete ${app.name || 'student'} placement`}
+                              title="Delete placement record"
+                            >
+                              {deletingRow === app.rowNumber ? <CircleNotch size={14} className="ph-spin" /> : <Trash weight="bold" size={14} />}
+                              Delete
+                            </button>
+                          )}
+                        </>
                       ) : (
                         (app.offerLetter && app.offerLetter !== 'N/A') ? (
                           <button className="btn-secondary" style={{ padding: '6px 14px', fontSize: '0.75rem', background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)', borderColor: 'var(--accent-primary)', display: 'flex', alignItems: 'center', gap: '5px' }} onClick={() => window.open(getDrivePdf(app.offerLetter) || app.offerLetter, '_blank')}>

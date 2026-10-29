@@ -3510,6 +3510,206 @@ exports.getPlacedStudents = async (req, res) => {
   });
 };
 
+exports.deletePlacedStudent = async (req, res) => {
+  const user = req.portalUser || {};
+  if (!isPlacementTrackerAdmin(user) && !isPlacementTrackerTpo(user)) {
+    return res.status(403).json({ success: false, message: 'Only TPOs and placement administrators can delete placed-student records.' });
+  }
+
+  const rowNumber = Number.parseInt(req.body?.rowNumber, 10);
+  if (!Number.isInteger(rowNumber) || rowNumber < 2) {
+    return res.status(400).json({ success: false, message: 'A valid TPO_Log row is required.' });
+  }
+
+  let auditRecord = null;
+  let auditIntentSaved = false;
+  let deletionCompleted = false;
+  try {
+    await loadDocInfo();
+    const logSheet = doc.sheetsByTitle['TPO_Log'];
+    const applicationSheet = doc.sheetsByTitle['Opening_Applied'];
+    if (!logSheet || !applicationSheet) {
+      return res.status(503).json({ success: false, message: 'TPO_Log or Opening_Applied is unavailable; no records were deleted.' });
+    }
+
+    const placementsSpreadsheetId = getSpreadsheetIdForSheetName('TPO_Log');
+    if (!placementsSpreadsheetId || placementsSpreadsheetId !== getSpreadsheetIdForSheetName('Opening_Applied')) {
+      return res.status(503).json({ success: false, message: 'TPO_Log and Opening_Applied are not in the same configured spreadsheet, so the delete cannot be performed safely.' });
+    }
+
+    // Read the live row instead of trusting a row object or identity sent by the browser.
+    const [logRow] = await logSheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    if (!logRow || Number(logRow.rowNumber) !== rowNumber) {
+      return res.status(404).json({ success: false, message: 'This placement row no longer exists. Refresh the page and try again.' });
+    }
+
+    const record = {
+      name: getValByHeader(logRow, ['studentname', 'name', 'candidate']),
+      roll: getValByHeader(logRow, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']),
+      jobId: getValByHeader(logRow, ['jobid', 'job id']),
+      company: getValByHeader(logRow, ['companyname', 'company']),
+      position: getValByHeader(logRow, ['position', 'role']),
+      branch: getValByHeader(logRow, ['branch', 'sittingbranch']),
+      course: getValByHeader(logRow, ['course', 'program']),
+      owner: getValByHeader(logRow, ['placementofficer', 'tpo', 'tponame', 'createdby']),
+      status: getValByHeader(logRow, ['status']),
+      entrySource: getValByHeader(logRow, ['entrysource', 'recordorigin', 'origin']) || 'TPO_Log'
+    };
+
+    if (normalizePlacementText(record.status) !== 'placed') {
+      return res.status(409).json({ success: false, message: 'This TPO_Log row is no longer marked Placed. Refresh the page before deleting.' });
+    }
+    if (/^(yes|true|1)$/i.test(getValByHeader(logRow, ['tpoactionlog']))) {
+      return res.status(409).json({ success: false, message: 'This is a placement action-history row and cannot be deleted from the Placed Students page.' });
+    }
+
+    const expected = req.body?.expected || {};
+    const expectedFields = [
+      ['roll', record.roll], ['name', record.name], ['jobId', record.jobId],
+      ['company', record.company], ['position', record.position]
+    ];
+    const staleIdentity = expectedFields.some(([key, current]) => {
+      const supplied = String(expected[key] ?? '').trim();
+      return supplied && normalizePlacementText(supplied) !== normalizePlacementText(current);
+    });
+    if (staleIdentity) {
+      return res.status(409).json({ success: false, message: 'The placement details changed after this list loaded. Refresh the page and check the record again.' });
+    }
+
+    if (!isPlacementTrackerAdmin(user)) {
+      const allowed = record.owner
+        ? placementOwnerMatchesUser(record.owner, user)
+        : hasPlacementBranchAccess(record.branch, user);
+      if (!allowed) {
+        return res.status(403).json({ success: false, message: 'You can delete only placements assigned to you. Ask a placement administrator if this record needs correction.' });
+      }
+    }
+
+    const normalize = value => normalizePlacementText(value);
+    const sameStudent = candidate => {
+      const candidateRoll = getValByHeader(candidate, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']);
+      if (record.roll && candidateRoll) return normalize(candidateRoll) === normalize(record.roll);
+      const candidateName = getValByHeader(candidate, ['studentname', 'name', 'candidate']);
+      return Boolean(record.name && candidateName && normalize(candidateName) === normalize(record.name));
+    };
+    const sameOpening = candidate => {
+      const candidateJobId = getValByHeader(candidate, ['jobid', 'job id']);
+      if (record.jobId && candidateJobId && normalize(candidateJobId) !== normalize(record.jobId)) return false;
+      const candidateCompany = getValByHeader(candidate, ['companyname', 'company']);
+      if (!record.company || !candidateCompany || normalize(candidateCompany) !== normalize(record.company)) return false;
+      const candidatePosition = getValByHeader(candidate, ['position', 'role']);
+      return !record.position || !candidatePosition || normalize(candidatePosition) === normalize(record.position);
+    };
+
+    const applicationRows = await applicationSheet.getRows();
+    const matchingApplications = applicationRows.filter(row => sameStudent(row) && sameOpening(row));
+    if (matchingApplications.length > 1) {
+      return res.status(409).json({
+        success: false,
+        message: `Found ${matchingApplications.length} matching Opening_Applied rows. Nothing was deleted; ask an administrator to resolve the duplicate safely.`
+      });
+    }
+    const applicationRow = matchingApplications[0] || null;
+
+    const logSheetId = Number(logSheet.sheetId);
+    const applicationSheetId = Number(applicationSheet.sheetId);
+    const applicationRowNumber = applicationRow ? Number(applicationRow.rowNumber) : null;
+    if (!Number.isInteger(logSheetId) || !Number.isInteger(applicationSheetId)) {
+      return res.status(503).json({ success: false, message: 'Google Sheets tab metadata is unavailable; no records were deleted.' });
+    }
+    if (applicationRow && (!Number.isInteger(applicationRowNumber) || applicationRowNumber < 2)) {
+      return res.status(409).json({ success: false, message: 'The matching Opening_Applied row has an invalid row reference; no records were deleted.' });
+    }
+
+    const placementAuditDetails = `Delete requested from Placed Students. TPO_Log row ${rowNumber}; matching Opening_Applied row ${applicationRow?.rowNumber || 'not found'}.`;
+    auditRecord = createPlacementAuditEvent({
+      actor: user,
+      action: 'Placed-student deletion requested',
+      previousStatus: record.status,
+      newStatus: 'Delete pending',
+      record,
+      details: placementAuditDetails,
+      changedAt: formatIndiaTimestamp()
+    });
+    // Require a durable audit entry before a destructive change is attempted.
+    await appendPlacementAudit(auditRecord);
+    auditIntentSaved = true;
+
+    const requests = [
+      { deleteDimension: { range: { sheetId: logSheetId, dimension: 'ROWS', startIndex: rowNumber - 1, endIndex: rowNumber } } }
+    ];
+    if (applicationRow) {
+      requests.push({ deleteDimension: { range: { sheetId: applicationSheetId, dimension: 'ROWS', startIndex: applicationRowNumber - 1, endIndex: applicationRowNumber } } });
+    }
+
+    await google.sheets({ version: 'v4', auth: serviceAccountAuth }).spreadsheets.batchUpdate({
+      spreadsheetId: placementsSpreadsheetId,
+      requestBody: { requests }
+    });
+    deletionCompleted = true;
+
+    const warnings = [];
+    let projectionRebuilt = false;
+    try {
+      const refreshed = await refreshCache();
+      if (!refreshed || getCache()?.cacheSheetHealth?.tpoLogs !== true) {
+        warnings.push('The Placed_Students projection could not be refreshed because TPO_Log is not confirmed healthy. The source rows were deleted; ask an administrator to rebuild the projection.');
+      } else {
+        const rebuildResult = await rebuildPlacedStudentsFromTpoLogs();
+        projectionRebuilt = Boolean(rebuildResult?.rebuilt);
+        await refreshCache();
+      }
+    } catch (projectionError) {
+      console.error('Placement deleted, but Placed_Students projection rebuild failed:', projectionError.message);
+      warnings.push('The source rows were deleted, but Placed_Students could not be rebuilt. Ask an administrator to reconcile the placement projection.');
+    }
+    if (!applicationRow) warnings.push('No matching Opening_Applied row existed, so only TPO_Log and the Placed_Students projection were updated.');
+
+    try {
+      await appendPlacementAudit(createPlacementAuditEvent({
+        actor: user,
+        action: 'Placed student deleted',
+        previousStatus: record.status,
+        newStatus: 'Deleted',
+        record,
+        details: `Deleted TPO_Log row ${rowNumber}${applicationRow ? ` and Opening_Applied row ${applicationRow.rowNumber}` : ''}; Placed_Students projection ${projectionRebuilt ? 'rebuilt' : 'not confirmed rebuilt'}.`,
+        changedAt: formatIndiaTimestamp()
+      }));
+    } catch (auditError) {
+      console.error('Placement deleted, but completion audit entry could not be saved:', auditError.message);
+      warnings.push('The placement was deleted, but its completion could not be added to the audit log.');
+    }
+
+    return res.json({
+      success: true,
+      message: 'Placed-student record deleted.',
+      deleted: { tpoLog: true, openingApplied: Boolean(applicationRow), placedStudentsProjectionRebuilt: projectionRebuilt },
+      warning: warnings.join(' ')
+    });
+  } catch (error) {
+    console.error('Placed-student deletion failed:', error);
+    if (auditIntentSaved && auditRecord && !deletionCompleted) {
+      try {
+        await appendPlacementAudit(createPlacementAuditEvent({
+          actor: user,
+          action: 'Placed-student deletion failed',
+          previousStatus: auditRecord['Previous Status'],
+          newStatus: 'Delete failed',
+          record: {
+            name: auditRecord['Student Name'], roll: auditRecord['Roll Number'], jobId: auditRecord['Job ID'],
+            company: auditRecord.Company, position: auditRecord.Position, entrySource: auditRecord['Entry Source']
+          },
+          details: `Delete attempt failed before completion: ${error.message}`,
+          changedAt: formatIndiaTimestamp()
+        }));
+      } catch (auditError) {
+        console.error('Failed placement-delete attempt could not be logged:', auditError.message);
+      }
+    }
+    return res.status(500).json({ success: false, message: `Could not delete this placement: ${error.message}` });
+  }
+};
+
 exports.getPlacementReconciliation = async (req, res) => {
   try {
     let cache = getCache();

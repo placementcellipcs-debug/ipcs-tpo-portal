@@ -289,6 +289,7 @@ app.post('/api/tpo/issues', controllers.getIssues);
 app.post('/api/tpo/issues/update', controllers.updateIssue);
 app.post('/api/tpo/reports', controllers.getReports);
 app.post('/api/tpo/placed-students', controllers.getPlacedStudents);
+app.post('/api/tpo/placed-students/delete', controllers.deletePlacedStudent);
 app.post('/api/tpo/talentino', controllers.getTalentino);
 app.post('/api/tpo/clients', controllers.getClients);
 app.get('/api/public/partners', controllers.getPublicPartners);
