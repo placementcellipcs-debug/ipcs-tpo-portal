@@ -102,7 +102,7 @@ const createPortalAuditLogger = ({ sheetsApi, spreadsheetId, sheetTitle = 'Porta
     return [
       cellText(event.eventId || randomUUID(), 80),
       cellText(event.timestamp || new Date().toISOString(), 80),
-      cellText(event.actorType || (actor.email ? 'Human' : 'Anonymous'), 40),
+      cellText(event.actorType || (actor.email ? 'Human' : actor.name ? 'Unverified' : 'Public visitor'), 40),
       cellText(event.actorName || actor.name, 180),
       cellText(event.actorEmail || actor.email, 254).toLowerCase(),
       cellText(event.actorRole || actor.role, 100),

@@ -789,14 +789,24 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
 // ---------------------------------------------------------
 exports.login = async (req, res) => {
   const { email, password } = req.body;
+  const cleanInput = (email || '').toString().trim().toLowerCase().slice(0, 254);
+  req.auditAttempt = cleanInput ? { kind: 'login', identifier: cleanInput } : null;
   try {
     const cache = getCache();
     
     if (!cache?.authCacheReady || !Array.isArray(cache.contacts) || !Array.isArray(cache.users)) {
+       req.auditReason = 'Login was not checked because the account cache was not ready.';
+       req.auditResult = 'Unavailable';
+       req.auditDetails = {
+         authCacheReady: Boolean(cache?.authCacheReady),
+         contactsLoaded: Array.isArray(cache?.contacts),
+         usersLoaded: Array.isArray(cache?.users),
+         cacheUpdatedAt: cache?.cacheUpdatedAt || '',
+         authSheetsHealthy: cache?.authSheetsHealthy || {}
+       };
        return res.status(503).json({ success: false, message: "System is booting up. Please try again in 5 seconds." });
     }
 
-    const cleanInput = (email || '').toString().trim().toLowerCase();
     const cleanPass = password === undefined || password === null ? '' : String(password);
     let foundUser = null; 
     let accountRow = null;
@@ -866,15 +876,33 @@ exports.login = async (req, res) => {
 
     if (!foundUser) {
       if (!cache.authSheetsHealthy?.contacts || !cache.authSheetsHealthy?.users) {
+        req.auditReason = 'Login could not be checked because one or more account sheets were unavailable.';
+        req.auditResult = 'Unavailable';
+        req.auditDetails = {
+          authCacheReady: Boolean(cache.authCacheReady),
+          contactsLoaded: Array.isArray(cache.contacts),
+          usersLoaded: Array.isArray(cache.users),
+          authSheetsHealthy: cache.authSheetsHealthy || {}
+        };
         return res.status(503).json({ success: false, message: 'Login records are temporarily unavailable. Please retry shortly.' });
       }
+      req.auditReason = 'The submitted login ID did not match an enabled account and password.';
+      req.auditResult = 'Rejected';
       return res.status(401).json({ success: false, message: "Invalid Login ID or Password." });
     }
 
     if (!isPasswordHash(storedPassword)) {
       const migration = await migrateLegacyPassword(accountRow, storedPassword, cleanPass);
-      if (migration.changed) return res.status(401).json({ success: false, message: 'This account password changed. Sign in with the latest password.' });
-      if (migration.cacheStale) return res.status(503).json({ success: false, message: 'Your account is being secured. Please retry in a moment.' });
+      if (migration.changed) {
+        req.auditReason = 'Password migration indicated the submitted credential is stale.';
+        req.auditResult = 'Rejected';
+        return res.status(401).json({ success: false, message: 'This account password changed. Sign in with the latest password.' });
+      }
+      if (migration.cacheStale) {
+        req.auditReason = 'Password migration could not be completed because account data was stale.';
+        req.auditResult = 'Unavailable';
+        return res.status(503).json({ success: false, message: 'Your account is being secured. Please retry in a moment.' });
+      }
       storedPassword = migration.password || storedPassword;
     }
 
@@ -917,6 +945,9 @@ exports.login = async (req, res) => {
     if (invalidatedAccountVersions.has(sessionKey)) {
       const invalidatedVersion = invalidatedAccountVersions.get(sessionKey);
       if (!invalidatedVersion || invalidatedVersion !== accountVersion) {
+        req.auditReason = 'Account details changed and the session version is being refreshed.';
+        req.auditResult = 'Unavailable';
+        req.auditDetails = { accountVersionRefreshPending: true, authCacheReady: Boolean(getCache()?.authCacheReady) };
         return res.status(503).json({ success: false, message: 'This account was just updated. Please retry after account details finish syncing.' });
       }
     }
@@ -947,11 +978,14 @@ exports.login = async (req, res) => {
       } catch (logErr) {}
     })();
 
+    req.auditResult = 'Success';
     return res.json({ 
       success: true, 
       tpo: { ...sessionUser, sessionToken }
     });
   } catch (error) { 
+    req.auditReason = 'Login processing raised an unhandled server error.';
+    req.auditResult = 'Error';
     res.status(500).json({ success: false, message: error.message }); 
   }
 };
@@ -7752,13 +7786,30 @@ exports.getSecurityLogs = (req, res) => {
 
 exports.verifySession = (req, res) => {
   const { email, sessionToken } = req.body;
+  const cleanEmail = String(email || '').trim().toLowerCase().slice(0, 254);
+  req.auditAttempt = cleanEmail ? { kind: 'session-verification', identifier: cleanEmail } : null;
   if (!email || !sessionToken) {
+    req.auditReason = 'Session verification request was missing its account ID or token.';
+    req.auditResult = 'Rejected';
     return res.json({ valid: false, reason: 'MISSING_PAYLOAD' });
   }
 
   const user = exports.getSessionUser(email, sessionToken);
-  if (!user) return res.json({ valid: false, reason: 'SESSION_EXPIRED', message: 'Your session expired. Please sign in again.' });
+  if (!user) {
+    const cache = getCache();
+    req.auditReason = cache?.authCacheReady
+      ? 'Session could not be matched to an active account; it may be expired, revoked, or disabled.'
+      : 'Session could not be revalidated because the account cache was not ready.';
+    req.auditDetails = {
+      authCacheReady: Boolean(cache?.authCacheReady),
+      accountRecordAvailable: Boolean(getCurrentAccountRow(cleanEmail, cache)),
+      authSheetsHealthy: cache?.authSheetsHealthy || {}
+    };
+    req.auditResult = 'Rejected';
+    return res.json({ valid: false, reason: 'SESSION_EXPIRED', message: 'Your session expired. Please sign in again.' });
+  }
   req.auditActor = user;
+  req.auditResult = 'Success';
   return res.json({ valid: true, expiresIn: SESSION_TOKEN_TTL_MS });
 };
 

@@ -66,9 +66,40 @@ const readPortalSessionToken = (email, token, expectedAccountVersion, options = 
   }
 };
 
+// Audit-only identity recovery: this verifies that the portal signed the token
+// and that it has not expired, but deliberately does not replace the live
+// account-version check used by readPortalSessionToken for authorization.
+const readPortalSessionIdentity = (email, token, options = {}) => {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  const cleanToken = String(token || '');
+  if (!cleanEmail || !cleanToken || cleanToken.length > 8192) return null;
+  const [prefix, encodedClaims, suppliedSignature, extra] = cleanToken.split('.');
+  if (prefix !== SESSION_TOKEN_PREFIX || !encodedClaims || !suppliedSignature || extra !== undefined) return null;
+
+  const key = getSigningKey(options.secret);
+  if (!key) return null;
+  const expectedSignature = Buffer.from(createHmac('sha256', key).update(`${prefix}.${encodedClaims}`).digest('base64url'));
+  const actualSignature = Buffer.from(suppliedSignature);
+  if (actualSignature.length !== expectedSignature.length || !timingSafeEqual(actualSignature, expectedSignature)) return null;
+
+  try {
+    const claims = JSON.parse(Buffer.from(encodedClaims, 'base64url').toString('utf8'));
+    const now = options.now ?? Date.now();
+    const ttlMs = options.ttlMs ?? SESSION_TOKEN_TTL_MS;
+    const user = claims?.user;
+    if (claims?.version !== 2 || !claims.accountVersion || !Number.isFinite(claims.issuedAt) || !Number.isFinite(claims.expiresAt)) return null;
+    if (claims.issuedAt > now + 60_000 || claims.expiresAt <= now || claims.expiresAt - claims.issuedAt > ttlMs) return null;
+    if (String(user?.email || '').trim().toLowerCase() !== cleanEmail) return null;
+    return user;
+  } catch {
+    return null;
+  }
+};
+
 module.exports = {
   SESSION_TOKEN_TTL_MS,
   getAccountVersion,
   createPortalSessionToken,
   readPortalSessionToken,
+  readPortalSessionIdentity,
 };

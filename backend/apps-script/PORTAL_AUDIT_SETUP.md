@@ -22,3 +22,14 @@ The installed triggers record manual cell edits and workbook structure changes w
 ## Delivery limit
 
 The portal retries failed sheet writes in memory and flushes the queue during graceful shutdown. A hard process crash, prolonged Google Sheets outage/quota failure, a browser closed before an interaction batch is sent, or an Apps Script trigger/API failure can still delay or lose an event. A Google Sheet cannot guarantee a lossless, tamper-proof audit stream by itself; the log also needs routine review and export/backup.
+
+## Reading actor and result fields
+
+- `Human`: the live portal session was validated; the name, email, and role come from that account.
+- `Signed session (not revalidated)`: the signed portal token identifies an account, but a current account check could not be completed. This can happen while the account cache is loading; it does not mean the request was authorized.
+- `Login attempt (not authenticated)`: the submitted login ID is recorded, but the password is never logged and the user was not authenticated.
+- `Session claim (not validated)`: an account ID was supplied with an invalid, expired, or uncheckable session.
+- `Public visitor`: a stable random browser ID links that browser's public-page activity. It does not identify a real person's name.
+- `Bot`: a scheduled task, worker, cache sync, or Apps Script action.
+
+`Unavailable` with HTTP 503 means the portal/cache/sheet data was not ready to serve the request. `Rejected` with HTTP 401/403/429 means authentication, authorization, or rate limits stopped it. For 200 responses, read `Details.reason`: session verification can return HTTP 200 while reporting `valid: false`.

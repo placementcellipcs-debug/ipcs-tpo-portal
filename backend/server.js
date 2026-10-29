@@ -8,6 +8,7 @@ const cors = require('cors');
 const multer = require('multer');
 const cron = require('node-cron');
 const { getRole, hasRoleToken, isPortalAdmin, getPolicyDenial } = require('./src/rolePolicy');
+const { readPortalSessionIdentity } = require('./src/sessionTokens');
 
 // 🚨 IMPORT CONTROLLERS EXACTLY ONCE
 const controllers = require('./src/controllers');
@@ -27,6 +28,41 @@ const {
 const { isAssetCacheReady } = require('./src/assetConfig');
 
 const app = express();
+const backendInstanceId = String(process.env.RENDER_INSTANCE_ID || process.env.HOSTNAME || `pid-${process.pid}`).slice(0, 120);
+const getAuditIdentity = req => {
+  const headerEmail = String(req.get('x-ipcs-email') || '').trim().toLowerCase();
+  const headerToken = String(req.get('x-ipcs-session-token') || '');
+  const verifySessionBody = String(req.originalUrl || '').split('?')[0] === '/api/auth/verify-session';
+  let user = req.portalUser || req.auditActor || null;
+  if (!user && headerEmail && headerToken) {
+    try { user = controllers.getSessionUser(headerEmail, headerToken); } catch { user = null; }
+  }
+  if (user?.email) return { actor: user, actorType: 'Human', identityBasis: 'Active portal session' };
+
+  const identityEmail = headerEmail || (verifySessionBody ? String(req.body?.email || '').trim().toLowerCase() : '');
+  const identityToken = headerToken || (verifySessionBody ? String(req.body?.sessionToken || '') : '');
+  if (identityEmail && identityToken) {
+    const signedIdentity = readPortalSessionIdentity(identityEmail, identityToken);
+    if (signedIdentity?.email) return { actor: signedIdentity, actorType: 'Signed session (not revalidated)', identityBasis: 'Valid signed token; live account status was not confirmed' };
+  }
+
+  if (req.auditAttempt?.identifier) {
+    return {
+      actor: { name: `${req.auditAttempt.kind === 'login' ? 'Login ID attempt' : 'Session identity claim'}: ${req.auditAttempt.identifier}` },
+      actorType: req.auditAttempt.kind === 'login' ? 'Login attempt (not authenticated)' : 'Session claim (not validated)',
+      identityBasis: req.auditAttempt.kind === 'login' ? 'Identifier submitted before authentication' : 'Account identifier submitted; session validation failed'
+    };
+  }
+  if (headerEmail) {
+    return { actor: { name: `Unverified session claim: ${headerEmail}` }, actorType: 'Session claim (not validated)', identityBasis: 'Email header did not match an active session' };
+  }
+
+  const visitorId = String(req.get('x-portal-visitor-id') || '').trim();
+  if (/^[a-z0-9-]{8,80}$/i.test(visitorId)) {
+    return { actor: { name: `Visitor ${visitorId.slice(0, 12)}` }, actorType: 'Public visitor', identityBasis: 'Persistent browser visitor ID; person not signed in' };
+  }
+  return { actor: { name: 'Visitor (browser ID unavailable)' }, actorType: 'Public visitor', identityBasis: 'No portal account identity was available' };
+};
 const portalServiceRole = String(process.env.PORTAL_SERVICE_ROLE || 'all').trim().toLowerCase();
 if (!['all', 'api', 'worker'].includes(portalServiceRole)) {
   throw new Error(`Invalid PORTAL_SERVICE_ROLE "${portalServiceRole}". Use all, api, or worker.`);
@@ -57,6 +93,7 @@ const loginRateLimit = (req, res, next) => {
     return next();
   }
   if (previous.count >= LOGIN_MAX_ATTEMPTS) {
+    req.auditReason = 'Repeated sign-in attempts hit the per-address and login-ID rate limit before credential verification.';
     res.set('Retry-After', String(Math.max(1, Math.ceil((previous.resetAt - now) / 1000))));
     return res.status(429).json({ success: false, message: 'Too many sign-in attempts. Wait a little and try again.' });
   }
@@ -102,7 +139,7 @@ app.use(cors({
     }
   },
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization', 'Range', 'x-ipcs-email', 'x-ipcs-session-token'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Range', 'x-ipcs-email', 'x-ipcs-session-token', 'x-portal-visitor-id'],
   exposedHeaders: ['Accept-Ranges', 'Content-Range', 'Content-Length']
 }));
 
@@ -130,21 +167,36 @@ app.use('/api', (req, res, next) => {
   req.portalAuditRequestId = requestId;
   res.set('X-Request-ID', requestId);
   res.on('finish', () => {
-    const actor = req.portalUser || req.auditActor || {};
+    const identity = getAuditIdentity(req);
+    const actor = identity.actor || {};
     const status = Number(res.statusCode) || 0;
+    const requestFields = req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? Object.keys(req.body).filter(field => !/(password|token|secret|base64|signature|file)/i.test(field)).slice(0, 40)
+      : [];
+    const details = {
+      backendInstanceId,
+      identityBasis: identity.identityBasis,
+      ...(/^[a-z0-9-]{8,80}$/i.test(String(req.get('x-portal-visitor-id') || '')) ? { browserVisitorId: String(req.get('x-portal-visitor-id')).slice(0, 80) } : {}),
+      requestFields,
+      ...(req.auditDetails && typeof req.auditDetails === 'object' ? req.auditDetails : {}),
+      ...(req.auditAttempt?.identifier ? { submittedLoginId: req.auditAttempt.identifier } : {}),
+      ...(req.auditReason ? { reason: req.auditReason } : {}),
+      ...(status === 503 && !getCache()?.cacheUpdatedAt ? { reason: req.auditReason || 'Portal data cache was not ready; request could not be served.' } : {}),
+      ...(status >= 500 && !req.auditReason && status !== 503 ? { reason: 'Request completed with a server error.' } : {})
+    };
     logPortalAuditEvent({
       requestId,
       actor,
-      actorType: actor.email ? 'Human' : req.auditSource === 'Automation' ? 'Bot' : 'Anonymous',
+      actorType: actor.email ? identity.actorType : ['Automation', 'Apps Script'].includes(req.auditSource) ? 'Bot' : identity.actorType,
       source: req.auditSource || 'API',
       action: `${String(req.method || '').toUpperCase()} ${auditRouteForRequest(req)}`,
       resource: auditRouteForRequest(req),
       method: req.method,
       route: auditRouteForRequest(req),
-      result: status >= 500 ? 'Error' : status >= 400 ? 'Rejected' : 'Success',
+      result: req.auditResult || (status === 503 ? 'Unavailable' : status >= 500 ? 'Error' : status >= 400 ? 'Rejected' : 'Success'),
       httpStatus: status,
       durationMs: Date.now() - startedAt,
-      details: status >= 500 ? 'Request completed with a server error.' : status >= 400 ? 'Request was rejected.' : 'Request completed.'
+      details
     });
   });
   next();
@@ -213,6 +265,7 @@ const createIpRateLimiter = ({ windowMs, max, message }) => {
       entries.set(key, entry);
     }
     if (entry.count >= max) {
+      req.auditReason = message;
       res.set('Retry-After', String(Math.max(1, Math.ceil((entry.resetAt - now) / 1000))));
       return res.status(429).json({ success: false, message });
     }
@@ -230,7 +283,12 @@ const automationAuditRateLimit = createIpRateLimiter({ windowMs: 60 * 1000, max:
 // ---------------------------------------------------------
 // AUTHENTICATION ROUTES
 // ---------------------------------------------------------
-app.post('/api/auth/login', loginAddressRateLimit, loginRateLimit, controllers.login);
+const captureLoginAttempt = (req, _res, next) => {
+  const identifier = String(req.body?.email || '').trim().toLowerCase().slice(0, 254);
+  req.auditAttempt = identifier ? { kind: 'login', identifier } : null;
+  next();
+};
+app.post('/api/auth/login', captureLoginAttempt, loginAddressRateLimit, loginRateLimit, controllers.login);
 app.post('/api/auth/verify-session', controllers.verifySession);
 
 // 🚨 GLOBAL CACHE MIDDLEWARE
@@ -245,10 +303,14 @@ app.use('/api', async (req, res, next) => {
     cache = getCache();
   }
   if (!cache?.cacheUpdatedAt) {
+    req.auditReason = 'The primary Google Sheets cache was not ready; the request stopped before its route handler.';
+    req.auditDetails = { cacheUpdatedAt: cache?.cacheUpdatedAt || '', cacheRefreshStatus: cache?.cacheRefreshStatus || 'not-ready', cacheFailedSheets: cache?.cacheFailedSheets || [] };
     res.set('Retry-After', '5');
     return res.status(503).json({ success: false, message: 'Portal data is still syncing from Google Sheets. Please try again shortly.' });
   }
   if (req.path.startsWith('/v1/assets') && !isAssetCacheReady()) {
+    req.auditReason = 'The asset cache was not ready; the request stopped before its route handler.';
+    req.auditDetails = { assetCacheReady: false };
     return res.status(503).json({ success: false, message: "Asset data is still loading from Google Sheets. Please try again shortly." });
   }
   next();
@@ -286,7 +348,10 @@ app.post('/api/audit/interactions', (req, res, next) => {
   req.auditInteractionActor = user || {};
   return (user ? interactionRateLimit : publicInteractionRateLimit)(req, res, next);
 }, (req, res) => {
-  const actor = req.auditInteractionActor || {};
+  const identity = req.auditInteractionActor?.email
+    ? { actor: req.auditInteractionActor, actorType: 'Human' }
+    : getAuditIdentity(req);
+  const actor = identity.actor || {};
   const interactionRequestId = randomUUID();
   res.set('X-Request-ID', interactionRequestId);
   const events = Array.isArray(req.body?.events) ? req.body.events.slice(0, 100) : [];
@@ -302,14 +367,15 @@ app.post('/api/audit/interactions', (req, res, next) => {
     const controlId = /^[a-z][a-z0-9_.:-]{0,79}$/i.test(String(item?.controlId || '')) ? String(item.controlId) : '';
     logPortalAuditEvent({
       actor,
-      actorType: actor.email ? 'Human' : 'Anonymous',
+      actorType: actor.email ? identity.actorType : identity.actorType,
       source: 'UI',
       action: `UI ${interactionType}`,
       resource: page,
       route: page,
       result: 'Observed',
       requestId: interactionRequestId,
-      details: { control, field, controlId }
+      timestamp: Number.isFinite(Date.parse(item?.timestamp)) ? new Date(item.timestamp).toISOString() : undefined,
+      details: { control, field, controlId, identityBasis: identity.identityBasis, browserVisitorId: req.get('x-portal-visitor-id') || '' }
     });
   }
   return res.json({ success: true, recorded: events.length });
@@ -322,6 +388,8 @@ app.post('/api/audit/automation-events', automationAuditRateLimit, (req, res) =>
   if (expectedToken.length !== suppliedToken.length || !timingSafeEqual(expectedToken, suppliedToken)) {
     return res.status(401).json({ success: false, message: 'Invalid audit integration credentials.' });
   }
+  req.auditSource = 'Apps Script';
+  req.auditActor = { name: 'Google Apps Script', role: 'Automation' };
 
   const allowedDetailKeys = new Set(['spreadsheetId', 'sheet', 'range', 'changeType', 'operation', 'recordId', 'triggerUid', 'rowCount', 'columnCount', 'job', 'summary']);
   const events = Array.isArray(req.body?.events) ? req.body.events.slice(0, 100) : [];
@@ -630,7 +698,7 @@ if (runsBackgroundJobs && mailReportsEnabled && reportRecipients) {
 const PORT = process.env.PORT || 5000;
 const httpServer = app.listen(PORT, () => {
   console.log(`🚀 IPCS Backend is running on http://localhost:${PORT}`);
-  logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Portal backend started', resource: 'Portal backend', result: 'Success', details: { serviceRole: portalServiceRole } });
+  logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Portal backend started', resource: 'Portal backend', result: 'Success', details: { serviceRole: portalServiceRole, backendInstanceId, processId: process.pid, environment: process.env.NODE_ENV || 'development' } });
   if (runsBackgroundJobs) {
     startEmailWorker();
     // Recover only yesterday's resume deliveries after deploys/restarts that

@@ -20,15 +20,31 @@ export const API_BASE =
     : isKnownProductionPortal ? 'https://api-placement.ipcstalenzo.com' : '');
 
 if (typeof window !== 'undefined' && !window.__ipcsSessionInterceptorInstalled) {
+  const getPortalVisitorId = () => {
+    const storageKey = 'ipcs:portal-audit-visitor-id';
+    try {
+      let visitorId = window.localStorage.getItem(storageKey);
+      if (!visitorId) {
+        visitorId = window.crypto?.randomUUID?.() || `v-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+        window.localStorage.setItem(storageKey, visitorId);
+      }
+      return visitorId;
+    } catch {
+      if (!window.__ipcsAuditVisitorId) window.__ipcsAuditVisitorId = `v-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+      return window.__ipcsAuditVisitorId;
+    }
+  };
+
   axios.interceptors.request.use((config) => {
     try {
       const apiOrigin = new URL(API_BASE, window.location.origin).origin;
       const requestOrigin = new URL(config.url || '', config.baseURL || window.location.origin).origin;
       if (requestOrigin !== apiOrigin) return config;
 
+      config.headers = config.headers || {};
+      config.headers['x-portal-visitor-id'] = getPortalVisitorId();
       const account = JSON.parse(window.localStorage.getItem('tpoData') || 'null');
       if (account?.email && account?.sessionToken) {
-        config.headers = config.headers || {};
         config.headers['x-ipcs-email'] = account.email;
         config.headers['x-ipcs-session-token'] = account.sessionToken;
       }

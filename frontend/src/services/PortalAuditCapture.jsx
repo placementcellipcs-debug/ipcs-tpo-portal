@@ -47,7 +47,7 @@ export default function PortalAuditCapture() {
       return 'document';
     };
     const fieldFor = element => {
-      const name = String(element?.getAttribute?.('name') || '').trim();
+      const name = String(element?.getAttribute?.('name') || element?.getAttribute?.('id') || '').trim();
       return /^[a-z0-9_.:-]{1,80}$/i.test(name) ? name : '';
     };
     const controlIdFor = element => {
@@ -55,7 +55,7 @@ export default function PortalAuditCapture() {
       return /^[a-z][a-z0-9_.:-]{0,79}$/i.test(id) ? id : '';
     };
     const record = (type, element, control) => {
-      bufferedEvents.push({ type, page: location.pathname, control: control || controlFor(element), field: fieldFor(element), controlId: controlIdFor(element) });
+      bufferedEvents.push({ timestamp: new Date().toISOString(), type, page: location.pathname, control: control || controlFor(element), field: fieldFor(element), controlId: controlIdFor(element) });
       if (bufferedEvents.length >= 12) void flushEvents();
       else scheduleFlush();
     };
