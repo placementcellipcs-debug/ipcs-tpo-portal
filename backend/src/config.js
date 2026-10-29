@@ -19,6 +19,16 @@ const portalAuditLogger = createPortalAuditLogger({
   sheetsApi: google.sheets({ version: 'v4', auth: serviceAccountAuth }),
   spreadsheetId: portalAuditSpreadsheetId
 });
+const logPortalAuditEvent = portalAuditLogger.log;
+const logCacheAuditEvent = event => {
+  try {
+    return logPortalAuditEvent(event);
+  } catch (error) {
+    // Audit logging must never stop the operational cache from refreshing.
+    console.error('[PORTAL AUDIT] Could not queue cache-refresh event:', error.message);
+    return false;
+  }
+};
 
 const legacySpreadsheetId = String(process.env.SPREADSHEET_ID || '').trim();
 const defaultSpreadsheetIds = {
@@ -609,12 +619,12 @@ function createCachedRows(sheet, values, headerValues) {
 async function performCacheRefresh() {
   const requestId = randomUUID();
   if (isFetching) {
-    logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh coalesced', resource: 'Google Sheets cache', result: 'Skipped', details: { reason: 'A refresh is already in progress.' } });
+    logCacheAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh coalesced', resource: 'Google Sheets cache', result: 'Skipped', details: { reason: 'A refresh is already in progress.' } });
     return false;
   }
   isFetching = true;
   const startedAt = Date.now();
-  logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh started', resource: 'Google Sheets cache', result: 'Started' });
+  logCacheAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh started', resource: 'Google Sheets cache', result: 'Started' });
   try {
     await loadDocInfo();
     const placedStudentsSheet = await ensurePlacedStudentsSheet();
@@ -827,17 +837,17 @@ async function performCacheRefresh() {
     if (cacheFailedSheets.length) {
       console.warn(`⚠️ Cache refresh completed with ${cacheFailedSheets.length} unavailable sheet(s): ${[...new Set(cacheFailedSheets)].join(', ')}`);
       scheduleCacheRetry();
-      logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh completed with errors', resource: 'Google Sheets cache', result: 'Partial', durationMs: Date.now() - startedAt, details: { unavailableSheets: uniqueCacheFailedSheets } });
+      logCacheAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh completed with errors', resource: 'Google Sheets cache', result: 'Partial', durationMs: Date.now() - startedAt, details: { unavailableSheets: uniqueCacheFailedSheets } });
     } else {
       clearCacheRetry();
       console.log("✅ Cache successfully synced with Google Sheets!");
-      logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh completed', resource: 'Google Sheets cache', result: 'Success', durationMs: Date.now() - startedAt });
+      logCacheAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh completed', resource: 'Google Sheets cache', result: 'Success', durationMs: Date.now() - startedAt });
     }
     isFetching = false;
     return cacheFailedSheets.length === 0;
   } catch (err) { 
     console.error("❌ Cache sync failed:", err.message); 
-    logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh failed', resource: 'Google Sheets cache', result: 'Error', durationMs: Date.now() - startedAt, details: { error: String(err.message || err).slice(0, 500) } });
+    logCacheAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh failed', resource: 'Google Sheets cache', result: 'Error', durationMs: Date.now() - startedAt, details: { error: String(err.message || err).slice(0, 500) } });
     isFetching = false;
     scheduleCacheRetry();
     return false;
@@ -854,7 +864,7 @@ function refreshCache() {
   const currentRefresh = performCacheRefresh();
   cacheRefreshPromise = currentRefresh;
   currentRefresh.then(succeeded => {
-    cacheRefreshPromise = null;
+    if (cacheRefreshPromise === currentRefresh) cacheRefreshPromise = null;
     if (cacheRefreshRequested) {
       cacheRefreshRequested = false;
       // A successful pass can immediately catch a write that landed mid-read.
@@ -862,7 +872,11 @@ function refreshCache() {
       if (succeeded) refreshCache();
     }
   }).catch(error => {
-    cacheRefreshPromise = null;
+    if (cacheRefreshPromise === currentRefresh) cacheRefreshPromise = null;
+    // Recover the refresh lock if an unexpected rejection escaped the main
+    // refresh handler, so scheduled retries can make progress again.
+    isFetching = false;
+    scheduleCacheRetry();
     console.error('Unexpected cache refresh error:', error.message);
   });
   return currentRefresh;

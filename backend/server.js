@@ -135,6 +135,10 @@ app.use(cors({
     if ([...allowedOrigins, ...configuredOrigins].includes(origin)) {
       return callback(null, true);
     } else {
+      const rejectedOrigin = String(origin || '(missing)')
+        .replace(/[\r\n\t]/g, ' ')
+        .slice(0, 300);
+      console.warn(`[CORS] Rejected origin: ${rejectedOrigin}`);
       return callback(new Error('Blocked by CORS'));
     }
   },
