@@ -2,6 +2,8 @@ require('dotenv').config();
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
 const { google } = require('googleapis');
+const { randomUUID } = require('crypto');
+const { logPortalAuditEvent } = require('./config');
 
 const serviceAccountAuth = new JWT({
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -62,9 +64,13 @@ function rowsFromValues(sheet, values) {
 async function refreshAssetCache() {
   if (isFetching) {
     refreshRequested = true;
+    logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset cache refresh coalesced', resource: 'Asset Google Sheets cache', result: 'Skipped', details: { reason: 'A refresh is already in progress.' } });
     return;
   }
   isFetching = true;
+  const requestId = randomUUID();
+  const startedAt = Date.now();
+  logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Asset cache refresh started', resource: 'Asset Google Sheets cache', result: 'Started' });
   try {
     await assetDoc.loadInfo();
     const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
@@ -99,8 +105,10 @@ async function refreshAssetCache() {
 
     assetCache = fetchedData;
     console.log("📦 Asset Management Cache successfully synced with Google Sheets!");
+    logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Asset cache refresh completed', resource: 'Asset Google Sheets cache', result: 'Success', durationMs: Date.now() - startedAt, details: { sheetsRead: existingSheets.length } });
   } catch (err) { 
     console.error("❌ Asset Management Cache sync failed:", err.message); 
+    logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Asset cache refresh failed', resource: 'Asset Google Sheets cache', result: 'Error', durationMs: Date.now() - startedAt, details: { error: String(err.message || err).slice(0, 500) } });
     setTimeout(refreshAssetCache, err.response?.status === 429 ? 60000 : 15000);
   } finally {
     isFetching = false;

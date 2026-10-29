@@ -1,6 +1,7 @@
 require('dotenv').config();
 const dns = require('dns');
 dns.setDefaultResultOrder('ipv4first');
+const { randomUUID, timingSafeEqual } = require('crypto');
 
 const express = require('express');
 const cors = require('cors');
@@ -19,7 +20,9 @@ const {
   waitForCacheReady,
   startEmailWorker,
   startMailDashboardRefresh,
-  sendScheduledMailReport
+  sendScheduledMailReport,
+  logPortalAuditEvent,
+  flushPortalAuditEvents
 } = require('./src/config');
 const { isAssetCacheReady } = require('./src/assetConfig');
 
@@ -104,6 +107,49 @@ app.use(cors({
 }));
 
 app.use(express.json({ limit: '1mb' }));
+
+const auditRouteForRequest = req => {
+  if (req.route?.path) {
+    const mount = String(req.baseUrl || '').replace(/\/$/, '');
+    const route = String(req.route.path || '');
+    return (mount && route.startsWith(`${mount}/`) ? route : `${mount}${route}`).slice(0, 500);
+  }
+  return String(req.originalUrl || req.path || '').split('?')[0]
+    .replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, ':email')
+    .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/gi, ':id')
+    .replace(/\/(?:\d{4,}|[A-Za-z0-9_-]{28,})(?=\/|$)/g, '/:id')
+    .slice(0, 500);
+};
+
+// Record every API request and its outcome without storing request bodies,
+// query strings, passwords, session tokens, student fields, or uploaded files.
+app.use('/api', (req, res, next) => {
+  if (req.method === 'OPTIONS' || (req.method === 'POST' && req.path === '/audit/interactions')) return next();
+  const startedAt = Date.now();
+  const requestId = randomUUID();
+  req.portalAuditRequestId = requestId;
+  res.set('X-Request-ID', requestId);
+  res.on('finish', () => {
+    const actor = req.portalUser || req.auditActor || {};
+    const status = Number(res.statusCode) || 0;
+    logPortalAuditEvent({
+      requestId,
+      actor,
+      actorType: actor.email ? 'Human' : req.auditSource === 'Automation' ? 'Bot' : 'Anonymous',
+      source: req.auditSource || 'API',
+      action: `${String(req.method || '').toUpperCase()} ${auditRouteForRequest(req)}`,
+      resource: auditRouteForRequest(req),
+      method: req.method,
+      route: auditRouteForRequest(req),
+      result: status >= 500 ? 'Error' : status >= 400 ? 'Rejected' : 'Success',
+      httpStatus: status,
+      durationMs: Date.now() - startedAt,
+      details: status >= 500 ? 'Request completed with a server error.' : status >= 400 ? 'Request was rejected.' : 'Request completed.'
+    });
+  });
+  next();
+});
+
 const memoryStorage = multer.memoryStorage();
 const upload = multer({ storage: memoryStorage, limits: {
   fileSize: 50 * 1024 * 1024,
@@ -177,6 +223,9 @@ const createIpRateLimiter = ({ windowMs, max, message }) => {
 const publicInquiryRateLimit = createIpRateLimiter({ windowMs: 15 * 60 * 1000, max: 5, message: 'Too many inquiry submissions. Please wait and try again.' });
 const mouSubmitRateLimit = createIpRateLimiter({ windowMs: 60 * 60 * 1000, max: 10, message: 'Too many signing attempts. Please wait and try again.' });
 const loginAddressRateLimit = createIpRateLimiter({ windowMs: LOGIN_WINDOW_MS, max: 30, message: 'Too many sign-in attempts from this network. Wait and try again.' });
+const interactionRateLimit = createIpRateLimiter({ windowMs: 60 * 1000, max: 120, message: 'Too many activity log batches. Please wait a moment.' });
+const publicInteractionRateLimit = createIpRateLimiter({ windowMs: 60 * 1000, max: 30, message: 'Too many activity log batches. Please wait a moment.' });
+const automationAuditRateLimit = createIpRateLimiter({ windowMs: 60 * 1000, max: 120, message: 'Too many automation audit batches. Please wait a moment.' });
 
 // ---------------------------------------------------------
 // AUTHENTICATION ROUTES
@@ -188,7 +237,8 @@ app.post('/api/auth/verify-session', controllers.verifySession);
 app.use('/api', async (req, res, next) => {
   // Public site data has its own Drive/Sheets readiness checks. Keep it available
   // while the larger staff data cache is warming up after a server restart.
-  if (req.originalUrl.split('?')[0].startsWith('/api/public/')) return next();
+  const requestPath = req.originalUrl.split('?')[0];
+  if (requestPath.startsWith('/api/public/') || requestPath === '/api/audit/interactions' || requestPath === '/api/audit/automation-events') return next();
   let cache = getCache();
   if (!cache?.cacheUpdatedAt) {
     await waitForCacheReady();
@@ -224,6 +274,78 @@ const requireSession = (policy = 'portal') => (req, res, next) => {
   }
   next();
 };
+
+const cleanAuditRoute = value => String(value || '').split('?')[0]
+  .replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, ':email')
+  .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/gi, ':id')
+  .replace(/\/(?:\d{4,}|[A-Za-z0-9_-]{28,})(?=\/|$)/g, '/:id')
+  .slice(0, 300);
+
+app.post('/api/audit/interactions', (req, res, next) => {
+  const user = controllers.getSessionUser(req.get('x-ipcs-email'), req.get('x-ipcs-session-token'));
+  req.auditInteractionActor = user || {};
+  return (user ? interactionRateLimit : publicInteractionRateLimit)(req, res, next);
+}, (req, res) => {
+  const actor = req.auditInteractionActor || {};
+  const interactionRequestId = randomUUID();
+  res.set('X-Request-ID', interactionRequestId);
+  const events = Array.isArray(req.body?.events) ? req.body.events.slice(0, 100) : [];
+  for (const item of events) {
+    const interactionType = ['click', 'touch', 'change', 'input', 'submit', 'navigate', 'keyboard', 'scroll'].includes(String(item?.type || '').toLowerCase())
+      ? String(item.type).toLowerCase()
+      : 'interaction';
+    const page = cleanAuditRoute(item?.page || '');
+    const control = ['button', 'link', 'input', 'select', 'textarea', 'form', 'navigation', 'document', 'contenteditable'].includes(String(item?.control || '').toLowerCase())
+      ? String(item.control).toLowerCase()
+      : 'control';
+    const field = /^[a-z0-9_.:-]{1,80}$/i.test(String(item?.field || '')) ? String(item.field) : '';
+    const controlId = /^[a-z][a-z0-9_.:-]{0,79}$/i.test(String(item?.controlId || '')) ? String(item.controlId) : '';
+    logPortalAuditEvent({
+      actor,
+      actorType: actor.email ? 'Human' : 'Anonymous',
+      source: 'UI',
+      action: `UI ${interactionType}`,
+      resource: page,
+      route: page,
+      result: 'Observed',
+      requestId: interactionRequestId,
+      details: { control, field, controlId }
+    });
+  }
+  return res.json({ success: true, recorded: events.length });
+});
+
+app.post('/api/audit/automation-events', automationAuditRateLimit, (req, res) => {
+  const expectedToken = Buffer.from(String(process.env.PORTAL_AUDIT_INGEST_TOKEN || ''));
+  const suppliedToken = Buffer.from(String(req.get('x-portal-audit-token') || ''));
+  if (!expectedToken.length) return res.status(503).json({ success: false, message: 'Automation audit ingestion is not configured.' });
+  if (expectedToken.length !== suppliedToken.length || !timingSafeEqual(expectedToken, suppliedToken)) {
+    return res.status(401).json({ success: false, message: 'Invalid audit integration credentials.' });
+  }
+
+  const allowedDetailKeys = new Set(['spreadsheetId', 'sheet', 'range', 'changeType', 'operation', 'recordId', 'triggerUid', 'rowCount', 'columnCount', 'job', 'summary']);
+  const events = Array.isArray(req.body?.events) ? req.body.events.slice(0, 100) : [];
+  for (const item of events) {
+    const rawDetails = item?.details && typeof item.details === 'object' && !Array.isArray(item.details) ? item.details : {};
+    const details = Object.fromEntries(Object.entries(rawDetails)
+      .filter(([key, value]) => allowedDetailKeys.has(key) && ['string', 'number', 'boolean'].includes(typeof value))
+      .map(([key, value]) => [key, String(value).slice(0, 500)]));
+    logPortalAuditEvent({
+      eventId: /^[a-z0-9-]{12,80}$/i.test(String(item?.eventId || '')) ? String(item.eventId) : undefined,
+      requestId: req.portalAuditRequestId,
+      actorType: String(item?.actorType || '').toLowerCase() === 'human' ? 'Human' : 'Bot',
+      actorName: String(item?.actorName || 'Apps Script').slice(0, 180),
+      actorEmail: String(item?.actorEmail || '').slice(0, 254),
+      actorRole: String(item?.actorRole || 'Apps Script').slice(0, 100),
+      source: 'Apps Script',
+      action: String(item?.action || 'Apps Script action').replace(/[\r\n\u0000-\u001f]/g, ' ').slice(0, 180),
+      resource: String(item?.resource || 'Google Sheets').replace(/[\r\n\u0000-\u001f]/g, ' ').slice(0, 180),
+      result: ['Success', 'Error', 'Started', 'Completed', 'Observed'].includes(String(item?.result || '')) ? String(item.result) : 'Observed',
+      details
+    });
+  }
+  return res.status(202).json({ success: true, accepted: events.length });
+});
 
 // Designer accounts have a restricted workspace. Enforce it at the API layer as
 // well as in navigation so hidden modules cannot be reached through direct requests.
@@ -456,7 +578,15 @@ if (runsBackgroundJobs) {
   // ⏰ AUTOMATED CRON: Triggers every day at 8:00 AM IST
   cron.schedule('00 08 * * *', async () => {
     console.log("⏰ [08:00 AM IST] Executing Daily Automated Tasks...");
-    await controllers.runDailyCron();
+    const requestId = randomUUID();
+    logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Daily scheduled tasks started', resource: 'Daily job', result: 'Started', details: { schedule: '08:00 Asia/Kolkata' } });
+    try {
+      const result = await controllers.runDailyCron();
+      logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Daily scheduled tasks completed', resource: 'Daily job', result: 'Success', details: { completed: true, summary: result?.summary || '' } });
+    } catch (error) {
+      logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Daily scheduled tasks failed', resource: 'Daily job', result: 'Error', details: { error: String(error.message || error).slice(0, 500) } });
+      throw error;
+    }
   }, {
     scheduled: true,
     timezone: "Asia/Kolkata"
@@ -478,10 +608,14 @@ if (runsBackgroundJobs && mailReportsEnabled && reportRecipients) {
       return;
     }
     cron.schedule(expression, async () => {
+      const requestId = randomUUID();
+      logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Scheduled mail report started', resource: 'Mail report', result: 'Started', details: { period, schedule: expression } });
       try {
         await sendScheduledMailReport(period);
+        logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Scheduled mail report completed', resource: 'Mail report', result: 'Success', details: { period } });
       } catch (error) {
         console.error(`[MAIL REPORT] ${period} report could not be sent:`, error.message);
+        logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Scheduled mail report failed', resource: 'Mail report', result: 'Error', details: { period, error: String(error.message || error).slice(0, 500) } });
       }
     }, { scheduled: true, timezone: 'Asia/Kolkata' });
     console.log(`[MAIL REPORT] ${period} report scheduled with ${envKey} (${expression}, Asia/Kolkata).`);
@@ -494,16 +628,44 @@ if (runsBackgroundJobs && mailReportsEnabled && reportRecipients) {
 }
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
+const httpServer = app.listen(PORT, () => {
   console.log(`🚀 IPCS Backend is running on http://localhost:${PORT}`);
+  logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Portal backend started', resource: 'Portal backend', result: 'Success', details: { serviceRole: portalServiceRole } });
   if (runsBackgroundJobs) {
     startEmailWorker();
     // Recover only yesterday's resume deliveries after deploys/restarts that
     // missed the scheduled run; the resume-only mode does not send the company report.
     setTimeout(() => {
+      const requestId = randomUUID();
+      logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Resume delivery startup catch-up started', resource: 'Resume delivery', result: 'Started' });
       controllers.runDailyCron({ resumeOnly: true })
-        .then(result => console.log('[RESUME DELIVERY] Startup catch-up complete:', JSON.stringify(result?.resumes || {})))
-        .catch(error => console.error('[RESUME DELIVERY] Startup catch-up could not run:', error.message));
+        .then(result => {
+          console.log('[RESUME DELIVERY] Startup catch-up complete:', JSON.stringify(result?.resumes || {}));
+          logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Resume delivery startup catch-up completed', resource: 'Resume delivery', result: 'Success', details: { completed: true } });
+        })
+        .catch(error => {
+          console.error('[RESUME DELIVERY] Startup catch-up could not run:', error.message);
+          logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Resume delivery startup catch-up failed', resource: 'Resume delivery', result: 'Error', details: { error: String(error.message || error).slice(0, 500) } });
+        });
     }, 60_000);
   }
 });
+
+let auditShutdownStarted = false;
+const shutdownPortal = signal => {
+  if (auditShutdownStarted) return;
+  auditShutdownStarted = true;
+  logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Portal backend shutting down', resource: 'Portal backend', result: 'Started', details: { signal } });
+  const forceExit = setTimeout(() => {
+    console.error('[PORTAL AUDIT] Shutdown timed out before the audit queue could be flushed.');
+    process.exit(1);
+  }, 10000);
+  httpServer.close(async () => {
+    const flushed = await flushPortalAuditEvents();
+    clearTimeout(forceExit);
+    if (!flushed) console.error('[PORTAL AUDIT] Some queued audit events could not be flushed before shutdown.');
+    process.exit(flushed ? 0 : 1);
+  });
+};
+process.on('SIGTERM', () => shutdownPortal('SIGTERM'));
+process.on('SIGINT', () => shutdownPortal('SIGINT'));

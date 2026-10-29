@@ -3,14 +3,21 @@ require('dotenv').config({ path: path.resolve(__dirname, '../.env') });
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
 const { google } = require('googleapis');
+const { randomUUID } = require('crypto');
 const axios = require('axios');
 const { formatIndiaTimestamp } = require('./utils/dateTime');
 const { createEmailService } = require('./emailService');
+const { createPortalAuditLogger } = require('./portalAuditLog');
 
 const serviceAccountAuth = new JWT({
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
   key: process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') : '',
   scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'],
+});
+const portalAuditSpreadsheetId = String(process.env.PORTAL_AUDIT_SPREADSHEET_ID || '11FH7p5rYIc0EmKvT6fd0PIIoc2ns8Vj-EjksX1BLZ-w').trim();
+const portalAuditLogger = createPortalAuditLogger({
+  sheetsApi: google.sheets({ version: 'v4', auth: serviceAccountAuth }),
+  spreadsheetId: portalAuditSpreadsheetId
 });
 
 const legacySpreadsheetId = String(process.env.SPREADSHEET_ID || '').trim();
@@ -600,8 +607,14 @@ function createCachedRows(sheet, values, headerValues) {
 }
 
 async function performCacheRefresh() {
-  if (isFetching) return false;
+  const requestId = randomUUID();
+  if (isFetching) {
+    logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh coalesced', resource: 'Google Sheets cache', result: 'Skipped', details: { reason: 'A refresh is already in progress.' } });
+    return false;
+  }
   isFetching = true;
+  const startedAt = Date.now();
+  logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh started', resource: 'Google Sheets cache', result: 'Started' });
   try {
     await loadDocInfo();
     const placedStudentsSheet = await ensurePlacedStudentsSheet();
@@ -814,14 +827,17 @@ async function performCacheRefresh() {
     if (cacheFailedSheets.length) {
       console.warn(`⚠️ Cache refresh completed with ${cacheFailedSheets.length} unavailable sheet(s): ${[...new Set(cacheFailedSheets)].join(', ')}`);
       scheduleCacheRetry();
+      logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh completed with errors', resource: 'Google Sheets cache', result: 'Partial', durationMs: Date.now() - startedAt, details: { unavailableSheets: uniqueCacheFailedSheets } });
     } else {
       clearCacheRetry();
       console.log("✅ Cache successfully synced with Google Sheets!");
+      logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh completed', resource: 'Google Sheets cache', result: 'Success', durationMs: Date.now() - startedAt });
     }
     isFetching = false;
     return cacheFailedSheets.length === 0;
   } catch (err) { 
     console.error("❌ Cache sync failed:", err.message); 
+    logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Sheet cache refresh failed', resource: 'Google Sheets cache', result: 'Error', durationMs: Date.now() - startedAt, details: { error: String(err.message || err).slice(0, 500) } });
     isFetching = false;
     scheduleCacheRetry();
     return false;
@@ -1037,7 +1053,8 @@ const emailService = createEmailService({
   refreshCache,
   formatIndiaTimestamp,
   sheetsApi: google.sheets({ version: 'v4', auth: serviceAccountAuth }),
-  getSpreadsheetIdForSheetName
+  getSpreadsheetIdForSheetName,
+  logPortalAuditEvent: portalAuditLogger.log
 });
 
 async function sendIPCSMail(mailOptions, sendDetails) {
@@ -1059,6 +1076,7 @@ async function uploadToDrive(file, folderId) {
 module.exports = { 
   doc, drive, google, serviceAccountAuth, getCache, refreshCache, waitForCacheReady, loadDocInfo, hasAccess, getFuzzyHeader, syncPlacedStudent,
   getSpreadsheetIdForSheetName, getActiveSpreadsheetIds, ensureSpreadsheetDateFormats, rebuildPlacedStudentsFromTpoLogs,
+  logPortalAuditEvent: portalAuditLogger.log, flushPortalAuditEvents: portalAuditLogger.flush,
   sendIPCSMail, startEmailWorker: emailService.startWorker, processEmailQueue: emailService.processQueue,
   startMailDashboardRefresh: emailService.startMailDashboardRefresh,
   refreshMailDashboard: emailService.refreshMailDashboard,

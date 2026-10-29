@@ -54,7 +54,7 @@ const ATTEMPT_HEADERS = [
 ];
 const MAX_CELL_CHARS = 45000;
 
-const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndiaTimestamp, sheetsApi, getSpreadsheetIdForSheetName }) => {
+const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndiaTimestamp, sheetsApi, getSpreadsheetIdForSheetName, logPortalAuditEvent = () => {} }) => {
   const transports = new Map();
   let queueSheetPromise = null;
   let usageSheetPromise = null;
@@ -879,6 +879,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
       await deletePayloadFile(savedPayload.value);
       throw error;
     }
+    logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Email added to delivery queue', resource: 'EmailQueue', result: 'Queued', details: { category, queueId: id } });
     console.warn(`[MAIL QUEUE] Email ${id} was queued for ${category}; next retry at ${retryAt(deliveryError, 1)}.`);
     return { queued: true, queueId: id };
   };
@@ -898,10 +899,12 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     const deliveryId = randomBytes(12).toString('hex');
     try {
       const result = await sendNow(category, mail, deliveryId);
+      logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Email delivered directly', resource: 'MailDelivery', result: 'Success', details: { category, deliveryId, provider: result.provider || '' } });
       return { queued: false, ...result };
     } catch (error) {
       if (!isRetryable(error)) throw error;
       const queued = await queueFailedMail(category, mail, { ...sendDetails, deliveryId }, error);
+      logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Email delivery handed to queue', resource: 'EmailQueue', result: 'Queued', details: { category, deliveryId, queueId: queued.queueId } });
       return { ...queued, provider: 'auto-failover' };
     }
   };
@@ -1014,6 +1017,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
         row.set('Attempts', attempts + 1);
         row.set('UpdatedAt', new Date().toISOString());
         await row.save();
+        logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Queued email attempt started', resource: 'EmailQueue', result: 'Started', details: { deliveryId, category, attempt: attempts + 1 } });
 
         let deliveryResult;
         try {
@@ -1034,6 +1038,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
             await deletePayloadFile(storedPayload);
           }
           await row.save();
+          logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Queued email attempt failed', resource: 'EmailQueue', result: deliveryUncertain ? 'Review' : retryable ? 'Retry scheduled' : 'Failed', details: { deliveryId, category, attempt, error: String(error.message || error).slice(0, 300) } });
           if (!retryable) {
             await appendMailLog(details, `${deliveryUncertain ? 'Review' : 'Failed'}: ${String(error.message || error).slice(0, 500)}`, mail.subject);
             await updateEventMailStatus(context, deliveryUncertain ? 'REVIEW' : 'FAILED', error.message);
@@ -1053,14 +1058,17 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
           await row.save();
         } catch (saveError) {
           console.error(`[MAIL QUEUE] Email ${row.get('ID')} was delivered, but its queue status could not be saved. It will be marked for review instead of resent:`, saveError.message);
+          logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Email delivered but queue update failed', resource: 'EmailQueue', result: 'Review required', details: { deliveryId, category, error: String(saveError.message || saveError).slice(0, 300) } });
           continue;
         }
+        logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Queued email delivered', resource: 'EmailQueue', result: 'Success', details: { deliveryId, category, provider: deliveryResult.provider || '', attempt: attempts + 1 } });
         await deletePayloadFile(storedPayload);
         await appendMailLog(details, 'Success (queued delivery)', mail.subject);
         await updateEventMailStatus(context, 'SENT');
       }
     } catch (error) {
       console.error('[MAIL QUEUE] Worker cycle failed:', error.message);
+      logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Email queue worker cycle failed', resource: 'EmailQueue', result: 'Error', details: { error: String(error.message || error).slice(0, 300) } });
     } finally {
       workerRunning = false;
     }

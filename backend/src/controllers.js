@@ -27,7 +27,8 @@ function parseUserAgent(ua = '') {
 
 const { 
   doc, drive, google, serviceAccountAuth, getCache, refreshCache, loadDocInfo, getSpreadsheetIdForSheetName, hasAccess, getFuzzyHeader,
-  sendIPCSMail, uploadToDrive, syncPlacedStudent, rebuildPlacedStudentsFromTpoLogs
+  sendIPCSMail, uploadToDrive, syncPlacedStudent, rebuildPlacedStudentsFromTpoLogs,
+  logPortalAuditEvent, flushPortalAuditEvents
 } = require('./config');
 
 const { autoCreateDesignTask } = require('./designControllers');
@@ -920,6 +921,7 @@ exports.login = async (req, res) => {
       }
     }
     const sessionToken = createPortalSessionToken(sessionUser, accountVersion);
+    req.auditActor = sessionUser;
 
     (async () => {
       try {
@@ -1357,7 +1359,25 @@ const appendPlacementAudit = async event => {
   let sheet = doc.sheetsByTitle[PLACEMENT_AUDIT_SHEET];
   if (!sheet) sheet = await doc.addSheet({ title: PLACEMENT_AUDIT_SHEET, headerValues: PLACEMENT_AUDIT_HEADERS });
   await ensurePlacementHeaders(sheet, PLACEMENT_AUDIT_HEADERS);
-  return sheet.addRow(event);
+  const saved = await sheet.addRow(event);
+  const changedFields = String(event.Details || '').split(/\r?\n/).map(line => line.split(':')[0].trim()).filter(Boolean);
+  logPortalAuditEvent({
+    eventId: event['Event ID'],
+    actor: { name: event['Actor Name'], email: event['Actor Email'], role: event['Actor Role'] },
+    actorType: 'Human',
+    source: 'Placement workflow',
+    action: event.Action || 'Placement updated',
+    resource: 'Placement',
+    result: event['New Status'] === 'Delete pending' ? 'Pending' : 'Success',
+    details: {
+      placementAuditEventId: event['Event ID'],
+      previousStatus: event['Previous Status'],
+      newStatus: event['New Status'],
+      entrySource: event['Entry Source'],
+      changedFields
+    }
+  });
+  return saved;
 };
 const placementAuditChanges = fields => (fields || [])
   .filter(([, before, after]) => String(before ?? '').trim() !== String(after ?? '').trim())
@@ -3634,6 +3654,9 @@ exports.deletePlacedStudent = async (req, res) => {
     // Require a durable audit entry before a destructive change is attempted.
     await appendPlacementAudit(auditRecord);
     auditIntentSaved = true;
+    if (!(await flushPortalAuditEvents())) {
+      return res.status(503).json({ success: false, message: 'The audit sheet could not confirm this delete request, so no placement rows were deleted. Please retry after the audit service recovers.' });
+    }
 
     const requests = [
       { deleteDimension: { range: { sheetId: logSheetId, dimension: 'ROWS', startIndex: rowNumber - 1, endIndex: rowNumber } } }
@@ -7735,6 +7758,7 @@ exports.verifySession = (req, res) => {
 
   const user = exports.getSessionUser(email, sessionToken);
   if (!user) return res.json({ valid: false, reason: 'SESSION_EXPIRED', message: 'Your session expired. Please sign in again.' });
+  req.auditActor = user;
   return res.json({ valid: true, expiresIn: SESSION_TOKEN_TTL_MS });
 };
 

@@ -1,6 +1,7 @@
 import { Component, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { isPortalAdminAccount } from '../utils/roleAccess';
+import PortalAuditCapture from '../services/PortalAuditCapture';
 
 const lazyRoute = importer => lazy(async () => {
   try {
@@ -225,6 +226,7 @@ function RoutedContent() {
 function App() {
   return (
     <BrowserRouter>
+      <PortalAuditCapture />
       <RoutedContent />
     </BrowserRouter>
   );

@@ -1,0 +1,24 @@
+# Portal audit sheet setup
+
+The portal backend appends events to the separate `Portal_Audit_Log` tab in the spreadsheet whose ID is configured by `PORTAL_AUDIT_SPREADSHEET_ID`. The current default is the private “Log Sheet” workbook supplied for this audit. The tab and header row are initialized on the first backend log write.
+
+## Deploy the portal code
+
+1. Set `PORTAL_AUDIT_SPREADSHEET_ID` to the audit workbook ID if the default should not be used.
+2. Set a long random `PORTAL_AUDIT_INGEST_TOKEN` in the production backend environment. Do not commit the token or place it in frontend code.
+3. Deploy the backend and frontend changes. Portal API requests, authenticated and anonymous UI interactions, placement audit events, mail delivery attempts, scheduled jobs, and cache refreshes are then sent to the audit workbook.
+
+The portal service account must retain edit access to the audit workbook. Keep its Google Drive sharing restricted to the owner and the portal service account.
+
+## Capture direct edits to the four Google workbooks
+
+1. Add `PortalAuditBridge.gs` to a standalone Apps Script project that can access the four workbooks listed in that file.
+2. In that project's Script Properties, set `PORTAL_AUDIT_API_BASE` to the deployed portal API origin (currently `https://api-placement.ipcstalenzo.com`) and set `PORTAL_AUDIT_INGEST_TOKEN` to the same private value configured on the backend.
+3. Run `installPortalAuditTriggers()` once and approve the permissions. This installs edit and sheet-change triggers for the four source workbooks.
+4. In each other Apps Script project that writes to those workbooks, copy the `portalAuditAutomation()` and `portalAuditSend_()` helper functions, configure the same Script Properties, then call `portalAuditAutomation()` after each successful automated write or delete. Also call it with result `Error` from failure handling where appropriate.
+
+The installed triggers record manual cell edits and workbook structure changes without recording cell contents. Apps Script edits, Sheets API writes, and other programmatic changes do not fire the edit trigger; those must call `portalAuditAutomation()` from the code that performs the write. Google may also hide the editor's email address from trigger events.
+
+## Delivery limit
+
+The portal retries failed sheet writes in memory and flushes the queue during graceful shutdown. A hard process crash, prolonged Google Sheets outage/quota failure, a browser closed before an interaction batch is sent, or an Apps Script trigger/API failure can still delay or lose an event. A Google Sheet cannot guarantee a lossless, tamper-proof audit stream by itself; the log also needs routine review and export/backup.
