@@ -759,16 +759,11 @@ async function performCacheRefresh() {
     const trainerLogRows = fetchedData[22] || [];
     const securityRows = fetchedData[23] || [];
     const tpoStatsRows = fetchedData[24] || [];
-    let placedStudentsRows = fetchedData[25] || [];
-    const placedStudentSourcesHealthy = [8, 25].every(index => !cacheFailedSheets.includes(cacheFields[index]));
-    if (placedStudentSourcesHealthy) {
-      try {
-        placedStudentsRows = await rebuildPlacedStudents(placedStudentsSheet, fetchedData[8] || [], placedStudentsRows) || placedStudentsRows;
-      } catch (error) {
-        cacheFailedSheets.push('placedStudents');
-        console.error('Placed_Students projection rebuild failed; TPO_Log cache remains available:', error.message);
-      }
-    }
+    const placedStudentsRows = fetchedData[25] || [];
+    // Keep timed cache refreshes read-only for Placed_Students. A full-sheet
+    // clear/rebuild from one cached TPO_Log read could erase existing rows if
+    // that source read is incomplete. Portal placement/status writes still
+    // sync individual rows; a full rebuild remains an explicit admin action.
     const cacheSheetHealth = Object.fromEntries(cacheFields.map((field, index) => {
       const sheetTitle = sheetsToFetch[index]?.title;
       const healthy = !cacheFailedSheets.includes(field) && (!sheetTitle || !cacheFailedSheets.includes(sheetTitle));
