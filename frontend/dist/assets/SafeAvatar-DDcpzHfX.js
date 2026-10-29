@@ -1,1 +1,0 @@
-import{r as e}from"./rolldown-runtime-XKyaHtl9.js";import{n as t,p as n}from"./index-8o8wGYDl.js";var r=e(n(),1),i=t();function a({src:e,alt:t=``,initial:n=`?`,imageStyle:a,fallbackStyle:o}){let[s,c]=(0,r.useState)(!1);return!e||s?(0,i.jsx)(`span`,{"aria-hidden":`true`,style:o,children:n}):(0,i.jsx)(`img`,{src:e,alt:t,style:a,onError:()=>c(!0)})}export{a as t};
