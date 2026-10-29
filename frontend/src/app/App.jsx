@@ -64,6 +64,10 @@ const Inventory = lazyRoute(() => import('../features/assets/Inventory'));
 const AssetTransfers = lazyRoute(() => import('../features/assets/AssetTransfers'));
 const AssetMaintenance = lazyRoute(() => import('../features/assets/AssetMaintenance'));
 const AssetSettings = lazyRoute(() => import('../features/assets/AssetSettings'));
+const AssetApprovals = lazyRoute(() => import('../features/assets/AssetApprovals'));
+const AssetQrCenter = lazyRoute(() => import('../features/assets/AssetQrCenter'));
+const AssetMailCenter = lazyRoute(() => import('../features/assets/AssetMailCenter'));
+const AssetActivity = lazyRoute(() => import('../features/assets/AssetActivity'));
 
 // MEDIA & DESIGN PORTAL
 const MediaTasks = lazyRoute(() => import('../features/media/MediaTasks'));
@@ -111,8 +115,15 @@ function AssetManagerAccessRoute({ children }) {
   let account = null;
   try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
   const role = String(account?.role || '').trim().toUpperCase();
-  const canManage = isPortalAdminAccount(account) || role.includes('ASSET') || String(account?.accessType || '').toLowerCase().includes('asset');
+  const isBranchManager = role === 'BM' || role.includes('BRANCH MANAGER');
+  const canManage = isPortalAdminAccount(account) || isBranchManager || role.includes('ASSET') || String(account?.accessType || '').toLowerCase().includes('asset');
   return canManage ? children : <Navigate to="/assets/branches" replace />;
+}
+
+function AssetSystemSettingsAccessRoute({ children }) {
+  let account = null;
+  try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
+  return isPortalAdminAccount(account) ? children : <Navigate to="/assets/dashboard" replace />;
 }
 
 function UnknownRoute() {
@@ -221,7 +232,11 @@ function RoutedContent() {
           <Route path="inventory" element={<Inventory />} />
           <Route path="transfers" element={<AssetTransfers />} />
           <Route path="maintenance" element={<AssetMaintenance />} />
-          <Route path="settings" element={<AssetSettings />} />
+          <Route path="approvals" element={<AssetApprovals />} />
+          <Route path="qr" element={<AssetQrCenter />} />
+          <Route path="mail" element={<AssetMailCenter />} />
+          <Route path="activity" element={<AssetActivity />} />
+          <Route path="settings" element={<AssetSystemSettingsAccessRoute><AssetSettings /></AssetSystemSettingsAccessRoute>} />
           <Route path="*" element={<Navigate to="/assets/dashboard" replace />} />
         </Route>
 

@@ -1,5 +1,5 @@
-const { assetDoc, getAssetCache, refreshAssetCache } = require('./assetConfig');
-const { getCache, uploadToDrive } = require('./config');
+const { assetDoc, getAssetCache, getAssetCacheUpdatedAt, refreshAssetCache } = require('./assetConfig');
+const { getCache, uploadToDrive, sendIPCSMail, logPortalAuditEvent } = require('./config');
 const { randomBytes } = require('crypto');
 const { formatIndiaTimestamp } = require('./utils/dateTime');
 
@@ -24,9 +24,10 @@ async function ensureAssetHeaders(sheet, requiredHeaders) {
   return headers;
 }
 const normalize = value => String(value || '').trim().toLowerCase().replace(/\s*branch\s*/g, ' ').replace(/[^a-z0-9]/g, '');
+const normalizeHeader = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 const rowValue = (row, field) => {
   const values = row?.toObject?.() || {};
-  const key = Object.keys(values).find(header => normalize(header) === normalize(field));
+  const key = Object.keys(values).find(header => normalizeHeader(header) === normalizeHeader(field));
   return key ? values[key] : '';
 };
 const parseJsonField = (value, fallback) => {
@@ -34,6 +35,153 @@ const parseJsonField = (value, fallback) => {
   try { return JSON.parse(value); } catch { return fallback; }
 };
 const sheetByKey = key => assetDoc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes(key));
+const cacheAppendedRow = (key, row) => {
+  const cache = getAssetCache();
+  if (row && Array.isArray(cache?.[key])) cache[key].push(row);
+};
+
+async function appendAssetActivity(req, event) {
+  const sheet = sheetByKey('assetactivitylog');
+  if (!sheet) return;
+  try {
+    const headers = await ensureAssetHeaders(sheet, ['Event_ID', 'Timestamp', 'Actor_ID', 'Actor_Name', 'Actor_Email', 'Actor_Role', 'Branch', 'Action', 'Entity_Type', 'Entity_ID', 'Before_JSON', 'After_JSON', 'Source', 'Request_ID']);
+    const actor = req.portalUser || {};
+    const savedRow = await sheet.addRow({
+      [getH(headers, 'Event_ID')]: `AST-EVT-${randomBytes(9).toString('hex').toUpperCase()}`,
+      [getH(headers, 'Timestamp')]: formatIndiaTimestamp(),
+      [getH(headers, 'Actor_ID')]: actor.userId || actor.id || actor.employeeId || '',
+      [getH(headers, 'Actor_Name')]: actor.name || event.actorName || '',
+      [getH(headers, 'Actor_Email')]: actor.email || '',
+      [getH(headers, 'Actor_Role')]: actor.role || '',
+      [getH(headers, 'Branch')]: event.branch || actor.sittingBranch || '',
+      [getH(headers, 'Action')]: event.action || '',
+      [getH(headers, 'Entity_Type')]: event.entityType || 'Asset',
+      [getH(headers, 'Entity_ID')]: event.entityId || '',
+      [getH(headers, 'Before_JSON')]: JSON.stringify(event.before ?? {}),
+      [getH(headers, 'After_JSON')]: JSON.stringify(event.after ?? {}),
+      [getH(headers, 'Source')]: 'Asset Management portal',
+      [getH(headers, 'Request_ID')]: req.portalAuditRequestId || ''
+    });
+    cacheAppendedRow('assetactivitylog', savedRow);
+  } catch (error) {
+    logPortalAuditEvent({ requestId: req.portalAuditRequestId, actorType: 'Bot', source: 'Automation', action: 'Asset activity record failed', resource: event.entityType || 'Asset', result: 'Warning', details: { action: event.action || '', entityId: event.entityId || '', error: String(error.message || error).slice(0, 300) } });
+  }
+}
+
+async function appendAssetApproval(event) {
+  const sheet = sheetByKey('assetapprovals');
+  if (!sheet) return;
+  try {
+    const headers = await ensureAssetHeaders(sheet, ['Approval_ID', 'Request_ID', 'Request_Type', 'Asset_ID', 'Branch', 'Requested_By', 'Requested_At', 'Decision', 'Decided_By', 'Decided_At', 'Reason']);
+    const savedRow = await sheet.addRow({
+      [getH(headers, 'Approval_ID')]: `APR-${randomBytes(8).toString('hex').toUpperCase()}`,
+      [getH(headers, 'Request_ID')]: event.requestId || '',
+      [getH(headers, 'Request_Type')]: event.requestType || 'TRANSFER',
+      [getH(headers, 'Asset_ID')]: event.assetId || '',
+      [getH(headers, 'Branch')]: event.branch || '',
+      [getH(headers, 'Requested_By')]: event.requestedBy || '',
+      [getH(headers, 'Requested_At')]: event.requestedAt || formatIndiaTimestamp(),
+      [getH(headers, 'Decision')]: event.decision || 'PENDING',
+      [getH(headers, 'Decided_By')]: event.decidedBy || '',
+      [getH(headers, 'Decided_At')]: event.decidedAt || '',
+      [getH(headers, 'Reason')]: event.reason || ''
+    });
+    cacheAppendedRow('assetapprovals', savedRow);
+  } catch (error) {
+    logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset approval ledger write failed', resource: 'Asset_Approvals', result: 'Warning', details: { requestId: event.requestId || '', error: String(error.message || error).slice(0, 300) } });
+  }
+}
+
+async function updateAssetApproval(event) {
+  const sheet = sheetByKey('assetapprovals');
+  if (!sheet) return;
+  try {
+    const headers = await ensureAssetHeaders(sheet, ['Approval_ID', 'Request_ID', 'Request_Type', 'Asset_ID', 'Branch', 'Requested_By', 'Requested_At', 'Decision', 'Decided_By', 'Decided_At', 'Reason']);
+    const rows = await sheet.getRows();
+    const row = rows.find(item => String(item.get(getH(headers, 'Request_ID')) || '').trim().toLowerCase() === String(event.requestId || '').trim().toLowerCase());
+    if (!row) return appendAssetApproval(event);
+    row.assign({
+      [getH(headers, 'Decision')]: event.decision || '',
+      [getH(headers, 'Decided_By')]: event.decidedBy || '',
+      [getH(headers, 'Decided_At')]: event.decidedAt || formatIndiaTimestamp(),
+      [getH(headers, 'Reason')]: event.reason || ''
+    });
+    await row.save();
+  } catch (error) {
+    logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset approval decision ledger update failed', resource: 'Asset_Approvals', result: 'Warning', details: { requestId: event.requestId || '', error: String(error.message || error).slice(0, 300) } });
+  }
+}
+
+async function appendAssetQrLabel(event) {
+  const sheet = sheetByKey('assetqrregistry');
+  if (!sheet) return false;
+  try {
+    const headers = await ensureAssetHeaders(sheet, ['QR_ID', 'Asset_ID', 'QR_Value', 'QR_Version', 'Created_By', 'Created_At', 'Status']);
+    const rows = await sheet.getRows();
+    const assetId = String(event.assetId || '').trim();
+    const existing = rows.find(row => String(row.get(getH(headers, 'Asset_ID')) || '').trim().toLowerCase() === assetId.toLowerCase() && String(row.get(getH(headers, 'Status')) || '').trim().toUpperCase() === 'ACTIVE');
+    const values = {
+      [getH(headers, 'QR_ID')]: existing?.get(getH(headers, 'QR_ID')) || `QR-${randomBytes(8).toString('hex').toUpperCase()}`,
+      [getH(headers, 'Asset_ID')]: assetId,
+      [getH(headers, 'QR_Value')]: `/assets/register?assetId=${encodeURIComponent(assetId)}`,
+      [getH(headers, 'QR_Version')]: 'PORTAL_LINK_V1',
+      [getH(headers, 'Created_By')]: event.createdBy || '',
+      [getH(headers, 'Created_At')]: formatIndiaTimestamp(),
+      [getH(headers, 'Status')]: 'ACTIVE'
+    };
+    if (existing) { existing.assign(values); await existing.save(); }
+    else {
+      const savedRow = await sheet.addRow(values);
+      cacheAppendedRow('assetqrregistry', savedRow);
+    }
+    return true;
+  } catch (error) {
+    logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset QR registry write failed', resource: 'Asset_QR_Registry', result: 'Warning', details: { assetId: event.assetId || '', error: String(error.message || error).slice(0, 300) } });
+    return false;
+  }
+}
+
+exports.registerAssetQrLabel = async (req, res) => {
+  try {
+    const assetId = String(req.params.assetId || '').trim();
+    const asset = (getAssetCache()?.assets || []).find(row => String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase() === assetId.toLowerCase());
+    if (!asset) return res.status(404).json({ success: false, message: 'That asset could not be found.' });
+    const branch = rowValue(asset, 'Branch') || '';
+    if (!canAccessAssetBranch(req, branch)) return res.status(403).json({ success: false, message: 'That asset is outside your branch access.' });
+    const saved = await appendAssetQrLabel({ assetId, createdBy: req.portalUser?.name || req.portalUser?.email || '' });
+    if (!saved) return res.status(503).json({ success: false, message: 'The QR registry could not be updated, so the label was not prepared.' });
+    await appendAssetActivity(req, { action: 'QR_LABEL_CREATED', entityType: 'Asset', entityId: assetId, branch, after: { qrVersion: 'PORTAL_LINK_V1' } });
+    refreshAssetCache();
+    return res.json({ success: true, message: 'The item label is ready.' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: `Could not create the QR label: ${error.message}` });
+  }
+};
+
+async function appendAssetNotification(event) {
+  const sheet = sheetByKey('assetnotificationlog');
+  if (!sheet) return;
+  try {
+    const headers = await ensureAssetHeaders(sheet, ['Notification_ID', 'Event_Type', 'Recipient', 'Subject', 'Delivery_Status', 'Provider', 'Queue_ID', 'Attempt_Count', 'Created_At', 'Last_Error', 'Related_Entity_ID', 'Branch']);
+    const savedRow = await sheet.addRow({
+      [getH(headers, 'Notification_ID')]: `NTF-${randomBytes(8).toString('hex').toUpperCase()}`,
+      [getH(headers, 'Event_Type')]: event.eventType || 'ASSET_SUMMARY',
+      [getH(headers, 'Recipient')]: event.recipient || '',
+      [getH(headers, 'Subject')]: event.subject || '',
+      [getH(headers, 'Delivery_Status')]: event.status || 'SENT',
+      [getH(headers, 'Provider')]: event.provider || '',
+      [getH(headers, 'Queue_ID')]: event.queueId || '',
+      [getH(headers, 'Attempt_Count')]: event.attemptCount || 0,
+      [getH(headers, 'Created_At')]: formatIndiaTimestamp(),
+      [getH(headers, 'Last_Error')]: event.error || '',
+      [getH(headers, 'Related_Entity_ID')]: event.entityId || '',
+      [getH(headers, 'Branch')]: event.branch || ''
+    });
+    cacheAppendedRow('assetnotificationlog', savedRow);
+  } catch (error) {
+    logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset mail ledger write failed', resource: 'Asset_Notification_Log', result: 'Warning', details: { eventType: event.eventType || '', error: String(error.message || error).slice(0, 300) } });
+  }
+}
 
 async function saveAssetPhoto(assetId, file, documentType, userName, fileUrl = '') {
   if (!file) return '';
@@ -67,6 +215,61 @@ const canAccessAssetBranch = (req, branch) => {
   return Boolean(target && assigned.some(value => normalize(value) === target));
 };
 
+function getVisibleAssetActivity(req, cache) {
+  const assetBranchById = new Map((cache.assets || []).map(row => [
+    String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase(), rowValue(row, 'Branch') || ''
+  ]));
+  const unified = (cache.assetactivitylog || []).map(row => ({
+    historyId: rowValue(row, 'Event_ID'),
+    assetId: rowValue(row, 'Entity_ID'),
+    entityType: rowValue(row, 'Entity_Type'),
+    action: rowValue(row, 'Action'),
+    branch: rowValue(row, 'Branch'),
+    performedBy: rowValue(row, 'Actor_Name'),
+    actorRole: rowValue(row, 'Actor_Role'),
+    timestamp: rowValue(row, 'Timestamp'),
+    oldValue: rowValue(row, 'Before_JSON'),
+    newValue: rowValue(row, 'After_JSON'),
+    remarks: rowValue(row, 'Remarks'),
+    requestId: rowValue(row, 'Request_ID'),
+    source: rowValue(row, 'Source'),
+    unified: true
+  }));
+  const legacy = (cache.history || []).map(row => {
+    const assetId = rowValue(row, 'Asset_ID');
+    return {
+      historyId: rowValue(row, 'History_ID'), assetId, action: rowValue(row, 'Action'),
+      entityType: 'Asset',
+      branch: rowValue(row, 'Branch') || assetBranchById.get(String(assetId || '').trim().toLowerCase()) || '',
+      performedBy: rowValue(row, 'Performed_By'), timestamp: rowValue(row, 'Timestamp'),
+      actorRole: '',
+      oldValue: rowValue(row, 'Old_Value'), newValue: rowValue(row, 'New_Value'),
+      remarks: rowValue(row, 'Remarks'), unified: false
+    };
+  });
+  const parseTime = value => {
+    const match = String(value || '').match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    if (match) return new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1]), Number(match[4] || 0), Number(match[5] || 0), Number(match[6] || 0)).getTime();
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const canonicalAction = value => String(value || '').trim().toUpperCase().replace('TRANSFER_DISPATCHED', 'TRANSFER_APPROVED');
+  const visibleUnified = unified.filter(item => canAccessAssetBranch(req, item.branch));
+  const visibleLegacy = legacy.filter(item => canAccessAssetBranch(req, item.branch));
+  const merged = [...visibleUnified];
+  for (const item of visibleLegacy) {
+    const itemTime = parseTime(item.timestamp);
+    const duplicate = visibleUnified.some(current => {
+      const sameRecord = canonicalAction(current.action) === canonicalAction(item.action)
+        && String(current.assetId || '').trim().toLowerCase() === String(item.assetId || '').trim().toLowerCase()
+        && normalize(current.branch) === normalize(item.branch);
+      return sameRecord && Math.abs(parseTime(current.timestamp) - itemTime) <= 10_000;
+    });
+    if (!duplicate) merged.push(item);
+  }
+  return merged.sort((left, right) => parseTime(right.timestamp) - parseTime(left.timestamp));
+}
+
 // =========================================================
 // 1. ASSET DASHBOARD ANALYTICS
 // =========================================================
@@ -77,6 +280,21 @@ exports.getAssetDashboardStats = async (req, res) => {
     const allowedAssetIds = new Set(assets.map(row => String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase()));
     const inventory = (cache.inventory || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'Branch')));
     const maintenance = (cache.maintenance || []).filter(row => allowedAssetIds.has(String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase()));
+    const transfers = (cache.transfers || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'From_Branch')));
+    const activity = getVisibleAssetActivity(req, cache);
+
+    const parseAssetDate = value => {
+      const raw = String(value || '').trim();
+      if (!raw) return null;
+      const localDate = raw.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+      if (localDate) {
+        const [, day, month, year, hour = '0', minute = '0', second = '0'] = localDate;
+        const parsed = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+        return Number.isNaN(parsed.getTime()) ? null : parsed;
+      }
+      const parsed = new Date(raw);
+      return Number.isNaN(parsed.getTime()) ? null : parsed;
+    };
 
     let totalAssets = 0;
     let totalValue = 0;
@@ -140,6 +358,28 @@ exports.getAssetDashboardStats = async (req, res) => {
       return (rd[k] || '').toUpperCase() === 'OPEN';
     }).length;
 
+    const monthFormatter = new Intl.DateTimeFormat('en-IN', { month: 'short' });
+    const now = new Date();
+    const activityTrend = Array.from({ length: 8 }, (_, index) => {
+      const month = new Date(now.getFullYear(), now.getMonth() - (7 - index), 1);
+      return { key: `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, '0')}`, month: monthFormatter.format(month), events: 0 };
+    });
+    const trendByMonth = new Map(activityTrend.map(item => [item.key, item]));
+    activity.forEach(item => {
+      const date = parseAssetDate(item.timestamp);
+      if (!date) return;
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const month = trendByMonth.get(key);
+      if (month) month.events += 1;
+    });
+    const recentActivity = activity
+      .map(item => ({ ...item, _date: parseAssetDate(item.timestamp) }))
+      .sort((a, b) => (b._date?.getTime() || 0) - (a._date?.getTime() || 0))
+      .slice(0, 8)
+      .map(({ _date, ...item }) => item);
+    const pendingApprovals = transfers.filter(row => String(rowValue(row, 'Status') || '').trim().toUpperCase() === 'PENDING').length;
+    const updatedAt = getAssetCacheUpdatedAt();
+
     res.json({
       success: true,
       stats: { 
@@ -151,11 +391,77 @@ exports.getAssetDashboardStats = async (req, res) => {
         branches: formattedBranches, 
         categories: formattedCategories, 
         lowStock, 
-        activeMaintenance 
+        activeMaintenance,
+        pendingApprovals,
+        activityTrend,
+        recentActivity,
+        updatedAt
       }
     });
   } catch (err) { 
     res.status(500).json({ success: false, message: err.message }); 
+  }
+};
+
+exports.sendAssetSummaryEmail = async (req, res) => {
+  try {
+    const recipient = String(req.portalUser?.email || '').trim().toLowerCase();
+    if (!recipient) return res.status(400).json({ success: false, message: 'Your portal account does not have an email address.' });
+    const cache = getAssetCache();
+    const assets = (cache.assets || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'Branch')));
+    const inventory = (cache.inventory || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'Branch')));
+    const transfers = (cache.transfers || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'From_Branch')));
+    const assigned = assets.filter(row => String(rowValue(row, 'Status') || '').toUpperCase() === 'ASSIGNED').length;
+    const available = assets.filter(row => String(rowValue(row, 'Status') || '').toUpperCase() === 'AVAILABLE').length;
+    const pendingTransfers = transfers.filter(row => String(rowValue(row, 'Status') || '').toUpperCase() === 'PENDING').length;
+    const lowStock = inventory.filter(row => Number(rowValue(row, 'Quantity') || 0) <= Number(rowValue(row, 'Minimum_Quantity') || 0)).length;
+    const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
+    const branchLabel = String(req.portalUser?.sittingBranch || 'your assigned branches');
+    const subject = `Your IPCS asset operations summary · ${new Date().toLocaleDateString('en-IN')}`;
+    if (String(process.env.ASSET_DEMO_MODE || '').toLowerCase() === 'true') {
+      await appendAssetNotification({ eventType: 'ASSET_SUMMARY', recipient, subject, status: 'PREVIEW_ONLY', provider: 'demo-mode', branch: branchLabel });
+      return res.json({ success: true, status: 'PREVIEW_ONLY', message: 'Demo mode is on, so no email was sent. The report request was logged as a preview.' });
+    }
+    const mail = await sendIPCSMail({
+      to: recipient,
+      subject,
+      text: `Asset summary for ${branchLabel}: ${assets.length} tracked items, ${assigned} assigned, ${available} available, ${pendingTransfers} pending transfers, ${lowStock} low-stock alerts.`,
+      html: `<div style="font-family:Arial,sans-serif;color:#17253a;max-width:620px;margin:auto"><div style="padding:22px 24px;background:#10283b;color:#eaf6ff;border-radius:14px 14px 0 0"><small style="letter-spacing:2px;color:#7ee7d4">IPCS ASSET OPERATIONS</small><h1 style="font-size:23px;margin:9px 0 4px">Asset summary</h1><p style="margin:0;color:#b3c7da">${escapeHtml(branchLabel)} · ${escapeHtml(new Date().toLocaleDateString('en-IN'))}</p></div><div style="padding:22px 24px;background:#f5f9fc;border:1px solid #d9e5ed;border-top:0;border-radius:0 0 14px 14px"><table style="width:100%;border-collapse:collapse"><tbody>${[['Tracked items', assets.length], ['Assigned', assigned], ['Available', available], ['Pending transfers', pendingTransfers], ['Low stock alerts', lowStock]].map(([label, value]) => `<tr><td style="padding:12px;border-bottom:1px solid #dce6ed">${label}</td><td style="padding:12px;border-bottom:1px solid #dce6ed;text-align:right;font-weight:bold">${value}</td></tr>`).join('')}</tbody></table><p style="font-size:12px;color:#73869b;margin:18px 0 0">This report was requested from the IPCS Asset Management portal.</p></div></div>`
+    }, { category: 'portal', logDetails: { name: req.portalUser.name || '', email: recipient, type: 'asset-summary' }, context: { source: 'asset-management', branch: branchLabel } });
+    await appendAssetNotification({ eventType: 'ASSET_SUMMARY', recipient, subject, status: mail.queued ? 'QUEUED' : 'SENT', provider: mail.provider || '', queueId: mail.queueId || '', branch: branchLabel });
+    return res.json({ success: true, status: mail.queued ? 'QUEUED' : 'SENT', message: mail.queued ? 'The report was added to the email retry queue.' : 'The asset summary was sent to your portal email.' });
+  } catch (err) {
+    return res.status(502).json({ success: false, message: `Could not send the asset summary: ${err.message}` });
+  }
+};
+
+exports.getAssetActivity = (req, res) => {
+  try {
+    const cache = getAssetCache();
+    const activity = getVisibleAssetActivity(req, cache).slice(0, 250);
+    return res.json({ success: true, activity, count: activity.length });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+};
+
+exports.getAssetNotifications = (req, res) => {
+  try {
+    const cache = getAssetCache();
+    const userEmail = String(req.portalUser?.email || '').trim().toLowerCase();
+    const isAdmin = isAssetAdmin(req);
+    const notifications = (cache.assetnotificationlog || []).map(row => ({
+      notificationId: rowValue(row, 'Notification_ID'), eventType: rowValue(row, 'Event_Type'),
+      recipient: rowValue(row, 'Recipient'), subject: rowValue(row, 'Subject'),
+      status: rowValue(row, 'Delivery_Status'), provider: rowValue(row, 'Provider'),
+      queueId: rowValue(row, 'Queue_ID'), attempts: rowValue(row, 'Attempt_Count'),
+      timestamp: rowValue(row, 'Created_At'), lastError: rowValue(row, 'Last_Error'),
+      entityId: rowValue(row, 'Related_Entity_ID'), branch: rowValue(row, 'Branch')
+    })).filter(item => (isAdmin || String(item.recipient || '').trim().toLowerCase() === userEmail)
+      && (!item.branch || canAccessAssetBranch(req, item.branch))).reverse().slice(0, 100);
+    return res.json({ success: true, notifications });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -165,16 +471,17 @@ exports.getAssetDashboardStats = async (req, res) => {
 exports.getRegistrationData = async (req, res) => {
   try {
     const cache = getAssetCache();
-    const gCache = getCache(); // The Main Placement Portal Cache
-
-    // 🚨 FIXED: Bulletproof extractor for the Branches sheet
-    let branches = [];
-    if (gCache && gCache.branches) {
-       branches = gCache.branches.map(r => {
-         if (typeof r.get === 'function') return r.get('Branch');
-         if (r._rawData && r._rawData.length > 2) return r._rawData[2]; // Fallback to column C
-         return null;
-       }).filter(Boolean);
+    const gCache = getCache();
+    // Prefer the Asset Management workbook's own branch list. Use the portal's
+    // branch directory only as a compatibility fallback for older asset books.
+    let branches = (cache.branches || []).map(row => rowValue(row, 'Branch_Name') || rowValue(row, 'Branch') || rowValue(row, 'Name'))
+      .filter(Boolean);
+    if (!branches.length && gCache?.branches) {
+      branches = gCache.branches.map(row => {
+        if (typeof row.get === 'function') return row.get('Branch') || row.get('Branch_Name') || row.get('Name');
+        if (row._rawData && row._rawData.length > 2) return row._rawData[2];
+        return null;
+      }).filter(Boolean);
     }
 
     // Deduplicate and sort branches alphabetically
@@ -289,6 +596,11 @@ exports.addAsset = async (req, res) => {
          [getH(hH, 'Remarks')]: 'Initial Asset Registration'
       });
     }
+
+    await Promise.all([
+      appendAssetQrLabel({ assetId, createdBy: userName }),
+      appendAssetActivity(req, { action: 'ASSET_REGISTERED', entityType: 'Asset', entityId: assetId, branch: asset.branch, after: { name: asset.name, category: asset.category, status: 'AVAILABLE' } })
+    ]);
 
     refreshAssetCache();
     res.json({ success: true, assetId, photoUrl, message: "Asset successfully registered!" });
@@ -571,6 +883,8 @@ exports.assignAsset = async (req, res) => {
       });
     }
 
+    await appendAssetActivity(req, { action: isReassignment ? 'ASSET_REASSIGNED' : 'ASSET_ASSIGNED', entityType: 'Asset', entityId: assetId, branch: assetBranch, before: { status: isReassignment ? 'ASSIGNED' : 'AVAILABLE' }, after: { status: 'ASSIGNED', employeeName } });
+
     refreshAssetCache();
     res.json({ success: true, message: `Asset successfully ${isReassignment ? 'reassigned' : 'assigned'} to ${employeeName}.` });
   } catch (err) {
@@ -660,6 +974,8 @@ exports.returnAsset = async (req, res) => {
       });
     }
 
+    await appendAssetActivity(req, { action: 'ASSET_RETURNED', entityType: 'Asset', entityId: assetId, branch: assetBranch, before: { status: 'ASSIGNED' }, after: { status: targetStatus, condition: conditionOnReturn || 'GOOD' } });
+
     refreshAssetCache();
     res.json({ success: true, message: "Asset successfully returned and logged!" });
   } catch (err) {
@@ -743,6 +1059,8 @@ exports.addInventory = async (req, res) => {
         [getH(tH, 'Date')]: timestamp 
       });
     }
+
+    await appendAssetActivity(req, { action: 'INVENTORY_CREATED', entityType: 'Inventory', entityId: itemId, branch: item.branch, after: { name: item.name, quantity, minimumQuantity } });
     
     refreshAssetCache(); 
     res.json({ success: true, message: "Item added to inventory!" });
@@ -807,6 +1125,8 @@ exports.updateStock = async (req, res) => {
         [getH(tH, 'Date')]: formatIndiaTimestamp()
       });
     }
+
+    await appendAssetActivity(req, { action: `STOCK_${normalizedAction}`, entityType: 'Inventory', entityId: itemId, branch: itemRow.get(getH(iH, 'Branch')) || '', before: { quantity: currentQty }, after: { quantity: newQty, minimumQuantity: minQty } });
     
     refreshAssetCache(); 
     res.json({ success: true, message: `Stock successfully updated. New Quantity: ${newQty}` });
@@ -900,6 +1220,11 @@ exports.requestTransfer = async (req, res) => {
     });
     assetRow.assign({ [getH(aH, 'Status')]: 'TRANSFER_PENDING' });
     await assetRow.save();
+
+    await Promise.all([
+      appendAssetApproval({ requestId: transferId, requestType: 'TRANSFER', assetId, branch: currentBranch, requestedBy: userName || '', requestedAt: timestamp, decision: 'PENDING', reason: remarks || '' }),
+      appendAssetActivity(req, { action: 'TRANSFER_REQUESTED', entityType: 'Transfer', entityId: assetId, branch: currentBranch, before: { status: 'AVAILABLE', branch: currentBranch }, after: { status: 'TRANSFER_PENDING', destination: String(toBranch).trim(), transferId } })
+    ]);
     
     refreshAssetCache(); 
     res.status(201).json({ success: true, transferId, message: 'Transfer request submitted for approval.' });
@@ -933,6 +1258,8 @@ exports.approveTransfer = async (req, res) => {
       return header ? transferValues[header] : '';
     };
     const assetId = String(readTransfer('assetid') || '').trim();
+    const fromBranch = String(readTransfer('frombranch') || '').trim();
+    if (!canAccessAssetBranch(req, fromBranch)) return res.status(403).json({ success: false, message: 'Only the source branch manager or a system administrator can approve this transfer.' });
     const assetSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'));
     if (!assetSheet) return res.status(503).json({ success: false, message: 'Asset register is unavailable.' });
     const aRows = await assetSheet.getRows();
@@ -967,10 +1294,75 @@ exports.approveTransfer = async (req, res) => {
       });
     }
 
+    await Promise.all([
+      updateAssetApproval({ requestId: transferId, decision: 'APPROVED', decidedBy: userName || '', decidedAt: timestamp, reason: '' }),
+      appendAssetActivity(req, { action: 'TRANSFER_APPROVED', entityType: 'Transfer', entityId: assetId, branch: fromBranch, before: { status: 'PENDING' }, after: { status: 'IN_TRANSIT', transferId, destination: readTransfer('tobranch') } })
+    ]);
+
     refreshAssetCache(); 
     res.json({ success: true, message: 'Transfer dispatched. The destination branch must confirm receipt.' });
   } catch (err) { 
     res.status(500).json({ success: false, message: err.message }); 
+  }
+};
+
+exports.rejectTransfer = async (req, res) => {
+  try {
+    const { transferId, userName, reason } = req.body || {};
+    if (!transferId || !String(reason || '').trim()) return res.status(400).json({ success: false, message: 'Transfer ID and rejection reason are required.' });
+    const transferSheet = sheetByKey('transfers');
+    const assetSheet = sheetByKey('assets');
+    if (!transferSheet || !assetSheet) return res.status(503).json({ success: false, message: 'Transfer or asset register is unavailable.' });
+    const tH = transferSheet.headerValues;
+    const transferRows = await transferSheet.getRows();
+    const transfer = transferRows.find(row => String(row.get(getH(tH, 'Transfer_ID')) || '').trim().toLowerCase() === String(transferId).trim().toLowerCase());
+    if (!transfer) return res.status(404).json({ success: false, message: 'Transfer request not found.' });
+    if (String(transfer.get(getH(tH, 'Status')) || '').trim().toUpperCase() !== 'PENDING') return res.status(409).json({ success: false, message: 'Only pending transfer requests can be rejected.' });
+    const fromBranch = String(transfer.get(getH(tH, 'From_Branch')) || '').trim();
+    if (!canAccessAssetBranch(req, fromBranch)) return res.status(403).json({ success: false, message: 'Only the source branch manager or a system administrator can reject this transfer.' });
+    const assetId = String(transfer.get(getH(tH, 'Asset_ID')) || '').trim();
+    const aH = assetSheet.headerValues;
+    const assetRows = await assetSheet.getRows();
+    const assetRow = assetRows.find(row => String(row.get(getH(aH, 'Asset_ID')) || '').trim().toLowerCase() === assetId.toLowerCase());
+    if (!assetRow) return res.status(404).json({ success: false, message: 'Transfer asset no longer exists.' });
+    if (String(assetRow.get(getH(aH, 'Status')) || '').trim().toUpperCase() !== 'TRANSFER_PENDING') return res.status(409).json({ success: false, message: 'Asset is no longer awaiting transfer.' });
+    const timestamp = formatIndiaTimestamp();
+    const statusHeader = getH(tH, 'Status');
+    const remarksHeader = getH(tH, 'Remarks');
+    const previousRemarks = String(transfer.get(remarksHeader) || '').trim();
+    const rejectionHeader = getOptionalH(tH, 'Rejected_By');
+    const rejectionAtHeader = getOptionalH(tH, 'Rejected_At');
+    const reasonHeader = getOptionalH(tH, 'Rejection_Reason');
+    const rejectionUpdate = {
+      [statusHeader]: 'REJECTED',
+      [remarksHeader]: [previousRemarks, `Rejected by ${userName || 'asset manager'}: ${String(reason).trim()}`].filter(Boolean).join(' | ')
+    };
+    if (rejectionHeader) rejectionUpdate[rejectionHeader] = userName || '';
+    if (rejectionAtHeader) rejectionUpdate[rejectionAtHeader] = timestamp;
+    if (reasonHeader) rejectionUpdate[reasonHeader] = String(reason).trim();
+    transfer.assign(rejectionUpdate);
+    await transfer.save();
+    assetRow.assign({ [getH(aH, 'Status')]: 'AVAILABLE' });
+    await assetRow.save();
+    const historySheet = sheetByKey('history');
+    if (historySheet) {
+      const h = historySheet.headerValues;
+      await historySheet.addRow({
+        [getH(h, 'History_ID')]: `HIS-${Date.now()}`, [getH(h, 'Asset_ID')]: assetId,
+        [getH(h, 'Action')]: 'TRANSFER_REJECTED', [getH(h, 'Old_Value')]: 'TRANSFER_PENDING',
+        [getH(h, 'New_Value')]: 'AVAILABLE', [getH(h, 'Performed_By')]: userName || '',
+        [getH(h, 'Branch')]: fromBranch, [getH(h, 'Timestamp')]: timestamp,
+        [getH(h, 'Remarks')]: `Transfer ${transferId} rejected: ${String(reason).trim()}`
+      });
+    }
+    await Promise.all([
+      updateAssetApproval({ requestId: transferId, decision: 'REJECTED', decidedBy: userName || '', decidedAt: timestamp, reason: String(reason).trim() }),
+      appendAssetActivity(req, { action: 'TRANSFER_REJECTED', entityType: 'Transfer', entityId: assetId, branch: fromBranch, before: { status: 'PENDING' }, after: { status: 'REJECTED', transferId, reason: String(reason).trim() } })
+    ]);
+    refreshAssetCache();
+    return res.json({ success: true, message: 'Transfer request rejected and the asset is available again.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
   }
 };
 
@@ -1026,6 +1418,7 @@ exports.receiveTransfer = async (req, res) => {
         [getH(h, 'Timestamp')]: timestamp, [getH(h, 'Remarks')]: `Transfer ${transferId} received. ${remarks || ''}`
       });
     }
+    await appendAssetActivity(req, { action: 'TRANSFER_RECEIVED', entityType: 'Transfer', entityId: assetId, branch: destination, before: { status: 'IN_TRANSIT' }, after: { status: 'COMPLETED', branch: destination, transferId } });
     refreshAssetCache();
     res.json({ success: true, message: 'Receipt confirmed and asset branch updated.' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -1096,6 +1489,8 @@ exports.reportMaintenance = async (req, res) => {
     assetRow.assign({ [getH(aH, 'Status')]: 'UNDER_MAINTENANCE' });
     await assetRow.save();
 
+    await appendAssetActivity(req, { action: 'MAINTENANCE_REPORTED', entityType: 'Maintenance', entityId: ticketValues[getH(mH, 'Maintenance_ID')], branch: assetRow.get(getH(aH, 'Branch')) || '', before: { status: previousStatus }, after: { status: 'OPEN', issue: String(issue).trim(), assetId } });
+
     refreshAssetCache();
     res.status(201).json({ success: true, message: 'Maintenance ticket created.' });
   } catch (err) {
@@ -1137,6 +1532,8 @@ exports.resolveMaintenance = async (req, res) => {
     await mRow.save();
     assetRow.assign({ [getH(aH, 'Status')]: previousStatus === 'ASSIGNED' ? 'ASSIGNED' : 'AVAILABLE' });
     await assetRow.save();
+
+    await appendAssetActivity(req, { action: 'MAINTENANCE_COMPLETED', entityType: 'Maintenance', entityId: maintenanceId, branch: assetRow.get(getH(aH, 'Branch')) || '', before: { status: 'OPEN' }, after: { status: 'COMPLETED', cost: Number(cost), assetStatus: previousStatus === 'ASSIGNED' ? 'ASSIGNED' : 'AVAILABLE' } });
 
     refreshAssetCache();
     res.json({ success: true, message: 'Maintenance completed and asset status restored.' });
@@ -1349,6 +1746,8 @@ exports.disposeAsset = async (req, res) => {
        [getH(hH, 'Timestamp')]: timestamp,
        [getH(hH, 'Remarks')]: [`Disposal ${disposalId}; method: ${cleanMethod} | reason: ${cleanReason}`, String(remarks || '').trim()].filter(Boolean).join(' | ')
     });
+
+    await appendAssetActivity(req, { action: 'ASSET_DISPOSED', entityType: 'Disposal', entityId: cleanAssetId, branch: assetRow.get(getH(aH, 'Branch')) || '', before: { status: oldStatus }, after: { status: 'DISPOSED', disposalId, reason: cleanReason, method: cleanMethod, value: disposalValue } });
 
     refreshAssetCache();
     res.json({ success: true, disposalId, disposedDate: timestamp, message: "Asset has been permanently disposed." });

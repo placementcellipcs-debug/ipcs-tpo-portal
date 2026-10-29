@@ -330,6 +330,9 @@ const requireSession = (policy = 'portal') => (req, res, next) => {
   req.portalUser = user;
   if (req.body && typeof req.body === 'object' && !Array.isArray(req.body)) {
     req.body = { ...req.body, actorName: user.name, userEmail: user.email, currentUserEmail: user.email };
+    if (String(req.originalUrl || '').split('?')[0].startsWith('/api/v1/assets/')) {
+      req.body = { ...req.body, userName: user.name, actorName: user.name, userEmail: user.email };
+    }
     if (req.baseUrl.startsWith('/api/tpo/')) {
       req.body = { ...req.body, userName: user.name, assignedBranchesArray: user.assignedBranchesArray, role: user.role, assignedCourse: user.assignedCourse, department: user.department };
     }
@@ -580,22 +583,27 @@ app.post('/api/tpo/activity', requireSession('portal'), controllers.updateTpoAct
 // 🚨 ASSET MANAGEMENT (ERP) ROUTES
 // ---------------------------------------------------------
 app.get('/api/v1/assets/form-data', assetControllers.getRegistrationData);
-app.post('/api/v1/assets/add', requireSession('asset-admin'), upload.single('photo'), assetControllers.addAsset);
+app.post('/api/v1/assets/add', requireSession('asset-operations'), upload.single('photo'), assetControllers.addAsset);
 app.get('/api/v1/assets', assetControllers.getAssets);
 app.get('/api/v1/assets/:assetId/details', assetControllers.getAssetDetails);
-app.post('/api/v1/assets/assign', requireSession('asset-admin'), upload.fields([{ name: 'photo', maxCount: 1 }, { name: 'returnPhoto', maxCount: 1 }]), assetControllers.assignAsset);
-app.post('/api/v1/assets/return', requireSession('asset-admin'), upload.single('photo'), assetControllers.returnAsset);
+app.post('/api/v1/assets/:assetId/qr-label', assetControllers.registerAssetQrLabel);
+app.post('/api/v1/assets/assign', requireSession('asset-operations'), upload.fields([{ name: 'photo', maxCount: 1 }, { name: 'returnPhoto', maxCount: 1 }]), assetControllers.assignAsset);
+app.post('/api/v1/assets/return', requireSession('asset-operations'), upload.single('photo'), assetControllers.returnAsset);
 app.get('/api/v1/assets/dashboard', assetControllers.getAssetDashboardStats);
+app.get('/api/v1/assets/activity', assetControllers.getAssetActivity);
+app.get('/api/v1/assets/notifications', assetControllers.getAssetNotifications);
 
 // 🚨 INVENTORY, TRANSFERS, AND MAINTENANCE ROUTES
 app.get('/api/v1/assets/inventory', assetControllers.getInventory);
-app.post('/api/v1/assets/inventory/add', assetControllers.addInventory);
-app.post('/api/v1/assets/inventory/stock', assetControllers.updateStock);
+app.post('/api/v1/assets/inventory/add', requireSession('asset-operations'), assetControllers.addInventory);
+app.post('/api/v1/assets/inventory/stock', requireSession('asset-operations'), assetControllers.updateStock);
 
 app.get('/api/v1/assets/transfers', assetControllers.getTransfers);
-app.post('/api/v1/assets/transfers/request', assetControllers.requestTransfer);
-app.post('/api/v1/assets/transfers/approve', requireSession('portal-admin'), assetControllers.approveTransfer);
-app.post('/api/v1/assets/transfers/receive', assetControllers.receiveTransfer);
+app.post('/api/v1/assets/transfers/request', requireSession('asset-operations'), assetControllers.requestTransfer);
+app.post('/api/v1/assets/transfers/approve', requireSession('asset-operations'), assetControllers.approveTransfer);
+app.post('/api/v1/assets/transfers/reject', requireSession('asset-operations'), assetControllers.rejectTransfer);
+app.post('/api/v1/assets/transfers/receive', requireSession('asset-operations'), assetControllers.receiveTransfer);
+app.post('/api/v1/assets/notifications/summary', assetControllers.sendAssetSummaryEmail);
 
 app.get('/api/v1/assets/maintenance', assetControllers.getMaintenance);
 app.post('/api/v1/assets/maintenance/report', assetControllers.reportMaintenance);
@@ -609,7 +617,7 @@ app.post('/api/v1/assets/config/vendor', requireSession('asset-admin'), assetCon
 
 // 🚨 ASSET DOCUMENTS & DISPOSAL
 app.post('/api/v1/assets/documents/upload', upload.single('file'), assetControllers.uploadAssetDocument);
-app.post('/api/v1/assets/dispose', requireSession('asset-admin'), assetControllers.disposeAsset);
+app.post('/api/v1/assets/dispose', requireSession('asset-operations'), assetControllers.disposeAsset);
 
 // ---------------------------------------------------------
 // CREATIVE & DESIGN MANAGEMENT 

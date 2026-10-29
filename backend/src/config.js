@@ -670,27 +670,29 @@ async function performCacheRefresh() {
       getSheetFuzzy("StudyMaterials"), getSheetFuzzy("TechQuestions"), getSheetFuzzy("TechResults"),
       getSheetFuzzy("AptitudeQuestions"), getSheetFuzzy("AptitudeResults"), getSheetFuzzy("TalentinoQuestions"), getSheetFuzzy("TalentinoResults"),
       getSheetFuzzy("Courses"), getSheetFuzzy("DriveRegistration"), getSheetFuzzy("Contact"), getSheetFuzzy("User"), getSheetFuzzy("Branches"), getSheetFuzzy("Mail"),
-      doc.sheetsByTitle['Trainer/TL_Log'] || getSheetFuzzy("TrainerTLLog"), getSheetFuzzy("security"), getSheetFuzzy("TPOStats"), placedStudentsSheet
+      doc.sheetsByTitle['Trainer/TL_Log'] || getSheetFuzzy("TrainerTLLog"), getSheetFuzzy("security"), getSheetFuzzy("TPOStats"), placedStudentsSheet,
+      getSheetFuzzy("HiringInquiries")
     ];
 
     const cacheFields = [
       'students', 'applications', 'vacancies', 'events', 'issues', 'tSched', 'tAtt', 'clients', 'tpoLogs',
       'materials', 'techQuestions', 'techResults', 'aptQuestions', 'aptResults', 'talQuestions', 'talResults',
-      'coursesRows', 'drives', 'contacts', 'users', 'branches', 'mails', 'trainerLogs', 'securityLogs', 'tpoStats', 'placedStudents'
+      'coursesRows', 'drives', 'contacts', 'users', 'branches', 'mails', 'trainerLogs', 'securityLogs', 'tpoStats', 'placedStudents', 'hiringInquiries'
     ];
     const emptyCache = {
       students: [], applications: [], vacancies: [], events: [], issues: [], tSched: [], tAtt: [], clients: [],
       tpoLogs: [], materials: [], techQuestions: [], techResults: [], aptQuestions: [], aptResults: [],
       talQuestions: [], talResults: [], coursesRows: [], drives: [], contacts: [], users: [], branches: [],
-      mails: [], trainerLogs: [], securityLogs: [], tpoStats: [], placedStudents: [], coursesDict: {}
+      mails: [], trainerLogs: [], securityLogs: [], tpoStats: [], placedStudents: [], hiringInquiries: [], coursesDict: {}
     };
     const previousCache = globalCache || {};
     const cacheFailedSheets = [];
+    const optionalCacheFields = new Set(['hiringInquiries']);
     const fetchedData = new Array(sheetsToFetch.length);
     const groupedIndexes = new Map();
     sheetsToFetch.forEach((sheet, index) => {
       if (!sheet) {
-        cacheFailedSheets.push(cacheFields[index]);
+        if (!optionalCacheFields.has(cacheFields[index])) cacheFailedSheets.push(cacheFields[index]);
         fetchedData[index] = previousCache[cacheFields[index]] || emptyCache[cacheFields[index]];
         return;
       }
@@ -783,6 +785,7 @@ async function performCacheRefresh() {
     const securityRows = fetchedData[23] || [];
     const tpoStatsRows = fetchedData[24] || [];
     const placedStudentsRows = fetchedData[25] || [];
+    const hiringInquiryRows = fetchedData[26] || previousCache.hiringInquiries || [];
     // Keep timed cache refreshes read-only for Placed_Students. A full-sheet
     // clear/rebuild from one cached TPO_Log read could erase existing rows if
     // that source read is incomplete. Portal placement/status writes still
@@ -825,6 +828,7 @@ async function performCacheRefresh() {
       securityLogs: securityRows,
       tpoStats: tpoStatsRows,
       placedStudents: placedStudentsRows,
+      hiringInquiries: hiringInquiryRows,
       authCacheReady: true,
       authSheetsHealthy: globalCache.authSheetsHealthy,
       cacheSheetHealth,

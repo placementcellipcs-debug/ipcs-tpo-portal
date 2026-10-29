@@ -19,6 +19,7 @@ const getPolicyDenial = (user, { policy = 'portal', method = '', path = '', base
 
   if (policy === 'assets' && !admin && !isBranchManager(role) && !hasAssetAccess) return deny('Asset Management is not available for this role.');
   if (policy === 'asset-admin' && !admin && !hasAssetAccess) return deny('Asset manager access is required for this action.');
+  if (policy === 'asset-operations' && !admin && !isBranchManager(role) && !hasAssetAccess) return deny('Asset manager or branch manager access is required for this action.');
   if (policy === 'portal-admin' && !admin) return deny('System administrator access is required for this action.');
   if (policy === 'hiring-inquiries' && String(user?.email || '').trim().toLowerCase() !== 'gifty@ipcsglobal.com') return deny('Only Gifty can view and assign company hiring inquiries.');
   if (policy === 'placement-drive' && !admin && !role.includes('ADMIN') && !isBranchManager(role) && !role.includes('TPO') && !role.includes('PLACEMENT OFFICER')) return deny('Placement Drives are available only to Placement Officers, administrators, and Branch Managers.');

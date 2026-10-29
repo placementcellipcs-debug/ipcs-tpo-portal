@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, ArrowsLeftRight, Barcode, Buildings, Camera, CheckCircle, CircleNotch, ClockCounterClockwise, Cube, Image as ImageIcon, MagnifyingGlass, MapPinLine, QrCode, UserCheck, Wrench, X } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
@@ -44,9 +44,13 @@ export default function AssetList() {
   const user = useMemo(() => readUser(), []);
   const role = String(user.role || '').toUpperCase();
   const isGlobalAdmin = String(user.accessType || '').toLowerCase() === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
-  const canManage = isGlobalAdmin || role.includes('ASSET') || String(user.accessType || '').toLowerCase().includes('asset');
+  const isBranchManager = role === 'BM' || role.includes('BRANCH MANAGER');
+  const canManage = isGlobalAdmin || isBranchManager || role.includes('ASSET') || String(user.accessType || '').toLowerCase().includes('asset');
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const qrAssetId = searchParams.get('assetId') || '';
+  const qrHandled = useRef('');
   const assetView = ({ '/assets/register': 'register', '/assets/assignments': 'assignments', '/assets/retired': 'retired' })[location.pathname] || 'branches';
   const [assets, setAssets] = useState([]);
   const [dbData, setDbData] = useState({ branches: [], locations: [] });
@@ -144,6 +148,27 @@ export default function AssetList() {
       showToast(error.response?.data?.message || 'Could not load item details.');
     }
   };
+
+  const prepareQrLabel = async item => {
+    try {
+      const response = await axios.post(`${API_BASE}/api/v1/assets/${encodeURIComponent(item.assetId)}/qr-label`);
+      if (!response.data?.success) throw new Error(response.data?.message || 'Could not prepare the item label.');
+      setQrItem(item);
+    } catch (error) {
+      showToast(error.response?.data?.message || error.message || 'Could not prepare the item label.');
+    }
+  };
+
+  useEffect(() => {
+    if (loading || !qrAssetId || qrHandled.current === qrAssetId) return;
+    qrHandled.current = qrAssetId;
+    const match = assets.find(item => String(item.assetId || '').trim().toLowerCase() === qrAssetId.trim().toLowerCase());
+    if (match) void openDetails(match);
+    else showToast('That QR item is not in your permitted branch records.');
+    setSearchParams(params => { params.delete('assetId'); return params; }, { replace: true });
+  // The QR parameter is handled once after the permitted asset register loads.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [assets, loading, qrAssetId, setSearchParams]);
 
   const submitHandover = async event => {
     event.preventDefault();
@@ -323,7 +348,7 @@ export default function AssetList() {
                   <div className="asset-item-info"><div className="asset-item-code">{item.assetId}</div><h3>{item.name}</h3><p>{[item.brand, item.model].filter(Boolean).join(' · ') || item.subcategory || item.category}</p><div className="asset-condition"><span>Condition</span><b>{item.condition || 'GOOD'}</b></div></div>
                   <div className="asset-item-actions">
                     <button type="button" className="asset-icon-button" title="Item history and photos" onClick={() => openDetails(item)}><ImageIcon size={17} /></button>
-                    <button type="button" className="asset-icon-button" title="Print asset QR" onClick={() => setQrItem(item)}><QrCode size={17} /></button>
+                    <button type="button" className="asset-icon-button" title="Print asset QR" onClick={() => void prepareQrLabel(item)}><QrCode size={17} /></button>
                     {canManage && item.status === 'AVAILABLE' && <button type="button" className="asset-small-action" onClick={() => openAssignment(item)}><UserCheck size={16} /> Assign</button>}
                     {canManage && item.status === 'ASSIGNED' && <><button type="button" className="asset-small-action" onClick={() => openAssignment(item)}><ArrowsLeftRight size={16} /> Reassign</button><button type="button" className="asset-small-action return-action" onClick={() => openReturn(item)}><ArrowLeft size={16} /> Return</button></>}
                     {item.status === 'UNDER_MAINTENANCE' && <span className="asset-maintenance-tag"><Wrench size={14} /> Service</span>}
@@ -413,7 +438,7 @@ export default function AssetList() {
 
         {disposeItem && <Modal title="Dispose of asset" subtitle={`${disposeItem.name} · ${disposeItem.assetId}`} onClose={() => setDisposeItem(null)}><form className="asset-form" onSubmit={submitDisposal}><div className="asset-permanent-note">This permanently retires the item and records who approved the disposal.</div><label>Reason for disposal<input value={disposalForm.reason} onChange={event => setDisposalForm({ ...disposalForm, reason: event.target.value })} placeholder="End of useful life, damaged beyond repair…" required /></label><label>Disposal method<select value={disposalForm.method} onChange={event => setDisposalForm({ ...disposalForm, method: event.target.value })}><option>Recycling</option><option>Sale</option><option>Donation</option><option>Secure destruction</option><option>Other</option></select></label><label>Recovery value<input type="number" min="0" step="0.01" value={disposalForm.value} onChange={event => setDisposalForm({ ...disposalForm, value: event.target.value })} placeholder="0" /></label><label>Disposal notes<textarea rows="3" value={disposalForm.remarks} onChange={event => setDisposalForm({ ...disposalForm, remarks: event.target.value })} placeholder="Add a reference number or handover details" /></label><button className="asset-dispose-button form-submit" type="submit" disabled={busy}>{busy ? <CircleNotch size={18} className="ph-spin" /> : 'Confirm permanent disposal'}</button></form></Modal>}
 
-        {qrItem && <Modal title="Asset label" subtitle={qrItem.assetId} onClose={() => setQrItem(null)}><div className="asset-qr-card"><h3>{qrItem.name}</h3><img src={`https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(qrItem.assetId)}`} alt={`QR code for ${qrItem.assetId}`} /><p>{qrItem.branch} · {qrItem.location || 'Unassigned space'}</p><button type="button" className="asset-action-primary" onClick={() => window.print()}>Print label</button></div></Modal>}
+        {qrItem && <Modal title="Asset label" subtitle={qrItem.assetId} onClose={() => setQrItem(null)}><div className="asset-qr-card"><h3>{qrItem.name}</h3><img src={`https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(`${window.location.origin}/assets/register?assetId=${encodeURIComponent(qrItem.assetId)}`)}`} alt={`QR code for ${qrItem.assetId}`} /><p>{qrItem.branch} · {qrItem.location || 'Unassigned space'}</p><button type="button" className="asset-action-primary" onClick={() => window.print()}>Print label</button></div></Modal>}
       </main>
     </Layout>
   );

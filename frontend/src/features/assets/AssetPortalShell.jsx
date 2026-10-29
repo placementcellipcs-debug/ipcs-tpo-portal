@@ -1,23 +1,27 @@
 import { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, ArrowsLeftRight, Barcode, Buildings, CaretLeft, ChartBar,
-  ClockCounterClockwise, Cube, Gear, ListChecks, ListPlus, Package,
-  SignOut, UserCircle, UserCheck, Wrench, X
+  Pulse as Activity, ArrowLeft, ArrowsLeftRight, Barcode, Buildings, CaretLeft, ChartBar,
+  ClockCounterClockwise, Cube, EnvelopeSimple, Gear, ListChecks, ListPlus, Package,
+  QrCode, SignOut, UserCircle, UserCheck, Wrench, X, ClipboardText
 } from '@phosphor-icons/react';
 import './AssetPortalShell.css';
 
 const links = [
-  { label: 'Dashboard', to: '/assets/dashboard', icon: ChartBar, end: true },
-  { label: 'Branches & spaces', to: '/assets/branches', icon: Buildings },
-  { label: 'Item register', to: '/assets/register', icon: Barcode },
-  { label: 'Assignments', to: '/assets/assignments', icon: UserCheck },
-  { label: 'Retired items', to: '/assets/retired', icon: ClockCounterClockwise },
-  { label: 'Consumable stock', to: '/assets/inventory', icon: Package },
-  { label: 'Transfers', to: '/assets/transfers', icon: ArrowsLeftRight },
-  { label: 'Maintenance', to: '/assets/maintenance', icon: Wrench },
-  { label: 'Register an item', to: '/assets/add', icon: ListPlus, managerOnly: true },
-  { label: 'System settings', to: '/assets/settings', icon: Gear, adminOnly: true }
+  { label: 'Overview', to: '/assets/dashboard', icon: ChartBar, end: true, group: 'WORKSPACE' },
+  { label: 'Branch inventory', to: '/assets/branches', icon: Buildings, group: 'WORKSPACE' },
+  { label: 'Asset register', to: '/assets/register', icon: Barcode, group: 'WORKSPACE' },
+  { label: 'Assignments', to: '/assets/assignments', icon: UserCheck, group: 'WORKSPACE' },
+  { label: 'QR labels', to: '/assets/qr', icon: QrCode, group: 'TRACKING' },
+  { label: 'Approvals', to: '/assets/approvals', icon: ClipboardText, group: 'TRACKING' },
+  { label: 'Transfers', to: '/assets/transfers', icon: ArrowsLeftRight, group: 'TRACKING' },
+  { label: 'Activity history', to: '/assets/activity', icon: Activity, group: 'TRACKING' },
+  { label: 'Consumable stock', to: '/assets/inventory', icon: Package, group: 'OPERATIONS' },
+  { label: 'Maintenance', to: '/assets/maintenance', icon: Wrench, group: 'OPERATIONS' },
+  { label: 'Retired items', to: '/assets/retired', icon: ClockCounterClockwise, group: 'OPERATIONS' },
+  { label: 'Email reports', to: '/assets/mail', icon: EnvelopeSimple, group: 'OPERATIONS' },
+  { label: 'Register an item', to: '/assets/add', icon: ListPlus, managerOnly: true, group: 'ADMINISTRATION' },
+  { label: 'System settings', to: '/assets/settings', icon: Gear, adminOnly: true, group: 'ADMINISTRATION' }
 ];
 
 const readAccount = () => {
@@ -36,7 +40,8 @@ export default function AssetPortalShell({ children, user }) {
   const account = user || readAccount();
   const role = String(account.role || '').toUpperCase();
   const isAdmin = isAdminAccount(account);
-  const canManage = isAdmin || role.includes('ASSET') || String(account.accessType || '').toLowerCase().includes('asset');
+  const isBranchManager = role === 'BM' || role.includes('BRANCH MANAGER');
+  const canManage = isAdmin || isBranchManager || role.includes('ASSET') || String(account.accessType || '').toLowerCase().includes('asset');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const displayName = account.name || account.email || 'Staff member';
   const initials = displayName.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase();
@@ -62,14 +67,17 @@ export default function AssetPortalShell({ children, user }) {
           <span className="asset-portal-account-copy"><b>{displayName}</b><small>{account.role || 'Asset workspace'}</small></span>
         </div>
 
-        <span className="asset-portal-nav-label">ASSET WORKSPACE</span>
         <nav className="asset-portal-nav">
-          {links.filter(link => (!link.managerOnly || canManage) && (!link.adminOnly || isAdmin)).map(({ label, to, icon: Icon, end }) => (
-            <NavLink key={to} to={to} end={end} onClick={closeNav} className={({ isActive }) => `asset-portal-nav-link${isActive ? ' active' : ''}`}>
-              <Icon size={19} weight="duotone" /><span>{label}</span>
-              {to === '/assets/add' && <span className="asset-nav-add">+</span>}
-            </NavLink>
-          ))}
+          {['WORKSPACE', 'TRACKING', 'OPERATIONS', 'ADMINISTRATION'].map(group => {
+            const visibleLinks = links.filter(link => link.group === group && (!link.managerOnly || canManage) && (!link.adminOnly || isAdmin));
+            return visibleLinks.length ? <section className="asset-nav-group" key={group}>
+              <span className="asset-portal-nav-label">{group}</span>
+              {visibleLinks.map(({ label, to, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={closeNav} className={({ isActive }) => `asset-portal-nav-link${isActive ? ' active' : ''}`}>
+                <Icon size={19} weight="duotone" /><span>{label}</span>
+                {to === '/assets/add' && <span className="asset-nav-add">+</span>}
+              </NavLink>)}
+            </section> : null;
+          })}
         </nav>
 
         <div className="asset-portal-sidebar-footer">

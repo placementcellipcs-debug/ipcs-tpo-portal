@@ -5632,14 +5632,21 @@ exports.getHiringInquiryTpos = (_req, res) => {
   res.json({ success: true, tpos: getHiringTpoOptions() });
 };
 
-exports.getHiringInquiries = async (_req, res) => {
+exports.getHiringInquiries = (_req, res) => {
   try {
-    const sheet = await getHiringInquirySheet();
-    const inquiries = (await sheet.getRows()).map(toHiringInquiry).filter(item => item.inquiryId).reverse();
-    res.json({ success: true, inquiries });
+    const cache = getCache();
+    if (!cache?.cacheUpdatedAt || !Array.isArray(cache.hiringInquiries)) {
+      void refreshCache();
+      return res.status(503).json({ success: false, inquiries: [], message: 'Hiring inquiries are loading. Please refresh in a moment.' });
+    }
+    if (cache.cacheSheetHealth?.hiringInquiries === false && cache.hiringInquiries.length === 0) {
+      return res.status(503).json({ success: false, inquiries: [], message: 'Hiring inquiries are temporarily unavailable.' });
+    }
+    const inquiries = cache.hiringInquiries.map(toHiringInquiry).filter(item => item.inquiryId).reverse();
+    return res.json({ success: true, inquiries });
   } catch (error) {
     console.error('Could not load hiring inquiries:', error.message);
-    res.status(503).json({ success: false, inquiries: [], message: 'Hiring inquiries are temporarily unavailable.' });
+    return res.status(503).json({ success: false, inquiries: [], message: 'Hiring inquiries are temporarily unavailable.' });
   }
 };
 

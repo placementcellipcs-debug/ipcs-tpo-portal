@@ -13,11 +13,20 @@ const serviceAccountAuth = new JWT({
 
 const assetDoc = new GoogleSpreadsheet(process.env.ASSET_SPREADSHEET_ID || '17tEo324Xyfc3ku98hmsnKZDry4OgCt_hnUlK8hGtVXA', serviceAccountAuth);
 
+const managedOperationalSheets = [
+  { title: 'Asset_Approvals', headers: ['Approval_ID', 'Request_ID', 'Request_Type', 'Asset_ID', 'Branch', 'Requested_By', 'Requested_At', 'Decision', 'Decided_By', 'Decided_At', 'Reason'] },
+  { title: 'Asset_Notification_Log', headers: ['Notification_ID', 'Event_Type', 'Recipient', 'Subject', 'Delivery_Status', 'Provider', 'Queue_ID', 'Attempt_Count', 'Created_At', 'Last_Error', 'Related_Entity_ID', 'Branch'] },
+  { title: 'Asset_QR_Registry', headers: ['QR_ID', 'Asset_ID', 'QR_Value', 'QR_Version', 'Created_By', 'Created_At', 'Status'] },
+  { title: 'Asset_Activity_Log', headers: ['Event_ID', 'Timestamp', 'Actor_ID', 'Actor_Name', 'Actor_Email', 'Actor_Role', 'Branch', 'Action', 'Entity_Type', 'Entity_ID', 'Before_JSON', 'After_JSON', 'Source', 'Request_ID'] }
+];
+
 let assetCache = null;
+let assetCacheUpdatedAt = null;
 let isFetching = false;
 let refreshRequested = false;
 
 const getAssetCache = () => assetCache;
+const getAssetCacheUpdatedAt = () => assetCacheUpdatedAt;
 const isAssetCacheReady = () => assetCache !== null;
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -38,6 +47,22 @@ async function fetchAssetBatchWithRetry(sheetsApi, spreadsheetId, ranges, retrie
     }
   }
   return [];
+}
+
+async function ensureOperationalSheets() {
+  const normalizeTitle = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  for (const definition of managedOperationalSheets) {
+    const existing = assetDoc.sheetsByIndex.find(sheet => normalizeTitle(sheet.title) === normalizeTitle(definition.title));
+    if (existing) continue;
+    try {
+      await assetDoc.addSheet({ title: definition.title, headerValues: definition.headers });
+      console.log(`[ASSET SHEETS] Created empty operational tab ${definition.title}.`);
+      logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset operational tab created', resource: definition.title, result: 'Success', details: { columns: definition.headers.length, rowsSeeded: 0 } });
+    } catch (error) {
+      console.error(`[ASSET SHEETS] Could not create ${definition.title}: ${error.message}`);
+      logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset operational tab creation failed', resource: definition.title, result: 'Error', details: { error: String(error.message || error).slice(0, 400) } });
+    }
+  }
 }
 
 function rowsFromValues(sheet, values) {
@@ -73,6 +98,7 @@ async function refreshAssetCache() {
   logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Asset cache refresh started', resource: 'Asset Google Sheets cache', result: 'Started' });
   try {
     await assetDoc.loadInfo();
+    await ensureOperationalSheets();
     const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
     
     const getSheetFuzzy = (keyword) => {
@@ -84,7 +110,8 @@ async function refreshAssetCache() {
       'branches', 'users', 'employees', 'categories', 'subcategories', 
       'locations', 'assets', 'assetcustomdata', 'assignments', 'transfers', 
       'transferitems', 'maintenance', 'inventory', 'inventorytransactions', 
-      'vendors', 'documents', 'history', 'audits', 'audititems', 'disposals'
+      'vendors', 'documents', 'history', 'audits', 'audititems', 'disposals',
+      'assetapprovals', 'assetnotificationlog', 'assetqrregistry', 'assetactivitylog'
     ];
 
     const selectedSheets = sheetKeys.map(key => getSheetFuzzy(key));
@@ -104,6 +131,7 @@ async function refreshAssetCache() {
     });
 
     assetCache = fetchedData;
+    assetCacheUpdatedAt = new Date().toISOString();
     console.log("📦 Asset Management Cache successfully synced with Google Sheets!");
     logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Asset cache refresh completed', resource: 'Asset Google Sheets cache', result: 'Success', durationMs: Date.now() - startedAt, details: { sheetsRead: existingSheets.length } });
   } catch (err) { 
@@ -124,4 +152,4 @@ setTimeout(refreshAssetCache, 5000);
 // 🚨 Run every 6 minutes instead of 5 to further reduce overlap
 setInterval(refreshAssetCache, 360000); 
 
-module.exports = { assetDoc, getAssetCache, isAssetCacheReady, refreshAssetCache };
+module.exports = { assetDoc, getAssetCache, getAssetCacheUpdatedAt, isAssetCacheReady, refreshAssetCache };
