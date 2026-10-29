@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, ArrowsLeftRight, Barcode, Buildings, Camera, CheckCircle, CircleNotch, ClockCounterClockwise, Cube, Gear, Image as ImageIcon, MagnifyingGlass, MapPinLine, Package, Plus, QrCode, UserCheck, Wrench, X } from '@phosphor-icons/react';
+import { ArrowLeft, ArrowRight, ArrowsLeftRight, Barcode, Buildings, Camera, CheckCircle, CircleNotch, ClockCounterClockwise, Cube, Image as ImageIcon, MagnifyingGlass, MapPinLine, QrCode, UserCheck, Wrench, X } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
 import { formatPortalDate, formatPortalDateTime } from '../../utils/dateFormat';
@@ -252,24 +252,6 @@ export default function AssetList() {
         <details className="asset-howto"><summary>How asset tracking works</summary><div><span><b>1 · Register</b> Add an item with its branch, office space, vendor, purchase details, photo, and auto-generated ID/QR.</span><span><b>2 · Assign</b> Record the employee, issued condition, accessories, and a handover photo.</span><span><b>3 · Return</b> Record the new condition and return photo; items needing repair move to maintenance.</span><span><b>4 · Track or dispose</b> Open any item for its audit timeline, assignments, photos, vendor and warranty data. Retire available items with a reason and disposal method.</span></div></details>
 
         <div className="asset-workspace-layout">
-        <aside className="asset-module-sidebar" aria-label="Asset management sections">
-          <span className="asset-sidebar-label">INVENTORY</span>
-          <nav className="asset-primary-tabs" aria-label="Asset views">
-            <button type="button" className={assetView === 'branches' ? 'active' : ''} aria-current={assetView === 'branches' ? 'page' : undefined} onClick={() => { setSearch(''); navigate('/assets/branches'); }}><Buildings size={18} /> Branches &amp; spaces</button>
-            <button type="button" className={assetView === 'register' ? 'active' : ''} aria-current={assetView === 'register' ? 'page' : undefined} onClick={() => { setSearch(''); navigate('/assets/register'); }}><Barcode size={18} /> Item register <span>{assets.filter(item => item.status !== 'DISPOSED').length}</span></button>
-            <button type="button" className={assetView === 'assignments' ? 'active' : ''} aria-current={assetView === 'assignments' ? 'page' : undefined} onClick={() => { setSearch(''); navigate('/assets/assignments'); }}><UserCheck size={18} /> Assignments <span>{assets.filter(item => item.status === 'ASSIGNED').length}</span></button>
-            <button type="button" className={assetView === 'retired' ? 'active' : ''} aria-current={assetView === 'retired' ? 'page' : undefined} onClick={() => { setSearch(''); navigate('/assets/retired'); }}><ClockCounterClockwise size={18} /> Retired <span>{assets.filter(item => item.status === 'DISPOSED').length}</span></button>
-          </nav>
-          <span className="asset-sidebar-label asset-sidebar-tools">OPERATIONS</span>
-          <nav className="asset-primary-tabs" aria-label="Asset operations">
-            {canManage && <button type="button" className="asset-route-tab asset-create-tab" onClick={() => navigate('/assets/add')}><Plus size={18} /> Register new</button>}
-            <button type="button" className="asset-route-tab" onClick={() => navigate('/assets/transfers')}><ArrowsLeftRight size={18} /> Transfers</button>
-            <button type="button" className="asset-route-tab" onClick={() => navigate('/assets/maintenance')}><Wrench size={18} /> Maintenance</button>
-            <button type="button" className="asset-route-tab" onClick={() => navigate('/assets/inventory')}><Package size={18} /> Consumables</button>
-            {String(user.accessType || '').toLowerCase() === 'superadmin' && <button type="button" className="asset-route-tab" onClick={() => navigate('/assets/settings')}><Gear size={18} /> Vendors &amp; settings</button>}
-          </nav>
-          <div className="asset-sidebar-help"><b>Item lifecycle</b><span>Register, assign, document returns, and keep a complete service and disposal history.</span></div>
-        </aside>
         <section className="asset-module-content" aria-label={assetView === 'branches' ? 'Branch spaces and items' : assetView === 'assignments' ? 'Asset assignments' : assetView === 'retired' ? 'Retired assets' : 'Item register'}>
 
         <div className="asset-toolbar">

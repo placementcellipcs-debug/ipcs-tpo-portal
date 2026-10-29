@@ -1,5 +1,5 @@
 import { Component, lazy, Suspense } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { isPortalAdminAccount } from '../utils/roleAccess';
 import PortalAuditCapture from '../services/PortalAuditCapture';
 
@@ -56,8 +56,9 @@ const CorporateTrainingInquiries = lazyRoute(() => import('../features/admin/Cor
 const HiringInquiries = lazyRoute(() => import('../features/admin/HiringInquiries'));
 const PublicSitePage = lazyRoute(() => import('../features/public/PublicSitePage'));
 
-// ASSET MANAGEMENT (ERP)
+// Standalone Asset Management workspace
 const AssetList = lazyRoute(() => import('../features/assets/AssetList'));
+const AssetDashboard = lazyRoute(() => import('../features/assets/AssetDashboard'));
 const AddAsset = lazyRoute(() => import('../features/assets/AddAsset'));
 const Inventory = lazyRoute(() => import('../features/assets/Inventory'));
 const AssetTransfers = lazyRoute(() => import('../features/assets/AssetTransfers'));
@@ -92,6 +93,26 @@ function PlacementTrackerRoute() {
   const role = String(account.role || '').toUpperCase();
   const isTpo = role.includes('TPO') || role.includes('PLACEMENT OFFICER');
   return isTpo && !isPortalAdminAccount(account) ? <JobTracker /> : <Navigate to="/dashboard" replace />;
+}
+
+function AssetManagementAccessRoute() {
+  let account = null;
+  try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
+  if (!account) return <Navigate to="/login" replace />;
+
+  const role = String(account.role || '').trim().toUpperCase();
+  const hasAssetAccess = role.includes('ASSET') || String(account.accessType || '').toLowerCase().includes('asset');
+  const isBranchManager = role === 'BM' || role.includes('BRANCH MANAGER');
+  if (!isPortalAdminAccount(account) && !isBranchManager && !hasAssetAccess) return <Navigate to="/dashboard" replace />;
+  return <Outlet />;
+}
+
+function AssetManagerAccessRoute({ children }) {
+  let account = null;
+  try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
+  const role = String(account?.role || '').trim().toUpperCase();
+  const canManage = isPortalAdminAccount(account) || role.includes('ASSET') || String(account?.accessType || '').toLowerCase().includes('asset');
+  return canManage ? children : <Navigate to="/assets/branches" replace />;
 }
 
 function UnknownRoute() {
@@ -188,18 +209,21 @@ function RoutedContent() {
         <Route path="/admin/corporate-training" element={<CorporateTrainingInquiries />} />
         <Route path="/hiring-inquiries" element={<HiringInquiries />} />
         
-        {/* ASSET MANAGEMENT ERP ROUTES */}
-        <Route path="/assets" element={<AssetList />} />
-        <Route path="/assets/branches" element={<AssetList />} />
-        <Route path="/assets/register" element={<AssetList />} />
-        <Route path="/assets/assignments" element={<AssetList />} />
-        <Route path="/assets/retired" element={<AssetList />} />
-        <Route path="/assets/add" element={<AddAsset />} />
-        <Route path="/assets/inventory" element={<Inventory />} />
-        <Route path="/assets/transfers" element={<AssetTransfers />} />
-        <Route path="/assets/maintenance" element={<AssetMaintenance />} />
-        <Route path="/assets/dashboard" element={<Navigate to="/assets" replace />} />
-        <Route path="/assets/settings" element={<AssetSettings />} />
+        {/* Standalone asset workspace: its own navigation, page shell, and role gate. */}
+        <Route path="/assets" element={<AssetManagementAccessRoute />}>
+          <Route index element={<Navigate to="/assets/dashboard" replace />} />
+          <Route path="dashboard" element={<AssetDashboard />} />
+          <Route path="branches" element={<AssetList />} />
+          <Route path="register" element={<AssetList />} />
+          <Route path="assignments" element={<AssetList />} />
+          <Route path="retired" element={<AssetList />} />
+          <Route path="add" element={<AssetManagerAccessRoute><AddAsset /></AssetManagerAccessRoute>} />
+          <Route path="inventory" element={<Inventory />} />
+          <Route path="transfers" element={<AssetTransfers />} />
+          <Route path="maintenance" element={<AssetMaintenance />} />
+          <Route path="settings" element={<AssetSettings />} />
+          <Route path="*" element={<Navigate to="/assets/dashboard" replace />} />
+        </Route>
 
         {/* MODULAR MEDIA & DESIGN PORTAL ROUTES */}
         <Route path="/media/dashboard" element={<MediaTasks />} />

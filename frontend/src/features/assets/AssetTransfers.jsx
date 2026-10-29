@@ -3,7 +3,6 @@ import axios from 'axios';
 import { CircleNotch, ArrowsLeftRight, CheckCircle, WarningCircle, Truck } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
-import AssetWorkspaceNav from './AssetWorkspaceNav';
 import { formatPortalDateTime } from '../../utils/dateFormat';
 
 export default function AssetTransfers() {
@@ -97,7 +96,6 @@ export default function AssetTransfers() {
 
   return (
     <Layout>
-      <AssetWorkspaceNav />
       <div className="premium-dashboard-wrapper page-container" style={{ maxWidth: '1600px', margin: '0 auto', paddingBottom: '50px' }}>
         
         {/* TOAST NOTIFICATION */}

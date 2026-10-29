@@ -649,7 +649,6 @@
 }
 
 .pd-nav-item.active { background: var(--accent-primary) !important; box-shadow: 0 8px 20px -6px var(--accent-glow) !important; }
-.app-section-assets .pd-nav-item.active { background: linear-gradient(135deg,#b7791f,#d69e2e) !important; }
 .app-section-academic .pd-nav-item.active, .pd-nav-item.active-acad { background: linear-gradient(135deg,#07866c,#10b981) !important; }
 .app-section-media .pd-nav-item.active { background: linear-gradient(135deg,#7046c5,#9668eb) !important; }
 .app-section-partners .pd-nav-item.active { background: linear-gradient(135deg,#c04e6f,#e06b86) !important; }

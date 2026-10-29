@@ -6,15 +6,13 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
-import AssetWorkspaceNav from './AssetWorkspaceNav';
+import { isPortalAdminAccount } from '../../utils/roleAccess';
 
 export default function AssetSettings() {
   const tpoDataStr = localStorage.getItem('tpoData');
   const tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null;
-  const accessType = String(tpoData?.accessType || '').toLowerCase();
-  
-  // Strict Security: Only Super Admins can configure the ERP ecosystem
-  const isSuperAdmin = accessType === 'superadmin';
+  // Only portal administrators can configure the asset workspace.
+  const isSuperAdmin = isPortalAdminAccount(tpoData);
 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('categories');
@@ -85,18 +83,16 @@ export default function AssetSettings() {
 
   if (!isSuperAdmin) return (
     <Layout>
-      <AssetWorkspaceNav />
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '60vh', color: '#94a3b8', textAlign: 'center' }}>
         <Prohibit size={64} color="#ef4444" weight="fill" style={{ marginBottom: '20px' }} />
         <h2>Access Restricted</h2>
-        <p>Only Super Admins can configure the master ERP ecosystem.</p>
+        <p>Only portal administrators can configure asset categories, locations, and vendors.</p>
       </div>
     </Layout>
   );
 
   return (
     <Layout>
-      <AssetWorkspaceNav />
       <div className="premium-dashboard-wrapper page-container" style={{ maxWidth: '1400px', margin: '0 auto', paddingBottom: '50px' }}>
         
         {notification && (
@@ -109,7 +105,7 @@ export default function AssetSettings() {
         <div className="top-hero-section">
           <div className="hero-text">
             <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><DesktopTower color="var(--accent-primary)" weight="fill" /> System Configuration</h1>
-            <p>Manage organizational categories, physical locations, and vendors for the Asset ERP.</p>
+            <p>Manage the categories, branch locations, and vendors used by the asset workspace.</p>
           </div>
         </div>
 
@@ -121,7 +117,7 @@ export default function AssetSettings() {
         </div>
 
         {loading ? (
-          <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Syncing ecosystem configurations...</p></div>
+          <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Loading asset settings...</p></div>
         ) : (
           <div className="config-workspace">
             

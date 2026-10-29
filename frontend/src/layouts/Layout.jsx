@@ -5,7 +5,7 @@ import {
   Bell, X, SquaresFour, Trophy, ListChecks, ShieldCheck,
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
   Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin, ClipboardText,
-  WarningCircle, Barcode, Package, ArrowsLeftRight, Wrench, Plus,
+  WarningCircle, Package,
   Headset, SignOut,
   Kanban, ImageSquare, ShareNetwork, CheckCircle, ClockCounterClockwise, SlidersHorizontal,
   CaretDown, Brain, Newspaper, GraduationCap
@@ -14,6 +14,7 @@ import { API_BASE } from '../services/apiConfig';
 import { applyAppearance, readAppearance } from '../services/appearance';
 import { formatPortalDateTime, parsePortalDateTime } from '../utils/dateFormat';
 import { isPortalAdminAccount } from '../utils/roleAccess';
+import AssetPortalShell from '../features/assets/AssetPortalShell';
 
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
@@ -236,16 +237,18 @@ export default function Layout({ children }) {
 
   const sectionTheme = location.pathname.startsWith('/assets') ? 'assets' : location.pathname.startsWith('/academic') ? 'academic' : location.pathname.startsWith('/media') ? 'media' : location.pathname.startsWith('/clients') ? 'partners' : 'placement';
   const dashboardPath = '/dashboard';
-  const defaultBackPath = isAssetWorkspace ? '/assets' : '/dashboard';
+  const defaultBackPath = isAssetWorkspace ? '/assets/dashboard' : '/dashboard';
   const designerAllowedPath = ['/career-hub', '/game-pal', '/events', '/media/dashboard', '/media/preview', '/media/files', '/media/social', '/media/categories', '/media/logs', '/media/settings'].some(path => location.pathname === path || location.pathname.startsWith(`${path}/`));
 
   if (isDesignerWorkspace && !designerAllowedPath) return <Navigate to="/career-hub" replace />;
-  if (isAssetWorkspace && !location.pathname.startsWith('/assets')) return <Navigate to="/assets/branches" replace />;
+  if (isAssetWorkspace && !location.pathname.startsWith('/assets')) return <Navigate to="/assets/dashboard" replace />;
   if (isTerritoryManager && location.pathname.startsWith('/assets')) return <Navigate to="/dashboard" replace />;
   if (!canViewClients && location.pathname.startsWith('/clients')) return <Navigate to="/students" replace />;
   if (!canViewPlacementDrives && location.pathname.startsWith('/placement-drives')) return <Navigate to="/dashboard" replace />;
   if (isTechnicalLead && location.pathname.startsWith('/exams/') && !location.pathname.startsWith('/exams/technical')) return <Navigate to="/exams/technical?view=results" replace />;
   if (isRth && location.pathname.startsWith('/exams/talentino')) return <Navigate to="/exams" replace />;
+
+  if (location.pathname.startsWith('/assets')) return <AssetPortalShell user={tpoData}>{children}</AssetPortalShell>;
 
   return (
     <div className={`app-layout app-section-${sectionTheme}`}>
@@ -390,36 +393,10 @@ export default function Layout({ children }) {
               </>
             )}
 
-            {/* 🚨 ASSET MANAGEMENT */}
             {(isSuperAdmin || isBranchManager || isAssetManager) && !isDesigner && !isTerritoryManager && (
-              <>
-                {navSectionHeading('assets', 'Asset Management', showPlacementAndAcademic ? { marginTop: '15px' } : {})}
-                <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('assets')}>
-                <div className={`pd-nav-item ${(location.pathname === '/assets' || location.pathname === '/assets/branches') ? 'active' : ''}`} onClick={() => handleNav('/assets/branches')}>
-                  <ChartBar size={22} weight={isActive('/assets') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Branches &amp; Item Workspace</span>
-                </div>
-                <div className={`pd-nav-item ${location.pathname === '/assets/register' ? 'active' : ''}`} onClick={() => handleNav('/assets/register')}>
-                  <Barcode size={22} weight={location.pathname === '/assets/register' ? 'fill' : 'regular'} /> <span>Master Registry</span>
-                </div>
-                <div className={`pd-nav-item ${location.pathname === '/assets/assignments' ? 'active' : ''}`} onClick={() => handleNav('/assets/assignments')}><UserCheck size={22} /><span>Assignments &amp; Reassignments</span></div>
-                <div className={`pd-nav-item ${location.pathname === '/assets/retired' ? 'active' : ''}`} onClick={() => handleNav('/assets/retired')}><ClockCounterClockwise size={22} /><span>Retired Assets</span></div>
-                {(isSuperAdmin || isAssetManager) && <div className={`pd-nav-item ${isActive('/assets/add') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/add')}>
-                  <Plus size={22} weight={isActive('/assets/add') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Register Asset</span>
-                </div>}
-                <div className={`pd-nav-item ${isActive('/assets/inventory') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/inventory')}>
-                  <Package size={22} weight={isActive('/assets/inventory') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Consumables</span>
-                </div>
-                <div className={`pd-nav-item ${isActive('/assets/transfers') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/transfers')}>
-                  <ArrowsLeftRight size={22} weight={isActive('/assets/transfers') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Transfers</span>
-                </div>
-                <div className={`pd-nav-item ${isActive('/assets/maintenance') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/maintenance')}>
-                  <Wrench size={22} weight={isActive('/assets/maintenance') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Maintenance</span>
-                </div>
-                {isSuperAdmin && <div className={`pd-nav-item ${isActive('/assets/settings') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/assets/settings')}>
-                  <Gear size={22} weight={isActive('/assets/settings') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Vendors &amp; Settings</span>
-                </div>}
-                </div>
-              </>
+              <div className={`pd-nav-item ${location.pathname.startsWith('/assets') ? 'active' : ''}`} onClick={() => handleNav('/assets/dashboard')}>
+                <Package size={22} weight={location.pathname.startsWith('/assets') ? 'fill' : 'regular'} /> <span>Asset Management</span>
+              </div>
             )}
 
             {showManageAdmin && (

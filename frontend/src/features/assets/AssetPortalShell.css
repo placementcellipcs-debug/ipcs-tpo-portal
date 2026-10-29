@@ -1,0 +1,77 @@
+.asset-portal {
+  --asset-bg: #08111f;
+  --asset-panel: #101c2c;
+  --asset-border: rgba(148, 173, 202, .14);
+  --asset-text: #edf4fc;
+  --asset-muted: #8fa3bb;
+  --asset-accent: #38bdf8;
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 258px minmax(0, 1fr);
+  color: var(--asset-text);
+  background: radial-gradient(ellipse at 74% -10%, rgba(31, 102, 155, .18), transparent 35%), var(--asset-bg);
+  font-family: Inter, system-ui, sans-serif;
+}
+.asset-portal-sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  padding: 23px 15px 15px;
+  border-right: 1px solid var(--asset-border);
+  background: rgba(10, 19, 32, .96);
+  backdrop-filter: blur(16px);
+}
+.asset-portal-brand { display: flex; align-items: center; gap: 11px; padding: 0 8px 22px; }
+.asset-portal-brand-mark { width: 39px; height: 39px; display: grid; place-items: center; color: #8bd9ff; border: 1px solid rgba(56,189,248,.3); border-radius: 13px; background: rgba(56,189,248,.1); }
+.asset-portal-brand > span:last-of-type { display: grid; gap: 2px; }
+.asset-portal-brand b { font-size: 1rem; letter-spacing: .12em; }
+.asset-portal-brand small { color: #839ab3; font-size: .59rem; font-weight: 800; letter-spacing: .13em; }
+.asset-portal-close, .asset-portal-menu { display: none; }
+.asset-portal-account { display: flex; align-items: center; gap: 10px; padding: 13px 10px; margin-bottom: 25px; border: 1px solid var(--asset-border); border-radius: 13px; background: rgba(255,255,255,.025); }
+.asset-portal-avatar { width: 35px; height: 35px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid rgba(56,189,248,.25); border-radius: 50%; color: #bdeafe; background: rgba(56,189,248,.12); font-size: .72rem; font-weight: 800; }
+.asset-portal-avatar.small { width: 31px; height: 31px; }
+.asset-portal-account-copy { min-width: 0; display: grid; gap: 4px; }
+.asset-portal-account-copy b { overflow: hidden; color: #e5edf7; font-size: .78rem; text-overflow: ellipsis; white-space: nowrap; }
+.asset-portal-account-copy small { overflow: hidden; color: var(--asset-muted); font-size: .67rem; text-overflow: ellipsis; white-space: nowrap; }
+.asset-portal-nav-label { padding: 0 10px 10px; color: #71869e; font-size: .63rem; font-weight: 900; letter-spacing: .14em; }
+.asset-portal-nav { display: grid; gap: 5px; overflow-y: auto; }
+.asset-portal-nav-link { min-height: 43px; box-sizing: border-box; display: flex; align-items: center; gap: 11px; padding: 0 11px; border: 1px solid transparent; border-radius: 10px; color: #9aacc1; font-size: .78rem; font-weight: 650; text-decoration: none; transition: color .15s ease, background .15s ease, border-color .15s ease; }
+.asset-portal-nav-link:hover { color: #f1f7fd; background: rgba(255,255,255,.045); }
+.asset-portal-nav-link.active { border-color: rgba(56,189,248,.2); color: #e9f7ff; background: linear-gradient(100deg,rgba(20,128,182,.23),rgba(32,75,117,.2)); }
+.asset-portal-nav-link.active svg { color: #74d6ff; }
+.asset-nav-add { margin-left: auto; color: #7bd7ff; font-size: 1.15rem; }
+.asset-portal-sidebar-footer { display: grid; gap: 5px; margin-top: auto; padding-top: 14px; border-top: 1px solid var(--asset-border); }
+.asset-portal-sidebar-footer button { display: flex; align-items: center; gap: 10px; min-height: 39px; padding: 0 11px; border: 0; border-radius: 9px; color: #94a9c0; background: transparent; font: inherit; font-size: .75rem; text-align: left; cursor: pointer; }
+.asset-portal-sidebar-footer button:hover { color: #fff; background: rgba(255,255,255,.05); }
+.asset-portal-main { min-width: 0; }
+.asset-portal-topbar { min-height: 69px; box-sizing: border-box; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 clamp(18px, 3vw, 42px); border-bottom: 1px solid var(--asset-border); background: rgba(8,17,31,.64); }
+.asset-portal-crumb { display: flex; align-items: center; gap: 9px; color: #7590aa; font-size: .7rem; }
+.asset-portal-crumb > span { font-size: .62rem; font-weight: 850; letter-spacing: .12em; }
+.asset-portal-crumb svg { transform: rotate(180deg); }
+.asset-portal-crumb b { color: #dbe8f5; font-size: .76rem; }
+.asset-portal-top-account { display: flex; align-items: center; gap: 11px; color: #8fa3bb; font-size: .7rem; }
+.asset-portal-content { min-width: 0; padding: 25px clamp(16px, 3vw, 42px) 55px; }
+.asset-portal-content > .asset-workspace { max-width: 1540px; padding: 0; }
+.asset-portal-scrim { display: none; }
+
+@media (max-width: 900px) {
+  .asset-portal { grid-template-columns: 1fr; }
+  .asset-portal-sidebar { position: fixed; left: 0; top: 0; width: min(290px, 86vw); transform: translateX(-102%); transition: transform .22s ease; box-shadow: 20px 0 60px rgba(0,0,0,.35); }
+  .asset-portal-sidebar.is-open { transform: translateX(0); }
+  .asset-portal-close, .asset-portal-menu { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--asset-border); border-radius: 10px; color: #bed0e1; background: rgba(255,255,255,.035); cursor: pointer; }
+  .asset-portal-close { margin-left: auto; }
+  .asset-portal-menu { margin-right: 3px; }
+  .asset-portal-scrim { position: fixed; inset: 0; z-index: 25; display: block; border: 0; background: rgba(1,7,14,.68); }
+  .asset-portal-topbar { justify-content: flex-start; }
+  .asset-portal-top-account { margin-left: auto; }
+}
+@media (max-width: 520px) {
+  .asset-portal-topbar { min-height: 59px; gap: 10px; padding: 0 13px; }
+  .asset-portal-crumb > span, .asset-portal-crumb > svg { display: none; }
+  .asset-portal-top-account > span:first-child { max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .asset-portal-content { padding: 17px 12px 36px; }
+}
