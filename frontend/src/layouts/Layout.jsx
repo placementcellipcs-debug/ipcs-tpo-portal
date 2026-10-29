@@ -396,12 +396,13 @@ export default function Layout({ children }) {
                 <div className={`pd-nav-item ${isActive('/security-logs') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/security-logs')}>
                   <ShieldCheck size={22} weight={isActive('/security-logs') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Security Logs</span>
                 </div>
-                <div className={`pd-nav-item ${isActive('/placement-reconciliation') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/placement-reconciliation')}>
-                  <ClipboardText size={22} weight={isActive('/placement-reconciliation') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Placement Reconciliation</span>
-                </div>
                 </div>
               </>
             )}
+
+            {isHiringInboxOwner && <div className={`pd-nav-item ${isActive('/placement-reconciliation') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/placement-reconciliation')}>
+              <ClipboardText size={22} weight={isActive('/placement-reconciliation') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Placement Reconciliation</span>
+            </div>}
 
             {!isAssetWorkspace && navSectionHeading('career', 'News & Games', { marginTop: '15px' })}
             {!isAssetWorkspace && <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('career')}>

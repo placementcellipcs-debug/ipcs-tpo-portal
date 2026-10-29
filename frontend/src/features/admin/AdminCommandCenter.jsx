@@ -24,7 +24,7 @@ const moduleRoutes = [
   { id: 'training', title: 'Training & Academics', icon: GraduationCap, path: '/academic/training', color: 'green', description: 'Training assignments, batches, live sessions, attendance, and student diaries.', links: [['Training', '/academic/training'], ['Batches', '/academic/batches'], ['Live sessions', '/academic/sessions'], ['Attendance', '/academic/attendance'], ['Student diary', '/academic/diary']] },
   { id: 'media', title: 'Media & Design Studio', icon: Images, path: '/media/dashboard', color: 'pink', description: 'Creative queue, previews, files, social posts, categories, and activity.', links: [['Active queues', '/media/dashboard'], ['Preview gallery', '/media/preview'], ['File vault', '/media/files'], ['Social media', '/media/social']] },
   { id: 'assets', title: 'Asset Management', icon: Package, path: '/assets', color: 'amber', description: 'Branch spaces, item register, assignments, asset condition history, and disposal.', links: [['Branches & items', '/assets'], ['Register an item', '/assets/add'], ['Transfers', '/assets/transfers'], ['Maintenance', '/assets/maintenance'], ['Consumables', '/assets/inventory'], ['Workspace settings', '/assets/settings'], ['Asset setup', '/assets/setup']] },
-  { id: 'system', title: 'System Admin', icon: ShieldCheck, path: '/users', color: 'violet', description: 'User access, branches, corporate training inquiries, courses, security activity, and placement reconciliation.', links: [['Users', '/users'], ['Branches', '/branches'], ['Corporate Training', '/admin/corporate-training'], ['Courses', '/courses'], ['Security logs', '/security-logs'], ['Placement reconciliation', '/placement-reconciliation']] },
+  { id: 'system', title: 'System Admin', icon: ShieldCheck, path: '/users', color: 'violet', description: 'User access, branches, corporate training inquiries, courses, and security activity.', links: [['Users', '/users'], ['Branches', '/branches'], ['Corporate Training', '/admin/corporate-training'], ['Courses', '/courses'], ['Security logs', '/security-logs']] },
   { id: 'settings', title: 'Settings', icon: GearSix, path: '/settings', color: 'slate', description: 'Your account settings and workspace preferences.', links: [['Open settings', '/settings']] }
 ];
 
@@ -96,16 +96,20 @@ export default function AdminCommandCenter() {
           {topMetrics.map(({ label, value, icon: Icon }) => <article key={label}><span className="admin-metric-icon"><Icon size={20} weight="duotone" /></span><div><small>{label}</small><strong>{summary.loading ? <CircleNotch className="ph-spin" size={17} /> : number(value)}</strong></div></article>)}
         </section>
         <section className="admin-module-grid" aria-label="Admin workspaces">
-          {moduleRoutes.map(({ id, title, icon: Icon, path, color, description, links }) => (
+          {moduleRoutes.map(({ id, title, icon: Icon, path, color, description, links }) => {
+            const visibleLinks = id === 'system' && String(user.email || '').trim().toLowerCase() === 'gifty@ipcsglobal.com'
+              ? [...links, ['Placement reconciliation', '/placement-reconciliation']]
+              : links;
+            return (
             <article className={`admin-module-card module-${color}`} key={id}>
               <button type="button" className="admin-module-main" onClick={() => navigate(path)}>
                 <span className="admin-module-icon"><Icon size={23} weight="duotone" /></span><span className="admin-module-open"><ArrowRight size={18} /></span>
                 <span className="admin-module-title">{title}</span><span className="admin-module-description">{description}</span>
               </button>
               <div className="admin-module-summary">{summaryLines[id].map(([value, label]) => <div key={label}><b>{summary.loading ? '—' : value}</b><span>{label}</span></div>)}</div>
-              <nav className="admin-module-links" aria-label={`${title} pages`}>{links.map(([label, route]) => <button type="button" key={route} onClick={() => navigate(route)}>{label}<ArrowRight size={13} /></button>)}</nav>
+              <nav className="admin-module-links" aria-label={`${title} pages`}>{visibleLinks.map(([label, route]) => <button type="button" key={route} onClick={() => navigate(route)}>{label}<ArrowRight size={13} /></button>)}</nav>
             </article>
-          ))}
+          ); })}
         </section>
         {summary.loading && <div className="admin-command-sync"><CircleNotch size={15} className="ph-spin" /> Updating live module totals…</div>}
       </main>

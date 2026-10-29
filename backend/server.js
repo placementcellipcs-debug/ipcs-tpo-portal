@@ -344,6 +344,14 @@ const requireSession = (policy = 'portal') => (req, res, next) => {
   next();
 };
 
+const requirePlacementReconciliationOwner = (req, res, next) => {
+  const email = String(req.portalUser?.email || '').trim().toLowerCase();
+  if (email !== 'gifty@ipcsglobal.com') {
+    return res.status(403).json({ success: false, message: 'Placement reconciliation is available only to the designated account.' });
+  }
+  next();
+};
+
 const cleanAuditRoute = value => String(value || '').split('?')[0]
   .replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, ':email')
   .replace(/\b[0-9a-f]{8}-[0-9a-f-]{27,}\b/gi, ':id')
@@ -528,13 +536,13 @@ app.get('/api/admin/courses', controllers.getCourses);
 app.post('/api/admin/courses/add', controllers.addCourse);
 app.post('/api/admin/courses/delete', controllers.deleteCourse); 
 app.get('/api/admin/security-logs', controllers.getSecurityLogs);
-app.get('/api/admin/placement-reconciliation', controllers.getPlacementReconciliation);
-app.post('/api/admin/placement-reconciliation/refresh', controllers.refreshPlacementReconciliation);
-app.post('/api/admin/placement-reconciliation/repair-manual-saves', controllers.repairManualPlacementSaves);
-app.post('/api/admin/placement-reconciliation/rebuild', controllers.rebuildPlacedStudentProjection);
-app.get('/api/admin/placement-audit', controllers.getPlacementAudit);
+app.get('/api/admin/placement-reconciliation', requirePlacementReconciliationOwner, controllers.getPlacementReconciliation);
+app.post('/api/admin/placement-reconciliation/refresh', requirePlacementReconciliationOwner, controllers.refreshPlacementReconciliation);
+app.post('/api/admin/placement-reconciliation/repair-manual-saves', requirePlacementReconciliationOwner, controllers.repairManualPlacementSaves);
+app.post('/api/admin/placement-reconciliation/rebuild', requirePlacementReconciliationOwner, controllers.rebuildPlacedStudentProjection);
+app.get('/api/admin/placement-audit', requirePlacementReconciliationOwner, controllers.getPlacementAudit);
 app.post('/api/admin/trigger-resume-delivery', controllers.triggerDailyCron);
-app.post('/api/admin/company-opening-report', controllers.triggerCompanyOpeningReport);
+app.post('/api/admin/company-opening-report', requirePlacementReconciliationOwner, controllers.triggerCompanyOpeningReport);
 app.get('/api/admin/corporate-training-inquiries', controllers.getCorporateTrainingInquiries);
 app.post('/api/admin/corporate-training-inquiries/assign', controllers.assignCorporateTrainingInquiry);
 app.get('/api/admin/branches', controllers.getBranches);

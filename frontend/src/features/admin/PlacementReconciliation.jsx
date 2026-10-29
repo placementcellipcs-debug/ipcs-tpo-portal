@@ -6,7 +6,6 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
-import { isPortalAdminAccount } from '../../utils/roleAccess';
 import { formatPortalDateTime } from '../../utils/dateFormat';
 import './PlacementReconciliation.css';
 
@@ -40,7 +39,7 @@ function ReconciliationTable({ title, rows, emptyText, kind = 'mismatch' }) {
 export default function PlacementReconciliation() {
   let account;
   try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { account = null; }
-  const isAdmin = isPortalAdminAccount(account);
+  const isAuthorized = String(account?.email || '').trim().toLowerCase() === 'gifty@ipcsglobal.com';
   const [reconciliation, setReconciliation] = useState(null);
   const [meta, setMeta] = useState(null);
   const [audit, setAudit] = useState([]);
@@ -72,7 +71,7 @@ export default function PlacementReconciliation() {
     } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { if (isAdmin) void load(); }, [isAdmin, load]);
+  useEffect(() => { if (isAuthorized) void load(); }, [isAuthorized, load]);
 
   const runAdminAction = async (path, prompt) => {
     if (actionLoading || (prompt && !window.confirm(prompt))) return;
@@ -89,7 +88,7 @@ export default function PlacementReconciliation() {
     } finally { setActionLoading(false); }
   };
 
-  if (!isAdmin) return <Layout><div className="page-container"><h1>Admin access required</h1><p>Placement reconciliation is available to portal administrators.</p></div></Layout>;
+  if (!isAuthorized) return <Layout><div className="page-container"><h1>Access restricted</h1><p>Placement reconciliation is available only to gifty@ipcsglobal.com.</p></div></Layout>;
 
   const mismatchCount = Number(reconciliation?.missingCount || 0) + Number(reconciliation?.staleCount || 0) + Number(reconciliation?.duplicateCount || 0);
   const cards = [

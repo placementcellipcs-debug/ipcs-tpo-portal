@@ -122,6 +122,15 @@ function MediaStudioAccessRoute() {
   return isPortalAdminAccount(account) || isMediaTeam ? <Outlet /> : <Navigate to="/dashboard" replace />;
 }
 
+function PlacementReconciliationRoute() {
+  let account = null;
+  try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
+  if (!account) return <Navigate to="/login" replace />;
+  return String(account.email || '').trim().toLowerCase() === 'gifty@ipcsglobal.com'
+    ? <PlacementReconciliation />
+    : <Navigate to="/dashboard" replace />;
+}
+
 function AssetManagerAccessRoute({ children }) {
   let account = null;
   try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
@@ -227,7 +236,7 @@ function RoutedContent() {
         <Route path="/exams/aptitude" element={<Aptitude />} />
         <Route path="/exams/talentino" element={<TalentinoExams />} />
         <Route path="/security-logs" element={<SecurityActivity />} />
-        <Route path="/placement-reconciliation" element={<PlacementReconciliation />} />
+        <Route path="/placement-reconciliation" element={<PlacementReconciliationRoute />} />
         <Route path="/admin/corporate-training" element={<CorporateTrainingInquiries />} />
         <Route path="/hiring-inquiries" element={<HiringInquiries />} />
         
