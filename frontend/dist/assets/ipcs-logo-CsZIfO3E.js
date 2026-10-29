@@ -1,0 +1,1 @@
+var e=`/assets/ipcs-logo-gkGo8fLI.png`;export{e as t};
