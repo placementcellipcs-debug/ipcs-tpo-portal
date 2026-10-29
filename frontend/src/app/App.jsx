@@ -112,6 +112,16 @@ function AssetManagementAccessRoute() {
   return <Outlet />;
 }
 
+function MediaStudioAccessRoute() {
+  let account = null;
+  try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
+  if (!account) return <Navigate to="/login" replace />;
+
+  const role = String(account.role || '').trim().toUpperCase();
+  const isMediaTeam = ['DESIGN', 'MEDIA', 'CREATIVE'].some(part => role.includes(part));
+  return isPortalAdminAccount(account) || isMediaTeam ? <Outlet /> : <Navigate to="/dashboard" replace />;
+}
+
 function AssetManagerAccessRoute({ children }) {
   let account = null;
   try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
@@ -242,14 +252,18 @@ function RoutedContent() {
           <Route path="*" element={<Navigate to="/assets/dashboard" replace />} />
         </Route>
 
-        {/* MODULAR MEDIA & DESIGN PORTAL ROUTES */}
-        <Route path="/media/dashboard" element={<MediaTasks />} />
-        <Route path="/media/preview" element={<MediaPreview />} />
-        <Route path="/media/files" element={<MediaFiles />} />
-        <Route path="/media/categories" element={<MediaCategories />} />
-        <Route path="/media/social" element={<MediaSocial />} />
-        <Route path="/media/logs" element={<MediaLogs />} />
-        <Route path="/media/settings" element={<MediaSettings />} />
+        {/* Standalone Media & Design Studio; backend routes enforce the same role restriction. */}
+        <Route path="/media" element={<MediaStudioAccessRoute />}>
+          <Route index element={<Navigate to="/media/dashboard" replace />} />
+          <Route path="dashboard" element={<MediaTasks />} />
+          <Route path="preview" element={<MediaPreview />} />
+          <Route path="files" element={<MediaFiles />} />
+          <Route path="categories" element={<MediaCategories />} />
+          <Route path="social" element={<MediaSocial />} />
+          <Route path="logs" element={<MediaLogs />} />
+          <Route path="settings" element={<MediaSettings />} />
+          <Route path="*" element={<Navigate to="/media/dashboard" replace />} />
+        </Route>
 
         {/* Training & Academics is temporarily unavailable for every role. */}
         <Route path="/trainer" element={<AcademicUnavailable />} />

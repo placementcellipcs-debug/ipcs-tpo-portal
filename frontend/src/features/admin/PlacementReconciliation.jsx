@@ -1,16 +1,41 @@
 import { useCallback, useEffect, useState } from 'react';
 import axios from 'axios';
-import { ArrowClockwise, CheckCircle, CircleNotch, ClipboardText, WarningCircle } from '@phosphor-icons/react';
+import {
+  ArrowClockwise, ArrowCounterClockwise, CheckCircle, CircleNotch,
+  ClipboardText, Database, WarningCircle, Wrench
+} from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
 import { isPortalAdminAccount } from '../../utils/roleAccess';
 import { formatPortalDateTime } from '../../utils/dateFormat';
+import './PlacementReconciliation.css';
 
 const formatDate = value => value ? (formatPortalDateTime(value) || value) : 'Not recorded';
-const badge = healthy => ({
-  display: 'inline-flex', alignItems: 'center', gap: 6, borderRadius: 999, padding: '5px 10px',
-  color: healthy ? '#10b981' : '#f59e0b', background: healthy ? 'rgba(16,185,129,.12)' : 'rgba(245,158,11,.12)', fontSize: 12, fontWeight: 700
-});
+
+function ReconciliationTable({ title, rows, emptyText, kind = 'mismatch' }) {
+  const audit = kind === 'audit';
+  return <section className={`recon-panel recon-table-panel ${audit ? 'audit-panel' : ''}`}>
+    <div className="recon-panel-heading"><div><span>{audit ? 'CHANGE HISTORY' : 'ROW-LEVEL REVIEW'}</span><h2>{title}</h2></div>{audit && <ClipboardText size={22} />}</div>
+    {!rows?.length ? <div className="recon-empty"><CheckCircle size={21} /><span>{emptyText}</span></div> : <div className="recon-table-scroll">
+      <table className={`recon-table ${audit ? 'recon-audit-table' : ''}`}>
+        {audit ? <colgroup><col className="col-when" /><col className="col-who" /><col className="col-student" /><col className="col-opening" /><col className="col-change" /><col className="col-status" /><col className="col-details" /></colgroup> : <colgroup><col className="col-source-key" /><col className="col-student" /><col className="col-roll" /><col className="col-company" /><col className="col-status" /></colgroup>}
+        <thead>{audit ? <tr><th>When</th><th>Who</th><th>Student</th><th>Opening</th><th>Change</th><th>From → To</th><th>Details</th></tr> : <tr><th>Source key</th><th>Student</th><th>Roll number</th><th>Company</th><th>Status</th></tr>}</thead>
+        <tbody>{audit ? rows.map((row, index) => <tr key={row.eventId || index}>
+          <td><time>{formatDate(row.timestamp)}</time></td>
+          <td>{row.actorName || row.actorEmail || '—'}</td>
+          <td><b>{row.studentName || '—'}</b>{row.roll && <small>{row.roll}</small>}</td>
+          <td>{[row.company, row.position].filter(Boolean).join(' · ') || row.jobId || '—'}</td>
+          <td><span className="recon-action-tag">{row.action || '—'}</span></td>
+          <td><span className="recon-status-change">{row.previousStatus || '—'} <i>→</i> {row.newStatus || '—'}</span></td>
+          <td className="recon-detail-cell">{row.details || '—'}</td>
+        </tr>) : rows.map((row, index) => <tr key={`${row.key}-${index}`}>
+          <td><code>{row.key || '—'}</code></td><td><b>{row.name || '—'}</b></td><td>{row.roll || '—'}</td><td>{row.company || '—'}</td><td><span className="recon-placed-status">{row.status || '—'}</span></td>
+        </tr>)}</tbody>
+      </table>
+      {!audit && rows.length === 100 && <p className="recon-table-note">Showing the first 100 mismatches. Summary counts include every row.</p>}
+    </div>}
+  </section>;
+}
 
 export default function PlacementReconciliation() {
   let account;
@@ -44,12 +69,10 @@ export default function PlacementReconciliation() {
       setAuditAvailable(Boolean(auditResponse?.data?.available));
     } catch (loadError) {
       setError(loadError.response?.data?.message || loadError.message || 'Could not load placement reconciliation.');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   }, []);
 
-  useEffect(() => { if (isAdmin) load(); }, [isAdmin, load]);
+  useEffect(() => { if (isAdmin) void load(); }, [isAdmin, load]);
 
   const runAdminAction = async (path, prompt) => {
     if (actionLoading || (prompt && !window.confirm(prompt))) return;
@@ -63,112 +86,57 @@ export default function PlacementReconciliation() {
       await load();
     } catch (actionError) {
       setError(actionError.response?.data?.message || actionError.message || 'The action could not be completed.');
-    } finally {
-      setActionLoading(false);
-    }
+    } finally { setActionLoading(false); }
   };
 
-  if (!isAdmin) {
-    return <Layout><div className="page-container"><h1>Admin access required</h1><p>Placement reconciliation is available to portal administrators.</p></div></Layout>;
-  }
+  if (!isAdmin) return <Layout><div className="page-container"><h1>Admin access required</h1><p>Placement reconciliation is available to portal administrators.</p></div></Layout>;
 
   const mismatchCount = Number(reconciliation?.missingCount || 0) + Number(reconciliation?.staleCount || 0) + Number(reconciliation?.duplicateCount || 0);
-  const statCard = (label, value, note) => (
-    <div key={label} style={{ background: 'var(--surface-card, #111827)', border: '1px solid var(--border-color, #263244)', borderRadius: 14, padding: 18 }}>
-      <div style={{ color: 'var(--text-muted)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '.05em' }}>{label}</div>
-      <strong style={{ display: 'block', marginTop: 8, fontSize: 28 }}>{value ?? '—'}</strong>
-      <small style={{ color: 'var(--text-muted)' }}>{note}</small>
-    </div>
-  );
-  const rowsTable = (title, rows, emptyText) => (
-    <section style={{ marginTop: 22, background: 'var(--surface-card, #111827)', border: '1px solid var(--border-color, #263244)', borderRadius: 14, padding: 18 }}>
-      <h2 style={{ margin: '0 0 14px', fontSize: 18 }}>{title}</h2>
-      {!rows?.length ? <p style={{ color: 'var(--text-muted)', margin: 0 }}>{emptyText}</p> : (
-        <div style={{ overflowX: 'auto' }}><table className="dt" style={{ minWidth: 720, width: '100%' }}>
-          <thead><tr><th>Source key</th><th>Student</th><th>Roll</th><th>Company</th><th>Status</th></tr></thead>
-          <tbody>{rows.map((row, index) => <tr key={`${row.key}-${index}`}>
-            <td>{row.key}</td><td>{row.name || '—'}</td><td>{row.roll || '—'}</td><td>{row.company || '—'}</td><td>{row.status || '—'}</td>
-          </tr>)}</tbody>
-        </table></div>
-      )}
-      {rows?.length === 100 && <small style={{ color: 'var(--text-muted)' }}>Showing the first 100 mismatches. Counts include all rows.</small>}
+  const cards = [
+    { label: 'Placed source rows', value: reconciliation?.sourceCount, note: 'TPO_Log · exact Placed status', tone: 'cyan', icon: Database },
+    { label: 'Projection rows', value: reconciliation?.projectionCount, note: 'Placed_Students reporting sheet', tone: 'violet', icon: ClipboardText },
+    { label: 'Missing from projection', value: reconciliation?.missingCount, note: 'Source rows not copied', tone: 'amber', icon: WarningCircle },
+    { label: 'Stale projection rows', value: reconciliation?.staleCount, note: 'No matching source row', tone: 'rose', icon: ArrowCounterClockwise },
+    { label: 'Duplicate projection keys', value: reconciliation?.duplicateCount, note: 'Rows sharing a source key', tone: 'blue', icon: WarningCircle },
+    { label: 'Manual saves to repair', value: reconciliation?.missingManualLogCount, note: 'Incomplete TPO_Log writes', tone: 'mint', icon: Wrench }
+  ];
+
+  return <Layout><main className="recon-page">
+    <header className="recon-hero">
+      <div className="recon-hero-copy"><span className="recon-kicker"><i /> DATA QUALITY CONTROL</span><h1>Placement reconciliation</h1><p>Compare the authoritative placement log with its reporting sheet, review row-level differences, and repair incomplete saves.</p></div>
+      <div className="recon-hero-icon"><Database size={35} weight="duotone" /><span /><i /></div>
+    </header>
+
+    <section className="recon-action-bar" aria-label="Reconciliation actions">
+      <div className="recon-action-copy"><span>ADMIN ACTIONS</span><b>Review or repair the placement data</b></div>
+      <div className="recon-action-buttons">
+        <button type="button" className="recon-button secondary" onClick={() => void load(true)} disabled={loading || actionLoading}>{loading ? <CircleNotch className="ph-spin" /> : <ArrowClockwise />} Refresh source data</button>
+        {reconciliation?.missingManualLogCount > 0 && <button type="button" className="recon-button warning" onClick={() => void runAdminAction('/api/admin/placement-reconciliation/repair-manual-saves', `Retry ${reconciliation.missingManualLogCount} incomplete manual placement save(s)? This will fill missing TPO_Log entries and refresh the derived sheet.`)} disabled={loading || actionLoading}>{actionLoading ? <CircleNotch className="ph-spin" /> : <Wrench />} Retry manual saves <span>{reconciliation.missingManualLogCount}</span></button>}
+        <button type="button" className="recon-button primary" onClick={() => void runAdminAction('/api/admin/placement-reconciliation/rebuild', 'Rebuild the entire Placed_Students projection from TPO_Log? The current sheet will be backed up before it is cleared and rebuilt.')} disabled={loading || actionLoading || !meta?.sourceHealthy}>{actionLoading ? <CircleNotch className="ph-spin" /> : <ArrowCounterClockwise />} Rebuild placed sheet</button>
+        <button type="button" className="recon-button report" onClick={() => void runAdminAction('/api/admin/company-opening-report', 'Send yesterday’s company resume delivery report to the configured recipients? The daily guard prevents a second report for the same date.')} disabled={loading || actionLoading || !meta?.sourceHealthy}>{actionLoading ? <CircleNotch className="ph-spin" /> : <ClipboardText />} Send company report</button>
+      </div>
     </section>
-  );
 
-  return (
-    <Layout>
-      <main className="page-container" style={{ padding: 0 }}>
-        <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
-          <div>
-            <h1 style={{ margin: '0 0 7px', fontSize: 30 }}>Placement data reconciliation</h1>
-            <p style={{ margin: 0, color: 'var(--text-muted)' }}>Compare authoritative TPO_Log rows with the Placed_Students reporting sheet, inspect recent changes, and retry incomplete saves.</p>
-          </div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <button type="button" onClick={() => load(true)} disabled={loading || actionLoading} className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              {loading ? <CircleNotch className="ph-spin" /> : <ArrowClockwise />} Refresh
-            </button>
-            {reconciliation?.missingManualLogCount > 0 && <button type="button" onClick={() => runAdminAction('/api/admin/placement-reconciliation/repair-manual-saves', `Retry ${reconciliation.missingManualLogCount} incomplete manual placement save(s)? This will fill missing TPO_Log entries and refresh the derived sheet.`)} disabled={loading || actionLoading} className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              {actionLoading ? <CircleNotch className="ph-spin" /> : <ArrowClockwise />} Retry partial manual saves ({reconciliation.missingManualLogCount})
-            </button>}
-            <button type="button" onClick={() => runAdminAction('/api/admin/placement-reconciliation/rebuild', 'Rebuild the entire Placed_Students projection from TPO_Log? The current sheet will be backed up before it is cleared and rebuilt.')} disabled={loading || actionLoading || !meta?.sourceHealthy} className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              {actionLoading ? <CircleNotch className="ph-spin" /> : <ArrowClockwise />} Rebuild placed sheet
-            </button>
-            <button type="button" onClick={() => runAdminAction('/api/admin/company-opening-report', 'Send yesterday’s company resume delivery report to the configured recipients? The daily guard prevents a second report for the same date.')} disabled={loading || actionLoading || !meta?.sourceHealthy} className="btn-primary" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              Send company report
-            </button>
-          </div>
-        </header>
+    {error && <div className="recon-notice error" role="alert"><WarningCircle size={19} />{error}</div>}
+    {actionMessage && <div className="recon-notice success" role="status"><CheckCircle size={19} />{actionMessage}</div>}
+    {loading && !reconciliation ? <div className="recon-loading" role="status"><CircleNotch className="ph-spin" size={30} /><span>Loading source and projection rows…</span></div> : null}
 
-        {error && <div role="alert" style={{ marginBottom: 18, padding: 14, borderRadius: 10, color: '#fecaca', background: 'rgba(239,68,68,.12)' }}>{error}</div>}
-        {actionMessage && <div role="status" style={{ marginBottom: 18, padding: 14, borderRadius: 10, color: '#a7f3d0', background: 'rgba(16,185,129,.12)' }}>{actionMessage}</div>}
-        {loading && !reconciliation ? <div role="status" style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}><CircleNotch className="ph-spin" size={28} /> Loading reconciliation…</div> : null}
+    {reconciliation && <>
+      <section className="recon-metrics" aria-label="Reconciliation counts">{cards.map(({ label, value, note, tone, icon: Icon }) => <article className={`recon-metric ${tone}`} key={label}><span className="recon-metric-icon"><Icon size={20} weight="duotone" /></span><div><span>{label}</span><strong>{Number(value || 0).toLocaleString('en-IN')}</strong><small>{note}</small></div></article>)}</section>
 
-        {reconciliation && <>
-          <section style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12 }}>
-            {statCard('TPO_Log placed rows', reconciliation.sourceCount, 'Status is exactly Placed')}
-            {statCard('Placed_Students rows', reconciliation.projectionCount, 'Derived reporting sheet')}
-            {statCard('Missing in projection', reconciliation.missingCount, 'Source rows not copied')}
-            {statCard('Stale in projection', reconciliation.staleCount, 'Projection rows with no current source')}
-            {statCard('Duplicate projection keys', reconciliation.duplicateCount, 'Rows sharing one source key')}
-            {statCard('Manual saves missing TPO_Log', reconciliation.missingManualLogCount, 'Retry can complete these saves')}
-          </section>
+      <section className={`recon-health-panel ${mismatchCount ? 'has-issues' : 'is-healthy'}`}>
+        <div className="recon-health-top"><span className="recon-health-symbol">{mismatchCount ? <WarningCircle size={22} /> : <CheckCircle size={22} />}</span><div><span>SHEET HEALTH</span><h2>{mismatchCount ? `${mismatchCount.toLocaleString('en-IN')} placement row issue${mismatchCount === 1 ? '' : 's'} found` : 'Source and reporting sheet match'}</h2></div></div>
+        <div className="recon-health-badges"><span className={meta?.sourceHealthy ? 'healthy' : 'unknown'}><i /> TPO_Log {meta?.sourceHealthy ? 'healthy' : 'not confirmed'}</span><span className={meta?.projectionHealthy ? 'healthy' : 'unknown'}><i /> Placed_Students {meta?.projectionHealthy ? 'healthy' : 'not confirmed'}</span><span className={meta?.refreshStatus === 'success' ? 'healthy' : 'unknown'}><i /> Cache {meta?.refreshStatus || 'unknown'}</span></div>
+        <div className="recon-sync-grid"><div><span>Source sync</span><b>{formatDate(meta?.sourceLastSuccessfulSyncAt)}</b></div><div><span>Projection sync</span><b>{formatDate(meta?.projectionLastSuccessfulSyncAt)}</b></div><div><span>Last refresh attempt</span><b>{formatDate(meta?.lastRefreshAttemptAt)}</b></div></div>
+        {meta?.failedSheets?.length > 0 && <p className="recon-sheet-errors">Sync errors: {meta.failedSheets.join(', ')}</p>}
+        {mismatchCount > 0 && <p className="recon-health-footnote">Refresh runs a source sync. Rebuilding first backs up Placed_Students, then derives it from healthy TPO_Log rows; it does not edit TPO_Log.</p>}
+      </section>
 
-          <section style={{ marginTop: 18, background: 'var(--surface-card, #111827)', border: '1px solid var(--border-color, #263244)', borderRadius: 14, padding: 18 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 12 }}>
-              {mismatchCount ? <WarningCircle color="#f59e0b" size={20} /> : <CheckCircle color="#10b981" size={20} />}
-              <strong>{mismatchCount ? `${mismatchCount} projection issue(s) found` : 'Source and projection match'}</strong>
-            </div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-              <span style={badge(meta?.sourceHealthy)}>TPO_Log {meta?.sourceHealthy ? 'healthy' : 'not confirmed healthy'}</span>
-              <span style={badge(meta?.projectionHealthy)}>Placed_Students {meta?.projectionHealthy ? 'healthy' : 'not confirmed healthy'}</span>
-              <span style={badge(meta?.refreshStatus === 'success')}>Cache {meta?.refreshStatus || 'unknown'}</span>
-            </div>
-            <p style={{ color: 'var(--text-muted)', margin: '12px 0 0' }}>
-              Last source sync: {formatDate(meta?.sourceLastSuccessfulSyncAt)} · Last projection sync: {formatDate(meta?.projectionLastSuccessfulSyncAt)} · Latest refresh: {formatDate(meta?.lastRefreshAttemptAt)}
-            </p>
-            {meta?.failedSheets?.length > 0 && <p style={{ color: '#fbbf24', margin: '8px 0 0' }}>Sheets with sync errors: {meta.failedSheets.join(', ')}</p>}
-            {mismatchCount > 0 && <p style={{ color: 'var(--text-muted)', margin: '10px 0 0' }}>The next successful source refresh backs up the current projection and rebuilds it from healthy TPO_Log rows. Refresh above to run that sync now; it never edits TPO_Log.</p>}
-          </section>
+      <div className="recon-tables-grid"><ReconciliationTable title="Source rows missing from Placed_Students" rows={reconciliation.missingRows} emptyText="No source rows are missing from the projection." /><ReconciliationTable title="Projection rows with no matching source" rows={reconciliation.staleRows} emptyText="No stale projection rows were found." /></div>
 
-          {rowsTable('Source rows missing from Placed_Students', reconciliation.missingRows, 'No source rows are missing from the projection.')}
-          {rowsTable('Projection rows with no matching source', reconciliation.staleRows, 'No stale projection rows were found.')}
-
-          <section style={{ marginTop: 22, background: 'var(--surface-card, #111827)', border: '1px solid var(--border-color, #263244)', borderRadius: 14, padding: 18 }}>
-            <h2 style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '0 0 10px', fontSize: 18 }}><ClipboardText size={20} /> Recent placement changes</h2>
-            {!auditAvailable && <p style={{ color: 'var(--text-muted)' }}>No placement audit sheet exists yet. It is created automatically when the next placement change is saved.</p>}
-            {auditAvailable && audit.length === 0 && <p style={{ color: 'var(--text-muted)' }}>No changes are recorded yet.</p>}
-            {audit.length > 0 && <div style={{ overflowX: 'auto' }}><table className="dt" style={{ minWidth: 950, width: '100%' }}>
-              <thead><tr><th>When</th><th>Who</th><th>Student</th><th>Opening</th><th>Change</th><th>From → To</th><th>Details</th></tr></thead>
-              <tbody>{audit.map((row, index) => <tr key={row.eventId || index}>
-                <td>{formatDate(row.timestamp)}</td><td>{row.actorName || row.actorEmail || '—'}</td>
-                <td>{row.studentName || '—'}{row.roll ? <small style={{ display: 'block', color: 'var(--text-muted)' }}>{row.roll}</small> : null}</td>
-                <td>{[row.company, row.position].filter(Boolean).join(' · ') || row.jobId || '—'}</td>
-                <td>{row.action || '—'}</td><td>{row.previousStatus || '—'} → {row.newStatus || '—'}</td><td>{row.details || '—'}</td>
-              </tr>)}</tbody>
-            </table></div>}
-          </section>
-        </>}
-      </main>
-    </Layout>
-  );
+      {!auditAvailable
+        ? <section className="recon-panel recon-audit-unavailable"><ClipboardText size={24} /><div><h2>Recent placement changes</h2><p>No placement audit sheet exists yet. It will be created automatically when the next placement change is saved.</p></div></section>
+        : <ReconciliationTable kind="audit" title="Recent placement changes" rows={audit} emptyText="No changes are recorded yet." />}
+    </>}
+  </main></Layout>;
 }

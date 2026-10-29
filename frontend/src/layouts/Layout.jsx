@@ -7,14 +7,14 @@ import {
   Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin, ClipboardText,
   WarningCircle, Package,
   Headset, SignOut,
-  Kanban, ImageSquare, ShareNetwork, CheckCircle, ClockCounterClockwise, SlidersHorizontal,
-  CaretDown, Brain, Newspaper, GraduationCap
+  PaintBrush, CaretDown, Brain, Newspaper, GraduationCap
 } from '@phosphor-icons/react';
 import { API_BASE } from '../services/apiConfig';
 import { applyAppearance, readAppearance } from '../services/appearance';
 import { formatPortalDateTime, parsePortalDateTime } from '../utils/dateFormat';
 import { isPortalAdminAccount } from '../utils/roleAccess';
 import AssetPortalShell from '../features/assets/AssetPortalShell';
+import MediaPortalShell from '../features/media/MediaPortalShell';
 
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
@@ -238,7 +238,7 @@ export default function Layout({ children }) {
   const sectionTheme = location.pathname.startsWith('/assets') ? 'assets' : location.pathname.startsWith('/academic') ? 'academic' : location.pathname.startsWith('/media') ? 'media' : location.pathname.startsWith('/clients') ? 'partners' : 'placement';
   const dashboardPath = '/dashboard';
   const defaultBackPath = isAssetWorkspace ? '/assets/dashboard' : '/dashboard';
-  const designerAllowedPath = ['/career-hub', '/game-pal', '/events', '/media/dashboard', '/media/preview', '/media/files', '/media/social', '/media/categories', '/media/logs', '/media/settings'].some(path => location.pathname === path || location.pathname.startsWith(`${path}/`));
+  const designerAllowedPath = ['/career-hub', '/game-pal', '/events'].some(path => location.pathname === path || location.pathname.startsWith(`${path}/`)) || location.pathname.startsWith('/media');
 
   if (isDesignerWorkspace && !designerAllowedPath) return <Navigate to="/career-hub" replace />;
   if (isAssetWorkspace && !location.pathname.startsWith('/assets')) return <Navigate to="/assets/dashboard" replace />;
@@ -249,6 +249,7 @@ export default function Layout({ children }) {
   if (isRth && location.pathname.startsWith('/exams/talentino')) return <Navigate to="/exams" replace />;
 
   if (location.pathname.startsWith('/assets')) return <AssetPortalShell user={tpoData}>{children}</AssetPortalShell>;
+  if (location.pathname.startsWith('/media')) return <MediaPortalShell user={tpoData}>{children}</MediaPortalShell>;
 
   return (
     <div className={`app-layout app-section-${sectionTheme}`}>
@@ -363,34 +364,11 @@ export default function Layout({ children }) {
               </>
             )}
 
-            {/* 🚨 MEDIA & DESIGN MANAGEMENT */}
+            {/* Standalone Media & Design Studio entry point */}
             {(isSuperAdmin || isDesigner) && (
-              <>
-                {navSectionHeading('media', 'Media & Design Studio', isSuperAdmin ? { marginTop: '15px' } : {})}
-                <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('media')}>
-                <div className={`pd-nav-item ${isActive('/media/dashboard') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/media/dashboard')}>
-                  <Kanban size={22} weight={isActive('/media/dashboard') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Active Queues</span>
-                </div>
-                <div className={`pd-nav-item ${isActive('/media/preview') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/media/preview')}>
-                  <ImageSquare size={22} weight={isActive('/media/preview') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Preview Gallery</span>
-                </div>
-                <div className={`pd-nav-item ${isActive('/media/files') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/media/files')}>
-                  <Files size={22} weight={isActive('/media/files') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>File Vault</span>
-                </div>
-                <div className={`pd-nav-item ${isActive('/media/social') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/media/social')}>
-                  <ShareNetwork size={22} weight={isActive('/media/social') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Social Media</span>
-                </div>
-                <div className={`pd-nav-item ${isActive('/media/categories') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/media/categories')}>
-                  <CheckCircle size={22} weight={isActive('/media/categories') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Categories</span>
-                </div>
-                <div className={`pd-nav-item ${isActive('/media/logs') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/media/logs')}>
-                  <ClockCounterClockwise size={22} weight={isActive('/media/logs') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Activity Logs</span>
-                </div>
-                <div className={`pd-nav-item ${isActive('/media/settings') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/media/settings')}>
-                  <SlidersHorizontal size={22} weight={isActive('/media/settings') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Studio Settings</span>
-                </div>
-                </div>
-              </>
+              <div className={`pd-nav-item ${location.pathname.startsWith('/media') ? 'active' : ''}`} onClick={() => handleNav('/media/dashboard')}>
+                <PaintBrush size={22} weight={location.pathname.startsWith('/media') ? 'fill' : 'regular'} /> <span>Media &amp; Design Studio</span>
+              </div>
             )}
 
             {(isSuperAdmin || isBranchManager || isAssetManager) && !isDesigner && !isTerritoryManager && (
