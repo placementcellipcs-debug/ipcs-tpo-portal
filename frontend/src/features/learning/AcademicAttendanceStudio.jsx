@@ -18,7 +18,7 @@ const MARKS = [
 const todayIndia = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
 const initials = value => String(value || 'Learner').trim().split(/\s+/).map(word => word[0]).join('').slice(0, 2).toUpperCase();
 const defaultMarkForDay = (mark, year, month, day) => mark || (new Date(year, month - 1, day).getDay() === 0 ? 'S' : '');
-const percentageValue = student => Math.max(0, Math.min(100, Number.parseFloat(student?.syllabusCompleted || student?.coursePercentage || student?.training?.progress) || 0));
+const percentageValue = student => Math.max(0, Math.min(100, Number.parseFloat(student?.training?.progress || student?.coursePercentage || student?.syllabusCompleted) || 0));
 const profileFields = [
   ['Phone number', 'phone', Phone], ['Mail ID', 'email', EnvelopeSimple], ['Parent phone', 'parentPhone', Phone],
   ['Qualification', 'qualification', GraduationCap], ['Course track', 'subCourse', BookOpen], ['Course duration', 'courseDuration', Clock],
@@ -51,7 +51,6 @@ export default function AcademicAttendanceStudio() {
   const [topicDraft, setTopicDraft] = useState({ module: '', topic: '', courseDuration: '', plannedHours: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [importingHistory, setImportingHistory] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
   const [savingTopic, setSavingTopic] = useState(false);
   const [error, setError] = useState('');
@@ -123,16 +122,6 @@ export default function AcademicAttendanceStudio() {
     finally { setSaving(false); }
   };
 
-  const importMasterHistory = async () => {
-    setImportingHistory(true); setError(''); setNotice('');
-    try {
-      const response = await axios.post(`${API_BASE}/api/academic/attendance/import-master`, { branch, course });
-      const alreadyImported = Number(response.data?.alreadyImported) || 0;
-      setNotice(`${response.data?.message || 'Master attendance sync finished.'} ${alreadyImported ? `(${alreadyImported} already present)` : ''}`.trim());
-    } catch (requestError) { setError(requestError.response?.data?.message || 'Could not import the master attendance history.'); }
-    finally { setImportingHistory(false); }
-  };
-
   const markAllPresent = () => setDraft(current => Object.fromEntries((register?.students || []).map(student => [String(student.studentId), current[String(student.studentId)] || 'P'])));
 
   const openStudent = student => {
@@ -186,7 +175,7 @@ export default function AcademicAttendanceStudio() {
         <AcademicTopNav title="Attendance & progress" subtitle="Mark a day, follow each learner’s syllabus, and review the monthly register in one connected workspace." statLabel="Assigned learners" statValue={register?.students?.length || 0} />
 
         <section className="attendance-command-bar">
-          <div className="attendance-command-copy"><span><CalendarCheck size={15} weight="fill" /> TRAINER REGISTER</span><h2>{register?.monthLabel || MONTHS[month - 1]} <em>{year}</em></h2><p>{branch || 'Branch'} <i /> {course || 'Course'} <i /> The selected date’s course roster and monthly master are kept in sync.</p></div>
+          <div className="attendance-command-copy"><span><CalendarCheck size={15} weight="fill" /> TRAINER REGISTER</span><h2>{register?.monthLabel || MONTHS[month - 1]} <em>{year}</em></h2><p>{branch || 'Branch'} <i /> {course || 'Course'} <i /> Daily marks and imported history are stored together in the portal attendance register.</p></div>
           <div className="attendance-command-filters">
             <label><small>BRANCH</small><select value={branch} onChange={event => setBranch(event.target.value)}>{branchOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></label>
             <label><small>COURSE</small><select value={course} onChange={event => setCourse(event.target.value)}>{courseOptions.map(option => <option key={option} value={option}>{option}</option>)}</select></label>
@@ -209,10 +198,9 @@ export default function AcademicAttendanceStudio() {
 
         <section className="attendance-ledger-card">
           <div className="attendance-ledger-head">
-            <div><span>{view === 'day' ? 'DAILY CLASSROOM' : 'MONTHLY OVERVIEW'}</span><h2>{view === 'day' ? 'Take today’s register' : `${register?.monthLabel || MONTHS[month - 1]} attendance`}</h2><p>{view === 'day' ? 'Select the day, open a learner for their profile, then mark the class register.' : 'Every mark is the same code used in your monthly master attendance sheet.'}</p></div>
+            <div><span>{view === 'day' ? 'DAILY CLASSROOM' : 'MONTHLY OVERVIEW'}</span><h2>{view === 'day' ? 'Take today’s register' : `${register?.monthLabel || MONTHS[month - 1]} attendance`}</h2><p>{view === 'day' ? 'Select the day, open a learner for their profile, then mark the class register.' : 'Review attendance history imported from the master sheet and marks recorded in the portal.'}</p></div>
             <div className="attendance-ledger-actions">
               {view === 'day' && <label className="attendance-day-select"><small>DAY</small><select value={Math.min(day, daysInMonth)} onChange={event => setDay(Number(event.target.value))}>{Array.from({ length: daysInMonth }, (_, index) => index + 1).map(value => <option key={value}>{value}</option>)}</select><span>{new Intl.DateTimeFormat('en', { weekday: 'short' }).format(new Date(year, month - 1, Math.min(day, daysInMonth)))}</span></label>}
-              {register?.sourceType === 'monthly-master' && <button type="button" className="attendance-import-button" onClick={importMasterHistory} disabled={importingHistory || loading}><ArrowDownRight size={15} />{importingHistory ? 'Importing history…' : 'Add master history to portal'}</button>}
               <button type="button" className="attendance-mark-all" onClick={markAllPresent} disabled={loading || !register?.students?.length}><Check size={15} /> Mark remaining present</button>
               <button type="button" className="attendance-save-button" onClick={saveDay} disabled={saving || loading || !markedCount}>{saving ? <span className="attendance-loader" /> : <FloppyDisk size={17} />} Save day’s register <ArrowUpRight size={15} /></button>
             </div>

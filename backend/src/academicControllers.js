@@ -7,6 +7,9 @@ let loadPromise;
 let cachedData;
 let cachedAt = 0;
 let dataPromise;
+let cachedWorkspaceData;
+let workspaceCachedAt = 0;
+let workspaceDataPromise;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const BANGALORE_ATTENDANCE_SPREADSHEET_ID = String(
   process.env.BANGALORE_ATTENDANCE_SPREADSHEET_ID || process.env.ATTENDANCE_SPREADSHEET_ID ||
@@ -209,16 +212,27 @@ function mapRecords(rows, fields) {
   return rows.map(row => ({ rowNumber: row.rowNumber, ...mapRow(row, fields) }));
 }
 
-async function readAllAcademicData(force = false) {
-  if (!force && cachedData && Date.now() - cachedAt < CACHE_TTL_MS) return cachedData;
-  if (dataPromise) return dataPromise;
-  dataPromise = (async () => {
+async function readAllAcademicData(force = false, options = {}) {
+  const includeAttendance = options.includeAttendance !== false;
+  const currentCache = includeAttendance ? cachedData : cachedWorkspaceData;
+  const currentCacheAt = includeAttendance ? cachedAt : workspaceCachedAt;
+  const currentPromise = includeAttendance ? dataPromise : workspaceDataPromise;
+  if (!force && currentCache && Date.now() - currentCacheAt < CACHE_TTL_MS) return currentCache;
+  if (currentPromise) return currentPromise;
+  const promise = (async () => {
     await loadAcademicDoc();
-    const keys = ['training', 'batches', 'topics', 'sessions', 'attendance', 'topicProgress', 'diary', 'leaveRequests'];
+    const keys = ['training', 'batches', 'topics', 'sessions', ...(includeAttendance ? ['attendance'] : []), 'topicProgress', 'diary', 'leaveRequests'];
     const leaveSheet = findSheet('leaveRequests');
-    const [trainingRows, batchRows, topicRows, sessionRows, attendanceRows, progressRows, diaryRows, leaveRows] = await Promise.all(
-      keys.map(key => readRows(key === 'leaveRequests' ? leaveSheet : findSheet(key)))
-    );
+    const rowEntries = await Promise.all(keys.map(async key => [key, await readRows(key === 'leaveRequests' ? leaveSheet : findSheet(key))]));
+    const rowsByKey = Object.fromEntries(rowEntries);
+    const trainingRows = rowsByKey.training || [];
+    const batchRows = rowsByKey.batches || [];
+    const topicRows = rowsByKey.topics || [];
+    const sessionRows = rowsByKey.sessions || [];
+    const attendanceRows = rowsByKey.attendance || [];
+    const progressRows = rowsByKey.topicProgress || [];
+    const diaryRows = rowsByKey.diary || [];
+    const leaveRows = rowsByKey.leaveRequests || [];
     const masterStudents = getCache()?.students || [];
     const students = masterStudents.map(mapStudent).filter(student => student.studentId);
     const studentMap = new Map(students.map(student => [String(student.studentId).trim().toLowerCase(), student]));
@@ -268,20 +282,31 @@ async function readAllAcademicData(force = false) {
         return { ...record, leaveId: record.leaveId || `ROW-${record.rowNumber}`, studentName: record.studentName || student.studentName || '', mainCourse: record.mainCourse || student.mainCourse || '', branch: record.branch || student.branch || '' };
       });
 
-    cachedData = { training, batches, topics, sessions, attendance, topicProgress, diary, leaveRequests, leaveRequestsAvailable: Boolean(leaveSheet), students };
-    cachedAt = Date.now();
-    return cachedData;
+    const result = { training, batches, topics, sessions, attendance, topicProgress, diary, leaveRequests, leaveRequestsAvailable: Boolean(leaveSheet), students };
+    if (includeAttendance) {
+      cachedData = result;
+      cachedAt = Date.now();
+    } else {
+      cachedWorkspaceData = result;
+      workspaceCachedAt = Date.now();
+    }
+    return result;
   })();
+  if (includeAttendance) dataPromise = promise;
+  else workspaceDataPromise = promise;
   try {
-    return await dataPromise;
+    return await promise;
   } finally {
-    dataPromise = null;
+    if (includeAttendance) dataPromise = null;
+    else workspaceDataPromise = null;
   }
 }
 
 function invalidateAcademicCache() {
   cachedData = null;
   cachedAt = 0;
+  cachedWorkspaceData = null;
+  workspaceCachedAt = 0;
 }
 
 function respondError(res, error) {
@@ -311,6 +336,16 @@ function normalizeAttendanceBranch(value) {
   return branch.includes('bangalore') ? 'bangalore' : branch;
 }
 
+function standardizeAttendanceCourse(value) {
+  const course = normalize(value);
+  if (course.includes('bms') || course.includes('cctv')) return 'bms and cctv';
+  if (course.includes('automation') || course.includes('plc') || course.includes('scada')) return 'industrial automation';
+  if (course.includes('embed') || course.includes('iot')) return 'embedded and iot';
+  if (course.includes('digital') || course.includes('marketing') || course === 'dm' || course.includes('accdm')) return 'digital marketing';
+  if (course.includes('information technology') || course.includes('python') || course.includes('software') || course.includes('data') || course === 'it') return 'information technology';
+  return course;
+}
+
 function getAttendanceSpreadsheetId(branch) {
   const configured = String(process.env.ACADEMIC_BRANCH_ATTENDANCE_SPREADSHEETS || '').trim();
   if (configured) {
@@ -337,25 +372,6 @@ async function getAttendanceWorkbook(branch) {
     attendanceWorkbooks.set(spreadsheetId, promise);
   }
   return attendanceWorkbooks.get(spreadsheetId);
-}
-
-function readHeaderValue(row, aliases, excluded = []) {
-  const headers = row?._worksheet?.headerValues || Object.keys(row?.toObject?.() || {});
-  const targets = aliases.map(normalize);
-  const excludedTargets = excluded.map(normalize);
-  const header = headers.find(item => targets.includes(normalize(item))) || headers.find(item => {
-    const candidate = normalize(item);
-    return targets.some(target => candidate.includes(target)) && !excludedTargets.some(target => candidate.includes(target));
-  });
-  return header ? (row.get(header) ?? '') : '';
-}
-
-function findHeader(headers, aliases) {
-  const targets = aliases.map(normalize);
-  return headers.find(header => targets.includes(normalize(header))) || headers.find(header => {
-    const candidate = normalize(header);
-    return targets.some(target => candidate.includes(target));
-  }) || null;
 }
 
 function findHeaderIndex(headers, aliases, excluded = []) {
@@ -389,32 +405,49 @@ function monthYearKey(value) {
   return Number.isNaN(parsed.getTime()) ? '' : `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}`;
 }
 
+function attendanceDateKey(value) {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(value);
+  }
+  const text = cleanText(value);
+  const iso = text.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+  if (iso) return `${iso[1]}-${String(Number(iso[2])).padStart(2, '0')}-${String(Number(iso[3])).padStart(2, '0')}`;
+  const parsed = new Date(text);
+  return Number.isNaN(parsed.getTime()) ? '' : new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(parsed);
+}
+
 function monthYearLabel(key) {
   const [year, month] = String(key || '').split('-').map(Number);
   return year && month ? new Date(year, month - 1, 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' }) : '';
 }
 
 function attendanceCourseConfig(course) {
-  return LEGACY_COURSE_SHEETS.find(item => normalize(item.course) === normalize(course) || normalize(item.name) === normalize(course)) || null;
+  const target = standardizeAttendanceCourse(course);
+  return LEGACY_COURSE_SHEETS.find(item => standardizeAttendanceCourse(item.course) === target || standardizeAttendanceCourse(item.name) === target) || null;
+}
+
+async function readLegacyCourseGrid(workbook, branch, item) {
+  const sheet = workbook.sheetsByTitle[item.name];
+  if (!sheet) return { sheet: null, headers: [], rows: [] };
+  const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
+  const response = await sheetsApi.spreadsheets.values.get({
+    spreadsheetId: getAttendanceSpreadsheetId(branch),
+    range: `'${item.name}'!A5:AJ`,
+  });
+  const grid = response.data.values || [];
+  return { sheet, headers: grid[0] || [], rows: grid.slice(1) };
 }
 
 async function readLegacyCourseRoster(workbook, branch, courseFilter = '') {
-  const courses = LEGACY_COURSE_SHEETS.filter(item => !courseFilter || normalize(item.course) === normalize(courseFilter) || normalize(item.name) === normalize(courseFilter));
-  const spreadsheetId = getAttendanceSpreadsheetId(branch);
-  const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
+  const targetCourse = standardizeAttendanceCourse(courseFilter);
+  const courses = LEGACY_COURSE_SHEETS.filter(item => !courseFilter || standardizeAttendanceCourse(item.course) === targetCourse || standardizeAttendanceCourse(item.name) === targetCourse);
   const groups = await Promise.all(courses.map(async item => {
     const sheet = workbook.sheetsByTitle[item.name];
     if (!sheet) return [];
     // Course tabs contain three side-by-side tables with repeated headings such
     // as Sl.No, Name, Phone No, and Course. Read the roster grid directly so
     // duplicate headers do not prevent the trainer roster from loading.
-    const response = await sheetsApi.spreadsheets.values.get({
-      spreadsheetId,
-      range: `'${item.name}'!A5:AJ`,
-    });
-    const grid = response.data.values || [];
-    const headers = grid[0] || [];
-    const rows = grid.slice(1);
+    const { headers, rows } = await readLegacyCourseGrid(workbook, branch, item);
     const validStatuses = new Set(['activeregular', 'activeirregular', 'transferstudentactiveregular', 'transferstudentactiveirregular', 'transferstudentaciveirregular', 'active']);
     return rows.map((values, index) => {
       const statusValues = [values[14], values[15], values[16]].map(cleanText).filter(Boolean);
@@ -458,14 +491,6 @@ async function readLegacyCourseRoster(workbook, branch, courseFilter = '') {
   return groups.flat();
 }
 
-async function readLegacyMasterRows(workbook) {
-  const sheet = workbook.sheetsByTitle.Master_Attendance_Database;
-  if (!sheet) throw new Error('The Bangalore workbook is missing Master_Attendance_Database.');
-  await sheet.loadHeaderRow(2);
-  const rows = await readRows(sheet);
-  return { sheet, rows, headers: sheet.headerValues || [] };
-}
-
 async function readLegacyMasterGrid(branch) {
   const spreadsheetId = getAttendanceSpreadsheetId(branch);
   const cacheKey = `${spreadsheetId}:Master_Attendance_Database`;
@@ -480,31 +505,6 @@ async function readLegacyMasterGrid(branch) {
   const value = { headers: grid[0] || [], rows: grid.slice(1) };
   legacyMasterGridCache.set(cacheKey, { value, expiresAt: Date.now() + 30000 });
   return value;
-}
-
-function legacyMonthlyRecord(row, headers, student, key) {
-  const dayMarks = {};
-  for (let day = 1; day <= 31; day += 1) {
-    const header = findHeader(headers, [String(day)]);
-    dayMarks[day] = header ? cleanText(row.get(header)).toUpperCase() : '';
-  }
-  const present = Object.values(dayMarks).filter(mark => mark === 'P').length;
-  const absent = Object.values(dayMarks).filter(mark => mark === 'A').length;
-  const matchRoll = cleanText(readHeaderValue(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
-  return {
-    studentId: matchRoll || student.studentId,
-    studentName: cleanText(readHeaderValue(row, ['studentname', 'name'])) || student.studentName,
-    mainCourse: cleanText(readHeaderValue(row, ['mastercourse', 'department'])) || student.mainCourse,
-    subCourse: cleanText(readHeaderValue(row, ['course', 'subcourse', 'specialization'])) || student.subCourse,
-    month: key,
-    monthLabel: monthYearLabel(key),
-    dayMarks,
-    present,
-    absent,
-    rowNumber: row.rowNumber,
-    studentStatus: cleanText(readHeaderValue(row, ['studentstatus', 'enrollmentstatus', 'status'])),
-    placementStatus: cleanText(readHeaderValue(row, ['placementstatus', 'placement'])) || student.placementStatus || '',
-  };
 }
 
 function indiaTodayKey() {
@@ -577,7 +577,7 @@ async function findRowBy(sheet, field, value) {
 
 exports.getAcademicData = async (req, res) => {
   try {
-    const data = scopeAcademicData(await readAllAcademicData(), req.portalUser);
+    const data = scopeAcademicData(await readAllAcademicData(false, { includeAttendance: false }), req.portalUser);
     res.json({ success: true, ...data });
   } catch (error) { respondError(res, error); }
 };
@@ -621,63 +621,42 @@ exports.getAttendanceRegister = async (req, res) => {
     const [year, month] = requestedKey.split('-').map(Number);
     if (!year || month < 1 || month > 12) return res.status(400).json({ success: false, message: 'Choose a valid month and year.' });
 
-    const workbook = await getAttendanceWorkbook(branch);
     let roster = scopedData.students.filter(student => normalizeAttendanceBranch(student.branch) === normalizeAttendanceBranch(branch));
-    let sourceSheet = '05_Attendance';
-    let sourceWorkbookTitle = '';
+    const sourceSheet = findSheet('attendance')?.title || '05_Attendance';
+    const sourceWorkbookTitle = academicDoc.title || '';
     let sourceType = 'portal';
-    let dailySheet = '';
+    const dailySheet = '';
     let monthlyRecords = [];
-
-    if (workbook) {
-      sourceWorkbookTitle = workbook.title;
-      sourceSheet = 'Master_Attendance_Database';
-      dailySheet = 'Daily_Attendance';
-      sourceType = 'monthly-master';
-      const legacyRoster = await readLegacyCourseRoster(workbook, branch, course);
-      if (legacyRoster.length) roster = mergeLegacyStudentProfiles(legacyRoster, scopedData.students);
-      const { rows, headers } = await readLegacyMasterRows(workbook);
-      const masterRows = rows.filter(row => monthYearKey(readHeaderValue(row, ['monthyear', 'month & year', 'month'])) === requestedKey);
-      const rosterById = new Map(roster.map(student => [cleanText(student.studentId).toLowerCase(), student]));
-      monthlyRecords = masterRows.map(row => {
-        const studentId = cleanText(readHeaderValue(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
-        const student = rosterById.get(studentId.toLowerCase());
-        if (!student) return null;
-        const record = legacyMonthlyRecord(row, headers, student, requestedKey);
-        if (!canAccessAcademicRecord(req.portalUser, { branch, mainCourse: record.mainCourse || student.mainCourse })) return null;
-        if (course && normalize(record.mainCourse) !== normalize(course)) return null;
-        return record;
-      }).filter(Boolean);
-    } else {
-      const rosterById = new Map(roster.map(student => [cleanText(student.studentId).toLowerCase(), student]));
-      const attendanceByStudent = new Map();
-      const markCode = value => ({
-        p: 'P', present: 'P', a: 'A', absent: 'A', late: 'A',
-        h: 'H', leave: 'H', holiday: 'H', holidayleave: 'H', s: 'S', sunday: 'S',
-        x: 'X', 'no class': 'X', noclass: 'X',
-      })[normalize(value)] || '';
-      scopedData.attendance
-        .filter(record => monthYearKey(record.date) === requestedKey && (!course || normalize(record.mainCourse) === normalize(course)))
-        .forEach(record => {
-          const student = rosterById.get(cleanText(record.studentId).toLowerCase());
-          if (!student) return;
-          const day = Number(String(record.date || '').slice(8, 10)) || new Date(record.date).getDate();
-          if (day < 1 || day > 31) return;
-          const id = cleanText(student.studentId).toLowerCase();
-          if (!attendanceByStudent.has(id)) attendanceByStudent.set(id, {
-            studentId: student.studentId, studentName: student.studentName, mainCourse: student.mainCourse,
-            subCourse: student.subCourse || '', month: requestedKey, monthLabel: monthYearLabel(requestedKey), dayMarks: {},
-            present: 0, absent: 0, rowNumber: record.rowNumber,
-          });
-          const monthly = attendanceByStudent.get(id);
-          monthly.dayMarks[day] = markCode(record.attendanceStatus);
-          monthly.present = Object.values(monthly.dayMarks).filter(mark => mark === 'P').length;
-          monthly.absent = Object.values(monthly.dayMarks).filter(mark => mark === 'A').length;
+    const rosterById = new Map(roster.map(student => [cleanText(student.studentId).toLowerCase(), student]));
+    const attendanceByStudent = new Map();
+    const markCode = value => ({
+      p: 'P', present: 'P', a: 'A', absent: 'A', late: 'A',
+      h: 'H', leave: 'H', holiday: 'H', holidayleave: 'H', s: 'S', sunday: 'S',
+      x: 'X', 'no class': 'X', noclass: 'X',
+    })[normalize(value)] || '';
+    scopedData.attendance
+      .filter(record => monthYearKey(record.date) === requestedKey &&
+        normalizeAttendanceBranch(record.branch) === normalizeAttendanceBranch(branch) &&
+        (!course || standardizeAttendanceCourse(record.mainCourse) === standardizeAttendanceCourse(course)))
+      .forEach(record => {
+        const student = rosterById.get(cleanText(record.studentId).toLowerCase());
+        if (!student) return;
+        const day = Number(String(record.date || '').slice(8, 10)) || new Date(record.date).getDate();
+        if (day < 1 || day > 31) return;
+        const id = cleanText(student.studentId).toLowerCase();
+        if (!attendanceByStudent.has(id)) attendanceByStudent.set(id, {
+          studentId: student.studentId, studentName: student.studentName, mainCourse: student.mainCourse,
+          subCourse: student.subCourse || '', month: requestedKey, monthLabel: monthYearLabel(requestedKey), dayMarks: {},
+          present: 0, absent: 0, rowNumber: record.rowNumber,
         });
-      monthlyRecords = [...attendanceByStudent.values()];
-    }
+        const monthly = attendanceByStudent.get(id);
+        monthly.dayMarks[day] = markCode(record.attendanceStatus);
+        monthly.present = Object.values(monthly.dayMarks).filter(mark => mark === 'P').length;
+        monthly.absent = Object.values(monthly.dayMarks).filter(mark => mark === 'A').length;
+      });
+    monthlyRecords = [...attendanceByStudent.values()];
 
-    if (course) roster = roster.filter(student => normalize(student.mainCourse) === normalize(course));
+    if (course) roster = roster.filter(student => standardizeAttendanceCourse(student.mainCourse) === standardizeAttendanceCourse(course));
     roster = roster.filter(student => canAccessAcademicRecord(req.portalUser, { branch, mainCourse: student.mainCourse }));
     const recordById = new Map(monthlyRecords.map(record => [cleanText(record.studentId).toLowerCase(), record]));
     const trainingById = new Map(scopedData.training.map(record => [cleanText(record.studentId).toLowerCase(), record]));
@@ -694,15 +673,13 @@ exports.getAttendanceRegister = async (req, res) => {
       topicProgress: progressByStudent.get(cleanText(student.studentId).toLowerCase()) || [],
     }));
     const topics = scopedData.topics.filter(topic =>
-      normalize(topic.mainCourse) === normalize(course || req.portalUser?.assignedCourse || req.portalUser?.department) &&
+      standardizeAttendanceCourse(topic.mainCourse) === standardizeAttendanceCourse(course || req.portalUser?.assignedCourse || req.portalUser?.department) &&
       (!topic.branch || normalizeAttendanceBranch(topic.branch) === normalizeAttendanceBranch(branch))
     );
     res.json({
       success: true, branch, course, month: String(month).padStart(2, '0'), year, monthKey: requestedKey,
       monthLabel: monthYearLabel(requestedKey), daysInMonth: new Date(year, month, 0).getDate(),
-      sourceSheet, dailySheet, sourceWorkbookTitle, sourceType, sourceUrl: workbook
-        ? `https://docs.google.com/spreadsheets/d/${getAttendanceSpreadsheetId(branch)}/edit${normalizeAttendanceBranch(branch) === 'bangalore' ? '#gid=2114306315' : ''}`
-        : '',
+      sourceSheet, dailySheet, sourceWorkbookTitle, sourceType, sourceUrl: '',
       canMark: true, students, topics,
       summary: {
         total: students.length,
@@ -712,7 +689,7 @@ exports.getAttendanceRegister = async (req, res) => {
     });
   } catch (error) {
     console.error('Attendance register could not be loaded:', error.message);
-    return res.status(503).json({ success: false, message: 'The assigned attendance workbook could not be read. Check that the portal service account has access to the branch workbook.' });
+    return res.status(503).json({ success: false, message: 'The portal attendance register could not be read. Check that the portal service account has access to the academics workbook.' });
   }
 };
 
@@ -778,7 +755,7 @@ exports.importLegacyMasterAttendance = async (req, res) => {
       const sourceCourse = readGridField(masterHeaders, sourceRow, ['mastercourse', 'department']);
       const matchedStudent = rosterById.get(studentId.toLowerCase());
       const rowCourse = sourceCourse || matchedStudent?.mainCourse || '';
-      if (normalize(rowCourse) !== normalize(course)) continue;
+      if (standardizeAttendanceCourse(rowCourse) !== standardizeAttendanceCourse(course)) continue;
       const monthKey = monthYearKey(readGridField(masterHeaders, sourceRow, ['monthyear', 'month & year', 'month']));
       if (!monthKey) { skippedRows++; continue; }
       const [year, month] = monthKey.split('-').map(Number);
@@ -828,24 +805,6 @@ exports.importLegacyMasterAttendance = async (req, res) => {
   }
 };
 
-function attendanceRowValues(sheet, student, monthKey) {
-  const row = {};
-  const headers = sheet.headerValues || [];
-  const set = (aliases, value) => {
-    const header = findHeader(headers, aliases);
-    if (header && value !== undefined && value !== '') row[header] = value;
-  };
-  set(['monthyear', 'month & year', 'month'], monthYearLabel(monthKey));
-  set(['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'], student.studentId);
-  set(['studentname', 'name'], student.studentName);
-  set(['mastercourse', 'department'], student.mainCourse);
-  set(['course', 'subcourse', 'specialization'], student.subCourse);
-  set(['batch', 'batchname'], student.batch);
-  set(['durationofthecourse', 'courseduration', 'duration'], student.courseDuration);
-  set(['studentstatus', 'enrollmentstatus', 'status'], student.courseStatus || student.status || 'Active');
-  return row;
-}
-
 exports.markDailyAttendance = async (req, res) => {
   try {
     const body = req.body || {};
@@ -862,124 +821,76 @@ exports.markDailyAttendance = async (req, res) => {
     if (marks.some(item => !item || !allowedMarks.has(cleanText(item.status).toUpperCase()))) return res.status(400).json({ success: false, message: 'Attendance marks must be P, A, H, S, X, or blank.' });
 
     const scopedData = scopeAcademicData(await readAllAcademicData(), req.portalUser);
-    const workbook = await getAttendanceWorkbook(branch);
-    let attendanceRoster = scopedData.students.filter(student => normalizeAttendanceBranch(student.branch) === normalizeAttendanceBranch(branch) && normalize(student.mainCourse) === normalize(course));
-    if (workbook) {
-      const legacyRoster = await readLegacyCourseRoster(workbook, branch, course);
-      if (legacyRoster.length) attendanceRoster = mergeLegacyStudentProfiles(legacyRoster, scopedData.students);
+    const allowedStudents = new Map(scopedData.students
+      .filter(student => normalizeAttendanceBranch(student.branch) === normalizeAttendanceBranch(branch) && standardizeAttendanceCourse(student.mainCourse) === standardizeAttendanceCourse(course))
+      .map(student => [cleanText(student.studentId).toLowerCase(), student]));
+    const marksById = new Map();
+    for (const item of marks) {
+      const studentId = cleanText(item.studentId).toLowerCase();
+      const student = allowedStudents.get(studentId);
+      if (!student || !canAccessAcademicRecord(req.portalUser, { branch, mainCourse: student.mainCourse })) return res.status(403).json({ success: false, message: 'One or more learners are outside your assigned scope.' });
+      if (marksById.has(studentId)) return res.status(400).json({ success: false, message: 'A learner can only have one attendance mark per save.' });
+      marksById.set(studentId, cleanText(item.status).toUpperCase());
     }
-    const allowedStudents = new Map(attendanceRoster.filter(student => normalizeAttendanceBranch(student.branch) === normalizeAttendanceBranch(branch) && normalize(student.mainCourse) === normalize(course)).map(student => [cleanText(student.studentId).toLowerCase(), student]));
+    if (!allowedStudents.size) return res.status(400).json({ success: false, message: 'No assigned learners are available for this course.' });
+    const isSunday = new Date(Date.UTC(dateYear, dateMonth - 1, dateDay)).getUTCDay() === 0;
+    const roster = [...allowedStudents.values()].map(student => ({
+      ...student,
+      status: marksById.get(cleanText(student.studentId).toLowerCase()) || '',
+    }));
+    if (isSunday) roster.forEach(student => { if (!student.status) student.status = 'S'; });
+    if (!roster.some(student => student.status)) return res.status(400).json({ success: false, message: 'Choose at least one attendance mark before saving.' });
+
+    const sheet = requireSheet('attendance', res);
+    if (!sheet) return;
+    const attendanceRows = await readRows(sheet);
+    const statusLabels = { P: 'Present', A: 'Absent', H: 'Holiday', S: 'Sunday', X: 'No Class' };
+    const attendanceKey = (studentId, attendanceDate, attendanceBranch, attendanceCourse) => [
+      cleanText(studentId).toLowerCase(), attendanceDateKey(attendanceDate),
+      normalizeAttendanceBranch(attendanceBranch), standardizeAttendanceCourse(attendanceCourse),
+    ].join('|');
+    const existingByKey = new Map();
+    for (const row of attendanceRows) {
+      const key = attendanceKey(readField(row, 'studentId'), readField(row, 'date'), readField(row, 'branch'), readField(row, 'mainCourse'));
+      if (!existingByKey.has(key)) existingByKey.set(key, row);
+    }
+    const newRows = [];
     let saved = 0;
-    let destination = '05_Attendance';
-
-    if (workbook) {
-      const dailySheet = workbook.sheetsByTitle.Daily_Attendance;
-      if (!dailySheet) return res.status(503).json({ success: false, message: 'The branch workbook is missing Daily_Attendance.' });
-      const courseConfig = attendanceCourseConfig(course);
-      if (!courseConfig) return res.status(400).json({ success: false, message: 'This course has no daily attendance column mapping.' });
-      const marksById = new Map();
-      for (const item of marks) {
-        const student = allowedStudents.get(cleanText(item.studentId).toLowerCase());
-        if (!student || !canAccessAcademicRecord(req.portalUser, { branch, mainCourse: student.mainCourse })) return res.status(403).json({ success: false, message: 'One or more learners are outside your assigned scope.' });
-        const studentKey = cleanText(item.studentId).toLowerCase();
-        if (marksById.has(studentKey)) return res.status(400).json({ success: false, message: 'A learner can only have one attendance mark per save.' });
-        marksById.set(studentKey, cleanText(item.status).toUpperCase());
+    for (const student of roster) {
+      if (!student.status) continue;
+      const studentId = cleanText(student.studentId).toLowerCase();
+      const key = attendanceKey(student.studentId, date, branch, course);
+      const existing = existingByKey.get(key);
+      const values = makeRow(sheet, {
+        attendanceId: existing ? readField(existing, 'attendanceId') : nextId('ATT'),
+        studentId: student.studentId,
+        studentName: student.studentName,
+        mainCourse: student.mainCourse,
+        subCourse: student.subCourse,
+        branch,
+        date,
+        attendanceStatus: statusLabels[student.status],
+        markingMethod: 'Trainer',
+        verified: 'Yes',
+        verifiedBy: cleanText(req.portalUser?.name),
+        remarks: cleanText(marks.find(item => cleanText(item.studentId).toLowerCase() === studentId)?.remarks),
+      });
+      if (existing) {
+        existing.assign(values);
+        await existing.save();
+      } else {
+        newRows.push(values);
       }
-      const roster = [...allowedStudents.values()].map(student => ({
-        ...student,
-        status: marksById.get(cleanText(student.studentId).toLowerCase()) || '',
-      }));
-      if (!roster.length) return res.status(400).json({ success: false, message: 'No assigned learners are available for this course.' });
-      const isSunday = new Date(Date.UTC(dateYear, dateMonth - 1, dateDay)).getUTCDay() === 0;
-      if (isSunday) roster.forEach(student => { if (!student.status) student.status = 'S'; });
-      if (!roster.some(student => student.status)) return res.status(400).json({ success: false, message: 'Choose at least one attendance mark before saving.' });
-
-      const monthKey = date.slice(0, 7);
-      const { sheet: masterSheet, rows: masterRows, headers } = await readLegacyMasterRows(workbook);
-      const monthRows = masterRows.filter(row => monthYearKey(readHeaderValue(row, ['monthyear', 'month & year', 'month'])) === monthKey);
-      const day = Number(date.slice(8, 10));
-      const dayHeader = findHeader(headers, [String(day)]);
-      if (!dayHeader) return res.status(503).json({ success: false, message: `The master attendance sheet is missing the day ${day} column.` });
-
-      const pendingRows = [];
-      const matchedById = new Map();
-      for (const student of roster) {
-        const match = monthRows.find(row => cleanText(readHeaderValue(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])).toLowerCase() === cleanText(student.studentId).toLowerCase()
-          && normalize(readHeaderValue(row, ['mastercourse', 'department']) || student.mainCourse) === normalize(student.mainCourse));
-        if (match) matchedById.set(cleanText(student.studentId).toLowerCase(), match);
-        else pendingRows.push(attendanceRowValues(masterSheet, student, monthKey));
-      }
-      if (pendingRows.length) {
-        await masterSheet.addRows(pendingRows);
-        const refreshed = await masterSheet.getRows();
-        const refreshedMonthRows = refreshed.filter(row => monthYearKey(readHeaderValue(row, ['monthyear', 'month & year', 'month'])) === monthKey);
-        roster.forEach(student => {
-          if (matchedById.has(cleanText(student.studentId).toLowerCase())) return;
-          const match = refreshedMonthRows.find(row => cleanText(readHeaderValue(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])).toLowerCase() === cleanText(student.studentId).toLowerCase()
-            && normalize(readHeaderValue(row, ['mastercourse', 'department']) || student.mainCourse) === normalize(student.mainCourse));
-          if (match) matchedById.set(cleanText(student.studentId).toLowerCase(), match);
-        });
-      }
-      if (roster.some(student => !matchedById.has(cleanText(student.studentId).toLowerCase()))) return res.status(409).json({ success: false, message: 'Some learners could not be added to the monthly master register. Refresh the master database before saving.' });
-
-      const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
-      const requests = [];
-      {
-        const lastRow = Math.max(Number(dailySheet.rowCount) || 0, roster.length + 2, 100);
-        const startColumnIndex = courseConfig.dailyColumn - 1;
-        const dailyDate = new Intl.DateTimeFormat('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'long', year: 'numeric' })
-          .format(new Date(`${date}T00:00:00Z`)).replace(/\s(\d{4})$/, ' , $1');
-        requests.push({ updateCells: { range: { sheetId: dailySheet.sheetId, startRowIndex: 2, endRowIndex: lastRow, startColumnIndex, endColumnIndex: startColumnIndex + 4 }, fields: 'userEnteredValue' } });
-        requests.push({ updateCells: {
-          start: { sheetId: dailySheet.sheetId, rowIndex: 2, columnIndex: startColumnIndex },
-          rows: roster.map(student => ({ values: [dailyDate, student.studentId, student.studentName, student.status].map(value => ({ userEnteredValue: { stringValue: String(value ?? '') } })) })),
-          fields: 'userEnteredValue',
-        } });
-      }
-      const dayCol = headers.indexOf(dayHeader);
-      for (const student of roster) {
-        if (!student.status) continue;
-        const row = matchedById.get(cleanText(student.studentId).toLowerCase());
-        const rowIndex = Math.max(0, Number(row.rowNumber) - 1);
-        requests.push({ updateCells: { start: { sheetId: masterSheet.sheetId, rowIndex, columnIndex: dayCol }, rows: [{ values: [{ userEnteredValue: { stringValue: student.status } }] }], fields: 'userEnteredValue' } });
-        const updatedMarks = [];
-        for (let dayNumber = 1; dayNumber <= 31; dayNumber += 1) {
-          const header = findHeader(headers, [String(dayNumber)]);
-          updatedMarks.push(dayNumber === day ? student.status : (header ? cleanText(row.get(header)).toUpperCase() : ''));
-        }
-        const totalPresentHeader = findHeader(headers, ['totalpresent']);
-        const totalAbsentHeader = findHeader(headers, ['totalabsent']);
-        if (totalPresentHeader) requests.push({ updateCells: { start: { sheetId: masterSheet.sheetId, rowIndex, columnIndex: headers.indexOf(totalPresentHeader) }, rows: [{ values: [{ userEnteredValue: { numberValue: updatedMarks.filter(mark => mark === 'P').length } }] }], fields: 'userEnteredValue' } });
-        if (totalAbsentHeader) requests.push({ updateCells: { start: { sheetId: masterSheet.sheetId, rowIndex, columnIndex: headers.indexOf(totalAbsentHeader) }, rows: [{ values: [{ userEnteredValue: { numberValue: updatedMarks.filter(mark => mark === 'A').length } }] }], fields: 'userEnteredValue' } });
-      }
-      if (requests.length) await sheetsApi.spreadsheets.batchUpdate({ spreadsheetId: getAttendanceSpreadsheetId(branch), requestBody: { requests } });
-      destination = 'Daily_Attendance + Master_Attendance_Database';
-      saved = roster.filter(student => student.status).length;
-    } else {
-      const sheet = requireSheet('attendance', res);
-      if (!sheet) return;
-      const submittedIds = new Set();
-      for (const item of marks) {
-        const studentId = cleanText(item.studentId).toLowerCase();
-        if (!allowedStudents.has(studentId)) return res.status(403).json({ success: false, message: 'One or more learners are outside your assigned scope.' });
-        if (submittedIds.has(studentId)) return res.status(400).json({ success: false, message: 'A learner can only have one attendance mark per save.' });
-        submittedIds.add(studentId);
-      }
-      const records = marks.map(item => {
-        const student = allowedStudents.get(cleanText(item.studentId).toLowerCase());
-        if (!student || !cleanText(item.status)) return null;
-        const status = ({ P: 'Present', A: 'Absent', H: 'Leave', S: 'Holiday', X: 'No Class' })[cleanText(item.status).toUpperCase()];
-        return makeRow(sheet, { attendanceId: nextId('ATT'), studentId: student.studentId, date, attendanceStatus: status, markingMethod: 'Trainer', verified: 'Yes', verifiedBy: cleanText(req.portalUser?.name), remarks: cleanText(item.remarks) });
-      }).filter(Boolean);
-      await sheet.addRows(records);
-      saved = records.length;
+      saved += 1;
     }
+    if (newRows.length) await sheet.addRows(newRows);
+    const destination = sheet.title || 'Attendance';
 
     invalidateAcademicCache();
     return res.json({ success: true, saved, date, branch, course, destination, message: `${saved} attendance marks saved to ${destination}.` });
   } catch (error) {
     console.error('Daily attendance save failed:', error.message);
-    return res.status(503).json({ success: false, message: 'Could not save to the branch attendance workbook. Check that the portal service account has editor access.' });
+    return res.status(503).json({ success: false, message: 'Could not save attendance to the portal Attendance sheet.' });
   }
 };
 
@@ -1016,7 +927,7 @@ exports.reviewLeaveRequest = async (req, res) => {
 
 exports.getTrainingData = async (req, res) => {
   try {
-    const { training, students } = scopeAcademicData(await readAllAcademicData(), req.portalUser);
+    const { training, students } = scopeAcademicData(await readAllAcademicData(false, { includeAttendance: false }), req.portalUser);
     res.json({ success: true, training, students });
   } catch (error) { respondError(res, error); }
 };
@@ -1286,7 +1197,7 @@ exports.updateStudentAcademics = async (req, res) => {
     let savedTopics = 0;
     if (body.topicId) {
       const topic = scopedData.topics.find(item => cleanText(item.topicId) === cleanText(body.topicId));
-      if (!topic || (topic.mainCourse && normalize(topic.mainCourse) !== normalize(student.mainCourse)) || (topic.branch && normalizeAttendanceBranch(topic.branch) !== normalizeAttendanceBranch(student.branch))) {
+      if (!topic || (topic.mainCourse && standardizeAttendanceCourse(topic.mainCourse) !== standardizeAttendanceCourse(student.mainCourse)) || (topic.branch && normalizeAttendanceBranch(topic.branch) !== normalizeAttendanceBranch(student.branch))) {
         return res.status(403).json({ success: false, message: 'This topic is not part of the learner’s assigned course and branch.' });
       }
       const progressSheet = requireSheet('topicProgress', res);
@@ -1312,33 +1223,66 @@ exports.updateStudentAcademics = async (req, res) => {
       coursePercentage = Number(body.coursePercentage);
       if (!Number.isFinite(coursePercentage) || coursePercentage < 0 || coursePercentage > 100) return res.status(400).json({ success: false, message: 'Course completion must be between 0 and 100 percent.' });
       coursePercentage = Math.round(coursePercentage);
-      const training = scopedData.training.find(item => cleanText(item.studentId).toLowerCase() === studentId.toLowerCase() && canAccessAcademicRecord(req.portalUser, item));
+      const trainingSheet = requireSheet('training', res);
+      if (!trainingSheet) return;
+      const training = scopedData.training.find(item =>
+        cleanText(item.studentId).toLowerCase() === studentId.toLowerCase() &&
+        standardizeAttendanceCourse(item.mainCourse) === standardizeAttendanceCourse(student.mainCourse) &&
+        normalizeAttendanceBranch(item.branch) === normalizeAttendanceBranch(student.branch) &&
+        canAccessAcademicRecord(req.portalUser, item)
+      );
       if (training) {
-        const trainingSheet = requireSheet('training', res);
-        if (!trainingSheet) return;
         const row = await findRowBy(trainingSheet, 'trainingId', training.trainingId);
         if (row) {
           row.assign(makeRow(trainingSheet, { progress: `${coursePercentage}%`, status: coursePercentage === 100 ? 'Completed' : training.status }));
           await row.save();
         }
+      } else {
+        const trainingId = nextId('TRN');
+        await trainingSheet.addRow(makeRow(trainingSheet, {
+          trainingId, studentId: student.studentId, studentName: student.studentName,
+          mainCourse: student.mainCourse, subCourse: student.subCourse, branch: student.branch,
+          trainingType: 'Individual', trainerId: cleanText(req.portalUser?.empId),
+          trainerName: cleanText(req.portalUser?.name), plannedHours: 0, completedHours: 0,
+          progress: `${coursePercentage}%`, status: coursePercentage === 100 ? 'Completed' : 'Active',
+          startDate: student.joiningDate || indiaTodayKey(),
+        }));
       }
-      const workbook = await getAttendanceWorkbook(student.branch);
-      const courseConfig = attendanceCourseConfig(student.mainCourse);
-      const courseSheet = workbook && courseConfig ? workbook.sheetsByTitle[courseConfig.name] : null;
-      if (courseSheet) {
-        await courseSheet.loadHeaderRow(5);
-        const rows = await readRows(courseSheet);
-        const row = rows.find(item => cleanText(readHeaderValue(item, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])).toLowerCase() === studentId.toLowerCase());
-        if (row) {
-          const headers = courseSheet.headerValues || [];
-          const percentageHeader = findHeader(headers, ['syllabuscompleted', 'coursecompletedpercentage', 'completedpercentage']);
-          const statusHeader = findHeader(headers, ['status', 'studentstatus', 'coursestatus']);
-          const completedDateHeader = findHeader(headers, ['coursecompleteddate', 'completeddate']);
-          if (percentageHeader) row.set(percentageHeader, `${coursePercentage}%`);
-          if (coursePercentage === 100 && statusHeader) row.set(statusHeader, 'Completed');
-          if (coursePercentage === 100 && completedDateHeader) row.set(completedDateHeader, indiaTodayKey());
-          await row.save();
+
+      // Keep the old course roster in sync when available. The portal Training
+      // record above remains the canonical value used by the new workspace.
+      try {
+        const workbook = await getAttendanceWorkbook(student.branch);
+        const courseConfig = attendanceCourseConfig(student.mainCourse);
+        const courseSheet = workbook && courseConfig ? workbook.sheetsByTitle[courseConfig.name] : null;
+        if (courseSheet) {
+          const { headers, rows } = await readLegacyCourseGrid(workbook, student.branch, courseConfig);
+          const rowIndex = rows.findIndex(values => readGridField(headers, values, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']).toLowerCase() === studentId.toLowerCase());
+          if (rowIndex >= 0) {
+            const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
+            const targetRow = rowIndex + 5; // The grid begins at sheet row 5; roster rows begin at row 6.
+            const requests = [];
+            const setCell = (aliases, value) => {
+              const columnIndex = findHeaderIndex(headers, aliases);
+              if (columnIndex >= 0) requests.push({ updateCells: {
+                start: { sheetId: courseSheet.sheetId, rowIndex: targetRow, columnIndex },
+                rows: [{ values: [{ userEnteredValue: { stringValue: String(value) } }] }],
+                fields: 'userEnteredValue',
+              } });
+            };
+            setCell(['syllabuscompleted', 'coursecompletedpercentage', 'completedpercentage'], `${coursePercentage}%`);
+            if (coursePercentage === 100) {
+              setCell(['status', 'studentstatus', 'coursestatus'], 'Completed');
+              setCell(['coursecompleteddate', 'completeddate'], indiaTodayKey());
+            }
+            if (requests.length) await sheetsApi.spreadsheets.batchUpdate({
+              spreadsheetId: getAttendanceSpreadsheetId(student.branch),
+              requestBody: { requests },
+            });
+          }
         }
+      } catch (error) {
+        console.warn('Portal course progress was saved, but the legacy course roster could not be updated:', error.message);
       }
     }
 

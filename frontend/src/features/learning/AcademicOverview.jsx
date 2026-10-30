@@ -20,7 +20,12 @@ const sheetDateKey = value => {
   const parsed = new Date(text);
   return Number.isNaN(parsed.getTime()) ? '' : new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(parsed);
 };
-const activeValue = value => ['active', 'ongoing', 'in progress', 'enrolled', 'current'].includes(normalized(value));
+const activeValue = value => {
+  const status = normalized(value);
+  return ['active', 'ongoing', 'in progress', 'enrolled', 'current'].includes(status) ||
+    status.startsWith('active') || status.startsWith('currently') || status.includes('studying') ||
+    status.includes('ongoing') || status.includes('enrolled') || status.includes('inprogress');
+};
 const progressOf = record => Math.max(0, Math.min(100, Number.parseFloat(record?.progress) || (Number(record?.plannedHours) ? (Number(record?.completedHours || 0) / Number(record.plannedHours)) * 100 : 0)));
 const initials = value => String(value || 'Student').trim().split(/\s+/).map(word => word[0]).join('').slice(0, 2).toUpperCase();
 

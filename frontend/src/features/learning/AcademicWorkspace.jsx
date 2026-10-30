@@ -28,6 +28,12 @@ const buttonStyle = { border: 0, borderRadius: '9px', padding: '10px 14px', back
 const asList = value => (Array.isArray(value) ? value : String(value || '').split(/[,;\n]+/)).map(item => String(item || '').trim()).filter(Boolean);
 const dateToday = getTodayPortalDateInput;
 const studentName = (studentId, students = []) => students.find(student => String(student.studentId).toLowerCase() === String(studentId).toLowerCase())?.studentName || '';
+const activeStatus = value => {
+  const status = String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  return ['active', 'ongoing', 'in progress', 'enrolled', 'current'].includes(status) ||
+    status.startsWith('active ') || status.startsWith('currently ') || status.includes('studying') ||
+    status.includes('ongoing') || status.includes('enrolled') || status.includes('in progress');
+};
 
 export default function AcademicWorkspace({ module }) {
   return module === 'attendance' ? <AcademicAttendanceStudio /> : <AcademicWorkspaceRecords module={module} />;
@@ -98,11 +104,18 @@ function AcademicWorkspaceRecords({ module }) {
 
   const showModal = () => {
     setError('');
+    const initialCourse = courseOptions[0] || '';
+    const initialBranch = branchOptions[0] || '';
+    const initialPlanStudent = students.find(student =>
+      standardizeAcademicCourse(student.mainCourse) === standardizeAcademicCourse(initialCourse) &&
+      normalizeAcademicBranch(student.branch) === normalizeAcademicBranch(initialBranch)
+    );
     const defaults = {
       training: { trainingType: 'Individual', status: 'Active', plannedHours: '40', startDate: dateToday() },
       batches: { status: 'Active', startDate: dateToday() },
       sessions: { sessionType: 'Individual', date: dateToday(), startTime: '09:00', endTime: '10:00', sessionStatus: 'Completed', trainerName: tpoData.name || '' },
       diary: { date: dateToday(), eventType: 'Trainer Note' },
+      topics: { mainCourse: initialCourse, branch: initialBranch, subCourse: initialPlanStudent?.subCourse || '', courseDuration: initialPlanStudent?.courseDuration || '', module: '', topic: '', sequence: '', plannedHours: '' },
     };
     setForm(defaults[module] || {});
     setAttendanceDraft({});
@@ -128,6 +141,10 @@ function AcademicWorkspaceRecords({ module }) {
         payload.actualHours = form.actualHours || undefined;
       }
       if (module === 'diary') endpoint = 'diary/add';
+      if (module === 'topics') {
+        endpoint = 'topics/add';
+        payload = { ...payload, branch: form.branch, course: form.mainCourse };
+      }
       const response = await axios.post(`${API_BASE}/api/academic/${endpoint}`, payload);
       if (!response.data.success) throw new Error(response.data.message || 'Could not save record.');
       setIsModalOpen(false);
@@ -160,11 +177,36 @@ function AcademicWorkspaceRecords({ module }) {
   const visibleDiary = diary.filter(item => !q || `${item.studentName} ${item.studentId} ${item.title} ${item.eventType} ${item.description}`.toLowerCase().includes(q));
   const visibleSessions = sessions.filter(item => !q || `${item.sessionId} ${item.topic} ${item.studentId} ${item.batchId} ${item.trainerName}`.toLowerCase().includes(q));
   const visibleBatches = batches.filter(item => !q || `${item.batchName} ${item.batchId} ${item.mainCourse} ${item.branch} ${item.trainerName}`.toLowerCase().includes(q));
-  const visibleTraining = training.filter(item => !q || `${item.studentName} ${item.studentId} ${item.mainCourse} ${item.subCourse} ${item.branch} ${item.trainerName}`.toLowerCase().includes(q));
+  const assignedStudentIds = new Set(training.map(item => String(item.studentId).toLowerCase()));
+  const trainingCards = module === 'training' ? [
+    ...training,
+    ...students.filter(student => !assignedStudentIds.has(String(student.studentId).toLowerCase())).map(student => ({
+      trainingId: `PROFILE-${student.studentId}`,
+      studentId: student.studentId,
+      studentName: student.studentName,
+      mainCourse: student.mainCourse,
+      subCourse: student.subCourse,
+      branch: student.branch,
+      status: student.courseStatus || student.status || 'Enrolled',
+      progress: student.syllabusCompleted || student.coursePercentage || '',
+      profileOnly: true,
+    })),
+  ] : training;
+  const visibleTraining = trainingCards.filter(item => !q || `${item.studentName} ${item.studentId} ${item.mainCourse} ${item.subCourse} ${item.branch} ${item.trainerName} ${item.status}`.toLowerCase().includes(q));
   const visibleTopics = topics.filter(item => !q || `${item.mainCourse} ${item.subCourse} ${item.module} ${item.topic} ${item.subtopic}`.toLowerCase().includes(q));
   const courseOptions = [...new Set(students.map(student => student.mainCourse).filter(Boolean))].sort((a, b) => a.localeCompare(b));
   const branchOptions = [...new Set(students.map(student => student.branch).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  const activeTrainingCount = training.filter(item => ['active', 'ongoing', 'in progress'].includes(String(item.status || '').toLowerCase())).length;
+  const topicPlanStudents = students.filter(student =>
+    (!form.mainCourse || standardizeAcademicCourse(student.mainCourse) === standardizeAcademicCourse(form.mainCourse)) &&
+    (!form.branch || normalizeAcademicBranch(student.branch) === normalizeAcademicBranch(form.branch))
+  );
+  const topicTrackOptions = [...new Set(topicPlanStudents.map(student => student.subCourse).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const topicDurationOptions = [...new Set(topicPlanStudents.map(student => student.courseDuration).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const activeTrainingIds = new Set(training.filter(item => activeStatus(item.status)).map(item => String(item.studentId).toLowerCase()));
+  const activeTrainingCount = new Set([
+    ...students.filter(student => activeStatus(student.status)).map(student => String(student.studentId).toLowerCase()),
+    ...activeTrainingIds,
+  ]).size;
   const completedHours = training.reduce((sum, item) => sum + (Number(item.completedHours) || 0), 0);
   const completionRate = training.length ? Math.round(training.reduce((sum, item) => sum + (Number.parseFloat(item.progress) || 0), 0) / training.length) : 0;
   const metricCards = module === 'training'
@@ -178,9 +220,9 @@ function AcademicWorkspaceRecords({ module }) {
           : module === 'topics'
             ? [{ label: 'Course topics', value: topics.length, icon: BookOpen }, { label: 'Learning modules', value: new Set(topics.map(item => item.module).filter(Boolean)).size, icon: GraduationCap }, { label: 'Courses in scope', value: courseOptions.length, icon: Buildings }]
             : [{ label: 'Diary entries', value: diary.length, icon: Notebook }, { label: 'Learners noted', value: new Set(diary.map(item => item.studentId).filter(Boolean)).size, icon: UsersFour }, { label: 'Active learners', value: activeTrainingCount, icon: Sparkle }];
-  const recordCount = module === 'training' ? training.length : module === 'batches' ? batches.length : module === 'sessions' ? sessions.length : module === 'attendance' ? attendance.length : module === 'topics' ? topics.length : diary.length;
+  const recordCount = module === 'training' ? trainingCards.length : module === 'batches' ? batches.length : module === 'sessions' ? sessions.length : module === 'attendance' ? attendance.length : module === 'topics' ? topics.length : diary.length;
   const visibleCount = module === 'training' ? visibleTraining.length : module === 'batches' ? visibleBatches.length : module === 'sessions' ? visibleSessions.length : module === 'attendance' ? visibleAttendance.length : module === 'topics' ? visibleTopics.length : visibleDiary.length;
-  const createLabel = module === 'training' ? 'Assign Training' : module === 'batches' ? 'Create Batch' : module === 'sessions' ? 'Log a Session' : 'Add Diary Note';
+  const createLabel = module === 'training' ? 'Assign Training' : module === 'batches' ? 'Create Batch' : module === 'sessions' ? 'Log a Session' : module === 'topics' ? 'Add syllabus topic' : 'Add Diary Note';
   const studentById = new Map(students.map(student => [String(student.studentId).toLowerCase(), student]));
   const trainingById = new Map(training.map(item => [String(item.trainingId), item]));
   const batchById = new Map(batches.map(item => [String(item.batchId), item]));
@@ -202,7 +244,7 @@ function AcademicWorkspaceRecords({ module }) {
 
         <div className="academic-toolbar">
           <label className="academic-search"><MagnifyingGlass size={18} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder={`Search ${module === 'topics' ? 'topics and modules' : 'students, records, and branches'}…`} /></label>
-          {module !== 'attendance' && module !== 'topics' && <button type="button" className="academic-create-button" onClick={showModal}><Plus weight="bold" /> {createLabel}<ArrowUpRight size={16} /></button>}
+          {module !== 'attendance' && <button type="button" className="academic-create-button" onClick={showModal}><Plus weight="bold" /> {createLabel}<ArrowUpRight size={16} /></button>}
         </div>
 
         {error && <div className="academic-message error" role="alert">{error}</div>}
@@ -211,12 +253,12 @@ function AcademicWorkspaceRecords({ module }) {
             {module === 'training' && <div className="academic-training-grid">{visibleTraining.map((item, index) => {
               const progress = Math.max(0, Math.min(100, Number.parseFloat(item.progress) || (Number(item.plannedHours) ? Number(item.completedHours || 0) / Number(item.plannedHours) * 100 : 0)));
               return <article className="academic-training-card" key={item.trainingId} style={{ '--card-delay': `${Math.min(index * 35, 245)}ms` }}>
-                <div className="academic-card-topline"><span className="academic-avatar">{String(item.studentName || item.studentId || 'S').split(/\s+/).map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span><select aria-label={`Training status for ${item.trainingId}`} value={item.status || 'Active'} onChange={event => updateTrainingStatus(item, event.target.value)}><option>Active</option><option>On Hold</option><option>Completed</option><option>Cancelled</option></select></div>
+                <div className="academic-card-topline"><span className="academic-avatar">{String(item.studentName || item.studentId || 'S').split(/\s+/).map(word => word[0]).join('').slice(0, 2).toUpperCase()}</span>{item.profileOnly ? <span className="academic-profile-label">ENROLMENT PROFILE</span> : <select aria-label={`Training status for ${item.trainingId}`} value={item.status || 'Active'} onChange={event => updateTrainingStatus(item, event.target.value)}><option>Active</option><option>On Hold</option><option>Completed</option><option>Cancelled</option></select>}</div>
                 <div className="academic-student-title"><h3>{item.studentName || 'Student record'}</h3><span>{item.studentId}</span></div>
                 <div className="academic-course-label">{item.mainCourse || 'Course not set'}<small>{item.subCourse || 'General track'}</small></div>
-                <div className="academic-training-meta"><span><Buildings size={14} /> {item.branch || 'Branch not set'}</span><span><GraduationCap size={14} /> {item.trainingType || 'Individual'}</span></div>
+                <div className="academic-training-meta"><span><Buildings size={14} /> {item.branch || 'Branch not set'}</span><span><GraduationCap size={14} /> {item.profileOnly ? 'Student master' : item.trainingType || 'Individual'}</span></div>
                 <div className="academic-progress-label"><span>Learning progress</span><b>{Math.round(progress)}%</b></div><div className="academic-progress-track"><i style={{ width: `${progress}%` }} /></div>
-                <div className="academic-card-footer"><span>{item.completedHours || 0} of {item.plannedHours || 0} hours</span><small>{item.trainerName || tpoData.name || 'Assigned trainer'}</small></div>
+                <div className="academic-card-footer"><span>{item.profileOnly ? 'Training plan pending' : `${item.completedHours || 0} of ${item.plannedHours || 0} hours`}</span><small>{item.profileOnly ? item.status : item.trainerName || tpoData.name || 'Assigned trainer'}</small></div>
               </article>;
             })}</div>}
 
@@ -258,7 +300,7 @@ function AcademicWorkspaceRecords({ module }) {
               })}
             </tbody></table></div></div>}
 
-            {module === 'topics' && <div className="academic-topic-grid">{visibleTopics.map((item, index) => <article className="academic-topic-card" key={item.topicId || `${item.module}-${item.topic}-${index}`}><div className="academic-topic-number">{String(item.sequence || index + 1).padStart(2, '0')}</div><span>{item.module || item.mainCourse || 'COURSE TOPIC'}</span><h3>{item.topic || 'Untitled topic'}</h3><p>{item.subtopic || 'Build practical understanding through guided learning.'}</p><footer><span><BookOpen size={14} /> {item.mainCourse || courseOptions[0] || 'Assigned course'}</span><small>{item.plannedHours ? `${item.plannedHours} planned hours` : 'Learning outline'}</small></footer></article>)}</div>}
+            {module === 'topics' && <div className="academic-topic-grid">{visibleTopics.map((item, index) => <article className="academic-topic-card" key={item.topicId || `${item.module}-${item.topic}-${index}`}><div className="academic-topic-number">{String(item.sequence || index + 1).padStart(2, '0')}</div><span>{item.module || item.mainCourse || 'COURSE TOPIC'}</span><h3>{item.topic || 'Untitled topic'}</h3><p>{item.subtopic || 'Build practical understanding through guided learning.'}</p><footer><span><BookOpen size={14} /> {item.mainCourse || courseOptions[0] || 'Assigned course'}</span><small>{item.plannedHours ? `${item.plannedHours} planned hours` : 'Learning outline'}</small></footer><div className="academic-topic-scope"><span>{item.branch || 'All assigned branches'}</span><span>{item.subCourse || 'General track'}</span><span>{item.courseDuration || 'Duration flexible'}</span></div></article>)}</div>}
 
             {module === 'diary' && <div className="academic-diary-list">{visibleDiary.map(item => { const student = studentById.get(String(item.studentId).toLowerCase()); return <article key={item.diaryId} className="academic-diary-card"><div className="academic-diary-marker"><Icon size={18} weight="duotone" /></div><div className="academic-diary-content"><div className="academic-diary-meta"><span>{item.eventType || 'Trainer note'}</span><time>{formatPortalDate(item.date, String(item.date || ''))}</time></div><h3>{item.title}</h3><p>{item.description || 'No additional note was recorded.'}</p><footer><b>{item.studentName || student?.studentName || item.studentId}</b><span>{student?.mainCourse || 'Assigned course'} · {student?.branch || 'Assigned branch'}</span><small>{item.studentId}{item.createdBy ? ` · ${item.createdBy}` : ''}</small></footer></div></article>; })}</div>}
 
@@ -267,7 +309,7 @@ function AcademicWorkspaceRecords({ module }) {
         )}
       </main>
 
-      {isModalOpen && <div className="academic-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setIsModalOpen(false); }}><div className="academic-modal"><div className="academic-modal-header"><div><span className="academic-modal-eyebrow">TRAINING &amp; ACADEMICS</span><h2>{module === 'training' ? 'Assign student training' : module === 'batches' ? 'Create training batch' : module === 'sessions' ? 'Log a live session' : 'Add student diary note'}</h2></div><button type="button" onClick={() => setIsModalOpen(false)} className="academic-icon-button" aria-label="Close"><X size={20} /></button></div>
+      {isModalOpen && <div className="academic-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setIsModalOpen(false); }}><div className="academic-modal"><div className="academic-modal-header"><div><span className="academic-modal-eyebrow">TRAINING &amp; ACADEMICS</span><h2>{module === 'training' ? 'Assign student training' : module === 'batches' ? 'Create training batch' : module === 'sessions' ? 'Log a live session' : module === 'topics' ? 'Build a syllabus plan' : 'Add student diary note'}</h2></div><button type="button" onClick={() => setIsModalOpen(false)} className="academic-icon-button" aria-label="Close"><X size={20} /></button></div>
         <form onSubmit={submit} className="academic-form">
           {module === 'training' && <>
             <label><span style={labelStyle}>Student *</span><select style={inputStyle} required value={form.studentId || ''} onChange={event => { const student = students.find(item => item.studentId === event.target.value); setForm(current => ({ ...current, studentId: event.target.value, mainCourse: student?.mainCourse || '', subCourse: student?.subCourse || '', branch: student?.branch || '' })); }}><option value="">Select an assigned learner</option>{students.map(student => <option key={student.studentId} value={student.studentId}>{student.studentName} · {student.studentId} · {student.branch}</option>)}</select></label>
@@ -300,6 +342,13 @@ function AcademicWorkspaceRecords({ module }) {
             <div className="academic-form-grid"><label><span style={labelStyle}>Entry type</span><select style={inputStyle} value={form.eventType || 'Trainer Note'} onChange={event => setForm(current => ({ ...current, eventType: event.target.value }))}><option>Trainer Note</option><option>Assignment</option><option>Assessment</option><option>Training</option><option>Activity</option></select></label><label><span style={labelStyle}>Date</span><DateInput style={inputStyle} value={form.date || ''} onChange={event => setForm(current => ({ ...current, date: event.target.value }))} /></label></div>
             <label><span style={labelStyle}>Title *</span><input style={inputStyle} required value={form.title || ''} onChange={event => setForm(current => ({ ...current, title: event.target.value }))} /></label>
             <label><span style={labelStyle}>Notes</span><textarea style={{ ...inputStyle, minHeight: 100 }} value={form.description || ''} onChange={event => setForm(current => ({ ...current, description: event.target.value }))} /></label>
+          </>}
+          {module === 'topics' && <>
+            <p className="academic-form-hint">Topics are saved as a course plan for this branch, specialization, and course duration. Learners with a matching plan will see it in their attendance and progress view.</p>
+            <div className="academic-form-grid"><label><span style={labelStyle}>Course *</span><select style={inputStyle} required value={form.mainCourse || ''} onChange={event => setForm(current => ({ ...current, mainCourse: event.target.value, subCourse: '', courseDuration: '' }))}><option value="">Select course</option>{courseOptions.map(course => <option key={course}>{course}</option>)}</select></label><label><span style={labelStyle}>Branch *</span><select style={inputStyle} required value={form.branch || ''} onChange={event => setForm(current => ({ ...current, branch: event.target.value, subCourse: '', courseDuration: '' }))}><option value="">Select branch</option>{branchOptions.map(branch => <option key={branch}>{branch}</option>)}</select></label></div>
+            <div className="academic-form-grid"><label><span style={labelStyle}>Specialization / track *</span><input style={inputStyle} required list="academic-topic-tracks" value={form.subCourse || ''} placeholder="e.g. General track" onChange={event => setForm(current => ({ ...current, subCourse: event.target.value }))} /><datalist id="academic-topic-tracks">{topicTrackOptions.map(track => <option key={track} value={track} />)}</datalist></label><label><span style={labelStyle}>Course duration *</span><input style={inputStyle} required list="academic-topic-durations" value={form.courseDuration || ''} placeholder="e.g. 6 Months" onChange={event => setForm(current => ({ ...current, courseDuration: event.target.value }))} /><datalist id="academic-topic-durations">{topicDurationOptions.map(duration => <option key={duration} value={duration} />)}</datalist></label></div>
+            <div className="academic-form-grid"><label><span style={labelStyle}>Module</span><input style={inputStyle} value={form.module || ''} placeholder="e.g. Foundations" onChange={event => setForm(current => ({ ...current, module: event.target.value }))} /></label><label><span style={labelStyle}>Topic order</span><input style={inputStyle} type="number" min="1" value={form.sequence || ''} placeholder="Next in sequence" onChange={event => setForm(current => ({ ...current, sequence: event.target.value }))} /></label></div>
+            <div className="academic-form-grid"><label><span style={labelStyle}>Topic *</span><input style={inputStyle} required value={form.topic || ''} placeholder="What will learners study?" onChange={event => setForm(current => ({ ...current, topic: event.target.value }))} /></label><label><span style={labelStyle}>Planned hours</span><input style={inputStyle} type="number" min="0" step="0.5" value={form.plannedHours || ''} placeholder="Optional" onChange={event => setForm(current => ({ ...current, plannedHours: event.target.value }))} /></label></div>
           </>}
           {error && <div className="academic-message error" role="alert">{error}</div>}
           <div className="academic-modal-actions"><button type="button" className="academic-secondary-button" onClick={() => setIsModalOpen(false)}>Cancel</button><button type="submit" style={buttonStyle} disabled={submitting}>{submitting ? <CircleNotch size={18} className="ph-spin" /> : <CheckCircle size={18} weight="bold" />} Save record</button></div>
