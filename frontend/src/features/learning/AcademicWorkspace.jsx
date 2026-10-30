@@ -7,6 +7,7 @@ import DateInput from '../../components/DateInput';
 import { API_BASE } from '../../services/apiConfig';
 import { formatPortalDate, formatPortalTime, getTodayPortalDateInput } from '../../utils/dateFormat';
 import { getTrainerAssignments, isWithinTrainerScope, normalizeAcademicBranch, standardizeAcademicCourse } from './academicScope';
+import AcademicAttendanceStudio from './AcademicAttendanceStudio';
 import './AcademicWorkspace.css';
 import './TrainerPortalTheme.css';
 
@@ -29,6 +30,10 @@ const dateToday = getTodayPortalDateInput;
 const studentName = (studentId, students = []) => students.find(student => String(student.studentId).toLowerCase() === String(studentId).toLowerCase())?.studentName || '';
 
 export default function AcademicWorkspace({ module }) {
+  return module === 'attendance' ? <AcademicAttendanceStudio /> : <AcademicWorkspaceRecords module={module} />;
+}
+
+function AcademicWorkspaceRecords({ module }) {
   const config = CONFIG[module] || CONFIG.training;
   const Icon = config.icon;
   const [data, setData] = useState(EMPTY_DATA);

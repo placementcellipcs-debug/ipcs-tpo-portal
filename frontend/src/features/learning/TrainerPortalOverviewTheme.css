@@ -1,13 +1,83 @@
-.trainer-portal-shell .academic-dashboard-banner { border-color:#dfe5ef; background:radial-gradient(ellipse at 77% 7%,rgba(166,173,255,.2),transparent 34%),radial-gradient(ellipse at 95% 95%,rgba(76,202,171,.14),transparent 37%),linear-gradient(115deg,#fff,#f6f8fe 62%,#f3fbf9); box-shadow:0 12px 32px rgba(35,52,78,.065),inset 0 1px 0 #fff; }
-.trainer-portal-shell .academic-dashboard-copy > span { color:#398d82; }.trainer-portal-shell .academic-dashboard-copy h2 { color:#24334b; }.trainer-portal-shell .academic-dashboard-copy h2 em { color:#368f80; }.trainer-portal-shell .academic-dashboard-copy > p { color:#718096; }.trainer-portal-shell .academic-dashboard-actions > small { color:#8793a4; }
-.trainer-portal-shell .academic-dashboard-art { color:#389d91; }.trainer-portal-shell .academic-art-ring { border-color:rgba(54,160,145,.3); box-shadow:0 0 35px rgba(57,155,142,.07),inset 0 0 30px rgba(92,162,255,.04); }.trainer-portal-shell .academic-art-ring.ring-two { border-color:rgba(108,126,212,.24); }.trainer-portal-shell .academic-art-center { border-color:rgba(69,173,154,.28); color:#258d7e; background:linear-gradient(145deg,#e6f8f2,#e9efff); box-shadow:0 17px 42px rgba(62,86,128,.15),inset 0 1px 0 #fff; }.trainer-portal-shell .academic-dashboard-art > span,.trainer-portal-shell .academic-dashboard-art > i { border-color:#e1e7ef; color:#586c85; background:rgba(255,255,255,.92); box-shadow:0 4px 12px rgba(35,52,78,.05); }.trainer-portal-shell .academic-dashboard-art > i { color:#8b6ca3; }
-.trainer-portal-shell .academic-overview-metrics article { border-color:#e3e8f0; background:linear-gradient(145deg,#fff,#f9fbfd); box-shadow:0 7px 20px rgba(36,52,76,.045),inset 0 1px 0 #fff; }.trainer-portal-shell .academic-overview-metrics article span { color:#6f7e94; }.trainer-portal-shell .academic-overview-metrics article strong { color:#25344c; }.trainer-portal-shell .academic-overview-metrics article > small { color:#8d99a9; }
-.trainer-portal-shell .academic-panel { border-color:#e2e7ef; background:linear-gradient(145deg,#fff,#fbfcfe); box-shadow:0 9px 26px rgba(35,52,78,.045),inset 0 1px 0 #fff; }.trainer-portal-shell .academic-panel-heading h2 { color:#27364d; }.trainer-portal-shell .academic-panel-heading p { color:#8491a3; }.trainer-portal-shell .academic-panel-heading > div > span { color:#398e7f; }.trainer-portal-shell .academic-panel-heading > button { border-color:#cce5dc; color:#357d71; background:#f0faf6; }
-.trainer-portal-shell .academic-schedule-item { border-color:#e1eceb; background:linear-gradient(100deg,#f3fbfa,#fff 65%); }.trainer-portal-shell .academic-schedule-time { color:#388b82; }.trainer-portal-shell .academic-schedule-detail > span { color:#498e89; }.trainer-portal-shell .academic-schedule-detail h3 { color:#29394e; }.trainer-portal-shell .academic-schedule-detail p { color:#7c8b9d; }.trainer-portal-shell .academic-session-status { color:#43836e; background:#eaf7f0; }.trainer-portal-shell .academic-schedule-empty { border-color:#e3e9ef; color:#8895a6; }.trainer-portal-shell .academic-schedule-empty b { color:#53647a; }
-.trainer-portal-shell .academic-scope-block > span { color:#8591a3; }.trainer-portal-shell .academic-scope-block > div > i { border-color:#e1ddf5; color:#685c9c; background:#f8f6ff; }.trainer-portal-shell .academic-scope-block > div > i svg { color:#8477c5; }.trainer-portal-shell .academic-scope-block > div > small { color:#8793a5; }.trainer-portal-shell .academic-footprint-icon { border-color:#e1dff5; color:#776bb5; background:#f5f3ff; }.trainer-portal-shell .branch-scope-block > div > button { border-color:#edf0f4; color:#8490a2; }.trainer-portal-shell .branch-scope-block > div > button b { color:#394a62; }.trainer-portal-shell .branch-scope-block > div > button small { color:#8491a3; }.trainer-portal-shell .academic-scope-cta { border-color:#e7ebf1; color:#388d7d; }
-.trainer-portal-shell .academic-dashboard-roster > article { border-color:#e3e8ef; background:linear-gradient(145deg,#fff,#fafbfd); }.trainer-portal-shell .dashboard-learner-head b { color:#2b3a50; }.trainer-portal-shell .dashboard-learner-head small { color:#8591a3; }.trainer-portal-shell .dashboard-learner-head > i { color:#39816d; background:#ecf7f1; }.trainer-portal-shell .academic-dashboard-roster article > p { color:#75839a; }.trainer-portal-shell .academic-dashboard-roster footer { color:#8591a3; }.trainer-portal-shell .academic-dashboard-roster footer b { color:#3f8b76; }
-.trainer-portal-shell .academic-page-intro { border-color:#e1e7ef; background:radial-gradient(ellipse at 92% 2%,rgba(97,207,187,.13),transparent 33%),linear-gradient(115deg,#fff,#f8fafc); box-shadow:0 9px 27px rgba(35,52,78,.05); }.trainer-portal-shell .academic-page-intro > span { color:#398e7e; }.trainer-portal-shell .academic-page-intro h2 { color:#29384e; }.trainer-portal-shell .academic-page-intro > p { color:#758298; }.trainer-portal-shell .branch-intro { background:radial-gradient(ellipse at 93% 10%,rgba(94,216,207,.15),transparent 32%),linear-gradient(115deg,#fff,#f4fbf9 64%,#f6f8fc); }.trainer-portal-shell .leave-intro { background:radial-gradient(ellipse at 91% 0%,rgba(255,162,120,.13),transparent 34%),linear-gradient(115deg,#fff,#fff9f5 58%,#f7f8fc); }.trainer-portal-shell .leave-intro > span { color:#c07c4f; }.trainer-portal-shell .academic-intro-stats b { color:#b8754b; }.trainer-portal-shell .academic-intro-stats small { color:#8f8a91; }
-.trainer-portal-shell .academic-branch-pill-row button { border-color:#dcebe8; color:#497f7e; background:#f5fbf9; }.trainer-portal-shell .academic-branch-pill-row button.selected { border-color:#8ecdbf; color:#287669; background:#e8f7f2; }.trainer-portal-shell .academic-branch-pill-row button b { color:#398475; background:#dff3ed; }
-.trainer-portal-shell .academic-overview-section-heading > div > span { color:#3d9382; }.trainer-portal-shell .page-kind-leaves .academic-overview-section-heading > div > span { color:#bd8154; }.trainer-portal-shell .academic-overview-section-heading h2 { color:#2b394f; }.trainer-portal-shell .academic-overview-section-heading p { color:#7e8b9d; }.trainer-portal-shell .academic-overview-search { border-color:#dce3ec; color:#8492a4; background:#fff; }.trainer-portal-shell .academic-overview-search input { color:#34445c; }.trainer-portal-shell .academic-overview-search input::placeholder { color:#9ba7b6; }
-.trainer-portal-shell .academic-overview-table-wrap { border-color:#e1e7ef; background:#fff; box-shadow:0 9px 26px rgba(35,52,78,.045); }.trainer-portal-shell .academic-overview-table-wrap th { color:#7e8a9c; background:#f7f9fc; }.trainer-portal-shell .academic-overview-table-wrap td { border-color:#edf0f4; color:#56667d; }.trainer-portal-shell .academic-overview-table-wrap tr:hover td { background:#f9fbfd; }.trainer-portal-shell .academic-overview-table-wrap td b { color:#2d3c52; }.trainer-portal-shell .academic-overview-table-wrap td small { color:#8190a2; }.trainer-portal-shell .roster-name > span { border-color:#cde8df; color:#317c6d; background:linear-gradient(145deg,#e3f6ef,#e9efff); }.trainer-portal-shell .roster-contact a { color:#398e7c; }.trainer-portal-shell .roster-contact > span,.trainer-portal-shell .roster-not-started { color:#8290a2; }.trainer-portal-shell .roster-progress-label { color:#7b899b; }.trainer-portal-shell .roster-progress-label b { color:#38836e!important; }.trainer-portal-shell .roster-attendance-value { color:#38836e!important; }
-.trainer-portal-shell .academic-overview-status { border-color:#cfe9da; color:#3d8566; background:#eef8f1; }.trainer-portal-shell .academic-overview-status.rejected { border-color:#f0d5d8; color:#b65b65; background:#fff3f4; }.trainer-portal-shell .academic-overview-status.pending { border-color:#f1e2bf; color:#a07b37; background:#fffaf0; }.trainer-portal-shell .academic-leave-review input { border-color:#dce3ec; color:#34445c; background:#fff; }.trainer-portal-shell .academic-leave-review button { border-color:#cde5d8; color:#398064; background:#f0faf4; }.trainer-portal-shell .academic-leave-review button.reject { border-color:#f0d4d6; color:#b05e67; background:#fff4f4; }.trainer-portal-shell .academic-overview-notice { border-color:#cde8d8; color:#398064; background:#f0faf4; }
+.trainer-portal-shell .academic-dashboard-banner { border-color:#2a3850; background:radial-gradient(ellipse at 77% 7%,rgba(123,112,255,.18),transparent 34%),radial-gradient(ellipse at 95% 95%,rgba(76,202,171,.1),transparent 37%),linear-gradient(115deg,#111a28,#151b2d 62%,#102128); box-shadow:0 14px 38px rgba(0,0,0,.2),inset 0 1px 0 rgba(255,255,255,.03); }
+.trainer-portal-shell .academic-dashboard-copy > span { color:#7be1cd; }
+.trainer-portal-shell .academic-dashboard-copy h2 { color:#f0f4ff; }
+.trainer-portal-shell .academic-dashboard-copy h2 em { color:#77dfc7; }
+.trainer-portal-shell .academic-dashboard-copy > p { color:#98a7bd; }
+.trainer-portal-shell .academic-dashboard-actions > small { color:#7d8ea7; }
+.trainer-portal-shell .academic-dashboard-art { color:#6edbca; }
+.trainer-portal-shell .academic-art-ring { border-color:rgba(87,208,185,.27); box-shadow:0 0 35px rgba(57,155,142,.06),inset 0 0 30px rgba(92,162,255,.035); }
+.trainer-portal-shell .academic-art-ring.ring-two { border-color:rgba(139,125,244,.22); }
+.trainer-portal-shell .academic-art-center { border-color:rgba(69,173,154,.32); color:#94f1dc; background:linear-gradient(145deg,#203f47,#292c50); box-shadow:0 18px 48px rgba(0,0,0,.32),inset 0 1px 0 rgba(255,255,255,.08); }
+.trainer-portal-shell .academic-dashboard-art > span,.trainer-portal-shell .academic-dashboard-art > i { border-color:#344056; color:#b4c3d7; background:rgba(16,25,39,.92); box-shadow:0 5px 14px rgba(0,0,0,.22); }
+.trainer-portal-shell .academic-dashboard-art > i { color:#c5a9e8; }
+.trainer-portal-shell .academic-overview-metrics article { border-color:#29364d; background:linear-gradient(145deg,#141d2b,#101724); box-shadow:0 9px 22px rgba(0,0,0,.18); }
+.trainer-portal-shell .academic-overview-metrics article span { color:#93a2b8; }
+.trainer-portal-shell .academic-overview-metrics article strong { color:#eef3ff; }
+.trainer-portal-shell .academic-overview-metrics article > small { color:#72839c; }
+.trainer-portal-shell .academic-panel { border-color:#29364d; background:linear-gradient(145deg,#131c2a,#101723); box-shadow:0 10px 28px rgba(0,0,0,.17); }
+.trainer-portal-shell .academic-panel-heading h2 { color:#ecf2fe; }
+.trainer-portal-shell .academic-panel-heading p { color:#899bb3; }
+.trainer-portal-shell .academic-panel-heading > div > span { color:#6ed5c1; }
+.trainer-portal-shell .academic-panel-heading > button { border-color:rgba(99,213,186,.25); color:#8be5d0; background:rgba(43,141,123,.12); }
+.trainer-portal-shell .academic-schedule-item { border-color:#283c46; background:linear-gradient(100deg,#14242c,#121b28 65%); }
+.trainer-portal-shell .academic-schedule-time { color:#75dcca; }
+.trainer-portal-shell .academic-schedule-detail > span { color:#6acabc; }
+.trainer-portal-shell .academic-schedule-detail h3 { color:#e8f0fb; }
+.trainer-portal-shell .academic-schedule-detail p { color:#879ab0; }
+.trainer-portal-shell .academic-session-status { color:#85dfb3; background:rgba(53,142,100,.17); }
+.trainer-portal-shell .academic-schedule-empty { border-color:#29374d; color:#8091a8; }
+.trainer-portal-shell .academic-schedule-empty b { color:#b9c7da; }
+.trainer-portal-shell .academic-scope-block > span { color:#8697af; }
+.trainer-portal-shell .academic-scope-block > div > i { border-color:#3b355b; color:#c0b4ff; background:rgba(119,99,190,.13); }
+.trainer-portal-shell .academic-scope-block > div > i svg { color:#b5a7ff; }
+.trainer-portal-shell .academic-scope-block > div > small { color:#7f90a8; }
+.trainer-portal-shell .academic-footprint-icon { border-color:#3d355f; color:#c0b5ff; background:rgba(120,99,196,.15); }
+.trainer-portal-shell .branch-scope-block > div > button { border-color:#2e3a4e; color:#94a4b9; background:#121b28; }
+.trainer-portal-shell .branch-scope-block > div > button b { color:#dbe5f4; }
+.trainer-portal-shell .branch-scope-block > div > button small { color:#7f90a7; }
+.trainer-portal-shell .academic-scope-cta { border-color:#293a48; color:#75dcca; background:rgba(30,132,119,.08); }
+.trainer-portal-shell .academic-dashboard-roster > article { border-color:#29364d; background:linear-gradient(145deg,#141d2b,#101724); }
+.trainer-portal-shell .dashboard-learner-head b { color:#e8effc; }
+.trainer-portal-shell .dashboard-learner-head small { color:#8092ab; }
+.trainer-portal-shell .dashboard-learner-head > i { color:#91e2be; background:rgba(44,136,92,.17); }
+.trainer-portal-shell .academic-dashboard-roster article > p { color:#8d9db3; }
+.trainer-portal-shell .academic-dashboard-roster footer { color:#8091a8; }
+.trainer-portal-shell .academic-dashboard-roster footer b { color:#79ddbd; }
+.trainer-portal-shell .academic-page-intro { border-color:#2a384d; background:radial-gradient(ellipse at 92% 2%,rgba(97,207,187,.1),transparent 34%),linear-gradient(115deg,#111a27,#141d2b); box-shadow:0 11px 30px rgba(0,0,0,.18); }
+.trainer-portal-shell .academic-page-intro > span { color:#76ddc8; }
+.trainer-portal-shell .academic-page-intro h2 { color:#eef3ff; }
+.trainer-portal-shell .academic-page-intro > p { color:#93a3b8; }
+.trainer-portal-shell .branch-intro { background:radial-gradient(ellipse at 93% 10%,rgba(94,216,207,.11),transparent 34%),linear-gradient(115deg,#101b27,#12212b 64%,#151a2a); }
+.trainer-portal-shell .leave-intro { background:radial-gradient(ellipse at 91% 0,rgba(255,162,120,.1),transparent 36%),linear-gradient(115deg,#171923,#1b1a25 58%,#181a26); }
+.trainer-portal-shell .leave-intro > span { color:#efb17e; }
+.trainer-portal-shell .academic-intro-stats b { color:#eab17e; }
+.trainer-portal-shell .academic-intro-stats small { color:#8c8a99; }
+.trainer-portal-shell .academic-branch-pill-row button { border-color:#29434a; color:#a4d8d0; background:#122329; }
+.trainer-portal-shell .academic-branch-pill-row button.selected { border-color:#4caa9e; color:#abffec; background:rgba(38,143,125,.19); }
+.trainer-portal-shell .academic-branch-pill-row button b { color:#8ee6d4; background:rgba(54,168,145,.18); }
+.trainer-portal-shell .academic-overview-section-heading > div > span { color:#73ddc7; }
+.trainer-portal-shell .page-kind-leaves .academic-overview-section-heading > div > span { color:#e9b07d; }
+.trainer-portal-shell .academic-overview-section-heading h2 { color:#eaf0fc; }
+.trainer-portal-shell .academic-overview-section-heading p { color:#899ab1; }
+.trainer-portal-shell .academic-overview-search { border-color:#2c3a50; color:#91a1b7; background:#111927; }
+.trainer-portal-shell .academic-overview-search input { color:#e6edf9; }
+.trainer-portal-shell .academic-overview-search input::placeholder { color:#6f829a; }
+.trainer-portal-shell .academic-overview-table-wrap { border-color:#29364d; background:#111927; box-shadow:0 11px 28px rgba(0,0,0,.18); }
+.trainer-portal-shell .academic-overview-table-wrap th { color:#8192aa; background:#151f2e; }
+.trainer-portal-shell .academic-overview-table-wrap td { border-color:#273449; color:#adbbcf; }
+.trainer-portal-shell .academic-overview-table-wrap tr:hover td { background:#151f2d; }
+.trainer-portal-shell .academic-overview-table-wrap td b { color:#e7eefb; }
+.trainer-portal-shell .academic-overview-table-wrap td small { color:#8092aa; }
+.trainer-portal-shell .roster-name > span { border-color:rgba(101,218,187,.28); color:#a5f1dc; background:linear-gradient(145deg,#1a4549,#242e4b); }
+.trainer-portal-shell .roster-contact a { color:#79dfc8; }
+.trainer-portal-shell .roster-contact > span,.trainer-portal-shell .roster-not-started { color:#8293aa; }
+.trainer-portal-shell .roster-progress-label { color:#92a1b7; }
+.trainer-portal-shell .roster-progress-label b { color:#7ee0bc!important; }
+.trainer-portal-shell .roster-attendance-value { color:#7ee0bc!important; }
+.trainer-portal-shell .academic-overview-status { border-color:rgba(83,190,133,.28); color:#8fe1ae; background:rgba(48,127,82,.15); }
+.trainer-portal-shell .academic-overview-status.rejected { border-color:rgba(227,107,124,.28); color:#ffb3bc; background:rgba(122,41,57,.18); }
+.trainer-portal-shell .academic-overview-status.pending { border-color:rgba(223,176,81,.26); color:#eac779; background:rgba(123,91,31,.16); }
+.trainer-portal-shell .academic-leave-review input { border-color:#314056; color:#e2eaf7; background:#101827; }
+.trainer-portal-shell .academic-leave-review button { border-color:rgba(86,189,130,.27); color:#8fe0b2; background:rgba(37,111,75,.16); }
+.trainer-portal-shell .academic-leave-review button.reject { border-color:rgba(219,102,119,.27); color:#ffadb8; background:rgba(117,38,54,.18); }
+.trainer-portal-shell .academic-overview-notice { border-color:rgba(91,194,137,.27); color:#94e6b4; background:rgba(35,112,73,.17); }

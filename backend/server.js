@@ -649,12 +649,16 @@ const academicControllers = require('./src/academicControllers');
 
 app.get('/api/academic/training', academicControllers.getTrainingData);
 app.get('/api/academic/data', academicControllers.getAcademicData);
+app.get('/api/academic/attendance/register', academicControllers.getAttendanceRegister);
 app.post('/api/academic/training/add', academicControllers.addTraining);
 app.post('/api/academic/training/update', academicControllers.updateTraining);
 app.post('/api/academic/batches/add', academicControllers.addBatch);
 app.post('/api/academic/batches/update', academicControllers.updateBatch);
 app.post('/api/academic/sessions/add', academicControllers.addSession);
+app.post('/api/academic/topics/add', academicControllers.addAcademicTopic);
+app.post('/api/academic/students/update', academicControllers.updateStudentAcademics);
 app.post('/api/academic/attendance/update', academicControllers.updateAttendance);
+app.post('/api/academic/attendance/mark-day', academicControllers.markDailyAttendance);
 app.post('/api/academic/leaves/review', academicControllers.reviewLeaveRequest);
 app.post('/api/academic/diary/add', academicControllers.addDiaryEntry);
 
