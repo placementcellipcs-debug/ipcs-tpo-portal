@@ -7,6 +7,7 @@ import AcademicTopNav from './AcademicTopNav';
 import { API_BASE } from '../../services/apiConfig';
 import { getTrainerAssignments, isWithinTrainerScope } from './academicScope';
 import './AcademicOverview.css';
+import './TrainerPortalOverviewTheme.css';
 
 const EMPTY = { students: [], training: [], sessions: [], attendance: [], batches: [], leaveRequests: [], leaveRequestsAvailable: false };
 const normalized = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');

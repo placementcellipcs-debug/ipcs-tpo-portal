@@ -150,6 +150,12 @@ function TrainerWorkspaceRoute() {
   return account && isAcademicTrainerAccount(account) ? <Navigate to="/academic" replace /> : <Navigate to={account ? '/dashboard' : '/login'} replace />;
 }
 
+function TrainerDashboardRoute() {
+  let account = null;
+  try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
+  return account && isAcademicTrainerAccount(account) ? <Navigate to="/academic" replace /> : <Dashboard />;
+}
+
 function AssetManagerAccessRoute({ children }) {
   let account = null;
   try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
@@ -220,7 +226,7 @@ function RoutedContent() {
         <Route path="/updates" element={<PublicSitePage page="updates" />} />
         <Route path="/openings" element={<Navigate to="/placements#vacancies" replace />} />
         <Route path="/recruiter" element={<Navigate to="/placements#recruiter-partnerships" replace />} />
-        <Route path="/dashboard" element={<Dashboard />} />
+        <Route path="/dashboard" element={<TrainerDashboardRoute />} />
         <Route path="/career-hub" element={<CareerHub />} />
         <Route path="/admin-command" element={<Navigate to="/dashboard" replace />} />
         <Route path="/students" element={<StudentsDirectory />} />

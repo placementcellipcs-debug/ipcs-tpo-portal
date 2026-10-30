@@ -8,6 +8,7 @@ import { API_BASE } from '../../services/apiConfig';
 import { formatPortalDate, formatPortalTime, getTodayPortalDateInput } from '../../utils/dateFormat';
 import { getTrainerAssignments, isWithinTrainerScope, normalizeAcademicBranch, standardizeAcademicCourse } from './academicScope';
 import './AcademicWorkspace.css';
+import './TrainerPortalTheme.css';
 
 const CONFIG = {
   training: { title: 'Student Training', subtitle: 'Every learner, course plan, and training milestone in your teaching scope.', icon: GraduationCap, eyebrow: 'LEARNER JOURNEYS', heading: 'Progress, made visible.', accent: '#66e2bc', tint: 'rgba(102,226,188,.13)' },

@@ -15,6 +15,7 @@ import { formatPortalDateTime, parsePortalDateTime } from '../utils/dateFormat';
 import { isAcademicTrainerAccount, isPortalAdminAccount } from '../utils/roleAccess';
 import AssetPortalShell from '../features/assets/AssetPortalShell';
 import MediaPortalShell from '../features/media/MediaPortalShell';
+import TrainerPortalShell from '../features/learning/TrainerPortalShell';
 
 const getStandardCourse = (c) => {
   if (!c) return 'Others';
@@ -247,6 +248,11 @@ export default function Layout({ children }) {
   if (!canViewPlacementDrives && location.pathname.startsWith('/placement-drives')) return <Navigate to="/dashboard" replace />;
   if (isTechnicalLead && location.pathname.startsWith('/exams/') && !location.pathname.startsWith('/exams/technical')) return <Navigate to="/exams/technical?view=results" replace />;
   if (isRth && location.pathname.startsWith('/exams/talentino')) return <Navigate to="/exams" replace />;
+
+  if (isAcademicTrainer) {
+    if (!location.pathname.startsWith('/academic')) return <Navigate to="/academic" replace />;
+    return <TrainerPortalShell user={tpoData}>{children}</TrainerPortalShell>;
+  }
 
   if (location.pathname.startsWith('/assets')) return <AssetPortalShell user={tpoData}>{children}</AssetPortalShell>;
   if (location.pathname.startsWith('/media')) return <MediaPortalShell user={tpoData}>{children}</MediaPortalShell>;

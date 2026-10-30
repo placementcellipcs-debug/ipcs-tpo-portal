@@ -1,1 +1,0 @@
-import{n as e}from"./index-DXDw_wyo.js";import t from"./AcademicWorkspace-BZkgKVZx.js";var n=e();function r(){return(0,n.jsx)(t,{module:`attendance`})}export{r as default};
