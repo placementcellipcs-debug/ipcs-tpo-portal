@@ -1,59 +1,57 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { GraduationCap, UsersFour, ChalkboardTeacher, CalendarCheck, Notebook, SquaresFour, Buildings } from '@phosphor-icons/react';
+import { useMemo } from 'react';
+import { Brain, Buildings, CalendarCheck, ChalkboardTeacher, ClipboardText, GraduationCap, Notebook, BookOpen, SquaresFour, UsersFour } from '@phosphor-icons/react';
+import { getTrainerAssignments } from './academicScope';
+import './AcademicTopNav.css';
 
 export default function AcademicTopNav({ title, subtitle, statLabel, statValue }) {
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = location.pathname;
+  const account = useMemo(() => { try { return JSON.parse(localStorage.getItem('tpoData') || '{}'); } catch { return {}; } }, []);
+  const { branches, courses } = getTrainerAssignments(account);
 
   const tabs = [
     { name: 'Dashboard', path: '/academic', icon: <SquaresFour size={20} /> },
-    { name: 'My Students', path: '/academic/branches', icon: <Buildings size={20} /> },
+    { name: 'Mind Gym', path: '/academic/brain-gym', icon: <Brain size={20} /> },
+    { name: 'Branches', path: '/academic/branches', icon: <Buildings size={20} /> },
+    { name: 'Leave approvals', path: '/academic/leaves', icon: <ClipboardText size={20} /> },
     { name: 'Student Training', path: '/academic/training', icon: <GraduationCap size={20} /> },
     { name: 'Batches', path: '/academic/batches', icon: <UsersFour size={20} /> },
     { name: 'Daily Sessions', path: '/academic/sessions', icon: <ChalkboardTeacher size={20} /> },
     { name: 'Attendance', path: '/academic/attendance', icon: <CalendarCheck size={20} /> },
+    { name: 'Syllabus & Topics', path: '/academic/topics', icon: <BookOpen size={20} /> },
     { name: 'Digital Diary', path: '/academic/diary', icon: <Notebook size={20} /> }
   ];
 
   return (
-    <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', flexWrap: 'wrap', gap: '20px' }}>
-        <div>
-          <h1 style={{ fontSize: '2.2rem', display: 'flex', alignItems: 'center', gap: '10px', margin: '0 0 5px 0' }}>
-            <GraduationCap weight="fill" color="#10b981" /> {title}
-          </h1>
-          <p style={{ color: 'var(--text-muted)', margin: 0 }}>{subtitle}</p>
-        </div>
-        
-        {statLabel && (
-          <div style={{ display: 'flex', gap: '15px' }}>
-            <div style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', padding: '10px 20px', borderRadius: '12px', textAlign: 'center', boxShadow: '0 4px 15px rgba(0,0,0,0.1)' }}>
-              <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase' }}>{statLabel}</div>
-              <div style={{ fontSize: '1.4rem', fontWeight: 'bold', color: '#10b981' }}>{statValue}</div>
-            </div>
+    <header className="academic-portal-header">
+      <div className="academic-portal-hero">
+        <div className="academic-portal-hero-copy">
+          <div className="academic-portal-eyebrow"><span className="academic-live-dot" /> TRAINER LEARNING STUDIO <span className="academic-eyebrow-divider" /> {account.name || 'Trainer'}</div>
+          <h1>{title}</h1>
+          <p>{subtitle}</p>
+          <div className="academic-scope-row">
+            <span className="academic-scope-label">YOUR SCOPE</span>
+            <span className="academic-scope-chip course"><BookOpen size={14} /> {courses.length ? courses.join(' · ') : 'Course assignment pending'}</span>
+            <span className="academic-scope-chip branches"><Buildings size={14} /> {branches.length ? branches.join(' · ') : 'Branch assignment pending'}</span>
           </div>
-        )}
+        </div>
+        {statLabel && <div className="academic-hero-stat"><span>{statLabel}</span><strong>{statValue}</strong><small>IN YOUR ASSIGNED SCOPE</small></div>}
+        <div className="academic-hero-orb orb-one" /><div className="academic-hero-orb orb-two" />
       </div>
 
-      <div style={{ display: 'flex', gap: '10px', overflowX: 'auto', paddingBottom: '10px', marginBottom: '25px', borderBottom: '1px solid var(--card-border)', scrollbarWidth: 'none' }}>
-        {tabs.map(tab => {
-          const isActive = currentPath === tab.path;
-          return (
-            <button 
-              key={tab.name}
-              onClick={() => navigate(tab.path)}
-              style={{
-                display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 20px', borderRadius: '12px 12px 0 0',
-                border: 'none', background: isActive ? 'rgba(16, 185, 129, 0.1)' : 'transparent',
-                color: isActive ? '#10b981' : 'var(--text-muted)', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s', borderBottom: isActive ? '3px solid #10b981' : '3px solid transparent', whiteSpace: 'nowrap'
-              }}
-            >
-              {tab.icon} {tab.name}
-            </button>
-          )
-        })}
+      <div className="academic-slider-shell">
+        <div className="academic-slider-caption"><span>WORKSPACE</span><small>Move between your teaching tools</small></div>
+        <nav className="academic-tab-slider" aria-label="Training and Academics tabs">
+          {tabs.map((tab, index) => {
+            const isActive = currentPath === tab.path || (tab.path === '/academic' && currentPath === '/academic/');
+            return <button key={tab.name} type="button" className={`academic-slider-tab${isActive ? ' active' : ''} tab-tone-${index}`} aria-current={isActive ? 'page' : undefined} onClick={() => navigate(tab.path)}>
+              <span className="academic-tab-icon">{tab.icon}</span><span className="academic-tab-name">{tab.name}</span><small>{String(index + 1).padStart(2, '0')}</small>
+            </button>;
+          })}
+        </nav>
       </div>
-    </>
+    </header>
   );
 }

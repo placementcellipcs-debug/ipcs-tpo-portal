@@ -135,17 +135,32 @@ async function readRows(sheet) {
 
 function mapStudent(row) {
   const headers = row._worksheet?.headerValues || [];
-  const read = (keywords) => {
-    const header = headers.find(item => keywords.some(keyword => normalize(item).includes(normalize(keyword))));
+  const read = (aliases, excluded = []) => {
+    const normalizedAliases = aliases.map(normalize);
+    const normalizedExclusions = excluded.map(normalize);
+    const exact = headers.find(item => normalizedAliases.includes(normalize(item)));
+    const header = exact || headers.find(item => {
+      const candidate = normalize(item);
+      return normalizedAliases.some(alias => candidate.includes(alias))
+        && !normalizedExclusions.some(exclusion => candidate.includes(exclusion));
+    });
     return header ? (row.get(header) || '') : '';
   };
   return {
     studentId: read(['ipcsrollnumber', 'rollnumber', 'roll']),
     studentName: read(['studentname', 'name']),
     mainCourse: read(['course', 'maincourse']),
-    subCourse: read(['subcourse']),
+    subCourse: read(['subcourse', 'specialization']),
     branch: read(['branch']),
     status: read(['studentstatus', 'enrollmentstatus', 'coursestatus', 'status']),
+    phone: read(['phone', 'mobilenumber', 'contactnumber', 'contactno'], ['parent', 'father', 'mother', 'friend', 'reference', 'emergency']),
+    email: read(['email', 'mailid', 'mail'], ['parent', 'father', 'mother', 'friend', 'reference']),
+    qualification: read(['qualification', 'qual']),
+    stream: read(['stream', 'discipline']),
+    joiningDate: read(['joiningdate', 'dateofjoining']),
+    courseStatus: read(['coursestatus', 'statuscurrently']),
+    coursePercentage: read(['coursepercentage', 'coursepercent', 'progresspercentage']),
+    experience: read(['experience', 'fresher', 'experiencestatus']),
   };
 }
 

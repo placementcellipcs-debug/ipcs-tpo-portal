@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, Brain, Check, CheckCircle, Clock, Fire, Lightbulb, Sparkle, Trophy, X } from '@phosphor-icons/react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../../layouts/Layout';
+import AcademicTopNav from './AcademicTopNav';
 import AdditionalMiniGame from './extra-games/AdditionalMiniGames';
 import { EXTRA_GAMES } from './extra-games/AdditionalGameCatalog';
 import './extra-games/AdditionalMiniGames.css';
@@ -98,7 +99,7 @@ function oneLetterApart(first, second) {
 }
 function clamp(value, low, high) { return Math.max(low, Math.min(high, value)); }
 
-export default function BrainGym() {
+export default function BrainGym({ academicMode = false }) {
   const navigate = useNavigate();
   const profileKey = useMemo(() => {
     try {
@@ -178,6 +179,7 @@ export default function BrainGym() {
   return (
     <Layout>
       <main className="mind-gym page-container">
+        {academicMode && <AcademicTopNav title="Mind Gym" subtitle="Build focus, memory, and problem-solving with a short daily practice." />}
         <header className="gamepal-page-header"><span>DAILY BRAIN GAMES</span><h1>GamePal</h1><p>A five-minute reset for focus, recall, language, and logic.</p></header>
         {activeGame ? <GameSession key={activeGame} game={game} level={gameLevel} onExit={exitGame} onResult={recordResult} onNext={() => {
           if (!circuit) { exitGame(); return; }

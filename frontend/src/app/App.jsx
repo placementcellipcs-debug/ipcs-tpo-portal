@@ -87,6 +87,7 @@ const AcademicBatches = lazyRoute(() => import('../features/learning/AcademicBat
 const AcademicSessions = lazyRoute(() => import('../features/learning/AcademicSessions'));
 const AcademicAttendance = lazyRoute(() => import('../features/learning/AcademicAttendance'));
 const AcademicDiary = lazyRoute(() => import('../features/learning/AcademicDiary'));
+const AcademicWorkspace = lazyRoute(() => import('../features/learning/AcademicWorkspace'));
 
 function PlacementDrivesRoute() {
   let account = null;
@@ -283,14 +284,16 @@ function RoutedContent() {
         </Route>
 
         <Route path="/trainer" element={<TrainerWorkspaceRoute />} />
-        <Route path="/academic/brain-gym" element={<Navigate to="/game-pal" replace />} />
         <Route path="/academic" element={<TrainerAcademicAccessRoute />}>
           <Route index element={<AcademicOverview trainerMode />} />
+          <Route path="brain-gym" element={<BrainGym academicMode />} />
           <Route path="branches" element={<AcademicOverview trainerMode />} />
+          <Route path="leaves" element={<AcademicOverview trainerMode />} />
           <Route path="training" element={<AcademicTraining />} />
           <Route path="batches" element={<AcademicBatches />} />
           <Route path="sessions" element={<AcademicSessions />} />
           <Route path="attendance" element={<AcademicAttendance />} />
+          <Route path="topics" element={<AcademicWorkspace module="topics" />} />
           <Route path="diary" element={<AcademicDiary />} />
           <Route path="*" element={<Navigate to="/academic" replace />} />
         </Route>
