@@ -1,5 +1,5 @@
 import { useNavigate, useLocation } from 'react-router-dom';
-import { GraduationCap, UsersFour, ChalkboardTeacher, CalendarCheck, Notebook, BookOpen, Buildings, SquaresFour, ClipboardText, Brain } from '@phosphor-icons/react';
+import { GraduationCap, UsersFour, ChalkboardTeacher, CalendarCheck, Notebook, SquaresFour, Buildings } from '@phosphor-icons/react';
 
 export default function AcademicTopNav({ title, subtitle, statLabel, statValue }) {
   const navigate = useNavigate();
@@ -8,14 +8,11 @@ export default function AcademicTopNav({ title, subtitle, statLabel, statValue }
 
   const tabs = [
     { name: 'Dashboard', path: '/academic', icon: <SquaresFour size={20} /> },
-    { name: 'Mind Gym', path: '/academic/brain-gym', icon: <Brain size={20} /> },
-    { name: 'Branches', path: '/academic/branches', icon: <Buildings size={20} /> },
-    { name: 'Leave approvals', path: '/academic/leaves', icon: <ClipboardText size={20} /> },
+    { name: 'My Students', path: '/academic/branches', icon: <Buildings size={20} /> },
     { name: 'Student Training', path: '/academic/training', icon: <GraduationCap size={20} /> },
     { name: 'Batches', path: '/academic/batches', icon: <UsersFour size={20} /> },
     { name: 'Daily Sessions', path: '/academic/sessions', icon: <ChalkboardTeacher size={20} /> },
     { name: 'Attendance', path: '/academic/attendance', icon: <CalendarCheck size={20} /> },
-    { name: 'Syllabus & Topics', path: '/academic/topics', icon: <BookOpen size={20} /> },
     { name: 'Digital Diary', path: '/academic/diary', icon: <Notebook size={20} /> }
   ];
 

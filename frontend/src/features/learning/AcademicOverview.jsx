@@ -52,9 +52,10 @@ export default function AcademicOverview({ trainerMode = false }) {
   const activeTraining = useMemo(() => scopedTraining.filter(row => activeValue(row.status)), [scopedTraining]);
   const activeIds = useMemo(() => new Set(activeTraining.map(row => normalized(row.studentId)).filter(Boolean)), [activeTraining]);
   const activeStudents = useMemo(() => data.students.filter(student => {
+    if (trainerMode) return activeIds.has(normalized(student.studentId));
     const state = normalized(student.status);
     return state ? activeValue(state) : activeIds.has(normalized(student.studentId));
-  }), [data.students, activeIds]);
+  }), [data.students, activeIds, trainerMode]);
   const branchCounts = useMemo(() => {
     const totals = new Map();
     activeStudents.forEach(student => {

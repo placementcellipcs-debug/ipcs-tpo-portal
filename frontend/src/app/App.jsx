@@ -1,6 +1,6 @@
 import { Component, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
-import { isPortalAdminAccount } from '../utils/roleAccess';
+import { isAcademicTrainerAccount, isPortalAdminAccount } from '../utils/roleAccess';
 import PortalAuditCapture from '../services/PortalAuditCapture';
 
 const lazyRoute = importer => lazy(async () => {
@@ -81,6 +81,12 @@ const MediaSettings = lazyRoute(() => import('../features/media/MediaSettings'))
 
 const BrainGym = lazyRoute(() => import('../features/learning/BrainGym'));
 const CareerHub = lazyRoute(() => import('../features/placements/CareerHub'));
+const AcademicOverview = lazyRoute(() => import('../features/learning/AcademicOverview'));
+const AcademicTraining = lazyRoute(() => import('../features/learning/AcademicTraining'));
+const AcademicBatches = lazyRoute(() => import('../features/learning/AcademicBatches'));
+const AcademicSessions = lazyRoute(() => import('../features/learning/AcademicSessions'));
+const AcademicAttendance = lazyRoute(() => import('../features/learning/AcademicAttendance'));
+const AcademicDiary = lazyRoute(() => import('../features/learning/AcademicDiary'));
 
 function PlacementDrivesRoute() {
   let account = null;
@@ -131,6 +137,18 @@ function PlacementReconciliationRoute() {
     : <Navigate to="/dashboard" replace />;
 }
 
+function TrainerAcademicAccessRoute() {
+  let account = null;
+  try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
+  return account && isAcademicTrainerAccount(account) ? <Outlet /> : <Navigate to={account ? '/dashboard' : '/login'} replace />;
+}
+
+function TrainerWorkspaceRoute() {
+  let account = null;
+  try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
+  return account && isAcademicTrainerAccount(account) ? <Navigate to="/academic" replace /> : <Navigate to={account ? '/dashboard' : '/login'} replace />;
+}
+
 function AssetManagerAccessRoute({ children }) {
   let account = null;
   try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
@@ -150,16 +168,6 @@ function UnknownRoute() {
   let account = null;
   try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Treat invalid session data as signed out. */ }
   return <Navigate to={account ? '/dashboard' : '/login'} replace />;
-}
-
-function AcademicUnavailable() {
-  return (
-    <main role="status" style={{ minHeight: '100vh', display: 'grid', placeContent: 'center', gap: 12, padding: 24, background: '#08090f', color: '#f8fafc', fontFamily: 'Inter, sans-serif', textAlign: 'center' }}>
-      <h1 style={{ margin: 0, fontSize: 28 }}>Training &amp; Academics is temporarily unavailable</h1>
-      <p style={{ margin: 0, color: '#94a3b8' }}>This section is paused while the module is being restored. Your other portal sections are still available.</p>
-      <a href="/dashboard" style={{ justifySelf: 'center', marginTop: 8, padding: '10px 18px', borderRadius: 8, background: '#0ea5e9', color: '#fff', textDecoration: 'none' }}>Back to dashboard</a>
-    </main>
-  );
 }
 
 class RouteErrorBoundary extends Component {
@@ -274,11 +282,18 @@ function RoutedContent() {
           <Route path="*" element={<Navigate to="/media/dashboard" replace />} />
         </Route>
 
-        {/* Training & Academics is temporarily unavailable for every role. */}
-        <Route path="/trainer" element={<AcademicUnavailable />} />
+        <Route path="/trainer" element={<TrainerWorkspaceRoute />} />
         <Route path="/academic/brain-gym" element={<Navigate to="/game-pal" replace />} />
-        <Route path="/academic" element={<AcademicUnavailable />} />
-        <Route path="/academic/*" element={<AcademicUnavailable />} />
+        <Route path="/academic" element={<TrainerAcademicAccessRoute />}>
+          <Route index element={<AcademicOverview trainerMode />} />
+          <Route path="branches" element={<AcademicOverview trainerMode />} />
+          <Route path="training" element={<AcademicTraining />} />
+          <Route path="batches" element={<AcademicBatches />} />
+          <Route path="sessions" element={<AcademicSessions />} />
+          <Route path="attendance" element={<AcademicAttendance />} />
+          <Route path="diary" element={<AcademicDiary />} />
+          <Route path="*" element={<Navigate to="/academic" replace />} />
+        </Route>
         <Route path="/game-pal" element={<BrainGym />} />
         <Route path="*" element={<UnknownRoute />} />
       </Routes>

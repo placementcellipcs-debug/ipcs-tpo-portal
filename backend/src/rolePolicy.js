@@ -10,6 +10,12 @@ const isTechnicalScoped = user => {
   return technicalRole || academicTrainer;
 };
 
+const isAcademicTrainer = user => {
+  const role = getRole(user);
+  const department = String(user?.department || '').trim().toUpperCase();
+  return role.includes('TRAINER') && (!department || department === 'ACADEMIC');
+};
+
 const getPolicyDenial = (user, { policy = 'portal', method = '', path = '', baseUrl = '' } = {}) => {
   const role = getRole(user);
   const admin = isPortalAdmin(user);
@@ -26,7 +32,7 @@ const getPolicyDenial = (user, { policy = 'portal', method = '', path = '', base
   if (policy === 'design' && !admin && !['DESIGN', 'MEDIA', 'CREATIVE'].some(part => role.includes(part))) return deny('Media & Design Studio is not available for this role.');
   if (policy === 'events-write' && !admin && !role.includes('TPO') && !role.includes('PLACEMENT OFFICER')) return deny('Event management is not available for this role.');
   if (policy === 'vacancies-write' && (admin || (!role.includes('TPO') && !role.includes('PLACEMENT OFFICER')))) return deny('Only placement officers can add vacancies.');
-  if (policy === 'academic') return { status: 404, message: 'Training & Academics is temporarily unavailable.' };
+  if (policy === 'academic' && !isAcademicTrainer(user)) return deny('Training & Academics is available only to trainer accounts.');
   if (policy === 'clients' && (hasRoleToken(role, 'RTH') || role.includes('REGIONAL TECHNICAL HEAD') || /TECH(?:NICAL)?\s+LEAD/.test(role) || hasRoleToken(role, 'TL') || role.includes('TRAINER') || hasRoleToken(role, 'TTH'))) return deny('Clients & Partners is not available for this role.');
   if (policy === 'learning' && !admin && !isTechnicalScoped(user)) return deny('Study materials are not available for this role.');
   if (policy === 'learning-write' && !admin) return deny('Administrator access is required to manage study materials.');

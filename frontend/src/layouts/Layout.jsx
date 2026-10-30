@@ -12,7 +12,7 @@ import {
 import { API_BASE } from '../services/apiConfig';
 import { applyAppearance, readAppearance } from '../services/appearance';
 import { formatPortalDateTime, parsePortalDateTime } from '../utils/dateFormat';
-import { isPortalAdminAccount } from '../utils/roleAccess';
+import { isAcademicTrainerAccount, isPortalAdminAccount } from '../utils/roleAccess';
 import AssetPortalShell from '../features/assets/AssetPortalShell';
 import MediaPortalShell from '../features/media/MediaPortalShell';
 
@@ -180,7 +180,7 @@ export default function Layout({ children }) {
   const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('REGIONAL TECHNICAL HEAD');
   const isTth = /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('TERRITORY TECHNICAL HEAD');
   const isTrainer = userRole.includes('TRAINER');
-  const isAcademicTrainer = isTrainer && (!String(tpoData?.department || '').trim() || String(tpoData.department).trim().toUpperCase() === 'ACADEMIC');
+  const isAcademicTrainer = isAcademicTrainerAccount(tpoData);
   const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(userRole) || /(^|[^A-Z0-9])TL([^A-Z0-9]|$)/.test(userRole);
   const isBranchManager = userRole === 'BM' || userRole.includes('BRANCH MANAGER');
   const isTerritoryManager = userRole.includes('TERRITORY MANAGER') || /(^|[^A-Z0-9])TM([^A-Z0-9]|$)/.test(userRole);
@@ -357,6 +357,7 @@ export default function Layout({ children }) {
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('ops')}>
                 <div className={`pd-nav-item ${isActive('/events') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} weight={isActive('/events') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Events</span></div>
                 <div className={`pd-nav-item ${isActive('/talentino') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/talentino')}><UserCheck size={22} weight={isActive('/talentino') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Talentino</span></div>
+                {isAcademicTrainer && <div className={`pd-nav-item ${isActive('/academic') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/academic')}><GraduationCap size={22} weight={isActive('/academic') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Training &amp; Academics</span></div>}
                 {showStudyMaterials && <div className={`pd-nav-item ${isActive('/study-materials') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/study-materials')}><Book size={22} weight={isActive('/study-materials') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Study Materials</span></div>}
                 {showExams && <div className={`pd-nav-item ${isActive('/exams') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/exams')}><FileText size={22} weight={isActive('/exams') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Exams Hub</span></div>}
                 </div>
