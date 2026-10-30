@@ -250,7 +250,7 @@ function AcademicWorkspaceRecords({ module }) {
                     <td>{student?.branch || '—'}<small>{student?.mainCourse || '—'}{student?.subCourse ? ` · ${student.subCourse}` : ''}</small></td>
                     <td>{item.sessionId}</td>
                     <td>{formatPortalDate(item.date, String(item.date || ''))}</td>
-                    <td><select className="academic-status-select" value={draft.status} onChange={event => setAttendanceDraft(current => ({ ...current, [item.attendanceId]: { ...draft, status: event.target.value } }))}><option>Present</option><option>Absent</option><option>Late</option><option>Leave</option></select></td>
+                    <td><select className="academic-status-select" value={draft.status} onChange={event => setAttendanceDraft(current => ({ ...current, [item.attendanceId]: { ...draft, status: event.target.value } }))}><option>Present</option><option>Absent</option><option>Late</option><option>Leave</option><option>Holiday</option><option>Sunday</option><option>No Class</option></select></td>
                     <td><label className="academic-check"><input type="checkbox" checked={draft.verified} onChange={event => setAttendanceDraft(current => ({ ...current, [item.attendanceId]: { ...draft, verified: event.target.checked } }))} /> <span>{draft.verified ? 'Verified' : 'Pending'}</span></label></td>
                     <td><button type="button" className="academic-icon-button" title="Save attendance" onClick={() => saveAttendance(item)}><FloppyDisk size={17} /></button></td>
                   </tr>

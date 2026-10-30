@@ -659,6 +659,7 @@ app.post('/api/academic/topics/add', academicControllers.addAcademicTopic);
 app.post('/api/academic/students/update', academicControllers.updateStudentAcademics);
 app.post('/api/academic/attendance/update', academicControllers.updateAttendance);
 app.post('/api/academic/attendance/mark-day', academicControllers.markDailyAttendance);
+app.post('/api/academic/attendance/import-master', academicControllers.importLegacyMasterAttendance);
 app.post('/api/academic/leaves/review', academicControllers.reviewLeaveRequest);
 app.post('/api/academic/diary/add', academicControllers.addDiaryEntry);
 

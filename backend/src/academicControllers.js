@@ -1,6 +1,7 @@
 const { doc: academicDoc, getCache, hasAccess, loadDocInfo, google, serviceAccountAuth } = require('./config');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { formatIndiaTimestamp } = require('./utils/dateTime');
+const { createHash } = require('crypto');
 
 let loadPromise;
 let cachedData;
@@ -12,12 +13,13 @@ const BANGALORE_ATTENDANCE_SPREADSHEET_ID = String(
   '1Ba2Nk8IiMmBh-jvxbBKLosCLi_De-uMHEzgeNz0mRik'
 ).trim();
 const attendanceWorkbooks = new Map();
+const legacyMasterGridCache = new Map();
 const LEGACY_COURSE_SHEETS = [
-  { name: 'Embedded_&_IoT', course: 'Embedded & IoT', dailyColumn: 1 },
-  { name: 'Information_Technology', course: 'Information Technology', dailyColumn: 6 },
-  { name: 'Industrial_Automation', course: 'Industrial Automation', dailyColumn: 11 },
-  { name: 'BMS_&_CCTV', course: 'BMS & CCTV', dailyColumn: 16 },
-  { name: 'Digital_Marketing', course: 'Digital Marketing', dailyColumn: 21 },
+  { name: 'Embedded_&_IoT', course: 'Embedded & IoT', dailyColumn: 1, statusColumn: 16 },
+  { name: 'Information_Technology', course: 'Information Technology', dailyColumn: 6, statusColumn: 16 },
+  { name: 'Industrial_Automation', course: 'Industrial Automation', dailyColumn: 11, statusColumn: 17 },
+  { name: 'BMS_&_CCTV', course: 'BMS & CCTV', dailyColumn: 16, statusColumn: 17 },
+  { name: 'Digital_Marketing', course: 'Digital Marketing', dailyColumn: 21, statusColumn: 16 },
 ];
 
 const SHEET_TITLES = {
@@ -25,7 +27,7 @@ const SHEET_TITLES = {
   batches: ['02_Batches', 'batches'],
   topics: ['03_Topics', 'topics'],
   sessions: ['04_Sessions', 'sessions'],
-  attendance: ['05_Attendance', 'attendance'],
+  attendance: ['05_Attendance', 'Attendance', 'attendance'],
   topicProgress: ['06_Topic_Progress', 'topicprogress'],
   diary: ['07_Diary', 'diary'],
   leaveRequests: ['08_Leave_Requests', 'Leave Requests', 'Student Leaves', 'Student Leave Requests', 'Leave Form Responses', 'Form Responses 1', 'Form Responses 2', 'leave requests', 'leaves'],
@@ -245,11 +247,17 @@ async function readAllAcademicData(force = false) {
       'trainerName', 'topicId', 'topic', 'actualHours', 'sessionStatus', 'remarks'
     ]);
     const attendance = mapRecords(attendanceRows, [
-      'attendanceId', 'sessionId', 'trainingId', 'studentId', 'date', 'attendanceStatus', 'markingMethod',
+      'attendanceId', 'sessionId', 'trainingId', 'studentId', 'studentName', 'mainCourse', 'subCourse', 'branch', 'date', 'attendanceStatus', 'markingMethod',
       'verified', 'verifiedBy', 'remarks'
     ]).map(record => {
       const student = studentMap.get(String(record.studentId).trim().toLowerCase()) || {};
-      return { ...record, studentName: student.studentName || '', mainCourse: student.mainCourse || '', branch: student.branch || '' };
+      return {
+        ...record,
+        studentName: record.studentName || student.studentName || '',
+        mainCourse: record.mainCourse || student.mainCourse || '',
+        subCourse: record.subCourse || student.subCourse || '',
+        branch: record.branch || student.branch || '',
+      };
     });
     const topicProgress = mapRecords(progressRows, ['trainingId', 'studentId', 'topicId', 'topic', 'completed', 'comprehension', 'remarks']);
     const diary = mapRecords(diaryRows, ['diaryId', 'studentId', 'trainingId', 'date', 'eventType', 'title', 'description', 'createdBy'])
@@ -350,6 +358,22 @@ function findHeader(headers, aliases) {
   }) || null;
 }
 
+function findHeaderIndex(headers, aliases, excluded = []) {
+  const targets = aliases.map(normalize);
+  const excludedTargets = excluded.map(normalize);
+  const exact = headers.findIndex(header => targets.includes(normalize(header)));
+  if (exact >= 0) return exact;
+  return headers.findIndex(header => {
+    const candidate = normalize(header);
+    return targets.some(target => candidate.includes(target)) && !excludedTargets.some(target => candidate.includes(target));
+  });
+}
+
+function readGridField(headers, row, aliases, excluded = []) {
+  const index = findHeaderIndex(headers, aliases, excluded);
+  return index >= 0 ? cleanText(row[index]) : '';
+}
+
 function monthYearKey(value) {
   if (!value) return '';
   if (value instanceof Date && !Number.isNaN(value.getTime())) return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}`;
@@ -376,43 +400,57 @@ function attendanceCourseConfig(course) {
 
 async function readLegacyCourseRoster(workbook, branch, courseFilter = '') {
   const courses = LEGACY_COURSE_SHEETS.filter(item => !courseFilter || normalize(item.course) === normalize(courseFilter) || normalize(item.name) === normalize(courseFilter));
+  const spreadsheetId = getAttendanceSpreadsheetId(branch);
+  const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
   const groups = await Promise.all(courses.map(async item => {
     const sheet = workbook.sheetsByTitle[item.name];
     if (!sheet) return [];
-    await sheet.loadHeaderRow(5);
-    const rows = await readRows(sheet);
-    return rows.map(row => {
+    // Course tabs contain three side-by-side tables with repeated headings such
+    // as Sl.No, Name, Phone No, and Course. Read the roster grid directly so
+    // duplicate headers do not prevent the trainer roster from loading.
+    const response = await sheetsApi.spreadsheets.values.get({
+      spreadsheetId,
+      range: `'${item.name}'!A5:AJ`,
+    });
+    const grid = response.data.values || [];
+    const headers = grid[0] || [];
+    const rows = grid.slice(1);
+    const validStatuses = new Set(['activeregular', 'activeirregular', 'transferstudentactiveregular', 'transferstudentactiveirregular', 'transferstudentaciveirregular', 'active']);
+    return rows.map((values, index) => {
+      const statusValues = [values[14], values[15], values[16]].map(cleanText).filter(Boolean);
+      const rawStatus = statusValues.find(value => validStatuses.has(normalize(value))) || values[item.statusColumn - 1] || '';
+      const read = (aliases, excluded = []) => readGridField(headers, values, aliases, excluded);
       const student = {
-        studentId: cleanText(readHeaderValue(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])),
-        studentName: cleanText(readHeaderValue(row, ['name', 'studentname'])),
-        phone: cleanText(readHeaderValue(row, ['phoneno', 'phone', 'mobilenumber', 'contactnumber'], ['parent', 'father', 'mother'])),
-        email: cleanText(readHeaderValue(row, ['mailid', 'email', 'mail'], ['parent', 'father', 'mother'])),
-        parentPhone: cleanText(readHeaderValue(row, ['parentphone', 'parentphonenumber', 'guardianphone', 'fatherphone', 'motherphone'])),
+        studentId: read(['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']),
+        studentName: read(['studentname', 'name']),
+        phone: read(['phoneno', 'phone', 'mobilenumber', 'contactnumber'], ['parent', 'father', 'mother']),
+        email: read(['mailid', 'email', 'mail'], ['parent', 'father', 'mother']),
+        parentPhone: read(['parentphone', 'parentphonenumber', 'guardianphone', 'fatherphone', 'motherphone']),
         mainCourse: item.course,
-        subCourse: cleanText(readHeaderValue(row, ['course', 'subcourse', 'specialization'], ['master'])),
+        subCourse: read(['course', 'subcourse', 'specialization'], ['master']),
         branch,
-        courseDuration: cleanText(readHeaderValue(row, ['durationofthecourse', 'courseduration', 'duration'])),
-        modeOfClass: cleanText(readHeaderValue(row, ['modeofclass', 'classmode', 'mode'])),
-        syllabusCompleted: cleanText(readHeaderValue(row, ['syllabuscompleted', 'coursecompletedpercentage', 'completedpercentage'])),
-        attendedDays: cleanText(readHeaderValue(row, ['totalnumberofdaysattendedtheclass', 'attendeddays', 'totalattendancedays'])),
-        joiningDate: cleanText(readHeaderValue(row, ['joiningdate', 'dateofjoining'])),
-        batch: cleanText(readHeaderValue(row, ['batch', 'batchname'])),
-        batchStartTime: cleanText(readHeaderValue(row, ['batchstarttime', 'starttime'])),
-        batchEndTime: cleanText(readHeaderValue(row, ['batchendtime', 'endtime'])),
-        courseStatus: cleanText(readHeaderValue(row, ['coursestatus', 'statuscurrently', 'studentstatus', 'enrollmentstatus', 'status'])),
-        courseCompletedDate: cleanText(readHeaderValue(row, ['coursecompleteddate', 'completeddate'])),
-        reasonRemarks: cleanText(readHeaderValue(row, ['reasonremarks', 'reason', 'remarks'])),
-        feesStatus: cleanText(readHeaderValue(row, ['feesstatus', 'feestatus'])),
-        qualification: cleanText(readHeaderValue(row, ['qualification', 'qual'])),
-        certificateApplied: cleanText(readHeaderValue(row, ['certificateapplied'])),
-        certificateReceived: cleanText(readHeaderValue(row, ['certificatereceived', 'certificaterecieved'])),
-        feedback: cleanText(readHeaderValue(row, ['feedback'])),
-        placement: cleanText(readHeaderValue(row, ['placement'])),
-        placementStatus: cleanText(readHeaderValue(row, ['placementstatus'])),
-        absentMonths: cleanText(readHeaderValue(row, ['noofmonthabsent', 'monthabsent', 'absentmonths'])),
-        absenceReason: cleanText(readHeaderValue(row, ['reasonforabsent', 'absencereason'])),
+        courseDuration: read(['durationofthecourse', 'courseduration', 'duration']),
+        modeOfClass: read(['modeofclass', 'classmode', 'mode']),
+        syllabusCompleted: read(['syllabuscompleted', 'coursecompletedpercentage', 'completedpercentage']),
+        attendedDays: read(['totalnumberofdaysattendedtheclass', 'attendeddays', 'totalattendancedays']),
+        joiningDate: read(['joiningdate', 'dateofjoining']),
+        batch: read(['batch', 'batchname']),
+        batchStartTime: read(['batchstarttime', 'starttime']),
+        batchEndTime: read(['batchendtime', 'endtime']),
+        courseStatus: cleanText(rawStatus),
+        courseCompletedDate: read(['coursecompleteddate', 'completeddate']),
+        reasonRemarks: read(['reasonremarks', 'reason', 'remarks']),
+        feesStatus: read(['feesstatus', 'feestatus']),
+        qualification: read(['qualification', 'qual']),
+        certificateApplied: read(['certificateapplied']),
+        certificateReceived: read(['certificatereceived', 'certificaterecieved']),
+        feedback: read(['feedback']),
+        placement: read(['placement']),
+        placementStatus: read(['placementstatus']),
+        absentMonths: read(['noofmonthabsent', 'monthabsent', 'absentmonths']),
+        absenceReason: read(['reasonforabsent', 'absencereason']),
         legacySheet: item.name,
-        legacyRowNumber: row.rowNumber,
+        legacyRowNumber: index + 6,
       };
       return student.studentId && student.studentName ? student : null;
     }).filter(Boolean);
@@ -426,6 +464,22 @@ async function readLegacyMasterRows(workbook) {
   await sheet.loadHeaderRow(2);
   const rows = await readRows(sheet);
   return { sheet, rows, headers: sheet.headerValues || [] };
+}
+
+async function readLegacyMasterGrid(branch) {
+  const spreadsheetId = getAttendanceSpreadsheetId(branch);
+  const cacheKey = `${spreadsheetId}:Master_Attendance_Database`;
+  const cached = legacyMasterGridCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
+  const response = await sheetsApi.spreadsheets.values.get({
+    spreadsheetId,
+    range: 'Master_Attendance_Database!A2:AZ',
+  });
+  const grid = response.data.values || [];
+  const value = { headers: grid[0] || [], rows: grid.slice(1) };
+  legacyMasterGridCache.set(cacheKey, { value, expiresAt: Date.now() + 30000 });
+  return value;
 }
 
 function legacyMonthlyRecord(row, headers, student, key) {
@@ -498,7 +552,9 @@ function scopeAcademicData(data, user) {
   );
   const sessionIds = new Set(sessions.map(session => cleanText(session.sessionId)));
   const attendance = data.attendance.filter(record =>
-    sessionIds.has(cleanText(record.sessionId)) || trainingIds.has(cleanText(record.trainingId)) || studentIds.has(cleanText(record.studentId).toLowerCase())
+    sessionIds.has(cleanText(record.sessionId)) || trainingIds.has(cleanText(record.trainingId)) ||
+    studentIds.has(cleanText(record.studentId).toLowerCase()) ||
+    (record.branch && record.mainCourse && canAccessAcademicRecord(user, record))
   );
   return {
     training,
@@ -597,7 +653,7 @@ exports.getAttendanceRegister = async (req, res) => {
       const attendanceByStudent = new Map();
       const markCode = value => ({
         p: 'P', present: 'P', a: 'A', absent: 'A', late: 'A',
-        h: 'H', leave: 'H', holiday: 'H', s: 'S', sunday: 'S',
+        h: 'H', leave: 'H', holiday: 'H', holidayleave: 'H', s: 'S', sunday: 'S',
         x: 'X', 'no class': 'X', noclass: 'X',
       })[normalize(value)] || '';
       scopedData.attendance
@@ -644,7 +700,9 @@ exports.getAttendanceRegister = async (req, res) => {
     res.json({
       success: true, branch, course, month: String(month).padStart(2, '0'), year, monthKey: requestedKey,
       monthLabel: monthYearLabel(requestedKey), daysInMonth: new Date(year, month, 0).getDate(),
-      sourceSheet, dailySheet, sourceWorkbookTitle, sourceType, sourceUrl: workbook ? `https://docs.google.com/spreadsheets/d/${getAttendanceSpreadsheetId(branch)}/edit` : '',
+      sourceSheet, dailySheet, sourceWorkbookTitle, sourceType, sourceUrl: workbook
+        ? `https://docs.google.com/spreadsheets/d/${getAttendanceSpreadsheetId(branch)}/edit${normalizeAttendanceBranch(branch) === 'bangalore' ? '#gid=2114306315' : ''}`
+        : '',
       canMark: true, students, topics,
       summary: {
         total: students.length,
@@ -655,6 +713,118 @@ exports.getAttendanceRegister = async (req, res) => {
   } catch (error) {
     console.error('Attendance register could not be loaded:', error.message);
     return res.status(503).json({ success: false, message: 'The assigned attendance workbook could not be read. Check that the portal service account has access to the branch workbook.' });
+  }
+};
+
+async function ensureLegacyAttendanceImportHeaders(sheet) {
+  let headers = [];
+  try {
+    await sheet.loadHeaderRow();
+    headers = [...(sheet.headerValues || [])];
+  } catch {
+    // The portal Attendance tab is currently empty, so initialize a usable header row.
+  }
+  while (headers.length && !cleanText(headers[headers.length - 1])) headers.pop();
+  const required = [
+    ['attendanceId', 'Attendance ID'], ['sessionId', 'Session ID'], ['trainingId', 'Training ID'],
+    ['studentId', 'Student ID'], ['studentName', 'Student Name'], ['mainCourse', 'Main Course'],
+    ['subCourse', 'Sub Course'], ['branch', 'Branch'], ['date', 'Date'],
+    ['attendanceStatus', 'Attendance Status'], ['markingMethod', 'Marking Method'],
+    ['verified', 'Verified'], ['verifiedBy', 'Verified By'], ['remarks', 'Remarks'],
+  ];
+  let changed = false;
+  for (const [field, label] of required) {
+    if (!getFieldHeader(headers, field)) { headers.push(label); changed = true; }
+  }
+  if (changed || !sheet.headerValues?.length) {
+    if ((Number(sheet.columnCount) || 0) < headers.length) await sheet.resize({ columnCount: headers.length });
+    await sheet.setHeaderRow(headers);
+    await sheet.loadHeaderRow();
+  }
+  return headers;
+}
+
+exports.importLegacyMasterAttendance = async (req, res) => {
+  try {
+    const branch = cleanText(req.body?.branch);
+    const course = cleanText(req.body?.course);
+    if (!branch || !course || !canAccessAcademicRecord(req.portalUser, { branch, mainCourse: course })) {
+      return res.status(403).json({ success: false, message: 'Choose a branch and course inside your trainer assignment.' });
+    }
+    const workbook = await getAttendanceWorkbook(branch);
+    if (!workbook) return res.status(404).json({ success: false, message: 'No legacy master attendance workbook is configured for this branch.' });
+    if (!attendanceCourseConfig(course)) return res.status(400).json({ success: false, message: 'This course does not have a legacy attendance mapping.' });
+
+    const targetSheet = requireSheet('attendance', res);
+    if (!targetSheet) return;
+    await ensureLegacyAttendanceImportHeaders(targetSheet);
+
+    const [legacyRoster, masterGrid, existingRows] = await Promise.all([
+      readLegacyCourseRoster(workbook, branch, course),
+      readLegacyMasterGrid(branch),
+      readRows(targetSheet),
+    ]);
+    const { rows: masterRows, headers: masterHeaders } = masterGrid;
+    const rosterById = new Map(legacyRoster.map(student => [cleanText(student.studentId).toLowerCase(), student]));
+    const importedIds = new Set(existingRows.map(row => cleanText(readField(row, 'attendanceId'))));
+    const targetRows = [];
+    let duplicateCount = 0;
+    let skippedRows = 0;
+    const attendanceStatus = { P: 'Present', A: 'Absent', H: 'Holiday', S: 'Sunday', X: 'No Class' };
+
+    for (const sourceRow of masterRows) {
+      const studentId = readGridField(masterHeaders, sourceRow, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']);
+      if (!studentId) { skippedRows++; continue; }
+      const sourceCourse = readGridField(masterHeaders, sourceRow, ['mastercourse', 'department']);
+      const matchedStudent = rosterById.get(studentId.toLowerCase());
+      const rowCourse = sourceCourse || matchedStudent?.mainCourse || '';
+      if (normalize(rowCourse) !== normalize(course)) continue;
+      const monthKey = monthYearKey(readGridField(masterHeaders, sourceRow, ['monthyear', 'month & year', 'month']));
+      if (!monthKey) { skippedRows++; continue; }
+      const [year, month] = monthKey.split('-').map(Number);
+      const dayCount = new Date(year, month, 0).getDate();
+      const studentName = readGridField(masterHeaders, sourceRow, ['studentname', 'name']) || matchedStudent?.studentName || '';
+      const student = matchedStudent || {
+        studentId, studentName, mainCourse: course,
+        subCourse: readGridField(masterHeaders, sourceRow, ['course', 'subcourse', 'specialization']),
+        branch,
+      };
+      if (!studentName || !canAccessAcademicRecord(req.portalUser, { branch, mainCourse: course })) { skippedRows++; continue; }
+
+      for (let day = 1; day <= dayCount; day++) {
+        const dayIndex = findHeaderIndex(masterHeaders, [String(day)]);
+        const legacyCode = dayIndex >= 0 ? cleanText(sourceRow[dayIndex]).toUpperCase() : '';
+        const status = attendanceStatus[legacyCode];
+        if (!status) continue;
+        const date = `${monthKey}-${String(day).padStart(2, '0')}`;
+        const identity = createHash('sha256').update(`${normalizeAttendanceBranch(branch)}|${normalize(course)}|${studentId.toLowerCase()}|${date}`).digest('hex').slice(0, 24).toUpperCase();
+        const attendanceId = `LEGACY-${identity}`;
+        if (importedIds.has(attendanceId)) { duplicateCount++; continue; }
+        importedIds.add(attendanceId);
+        targetRows.push(makeRow(targetSheet, {
+          attendanceId, studentId, studentName, mainCourse: course,
+          subCourse: student.subCourse || readGridField(masterHeaders, sourceRow, ['course', 'subcourse', 'specialization']),
+          branch, date, attendanceStatus: status, markingMethod: 'Legacy Master Import',
+          verified: 'Yes', verifiedBy: 'Master_Attendance_Database',
+          remarks: `Imported legacy mark ${legacyCode} from Master_Attendance_Database.`,
+        }));
+      }
+    }
+
+    for (let offset = 0; offset < targetRows.length; offset += 500) {
+      await targetSheet.addRows(targetRows.slice(offset, offset + 500));
+    }
+    invalidateAcademicCache();
+    return res.json({
+      success: true, branch, course, imported: targetRows.length, alreadyImported: duplicateCount, skippedRows,
+      destination: targetSheet.title,
+      message: targetRows.length
+        ? `Imported ${targetRows.length} historical attendance marks into ${targetSheet.title}.`
+        : `No new historical marks to import; ${duplicateCount} marks were already in ${targetSheet.title}.`,
+    });
+  } catch (error) {
+    console.error('Legacy attendance import failed:', error.message);
+    return res.status(503).json({ success: false, message: 'Could not import the master attendance. Check that the portal service account can edit both workbooks.' });
   }
 };
 
@@ -1243,10 +1413,10 @@ exports.updateAttendance = async (req, res) => {
     if (!row) return res.status(404).json({ success: false, message: 'Attendance record not found.' });
     const scopedData = scopeAcademicData(await readAllAcademicData(), req.portalUser);
     if (!scopedData.attendance.some(record => cleanText(record.attendanceId) === cleanText(body.attendanceId))) return res.status(403).json({ success: false, message: 'This attendance record is outside your course or branch assignment.' });
-    const allowedStatuses = ['Present', 'Absent', 'Late', 'Leave'];
+    const allowedStatuses = ['Present', 'Absent', 'Late', 'Leave', 'Holiday', 'Sunday', 'No Class'];
     const values = {};
     if (body.status !== undefined) {
-      if (!allowedStatuses.includes(body.status)) return res.status(400).json({ success: false, message: 'Attendance status must be Present, Absent, Late, or Leave.' });
+      if (!allowedStatuses.includes(body.status)) return res.status(400).json({ success: false, message: 'Choose a valid attendance status.' });
       values.attendanceStatus = body.status;
     }
     if (body.verified !== undefined) {

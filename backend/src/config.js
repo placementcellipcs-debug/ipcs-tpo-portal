@@ -892,10 +892,12 @@ async function waitForCacheReady() {
   return Boolean(globalCache?.cacheUpdatedAt);
 }
 
-refreshCache();
-// Pick up manual Google Sheets edits within two minutes. Writes made through
-// the portal request an immediate refresh rather than waiting for this poll.
-setInterval(refreshCache, 120000);
+if (process.env.SKIP_INITIAL_SHEET_CACHE_REFRESH !== 'true') {
+  refreshCache();
+  // Pick up manual Google Sheets edits within two minutes. Writes made through
+  // the portal request an immediate refresh rather than waiting for this poll.
+  setInterval(refreshCache, 120000);
+}
 
 const getStandardCourse = (c) => {
   if (!c) return 'Others';

@@ -51,6 +51,7 @@ export default function AcademicAttendanceStudio() {
   const [topicDraft, setTopicDraft] = useState({ module: '', topic: '', courseDuration: '', plannedHours: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [importingHistory, setImportingHistory] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
   const [savingTopic, setSavingTopic] = useState(false);
   const [error, setError] = useState('');
@@ -120,6 +121,16 @@ export default function AcademicAttendanceStudio() {
       await reloadRegister();
     } catch (requestError) { setError(requestError.response?.data?.message || 'Could not save the daily register.'); }
     finally { setSaving(false); }
+  };
+
+  const importMasterHistory = async () => {
+    setImportingHistory(true); setError(''); setNotice('');
+    try {
+      const response = await axios.post(`${API_BASE}/api/academic/attendance/import-master`, { branch, course });
+      const alreadyImported = Number(response.data?.alreadyImported) || 0;
+      setNotice(`${response.data?.message || 'Master attendance sync finished.'} ${alreadyImported ? `(${alreadyImported} already present)` : ''}`.trim());
+    } catch (requestError) { setError(requestError.response?.data?.message || 'Could not import the master attendance history.'); }
+    finally { setImportingHistory(false); }
   };
 
   const markAllPresent = () => setDraft(current => Object.fromEntries((register?.students || []).map(student => [String(student.studentId), current[String(student.studentId)] || 'P'])));
@@ -201,6 +212,7 @@ export default function AcademicAttendanceStudio() {
             <div><span>{view === 'day' ? 'DAILY CLASSROOM' : 'MONTHLY OVERVIEW'}</span><h2>{view === 'day' ? 'Take today’s register' : `${register?.monthLabel || MONTHS[month - 1]} attendance`}</h2><p>{view === 'day' ? 'Select the day, open a learner for their profile, then mark the class register.' : 'Every mark is the same code used in your monthly master attendance sheet.'}</p></div>
             <div className="attendance-ledger-actions">
               {view === 'day' && <label className="attendance-day-select"><small>DAY</small><select value={Math.min(day, daysInMonth)} onChange={event => setDay(Number(event.target.value))}>{Array.from({ length: daysInMonth }, (_, index) => index + 1).map(value => <option key={value}>{value}</option>)}</select><span>{new Intl.DateTimeFormat('en', { weekday: 'short' }).format(new Date(year, month - 1, Math.min(day, daysInMonth)))}</span></label>}
+              {register?.sourceType === 'monthly-master' && <button type="button" className="attendance-import-button" onClick={importMasterHistory} disabled={importingHistory || loading}><ArrowDownRight size={15} />{importingHistory ? 'Importing history…' : 'Add master history to portal'}</button>}
               <button type="button" className="attendance-mark-all" onClick={markAllPresent} disabled={loading || !register?.students?.length}><Check size={15} /> Mark remaining present</button>
               <button type="button" className="attendance-save-button" onClick={saveDay} disabled={saving || loading || !markedCount}>{saving ? <span className="attendance-loader" /> : <FloppyDisk size={17} />} Save day’s register <ArrowUpRight size={15} /></button>
             </div>
