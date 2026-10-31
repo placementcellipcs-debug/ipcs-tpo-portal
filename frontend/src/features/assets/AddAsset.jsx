@@ -8,6 +8,7 @@ import Layout from '../../layouts/Layout';
 import DateInput from '../../components/DateInput';
 import { API_BASE } from '../../services/apiConfig';
 import AssetCategoryFields from './AssetCategoryFields';
+import { Link } from 'react-router-dom';
 
 const DYNAMIC_TEMPLATES = {
   'Laptop': ['Serial Number', 'MAC Address', 'Processor (CPU)', 'RAM', 'Storage', 'Operating System'],
@@ -107,7 +108,9 @@ export default function AddAsset() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     setIsSubmitting(true);
+    setNotification(null);
     
     // 🚨 Safely resolve the final location string
     let finalLocation = asset.location;
@@ -127,20 +130,19 @@ export default function AddAsset() {
       formData.append('userName', tpoData.name || '');
       formData.append('userEmail', tpoData.email || '');
       if (assetPhoto) formData.append('photo', assetPhoto);
-      const res = await axios.post(`${API_BASE}/api/v1/assets/add`, formData);
-      if(res.data.success) {
-        setNotification({ type: 'success', text: `Asset ${res.data.assetId} successfully registered!` });
-        // Reset form
-        setAsset({ name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', location: '', condition: 'NEW', brand: '', model: '', purchaseDate: '', purchaseCost: '', vendor: '', invoice: '', warrantyEnd: '' });
-        setCustomLocation('');
-        setCustomFields([]);
-        if (assetPhotoPreviewRef.current) URL.revokeObjectURL(assetPhotoPreviewRef.current);
-        assetPhotoPreviewRef.current = '';
-        setAssetPhoto(null);
-        setAssetPhotoPreview('');
-      }
+      const res = await axios.post(`${API_BASE}/api/v1/assets/add`, formData, { timeout: 60000 });
+      if (!res.data?.success) throw new Error(res.data?.message || 'The server did not confirm that the asset was saved.');
+      setNotification({ type: res.data.warning ? 'warning' : 'success', text: res.data.warning || `Asset ${res.data.assetId} successfully registered!` });
+      // Reset only after the API confirms the row was saved.
+      setAsset({ name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', location: '', condition: 'NEW', brand: '', model: '', purchaseDate: '', purchaseCost: '', vendor: '', invoice: '', warrantyEnd: '' });
+      setCustomLocation('');
+      setCustomFields([]);
+      if (assetPhotoPreviewRef.current) URL.revokeObjectURL(assetPhotoPreviewRef.current);
+      assetPhotoPreviewRef.current = '';
+      setAssetPhoto(null);
+      setAssetPhotoPreview('');
     } catch (err) {
-      setNotification({ type: 'error', text: err.response?.data?.message || 'Failed to register asset.' });
+      setNotification({ type: 'error', text: err.response?.data?.message || err.message || 'Failed to register asset.' });
     } finally {
       setIsSubmitting(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -154,7 +156,7 @@ export default function AddAsset() {
         
         {/* TOAST NOTIFICATION */}
         {notification && (
-          <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 999999, backgroundColor: notification.type === 'success' ? '#10b981' : '#ef4444', color: '#ffffff', padding: '16px 24px', borderRadius: '10px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1rem', fontWeight: 'bold' }}>
+          <div style={{ position: 'fixed', bottom: '30px', right: '30px', zIndex: 999999, backgroundColor: notification.type === 'success' ? '#10b981' : notification.type === 'warning' ? '#d97706' : '#ef4444', color: '#ffffff', padding: '16px 24px', borderRadius: '10px', boxShadow: '0 10px 25px rgba(0,0,0,0.3)', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '1rem', fontWeight: 'bold' }}>
             {notification.type === 'success' ? <CheckCircle size={24} weight="fill" /> : <WarningCircle size={24} weight="fill" />}
             {notification.text}
           </div>
@@ -183,7 +185,10 @@ export default function AddAsset() {
             
             {/* SECTION 1: BASIC INFO */}
             <div className="glass-panel" style={{ padding: '30px', borderRadius: '20px', borderLeft: '4px solid #3b82f6' }}>
-              <h2 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}><Laptop weight="fill"/> Basic Identification</h2>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '20px' }}>
+                <h2 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}><Laptop weight="fill"/> Basic Identification</h2>
+                <Link to="/assets/categories" className="asset-category-library-link">Browse category library <span aria-hidden="true">↗</span></Link>
+              </div>
               
               <AssetCategoryFields
                 type="ASSET"
@@ -316,7 +321,7 @@ export default function AddAsset() {
             </div>
 
             <button type="submit" className="premium-btn primary" style={{ padding: '16px', fontSize: '1.1rem', width: '100%' }} disabled={isSubmitting}>
-              {isSubmitting ? <CircleNotch size={24} className="ph-spin" /> : 'Register Asset & Generate ID'}
+              {isSubmitting ? <><CircleNotch size={21} className="ph-spin" /> Saving asset to the branch register…</> : 'Register Asset & Generate ID'}
             </button>
           </form>
         )}
@@ -354,6 +359,8 @@ export default function AddAsset() {
         .premium-btn.primary { background: #3b82f6; color: #fff; }
         .premium-btn.primary:hover:not(:disabled) { background: #2563eb; transform: translateY(-2px); box-shadow: 0 10px 20px -10px rgba(59, 130, 246, 0.5); }
         .premium-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .asset-category-library-link { display: inline-flex; align-items: center; gap: 7px; padding: 8px 11px; border: 1px solid rgba(115,217,207,.24); border-radius: 10px; background: rgba(45,212,191,.07); color: #9cebdd; font-size: .72rem; font-weight: 750; text-decoration: none; }
+        .asset-category-library-link:hover { border-color: rgba(115,217,207,.48); background: rgba(45,212,191,.13); }
         
         .empty-state-card { background: rgba(15, 23, 42, 0.5); border: 1px dashed rgba(255,255,255,0.1); border-radius: 16px; padding: 50px 20px; text-align: center; color: #94a3b8; font-size: 1.1rem; font-weight: bold; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px; }
         

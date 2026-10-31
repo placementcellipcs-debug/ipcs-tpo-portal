@@ -60,6 +60,7 @@ const PublicSitePage = lazyRoute(() => import('../features/public/PublicSitePage
 const AssetList = lazyRoute(() => import('../features/assets/AssetList'));
 const AssetDashboard = lazyRoute(() => import('../features/assets/AssetDashboard'));
 const AddAsset = lazyRoute(() => import('../features/assets/AddAsset'));
+const AssetCategories = lazyRoute(() => import('../features/assets/AssetCategories'));
 const Inventory = lazyRoute(() => import('../features/assets/Inventory'));
 const AssetTransfers = lazyRoute(() => import('../features/assets/AssetTransfers'));
 const AssetMaintenance = lazyRoute(() => import('../features/assets/AssetMaintenance'));
@@ -264,6 +265,7 @@ function RoutedContent() {
           <Route path="assignments" element={<AssetList />} />
           <Route path="retired" element={<AssetList />} />
           <Route path="add" element={<AssetManagerAccessRoute><AddAsset /></AssetManagerAccessRoute>} />
+          <Route path="categories" element={<AssetManagerAccessRoute><AssetCategories /></AssetManagerAccessRoute>} />
           <Route path="inventory" element={<Inventory />} />
           <Route path="transfers" element={<AssetTransfers />} />
           <Route path="maintenance" element={<AssetMaintenance />} />

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { Plus, Tag, X } from '@phosphor-icons/react';
 import { API_BASE } from '../../services/apiConfig';
@@ -25,6 +26,18 @@ export default function AssetCategoryFields({ type = 'ASSET', category, subcateg
     setSubcategories(Array.isArray(initialSubcategories) ? initialSubcategories : []);
     if (dataReady) setLoading(false);
   }, [initialCategories, initialSubcategories, dataReady]);
+
+  useEffect(() => {
+    if (!modal) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = event => { if (event.key === 'Escape' && !saving) setModal(''); };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [modal, saving]);
 
   const visibleCategories = useMemo(() => {
     const unique = new Map();
@@ -61,6 +74,7 @@ export default function AssetCategoryFields({ type = 'ASSET', category, subcateg
 
   const submitClassification = async event => {
     event.preventDefault();
+    event.stopPropagation();
     const name = (modal === 'category' ? categoryDraft : subcategoryDraft).trim();
     if (!name) return;
     setSaving(true);
@@ -68,7 +82,8 @@ export default function AssetCategoryFields({ type = 'ASSET', category, subcateg
       if (modal === 'category') {
         const duplicate = visibleCategories.some(item => normalize(categoryName(item)) === normalize(name));
         if (duplicate) throw new Error('That category already exists.');
-        const response = await axios.post(`${API_BASE}/api/v1/assets/config/category`, { categoryName: name, type });
+        const response = await axios.post(`${API_BASE}/api/v1/assets/config/category`, { categoryName: name, type }, { timeout: 30000 });
+        if (!response.data?.success) throw new Error(response.data?.message || 'Category was not saved.');
         const createdCategory = response.data?.category || { categoryid: `LOCAL-${Date.now()}`, categoryname: name, type };
         setCategories(current => [...current, createdCategory]);
         onCategoryChange(name);
@@ -79,7 +94,8 @@ export default function AssetCategoryFields({ type = 'ASSET', category, subcateg
         if (!selectedCategory) throw new Error('Choose a parent category first.');
         const duplicate = visibleSubcategories.some(item => normalize(subcategoryName(item)) === normalize(name));
         if (duplicate) throw new Error('That subcategory already exists in this category.');
-        const response = await axios.post(`${API_BASE}/api/v1/assets/config/subcategory`, { categoryId: categoryId(selectedCategory), subcategoryName: name });
+        const response = await axios.post(`${API_BASE}/api/v1/assets/config/subcategory`, { categoryId: categoryId(selectedCategory), subcategoryName: name }, { timeout: 30000 });
+        if (!response.data?.success) throw new Error(response.data?.message || 'Subcategory was not saved.');
         const createdSubcategory = response.data?.subcategory || { categoryid: categoryId(selectedCategory), categoryname: categoryName(selectedCategory), name };
         setSubcategories(current => [...current, createdSubcategory]);
         onSubcategoryChange(name);
@@ -115,7 +131,7 @@ export default function AssetCategoryFields({ type = 'ASSET', category, subcateg
       </div>
     </div>
     {notice && <div className={`asset-classification-notice ${notice.kind}`} role={notice.kind === 'error' ? 'alert' : 'status'}>{notice.text}</div>}
-    {modal && <div className="asset-classification-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !saving) setModal(''); }}>
+    {modal && createPortal(<div className="asset-classification-backdrop" onMouseDown={event => { if (event.target === event.currentTarget && !saving) setModal(''); }}>
       <section className="asset-classification-modal" role="dialog" aria-modal="true" aria-labelledby="asset-classification-title">
         <header><span className="asset-classification-modal-icon"><Tag size={18} /></span><div><small>ASSET CLASSIFICATION</small><h2 id="asset-classification-title">{modal === 'category' ? 'Add a category' : 'Add a subcategory'}</h2></div><button type="button" aria-label="Close" onClick={() => !saving && setModal('')}><X size={18} /></button></header>
         <form onSubmit={submitClassification}>
@@ -125,7 +141,7 @@ export default function AssetCategoryFields({ type = 'ASSET', category, subcateg
           <footer><button type="button" onClick={() => !saving && setModal('')}>Cancel</button><button type="submit" disabled={saving}>{saving ? 'Saving…' : modal === 'category' ? 'Save category' : 'Save subcategory'}</button></footer>
         </form>
       </section>
-    </div>}
+    </div>, document.body)}
     <style>{`
       .asset-classification-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-bottom:20px}
       .asset-classification-add{display:inline-flex;align-items:center;gap:5px;margin-top:8px;padding:5px 0;border:0;background:transparent;color:#73d9cf;font:inherit;font-size:.72rem;font-weight:750;cursor:pointer}

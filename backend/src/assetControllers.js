@@ -526,15 +526,17 @@ exports.getRegistrationData = async (req, res) => {
       if (!name) return null;
       const type = cleanName(typeValue).toUpperCase();
       const key = categoryKey(name, type);
-      let category = categoryByNameAndType.get(key);
+      const idKey = normalize(idValue);
+      let category = (idKey && categoryById.get(idKey)) || categoryByNameAndType.get(key);
       if (!category) {
         category = { categoryid: cleanName(idValue), categoryname: name, type, status: cleanName(statusValue) || 'ACTIVE' };
-        categoryByNameAndType.set(key, category);
         categories.push(category);
-      } else if (!category.categoryid && idValue) {
-        category.categoryid = cleanName(idValue);
+      } else {
+        if (!category.categoryid && idValue) category.categoryid = cleanName(idValue);
+        if (!category.type && type) category.type = type;
       }
-      if (idValue) categoryById.set(normalize(idValue), category);
+      categoryByNameAndType.set(categoryKey(category.categoryname, category.type), category);
+      if (idValue) categoryById.set(idKey, category);
       return category;
     };
     rawCategories.forEach(row => {
@@ -587,6 +589,8 @@ exports.getRegistrationData = async (req, res) => {
 // 3. REGISTER NEW ASSET
 // =========================================================
 exports.addAsset = async (req, res) => {
+  let assetId = '';
+  let assetRecordSaved = false;
   try {
     const { userName, userEmail } = req.body || {};
     const asset = parseJsonField(req.body?.asset, {});
@@ -605,11 +609,10 @@ exports.addAsset = async (req, res) => {
 
     // Generate Unique IDs
     const timestamp = formatIndiaTimestamp();
-    const existingAssetIds = new Set((await assetSheet.getRows()).map(row => String(rowValue(row, 'Asset_ID') || '').trim().toUpperCase()));
-    let assetId;
-    do {
-      assetId = `IPCS-AST-${new Date().getFullYear()}-${randomBytes(4).toString('hex').toUpperCase()}`;
-    } while (existingAssetIds.has(assetId));
+    // The previous ID check loaded every asset row before each registration.
+    // A 48-bit random suffix makes collisions vanishingly unlikely without a
+    // full-sheet read on the submit path.
+    assetId = `IPCS-AST-${new Date().getFullYear()}-${randomBytes(6).toString('hex').toUpperCase()}`;
     const photoUrl = req.file ? await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || '') : '';
 
     // 1. Write to Main Assets Sheet
@@ -636,6 +639,7 @@ exports.addAsset = async (req, res) => {
       [getH(aH, 'Created_By')]: userName,
       [getH(aH, 'Timestamp')]: timestamp,
     });
+    assetRecordSaved = true;
 
     if (req.file) await saveAssetPhoto(assetId, req.file, 'PHOTO_REGISTERED', userName, photoUrl);
 
@@ -667,16 +671,29 @@ exports.addAsset = async (req, res) => {
       });
     }
 
-    await Promise.all([
+    const followUpResults = await Promise.allSettled([
       appendAssetQrLabel({ assetId, createdBy: userName }),
       appendAssetActivity(req, { action: 'ASSET_REGISTERED', entityType: 'Asset', entityId: assetId, branch: asset.branch, after: { name: asset.name, category: asset.category, status: 'AVAILABLE' } })
     ]);
 
+    const followUpFailed = followUpResults.some(result => result.status === 'rejected');
+    if (followUpFailed) console.error(`[ASSET REGISTER] Asset ${assetId} saved; a QR or activity follow-up could not be written.`);
+
     refreshAssetCache();
-    res.json({ success: true, assetId, photoUrl, message: "Asset successfully registered!" });
+    res.status(201).json({
+      success: true,
+      assetId,
+      photoUrl,
+      warning: followUpFailed ? 'The asset was registered, but its QR label or activity entry needs a follow-up.' : '',
+      message: "Asset successfully registered!"
+    });
 
   } catch (err) {
     console.error(err);
+    if (assetRecordSaved) {
+      refreshAssetCache();
+      return res.status(201).json({ success: true, assetId, warning: `Asset ${assetId} was saved, but a follow-up record could not be completed. ${err.message}` });
+    }
     res.status(500).json({ success: false, message: err.message });
   }
 };
@@ -1627,8 +1644,9 @@ exports.addCategory = async (req, res) => {
     const sheet = findAssetSheet('categories');
     if (!sheet) return res.status(404).json({ success: false, message: "Categories sheet missing." });
 
-    await sheet.loadHeaderRow();
-    const h = sheet.headerValues || [];
+    // The category tables in older workbooks may not have a type column. Add
+    // one so new asset and consumable groups remain distinct in later reads.
+    const h = await ensureAssetHeaders(sheet, ['Type']);
     const existingRows = await sheet.getRows();
     const nameHeader = getOptionalH(h, 'Category_Name') || getOptionalH(h, 'Name');
     if (!nameHeader) return res.status(400).json({ success: false, message: 'The Categories sheet needs a Category_Name column.' });
@@ -1667,16 +1685,17 @@ exports.addSubcategory = async (req, res) => {
     const sheet = separateSubcategoriesSheet || categoriesSheet;
     if (!sheet || !categoriesSheet) return res.status(404).json({ success: false, message: 'Categories sheet missing.' });
 
-    await categoriesSheet.loadHeaderRow();
+    const categoryHeaders = await ensureAssetHeaders(categoriesSheet, ['Type']);
     if (sheet !== categoriesSheet) await sheet.loadHeaderRow();
-    const h = sheet.headerValues || [];
+    const h = sheet === categoriesSheet ? categoryHeaders : (sheet.headerValues || []);
     const categories = categoriesSheet ? await categoriesSheet.getRows() : [];
-    const categoryHeaders = categoriesSheet?.headerValues || [];
     const categoryIdHeader = getOptionalH(categoryHeaders, 'Category_ID');
     const categoryNameHeader = getOptionalH(categoryHeaders, 'Category_Name') || getOptionalH(categoryHeaders, 'Name');
+    const categoryTypeHeader = getOptionalH(categoryHeaders, 'Type') || getOptionalH(categoryHeaders, 'Category_Type');
     const parentCategory = categories.find(row => categoryIdHeader && normalize(row.get(categoryIdHeader)) === normalize(categoryId));
     if (!parentCategory) return res.status(404).json({ success: false, message: 'The selected parent category could not be found.' });
     const parentCategoryName = (categoryNameHeader && parentCategory.get(categoryNameHeader)) || '';
+    const parentCategoryType = (categoryTypeHeader && parentCategory.get(categoryTypeHeader)) || '';
     const existingRows = await sheet.getRows();
     const parentIdHeader = getOptionalH(h, 'Category_ID') || getOptionalH(h, 'Parent_Category_ID');
     const parentNameHeader = getOptionalH(h, 'Category_Name') || getOptionalH(h, 'Parent_Category') || getOptionalH(h, 'Category');
@@ -1699,6 +1718,7 @@ exports.addSubcategory = async (req, res) => {
     if (flatCategoryNameHeader && flatCategoryNameHeader !== parentIdHeader) subcategoryRow[flatCategoryNameHeader] = parentCategoryName;
     if (subcategoryIdHeader) subcategoryRow[subcategoryIdHeader] = subId;
     subcategoryRow[subcategoryHeader] = subcategoryName;
+    setColumn('Type', parentCategoryType);
     setColumn('Code', subcategoryName.substring(0, 3).toUpperCase());
     setColumn('Status', 'ACTIVE');
     await sheet.addRow(subcategoryRow);

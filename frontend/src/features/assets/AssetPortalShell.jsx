@@ -3,7 +3,7 @@ import { NavLink, useNavigate } from 'react-router-dom';
 import {
   Pulse as Activity, ArrowLeft, ArrowsLeftRight, Barcode, Buildings, CaretLeft, ChartBar,
   ClockCounterClockwise, Cube, EnvelopeSimple, Gear, ListChecks, ListPlus, Package,
-  QrCode, SignOut, UserCircle, UserCheck, Wrench, X, ClipboardText, SlidersHorizontal
+  QrCode, SignOut, UserCircle, UserCheck, Wrench, X, ClipboardText, SlidersHorizontal, Tag
 } from '@phosphor-icons/react';
 import './AssetPortalShell.css';
 
@@ -17,6 +17,7 @@ const links = [
   { label: 'Transfers', to: '/assets/transfers', icon: ArrowsLeftRight, group: 'TRACKING' },
   { label: 'Activity history', to: '/assets/activity', icon: Activity, group: 'TRACKING' },
   { label: 'Consumable stock', to: '/assets/inventory', icon: Package, group: 'OPERATIONS' },
+  { label: 'Categories & subcategories', to: '/assets/categories', icon: Tag, managerOnly: true, group: 'OPERATIONS' },
   { label: 'Maintenance', to: '/assets/maintenance', icon: Wrench, group: 'OPERATIONS' },
   { label: 'Retired items', to: '/assets/retired', icon: ClockCounterClockwise, group: 'OPERATIONS' },
   { label: 'Email reports', to: '/assets/mail', icon: EnvelopeSimple, group: 'OPERATIONS' },
