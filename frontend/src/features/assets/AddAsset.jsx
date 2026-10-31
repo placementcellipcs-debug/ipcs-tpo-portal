@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { 
   CircleNotch, Laptop, Barcode, ShieldCheck, 
@@ -29,6 +29,7 @@ export default function AddAsset() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData') || '{}');
   
   const [loading, setLoading] = useState(true);
+  const [formLoadError, setFormLoadError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState(null);
 
@@ -47,19 +48,30 @@ export default function AddAsset() {
   // 🚨 NEW: State for "Other" Custom Location
   const [customLocation, setCustomLocation] = useState('');
 
-  useEffect(() => {
-    axios.get(`${API_BASE}/api/v1/assets/form-data`).then(res => {
-      if(res.data.success) {
-        setDbData(prev => ({
-          branches: res.data.branches,
+  const loadFormData = useCallback(async () => {
+    setLoading(true);
+    setFormLoadError('');
+    try {
+      const res = await axios.get(`${API_BASE}/api/v1/assets/form-data`, { timeout: 15000 });
+      if (res.data?.success) {
+        setDbData({
+          branches: Array.isArray(res.data.branches) ? res.data.branches : [],
           categories: Array.isArray(res.data.categories) ? res.data.categories : [],
           subcategories: Array.isArray(res.data.subcategories) ? res.data.subcategories : [],
-          locations: res.data.locations,
-          vendors: res.data.vendors
-        }));
+          locations: Array.isArray(res.data.locations) ? res.data.locations : [],
+          vendors: Array.isArray(res.data.vendors) ? res.data.vendors : []
+        });
+      } else {
+        throw new Error(res.data?.message || 'The asset setup data could not be loaded.');
       }
-    }).finally(() => setLoading(false));
+    } catch (error) {
+      setFormLoadError(error.response?.data?.message || error.message || 'The asset setup data could not be loaded.');
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => { void loadFormData(); }, [loadFormData]);
 
   useEffect(() => () => {
     if (assetPhotoPreviewRef.current) URL.revokeObjectURL(assetPhotoPreviewRef.current);
@@ -160,6 +172,12 @@ export default function AddAsset() {
 
         {loading ? (
           <div className="empty-state-card"><CircleNotch size={40} className="ph-spin text-blue" /><p>Loading forms...</p></div>
+        ) : formLoadError ? (
+          <div className="empty-state-card asset-form-load-error" role="alert">
+            <WarningCircle size={36} color="#f59e0b" />
+            <p>{formLoadError}</p>
+            <button type="button" className="btn-action" onClick={() => void loadFormData()}>Retry loading form</button>
+          </div>
         ) : (
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
             

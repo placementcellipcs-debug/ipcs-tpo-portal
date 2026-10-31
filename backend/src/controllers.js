@@ -6820,15 +6820,30 @@ exports.updatePhoto = async (req, res) => {
     if (!targetRow) return res.status(404).json({ success: false, message: 'Your account could not be found.' });
     const photoLink = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS);
 
-    const h = targetRow._worksheet.headerValues;
-    let photoHeader = h.find(hd => hd.toLowerCase().includes('photo') || hd.toLowerCase().includes('profile'));
-    if (!photoHeader) photoHeader = 'Profile_Photo_URL';
+    const worksheet = targetRow._worksheet;
+    let h = worksheet.headerValues || [];
+    const normalizedHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const photoHeader = h.find(header => ['profilephotourl', 'profilephoto', 'profileimageurl', 'photo'].includes(normalizedHeader(header)))
+      || h.find(header => normalizedHeader(header).includes('profile') && normalizedHeader(header).includes('photo'));
+    let targetPhotoHeader = photoHeader;
+    if (!targetPhotoHeader) {
+      await worksheet.loadHeaderRow();
+      h = worksheet.headerValues || [];
+      targetPhotoHeader = h.find(header => ['profilephotourl', 'profilephoto', 'profileimageurl', 'photo'].includes(normalizedHeader(header)))
+        || 'Profile_Photo_URL';
+      if (!h.some(header => normalizedHeader(header) === normalizedHeader(targetPhotoHeader))) {
+        await worksheet.setHeaderRow([...h, targetPhotoHeader]);
+      }
+    }
 
-    targetRow.assign({ [photoHeader]: photoLink });
+    targetRow.assign({ [targetPhotoHeader]: photoLink });
     await targetRow.save();
-      
-    await refreshCache();
-    res.json({ success: true, photoUrl: photoLink });
+
+    // The photo write is complete. A full refresh spans all portal workbooks,
+    // so schedule it in the background instead of keeping the upload dialog
+    // open until every unrelated sheet has been reread.
+    void refreshCache();
+    res.json({ success: true, photoUrl: photoLink, photoUpdatedAt: Date.now() });
   } catch (error) { 
     res.status(500).json({ success: false, message: error.message }); 
   }

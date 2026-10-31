@@ -25,6 +25,16 @@ async function ensureAssetHeaders(sheet, requiredHeaders) {
 }
 const normalize = value => String(value || '').trim().toLowerCase().replace(/\s*branch\s*/g, ' ').replace(/[^a-z0-9]/g, '');
 const normalizeHeader = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+const findAssetSheet = kind => {
+  const wanted = normalizeHeader(kind);
+  const sheets = assetDoc.sheetsByIndex || [];
+  const exact = sheets.find(sheet => normalizeHeader(sheet.title) === wanted || normalizeHeader(sheet.title) === `asset${wanted}`);
+  if (exact) return exact;
+  return sheets.find(sheet => {
+    const title = normalizeHeader(sheet.title);
+    return title.includes(wanted) && !(wanted === 'categories' && title.includes('subcategories'));
+  }) || null;
+};
 const rowValue = (row, field) => {
   const values = row?.toObject?.() || {};
   const key = Object.keys(values).find(header => normalizeHeader(header) === normalizeHeader(field));
@@ -488,7 +498,8 @@ exports.getRegistrationData = async (req, res) => {
     branches = [...new Set(branches)].sort();
     if (!isAssetAdmin(req)) branches = branches.filter(branch => canAccessAssetBranch(req, branch));
 
-    // Map Asset DB Sheets
+    // Map Asset DB Sheets, accepting either a flat Categories table with one
+    // category/subcategory pair per row or separate Categories/Subcategories tabs.
     const mapSheet = (rows) => rows.map(r => {
       if (typeof r.toObject !== 'function') return {};
       const obj = r.toObject();
@@ -499,12 +510,71 @@ exports.getRegistrationData = async (req, res) => {
       return cleanObj;
     });
     const locations = mapSheet(cache.locations || []);
+    const rawCategories = mapSheet(cache.categories || []);
+    const rawSubcategories = mapSheet(cache.subcategories || []);
+    const active = row => {
+      const status = String(row.status || '').trim().toLowerCase();
+      return !status || ['active', 'enabled', 'current'].includes(status);
+    };
+    const cleanName = value => String(value || '').trim();
+    const categoryByNameAndType = new Map();
+    const categoryById = new Map();
+    const categoryKey = (name, type) => `${normalize(name)}|${normalize(type)}`;
+    const categories = [];
+    const registerCategory = (nameValue, idValue, typeValue, statusValue) => {
+      const name = cleanName(nameValue);
+      if (!name) return null;
+      const type = cleanName(typeValue).toUpperCase();
+      const key = categoryKey(name, type);
+      let category = categoryByNameAndType.get(key);
+      if (!category) {
+        category = { categoryid: cleanName(idValue), categoryname: name, type, status: cleanName(statusValue) || 'ACTIVE' };
+        categoryByNameAndType.set(key, category);
+        categories.push(category);
+      } else if (!category.categoryid && idValue) {
+        category.categoryid = cleanName(idValue);
+      }
+      if (idValue) categoryById.set(normalize(idValue), category);
+      return category;
+    };
+    rawCategories.forEach(row => {
+      if (!active(row)) return;
+      const categoryName = row.categoryname || row.name || row.category;
+      const category = registerCategory(categoryName, row.categoryid, row.type || row.categorytype, row.status);
+      if (!category) return;
+      const subName = cleanName(row.subcategoryname || row.subcategory || row.childcategory || row.subcategorytitle);
+      if (subName) {
+        const key = `${categoryKey(category.categoryname, category.type)}|${normalize(subName)}`;
+        if (!rawSubcategories._derivedKeys) rawSubcategories._derivedKeys = new Set();
+        if (!rawSubcategories._derivedKeys.has(key)) {
+          rawSubcategories._derivedKeys.add(key);
+          rawSubcategories.push({ categoryid: category.categoryid, categoryname: category.categoryname, name: subName, subcategoryid: cleanName(row.subcategoryid), status: cleanName(row.status) || 'ACTIVE' });
+        }
+      }
+    });
+    const subcategoryKeys = new Set();
+    const subcategories = [];
+    rawSubcategories.forEach(row => {
+      if (!active(row)) return;
+      const name = cleanName(row.subcategoryname || row.name || row.subcategory || row.childcategory);
+      if (!name) return;
+      const parentId = cleanName(row.categoryid || row.parentcategoryid || row.parentid);
+      const parentName = cleanName(row.categoryname || row.category || row.parentcategory);
+      const category = (parentId && categoryById.get(normalize(parentId)))
+        || categories.find(item => normalize(item.categoryname) === normalize(parentName));
+      const categoryNameValue = category?.categoryname || parentName;
+      const canonicalParentId = category?.categoryid || parentId;
+      const key = `${normalize(canonicalParentId || categoryNameValue)}|${normalize(name)}`;
+      if (subcategoryKeys.has(key)) return;
+      subcategoryKeys.add(key);
+      subcategories.push({ categoryid: canonicalParentId, categoryname: categoryNameValue, name, subcategoryid: cleanName(row.subcategoryid), status: cleanName(row.status) || 'ACTIVE' });
+    });
 
     res.json({ 
       success: true, 
       branches, 
-      categories: mapSheet(cache.categories || []), 
-      subcategories: mapSheet(cache.subcategories || []), 
+      categories: categories.sort((a, b) => a.categoryname.localeCompare(b.categoryname)),
+      subcategories: subcategories.sort((a, b) => a.name.localeCompare(b.name)),
       locations,
       vendors: mapSheet(cache.vendors || []) 
     });
@@ -1554,25 +1624,35 @@ exports.addCategory = async (req, res) => {
     const requestedType = String(req.body?.type || 'ASSET').trim().toUpperCase();
     if (!categoryName) return res.status(400).json({ success: false, message: 'Category name is required.' });
     if (!['ASSET', 'CONSUMABLE'].includes(requestedType)) return res.status(400).json({ success: false, message: 'Category type must be ASSET or CONSUMABLE.' });
-    const sheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('categories'));
+    const sheet = findAssetSheet('categories');
     if (!sheet) return res.status(404).json({ success: false, message: "Categories sheet missing." });
 
-    const h = sheet.headerValues;
+    await sheet.loadHeaderRow();
+    const h = sheet.headerValues || [];
     const existingRows = await sheet.getRows();
-    const duplicate = existingRows.some(row => normalize(row.get(getH(h, 'Category_Name'))) === normalize(categoryName) && normalize(row.get(getH(h, 'Type')) || 'ASSET') === requestedType.toLowerCase());
+    const nameHeader = getOptionalH(h, 'Category_Name') || getOptionalH(h, 'Name');
+    if (!nameHeader) return res.status(400).json({ success: false, message: 'The Categories sheet needs a Category_Name column.' });
+    const typeHeader = getOptionalH(h, 'Type') || getOptionalH(h, 'Category_Type');
+    const duplicate = existingRows.some(row => normalize(row.get(nameHeader)) === normalize(categoryName)
+      && (!typeHeader || normalize(row.get(typeHeader) || 'ASSET') === requestedType.toLowerCase()));
     if (duplicate) return res.status(409).json({ success: false, message: 'That category already exists.' });
-    const catId = `CAT-${Math.floor(1000 + Math.random() * 9000)}`;
-    const catCode = categoryName.substring(0, 3).toUpperCase();
+    const catId = `CAT-${randomBytes(5).toString('hex').toUpperCase()}`;
+    const categoryRow = {};
+    const setColumn = (field, value) => { const header = getOptionalH(h, field); if (header) categoryRow[header] = value; };
+    setColumn('Category_ID', catId);
+    setColumn('Category_Code', categoryName.substring(0, 3).toUpperCase());
+    setColumn('Category_Name', categoryName);
+    if (!nameHeader || normalizeHeader(nameHeader) !== 'categoryname') categoryRow[nameHeader] = categoryName;
+    setColumn('Type', requestedType);
+    setColumn('Category_Type', requestedType);
+    setColumn('Status', 'ACTIVE');
+    // In the flat category/subcategory layout, keep the new category row
+    // structurally valid and leave its subcategory fields blank.
+    setColumn('Subcategory_ID', '');
+    setColumn('Subcategory_Name', '');
+    await sheet.addRow(categoryRow);
 
-    await sheet.addRow({
-      [getH(h, 'Category_ID')]: catId,
-      [getH(h, 'Category_Code')]: catCode,
-      [getH(h, 'Category_Name')]: categoryName,
-      [getH(h, 'Type')]: requestedType,
-      [getH(h, 'Status')]: 'ACTIVE'
-    });
-
-    refreshAssetCache();
+    void refreshAssetCache();
     res.json({ success: true, message: `Category '${categoryName}' added successfully!`, category: { categoryid: catId, categoryname: categoryName, type: requestedType } });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
@@ -1582,36 +1662,48 @@ exports.addSubcategory = async (req, res) => {
     const categoryId = String(req.body?.categoryId || '').trim();
     const subcategoryName = String(req.body?.subcategoryName || '').trim();
     if (!categoryId || !subcategoryName) return res.status(400).json({ success: false, message: 'Parent category and subcategory name are required.' });
-    const sheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('subcategories'));
-    if (!sheet) return res.status(404).json({ success: false, message: "Subcategories sheet missing." });
+    const categoriesSheet = findAssetSheet('categories');
+    const separateSubcategoriesSheet = findAssetSheet('subcategories');
+    const sheet = separateSubcategoriesSheet || categoriesSheet;
+    if (!sheet || !categoriesSheet) return res.status(404).json({ success: false, message: 'Categories sheet missing.' });
 
-    const h = sheet.headerValues;
-    const categoriesSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('categories'));
+    await categoriesSheet.loadHeaderRow();
+    if (sheet !== categoriesSheet) await sheet.loadHeaderRow();
+    const h = sheet.headerValues || [];
     const categories = categoriesSheet ? await categoriesSheet.getRows() : [];
     const categoryHeaders = categoriesSheet?.headerValues || [];
-    const parentCategory = categories.find(row => normalize(row.get(getH(categoryHeaders, 'Category_ID'))) === normalize(categoryId));
+    const categoryIdHeader = getOptionalH(categoryHeaders, 'Category_ID');
+    const categoryNameHeader = getOptionalH(categoryHeaders, 'Category_Name') || getOptionalH(categoryHeaders, 'Name');
+    const parentCategory = categories.find(row => categoryIdHeader && normalize(row.get(categoryIdHeader)) === normalize(categoryId));
     if (!parentCategory) return res.status(404).json({ success: false, message: 'The selected parent category could not be found.' });
-    const parentCategoryName = parentCategory.get(getH(categoryHeaders, 'Category_Name')) || '';
+    const parentCategoryName = (categoryNameHeader && parentCategory.get(categoryNameHeader)) || '';
     const existingRows = await sheet.getRows();
-    const categoryIdHeader = getOptionalH(h, 'Category_ID');
-    const categoryNameHeader = getOptionalH(h, 'Category_Name');
-    const parentHeader = categoryIdHeader || categoryNameHeader || getH(h, 'Category_ID');
-    const parentValue = categoryIdHeader ? categoryId : parentCategoryName;
-    const subcategoryHeader = getOptionalH(h, 'Name') || getOptionalH(h, 'Subcategory_Name') || getH(h, 'Name');
-    const duplicate = existingRows.some(row => normalize(row.get(parentHeader)) === normalize(parentValue) && normalize(row.get(subcategoryHeader)) === normalize(subcategoryName));
+    const parentIdHeader = getOptionalH(h, 'Category_ID') || getOptionalH(h, 'Parent_Category_ID');
+    const parentNameHeader = getOptionalH(h, 'Category_Name') || getOptionalH(h, 'Parent_Category') || getOptionalH(h, 'Category');
+    const parentHeader = parentIdHeader || parentNameHeader;
+    const subcategoryIdHeader = getOptionalH(h, 'Subcategory_ID');
+    const subcategoryHeader = getOptionalH(h, 'Subcategory_Name') || getOptionalH(h, 'Name') || getOptionalH(h, 'Subcategory');
+    if (!subcategoryHeader || (!parentHeader && sheet !== categoriesSheet)) return res.status(400).json({ success: false, message: 'The subcategory sheet needs parent category and subcategory name columns.' });
+    const flatCategoryNameHeader = getOptionalH(h, 'Category_Name');
+    const flatParentHeader = parentIdHeader || flatCategoryNameHeader || parentNameHeader;
+    const lookupParentHeader = parentIdHeader ? (categoryIdHeader ? parentIdHeader : parentNameHeader) : (flatParentHeader || parentHeader);
+    const lookupParentValue = parentIdHeader && categoryIdHeader ? categoryId : parentCategoryName;
+    const duplicate = existingRows.some(row => normalize(row.get(lookupParentHeader)) === normalize(lookupParentValue)
+      && normalize(row.get(subcategoryHeader)) === normalize(subcategoryName));
     if (duplicate) return res.status(409).json({ success: false, message: 'That subcategory already exists in this category.' });
-    const subId = `SUB-${Math.floor(1000 + Math.random() * 9000)}`;
-    const subCode = subcategoryName.substring(0, 3).toUpperCase();
+    const subId = `SUB-${randomBytes(5).toString('hex').toUpperCase()}`;
+    const subcategoryRow = {};
+    const setColumn = (field, value) => { const header = getOptionalH(h, field); if (header) subcategoryRow[header] = value; };
+    if (parentIdHeader && categoryIdHeader) subcategoryRow[parentIdHeader] = categoryId;
+    else if (parentNameHeader) subcategoryRow[parentNameHeader] = parentCategoryName;
+    if (flatCategoryNameHeader && flatCategoryNameHeader !== parentIdHeader) subcategoryRow[flatCategoryNameHeader] = parentCategoryName;
+    if (subcategoryIdHeader) subcategoryRow[subcategoryIdHeader] = subId;
+    subcategoryRow[subcategoryHeader] = subcategoryName;
+    setColumn('Code', subcategoryName.substring(0, 3).toUpperCase());
+    setColumn('Status', 'ACTIVE');
+    await sheet.addRow(subcategoryRow);
 
-    await sheet.addRow({
-      [getH(h, 'Subcategory_ID')]: subId,
-      [parentHeader]: parentValue,
-      [getH(h, 'Code')]: subCode,
-      [subcategoryHeader]: subcategoryName,
-      [getH(h, 'Status')]: 'ACTIVE'
-    });
-
-    refreshAssetCache();
+    void refreshAssetCache();
     res.json({ success: true, message: `Subcategory '${subcategoryName}' added successfully!`, subcategory: { subcategoryid: subId, categoryid: categoryId, categoryname: parentCategoryName, name: subcategoryName } });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };

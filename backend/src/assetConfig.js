@@ -103,7 +103,20 @@ async function refreshAssetCache() {
     
     const getSheetFuzzy = (keyword) => {
       const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
-      return assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes(cleanKeyword));
+      const sheets = assetDoc.sheetsByIndex;
+      const normalizedTitle = sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const exact = sheets.find(sheet => normalizedTitle(sheet) === cleanKeyword);
+      if (exact) return exact;
+      if (cleanKeyword === 'categories') {
+        return sheets.find(sheet => {
+          const title = normalizedTitle(sheet);
+          return title.endsWith('categories') && !title.includes('subcategories');
+        });
+      }
+      if (cleanKeyword === 'subcategories') {
+        return sheets.find(sheet => normalizedTitle(sheet).includes('subcategories'));
+      }
+      return sheets.find(sheet => normalizedTitle(sheet).includes(cleanKeyword));
     };
 
     const sheetKeys = [
@@ -116,7 +129,9 @@ async function refreshAssetCache() {
 
     const selectedSheets = sheetKeys.map(key => getSheetFuzzy(key));
     const existingSheets = selectedSheets.filter(Boolean);
-    const ranges = existingSheets.map(sheet => `'${String(sheet.title).replace(/'/g, "''")}'!A1:ZZ`);
+    // Asset tabs use fewer than 60 columns. Bounding the requested width keeps
+    // the initial cache read small even when a sheet has an oversized grid.
+    const ranges = existingSheets.map(sheet => `'${String(sheet.title).replace(/'/g, "''")}'!A1:BH`);
     const response = ranges.length
       ? await fetchAssetBatchWithRetry(sheetsApi, assetDoc.spreadsheetId, ranges)
       : { data: { valueRanges: [] } };

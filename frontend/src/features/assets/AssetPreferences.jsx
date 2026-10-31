@@ -20,10 +20,11 @@ const reportOptions = [
   { id: 'activity', label: 'Activity history', detail: 'Latest 250 visible activity entries.', endpoint: '/api/v1/assets/activity', key: 'activity', icon: ArrowClockwise, tone: 'rose' }
 ];
 
-const getDriveImage = value => {
+const getDriveImage = (value, version = '') => {
   if (!value || typeof value !== 'string') return '';
   const match = value.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
-  return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : value;
+  const url = match ? `https://lh3.googleusercontent.com/d/${match[1]}` : value;
+  return version ? `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(version)}` : url;
 };
 
 const quoteCsv = value => {
@@ -58,7 +59,7 @@ export default function AssetPreferences() {
   const [busyReport, setBusyReport] = useState('');
   const [notice, setNotice] = useState(null);
   const fileInput = useRef(null);
-  const photo = getDriveImage(account.photo || account.profilePhoto);
+  const photo = getDriveImage(account.photo || account.profilePhoto, account.photoUpdatedAt);
   const initials = useMemo(() => String(account.name || account.email || 'Staff').split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase(), [account]);
   const accessBranch = account.sittingBranch || (Array.isArray(account.assignedBranchesArray) ? account.assignedBranchesArray.join(', ') : account.assignedBranchesArray) || 'Branches allowed for your account';
 
@@ -83,9 +84,9 @@ export default function AssetPreferences() {
     formData.append('loginId', account.loginId || '');
     formData.append('photo', file);
     try {
-      const response = await axios.post(`${API_BASE}/api/tpo/profile/update-photo`, formData, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const response = await axios.post(`${API_BASE}/api/tpo/profile/update-photo`, formData, { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 60000 });
       if (!response.data?.success || !response.data?.photoUrl) throw new Error(response.data?.message || 'The profile image did not save.');
-      const updated = { ...account, photo: response.data.photoUrl };
+      const updated = { ...account, photo: response.data.photoUrl, profilePhoto: response.data.photoUrl, photoUpdatedAt: response.data.photoUpdatedAt || Date.now() };
       localStorage.setItem('tpoData', JSON.stringify(updated));
       setAccount(updated);
       window.dispatchEvent(new Event('portal-account-updated'));

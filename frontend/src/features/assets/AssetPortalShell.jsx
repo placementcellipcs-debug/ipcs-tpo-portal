@@ -30,10 +30,11 @@ const readAccount = () => {
   catch { return {}; }
 };
 
-const getDriveImage = value => {
+const getDriveImage = (value, version = '') => {
   if (!value || typeof value !== 'string') return '';
   const match = value.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
-  return match ? `https://lh3.googleusercontent.com/d/${match[1]}` : value;
+  const url = match ? `https://lh3.googleusercontent.com/d/${match[1]}` : value;
+  return version ? `${url}${url.includes('?') ? '&' : '?'}v=${encodeURIComponent(version)}` : url;
 };
 
 const isAdminAccount = account => {
@@ -45,6 +46,7 @@ const isAdminAccount = account => {
 export default function AssetPortalShell({ children, user }) {
   const navigate = useNavigate();
   const [account, setAccount] = useState(user || readAccount());
+  const [photoFailed, setPhotoFailed] = useState(false);
   useEffect(() => { if (user) setAccount(user); }, [user]);
   useEffect(() => {
     const refreshAccount = () => setAccount(readAccount());
@@ -58,7 +60,9 @@ export default function AssetPortalShell({ children, user }) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const displayName = account.name || account.email || 'Staff member';
   const initials = displayName.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase();
-  const photoUrl = getDriveImage(account.photo || account.profilePhoto);
+  const photoUrl = getDriveImage(account.photo || account.profilePhoto, account.photoUpdatedAt);
+  useEffect(() => setPhotoFailed(false), [photoUrl]);
+  const profileImage = photoUrl && !photoFailed;
 
   const closeNav = () => setMobileNavOpen(false);
   const signOut = () => {
@@ -77,7 +81,7 @@ export default function AssetPortalShell({ children, user }) {
         </div>
 
         <div className="asset-portal-account">
-          <span className="asset-portal-avatar">{photoUrl ? <img src={photoUrl} alt="" /> : initials || <UserCircle size={20} />}</span>
+          <span className="asset-portal-avatar">{profileImage ? <img src={photoUrl} alt="" onError={() => setPhotoFailed(true)} /> : initials || <UserCircle size={20} />}</span>
           <span className="asset-portal-account-copy"><b>{displayName}</b><small>{account.role || 'Asset workspace'}</small></span>
         </div>
 
@@ -106,7 +110,7 @@ export default function AssetPortalShell({ children, user }) {
         <header className="asset-portal-topbar">
           <button type="button" className="asset-portal-menu" aria-label="Open navigation" onClick={() => setMobileNavOpen(true)}><ListChecks size={20} /></button>
           <div className="asset-portal-crumb"><span>IPCS OPERATIONS</span><CaretLeft size={14} /><b>Asset Management</b></div>
-          <div className="asset-portal-top-account"><span>{account.sittingBranch || 'All permitted branches'}</span><span className="asset-portal-avatar small">{photoUrl ? <img src={photoUrl} alt="" /> : initials || <UserCircle size={17} />}</span></div>
+          <div className="asset-portal-top-account"><span>{account.sittingBranch || 'All permitted branches'}</span><span className="asset-portal-avatar small">{profileImage ? <img src={photoUrl} alt="" onError={() => setPhotoFailed(true)} /> : initials || <UserCircle size={17} />}</span></div>
         </header>
         <div className="asset-portal-content">{children}</div>
       </div>

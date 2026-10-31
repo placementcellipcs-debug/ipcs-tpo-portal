@@ -301,9 +301,33 @@ app.use('/api', async (req, res, next) => {
   // while the larger staff data cache is warming up after a server restart.
   const requestPath = req.originalUrl.split('?')[0];
   if (requestPath.startsWith('/api/public/') || requestPath === '/api/audit/interactions' || requestPath === '/api/audit/automation-events') return next();
+
+  // Asset Management has a separate spreadsheet and cache. Do not make its
+  // forms, inventory, or profile-related actions wait for the much larger
+  // placement/learning cache to finish loading.
+  if (req.path.startsWith('/v1/assets')) {
+    if (!isAssetCacheReady()) {
+      req.auditReason = 'The asset cache is still warming up; the request was returned immediately.';
+      req.auditDetails = { assetCacheReady: false };
+      res.set('Retry-After', '3');
+      return res.status(503).json({ success: false, message: 'Asset data is syncing. Please retry in a few seconds.' });
+    }
+    return next();
+  }
+
   let cache = getCache();
   if (!cache?.cacheUpdatedAt) {
-    await waitForCacheReady();
+    let timeoutId;
+    const ready = await Promise.race([
+      waitForCacheReady(),
+      new Promise(resolve => { timeoutId = setTimeout(() => resolve(false), 10000); })
+    ]).finally(() => clearTimeout(timeoutId));
+    if (!ready) {
+      req.auditReason = 'The primary Google Sheets cache did not become ready within the 10 second request budget.';
+      req.auditDetails = { cacheUpdatedAt: '', cacheRefreshStatus: 'warming-up' };
+      res.set('Retry-After', '5');
+      return res.status(503).json({ success: false, message: 'Portal data is still syncing. Please retry in a few seconds.' });
+    }
     cache = getCache();
   }
   if (!cache?.cacheUpdatedAt) {
@@ -311,11 +335,6 @@ app.use('/api', async (req, res, next) => {
     req.auditDetails = { cacheUpdatedAt: cache?.cacheUpdatedAt || '', cacheRefreshStatus: cache?.cacheRefreshStatus || 'not-ready', cacheFailedSheets: cache?.cacheFailedSheets || [] };
     res.set('Retry-After', '5');
     return res.status(503).json({ success: false, message: 'Portal data is still syncing from Google Sheets. Please try again shortly.' });
-  }
-  if (req.path.startsWith('/v1/assets') && !isAssetCacheReady()) {
-    req.auditReason = 'The asset cache was not ready; the request stopped before its route handler.';
-    req.auditDetails = { assetCacheReady: false };
-    return res.status(503).json({ success: false, message: "Asset data is still loading from Google Sheets. Please try again shortly." });
   }
   next();
 });

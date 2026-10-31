@@ -1,16 +1,20 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { CircleNotch, Plus, Package, X } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
 import AssetCategoryFields from './AssetCategoryFields';
+import './Inventory.css';
 
 export default function Inventory() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData') || '{}');
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [inventoryError, setInventoryError] = useState('');
   const [classificationData, setClassificationData] = useState({ categories: [], subcategories: [] });
   const [classificationLoading, setClassificationLoading] = useState(true);
+  const [classificationError, setClassificationError] = useState('');
   
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [stockModal, setStockModal] = useState(null); // { item, action: 'IN' | 'OUT' }
@@ -18,25 +22,51 @@ export default function Inventory() {
   
   const [formData, setFormData] = useState({ name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', quantity: 0, minQuantity: 5 });
 
-  const fetchInventory = async () => {
+  const fetchInventory = useCallback(async () => {
+    setLoading(true);
+    setInventoryError('');
     try {
-      const res = await axios.get(`${API_BASE}/api/v1/assets/inventory`);
+      const res = await axios.get(`${API_BASE}/api/v1/assets/inventory`, { timeout: 15000 });
       if (res.data.success) setInventory(res.data.inventory);
-    } catch (err) { console.error("Error loading inventory", err); } finally { setLoading(false); }
-  };
+      else throw new Error(res.data?.message || 'Inventory could not be loaded.');
+    } catch (err) {
+      console.error('Error loading inventory', err);
+      setInventoryError(err.response?.data?.message || err.message || 'Inventory could not be loaded.');
+    } finally { setLoading(false); }
+  }, []);
 
-  const fetchClassifications = async () => {
+  const fetchClassifications = useCallback(async () => {
+    setClassificationLoading(true);
+    setClassificationError('');
     try {
-      const response = await axios.get(`${API_BASE}/api/v1/assets/form-data`);
+      const response = await axios.get(`${API_BASE}/api/v1/assets/form-data`, { timeout: 15000 });
       if (response.data?.success) setClassificationData({ categories: response.data.categories || [], subcategories: response.data.subcategories || [] });
-    } catch (err) { console.error('Error loading inventory categories', err); }
+      else throw new Error(response.data?.message || 'Categories could not be loaded.');
+    } catch (err) {
+      console.error('Error loading inventory categories', err);
+      setClassificationError(err.response?.data?.message || err.message || 'Categories could not be loaded.');
+    }
     finally { setClassificationLoading(false); }
-  };
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { void fetchInventory(); void fetchClassifications(); }, 0);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [fetchInventory, fetchClassifications]);
+
+  useEffect(() => {
+    if (!isAddModalOpen && !stockModal) return undefined;
+    const originalOverflow = document.body.style.overflow;
+    const onKeyDown = event => {
+      if (event.key === 'Escape') { setIsAddModalOpen(false); setStockModal(null); }
+    };
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [isAddModalOpen, stockModal]);
 
   const handleAddSubmit = async (e) => {
     e.preventDefault();
@@ -73,7 +103,8 @@ export default function Inventory() {
           <table className="modern-table">
             <thead><tr><th>Item ID & Name</th><th>Category / Subcategory</th><th>Branch</th><th>Quantity</th><th>Status</th><th style={{ textAlign: 'center' }}>Actions</th></tr></thead>
             <tbody>
-              {loading ? (<tr><td colSpan="6" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="var(--accent-primary)"/></td></tr>) 
+              {loading ? (<tr><td colSpan="6" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="var(--accent-primary)"/></td></tr>)
+              : inventoryError ? (<tr><td colSpan="6" style={{ textAlign: 'center', padding: '2.5rem' }}><p>{inventoryError}</p><button type="button" className="btn-action" onClick={() => void fetchInventory()}>Retry inventory</button></td></tr>)
               : inventory.map(item => (
                 <tr key={item.itemId}>
                   <td><span className="primary-text" style={{ color: 'var(--accent-primary)' }}>{item.itemId}</span><span className="sub-text">{item.name}</span></td>
@@ -94,12 +125,13 @@ export default function Inventory() {
         </div>
 
         {/* MODALS */}
-        {isAddModalOpen && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setIsAddModalOpen(false); }}>
-            <div className="modal-card" style={{ maxWidth: '500px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 style={{ margin: 0, color: 'var(--accent-primary)' }}>New Inventory Item</h2><X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsAddModalOpen(false)} /></div>
+        {isAddModalOpen && createPortal(
+          <div className="asset-inventory-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setIsAddModalOpen(false); }}>
+            <div className="asset-inventory-modal" role="dialog" aria-modal="true" aria-labelledby="inventory-modal-title">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 id="inventory-modal-title" style={{ margin: 0, color: 'var(--accent-primary)' }}>New Inventory Item</h2><button type="button" className="asset-inventory-modal-close" aria-label="Close" onClick={() => setIsAddModalOpen(false)}><X size={21} /></button></div>
               <form onSubmit={handleAddSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                 <div><label className="data-label">Item Name</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} required /></div>
+                {classificationError && <div className="asset-inventory-load-error" role="alert"><span>{classificationError}</span><button type="button" onClick={() => void fetchClassifications()}>Retry</button></div>}
                 <AssetCategoryFields type="CONSUMABLE" category={formData.category} subcategory={formData.subcategory} categories={classificationData.categories} subcategories={classificationData.subcategories} dataReady={!classificationLoading} onCategoryChange={value => setFormData(current => ({ ...current, category: value, subcategory: '' }))} onSubcategoryChange={value => setFormData(current => ({ ...current, subcategory: value }))} />
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
                   <div><label className="data-label">Initial Quantity</label><input type="number" className="sleek-input" style={{ width: '100%' }} value={formData.quantity} onChange={e => setFormData({...formData, quantity: e.target.value})} required /></div>
@@ -108,13 +140,13 @@ export default function Inventory() {
                 <button type="submit" className="btn-action" style={{ background: 'var(--accent-primary)', color: '#0f172a', marginTop: '10px' }}>Add to Inventory</button>
               </form>
             </div>
-          </div>
+          </div>, document.body
         )}
 
-        {stockModal && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setStockModal(null); }}>
-            <div className="modal-card" style={{ maxWidth: '400px', width: '100%', background: '#0f1523', border: `1px solid ${stockModal.action === 'IN' ? '#10b981' : '#ef4444'}`, borderRadius: '16px', padding: '2rem' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 style={{ margin: 0, color: stockModal.action === 'IN' ? '#10b981' : '#ef4444' }}>{stockModal.action === 'IN' ? 'Add Stock' : 'Consume Item'}</h2><X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setStockModal(null)} /></div>
+        {stockModal && createPortal(
+          <div className="asset-inventory-modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setStockModal(null); }}>
+            <div className={`asset-inventory-modal ${stockModal.action === 'IN' ? 'stock-in' : 'stock-out'}`} role="dialog" aria-modal="true" aria-labelledby="stock-modal-title">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}><h2 id="stock-modal-title" style={{ margin: 0, color: stockModal.action === 'IN' ? '#10b981' : '#ef4444' }}>{stockModal.action === 'IN' ? 'Add Stock' : 'Consume Item'}</h2><button type="button" className="asset-inventory-modal-close" aria-label="Close" onClick={() => setStockModal(null)}><X size={21} /></button></div>
               <form onSubmit={handleStockSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                 <div style={{ background: '#1e293b', padding: '15px', borderRadius: '8px' }}>
                   <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{stockModal.item.name}</div>
@@ -124,7 +156,7 @@ export default function Inventory() {
                 <button type="submit" className="btn-action" style={{ background: stockModal.action === 'IN' ? '#10b981' : '#ef4444', color: '#fff', marginTop: '10px' }}>Confirm Update</button>
               </form>
             </div>
-          </div>
+          </div>, document.body
         )}
       </div>
     </Layout>

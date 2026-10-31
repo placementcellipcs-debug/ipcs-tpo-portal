@@ -26,18 +26,38 @@ export default function AssetCategoryFields({ type = 'ASSET', category, subcateg
     if (dataReady) setLoading(false);
   }, [initialCategories, initialSubcategories, dataReady]);
 
-  const visibleCategories = useMemo(() => categories.filter(item => {
-    const itemType = String(item.type || item.categorytype || 'ASSET').trim().toUpperCase();
-    return type === 'CONSUMABLE' ? itemType.includes('CONSUM') || itemType.includes('STOCK') : !itemType.includes('CONSUM') && !itemType.includes('STOCK');
-  }), [categories, type]);
+  const visibleCategories = useMemo(() => {
+    const unique = new Map();
+    categories.forEach(item => {
+      const rawType = String(item.type || item.categorytype || '').trim().toUpperCase();
+      // Legacy combined category/subcategory sheets do not always have a Type
+      // column. Keep those entries available in either workflow.
+      const matchesType = !rawType || (type === 'CONSUMABLE'
+        ? rawType.includes('CONSUM') || rawType.includes('STOCK')
+        : !rawType.includes('CONSUM') && !rawType.includes('STOCK'));
+      if (!matchesType) return;
+      const name = categoryName(item).trim();
+      if (!name) return;
+      const key = normalize(name);
+      if (!unique.has(key)) unique.set(key, item);
+    });
+    return [...unique.values()];
+  }, [categories, type]);
   const selectedCategory = visibleCategories.find(item => normalize(categoryName(item)) === normalize(category));
-  const visibleSubcategories = subcategories.filter(item => {
-    if (!selectedCategory) return false;
-    const parentId = subcategoryParentId(item);
-    const parentName = subcategoryParentName(item);
-    return (parentId && categoryId(selectedCategory) && parentId === categoryId(selectedCategory))
-      || normalize(parentName) === normalize(categoryName(selectedCategory));
-  });
+  const visibleSubcategories = useMemo(() => {
+    if (!selectedCategory) return [];
+    const unique = new Map();
+    subcategories.forEach(item => {
+      const parentId = subcategoryParentId(item);
+      const parentName = subcategoryParentName(item);
+      const belongsToCategory = (parentId && categoryId(selectedCategory) && normalize(parentId) === normalize(categoryId(selectedCategory)))
+        || normalize(parentName) === normalize(categoryName(selectedCategory));
+      if (!belongsToCategory) return;
+      const name = subcategoryName(item).trim();
+      if (name && !unique.has(normalize(name))) unique.set(normalize(name), item);
+    });
+    return [...unique.values()];
+  }, [subcategories, selectedCategory]);
 
   const submitClassification = async event => {
     event.preventDefault();
