@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
-import { ArrowRight, ArrowUpRight, BookOpenText, Briefcase, Buildings, CheckCircle, Compass, EnvelopeSimple, GlobeHemisphereWest, GraduationCap, Handshake, Lightbulb, LinkedinLogo, Megaphone, Phone, PlayCircle, Star, Target, UsersThree, VideoCamera, WhatsappLogo, X } from '@phosphor-icons/react';
+import { ArrowRight, ArrowUpRight, BookOpenText, Briefcase, Buildings, CheckCircle, Compass, EnvelopeSimple, GlobeHemisphereWest, GraduationCap, Handshake, Lightbulb, LinkedinLogo, MagnifyingGlass, Megaphone, Phone, PlayCircle, Star, Target, UsersThree, VideoCamera, WhatsappLogo, X } from '@phosphor-icons/react';
 import { API_BASE } from '../../services/apiConfig';
 import { formatPortalDate } from '../../utils/dateFormat';
 import './PublicSiteSections.css';
@@ -407,6 +407,36 @@ function AnimatedMilestone({ value, suffix, label }) {
   return <article className="public-milestone" ref={node}><strong>{displayValue}{suffix}</strong><span>{label}</span></article>;
 }
 
+function PublicVacancyCard({ vacancy, className = '', decorative = false }) {
+  const logo = logoSource(vacancy.companyLogo);
+  const companyInitials = String(vacancy.company || 'IP').trim().split(/\s+/).slice(0, 2).map(word => word[0]?.toUpperCase()).join('');
+  return <article className={`public-vacancy-card${className ? ` ${className}` : ''}`} aria-hidden={decorative || undefined}>
+    <div className="public-vacancy-company">
+      <div className="public-vacancy-logo"><span>{companyInitials || 'IP'}</span>{logo && <img src={logo} alt={`${vacancy.company} logo`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}</div>
+      <div className="public-vacancy-company-copy"><span className="public-vacancy-label">Hiring Company</span><h3 title={vacancy.company}>{vacancy.company}</h3></div>
+    </div>
+    <h4>{vacancy.position}</h4>
+    <div className="public-vacancy-details">
+      {vacancy.location && <span><Buildings size={16} /><span>{vacancy.location}</span></span>}
+      {vacancy.mode && <span><Briefcase size={16} /><span>{vacancy.mode}</span></span>}
+    </div>
+    {vacancy.lastDate && <div className="public-vacancy-deadline">Listed deadline <strong>{formatPortalDate(vacancy.lastDate, vacancy.lastDate)}</strong></div>}
+  </article>;
+}
+
+function PublicPartnerCard({ partner, marquee = false, decorative = false }) {
+  const logo = logoSource(partner.logo);
+  const initials = String(partner.companyName || 'IP').trim().split(/\s+/).slice(0, 2).map(word => word[0]?.toUpperCase()).join('');
+  return <article className={`public-partner-card${marquee ? ' public-partner-marquee-card' : ''}`} aria-hidden={decorative || undefined}>
+    <div className="public-partner-logo-wrap">
+      <span className="public-partner-logo-fallback" aria-hidden="true">{initials || 'IP'}</span>
+      {logo && <img src={logo} alt={`${partner.companyName} logo`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}
+    </div>
+    <h3>{partner.companyName}</h3>
+    {partner.location && <p>{partner.location}</p>}
+  </article>;
+}
+
 export default function PublicSiteSections({ page = 'all' }) {
   const location = useLocation();
   const [corporateInquiryOpen, setCorporateInquiryOpen] = useState(false);
@@ -417,6 +447,8 @@ export default function PublicSiteSections({ page = 'all' }) {
   const [vacancies, setVacancies] = useState([]);
   const [vacanciesLoading, setVacanciesLoading] = useState(false);
   const [vacanciesError, setVacanciesError] = useState(false);
+  const [vacancyTotal, setVacancyTotal] = useState(0);
+  const [vacancySearch, setVacancySearch] = useState('');
   const [visibleVacancyCount, setVisibleVacancyCount] = useState(8);
   const [partnersLoaded, setPartnersLoaded] = useState(false);
   const [partnersError, setPartnersError] = useState(false);
@@ -447,6 +479,9 @@ export default function PublicSiteSections({ page = 'all' }) {
   const partnerDirectoryPage = partnerListPage;
   const partnerPreviewPage = page === 'hiring';
   const placementLandingPage = page === 'placement';
+  const partnerCarouselPage = partnerPreviewPage || placementLandingPage;
+  const openingsPage = page === 'openings';
+  const openingCarouselPage = partnerPreviewPage || placementLandingPage;
   const posterGalleryPage = page === 'placement-gallery';
   const partnerMediaPage = page === 'partners-media';
   const openVideo = item => { setVideoPlaybackError(false); setSelectedVideo(item); };
@@ -489,11 +524,13 @@ export default function PublicSiteSections({ page = 'all' }) {
   const placementTeamLeadProfile = placementTeam.find(person => normalizeTeamName(person.name) === normalizeTeamName(placementTeamLead.name));
   const placementTeamMembers = placementTeam.filter(person => person !== placementTeamLeadProfile);
   const allOpenings = vacancies;
+  const vacancyQuery = vacancySearch.trim().toLowerCase();
+  const visibleOpenings = allOpenings.filter(vacancy => !vacancyQuery || `${vacancy.company} ${vacancy.position} ${vacancy.location} ${vacancy.mode} ${vacancy.course}`.toLowerCase().includes(vacancyQuery));
 
   useEffect(() => {
     if (!['partners', 'partners-all', 'hiring', 'placement', 'all'].includes(page)) return undefined;
     let active = true;
-    const loadFullPartnerList = partnerDirectoryPage || placementLandingPage;
+    const loadFullPartnerList = partnerDirectoryPage;
     const limit = loadFullPartnerList ? 500 : 8;
     const query = loadFullPartnerList ? '&all=true' : '&random=true';
     publicGet(`${API_BASE}/api/public/partners?limit=${limit}&offset=0${query}`)
@@ -501,15 +538,15 @@ export default function PublicSiteSections({ page = 'all' }) {
         if (!active) return;
         if (!response.data?.success) throw new Error('Partner directory unavailable');
         setPartnersError(false);
-        const partnersWithLogos = (Array.isArray(response.data.partners) ? response.data.partners : []).filter(partner => Boolean(logoSource(partner.logo)));
-        setPartners(partnersWithLogos);
-        setPartnerTotal(Number(response.data.total) || partnersWithLogos.length);
+        const partnerRows = Array.isArray(response.data.partners) ? response.data.partners : [];
+        setPartners(partnerRows);
+        setPartnerTotal(Number(response.data.total) || partnerRows.length);
         setPartnerNextOffset(response.data.nextOffset ?? null);
       })
       .catch(() => { if (active) setPartnersError(true); })
       .finally(() => { if (active) setPartnersLoaded(true); });
     return () => { active = false; };
-  }, [page, partnerDirectoryPage, placementLandingPage]);
+  }, [page, partnerDirectoryPage]);
 
   useEffect(() => {
     if (!['about', 'all'].includes(page)) return undefined;
@@ -528,21 +565,23 @@ export default function PublicSiteSections({ page = 'all' }) {
   }, [page]);
 
   useEffect(() => {
-    if (!['vacancies', 'hiring', 'placement'].includes(page)) return undefined;
+    if (!['vacancies', 'hiring', 'placement', 'openings'].includes(page)) return undefined;
     let active = true;
     setVacanciesLoading(true);
     setVisibleVacancyCount(8);
-    publicGet(`${API_BASE}/api/public/openings`)
+    const query = placementLandingPage || partnerPreviewPage ? '?random=true&limit=6' : '';
+    publicGet(`${API_BASE}/api/public/openings${query}`)
       .then(response => {
         if (!active) return;
         if (!response.data?.success) throw new Error('Vacancies unavailable');
         setVacancies(Array.isArray(response.data.openings) ? response.data.openings : []);
+        setVacancyTotal(Number(response.data.total) || (Array.isArray(response.data.openings) ? response.data.openings.length : 0));
         setVacanciesError(false);
       })
       .catch(() => { if (active) setVacanciesError(true); })
       .finally(() => { if (active) setVacanciesLoading(false); });
     return () => { active = false; };
-  }, [page]);
+  }, [page, partnerPreviewPage, placementLandingPage]);
 
   useEffect(() => {
     if (!['updates', 'all'].includes(page)) return undefined;
@@ -954,7 +993,7 @@ export default function PublicSiteSections({ page = 'all' }) {
             <div className="public-partners-empty" role="status">The partner directory is temporarily unavailable. Please check back soon.</div>
           ) : partners.length === 0 ? (
             <div className="public-partners-empty">Our corporate partner directory is being updated. Please check back soon.</div>
-          ) : partnerPreviewPage ? (
+          ) : partnerCarouselPage ? (
             <div className="public-partner-reel" role="region" aria-label="IPCS Global hiring partners">
               {[0, 1].map(rowIndex => {
                 const rowPartners = partners.filter((_, index) => index % 2 === rowIndex);
@@ -962,31 +1001,18 @@ export default function PublicSiteSections({ page = 'all' }) {
                 const repeatedPartners = [...lanePartners, ...lanePartners, ...lanePartners];
                 return <div className="public-partner-marquee" role="group" aria-label={rowIndex === 0 ? 'Hiring partners moving left' : 'Hiring partners moving right'} key={`partner-row-${rowIndex}`}>
                   <div className={`public-partner-track${rowIndex === 1 ? ' is-right' : ''}`}>
-                    {repeatedPartners.map((partner, index) => <article className="public-partner-card public-partner-marquee-card" key={`${partner.companyName}-${rowIndex}-${index}`} aria-hidden={index >= lanePartners.length || undefined}>
-                      <div className="public-partner-logo-wrap">
-                        <img src={logoSource(partner.logo)} alt={`${partner.companyName} logo`} loading="lazy" onError={event => { event.currentTarget.closest('.public-partner-card')?.classList.add('is-logo-unavailable'); }} />
-                      </div>
-                      <h3>{partner.companyName}</h3>
-                      {partner.location && <p>{partner.location}</p>}
-                    </article>)}
+                    {repeatedPartners.map((partner, index) => <PublicPartnerCard key={`${partner.companyName}-${rowIndex}-${index}`} partner={partner} marquee decorative={index >= lanePartners.length} />)}
                   </div>
                 </div>;
               })}
             </div>
           ) : (
             <div className="public-partner-grid">
-              {partners.map((partner, index) => (
-                <article className="public-partner-card" key={`${partner.companyName}-${index}`}>
-                  <div className="public-partner-logo-wrap">
-                    <img src={logoSource(partner.logo)} alt={`${partner.companyName} logo`} loading="lazy" onError={event => { event.currentTarget.closest('.public-partner-card')?.classList.add('is-logo-unavailable'); }} />
-                  </div>
-                  <h3>{partner.companyName}</h3>
-                  {partner.location && <p>{partner.location}</p>}
-                </article>
-              ))}
+              {partners.map((partner, index) => <PublicPartnerCard key={`${partner.companyName}-${index}`} partner={partner} />)}
             </div>
           )}
-          {!partnerDirectoryPage && !partnerPreviewPage && partnerTotal > partners.length && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} hiring partners</span><Link to="/partners/all">See all hiring partners <ArrowRight size={16} /></Link></div>}
+          {!partnerDirectoryPage && partnerCarouselPage && !partnersLoading && !partnersError && partnerTotal > 0 && <div className="public-gallery-more"><span>Random preview · {partners.length} of {partnerTotal} hiring partners</span><Link to="/partners/all">See all hiring partners <ArrowRight size={16} /></Link></div>}
+          {!partnerDirectoryPage && !partnerCarouselPage && partnerTotal > partners.length && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} hiring partners</span><Link to="/partners/all">See all hiring partners <ArrowRight size={16} /></Link></div>}
           {partnerPreviewPage && !partnersLoading && !partnersError && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} hiring partners</span><Link to="/partners/all">View more companies <ArrowRight size={16} /></Link></div>}
           {partnerDirectoryPage && partnerNextOffset !== null && <div className="public-gallery-more"><span>Showing {partners.length} of {partnerTotal} hiring partners</span><button type="button" onClick={() => loadMore('partners')}>Load more partners <ArrowRight size={16} /></button></div>}
         </div>
@@ -1043,30 +1069,31 @@ export default function PublicSiteSections({ page = 'all' }) {
       </section>
       </>}
 
-      {['vacancies', 'hiring', 'placement'].includes(page) && <section className={`public-vacancies-section${partnerPreviewPage ? ' is-preview' : ''}`} id="vacancies">
+      {['vacancies', 'hiring', 'placement', 'openings'].includes(page) && <section className={`public-vacancies-section${openingCarouselPage ? ' is-preview' : ''}`} id="vacancies">
         <div className="public-story-shell">
-          <SectionHeading eyebrow="Career opportunities" title="Opportunities shared with IPCS." description={partnerPreviewPage ? 'Explore roles shared with IPCS Global and find your next opportunity.' : 'Browse roles shared through the IPCS Global newsletter, with each company and location in one place.'} />
+          <SectionHeading eyebrow="Career opportunities" title="Opportunities shared with IPCS." description="Browse roles shared through the IPCS Global newsletter, with each company and location in one place." />
+          {openingsPage && <Link className="public-gallery-back" to="/placements#vacancies">← Back to placements</Link>}
+          {openingsPage && !vacanciesLoading && !vacanciesError && <div className="public-opening-directory-tools"><span>{visibleOpenings.length === vacancyTotal ? `${vacancyTotal} opportunities` : `${visibleOpenings.length} of ${vacancyTotal} opportunities`}</span><label className="public-opening-search"><MagnifyingGlass size={17} /><input aria-label="Search opportunities" value={vacancySearch} onChange={event => setVacancySearch(event.target.value)} placeholder="Search role, company, location, or course" /></label></div>}
           {vacanciesLoading ? <div className="public-vacancy-grid" aria-label="Loading openings">{[1, 2, 3, 4].map(item => <div className="public-vacancy-skeleton" key={item} />)}</div>
             : vacanciesError ? <div className="public-vacancy-empty" role="status">Career opportunities are temporarily unavailable. Please check back soon.</div>
+              : openingCarouselPage && allOpenings.length > 0 ? <div className="public-opening-reel" role="region" aria-label="Career opportunities shared with IPCS">
+                {[0, 1].map(rowIndex => {
+                  const laneOpenings = allOpenings.filter((_, index) => index % 2 === rowIndex);
+                  const lane = laneOpenings.length ? laneOpenings : allOpenings.slice(0, 1);
+                  const repeated = [...lane, ...lane, ...lane];
+                  return <div className="public-opening-marquee" role="group" aria-label={rowIndex === 0 ? 'Career opportunities moving left' : 'Career opportunities moving right'} key={`opening-row-${rowIndex}`}>
+                    <div className={`public-opening-track${rowIndex === 1 ? ' is-right' : ''}`}>
+                      {repeated.map((vacancy, index) => <PublicVacancyCard key={`${vacancy.id || 'opening'}-${rowIndex}-${index}`} vacancy={vacancy} className="public-opening-marquee-card" decorative={index >= lane.length} />)}
+                    </div>
+                  </div>;
+                })}
+              </div>
+              : openingsPage ? visibleOpenings.length > 0 ? <div className="public-vacancy-grid">{visibleOpenings.map((vacancy, index) => <PublicVacancyCard key={`${vacancy.id || 'opening'}-${index}`} vacancy={vacancy} />)}</div>
+                : <div className="public-vacancy-empty">{vacancyQuery ? 'No opportunities match that search. Try another company, role, or location.' : 'No newsletter openings are available right now.'}</div>
               : allOpenings.length === 0 ? <div className="public-vacancy-empty">No newsletter openings are available right now.</div>
-                : <div className="public-vacancy-grid">{(partnerPreviewPage ? allOpenings.slice(0, 3) : placementLandingPage ? allOpenings.slice(0, visibleVacancyCount) : allOpenings).map((vacancy, index) => {
-                  const logo = logoSource(vacancy.companyLogo);
-                  const companyInitials = String(vacancy.company || 'IP').trim().split(/\s+/).slice(0, 2).map(word => word[0]?.toUpperCase()).join('');
-                  return <article className="public-vacancy-card" key={`${vacancy.id || 'opening'}-${index}`}>
-                    <div className="public-vacancy-company">
-                      <div className="public-vacancy-logo"><span>{companyInitials || 'IP'}</span>{logo && <img src={logo} alt={`${vacancy.company} logo`} loading="lazy" onError={event => { event.currentTarget.style.display = 'none'; }} />}</div>
-                      <div className="public-vacancy-company-copy"><span className="public-vacancy-label">Hiring Company</span><h3 title={vacancy.company}>{vacancy.company}</h3></div>
-                    </div>
-                    <h4>{vacancy.position}</h4>
-                    <div className="public-vacancy-details">
-                      {vacancy.location && <span><Buildings size={16} /><span>{vacancy.location}</span></span>}
-                      {vacancy.mode && <span><Briefcase size={16} /><span>{vacancy.mode}</span></span>}
-                    </div>
-                    {vacancy.lastDate && <div className="public-vacancy-deadline">Listed deadline <strong>{formatPortalDate(vacancy.lastDate, vacancy.lastDate)}</strong></div>}
-                  </article>;
-                })}</div>}
-          {placementLandingPage && allOpenings.length > visibleVacancyCount && <div className="public-gallery-more"><span>Showing {Math.min(visibleVacancyCount, allOpenings.length)} of {allOpenings.length} openings</span><button type="button" onClick={() => setVisibleVacancyCount(count => Math.min(count + 8, allOpenings.length))}>Show more openings <ArrowRight size={16} /></button></div>}
-          {partnerPreviewPage && <div className="public-gallery-more"><span>{vacanciesLoading ? 'Loading openings' : `Showing ${Math.min(3, allOpenings.length)} of ${allOpenings.length} openings`}</span><Link to="/openings">View more openings <ArrowRight size={16} /></Link></div>}
+                : <div className="public-vacancy-grid">{allOpenings.slice(0, visibleVacancyCount).map((vacancy, index) => <PublicVacancyCard key={`${vacancy.id || 'opening'}-${index}`} vacancy={vacancy} />)}</div>}
+          {openingCarouselPage && <div className="public-gallery-more"><span>{vacanciesLoading ? 'Loading openings' : `Random preview · ${allOpenings.length} of ${vacancyTotal} opportunities`}</span><Link to="/openings">See all career opportunities <ArrowRight size={16} /></Link></div>}
+          {placementLandingPage && allOpenings.length > visibleVacancyCount && <div className="public-gallery-more"><span>Showing {Math.min(visibleVacancyCount, allOpenings.length)} of {vacancyTotal} openings</span><Link to="/openings">Browse all opportunities <ArrowRight size={16} /></Link></div>}
         </div>
       </section>}
       {placementLandingPage && <HireFromUsForm />}

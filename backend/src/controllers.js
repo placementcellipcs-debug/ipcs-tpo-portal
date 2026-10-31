@@ -5116,11 +5116,11 @@ exports.getPublicPartners = async (req, res) => {
 
     rows.forEach(row => {
       const companyName = getValByHeader(row, ['companyname', 'company']).trim();
-      const logo = getValByHeader(row, ['companylogo', 'logo']).trim();
-      if (!companyName || !logo || /^(?:n\/?a|none|no logo|not available)$/i.test(logo)) return;
+      const rawLogo = getValByHeader(row, ['companylogo', 'logo']).trim();
+      if (!companyName) return;
       partners.push({
         companyName,
-        logo,
+        logo: /^(?:n\/?a|none|no logo|not available)$/i.test(rawLogo) ? '' : rawLogo,
         location: getValByHeader(row, ['companylocation', 'location']).trim()
       });
     });
@@ -5722,7 +5722,7 @@ exports.assignHiringInquiry = async (req, res) => {
   }
 };
 
-exports.getPublicOpenings = async (_req, res) => {
+exports.getPublicOpenings = async (req, res) => {
   try {
     let rows = getCache()?.vacancies;
     if (!Array.isArray(rows) || rows.length === 0) {
@@ -5760,7 +5760,19 @@ exports.getPublicOpenings = async (_req, res) => {
       });
     });
 
-    res.json({ success: true, openings });
+    const total = openings.length;
+    if (String(req.query.random || '').toLowerCase() === 'true') {
+      for (let index = openings.length - 1; index > 0; index -= 1) {
+        const swap = Math.floor(Math.random() * (index + 1));
+        [openings[index], openings[swap]] = [openings[swap], openings[index]];
+      }
+    }
+    const offset = Math.max(0, Number.parseInt(req.query.offset, 10) || 0);
+    const requestedLimit = Number.parseInt(req.query.limit, 10);
+    const items = Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? openings.slice(offset, offset + Math.min(100, requestedLimit))
+      : openings;
+    res.json({ success: true, openings: items, total, nextOffset: items.length < total && requestedLimit > 0 ? offset + items.length : null });
   } catch (err) {
     console.error('Error reading public openings:', err.message);
     res.status(503).json({ success: false, openings: [], message: 'Vacancies are temporarily unavailable.' });

@@ -224,7 +224,7 @@ function RoutedContent() {
         <Route path="/partners/all" element={<PublicSitePage page="partners-all" />} />
         <Route path="/partners/media" element={<PublicSitePage page="partners-media" />} />
         <Route path="/updates" element={<PublicSitePage page="updates" />} />
-        <Route path="/openings" element={<Navigate to="/placements#vacancies" replace />} />
+        <Route path="/openings" element={<PublicSitePage page="openings" />} />
         <Route path="/recruiter" element={<Navigate to="/placements#recruiter-partnerships" replace />} />
         <Route path="/dashboard" element={<TrainerDashboardRoute />} />
         <Route path="/career-hub" element={<CareerHub />} />
