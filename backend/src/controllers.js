@@ -1168,6 +1168,111 @@ exports.getStudents = async (req, res) => {
   }
   if (!cache) return res.status(503).json({ success: false, message: 'Student data is still syncing. Please retry shortly.' });
   let students = []; let stats = { total: 0, pending: 0, notResponding: 0, noNeed: 0, branchCounts: {}, courseCounts: {} };
+  const percentageValue = value => {
+    const match = String(value ?? '').replace(/,/g, '.').match(/-?\d+(?:\.\d+)?/);
+    if (!match) return 0;
+    const parsed = Number(match[0]);
+    return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed <= 1 && parsed > 0 ? parsed * 100 : parsed)) : 0;
+  };
+  const isActionLog = row => /^(yes|true|1)$/i.test(getValByHeader(row, ['tpoactionlog']));
+  const canonicalTpoLogs = (cache.tpoLogs || []).filter(row => !isActionLog(row));
+  const placedRolls = new Set();
+  const placedNameBranches = new Set();
+  canonicalTpoLogs.forEach(log => {
+    if (normalizePlacementText(getValByHeader(log, ['status'])) !== 'placed') return;
+    const roll = normalizePlacementText(getValByHeader(log, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+    const name = normalizePlacementText(getValByHeader(log, ['studentname', 'name']));
+    const branch = normalizePlacementText(getValByHeader(log, ['branch', 'sittingbranch']));
+    if (roll) placedRolls.add(roll);
+    else if (name && branch) placedNameBranches.add(`${name}|${branch}`);
+  });
+  const studentsByName = new Map();
+  const studentsByRoll = new Map();
+  (cache.students || []).forEach(row => {
+    const key = normalizePlacementText(getValByHeader(row, ['name', 'studentname']));
+    if (key) studentsByName.set(key, [...(studentsByName.get(key) || []), row]);
+    const roll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+    if (roll && !studentsByRoll.has(roll)) studentsByRoll.set(roll, row);
+  });
+  const getStudentKey = row => {
+    const roll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+    return roll || `name:${normalizePlacementText(getValByHeader(row, ['name', 'studentname', 'candidate']))}`;
+  };
+  const getOpeningKey = row => {
+    const company = normalizePlacementText(getValByHeader(row, ['companyname', 'company']));
+    const position = normalizePlacementText(getValByHeader(row, ['position', 'role']));
+    const jobId = normalizePlacementText(getValByHeader(row, ['jobid', 'job id']));
+    if (jobId) return `job:${jobId}`;
+    if (company && position) return `${company}|${position}`;
+    return company || position ? `${company}|${position}` : '';
+  };
+  const historyStatuses = row => {
+    const rawHistory = getValByHeader(row, ['statushistory']);
+    let history = [];
+    try { history = rawHistory ? JSON.parse(rawHistory) : []; } catch { history = []; }
+    const statuses = (Array.isArray(history) ? history : []).map(entry => String(entry?.status || ''));
+    const currentStatus = getValByHeader(row, ['status']);
+    if (currentStatus && normalizePlacementText(currentStatus) !== normalizePlacementText(statuses[statuses.length - 1])) statuses.push(currentStatus);
+    return statuses;
+  };
+  const openingRecordsByStudent = new Map();
+  const addOpeningRecord = (row, preferExisting = false) => {
+    const roll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+    const name = normalizePlacementText(getValByHeader(row, ['name', 'studentname', 'candidate']));
+    const matchedStudent = roll
+      ? studentsByRoll.get(roll)
+      : ((studentsByName.get(name) || []).length === 1 ? studentsByName.get(name)[0] : null);
+    const identity = roll || (matchedStudent ? getStudentKey(matchedStudent) : (name ? `name:${name}` : ''));
+    if (!identity) return;
+    const openingKey = getOpeningKey(row);
+    if (!openingKey) return;
+    const records = openingRecordsByStudent.get(identity) || new Map();
+    const current = records.get(openingKey);
+    const incomingStatuses = historyStatuses(row);
+    if (!current) records.set(openingKey, { row, statuses: incomingStatuses });
+    else if (preferExisting) {
+      const storedHistory = getValByHeader(row, ['statushistory']);
+      let hasStoredHistory = false;
+      try {
+        const parsedHistory = JSON.parse(storedHistory || '[]');
+        hasStoredHistory = Array.isArray(parsedHistory) && parsedHistory.length > 0;
+      } catch { hasStoredHistory = false; }
+      const statuses = hasStoredHistory ? incomingStatuses : [...current.statuses];
+      const currentStatus = getValByHeader(row, ['status']);
+      if (currentStatus && normalizePlacementText(currentStatus) !== normalizePlacementText(statuses[statuses.length - 1])) statuses.push(currentStatus);
+      records.set(openingKey, { row, statuses });
+    }
+    openingRecordsByStudent.set(identity, records);
+  };
+  (cache.applications || []).forEach(row => addOpeningRecord(row));
+  canonicalTpoLogs.forEach(row => addOpeningRecord(row, true));
+  const placementMetricsFor = row => {
+    const identity = getStudentKey(row);
+    const records = openingRecordsByStudent.get(identity) || openingRecordsByStudent.get(`name:${normalizePlacementText(getValByHeader(row, ['name', 'studentname']))}`) || new Map();
+    let interviewsAttended = 0;
+    let interviewsNotAttended = 0;
+    let offersRejected = 0;
+    let openingsAttended = 0;
+    let notResponding = false;
+    records.forEach(recordEntry => {
+      const record = recordEntry.row;
+      const normalizedStatuses = recordEntry.statuses.map(status => normalizePlacementText(status));
+      const statuses = normalizedStatuses.filter((status, index) => index === 0 || status !== normalizedStatuses[index - 1]);
+      let attendedForOpening = false;
+      statuses.forEach(status => {
+        if (status.includes('interviewnotattended') || status.includes('didnotattend')) interviewsNotAttended++;
+        else if (status.includes('interviewattended') || status === 'attended') {
+          interviewsAttended++;
+          attendedForOpening = true;
+        }
+        if (status.includes('offerrejected') || status.includes('studentrejectedoffer')) offersRejected++;
+      });
+      const currentStatus = normalizePlacementText(getValByHeader(record, ['status'])) || statuses[statuses.length - 1] || '';
+      if (currentStatus.includes('noresponsefromstudent') || currentStatus.includes('notresponding')) notResponding = true;
+      if (attendedForOpening) openingsAttended++;
+    });
+    return { openingsApplied: records.size, openingsAttended, interviewsAttended, interviewsNotAttended, offersRejected, notResponding };
+  };
 
   (cache.students || []).forEach(row => {
     const branch = getValByHeader(row, ['branch']) || 'Unknown';
@@ -1176,12 +1281,20 @@ exports.getStudents = async (req, res) => {
     if (hasPlacementBranchAccess(branch, placementUser)) {
       stats.total++;
       
-      const pStatus = (getValByHeader(row, ['placementstat', 'placementstatus']) || 'Pending').toString().trim();
-      const pLower = pStatus.toLowerCase();
-      
-      if (pLower.includes('not responding')) stats.notResponding++;
-      else if (pLower.includes('no need')) stats.noNeed++;
-      else if (pLower.includes('pending') || pLower === '') stats.pending++;
+      let pStatus = (getValByHeader(row, ['placementstat', 'placementstatus']) || '').toString().trim();
+      const rollKey = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+      const nameKey = normalizePlacementText(getValByHeader(row, ['name', 'studentname']));
+      const logHasPlacedStatus = (rollKey && placedRolls.has(rollKey))
+        || (nameKey && placedNameBranches.has(`${nameKey}|${normalizePlacementText(branch)}`));
+      if (logHasPlacedStatus) pStatus = 'Placed';
+      const pLower = normalizePlacementText(pStatus);
+      const coursePercentage = getValByHeader(row, ['coursepercentage']) || '';
+      const metrics = placementMetricsFor(row);
+      const isPlacementNeeded = pLower.includes('pending') || pLower.includes('placementneeded');
+
+      if (pLower.includes('notresponding') || metrics.notResponding) stats.notResponding++;
+      else if (pLower.includes('noneed')) stats.noNeed++;
+      else if (isPlacementNeeded && percentageValue(coursePercentage) >= 80) stats.pending++;
 
       stats.branchCounts[branch] = (stats.branchCounts[branch] || 0) + 1;
       stats.courseCounts[course] = (stats.courseCounts[course] || 0) + 1;
@@ -1204,6 +1317,10 @@ exports.getStudents = async (req, res) => {
         studyAccess: getValByHeader(row, ['studymaterialaccess']) || 'No', 
         examAccess: getValByHeader(row, ['technialexam', 'technicalexam']) || 'No', 
         placementStatus: pStatus,
+        coursePercentage,
+        courseStatus: getValByHeader(row, ['coursestatus', 'status(currently']) || 'N/A',
+        placementMetrics: metrics,
+        hasResume: Boolean(getValByHeader(row, ['resume', 'cv']) && !/^n\/?a$/i.test(getValByHeader(row, ['resume', 'cv']))),
         rawData: typeof row.toObject === 'function' ? row.toObject() : {}
       });
     }
@@ -1255,8 +1372,9 @@ exports.updateStudent = async (req, res) => {
       
       const getRealHeader = (searchStrs) => {
         for (let s of searchStrs) {
-          const clean = s.toLowerCase().replace(/\s/g, '');
-          const index = headers.indexOf(clean);
+          const clean = normalizePlacementHeader(s);
+          let index = headers.indexOf(clean);
+          if (index === -1) index = headers.findIndex(header => clean.length > 5 && header.includes(clean));
           if (index !== -1) return stuSheet.headerValues[index];
         }
         return null;
@@ -1272,7 +1390,8 @@ exports.updateStudent = async (req, res) => {
       let oldVacOpen = vH ? getOldVal(vH).toLowerCase() : '';
       if(isPlacementEditor && vH && vacOpen !== undefined) updateObj[vH] = vacOpen;
       
-      const pH = getRealHeader(['placementstatus', 'placementstat', 'placementstatsu']); if(isPlacementEditor && pH && placementStatus !== undefined) updateObj[pH] = placementStatus;
+      const pH = getRealHeader(['placementstatus', 'placementstat', 'placementstatsu']);
+      if (isPlacementEditor && pH && typeof placementStatus === 'string' && placementStatus.trim()) updateObj[pH] = placementStatus.trim();
       const sH = getRealHeader(['studymaterialaccess']); if(isAcademicEditor && sH && studyAccess !== undefined) updateObj[sH] = studyAccess;
       const eH = getRealHeader(['technicalexam', 'technialexam']); if(isAcademicEditor && eH && examAccess !== undefined) updateObj[eH] = examAccess;
       
@@ -1291,9 +1410,16 @@ exports.updateStudent = async (req, res) => {
       if (Object.keys(updateObj).length === 0) return res.status(400).json({ success: false, message: 'No permitted student fields were provided.' });
       rows[0].assign(updateObj); 
       await rows[0].save(); 
+      const cachedStudent = (getCache()?.students || []).find(row => Number(row.rowNumber) === Number(rows[0].rowNumber));
+      if (cachedStudent && Array.isArray(cachedStudent._rawData)) {
+        Object.entries(updateObj).forEach(([headerName, value]) => {
+          const index = stuSheet.headerValues.findIndex(header => normalizePlacementHeader(header) === normalizePlacementHeader(headerName));
+          if (index >= 0) cachedStudent._rawData[index] = String(value ?? '');
+        });
+      }
 
       let placedSheetWarning = '';
-      if (isPlacementEditor && placementStatus !== undefined) {
+      if (isPlacementEditor && typeof placementStatus === 'string' && placementStatus.trim()) {
         placedSheetWarning = await syncPositivePlacement({
           name: getValByHeader(rows[0], ['name', 'studentname']),
           phone: getValByHeader(rows[0], ['phone', 'contact', 'mobilenumber']),
@@ -1309,7 +1435,7 @@ exports.updateStudent = async (req, res) => {
           placementOfficer: isPlacementTrackerTpo(user)
             ? user?.name || user?.email || ''
             : getValByHeader(rows[0], ['placementofficer', 'tpo', 'tponame']) || '',
-          status: placementStatus,
+          status: placementStatus.trim(),
           joiningStatus: getValByHeader(rows[0], ['joiningstatus']),
           remarks: getValByHeader(rows[0], ['remarks']),
           datePlaced: getValByHeader(rows[0], ['dateplaced']),
@@ -1622,10 +1748,49 @@ const upsertPlacementTpoLog = async record => {
   return savedRow;
 };
 
+const syncDirectoryPlacementStatusFromLog = async logRow => {
+  if (normalizePlacementText(getValByHeader(logRow, ['status'])) !== 'placed') return '';
+  await loadDocInfo();
+  const studentSheet = doc.sheetsByTitle['Data'];
+  if (!studentSheet) return 'The placement is recorded, but the student directory sheet is unavailable.';
+  const headers = studentSheet.headerValues || [];
+  const statusHeader = findPlacementHeader(headers, ['Placement Status', 'Placement Status (Current)', 'Placement Status\u00a0']);
+  if (!statusHeader) return 'The placement is recorded, but the Data sheet has no Placement Status column to update.';
+
+  const rollKey = normalizePlacementText(getValByHeader(logRow, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+  const nameKey = normalizePlacementText(getValByHeader(logRow, ['studentname', 'name']));
+  const branchKey = normalizePlacementText(getValByHeader(logRow, ['branch', 'sittingbranch']));
+  const students = getCache()?.students || [];
+  let studentRow = rollKey
+    ? students.find(row => normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])) === rollKey)
+    : null;
+  if (!studentRow && nameKey) {
+    const matches = students.filter(row => normalizePlacementText(getValByHeader(row, ['name', 'studentname'])) === nameKey
+      && (!branchKey || normalizePlacementText(getValByHeader(row, ['branch', 'sittingbranch'])) === branchKey));
+    if (matches.length === 1) [studentRow] = matches;
+  }
+  if (!studentRow) return 'The placement is recorded, but its student could not be matched to the Data sheet.';
+  if (normalizePlacementText(getValByHeader(studentRow, ['placementstatus', 'placementstat'])) === 'placed') return '';
+  await updateCachedSheetRow(studentSheet, studentRow, { [statusHeader]: 'Placed' });
+  return '';
+};
+
 const syncPositivePlacement = async record => {
   try {
     const { tpoLogRow, ...placementRecord } = record;
     const logRow = tpoLogRow || await upsertPlacementTpoLog(placementRecord);
+    const cache = getCache();
+    if (cache && logRow) {
+      const rowIndex = (cache.tpoLogs || []).findIndex(row => Number(row.rowNumber) === Number(logRow.rowNumber));
+      if (rowIndex >= 0) cache.tpoLogs[rowIndex] = logRow;
+      else addRowToCache('tpoLogs', logRow);
+    }
+    let directoryStatusWarning = '';
+    try { directoryStatusWarning = await syncDirectoryPlacementStatusFromLog(logRow); }
+    catch (error) {
+      console.error('The TPO log status could not be copied to the student directory:', error.message);
+      directoryStatusWarning = `The placement is recorded, but the student directory status could not be updated: ${error.message}`;
+    }
     await syncPlacedStudent({
       name: getValByHeader(logRow, ['studentname', 'name']),
       phone: getValByHeader(logRow, ['contact', 'phone']),
@@ -1647,7 +1812,7 @@ const syncPositivePlacement = async record => {
       offerLetter: getValByHeader(logRow, ['offerletterstatus', 'offerletter']),
       sourceSheet: 'TPO_Log', sourceRow: logRow.rowNumber
     });
-    return '';
+    return directoryStatusWarning;
   } catch (error) {
     console.error('Placement was saved but the Placed_Students sheet could not be updated:', error.message);
     return `The placement was saved, but the Placed_Students sheet could not be updated: ${error.message}`;
@@ -3367,15 +3532,32 @@ exports.getReports = async (req, res) => {
   let students = [], applications = [], issues = [], talentino = [], tpoLogs = [], placementReportLogs = [];
   const cache = getCache();
   
+  const placedStudentRolls = new Set();
+  const placedStudentNameBranches = new Set();
+  (cache.tpoLogs || []).forEach(log => {
+    if (normalizePlacementText(getValByHeader(log, ['status'])) !== 'placed'
+      || /^(yes|true|1)$/i.test(getValByHeader(log, ['tpoactionlog']))) return;
+    const roll = normalizePlacementText(getValByHeader(log, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+    const name = normalizePlacementText(getValByHeader(log, ['studentname', 'name']));
+    const branch = normalizePlacementText(getValByHeader(log, ['branch', 'sittingbranch']));
+    if (roll) placedStudentRolls.add(roll);
+    else if (name && branch) placedStudentNameBranches.add(`${name}|${branch}`);
+  });
+
   (cache.students || []).forEach(row => {
     if(!checkPlacementReportAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) return;
+    const roll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+    const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+    const branch = normalizePlacementText(getValByHeader(row, ['branch']));
+    const isPlacedInTpoLog = (roll && placedStudentRolls.has(roll)) || (name && placedStudentNameBranches.has(`${name}|${branch}`));
     students.push({ 
       name: getValByHeader(row, ['name']), 
-      roll: getValByHeader(row, ['rollnumber', 'roll']), 
+      roll: getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']),
       branch: getValByHeader(row, ['branch']), 
       course: getValByHeader(row, ['course']), 
       status: getValByHeader(row, ['status']), 
-      placementStatus: getValByHeader(row, ['placementstat', 'placementstatus']),
+      placementStatus: isPlacedInTpoLog ? 'Placed' : getValByHeader(row, ['placementstat', 'placementstatus']),
+      coursePercentage: getValByHeader(row, ['coursepercentage']),
       timestamp: getValByHeader(row, ['timestamp']) // 🚨 Added to plot the Area Chart applications
     });
   });

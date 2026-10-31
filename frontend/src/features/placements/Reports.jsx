@@ -287,8 +287,12 @@ export default function Reports() {
   
   students.forEach(s => {
     if (isAssignedBranch(s.branch) && pendingByCourse[s.branch]) {
-      const stat = (s.placementStatus || '').toLowerCase();
-      if (stat.includes('pending') || stat === '') {
+      const stat = normalizePlacementText(s.placementStatus);
+      const percentageMatch = String(s.coursePercentage || '').replace(/,/g, '.').match(/\d+(?:\.\d+)?/);
+      const rawPercentage = percentageMatch ? Number(percentageMatch[0]) : 0;
+      const percentage = rawPercentage > 0 && rawPercentage <= 1 ? rawPercentage * 100 : rawPercentage;
+      const placementNeeded = stat.includes('pending') || stat.includes('placementneeded');
+      if (placementNeeded && percentage >= 80) {
         const c = getCourse(s.course);
         if (pendingByCourse[s.branch][c] !== undefined) {
           pendingByCourse[s.branch][c]++;

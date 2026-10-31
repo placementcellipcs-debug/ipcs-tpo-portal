@@ -28,6 +28,46 @@ const getStandardCourse = (c) => {
 };
 
 const parseDate = dStr => parsePortalDateTime(dStr);
+const normalizeStatus = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+const coursePercentageNumber = student => {
+  const raw = student?.coursePercentage ?? Object.entries(student?.rawData || {}).find(([key]) => normalizeStatus(key) === 'coursepercentage')?.[1] ?? '';
+  const match = String(raw).replace(/,/g, '.').match(/-?\d+(?:\.\d+)?/);
+  if (!match) return 0;
+  const value = Number(match[0]);
+  return Number.isFinite(value) ? Math.max(0, Math.min(100, value <= 1 && value > 0 ? value * 100 : value)) : 0;
+};
+const courseStatusValue = student => {
+  const value = String(student?.courseStatus || student?.status || Object.entries(student?.rawData || {}).find(([key]) => ['coursestatus', 'statuscurrently'].includes(normalizeStatus(key)))?.[1] || '').trim();
+  return !value || /^n\/?a$/i.test(value) ? 'Currently Studying' : value;
+};
+const placementStatusValue = student => String(student?.placementStatus || '');
+const isPlacementNeeded = student => {
+  const status = normalizeStatus(placementStatusValue(student));
+  return status.includes('pending') || status.includes('placementneeded');
+};
+const isStudentPlaced = student => {
+  const status = normalizeStatus(placementStatusValue(student));
+  return status === 'placed' || status.startsWith('placed') || status.includes('alreadyplaced');
+};
+const isStudentNotResponding = student => normalizeStatus(placementStatusValue(student)).includes('notresponding') || Boolean(student?.placementMetrics?.notResponding);
+const isStudentNoPlacementNeeded = student => normalizeStatus(placementStatusValue(student)).includes('noneed');
+const studentHasResume = student => {
+  const resume = String(student?.resume || '').trim();
+  return Boolean(resume && !/^(?:n\/?a|none|no|not available)$/i.test(resume));
+};
+const isCourseCompleted = student => {
+  const status = normalizeStatus(courseStatusValue(student));
+  return ['complete', 'completed', 'completedcourse', 'coursecompleted'].includes(status) || status.startsWith('coursecompleted') || coursePercentageNumber(student) >= 100;
+};
+const isEligibleForPlacementPending = student => isPlacementNeeded(student) && coursePercentageNumber(student) >= 80;
+const directoryStatusLabel = student => {
+  if (isStudentPlaced(student)) return 'Placed';
+  if (isStudentNoPlacementNeeded(student)) return 'No Placement Needed';
+  if (isStudentNotResponding(student)) return 'Not Responding';
+  if (isEligibleForPlacementPending(student)) return isCourseCompleted(student) ? 'Course Completed · Waiting for Placement' : 'Pending for Placement';
+  if (isCourseCompleted(student)) return 'Course Completed';
+  return 'Currently Studying';
+};
 
 export default function StudentsDirectory() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -192,15 +232,16 @@ export default function StudentsDirectory() {
   const openStudentModal = (student) => {
     setSelectedStudent(student);
     setLocalVacState(student.vacOpen || 'Yes');
-    setLocalPlacementState(student.placementStatus || 'Pending');
+    setLocalPlacementState(student.placementStatus || '');
     setLocalStudyAccess(student.studyAccess || 'No');
     setLocalExamAccess(student.examAccess || 'No');
     
     const cStatKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().replace(/\s/g, '') === 'coursestatus' || k.toLowerCase().replace(/\s/g, '').includes('status(currently'));
-    setLocalCourseStatus(cStatKey && student.rawData[cStatKey] && student.rawData[cStatKey] !== 'N/A' ? student.rawData[cStatKey] : 'Currently Studying');
+    const storedCourseStatus = student.courseStatus && student.courseStatus !== 'N/A' ? student.courseStatus : (cStatKey && student.rawData[cStatKey] && student.rawData[cStatKey] !== 'N/A' ? student.rawData[cStatKey] : 'Currently Studying');
+    setLocalCourseStatus(normalizeStatus(storedCourseStatus).includes('complete') ? 'Completed Course' : 'Currently Studying');
 
     const cPercKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().replace(/\s/g, '') === 'coursepercentage');
-    setLocalCoursePercentage(cPercKey && student.rawData[cPercKey] && student.rawData[cPercKey] !== 'N/A' ? student.rawData[cPercKey] : '50% completed');
+    setLocalCoursePercentage(student.coursePercentage || (cPercKey && student.rawData[cPercKey] && student.rawData[cPercKey] !== 'N/A' ? student.rawData[cPercKey] : '50% completed'));
 
     setIsModalOpen(true);
   };
@@ -227,10 +268,37 @@ export default function StudentsDirectory() {
       });
       
       if (response.data.success) {
-        const updatedStudents = rawStudents.map(s => s.rowIdx === selectedStudent.rowIdx ? { 
-          ...s, vacOpen: localVacState, placementStatus: localPlacementState, studyAccess: localStudyAccess, examAccess: localExamAccess, status: localCourseStatus
-        } : s);
+        const updatedStudents = rawStudents.map(s => {
+          if (s.rowIdx !== selectedStudent.rowIdx) return s;
+          const rawData = { ...(s.rawData || {}) };
+          const updateRawField = (target, value, fallback, aliases = []) => {
+            const candidateKeys = [target, ...aliases].map(normalizeStatus);
+            const key = Object.keys(rawData).find(rawKey => candidateKeys.includes(normalizeStatus(rawKey)))
+              || Object.keys(rawData).find(rawKey => candidateKeys.some(candidate => candidate.length > 5 && normalizeStatus(rawKey).includes(candidate)))
+              || fallback || target;
+            rawData[key] = value;
+          };
+          updateRawField('coursepercentage', localCoursePercentage, 'Course Percentage');
+          updateRawField('coursestatus', localCoursePercentage === '100% completed' || localCoursePercentage === '100%' ? 'Completed Course' : localCourseStatus, 'Course Status', ['statuscurrently']);
+          if (localPlacementState) updateRawField('placementstatus', localPlacementState, 'Placement Status', ['placementstat']);
+          if (localStudyAccess) updateRawField('studymaterialaccess', localStudyAccess, 'Study Material Access');
+          if (localExamAccess) updateRawField('technicalexamaccess', localExamAccess, 'Technical Exam Access');
+          if (localVacState) updateRawField('vacancyopen', localVacState, 'Vacancy Open');
+          return {
+            ...s,
+            vacOpen: localVacState || s.vacOpen,
+            placementStatus: localPlacementState || s.placementStatus,
+            studyAccess: localStudyAccess || s.studyAccess,
+            examAccess: localExamAccess || s.examAccess,
+            courseStatus: localCoursePercentage === '100% completed' || localCoursePercentage === '100%' ? 'Completed Course' : localCourseStatus,
+            coursePercentage: localCoursePercentage,
+            status: localCoursePercentage === '100% completed' || localCoursePercentage === '100%' ? 'Completed Course' : localCourseStatus,
+            rawData
+          };
+        });
+        const updatedSelectedStudent = updatedStudents.find(s => s.rowIdx === selectedStudent.rowIdx) || selectedStudent;
         setRawStudents(updatedStudents);
+        setSelectedStudent(updatedSelectedStudent);
         setIsModalOpen(false);
       }
     } catch { alert("Failed to update student data"); } finally { setSavingStatus(false); }
@@ -251,11 +319,15 @@ export default function StudentsDirectory() {
     const monthKey = dateObj ? `${dateObj.getFullYear()}-${String(dateObj.getMonth() + 1).padStart(2, '0')}` : '';
     let mMatch = monthFilter === '' || monthKey === monthFilter;
     
-    const pStat = (s.placementStatus || 'Pending').toLowerCase();
     let pMatch = true;
     if (placementStatusFilter !== 'All') {
-      if (placementStatusFilter === 'Pending') pMatch = pStat.includes('pending') || pStat === '';
-      else pMatch = pStat.includes(placementStatusFilter.toLowerCase());
+      if (placementStatusFilter === 'Pending') pMatch = isEligibleForPlacementPending(s);
+      else if (placementStatusFilter === 'Placed') pMatch = isStudentPlaced(s);
+      else if (placementStatusFilter === 'Has Resume') pMatch = studentHasResume(s);
+      else if (placementStatusFilter === 'Not Responding') pMatch = isStudentNotResponding(s);
+      else if (placementStatusFilter === 'No Need of Placement') pMatch = isStudentNoPlacementNeeded(s);
+      else if (placementStatusFilter === 'Currently Studying') pMatch = !isCourseCompleted(s) && !isStudentPlaced(s);
+      else if (placementStatusFilter === 'Course Completed') pMatch = isCourseCompleted(s);
     }
     
     return cMatch && mMatch && pMatch;
@@ -269,18 +341,25 @@ export default function StudentsDirectory() {
   const branchList = Object.keys(branchData).sort();
 
   const activeStudents = selectedBranch ? globallyFiltered.filter(s => s.branch === selectedBranch) : [];
+  const branchStudentsInCourse = selectedBranch ? scopedStudents.filter(s => s.branch === selectedBranch
+    && (courseFilter === 'All' || getStandardCourse(s.course) === getStandardCourse(courseFilter))) : [];
 
   const branchStats = {
-    pending: activeStudents.filter(s => s.placementStatus?.toLowerCase().includes('pending') || !s.placementStatus).length,
-    notResponding: activeStudents.filter(s => s.placementStatus?.toLowerCase().includes('not responding')).length,
-    noNeed: activeStudents.filter(s => s.placementStatus?.toLowerCase().includes('no need')).length
+    pending: branchStudentsInCourse.filter(isEligibleForPlacementPending).length,
+    notResponding: branchStudentsInCourse.filter(isStudentNotResponding).length,
+    noNeed: branchStudentsInCourse.filter(isStudentNoPlacementNeeded).length
   };
 
   let filteredAndSorted = activeStudents.filter(s => {
-    const safeSearch = (searchQuery || '').toLowerCase();
+    const safeSearch = (searchQuery || '').trim().toLowerCase();
+    if (!safeSearch) return true;
     const safeName = (s.name || '').toString().toLowerCase();
     const safeRoll = (s.roll || '').toString().toLowerCase();
-    return safeName.includes(safeSearch) || safeRoll.includes(safeSearch);
+    const safePhone = (s.phone || '').toString().replace(/\D/g, '');
+    const safeEmail = (s.email || '').toString().toLowerCase();
+    const digitsOnlySearch = safeSearch.replace(/\D/g, '');
+    return safeName.includes(safeSearch) || safeRoll.toLowerCase().includes(safeSearch) || safeEmail.includes(safeSearch)
+      || (digitsOnlySearch.length > 0 && safePhone.includes(digitsOnlySearch));
   });
 
   if (sortOrder === 'az') filteredAndSorted.sort((a, b) => (a.name || '').toString().localeCompare((b.name || '').toString()));
@@ -335,7 +414,7 @@ export default function StudentsDirectory() {
 
         <div className="header-controls" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '1.5rem', alignItems: 'center', background: 'var(--card-bg)', padding: '14px 18px', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
           {selectedBranch && (
-            <input type="text" className="sleek-input" placeholder="Search name or roll..." style={{ minWidth: '200px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+            <input type="text" className="sleek-input" placeholder="Search name, roll, phone, or email..." style={{ minWidth: '260px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           )}
 
           {(!isCourseSpecific || assignedCoursesArray.length > 1 || !selectedBranch) && (
@@ -369,13 +448,16 @@ export default function StudentsDirectory() {
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Placement:</span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Student status:</span>
             <select className="sleek-select" style={{ minWidth: '150px' }} value={placementStatusFilter} onChange={(e) => setPlacementStatusFilter(e.target.value)}>
-              <option value="All">All Statuses</option>
-              <option value="Pending">Pending</option>
+              <option value="All">All Students</option>
+              <option value="Pending">Pending for Placement (80%+)</option>
               <option value="Placed">Placed</option>
+              <option value="Has Resume">Resume Attached</option>
               <option value="Not Responding">Not Responding</option>
-              <option value="No Need of Placement">No Need</option>
+              <option value="No Need of Placement">No Placement Needed</option>
+              <option value="Currently Studying">Currently Studying</option>
+              <option value="Course Completed">Course Completed</option>
             </select>
           </div>
 
@@ -444,7 +526,7 @@ export default function StudentsDirectory() {
                   <div className="sc-detail-row"><span>Branch</span><strong style={{ color: 'var(--text-main)' }}>{st.branch}</strong></div>
                   <div className="sc-detail-row"><span>Course</span><strong style={{ color: 'var(--text-main)' }}>{st.course}</strong></div>
                   <div className="sc-detail-row"><span>Contact</span><strong style={{ color: 'var(--text-main)' }}>{st.phone}</strong></div>
-                  <div className="sc-detail-row"><span>Status</span><strong style={{ color: st.status.toLowerCase().includes('completed') ? '#10b981' : 'var(--accent-primary)' }}>{st.status}</strong></div>
+                  <div className="sc-detail-row"><span>Status</span><strong style={{ color: isStudentPlaced(st) || isCourseCompleted(st) ? '#10b981' : isStudentNotResponding(st) ? '#f87171' : 'var(--accent-primary)' }}>{directoryStatusLabel(st)}</strong></div>
                 </div>
                 <button className="btn-secondary" style={{ width: '100%', padding: '0.5rem' }} onClick={() => openStudentModal(st)}>View Profile</button>
               </div>
@@ -483,7 +565,7 @@ export default function StudentsDirectory() {
                       <span className="sub-text">{st.stream}</span>
                     </td>
                     <td>
-                      <StatusBadge status={st.status} />
+                      <StatusBadge status={directoryStatusLabel(st)} />
                     </td>
                     <td style={{ textAlign: 'center' }}>
                       <button className="btn-secondary" onClick={() => openStudentModal(st)} style={{ padding: '0.4rem 0.8rem', fontSize: '0.8rem' }}>
@@ -512,6 +594,7 @@ export default function StudentsDirectory() {
                 <div>
                   <h2 style={{ margin: '0 0 4px 0', fontSize: '1.4rem', color: '#fff' }}>{selectedStudent.name}</h2>
                   <span style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: 700, display: 'block', marginBottom: '8px' }}>{selectedStudent.roll}</span>
+                  <StatusBadge status={directoryStatusLabel(selectedStudent)} />
                   
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                     {(() => {
@@ -594,6 +677,7 @@ export default function StudentsDirectory() {
                      { label: 'Parent Contact', val: getF(['parentcontact', 'parentphone']) },
                      { label: 'Course Status', val: getF(['status(currently', 'coursestatus']) || localCourseStatus },
                      { label: 'Course Percentage', val: getF(['coursepercentage']) || localCoursePercentage },
+                     { label: 'Placement Status', val: directoryStatusLabel(selectedStudent) },
                      { label: 'IPCS Course Completed Date', val: getF(['coursecompleteddate', 'completeddate']) },
                      { label: 'Age', val: getF(['age', 'dob']) },
                      { label: 'Gender', val: getF(['gender', 'sex']) }
@@ -607,6 +691,27 @@ export default function StudentsDirectory() {
                    ));
                 })()}
              </div>
+
+             <section style={{ background: 'linear-gradient(135deg, rgba(20,184,166,.1), rgba(59,130,246,.08))', border: '1px solid rgba(45,212,191,.2)', borderRadius: '14px', padding: '1.25rem', marginBottom: '2rem' }}>
+               <div style={{ marginBottom: '14px' }}>
+                 <h3 style={{ margin: 0, color: '#f8fafc', fontSize: '1rem' }}>Placement activity</h3>
+                 <p style={{ margin: '4px 0 0', color: '#94a3b8', fontSize: '.8rem' }}>Counts are based on this student’s opening and TPO log records.</p>
+               </div>
+               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(135px, 1fr))', gap: '10px' }}>
+                 {[
+                   ['Openings applied', selectedStudent.placementMetrics?.openingsApplied || 0, '#60a5fa'],
+                   ['Openings attended', selectedStudent.placementMetrics?.openingsAttended || 0, '#2dd4bf'],
+                   ['Interviews attended', selectedStudent.placementMetrics?.interviewsAttended || 0, '#a78bfa'],
+                   ['Interviews not attended', selectedStudent.placementMetrics?.interviewsNotAttended || 0, '#fb7185'],
+                   ['Offers rejected', selectedStudent.placementMetrics?.offersRejected || 0, '#fbbf24']
+                 ].map(([label, value, color]) => (
+                   <div key={label} style={{ background: 'rgba(15,23,42,.72)', border: '1px solid #273449', borderRadius: '10px', padding: '12px 14px' }}>
+                     <span style={{ display: 'block', color: '#94a3b8', fontSize: '.68rem', textTransform: 'uppercase', letterSpacing: '.04em', minHeight: '28px' }}>{label}</span>
+                     <strong style={{ color, fontSize: '1.35rem', lineHeight: 1.2 }}>{value}</strong>
+                   </div>
+                 ))}
+               </div>
+             </section>
 
              {isBranchManager && (
                <div style={{ marginTop: '20px', paddingTop: '20px', borderTop: '1px solid #1e293b' }}>
@@ -724,7 +829,7 @@ export default function StudentsDirectory() {
                     <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
                       <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Placement Status</span>
                       <select className="sleek-select" style={{ width: '100%', cursor: !canEditAll ? 'not-allowed' : 'pointer', opacity: !canEditAll ? 0.7 : 1, background: '#161e2e' }} value={localPlacementState} onChange={(e) => setLocalPlacementState(e.target.value)} disabled={!canEditAll}>
-                        <option value="Pending">Pending</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
+                        <option value="">Select placement status</option><option value="Placement Needed">Placement Needed</option><option value="Pending">Pending (existing)</option><option value="Placed">Placed</option><option value="Not Responding">Not Responding</option><option value="No Need of Placement">No Need of Placement</option>
                       </select>
                     </div>
                   </div>
