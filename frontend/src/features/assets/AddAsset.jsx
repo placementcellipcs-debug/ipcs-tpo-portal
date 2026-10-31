@@ -7,6 +7,7 @@ import {
 import Layout from '../../layouts/Layout';
 import DateInput from '../../components/DateInput';
 import { API_BASE } from '../../services/apiConfig';
+import AssetCategoryFields from './AssetCategoryFields';
 
 const DYNAMIC_TEMPLATES = {
   'Laptop': ['Serial Number', 'MAC Address', 'Processor (CPU)', 'RAM', 'Storage', 'Operating System'],
@@ -17,9 +18,6 @@ const DYNAMIC_TEMPLATES = {
   'Router': ['Serial Number', 'MAC Address', 'WAN IP', 'Firmware Version'],
   'CCTV Camera': ['Camera Type', 'Resolution', 'IP Address', 'MAC Address']
 };
-
-const DEFAULT_CATEGORIES = [{ categoryid: 'CAT01', categoryname: 'IT Equipment' }, { categoryid: 'CAT02', categoryname: 'Networking' }, { categoryid: 'CAT03', categoryname: 'Mobile & SIM' }, { categoryid: 'CAT04', categoryname: 'Furniture' }];
-const DEFAULT_SUBCATEGORIES = [{ categoryid: 'CAT01', name: 'Laptop' }, { categoryid: 'CAT01', name: 'Desktop' }, { categoryid: 'CAT01', name: 'Monitor' }, { categoryid: 'CAT02', name: 'Network Switch' }, { categoryid: 'CAT02', name: 'Router' }, { categoryid: 'CAT02', name: 'CCTV Camera' }, { categoryid: 'CAT03', name: 'Mobile Phone' }, { categoryid: 'CAT03', name: 'SIM Card' }];
 
 // 🚨 ADDED HARDCODED LOCATIONS
 const HARDCODED_LOCATIONS = [
@@ -34,11 +32,11 @@ export default function AddAsset() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState(null);
 
-  const [dbData, setDbData] = useState({ branches: [], categories: DEFAULT_CATEGORIES, subcategories: DEFAULT_SUBCATEGORIES, locations: [], vendors: [] });
+  const [dbData, setDbData] = useState({ branches: [], categories: [], subcategories: [], locations: [], vendors: [] });
   
   const [asset, setAsset] = useState({
     name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', location: '', 
-    condition: 'NEW', brand: '', model: '', purchaseDate: '', purchaseCost: '', vendor: '', invoice: '', warrantyEnd: '', depreciationMethod: 'STRAIGHT_LINE', usefulLifeYears: '', salvageValue: ''
+    condition: 'NEW', brand: '', model: '', purchaseDate: '', purchaseCost: '', vendor: '', invoice: '', warrantyEnd: ''
   });
 
   const [customFields, setCustomFields] = useState([]);
@@ -54,8 +52,8 @@ export default function AddAsset() {
       if(res.data.success) {
         setDbData(prev => ({
           branches: res.data.branches,
-          categories: res.data.categories.length > 0 ? res.data.categories : prev.categories,
-          subcategories: res.data.subcategories.length > 0 ? res.data.subcategories : prev.subcategories,
+          categories: Array.isArray(res.data.categories) ? res.data.categories : [],
+          subcategories: Array.isArray(res.data.subcategories) ? res.data.subcategories : [],
           locations: res.data.locations,
           vendors: res.data.vendors
         }));
@@ -75,14 +73,8 @@ export default function AddAsset() {
     setAssetPhotoPreview(previewUrl);
   };
 
-  const handleCategoryChange = (e) => {
-    setAsset({ ...asset, category: e.target.value, subcategory: '' });
-    setCustomFields([]);
-  };
-
-  const handleSubcategoryChange = (e) => {
-    const sub = e.target.value;
-    setAsset({ ...asset, subcategory: sub });
+  const handleSubcategoryChange = (sub) => {
+    setAsset(current => ({ ...current, subcategory: sub }));
     
     const template = DYNAMIC_TEMPLATES[sub];
     if (template) {
@@ -127,7 +119,7 @@ export default function AddAsset() {
       if(res.data.success) {
         setNotification({ type: 'success', text: `Asset ${res.data.assetId} successfully registered!` });
         // Reset form
-        setAsset({ name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', location: '', condition: 'NEW', brand: '', model: '', purchaseDate: '', purchaseCost: '', vendor: '', invoice: '', warrantyEnd: '', depreciationMethod: 'STRAIGHT_LINE', usefulLifeYears: '', salvageValue: '' });
+        setAsset({ name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', location: '', condition: 'NEW', brand: '', model: '', purchaseDate: '', purchaseCost: '', vendor: '', invoice: '', warrantyEnd: '' });
         setCustomLocation('');
         setCustomFields([]);
         if (assetPhotoPreviewRef.current) URL.revokeObjectURL(assetPhotoPreviewRef.current);
@@ -143,9 +135,6 @@ export default function AddAsset() {
       setTimeout(() => setNotification(null), 4000);
     }
   };
-
-  const activeCategoryId = dbData.categories.find(c => c.categoryname === asset.category)?.categoryid;
-  const availableSubcategories = dbData.subcategories.filter(s => s.categoryid === activeCategoryId);
 
   return (
     <Layout>
@@ -178,22 +167,17 @@ export default function AddAsset() {
             <div className="glass-panel" style={{ padding: '30px', borderRadius: '20px', borderLeft: '4px solid #3b82f6' }}>
               <h2 style={{ fontSize: '1.2rem', color: 'var(--accent-primary)', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}><Laptop weight="fill"/> Basic Identification</h2>
               
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
-                <div>
-                  <label className="data-label">Asset Category *</label>
-                  <select className="premium-select" style={{ width: '100%' }} value={asset.category} onChange={handleCategoryChange} required>
-                    <option value="">Select Category</option>
-                    {dbData.categories.map((c, i) => <option key={i} value={c.categoryname}>{c.categoryname}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="data-label">Subcategory *</label>
-                  <select className="premium-select" style={{ width: '100%' }} value={asset.subcategory} onChange={handleSubcategoryChange} required disabled={!asset.category}>
-                    <option value="">Select Subcategory</option>
-                    {availableSubcategories.map((s, i) => <option key={i} value={s.name}>{s.name}</option>)}
-                  </select>
-                </div>
-              </div>
+              <AssetCategoryFields
+                type="ASSET"
+                category={asset.category}
+                subcategory={asset.subcategory}
+                subcategoryRequired
+                categories={dbData.categories}
+                subcategories={dbData.subcategories}
+                dataReady={!loading}
+                onCategoryChange={value => { setAsset(current => ({ ...current, category: value, subcategory: '' })); setCustomFields([]); }}
+                onSubcategoryChange={handleSubcategoryChange}
+              />
 
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: '20px' }}>
                 <div>
@@ -309,15 +293,6 @@ export default function AddAsset() {
                 <div>
                   <label className="data-label">Warranty End Date</label>
                   <DateInput className="premium-input" style={{ width: '100%' }} value={asset.warrantyEnd} onChange={e => setAsset({...asset, warrantyEnd: e.target.value})} />
-                </div>
-              </div>
-              <div style={{ marginTop: '20px', padding: '17px', border: '1px solid rgba(245,158,11,.25)', borderRadius: '13px', background: 'rgba(245,158,11,.055)' }}>
-                <h3 style={{ margin: '0 0 6px', color: '#fbbf24', fontSize: '.96rem' }}>Depreciation settings</h3>
-                <p style={{ margin: '0 0 14px', color: '#aab8c8', fontSize: '.76rem', lineHeight: 1.5 }}>Use for durable assets with a purchase cost and service life. Paper, stationery, and other stock consumed over time belong in <b>Consumables</b>, where quantities are tracked instead.</p>
-                <div className="asset-depreciation-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: '14px' }}>
-                  <label className="data-label">Method<select className="premium-select" style={{ width: '100%', marginTop: 6 }} value={asset.depreciationMethod} onChange={e => setAsset({ ...asset, depreciationMethod: e.target.value })}><option value="STRAIGHT_LINE">Straight line</option><option value="DECLINING_BALANCE">Declining balance</option><option value="NONE">Do not depreciate</option></select></label>
-                  <label className="data-label">Useful life (years)<input type="number" min="0" step="0.5" className="premium-input" style={{ width: '100%', marginTop: 6 }} value={asset.usefulLifeYears} onChange={e => setAsset({ ...asset, usefulLifeYears: e.target.value })} placeholder="e.g. 5" /></label>
-                  <label className="data-label">Salvage value (₹)<input type="number" min="0" step="0.01" className="premium-input" style={{ width: '100%', marginTop: 6 }} value={asset.salvageValue} onChange={e => setAsset({ ...asset, salvageValue: e.target.value })} placeholder="e.g. 5000" /></label>
                 </div>
               </div>
             </div>

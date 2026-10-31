@@ -382,9 +382,6 @@ export default function AssetList() {
                 <div><span>Invoice</span><b>{detailData.asset.invoice || details.invoice || '—'}</b></div>
                 <div><span>Purchased</span><b>{detailData.asset.purchaseDate || details.purchaseDate || '—'}</b></div>
                 <div><span>Warranty through</span><b>{detailData.asset.warrantyEnd || details.warrantyEnd || '—'}</b></div>
-                <div><span>Depreciation method</span><b>{String(detailData.asset.depreciationMethod || 'STRAIGHT_LINE').replaceAll('_', ' ')}</b></div>
-                <div><span>Useful life</span><b>{detailData.asset.usefulLifeYears ? `${detailData.asset.usefulLifeYears} years` : 'Not set'}</b></div>
-                <div><span>Salvage value</span><b>{detailData.asset.salvageValue || '—'}</b></div>
                 {detailData.asset.purchaseCost !== '' && detailData.asset.purchaseCost !== undefined && <div><span>Purchase cost</span><b>{detailData.asset.purchaseCost}</b></div>}
               </div>
               <h3>Condition photos</h3>

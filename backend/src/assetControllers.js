@@ -560,7 +560,7 @@ exports.addAsset = async (req, res) => {
       [getH(aH, 'Vendor')]: asset.vendor || '',
       [getH(aH, 'Invoice_Number')]: asset.invoice || '',
       [getH(aH, 'Warranty_End')]: asset.warrantyEnd || '',
-      [getH(aH, 'Depreciation_Method')]: asset.depreciationMethod || 'STRAIGHT_LINE',
+      [getH(aH, 'Depreciation_Method')]: asset.depreciationMethod || 'NONE',
       [getH(aH, 'Useful_Life_Years')]: asset.usefulLifeYears || '',
       [getH(aH, 'Salvage_Value')]: asset.salvageValue || '',
       [getH(aH, 'Created_By')]: userName,
@@ -651,14 +651,14 @@ exports.getAssets = async (req, res) => {
         brand: getVal('brand'),
         model: getVal('model'),
         purchaseDate: getVal('purchasedate'),
-        depreciationMethod: getVal('depreciationmethod') || 'STRAIGHT_LINE',
+        depreciationMethod: getVal('depreciationmethod') || 'NONE',
         usefulLifeYears: getVal('usefullifeyears'),
         salvageValue: isAssetAdmin(req) ? getVal('salvagevalue') : '',
         purchaseCost: isAssetAdmin(req) ? getVal('purchasecost') : '',
         vendor: getVal('vendor'),
         invoice: getVal('invoicenumber'),
         warrantyEnd: getVal('warrantyend'),
-        depreciationMethod: getVal('depreciationmethod') || 'STRAIGHT_LINE',
+        depreciationMethod: getVal('depreciationmethod') || 'NONE',
         usefulLifeYears: getVal('usefullifeyears'),
         salvageValue: isAssetAdmin(req) ? getVal('salvagevalue') : '',
         createdBy: getVal('createdby'),
@@ -758,7 +758,7 @@ exports.getAssetDetails = async (req, res) => {
     const asset = {
       vendor: readAssetValue('vendor'), invoice: readAssetValue('invoicenumber'), purchaseDate: readAssetValue('purchasedate'),
       purchaseCost: isAssetAdmin(req) ? readAssetValue('purchasecost') : '', warrantyEnd: readAssetValue('warrantyend'),
-      depreciationMethod: readAssetValue('depreciationmethod') || 'STRAIGHT_LINE', usefulLifeYears: readAssetValue('usefullifeyears'),
+      depreciationMethod: readAssetValue('depreciationmethod') || 'NONE', usefulLifeYears: readAssetValue('usefullifeyears'),
       salvageValue: isAssetAdmin(req) ? readAssetValue('salvagevalue') : '',
       createdBy: readAssetValue('createdby'), registeredAt: readAssetValue('timestamp')
     };
@@ -998,7 +998,8 @@ exports.getInventory = async (req, res) => {
       return { 
         itemId: getV('itemid'), 
         name: getV('itemname'), 
-        category: getV('category'), 
+        category: getV('category'),
+        subcategory: getV('subcategory'),
         branch: getV('branch'), 
         quantity: parseInt(getV('quantity') || 0), 
         minQuantity: parseInt(getV('minimumquantity') || 0), 
@@ -1017,8 +1018,8 @@ exports.addInventory = async (req, res) => {
     const { item, userName } = req.body || {};
     const quantity = Number(item?.quantity);
     const minimumQuantity = Number(item?.minQuantity);
-    if (!item?.name || !item?.branch || !Number.isInteger(quantity) || quantity < 0 || !Number.isInteger(minimumQuantity) || minimumQuantity < 0) {
-      return res.status(400).json({ success: false, message: 'Item name, branch, whole-number quantity, and minimum quantity are required.' });
+    if (!item?.name || !item?.category || !item?.branch || !Number.isInteger(quantity) || quantity < 0 || !Number.isInteger(minimumQuantity) || minimumQuantity < 0) {
+      return res.status(400).json({ success: false, message: 'Item name, category, branch, whole-number quantity, and minimum quantity are required.' });
     }
     if (!canAccessAssetBranch(req, item.branch)) return res.status(403).json({ success: false, message: 'You cannot manage inventory for that branch.' });
     
@@ -1033,11 +1034,12 @@ exports.addInventory = async (req, res) => {
     const itemId = `INV-${Date.now().toString().slice(-6)}`;
     const timestamp = formatIndiaTimestamp();
 
-    const iH = invSheet.headerValues;
+    const iH = await ensureAssetHeaders(invSheet, ['Subcategory']);
     await invSheet.addRow({
       [getH(iH, 'Item_ID')]: itemId, 
       [getH(iH, 'Item_Name')]: item.name, 
       [getH(iH, 'Category')]: item.category, 
+      [getH(iH, 'Subcategory')]: item.subcategory || '',
       [getH(iH, 'Branch')]: item.branch,
       [getH(iH, 'Quantity')]: quantity,
       [getH(iH, 'Minimum_Quantity')]: minimumQuantity,
@@ -1548,11 +1550,17 @@ exports.resolveMaintenance = async (req, res) => {
 
 exports.addCategory = async (req, res) => {
   try {
-    const { categoryName, type } = req.body;
+    const categoryName = String(req.body?.categoryName || '').trim();
+    const requestedType = String(req.body?.type || 'ASSET').trim().toUpperCase();
+    if (!categoryName) return res.status(400).json({ success: false, message: 'Category name is required.' });
+    if (!['ASSET', 'CONSUMABLE'].includes(requestedType)) return res.status(400).json({ success: false, message: 'Category type must be ASSET or CONSUMABLE.' });
     const sheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('categories'));
     if (!sheet) return res.status(404).json({ success: false, message: "Categories sheet missing." });
 
     const h = sheet.headerValues;
+    const existingRows = await sheet.getRows();
+    const duplicate = existingRows.some(row => normalize(row.get(getH(h, 'Category_Name'))) === normalize(categoryName) && normalize(row.get(getH(h, 'Type')) || 'ASSET') === requestedType.toLowerCase());
+    if (duplicate) return res.status(409).json({ success: false, message: 'That category already exists.' });
     const catId = `CAT-${Math.floor(1000 + Math.random() * 9000)}`;
     const catCode = categoryName.substring(0, 3).toUpperCase();
 
@@ -1560,35 +1568,51 @@ exports.addCategory = async (req, res) => {
       [getH(h, 'Category_ID')]: catId,
       [getH(h, 'Category_Code')]: catCode,
       [getH(h, 'Category_Name')]: categoryName,
-      [getH(h, 'Type')]: type || 'ASSET',
+      [getH(h, 'Type')]: requestedType,
       [getH(h, 'Status')]: 'ACTIVE'
     });
 
     refreshAssetCache();
-    res.json({ success: true, message: `Category '${categoryName}' added successfully!` });
+    res.json({ success: true, message: `Category '${categoryName}' added successfully!`, category: { categoryid: catId, categoryname: categoryName, type: requestedType } });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 exports.addSubcategory = async (req, res) => {
   try {
-    const { categoryId, subcategoryName } = req.body;
+    const categoryId = String(req.body?.categoryId || '').trim();
+    const subcategoryName = String(req.body?.subcategoryName || '').trim();
+    if (!categoryId || !subcategoryName) return res.status(400).json({ success: false, message: 'Parent category and subcategory name are required.' });
     const sheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('subcategories'));
     if (!sheet) return res.status(404).json({ success: false, message: "Subcategories sheet missing." });
 
     const h = sheet.headerValues;
+    const categoriesSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('categories'));
+    const categories = categoriesSheet ? await categoriesSheet.getRows() : [];
+    const categoryHeaders = categoriesSheet?.headerValues || [];
+    const parentCategory = categories.find(row => normalize(row.get(getH(categoryHeaders, 'Category_ID'))) === normalize(categoryId));
+    if (!parentCategory) return res.status(404).json({ success: false, message: 'The selected parent category could not be found.' });
+    const parentCategoryName = parentCategory.get(getH(categoryHeaders, 'Category_Name')) || '';
+    const existingRows = await sheet.getRows();
+    const categoryIdHeader = getOptionalH(h, 'Category_ID');
+    const categoryNameHeader = getOptionalH(h, 'Category_Name');
+    const parentHeader = categoryIdHeader || categoryNameHeader || getH(h, 'Category_ID');
+    const parentValue = categoryIdHeader ? categoryId : parentCategoryName;
+    const subcategoryHeader = getOptionalH(h, 'Name') || getOptionalH(h, 'Subcategory_Name') || getH(h, 'Name');
+    const duplicate = existingRows.some(row => normalize(row.get(parentHeader)) === normalize(parentValue) && normalize(row.get(subcategoryHeader)) === normalize(subcategoryName));
+    if (duplicate) return res.status(409).json({ success: false, message: 'That subcategory already exists in this category.' });
     const subId = `SUB-${Math.floor(1000 + Math.random() * 9000)}`;
     const subCode = subcategoryName.substring(0, 3).toUpperCase();
 
     await sheet.addRow({
       [getH(h, 'Subcategory_ID')]: subId,
-      [getH(h, 'Category_ID')]: categoryId,
+      [parentHeader]: parentValue,
       [getH(h, 'Code')]: subCode,
-      [getH(h, 'Name')]: subcategoryName,
+      [subcategoryHeader]: subcategoryName,
       [getH(h, 'Status')]: 'ACTIVE'
     });
 
     refreshAssetCache();
-    res.json({ success: true, message: `Subcategory '${subcategoryName}' added successfully!` });
+    res.json({ success: true, message: `Subcategory '${subcategoryName}' added successfully!`, subcategory: { subcategoryid: subId, categoryid: categoryId, categoryname: parentCategoryName, name: subcategoryName } });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 

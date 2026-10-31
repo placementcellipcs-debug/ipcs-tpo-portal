@@ -320,7 +320,6 @@
 .asset-photo-field small, .asset-modal-head p, .asset-history-list p, .asset-condition-photo > div span { color:#a9bbcf !important; }
 .asset-disposal-records article { border-color:#684334 !important; background:#30241f !important; }
 .asset-toast { color:#eff5fb !important; border-color:#3c536b !important; background:#14243a !important; }
-@media (max-width: 700px) { .asset-depreciation-grid { grid-template-columns:1fr !important; } }
 
 /* Prismatic liquid-glass styling for the branch inventory and item register. */
 .asset-overview-hero { border-color:rgba(232,235,255,.24)!important;background:radial-gradient(ellipse at 88% 5%,rgba(187,111,255,.32),transparent 34%),radial-gradient(ellipse at 3% 95%,rgba(39,213,191,.26),transparent 43%),linear-gradient(115deg,rgba(31,75,87,.88),rgba(37,43,87,.83) 58%,rgba(82,45,83,.78))!important;box-shadow:0 20px 56px rgba(4,6,24,.17),inset 0 1px rgba(255,255,255,.13)!important;backdrop-filter:blur(22px) saturate(155%); }
