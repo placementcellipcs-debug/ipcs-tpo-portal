@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus, PaperPlaneTilt } from '@phosphor-icons/react';
+import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus, PaperPlaneTilt, Trash } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import DataSourceStatus from '../../components/DataSourceStatus';
 import { API_BASE } from '../../services/apiConfig';
@@ -15,6 +15,55 @@ const getVal = (obj, searchStr) => {
 const safeReportLinks = value => String(value || '').split(/\r?\n/).map(link => link.trim()).filter(link => {
   try { return ['http:', 'https:'].includes(new URL(link).protocol); } catch { return false; }
 });
+const MONTHLY_ACTIVITY_TYPES = [
+  { value: 'company_visit', label: 'Company visit', kind: 'companies' },
+  { value: 'instagram_poster', label: 'Instagram poster', kind: 'link' },
+  { value: 'instagram_video', label: 'Instagram video', kind: 'link' },
+  { value: 'linkedin_post', label: 'LinkedIn post', kind: 'link' },
+  { value: 'linkedin_video', label: 'LinkedIn video', kind: 'link' }
+];
+const createActivityItem = (type = 'company_visit') => ({
+  id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  type,
+  companies: type === 'company_visit' ? Array(10).fill('') : [],
+  value: ''
+});
+const getActivityTypeLabel = type => MONTHLY_ACTIVITY_TYPES.find(item => item.value === type)?.label || 'Activity';
+const parseActivityItems = (serialized, legacy = {}) => {
+  try {
+    const saved = JSON.parse(String(serialized || ''));
+    if (Array.isArray(saved)) return saved.map(item => ({
+      ...createActivityItem(item.type),
+      type: MONTHLY_ACTIVITY_TYPES.some(type => type.value === item.type) ? item.type : 'company_visit',
+      companies: Array.from({ length: 10 }, (_, index) => String(item.companies?.[index] || '')),
+      value: String(item.value || '')
+    }));
+  } catch { /* Older TPO_Stats rows use the legacy text columns. */ }
+
+  const companyNames = String(legacy.companyNamesVisited || '').split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+  const items = [];
+  for (let index = 0; index < companyNames.length; index += 10) {
+    items.push({ ...createActivityItem('company_visit'), companies: Array.from({ length: 10 }, (_, offset) => companyNames[index + offset] || '') });
+  }
+
+  const links = new Map();
+  [
+    ['posterLinks', 'instagram_poster'],
+    ['videoLinks', 'instagram_video'],
+    ['linkedinLinks', 'linkedin_post'],
+    ['instagramLinks', 'instagram_poster']
+  ].forEach(([field, fallbackType]) => safeReportLinks(legacy[field]).forEach(link => {
+    const lower = link.toLowerCase();
+    const type = /instagram\.com/.test(lower)
+      ? (/\/(reel|reels|tv|video)\//.test(lower) ? 'instagram_video' : 'instagram_poster')
+      : /linkedin\.com/.test(lower)
+        ? (/video|clip/.test(lower) ? 'linkedin_video' : 'linkedin_post')
+        : fallbackType;
+    if (!links.has(lower)) links.set(lower, { ...createActivityItem(type), type, value: link });
+  }));
+  items.push(...links.values());
+  return items;
+};
 
 export default function Reports() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -54,7 +103,7 @@ export default function Reports() {
   // 🚨 NEW STATES FOR TPO ACTIVITY
   const [tpoStatsData, setTpoStatsData] = useState([]);
   const [showActivityModal, setShowActivityModal] = useState(false);
-  const [activityForm, setActivityForm] = useState({ companiesVisited: 0, branchVideos: 0, branchPosters: 0, companyNamesVisited: '', posterLinks: '', videoLinks: '', linkedinLinks: '', instagramLinks: '' });
+  const [activityForm, setActivityForm] = useState({ activityItems: [] });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -353,16 +402,21 @@ export default function Reports() {
     const tpoEvents = events.filter(e => checkMonth(e.date) && tpoIdentities.includes(normalizePlacementText(e.tpo)));
     const drivesConducted = tpoEvents.filter(e => (e.type || '').toLowerCase().includes('drive')).length;
 
-    return {
-      tpo: t.userName || t.name,
-      companiesVisited: manualStats && manualStats['Companies Visited'] ? parseInt(manualStats['Companies Visited']) : autoUniqueCompanies,
-      branchVideos: manualStats ? parseInt(manualStats['Branch Videos'] || 0) : 0,
-      branchPosters: manualStats ? parseInt(manualStats['Branch Posters'] || 0) : 0,
+    const legacyActivity = {
       companyNamesVisited: manualStats ? getVal(manualStats, 'companynamesvisited') : '',
       posterLinks: manualStats ? getVal(manualStats, 'posterlinks') : '',
       videoLinks: manualStats ? getVal(manualStats, 'videolinks') : '',
       linkedinLinks: manualStats ? getVal(manualStats, 'linkedinlinks') : '',
-      instagramLinks: manualStats ? getVal(manualStats, 'instagramlinks') : '',
+      instagramLinks: manualStats ? getVal(manualStats, 'instagramlinks') : ''
+    };
+
+    return {
+      tpo: t.userName || t.name,
+      companiesVisited: manualStats ? (parseInt(manualStats['Companies Visited'] || 0, 10) || 0) : autoUniqueCompanies,
+      branchVideos: manualStats ? parseInt(manualStats['Branch Videos'] || 0) : 0,
+      branchPosters: manualStats ? parseInt(manualStats['Branch Posters'] || 0) : 0,
+      ...legacyActivity,
+      activityItems: parseActivityItems(manualStats ? getVal(manualStats, 'activityitems') : '', legacyActivity),
       drivesConducted: drivesConducted,
       joining: joined,
       notJoining: notJoined,
@@ -372,19 +426,40 @@ export default function Reports() {
 
   const submitActivityStats = async (e) => {
     e.preventDefault();
+    const activityItems = activityForm.activityItems.map(item => item.type === 'company_visit'
+      ? { type: item.type, companies: (item.companies || []).slice(0, 10).map(company => String(company || '').trim()).filter(Boolean) }
+      : { type: item.type, value: String(item.value || '').trim() })
+      .filter(item => item.type === 'company_visit' ? item.companies.length > 0 : item.value.length > 0);
+    const invalidLinkItem = activityItems.find(item => {
+      if (item.type === 'company_visit') return false;
+      try { return !['http:', 'https:'].includes(new URL(item.value).protocol); } catch { return true; }
+    });
+    if (invalidLinkItem) {
+      alert(`Enter a valid http or https link for ${getActivityTypeLabel(invalidLinkItem.type)}.`);
+      return;
+    }
+    const companyNames = activityItems.filter(item => item.type === 'company_visit').flatMap(item => item.companies);
+    const uniqueCompanyNames = [...new Map(companyNames.map(company => [company.toLowerCase(), company])).values()];
+    const instagramPostLinks = activityItems.filter(item => item.type === 'instagram_poster').map(item => item.value);
+    const instagramVideoLinks = activityItems.filter(item => item.type === 'instagram_video').map(item => item.value);
+    const linkedinPostLinks = activityItems.filter(item => item.type === 'linkedin_post').map(item => item.value);
+    const linkedinVideoLinks = activityItems.filter(item => item.type === 'linkedin_video').map(item => item.value);
+    const posterLinks = [...instagramPostLinks, ...linkedinPostLinks];
+    const videoLinks = [...instagramVideoLinks, ...linkedinVideoLinks];
     setIsSubmitting(true);
     try {
       const res = await axios.post(`${API_BASE}/api/tpo/activity`, {
         tpoName: myName || tpoData?.name,
-        companiesVisited: activityForm.companiesVisited,
-        branchVideos: activityForm.branchVideos,
-        branchPosters: activityForm.branchPosters,
+        companiesVisited: uniqueCompanyNames.length,
+        branchVideos: videoLinks.length,
+        branchPosters: posterLinks.length,
         reportMonth: monthFilter,
-        companyNamesVisited: activityForm.companyNamesVisited,
-        posterLinks: activityForm.posterLinks,
-        videoLinks: activityForm.videoLinks,
-        linkedinLinks: activityForm.linkedinLinks,
-        instagramLinks: activityForm.instagramLinks
+        activityItems,
+        companyNamesVisited: uniqueCompanyNames.join('\n'),
+        posterLinks: posterLinks.join('\n'),
+        videoLinks: videoLinks.join('\n'),
+        linkedinLinks: [...linkedinPostLinks, ...linkedinVideoLinks].join('\n'),
+        instagramLinks: [...instagramPostLinks, ...instagramVideoLinks].join('\n')
       });
       if (res.data.success) {
         setShowActivityModal(false);
@@ -400,18 +475,7 @@ export default function Reports() {
 
   const handleAddActivityClick = () => {
     const currentMyStat = tpoActivity.find(t => t.tpo === (tpoData?.name || tpoData?.userName));
-    if (currentMyStat) {
-      setActivityForm({
-        companiesVisited: currentMyStat.companiesVisited,
-        branchVideos: currentMyStat.branchVideos,
-        branchPosters: currentMyStat.branchPosters,
-        companyNamesVisited: currentMyStat.companyNamesVisited || '',
-        posterLinks: currentMyStat.posterLinks || '',
-        videoLinks: currentMyStat.videoLinks || '',
-        linkedinLinks: currentMyStat.linkedinLinks || '',
-        instagramLinks: currentMyStat.instagramLinks || ''
-      });
-    } else setActivityForm({ companiesVisited: 0, branchVideos: 0, branchPosters: 0, companyNamesVisited: '', posterLinks: '', videoLinks: '', linkedinLinks: '', instagramLinks: '' });
+    setActivityForm({ activityItems: currentMyStat?.activityItems?.map(item => ({ ...item })) || [] });
     setShowActivityModal(true);
   };
 
@@ -845,10 +909,10 @@ export default function Reports() {
                       <th>Placement Officer</th>
                       <th>Companies Visited</th>
                       <th>Drives Conducted</th>
-                      <th>Branch Videos</th>
-                      <th>Branch Posters</th>
-                      <th>Companies Visited</th>
-                      <th>Report Links</th>
+                      <th>Poster Items</th>
+                      <th>Video Items</th>
+                      <th>Visited Company Names</th>
+                      <th>Activity Links</th>
                       <th style={{ color: '#10b981' }}>Total Joined</th>
                       <th style={{ color: '#ef4444' }}>Not Joining</th>
                       <th className="dt-total">Total Apps Handled</th>
@@ -861,12 +925,12 @@ export default function Reports() {
                         <td>{t.tpo}</td>
                         <td className={t.companiesVisited === 0 ? 'dt-zero' : ''}>{t.companiesVisited}</td>
                         <td className={t.drivesConducted === 0 ? 'dt-zero' : ''}>{t.drivesConducted}</td>
-                        <td className={t.branchVideos === 0 ? 'dt-zero' : ''}>{t.branchVideos}</td>
                         <td className={t.branchPosters === 0 ? 'dt-zero' : ''}>{t.branchPosters}</td>
+                        <td className={t.branchVideos === 0 ? 'dt-zero' : ''}>{t.branchVideos}</td>
                         <td style={{ textAlign: 'left', minWidth: '180px' }}>{String(t.companyNamesVisited || '').split(/\r?\n/).filter(Boolean).join(', ') || '—'}</td>
                         <td style={{ textAlign: 'left', minWidth: '210px' }}>
-                          {[['Poster', t.posterLinks], ['Video', t.videoLinks], ['LinkedIn', t.linkedinLinks], ['Instagram', t.instagramLinks]].flatMap(([label, value]) => safeReportLinks(value).map((href, index) => ({ label, href, index }))).map(link => <a key={`${link.label}-${link.href}-${link.index}`} href={link.href} target="_blank" rel="noreferrer" style={{ display: 'inline-block', margin: '2px 7px 2px 0', color: 'var(--accent-primary)' }}>{link.label}</a>)}
-                          {!t.posterLinks && !t.videoLinks && !t.linkedinLinks && !t.instagramLinks ? '—' : null}
+                          {t.activityItems.filter(item => item.type !== 'company_visit' && item.value).map((item, index) => <a key={`${item.type}-${item.value}-${index}`} href={item.value} target="_blank" rel="noreferrer" style={{ display: 'inline-block', margin: '2px 7px 2px 0', color: 'var(--accent-primary)' }}>{getActivityTypeLabel(item.type)}</a>)}
+                          {!t.activityItems.some(item => item.type !== 'company_visit' && item.value) ? '—' : null}
                         </td>
                         <td style={{ color: '#10b981', fontWeight: 'bold' }} className={t.joining === 0 ? 'dt-zero' : ''}>{t.joining}</td>
                         <td style={{ color: '#ef4444', fontWeight: 'bold' }} className={t.notJoining === 0 ? 'dt-zero' : ''}>{t.notJoining}</td>
@@ -886,33 +950,38 @@ export default function Reports() {
       {showActivityModal && (
         <div className="modal-backdrop" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setShowActivityModal(false); }}>
           <div style={{ background: '#0f1523', padding: '30px', borderRadius: '12px', border: '1px solid #1e293b', width: '680px', maxWidth: '94vw', maxHeight: '90vh', overflowY: 'auto' }}>
-            <h2 style={{ marginTop: 0, color: '#fff', borderBottom: '1px solid #1e293b', paddingBottom: '15px' }}>Update Monthly Stats</h2>
+            <h2 style={{ marginTop: 0, color: '#fff', borderBottom: '1px solid #1e293b', paddingBottom: '15px' }}>Monthly company and media activity</h2>
             <form onSubmit={submitActivityStats}>
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', color: '#94a3b8', marginBottom: '8px' }}>Companies Visited</label>
-                <input type="number" required value={activityForm.companiesVisited} onChange={(e) => setActivityForm({...activityForm, companiesVisited: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#fff' }} />
+              <p style={{ color: '#94a3b8', fontSize: '.9rem', margin: '0 0 18px' }}>Add each visit or social post as its own activity. Counts in the monthly report are calculated from the entries below.</p>
+              <div style={{ display: 'grid', gap: '14px', marginBottom: '16px' }}>
+                {activityForm.activityItems.map((item, itemIndex) => (
+                  <section key={item.id} style={{ padding: '15px', border: '1px solid #29384f', borderRadius: '10px', background: '#121c2c' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(180px, 1fr) auto', alignItems: 'end', gap: '10px', marginBottom: '13px' }}>
+                      <div>
+                        <label htmlFor={`activity-type-${item.id}`} style={{ display: 'block', color: '#94a3b8', fontSize: '.8rem', marginBottom: '6px' }}>Activity type</label>
+                        <select id={`activity-type-${item.id}`} value={item.type} onChange={event => {
+                          const type = event.target.value;
+                          setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...createActivityItem(type), id: item.id } : entry) }));
+                        }} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#fff' }}>
+                          {MONTHLY_ACTIVITY_TYPES.map(type => <option key={type.value} value={type.value}>{type.label}</option>)}
+                        </select>
+                      </div>
+                      <button type="button" aria-label={`Remove activity ${itemIndex + 1}`} onClick={() => setActivityForm(current => ({ ...current, activityItems: current.activityItems.filter(entry => entry.id !== item.id) }))} style={{ width: '39px', height: '39px', display: 'grid', placeItems: 'center', borderRadius: '7px', border: '1px solid #693b4a', background: 'rgba(127,29,29,.2)', color: '#fda4af', cursor: 'pointer' }}><Trash size={17} /></button>
+                    </div>
+                    {item.type === 'company_visit' ? (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '9px' }}>
+                        {Array.from({ length: 10 }, (_, companyIndex) => <input key={companyIndex} aria-label={`Company name ${companyIndex + 1} for visit ${itemIndex + 1}`} value={item.companies?.[companyIndex] || ''} onChange={event => setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...entry, companies: Array.from({ length: 10 }, (_, index) => index === companyIndex ? event.target.value : entry.companies?.[index] || '') } : entry) }))} placeholder={`Company ${companyIndex + 1}`} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#0d1522', color: '#fff' }} />)}
+                      </div>
+                    ) : (
+                      <div>
+                        <label htmlFor={`activity-link-${item.id}`} style={{ display: 'block', color: '#94a3b8', fontSize: '.8rem', marginBottom: '6px' }}>{getActivityTypeLabel(item.type)} URL</label>
+                        <input id={`activity-link-${item.id}`} type="url" inputMode="url" value={item.value || ''} onChange={event => setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...entry, value: event.target.value } : entry) }))} placeholder="https://..." style={{ width: '100%', boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#0d1522', color: '#fff' }} />
+                      </div>
+                    )}
+                  </section>
+                ))}
               </div>
-              <div style={{ marginBottom: '15px' }}>
-                <label style={{ display: 'block', color: '#94a3b8', marginBottom: '8px' }}>Branch Videos</label>
-                <input type="number" required value={activityForm.branchVideos} onChange={(e) => setActivityForm({...activityForm, branchVideos: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#fff' }} />
-              </div>
-              <div style={{ marginBottom: '25px' }}>
-                <label style={{ display: 'block', color: '#94a3b8', marginBottom: '8px' }}>Branch Posters</label>
-                <input type="number" required value={activityForm.branchPosters} onChange={(e) => setActivityForm({...activityForm, branchPosters: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#fff' }} />
-              </div>
-              <p style={{ color: '#94a3b8', fontSize: '.9rem', margin: '-10px 0 18px' }}>Add the supporting details that will appear in the monthly email report. Put one item or link on each line.</p>
-              {[
-                ['companyNamesVisited', 'Companies visited', 'Company names, one per line'],
-                ['posterLinks', 'Poster links', 'Poster URL, one per line'],
-                ['videoLinks', 'Video links', 'Video URL, one per line'],
-                ['linkedinLinks', 'LinkedIn links', 'LinkedIn URL, one per line'],
-                ['instagramLinks', 'Instagram links', 'Instagram URL, one per line']
-              ].map(([key, label, placeholder]) => (
-                <div key={key} style={{ marginBottom: '15px' }}>
-                  <label htmlFor={`activity-${key}`} style={{ display: 'block', color: '#94a3b8', marginBottom: '8px' }}>{label}</label>
-                  <textarea id={`activity-${key}`} rows={key === 'companyNamesVisited' ? 3 : 2} value={activityForm[key] || ''} onChange={(e) => setActivityForm({ ...activityForm, [key]: e.target.value })} placeholder={placeholder} style={{ width: '100%', padding: '10px', resize: 'vertical', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#fff', boxSizing: 'border-box' }} />
-                </div>
-              ))}
+              <button type="button" disabled={activityForm.activityItems.length >= 20} onClick={() => setActivityForm(current => ({ ...current, activityItems: [...current.activityItems, createActivityItem()] }))} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', marginBottom: '20px', padding: '9px 13px', borderRadius: '7px', border: '1px solid rgba(45,212,191,.4)', background: 'rgba(13,148,136,.15)', color: '#99f6e4', fontWeight: 700, cursor: activityForm.activityItems.length >= 20 ? 'not-allowed' : 'pointer', opacity: activityForm.activityItems.length >= 20 ? .55 : 1 }}><Plus size={17} weight="bold" /> Add activity</button>
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                 <button type="button" onClick={() => setShowActivityModal(false)} style={{ padding: '10px 20px', borderRadius: '6px', border: '1px solid #334155', background: 'transparent', color: '#fff', cursor: 'pointer' }}>Cancel</button>
                 <button type="submit" disabled={isSubmitting} style={{ padding: '10px 20px', borderRadius: '6px', border: 'none', background: 'var(--accent-primary)', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
