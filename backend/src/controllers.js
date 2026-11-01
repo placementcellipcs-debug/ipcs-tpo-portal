@@ -34,6 +34,7 @@ const {
 const { autoCreateDesignTask } = require('./designControllers');
 const { normalizePlacementText, placementIdentity, latestPlacementRows } = require('./placementRecords');
 const { calculateDashboardPlacementCounts } = require('./dashboardStats');
+const { isPlacementEligiblePending, placementOutcome } = require('./placementMetrics');
 const { buildPlacementReconciliation } = require('./placementReconciliation');
 const { PLACEMENT_AUDIT_SHEET, PLACEMENT_AUDIT_HEADERS, createPlacementAuditEvent } = require('./placementAudit');
 const { createTalentinoSessionResolver } = require('./talentinoSessionMatch');
@@ -175,34 +176,41 @@ const safeParseDate = (dateStr) => {
 };
 
 // 🚨 UPSERT HELPER FOR TPO_STATS
-const syncTpoStats = async (userName, updates) => {
+const syncTpoStats = async (userName, updates, reportMonth) => {
   if (!userName) throw new Error("TPO Name is missing");
   
   const sheet = doc.sheetsByTitle["TPO_Stats"];
   if (!sheet) {
     throw new Error("The sheet named 'TPO_Stats' was not found in the Google Spreadsheet.");
   }
+
+  const normalizedReportMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(reportMonth || ''))
+    ? String(reportMonth)
+    : new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
+  await ensurePlacementHeaders(sheet, ['Report Month', ...Object.keys(updates)]);
   
   const rows = await sheet.getRows();
-  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' });
-  const currentMonthPrefix = formatter.format(new Date()).slice(0, 7); // e.g., "2026-09"
   
   let targetRow = rows.find(r => {
      const un = (r.get('USER') || '').toLowerCase().trim();
+     const storedMonth = String(r.get('Report Month') || '').trim();
+     if (un !== userName.toLowerCase().trim()) return false;
+     if (storedMonth) return storedMonth === normalizedReportMonth;
      const ts = r.get('TimeStamp') || '';
      const rowDate = safeParseDate(ts);
-     const rowMonthStr = rowDate ? formatter.format(rowDate).slice(0, 7) : '';
-     return un === userName.toLowerCase().trim() && rowMonthStr === currentMonthPrefix;
+     const rowMonthStr = rowDate ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(rowDate).slice(0, 7) : '';
+     return rowMonthStr === normalizedReportMonth;
   });
 
+  const normalizedUpdates = { 'Report Month': normalizedReportMonth, ...updates };
   if (targetRow) {
-     targetRow.assign(updates);
+     targetRow.assign(normalizedUpdates);
      await targetRow.save();
   } else {
      await sheet.addRow({
        'TimeStamp': formatIndiaTimestamp(),
        'USER': userName,
-       ...updates
+       ...normalizedUpdates
      });
   }
 };
@@ -1151,6 +1159,7 @@ exports.getDashboardStats = async (req, res) => {
       // Count every TPO_Log row whose Status is exactly Placed, matching the
       // source-of-truth rule used by the monthly placement report.
       placed: placementCounts.placed,
+      placementPending: placementCounts.placementPending,
       activeVacancies: activeVacs,
       totalCompanies
     }, 
@@ -1168,12 +1177,6 @@ exports.getStudents = async (req, res) => {
   }
   if (!cache) return res.status(503).json({ success: false, message: 'Student data is still syncing. Please retry shortly.' });
   let students = []; let stats = { total: 0, pending: 0, notResponding: 0, noNeed: 0, branchCounts: {}, courseCounts: {} };
-  const percentageValue = value => {
-    const match = String(value ?? '').replace(/,/g, '.').match(/-?\d+(?:\.\d+)?/);
-    if (!match) return 0;
-    const parsed = Number(match[0]);
-    return Number.isFinite(parsed) ? Math.max(0, Math.min(100, parsed <= 1 && parsed > 0 ? parsed * 100 : parsed)) : 0;
-  };
   const isActionLog = row => /^(yes|true|1)$/i.test(getValByHeader(row, ['tpoactionlog']));
   const canonicalTpoLogs = (cache.tpoLogs || []).filter(row => !isActionLog(row));
   const placedRolls = new Set();
@@ -1290,11 +1293,11 @@ exports.getStudents = async (req, res) => {
       const pLower = normalizePlacementText(pStatus);
       const coursePercentage = getValByHeader(row, ['coursepercentage']) || '';
       const metrics = placementMetricsFor(row);
-      const isPlacementNeeded = pLower.includes('pending') || pLower.includes('placementneeded');
+      const isPlacementNeeded = isPlacementEligiblePending(pStatus, coursePercentage);
 
       if (pLower.includes('notresponding') || metrics.notResponding) stats.notResponding++;
       else if (pLower.includes('noneed')) stats.noNeed++;
-      else if (isPlacementNeeded && percentageValue(coursePercentage) >= 80) stats.pending++;
+      else if (isPlacementNeeded) stats.pending++;
 
       stats.branchCounts[branch] = (stats.branchCounts[branch] || 0) + 1;
       stats.courseCounts[course] = (stats.courseCounts[course] || 0) + 1;
@@ -3561,6 +3564,18 @@ exports.getReports = async (req, res) => {
       timestamp: getValByHeader(row, ['timestamp']) // 🚨 Added to plot the Area Chart applications
     });
   });
+
+  // One portal-wide placement-pending total is shared with every report view.
+  // TPO_Log placements override a stale student-sheet placement status.
+  const portalPlacementPending = (cache.students || []).reduce((count, row) => {
+    const roll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+    const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+    const branch = normalizePlacementText(getValByHeader(row, ['branch']));
+    const placedInTpoLog = (roll && placedStudentRolls.has(roll))
+      || (name && placedStudentNameBranches.has(`${name}|${branch}`));
+    const placementStatus = placedInTpoLog ? 'Placed' : getValByHeader(row, ['placementstat', 'placementstatus']);
+    return count + (isPlacementEligiblePending(placementStatus, getValByHeader(row, ['coursepercentage'])) ? 1 : 0);
+  }, 0);
   
   const studentsByRoll = new Map();
   const studentsByName = new Map();
@@ -3695,6 +3710,7 @@ exports.getReports = async (req, res) => {
     events,
     tpoLogs,
     placementReportLogs,
+    portalPlacementPending,
     tpoStats: tpoStatsList,
     dataMeta: {
       lastRefreshAttemptAt: cache.cacheUpdatedAt || '',
@@ -8047,23 +8063,268 @@ exports.getSessionUser = (email, sessionToken) => {
 // 🚨 SUBMIT TPO ACTIVITY STATS
 // =========================================================
 exports.updateTpoActivity = async (req, res) => {
-  const { companiesVisited, branchVideos, branchPosters } = req.body;
-  const tpoName = String(req.portalUser?.name || '').trim();
+  const { companiesVisited, branchVideos, branchPosters, reportMonth } = req.body || {};
+  const user = req.portalUser || {};
+  const tpoName = String(user.name || '').trim();
+  if (!isPlacementTrackerAdmin(user) && !isPlacementTrackerTpo(user)) {
+    return res.status(403).json({ success: false, message: 'Monthly placement activity is available to TPOs and placement administrators.' });
+  }
   if (!tpoName) return res.status(401).json({ success: false, message: 'Sign in again before submitting activity.' });
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(reportMonth || ''))) {
+    return res.status(400).json({ success: false, message: 'Choose a valid report month.' });
+  }
   const values = [companiesVisited, branchVideos, branchPosters];
   if (values.some(value => value === undefined || value === null || value === '' || !Number.isFinite(Number(value)) || Number(value) < 0)) {
     return res.status(400).json({ success: false, message: 'Enter a zero or positive number for each activity count.' });
   }
+
+  const reportTextFields = ['companyNamesVisited', 'posterLinks', 'videoLinks', 'linkedinLinks', 'instagramLinks'];
+  const normalizedText = {};
+  for (const field of reportTextFields) {
+    const raw = String(req.body?.[field] || '').trim();
+    if (raw.length > 12000) return res.status(400).json({ success: false, message: `${field} is too long (maximum 12,000 characters).` });
+    const lines = raw.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    if (lines.length > 100) return res.status(400).json({ success: false, message: `${field} can contain up to 100 lines.` });
+    if (field !== 'companyNamesVisited') {
+      const invalidLink = lines.find(line => {
+        try { return !['http:', 'https:'].includes(new URL(line).protocol); }
+        catch { return true; }
+      });
+      if (invalidLink) return res.status(400).json({ success: false, message: `Enter valid http or https URLs in ${field}.` });
+    }
+    normalizedText[field] = lines.join('\n');
+  }
   try {
+    const uniqueCompanies = [...new Set(normalizedText.companyNamesVisited.split('\n').map(value => normalizePlacementText(value)).filter(Boolean))].length;
+    const posterLinksCount = normalizedText.posterLinks ? normalizedText.posterLinks.split('\n').length : 0;
+    const videoLinksCount = normalizedText.videoLinks ? normalizedText.videoLinks.split('\n').length : 0;
     await syncTpoStats(tpoName, {
-      'Companies Visited': companiesVisited,
-      'Branch Videos': branchVideos,
-      'Branch Posters': branchPosters
-    });
-    refreshCache();
+      'Companies Visited': Math.max(Number(companiesVisited), uniqueCompanies),
+      'Branch Videos': Math.max(Number(branchVideos), videoLinksCount),
+      'Branch Posters': Math.max(Number(branchPosters), posterLinksCount),
+      'Company Names Visited': normalizedText.companyNamesVisited,
+      'Poster Links': normalizedText.posterLinks,
+      'Video Links': normalizedText.videoLinks,
+      'LinkedIn Links': normalizedText.linkedinLinks,
+      'Instagram Links': normalizedText.instagramLinks
+    }, reportMonth);
+    try { await refreshCache(); }
+    catch (refreshError) { console.warn('TPO activity saved, but the live cache refresh failed:', refreshError.message); }
     res.json({ success: true, message: "Activity stats updated successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+const MONTHLY_TPO_REPORT_RECIPIENT = 'gifty@ipcsglobal.com';
+const monthlyReportEscape = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+const monthlyReportLines = value => String(value || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+const monthlyReportLinkList = value => {
+  const links = monthlyReportLines(value);
+  return links.length ? `<ul style="margin:0;padding-left:18px">${links.map(link => {
+    let href = '';
+    try { const url = new URL(link); if (['http:', 'https:'].includes(url.protocol)) href = url.href; } catch {}
+    return `<li>${href ? `<a href="${monthlyReportEscape(href)}" style="color:#087f8c">${monthlyReportEscape(link)}</a>` : monthlyReportEscape(link)}</li>`;
+  }).join('')}</ul>` : '<span style="color:#667085">—</span>';
+};
+
+exports.sendMonthlyTpoReport = async (req, res) => {
+  const user = req.portalUser || {};
+  if (!isPlacementTrackerAdmin(user) && !isPlacementTrackerTpo(user)) {
+    return res.status(403).json({ success: false, message: 'Only TPOs and placement administrators can send the monthly report.' });
+  }
+  const month = String(req.body?.month || '').trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    return res.status(400).json({ success: false, message: 'Choose a valid report month.' });
+  }
+
+  let cache = getCache();
+  if (!cache) { await refreshCache(); cache = getCache(); }
+  if (!cache) return res.status(503).json({ success: false, message: 'Placement data is still syncing. Please retry shortly.' });
+
+  const isAdmin = isPlacementTrackerAdmin(user);
+  const userIdentities = [user.name, user.email, user.username, user.loginId, user.employeeId].map(normalizePlacementText).filter(Boolean);
+  const isMonthDate = value => {
+    if (!value) return false;
+    const date = safeParseDate(value);
+    return Boolean(date && `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` === month);
+  };
+  const statMonth = row => {
+    const explicitMonth = getValByHeader(row, ['reportmonth']);
+    if (/^\d{4}-(0[1-9]|1[0-2])$/.test(explicitMonth)) return explicitMonth;
+    const date = safeParseDate(getFirstNonEmptyValByHeader(row, ['timestamp', 'date']));
+    return date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : '';
+  };
+  const isActionLog = row => /^(yes|true|1)$/i.test(getValByHeader(row, ['tpoactionlog']));
+  const placementRows = (cache.tpoLogs || []).filter(row => {
+    if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed' || isActionLog(row)) return false;
+    if (!isMonthDate(getFirstNonEmptyValByHeader(row, ['dateplaced', 'timestamp', 'date']))) return false;
+    if (isAdmin) return true;
+    const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']);
+    return placementOwnerMatchesUser(owner, user)
+      || (!owner && hasPlacementBranchAccess(getValByHeader(row, ['branch', 'sittingbranch']), user));
+  });
+
+  const activityRows = (cache.tpoStats || []).filter(row => {
+    if (statMonth(row) !== month) return false;
+    const owner = normalizePlacementText(getValByHeader(row, ['user', 'tponame', 'placementofficer']));
+    return isAdmin || userIdentities.includes(owner);
+  });
+  const pendingStudents = [];
+  const placedRolls = new Set();
+  const placedNamesByBranch = new Set();
+  (cache.tpoLogs || []).forEach(row => {
+    if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed' || isActionLog(row)) return;
+    const roll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+    const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+    const branch = normalizePlacementText(getValByHeader(row, ['branch', 'sittingbranch']));
+    if (roll) placedRolls.add(roll);
+    else if (name && branch) placedNamesByBranch.add(`${name}|${branch}`);
+  });
+  (cache.students || []).forEach(row => {
+    const branch = getValByHeader(row, ['branch', 'sittingbranch']);
+    if (!isAdmin && !hasPlacementBranchAccess(branch, user)) return;
+    const roll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+    const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+    const normalizedBranch = normalizePlacementText(branch);
+    const status = (roll && placedRolls.has(roll)) || (name && placedNamesByBranch.has(`${name}|${normalizedBranch}`))
+      ? 'Placed'
+      : getValByHeader(row, ['placementstatus', 'placementstat']);
+    if (isPlacementEligiblePending(status, getValByHeader(row, ['coursepercentage']))) pendingStudents.push(row);
+  });
+  const portalPlacementPending = (cache.students || []).reduce((count, row) => {
+    const roll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+    const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+    const branch = normalizePlacementText(getValByHeader(row, ['branch', 'sittingbranch']));
+    const placedInLog = (roll && placedRolls.has(roll)) || (name && placedNamesByBranch.has(`${name}|${branch}`));
+    const status = placedInLog ? 'Placed' : getValByHeader(row, ['placementstatus', 'placementstat']);
+    return count + (isPlacementEligiblePending(status, getValByHeader(row, ['coursepercentage'])) ? 1 : 0);
+  }, 0);
+
+  const studentsByRoll = new Map();
+  (cache.students || []).forEach(row => {
+    const roll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+    if (roll && !studentsByRoll.has(roll)) studentsByRoll.set(roll, row);
+  });
+  const activityByOwner = new Map(activityRows.map(row => [normalizePlacementText(getValByHeader(row, ['user', 'tponame', 'placementofficer'])), row]));
+  const groupKey = row => normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby'])) || 'unassigned';
+  const tpoNames = [...new Set([...activityByOwner.keys(), ...placementRows.map(groupKey)])];
+  const tpoSummaryRows = tpoNames.map(ownerKey => {
+    const ownedPlacements = placementRows.filter(row => groupKey(row) === ownerKey);
+    const activity = activityByOwner.get(ownerKey);
+    const displayName = activity ? getValByHeader(activity, ['user', 'tponame', 'placementofficer'])
+      : (ownedPlacements.length ? getValByHeader(ownedPlacements[0], ['placementofficer', 'tpo', 'tponame']) : ownerKey);
+    const companies = monthlyReportLines(activity && getValByHeader(activity, ['companynamesvisited']));
+    const distinctCompanies = [...new Set(companies.map(name => normalizePlacementText(name)))].length;
+    return {
+      displayName: displayName || ownerKey,
+      placements: ownedPlacements.length,
+      joined: ownedPlacements.filter(row => placementOutcome(getValByHeader(row, ['status']), getValByHeader(row, ['joiningstatus'])).joined).length,
+      companiesVisited: Math.max(Number(getValByHeader(activity, ['companiesvisited'])) || 0, distinctCompanies),
+      activity
+    };
+  });
+  const courseCounts = new Map();
+  placementRows.forEach(row => {
+    const course = getValByHeader(row, ['course', 'program']) || 'Others';
+    courseCounts.set(course, (courseCounts.get(course) || 0) + 1);
+  });
+  const branchCounts = new Map();
+  placementRows.forEach(row => {
+    const branch = getValByHeader(row, ['branch', 'sittingbranch']) || 'Unspecified';
+    branchCounts.set(branch, (branchCounts.get(branch) || 0) + 1);
+  });
+  const pendingByBranch = new Map();
+  pendingStudents.forEach(row => {
+    const branch = getValByHeader(row, ['branch', 'sittingbranch']) || 'Unspecified';
+    const course = getValByHeader(row, ['course', 'program']) || 'Others';
+    const key = `${branch}\u0000${course}`;
+    pendingByBranch.set(key, { branch, course, count: (pendingByBranch.get(key)?.count || 0) + 1 });
+  });
+  const applicationRows = (cache.applications || []).filter(row => {
+    if (!isMonthDate(getFirstNonEmptyValByHeader(row, ['date', 'timestamp', 'dateapplied']))) return false;
+    if (isAdmin) return true;
+    return placementOwnerMatchesUser(getValByHeader(row, ['tponame', 'placementofficer', 'createdby']), user);
+  });
+  const newsletterApplicationsByCourse = new Map();
+  const connectedCompanies = new Set();
+  applicationRows.forEach(row => {
+    const course = getValByHeader(row, ['course', 'program']) || 'Others';
+    newsletterApplicationsByCourse.set(course, (newsletterApplicationsByCourse.get(course) || 0) + 1);
+    const company = getValByHeader(row, ['companyname', 'company']).trim();
+    if (company) connectedCompanies.add(company);
+  });
+
+  const table = (headers, rows) => `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 22px;font-size:13px"><thead><tr>${headers.map(header => `<th style="padding:9px;background:#eaf3f7;border:1px solid #d4e1e7;text-align:left;color:#183747">${monthlyReportEscape(header)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map(row => `<tr>${row.map(value => `<td style="padding:9px;border:1px solid #d4e1e7;vertical-align:top">${value}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}" style="padding:12px;border:1px solid #d4e1e7;color:#667085">No records for this month.</td></tr>`}</tbody></table>`;
+  const placedRowsHtml = placementRows.map(row => {
+    const roll = getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']);
+    const student = studentsByRoll.get(normalizePlacementText(roll));
+    return [
+      monthlyReportEscape(roll || '—'),
+      monthlyReportEscape(getValByHeader(row, ['studentname', 'name']) || getValByHeader(student, ['name', 'studentname']) || '—'),
+      monthlyReportEscape(getValByHeader(row, ['branch', 'sittingbranch']) || '—'),
+      monthlyReportEscape(getValByHeader(row, ['course', 'program']) || '—'),
+      monthlyReportEscape(getValByHeader(row, ['companyname', 'company']) || '—'),
+      monthlyReportEscape(getValByHeader(row, ['position', 'role']) || '—'),
+      monthlyReportEscape(getValByHeader(row, ['package', 'salary']) || '—'),
+      monthlyReportEscape(getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || '—'),
+      monthlyReportEscape(getValByHeader(row, ['joiningstatus']) || getValByHeader(row, ['status']) || 'Placed'),
+      monthlyReportEscape(getValByHeader(student, ['mailid', 'email']) || '—')
+    ];
+  });
+  const pendingRowsHtml = [...pendingByBranch.values()].sort((a, b) => a.branch.localeCompare(b.branch) || a.course.localeCompare(b.course))
+    .map(item => [monthlyReportEscape(item.branch), monthlyReportEscape(item.course), String(item.count)]);
+  const activityHtml = activityRows.map(row => {
+    const owner = getValByHeader(row, ['user', 'tponame', 'placementofficer']) || 'TPO';
+    return `<section style="margin:20px 0;padding:16px;border:1px solid #d4e1e7;border-radius:10px"><h3 style="margin:0 0 10px;color:#183747">${monthlyReportEscape(owner)} · Monthly Highlights</h3><p><b>Companies visited:</b> ${monthlyReportEscape(getValByHeader(row, ['companiesvisited']) || '0')}</p><p><b>Company names:</b> ${monthlyReportLines(getValByHeader(row, ['companynamesvisited'])).map(monthlyReportEscape).join(', ') || '—'}</p><p><b>Placements:</b> ${tpoSummaryRows.find(item => normalizePlacementText(item.displayName) === normalizePlacementText(owner))?.placements || 0}</p><p><b>Posters:</b> ${monthlyReportEscape(getValByHeader(row, ['branchposters']) || '0')}</p>${monthlyReportLinkList(getValByHeader(row, ['posterlinks']))}<p><b>Videos:</b> ${monthlyReportEscape(getValByHeader(row, ['branchvideos']) || '0')}</p>${monthlyReportLinkList(getValByHeader(row, ['videolinks']))}<p><b>LinkedIn:</b></p>${monthlyReportLinkList(getValByHeader(row, ['linkedinlinks']))}<p><b>Instagram:</b></p>${monthlyReportLinkList(getValByHeader(row, ['instagramlinks']))}</section>`;
+  }).join('');
+  const monthName = new Date(`${month}-01T12:00:00`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' });
+  const reportTitle = isAdmin ? `IPCS Global Placement Report · ${monthName}` : `${user.name || 'TPO'} · Placement Report · ${monthName}`;
+  const html = `
+    <div style="font-family:Arial,sans-serif;color:#243746;max-width:980px;margin:auto;line-height:1.5">
+      <header style="padding:24px;background:#102c3d;color:#fff;border-radius:12px">
+        <div style="font-size:12px;letter-spacing:2px;color:#74e0c1">IPCS GLOBAL · MONTHLY PLACEMENT REPORT</div>
+        <h1 style="margin:8px 0 0;font-size:26px">${monthlyReportEscape(reportTitle)}</h1>
+        <p style="margin:8px 0 0;color:#d6e3e9">Prepared by ${monthlyReportEscape(user.name || 'Placement team')} · ${isAdmin ? 'All portal records' : 'Assigned placement scope'}</p>
+      </header>
+      <p>Dear Gifty,</p><p>Please find the placement activity summary for <b>${monthlyReportEscape(monthName)}</b>.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin:16px 0">
+        <div style="padding:14px 18px;background:#eef8f5;border-radius:8px"><b>${placementRows.length}</b><br>Placements</div>
+        <div style="padding:14px 18px;background:#fff7e8;border-radius:8px"><b>${pendingStudents.length}</b><br>Eligible pending in this report scope</div>
+        <div style="padding:14px 18px;background:#fff1df;border-radius:8px"><b>${portalPlacementPending}</b><br>Portal-wide eligible pending</div>
+        <div style="padding:14px 18px;background:#eef5ff;border-radius:8px"><b>${applicationRows.length}</b><br>Opening applications</div>
+      </div>
+      <h2 style="color:#183747">Placement status by course</h2>
+      ${table(['Course', 'Placements'], [...courseCounts.entries()].sort((a,b) => a[0].localeCompare(b[0])).map(([course,count]) => [monthlyReportEscape(course), String(count)]))}
+      <h2 style="color:#183747">Newsletter and opening activity</h2>
+      ${table(['Course', 'Applications'], [...newsletterApplicationsByCourse.entries()].sort((a,b) => a[0].localeCompare(b[0])).map(([course,count]) => [monthlyReportEscape(course), String(count)]))}
+      ${table(['Companies connected through openings', 'Count'], [[monthlyReportEscape([...connectedCompanies].join(', ') || '—'), String(connectedCompanies.size)]])}
+      <h2 style="color:#183747">Center-wise placements</h2>
+      ${table(['Branch', 'Placed students'], [...branchCounts.entries()].sort((a,b) => a[0].localeCompare(b[0])).map(([branch,count]) => [monthlyReportEscape(branch), String(count)]))}
+      <h2 style="color:#183747">TPO-wise achievements</h2>
+      ${table(['TPO', 'Companies visited', 'Placements', 'Joined'], tpoSummaryRows.map(row => [monthlyReportEscape(row.displayName), String(row.companiesVisited), String(row.placements), String(row.joined)]))}
+      <h2 style="color:#183747">Placed student details</h2>
+      ${table(['Roll number', 'Student', 'Branch', 'Course', 'Company', 'Role', 'Package', 'TPO', 'Joining status', 'Email'], placedRowsHtml)}
+      <h2 style="color:#183747">Placement pending by branch and course</h2>
+      <p>Only students marked Pending or Placement Needed, including Pending for Placement, with at least 80% course completion are counted. A TPO_Log record marked Placed overrides a stale student-sheet status.</p>
+      ${table(['Branch', 'Course', 'Students'], pendingRowsHtml)}
+      <h2 style="color:#183747">Companies visited and media</h2>
+      ${activityHtml || '<p>No company visit or media details were entered for this report month.</p>'}
+      <p>Regards,<br>${monthlyReportEscape(user.name || 'IPCS Global Placement Team')}</p>
+    </div>`;
+  const subject = isAdmin ? `IPCS Global Monthly Placement Report - ${monthName}` : `${user.name || 'TPO'} - Monthly Placement Report - ${monthName}`;
+
+  try {
+    const delivery = await sendMailAndLog({
+      from: process.env.EMAIL_USER ? `"IPCS Global Placement Team" <${process.env.EMAIL_USER}>` : undefined,
+      to: MONTHLY_TPO_REPORT_RECIPIENT,
+      subject,
+      text: `IPCS Global monthly placement report for ${monthName}. Placements: ${placementRows.length}. Eligible placement pending students (portal-wide): ${portalPlacementPending}.`,
+      html
+    }, { name: user.name || 'IPCS Global Placement Team', email: MONTHLY_TPO_REPORT_RECIPIENT, type: 'Monthly TPO Placement Report', category: 'placement' });
+    return res.json({ success: true, queued: Boolean(delivery?.queued), recipient: MONTHLY_TPO_REPORT_RECIPIENT, month });
+  } catch (error) {
+    return res.status(502).json({ success: false, message: `The report could not be sent: ${String(error.message || error).slice(0, 300)}` });
   }
 };
 

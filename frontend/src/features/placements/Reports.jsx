@@ -1,24 +1,29 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus } from '@phosphor-icons/react';
+import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus, PaperPlaneTilt } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import DataSourceStatus from '../../components/DataSourceStatus';
 import { API_BASE } from '../../services/apiConfig';
 import { normalizePlacementText } from '../../utils/placementRecords';
-import { isPlacedStatus, placementOutcome } from '../../utils/placementMetrics';
+import { isPlacedStatus, isPlacementEligiblePending, placementOutcome } from '../../utils/placementMetrics';
 import { parsePortalDateTime } from '../../utils/dateFormat';
 
 const getVal = (obj, searchStr) => {
   const key = Object.keys(obj || {}).find(k => k.toLowerCase().replace(/\s/g, '').includes(searchStr.toLowerCase().replace(/\s/g, '')));
   return key ? obj[key] : '';
 };
+const safeReportLinks = value => String(value || '').split(/\r?\n/).map(link => link.trim()).filter(link => {
+  try { return ['http:', 'https:'].includes(new URL(link).protocol); } catch { return false; }
+});
 
 export default function Reports() {
   const tpoDataStr = localStorage.getItem('tpoData');
   let tpoData = null;
   try { tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null; } catch { tpoData = null; }
   const role = String(tpoData?.role || '').toUpperCase();
-  const isSuperAdmin = tpoData?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].some(adminRole => role.includes(adminRole));
+  const isSuperAdmin = tpoData?.accessType === 'superadmin' || role.includes('ADMIN') || role.includes('PLACEMENT TEAM') || ['GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].some(adminRole => role.includes(adminRole));
+  const isTpo = role === 'TPO' || role.includes('PLACEMENT OFFICER');
+  const canSendMonthlyReport = isSuperAdmin || isTpo;
   const myName = (tpoData?.name || '').toLowerCase().trim();
   const myIdentities = [tpoData?.name, tpoData?.email].map(normalizePlacementText).filter(Boolean);
   
@@ -40,13 +45,16 @@ export default function Reports() {
   const [reportError, setReportError] = useState('');
   const [reportReloadKey, setReportReloadKey] = useState(0);
   const [dataMeta, setDataMeta] = useState(null);
+  const [portalPlacementPending, setPortalPlacementPending] = useState(0);
+  const [sendingReport, setSendingReport] = useState(false);
+  const [sendReportMessage, setSendReportMessage] = useState('');
   // Replaced hardcoded courses with dynamic state (initialized with the 5 defaults)
   const [mainCourses, setMainCourses] = useState(['Industrial Automation', 'BMS AND CCTV', 'Information technology (IT)', 'Digital Marketing', 'Embedded and IoT']);
 
   // 🚨 NEW STATES FOR TPO ACTIVITY
   const [tpoStatsData, setTpoStatsData] = useState([]);
   const [showActivityModal, setShowActivityModal] = useState(false);
-  const [activityForm, setActivityForm] = useState({ companiesVisited: 0, branchVideos: 0, branchPosters: 0 });
+  const [activityForm, setActivityForm] = useState({ companiesVisited: 0, branchVideos: 0, branchPosters: 0, companyNamesVisited: '', posterLinks: '', videoLinks: '', linkedinLinks: '', instagramLinks: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -63,6 +71,7 @@ export default function Reports() {
         const reportApplications = data.applications || [];
         const reportLogs = data.tpoLogs || [];
         setDataMeta(data.dataMeta || null);
+        setPortalPlacementPending(Number(data.portalPlacementPending || 0));
         setStudents(reportStudents);
         setApplications(reportApplications);
         setEvents(data.events || []);
@@ -139,6 +148,7 @@ export default function Reports() {
 
   const isAssignedBranch = (b) => {
     if (!tpoData) return false;
+    if (isSuperAdmin) return true;
     const assignedBranches = Array.isArray(tpoData.assignedBranchesArray)
       ? tpoData.assignedBranchesArray
       : String(tpoData.assignedBranchesArray || '').split(/[\n,;]+/);
@@ -287,12 +297,7 @@ export default function Reports() {
   
   students.forEach(s => {
     if (isAssignedBranch(s.branch) && pendingByCourse[s.branch]) {
-      const stat = normalizePlacementText(s.placementStatus);
-      const percentageMatch = String(s.coursePercentage || '').replace(/,/g, '.').match(/\d+(?:\.\d+)?/);
-      const rawPercentage = percentageMatch ? Number(percentageMatch[0]) : 0;
-      const percentage = rawPercentage > 0 && rawPercentage <= 1 ? rawPercentage * 100 : rawPercentage;
-      const placementNeeded = stat.includes('pending') || stat.includes('placementneeded');
-      if (placementNeeded && percentage >= 80) {
+      if (isPlacementEligiblePending(s.placementStatus, s.coursePercentage)) {
         const c = getCourse(s.course);
         if (pendingByCourse[s.branch][c] !== undefined) {
           pendingByCourse[s.branch][c]++;
@@ -318,7 +323,9 @@ export default function Reports() {
       const statUser = (stat['USER'] || stat['user'] || '').toLowerCase().trim();
       let statMonth = '';
       const ts = getVal(stat, 'timestamp') || '';
-      if (ts) {
+      const reportMonth = String(getVal(stat, 'reportmonth') || '').trim();
+      if (reportMonth) statMonth = reportMonth;
+      else if (ts) {
         const d = new Date(ts);
         if (!isNaN(d)) statMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       }
@@ -351,6 +358,11 @@ export default function Reports() {
       companiesVisited: manualStats && manualStats['Companies Visited'] ? parseInt(manualStats['Companies Visited']) : autoUniqueCompanies,
       branchVideos: manualStats ? parseInt(manualStats['Branch Videos'] || 0) : 0,
       branchPosters: manualStats ? parseInt(manualStats['Branch Posters'] || 0) : 0,
+      companyNamesVisited: manualStats ? getVal(manualStats, 'companynamesvisited') : '',
+      posterLinks: manualStats ? getVal(manualStats, 'posterlinks') : '',
+      videoLinks: manualStats ? getVal(manualStats, 'videolinks') : '',
+      linkedinLinks: manualStats ? getVal(manualStats, 'linkedinlinks') : '',
+      instagramLinks: manualStats ? getVal(manualStats, 'instagramlinks') : '',
       drivesConducted: drivesConducted,
       joining: joined,
       notJoining: notJoined,
@@ -366,12 +378,17 @@ export default function Reports() {
         tpoName: myName || tpoData?.name,
         companiesVisited: activityForm.companiesVisited,
         branchVideos: activityForm.branchVideos,
-        branchPosters: activityForm.branchPosters
+        branchPosters: activityForm.branchPosters,
+        reportMonth: monthFilter,
+        companyNamesVisited: activityForm.companyNamesVisited,
+        posterLinks: activityForm.posterLinks,
+        videoLinks: activityForm.videoLinks,
+        linkedinLinks: activityForm.linkedinLinks,
+        instagramLinks: activityForm.instagramLinks
       });
       if (res.data.success) {
-        alert("Stats updated successfully!");
         setShowActivityModal(false);
-        window.location.reload(); 
+        setReportReloadKey(value => value + 1);
       }
     } catch (err) {
       const errorMsg = err.response?.data?.message || err.message || "Unknown error occurred";
@@ -387,10 +404,32 @@ export default function Reports() {
       setActivityForm({
         companiesVisited: currentMyStat.companiesVisited,
         branchVideos: currentMyStat.branchVideos,
-        branchPosters: currentMyStat.branchPosters
+        branchPosters: currentMyStat.branchPosters,
+        companyNamesVisited: currentMyStat.companyNamesVisited || '',
+        posterLinks: currentMyStat.posterLinks || '',
+        videoLinks: currentMyStat.videoLinks || '',
+        linkedinLinks: currentMyStat.linkedinLinks || '',
+        instagramLinks: currentMyStat.instagramLinks || ''
       });
-    }
+    } else setActivityForm({ companiesVisited: 0, branchVideos: 0, branchPosters: 0, companyNamesVisited: '', posterLinks: '', videoLinks: '', linkedinLinks: '', instagramLinks: '' });
     setShowActivityModal(true);
+  };
+
+  const sendMonthlyReport = async () => {
+    if (!monthFilter || sendingReport) return;
+    setSendingReport(true);
+    setSendReportMessage('');
+    try {
+      const response = await axios.post(`${API_BASE}/api/tpo/reports/send`, { month: monthFilter }, { timeout: 60000 });
+      if (!response.data?.success) throw new Error(response.data?.message || 'The report could not be sent.');
+      setSendReportMessage(response.data.queued
+        ? `Monthly report queued for gifty@ipcsglobal.com (${displayMonthName}).`
+        : `Monthly report sent to gifty@ipcsglobal.com (${displayMonthName}).`);
+    } catch (error) {
+      setSendReportMessage(error.response?.data?.message || error.message || 'The report could not be sent.');
+    } finally {
+      setSendingReport(false);
+    }
   };
 
   const reportStyles = `
@@ -430,10 +469,20 @@ export default function Reports() {
             <h1 style={{ fontSize: '2.4rem', margin: '0 0 8px 0' }}>Live Analytics Reports</h1>
             <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '1.1rem' }}>Comprehensive tracking, matrices, and placement data.</p>
           </div>
-          <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <input type="month" className="sleek-input" style={{ background: '#0f1523', border: '1px solid var(--accent-primary)', color: 'var(--accent-primary)', fontWeight: 'bold', fontSize: '1.15rem', padding: '12px 20px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
+            {canSendMonthlyReport && <button type="button" onClick={sendMonthlyReport} disabled={reportLoading || sendingReport || !monthFilter} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(52,211,153,.4)', background: 'linear-gradient(120deg, rgba(16,185,129,.2), rgba(14,165,233,.17))', color: '#a7f3d0', fontWeight: 800, cursor: reportLoading || sendingReport ? 'wait' : 'pointer', opacity: reportLoading || sendingReport ? .65 : 1 }}>
+              {sendingReport ? <CircleNotch size={17} className="ph-spin" /> : <PaperPlaneTilt size={17} weight="fill" />}
+              {sendingReport ? 'Sending…' : 'Send monthly report'}
+            </button>}
           </div>
         </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '18px', padding: '14px 18px', borderRadius: '12px', border: '1px solid rgba(245,158,11,.28)', background: 'rgba(120,75,17,.12)' }}>
+          <span style={{ color: '#fcd79a', fontWeight: 750 }}>Portal-wide placement pending · only students marked Pending / Placement Needed at 80%+ course completion</span>
+          <strong style={{ color: '#fff', fontSize: '1.35rem' }}>{portalPlacementPending.toLocaleString('en-IN')}</strong>
+        </div>
+        {sendReportMessage && <div role="status" style={{ marginBottom: '18px', padding: '12px 15px', borderRadius: '10px', border: `1px solid ${sendReportMessage.includes('could not') || sendReportMessage.includes('failed') ? 'rgba(248,113,113,.4)' : 'rgba(52,211,153,.35)'}`, color: sendReportMessage.includes('could not') || sendReportMessage.includes('failed') ? '#fecaca' : '#a7f3d0', background: sendReportMessage.includes('could not') || sendReportMessage.includes('failed') ? 'rgba(127,29,29,.18)' : 'rgba(6,78,59,.18)' }}>{sendReportMessage}</div>}
 
         {reportLoading && <div role="status" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px', color: 'var(--text-muted)' }}><CircleNotch className="ph-spin" size={20} />Loading report data…</div>}
         {reportError && <div role="alert" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '18px', padding: '13px 16px', border: '1px solid rgba(248,113,113,.35)', borderRadius: '10px', color: '#fecaca', background: 'rgba(127,29,29,.2)' }}><span>Report data could not be loaded: {reportError}</span><button type="button" onClick={() => setReportReloadKey(value => value + 1)} style={{ padding: '7px 12px', borderRadius: '8px', border: '1px solid rgba(248,113,113,.5)', background: 'transparent', color: '#fecaca', cursor: 'pointer' }}>Retry</button></div>}
@@ -603,7 +652,7 @@ export default function Reports() {
             <div className="data-table-wrap">
               <div className="data-table-head">
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}><UsersThree size={26} color="#f59e0b" weight="fill"/> Branchwise Student Enrollment</div>
-                <div style={{ fontSize: '1rem', color: '#94a3b8' }}>My Assigned Branches</div>
+                <div style={{ fontSize: '1rem', color: '#94a3b8' }}>{isSuperAdmin ? `All branches · ${portalPlacementPending} portal-wide` : 'My Assigned Branches'}</div>
               </div>
               <div style={{ overflowX: 'auto' }}>
                 <table className="dt">
@@ -782,11 +831,11 @@ export default function Reports() {
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                   <div style={{ fontSize: '1rem', color: '#94a3b8' }}>{displayMonthName}</div>
-                  <button 
+                  {canSendMonthlyReport && <button
                     onClick={handleAddActivityClick}
                     style={{ background: '#0284c7', border: 'none', color: 'white', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
                     <Plus weight="bold" /> Add Activity Count
-                  </button>
+                  </button>}
                 </div>
               </div>
               <div style={{ overflowX: 'auto' }}>
@@ -798,13 +847,15 @@ export default function Reports() {
                       <th>Drives Conducted</th>
                       <th>Branch Videos</th>
                       <th>Branch Posters</th>
+                      <th>Companies Visited</th>
+                      <th>Report Links</th>
                       <th style={{ color: '#10b981' }}>Total Joined</th>
                       <th style={{ color: '#ef4444' }}>Not Joining</th>
                       <th className="dt-total">Total Apps Handled</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {tpoActivity.length === 0 ? <tr><td colSpan="8" style={{textAlign:'center', padding: '2rem'}}>No TPO activities logged this month.</td></tr> : 
+                    {tpoActivity.length === 0 ? <tr><td colSpan="10" style={{textAlign:'center', padding: '2rem'}}>No TPO activities logged this month.</td></tr> :
                     tpoActivity.map(t => (
                       <tr key={`act-${t.tpo}`}>
                         <td>{t.tpo}</td>
@@ -812,6 +863,11 @@ export default function Reports() {
                         <td className={t.drivesConducted === 0 ? 'dt-zero' : ''}>{t.drivesConducted}</td>
                         <td className={t.branchVideos === 0 ? 'dt-zero' : ''}>{t.branchVideos}</td>
                         <td className={t.branchPosters === 0 ? 'dt-zero' : ''}>{t.branchPosters}</td>
+                        <td style={{ textAlign: 'left', minWidth: '180px' }}>{String(t.companyNamesVisited || '').split(/\r?\n/).filter(Boolean).join(', ') || '—'}</td>
+                        <td style={{ textAlign: 'left', minWidth: '210px' }}>
+                          {[['Poster', t.posterLinks], ['Video', t.videoLinks], ['LinkedIn', t.linkedinLinks], ['Instagram', t.instagramLinks]].flatMap(([label, value]) => safeReportLinks(value).map((href, index) => ({ label, href, index }))).map(link => <a key={`${link.label}-${link.href}-${link.index}`} href={link.href} target="_blank" rel="noreferrer" style={{ display: 'inline-block', margin: '2px 7px 2px 0', color: 'var(--accent-primary)' }}>{link.label}</a>)}
+                          {!t.posterLinks && !t.videoLinks && !t.linkedinLinks && !t.instagramLinks ? '—' : null}
+                        </td>
                         <td style={{ color: '#10b981', fontWeight: 'bold' }} className={t.joining === 0 ? 'dt-zero' : ''}>{t.joining}</td>
                         <td style={{ color: '#ef4444', fontWeight: 'bold' }} className={t.notJoining === 0 ? 'dt-zero' : ''}>{t.notJoining}</td>
                         <td className="dt-total">{t.totalApps}</td>
@@ -829,7 +885,7 @@ export default function Reports() {
       {/* 🚨 TPO ACTIVITY MODAL */}
       {showActivityModal && (
         <div className="modal-backdrop" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setShowActivityModal(false); }}>
-          <div style={{ background: '#0f1523', padding: '30px', borderRadius: '12px', border: '1px solid #1e293b', width: '400px', maxWidth: '90%' }}>
+          <div style={{ background: '#0f1523', padding: '30px', borderRadius: '12px', border: '1px solid #1e293b', width: '680px', maxWidth: '94vw', maxHeight: '90vh', overflowY: 'auto' }}>
             <h2 style={{ marginTop: 0, color: '#fff', borderBottom: '1px solid #1e293b', paddingBottom: '15px' }}>Update Monthly Stats</h2>
             <form onSubmit={submitActivityStats}>
               <div style={{ marginBottom: '15px' }}>
@@ -844,6 +900,19 @@ export default function Reports() {
                 <label style={{ display: 'block', color: '#94a3b8', marginBottom: '8px' }}>Branch Posters</label>
                 <input type="number" required value={activityForm.branchPosters} onChange={(e) => setActivityForm({...activityForm, branchPosters: e.target.value})} style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#fff' }} />
               </div>
+              <p style={{ color: '#94a3b8', fontSize: '.9rem', margin: '-10px 0 18px' }}>Add the supporting details that will appear in the monthly email report. Put one item or link on each line.</p>
+              {[
+                ['companyNamesVisited', 'Companies visited', 'Company names, one per line'],
+                ['posterLinks', 'Poster links', 'Poster URL, one per line'],
+                ['videoLinks', 'Video links', 'Video URL, one per line'],
+                ['linkedinLinks', 'LinkedIn links', 'LinkedIn URL, one per line'],
+                ['instagramLinks', 'Instagram links', 'Instagram URL, one per line']
+              ].map(([key, label, placeholder]) => (
+                <div key={key} style={{ marginBottom: '15px' }}>
+                  <label htmlFor={`activity-${key}`} style={{ display: 'block', color: '#94a3b8', marginBottom: '8px' }}>{label}</label>
+                  <textarea id={`activity-${key}`} rows={key === 'companyNamesVisited' ? 3 : 2} value={activityForm[key] || ''} onChange={(e) => setActivityForm({ ...activityForm, [key]: e.target.value })} placeholder={placeholder} style={{ width: '100%', padding: '10px', resize: 'vertical', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#fff', boxSizing: 'border-box' }} />
+                </div>
+              ))}
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                 <button type="button" onClick={() => setShowActivityModal(false)} style={{ padding: '10px 20px', borderRadius: '6px', border: '1px solid #334155', background: 'transparent', color: '#fff', cursor: 'pointer' }}>Cancel</button>
                 <button type="submit" disabled={isSubmitting} style={{ padding: '10px 20px', borderRadius: '6px', border: 'none', background: 'var(--accent-primary)', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>

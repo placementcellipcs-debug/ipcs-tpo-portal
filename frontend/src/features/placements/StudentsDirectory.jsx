@@ -13,6 +13,7 @@ import SafeAvatar from '../../components/SafeAvatar';
 import { API_BASE } from '../../services/apiConfig';
 import StatusBadge from '../../components/StatusBadge';
 import { parsePortalDateTime } from '../../utils/dateFormat';
+import { coursePercentageValue, isPlacementEligiblePending } from '../../utils/placementMetrics';
 
 const TILE_COLORS = ['#10b981', '#ef4444', '#3b82f6', 'var(--accent-primary)', '#f59e0b', '#ec4899', '#0ea5e9', '#f43f5e'];
 
@@ -31,20 +32,13 @@ const parseDate = dStr => parsePortalDateTime(dStr);
 const normalizeStatus = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
 const coursePercentageNumber = student => {
   const raw = student?.coursePercentage ?? Object.entries(student?.rawData || {}).find(([key]) => normalizeStatus(key) === 'coursepercentage')?.[1] ?? '';
-  const match = String(raw).replace(/,/g, '.').match(/-?\d+(?:\.\d+)?/);
-  if (!match) return 0;
-  const value = Number(match[0]);
-  return Number.isFinite(value) ? Math.max(0, Math.min(100, value <= 1 && value > 0 ? value * 100 : value)) : 0;
+  return coursePercentageValue(raw);
 };
 const courseStatusValue = student => {
   const value = String(student?.courseStatus || student?.status || Object.entries(student?.rawData || {}).find(([key]) => ['coursestatus', 'statuscurrently'].includes(normalizeStatus(key)))?.[1] || '').trim();
   return !value || /^n\/?a$/i.test(value) ? 'Currently Studying' : value;
 };
 const placementStatusValue = student => String(student?.placementStatus || '');
-const isPlacementNeeded = student => {
-  const status = normalizeStatus(placementStatusValue(student));
-  return status.includes('pending') || status.includes('placementneeded');
-};
 const isStudentPlaced = student => {
   const status = normalizeStatus(placementStatusValue(student));
   return status === 'placed' || status.startsWith('placed') || status.includes('alreadyplaced');
@@ -59,7 +53,7 @@ const isCourseCompleted = student => {
   const status = normalizeStatus(courseStatusValue(student));
   return ['complete', 'completed', 'completedcourse', 'coursecompleted'].includes(status) || status.startsWith('coursecompleted') || coursePercentageNumber(student) >= 100;
 };
-const isEligibleForPlacementPending = student => isPlacementNeeded(student) && coursePercentageNumber(student) >= 80;
+const isEligibleForPlacementPending = student => isPlacementEligiblePending(placementStatusValue(student), coursePercentageNumber(student));
 const directoryStatusLabel = student => {
   if (isStudentPlaced(student)) return 'Placed';
   if (isStudentNoPlacementNeeded(student)) return 'No Placement Needed';
@@ -77,7 +71,7 @@ export default function StudentsDirectory() {
   })();
   
   const [rawStudents, setRawStudents] = useState([]);
-  const [globalStats, setGlobalStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0 });
+  const [globalStats, setGlobalStats] = useState({ totalStudents: 0, pendingApps: 0, placementPending: 0, placed: 0, activeVacancies: 0 });
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [dataMeta, setDataMeta] = useState(null);
@@ -122,7 +116,7 @@ export default function StudentsDirectory() {
   }, [isModalOpen]);
 
   const upperRole = (tpoData?.role || '').toUpperCase();
-  const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
+  const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
   const isTpo = upperRole === 'TPO' || upperRole.includes('PLACEMENT OFFICER');
   const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(upperRole) || upperRole.includes('REGIONAL TECHNICAL HEAD');
   const isTth = /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(upperRole) || upperRole.includes('TERRITORY TECHNICAL HEAD');
@@ -333,6 +327,16 @@ export default function StudentsDirectory() {
     return cMatch && mMatch && pMatch;
   });
 
+  const matchesDirectorySearch = student => {
+    const query = String(searchQuery || '').trim().toLowerCase();
+    if (!query) return true;
+    const digits = query.replace(/\D/g, '');
+    return [student.name, student.roll, student.phone, student.email]
+      .some(value => String(value || '').toLowerCase().includes(query))
+      || (digits.length > 0 && String(student.phone || '').replace(/\D/g, '').includes(digits));
+  };
+  const directorySearchMatches = globallyFiltered.filter(matchesDirectorySearch);
+
   const branchData = {};
   globallyFiltered.forEach(s => {
     const b = s.branch || 'Unknown';
@@ -375,6 +379,7 @@ export default function StudentsDirectory() {
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.activeVacancies}</div><div className="kpi-label">Active Vacancies</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><Briefcase weight="fill"/></div></div>
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.pendingApps}</div><div className="kpi-label">Pending Apps</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><Files weight="fill"/></div></div>
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.placed}</div><div className="kpi-label">Total Hired</div></div><div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}><Confetti weight="fill"/></div></div>
+            <div className="kpi-card"><div><div className="kpi-val">{globalStats.placementPending || 0}</div><div className="kpi-label">Placement Pending · 80%+</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><ClockClockwise weight="fill"/></div></div>
           </div>
         )}
 
@@ -413,7 +418,7 @@ export default function StudentsDirectory() {
         )}
 
         <div className="header-controls" style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '1.5rem', alignItems: 'center', background: 'var(--card-bg)', padding: '14px 18px', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
-          {selectedBranch && (
+          {(selectedBranch || isSuperAdmin || isTpo) && (
             <input type="text" className="sleek-input" placeholder="Search name, roll, phone, or email..." style={{ minWidth: '260px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
           )}
 
@@ -491,25 +496,48 @@ export default function StudentsDirectory() {
             <p>Fetching registered students...</p>
           </div>
         ) : loadError ? null : !selectedBranch ? (
-          branchList.length === 0 ? (
+          branchList.length === 0 && !searchQuery.trim() ? (
             <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
               No students found. If you just loaded the portal, wait 10 seconds and refresh while Google Sheets syncs.
             </div>
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '25px' }}>
-              {branchList.map((branch, index) => {
-                const color = TILE_COLORS[index % TILE_COLORS.length];
-                return (
-                  <div key={branch} onClick={() => setSelectedBranch(branch)} style={{ backgroundColor: color, borderRadius: '20px', padding: '35px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-                    <h2 style={{ color: '#ffffff', fontSize: '2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>{branch}</h2>
-                    <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <UsersThree size={20} color="#ffffff" weight="bold" />
-                      <span style={{ color: '#ffffff', fontSize: '1.05rem', fontWeight: 'bold' }}>{branchData[branch]} Students</span>
-                    </div>
+            <>
+              {searchQuery.trim() && (
+                <section style={{ marginBottom: '22px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '14px', overflow: 'hidden' }} aria-label="Students matching directory search">
+                  <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--card-border)', color: 'var(--text-main)', fontWeight: 700 }}>
+                    {directorySearchMatches.length} matching student{directorySearchMatches.length === 1 ? '' : 's'} in your access scope {directorySearchMatches.length > 25 ? '· showing first 25' : ''}
                   </div>
-                );
-              })}
-            </div>
+                  {directorySearchMatches.length ? (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table className="modern-table" style={{ width: '100%' }}>
+                        <thead><tr><th>Student</th><th>Roll number</th><th>Branch</th><th>Course</th><th>Phone</th><th>Email</th><th>Status</th><th></th></tr></thead>
+                        <tbody>{directorySearchMatches.slice(0, 25).map((student, index) => (
+                          <tr key={student.rowIdx || `search-${index}`}>
+                            <td>{student.name || '—'}</td><td>{student.roll || '—'}</td><td>{student.branch || '—'}</td><td>{student.course || '—'}</td>
+                            <td>{student.phone || '—'}</td><td>{student.email || '—'}</td><td><StatusBadge status={directoryStatusLabel(student)} /></td>
+                            <td><button type="button" onClick={() => openStudentModal(student)} style={{ border: '1px solid var(--card-border)', background: 'transparent', color: 'var(--accent-primary)', padding: '7px 10px', borderRadius: '7px', cursor: 'pointer', whiteSpace: 'nowrap' }}>View details</button></td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                  ) : <p style={{ padding: '0 18px 12px', color: 'var(--text-muted)' }}>No student in your assigned branches and courses matches this search.</p>}
+                </section>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '25px' }}>
+                {branchList.map((branch, index) => {
+                  const color = TILE_COLORS[index % TILE_COLORS.length];
+                  return (
+                    <div key={branch} onClick={() => setSelectedBranch(branch)} style={{ backgroundColor: color, borderRadius: '20px', padding: '35px 20px', cursor: 'pointer', textAlign: 'center', minHeight: '200px', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+                      <h2 style={{ color: '#ffffff', fontSize: '2rem', margin: '0 0 10px 0', textShadow: '0 2px 4px rgba(0,0,0,0.2)' }}>{branch}</h2>
+                      <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <UsersThree size={20} color="#ffffff" weight="bold" />
+                        <span style={{ color: '#ffffff', fontSize: '1.05rem', fontWeight: 'bold' }}>{branchData[branch]} Students</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
           )
         ) : filteredAndSorted.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>

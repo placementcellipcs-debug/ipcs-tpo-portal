@@ -44,7 +44,7 @@ export default function Dashboard() {
   const isPlacementDriveAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || ['GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(userRole);
   const canViewPlacementDrives = isPlacementDriveAdmin || isBranchManager || isPlacementOfficer;
   const canViewHiringPartners = !userRole.includes('TRAINER') && !userRole.includes('TECHNICAL LEAD') && !userRole.includes('REGIONAL TECHNICAL HEAD') && !userRole.includes('RTH') && !userRole.includes('TTH');
-  const [stats, setStats] = useState({ totalStudents: 0, pendingApps: 0, placed: 0, activeVacancies: 0, totalCompanies: 0 });
+  const [stats, setStats] = useState({ totalStudents: 0, pendingApps: 0, placementPending: 0, placed: 0, activeVacancies: 0, totalCompanies: 0 });
   const [events, setEvents] = useState([]);
   const [recentPlacements, setRecentPlacements] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -308,6 +308,10 @@ export default function Dashboard() {
           <div className="dash-card" title="All-time placement total.">
             <div className="kpi-header"><div className="icon-c purple"><Trophy weight="fill" size={20}/></div><div><div className="kpi-title">Total Placements</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div></div></div>
             <div className="kpi-trend green">All-time total</div>
+          </div>
+          <div className="dash-card" title="Students marked Pending or Placement Needed with at least 80% course completion.">
+            <div className="kpi-header"><div className="icon-c orange"><Briefcase weight="fill" size={20}/></div><div><div className="kpi-title">Placement Pending</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placementPending}</div></div></div>
+            <div className="kpi-trend green">Pending / Placement Needed · 80%+</div>
           </div>
           <div className="dash-card" title="Total placement records divided by the total student directory count. Repeat placement records count in the numerator.">
             <div className="kpi-header"><div className="icon-c orange"><Percent weight="bold" size={20}/></div><div><div className="kpi-title">Placement Rate</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : `${placementRate.toFixed(1)}%`}</div></div></div>
