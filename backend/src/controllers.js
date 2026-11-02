@@ -8628,15 +8628,6 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     const branchLabel = branch ? (/branch$/i.test(branch) ? branch : `${branch} Branch`) : '';
     return `Conducted ${count} ${title}${branchLabel ? ` in ${branchLabel}` : ''}.`;
   });
-  const achievementItems = [
-    ...eventAchievementLines,
-    ...(totalOpeningPosts ? [`Published ${countWord(totalOpeningPosts, 'job opening post')} across the five main courses.`] : []),
-    ...(openingCompanies.size ? [`Connected ${countWord(openingCompanies.size, 'company')} through newsletter openings.`] : []),
-    ...(posterCount || videoCount ? [`Published ${countWord(posterCount, 'poster')} and ${countWord(videoCount, 'video')} on social media.`] : []),
-    ...(pendingPosterCount ? [`${countWord(pendingPosterCount, 'poster')} pending to post.`] : []),
-    ...(pendingVideoCount ? [`${countWord(pendingVideoCount, 'video')} pending to post.`] : [])
-  ];
-  const achievementListHtml = achievementItems.map(item => `<li style="margin:0 0 9px;padding-left:3px">${monthlyReportEscape(item)}</li>`).join('');
   const branchContributionMap = new Map();
   const ensureBranchContribution = branchValue => {
     const branch = String(branchValue || '').trim();
@@ -8672,15 +8663,29 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     const branch = normalizePlacementText(getValByHeader(row, ['branch', 'sittingbranch']));
     return roll ? `roll:${roll}` : name ? `name:${name}|${branch}` : `row:${row?.rowNumber || index}`;
   })).size;
-  const pendingScopeLabel = isAdmin ? 'Eligible pending across branches' : 'Eligible pending · assigned branches';
+  const pendingScopeLabel = isAdmin ? 'Eligible pending · report scope' : 'Eligible pending · assigned branches';
   const pendingScopeText = isAdmin ? 'eligible pending students across branches' : 'eligible pending students in assigned branches';
   const pendingTotalByCourse = MONTHLY_REPORT_MAIN_COURSES.map(course => new Set([...pendingByBranch.values()].flatMap(courseSets => [...courseSets.get(course)])).size);
+  const applicationRows = (cache.applications || []).filter(row => {
+    if (!isMonthDate(getFirstNonEmptyValByHeader(row, ['date', 'timestamp', 'dateapplied']))) return false;
+    if (isAdmin) return true;
+    return placementOwnerMatchesUser(getValByHeader(row, ['tponame', 'placementofficer', 'createdby']), user);
+  });
+  const achievementItems = [
+    `${countWord(placementRecordCount, 'placement')} recorded this month.`,
+    ...eventAchievementLines,
+    ...(highestLpa === null ? [] : [`Highest package: ${highestPackageLabel}, achieved by ${countWord(highestPackageStudents, 'student')}.`]),
+    ...(totalOpeningPosts ? [`Published ${countWord(totalOpeningPosts, 'job opening post')} across the five main courses.`] : []),
+    ...(openingCompanies.size ? [`Connected ${countWord(openingCompanies.size, 'company')} through newsletter openings.`] : [])
+  ];
   const summaryMetrics = [
     { value: String(placementRecordCount), label: 'Placements recorded', background: '#e9f7f3', border: '#c7e9df', color: '#087c70' },
+    ...(driveCount ? [{ value: String(driveCount), label: 'Placement drives', background: '#fff5e8', border: '#f3dfbd', color: '#b56b16' }] : []),
     { value: highestPackageLabel, label: `Highest package · ${highestPackageStudents} ${highestPackageStudents === 1 ? 'student' : 'students'}`, background: '#edf3ff', border: '#d6e1fa', color: '#4e67bb' },
     { value: String(pendingTotalUnique), label: pendingScopeLabel, background: '#f8eff9', border: '#e8d8ee', color: '#8852a0' }
   ];
-  const summaryCardsHtml = `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border-spacing:10px;margin:0 -10px 8px"><tr>${summaryMetrics.map(metric => `<td style="width:33.33%;padding:18px 20px;background:${metric.background};border:1px solid ${metric.border};border-radius:10px;vertical-align:top"><div style="font-size:24px;line-height:1.25;font-weight:bold;color:${metric.color}">${monthlyReportEscape(metric.value)}</div><div style="margin-top:6px;font-size:11px;line-height:1.5;color:#536879">${monthlyReportEscape(metric.label)}</div></td>`).join('')}</tr></table>`;
+  const summaryCardsHtml = `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border-spacing:8px;margin:0 -8px 8px"><tr>${summaryMetrics.map(metric => `<td style="width:${100 / summaryMetrics.length}%;padding:16px;background:${metric.background};border:1px solid ${metric.border};border-radius:9px;vertical-align:top"><div style="font-size:24px;line-height:1.25;font-weight:bold;color:${metric.color}">${monthlyReportEscape(metric.value)}</div><div style="margin-top:6px;font-size:11px;line-height:1.5;color:#536879">${monthlyReportEscape(metric.label)}</div></td>`).join('')}</tr></table>`;
+  const achievementListHtml = achievementItems.map(item => `<li style="margin:0 0 8px;padding-left:3px">${monthlyReportEscape(item)}</li>`).join('');
   const html = `
     <div style="margin:0;padding:30px 16px;background:#f2f6f9;font-family:Arial,Helvetica,sans-serif;color:#263a4a;line-height:1.65">
       <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:920px;margin:0 auto;border-collapse:separate;border-spacing:0;background:#ffffff;border:1px solid #dce6ed;border-radius:16px;overflow:hidden">
@@ -8692,9 +8697,10 @@ exports.sendMonthlyTpoReport = async (req, res) => {
        <tr><td style="padding:30px 38px 38px">
         <p style="margin:0 0 7px;color:#183747;font-size:15px"><b>Dear Gifty,</b></p>
         <p style="margin:0 0 12px;color:#506476">Here is the placement and career activity report for <b>${monthlyReportEscape(monthName)}</b>.</p>
-        ${sectionTitle('Monthly at a glance', 'Placement and progress summary', '#078a83')}
+        ${sectionTitle('Monthly at a glance', 'Achievements this month', '#078a83')}
+        <div style="margin:0 0 16px;padding:17px 20px;background:#edf8f6;border:1px solid #cceae3;border-radius:9px;color:#234b50;font-size:13px"><b>Highlights of the Month</b><ul style="margin:9px 0 0;padding-left:21px">${achievementListHtml}</ul></div>
         ${summaryCardsHtml}
-        ${achievementItems.length ? `<div style="margin:10px 0 20px;padding:19px 22px;background:#edf8f6;border:1px solid #cceae3;border-radius:10px;color:#234b50;font-size:13px"><b style="font-size:14px">Activity highlights</b><ul style="margin:10px 0 0;padding-left:22px">${achievementListHtml}</ul></div>` : ''}
+        <p style="margin:2px 0 8px;font-size:11px;color:#718394">Opening posts: <b>${totalOpeningPosts}</b> &nbsp;·&nbsp; Hiring companies connected: <b>${openingCompanies.size}</b> &nbsp;·&nbsp; Applications received: <b>${applicationRows.length}</b> &nbsp;·&nbsp; ${monthlyReportEscape(isAdmin ? 'Eligible pending in this report scope' : 'Eligible pending in assigned branches')}: <b>${pendingTotalUnique}</b></p>
 
         ${sectionTitle('Placement Status', 'Placement records by main course', '#3478c4')}
         ${table(['Main course', 'Placement records'], placedStudentRowsByCourse, { total: ['<b>Total placement records</b>', `<b>${placementRecordCount}</b>`] })}
