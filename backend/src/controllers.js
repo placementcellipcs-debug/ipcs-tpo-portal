@@ -8613,6 +8613,14 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
     return res.status(400).json({ success: false, message: 'Choose a valid report month.' });
   }
+  const deliveryMode = String(req.body?.deliveryMode || 'gifty').trim().toLowerCase();
+  if (!['gifty', 'gifty_rakesh_cc'].includes(deliveryMode)) {
+    return res.status(400).json({ success: false, message: 'Choose a supported report delivery option.' });
+  }
+  const senderEmail = String(user.email || '').trim().toLowerCase();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(senderEmail)) {
+    return res.status(422).json({ success: false, message: 'Your portal account needs a valid email address so it can be copied on the report.' });
+  }
 
   let cache = getCache();
   if (!cache) { await refreshCache(); cache = getCache(); }
@@ -9076,17 +9084,25 @@ exports.sendMonthlyTpoReport = async (req, res) => {
        </td></tr>
       </table>
     </div>`;
-  const subject = isAdmin ? `IPCS Global Monthly Placement Report - ${monthName}` : `${user.name || 'TPO'} - Monthly Placement Report - ${monthName}`;
+  const subjectBase = isAdmin ? `IPCS Global Monthly Placement Report - ${monthName}` : `${user.name || 'TPO'} - Monthly Placement Report - ${monthName}`;
+  // Give every send a distinct subject and omit reply/reference headers so mail clients
+  // create a fresh message instead of grouping repeat reports into an old conversation.
+  const deliveryReference = `RPT-${month.replace('-', '')}-${Date.now().toString(36).toUpperCase()}-${randomBytes(4).toString('hex').toUpperCase()}`;
+  const subject = `${subjectBase} [${deliveryReference}]`;
+  const ccRecipients = [senderEmail];
+  if (deliveryMode === 'gifty_rakesh_cc') ccRecipients.push('rakesh@ipcsglobal.com');
+  const cc = [...new Set(ccRecipients.filter(email => email !== MONTHLY_TPO_REPORT_RECIPIENT))];
 
   try {
     const delivery = await sendMailAndLog({
       from: process.env.EMAIL_USER ? `"IPCS Global Placement Team" <${process.env.EMAIL_USER}>` : undefined,
       to: MONTHLY_TPO_REPORT_RECIPIENT,
+      cc,
       subject,
       text: `IPCS Global monthly placement report for ${monthName}. ${placementRecordCount} placement records were recorded in the report month.${driveCount ? ` ${driveCount} placement drives were conducted.` : ''} Highest package: ${highestPackageLabel}, achieved by ${highestPackageStudents} student(s). ${pendingTotalUnique} ${pendingScopeText}.`,
       html
-    }, { name: user.name || 'IPCS Global Placement Team', email: MONTHLY_TPO_REPORT_RECIPIENT, type: 'Monthly TPO Placement Report', category: 'placement' });
-    return res.json({ success: true, queued: Boolean(delivery?.queued), recipient: MONTHLY_TPO_REPORT_RECIPIENT, month });
+    }, { name: user.name || 'IPCS Global Placement Team', email: MONTHLY_TPO_REPORT_RECIPIENT, type: deliveryMode === 'gifty_rakesh_cc' ? 'Monthly TPO Placement Report · Gifty + Rakesh CC' : 'Monthly TPO Placement Report · Gifty', category: 'placement' });
+    return res.json({ success: true, queued: Boolean(delivery?.queued), to: MONTHLY_TPO_REPORT_RECIPIENT, cc, month, deliveryReference });
   } catch (error) {
     return res.status(502).json({ success: false, message: `The report could not be sent: ${String(error.message || error).slice(0, 300)}` });
   }

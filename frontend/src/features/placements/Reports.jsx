@@ -119,7 +119,7 @@ export default function Reports() {
   const [reportReloadKey, setReportReloadKey] = useState(0);
   const [dataMeta, setDataMeta] = useState(null);
   const [portalPlacementPending, setPortalPlacementPending] = useState(0);
-  const [sendingReport, setSendingReport] = useState(false);
+  const [sendingReport, setSendingReport] = useState('');
   const [sendReportMessage, setSendReportMessage] = useState('');
   // Replaced hardcoded courses with dynamic state (initialized with the 5 defaults)
   const [mainCourses, setMainCourses] = useState(['Industrial Automation', 'BMS AND CCTV', 'Information technology (IT)', 'Digital Marketing', 'Embedded and IoT']);
@@ -559,20 +559,20 @@ export default function Reports() {
     setShowActivityModal(true);
   };
 
-  const sendMonthlyReport = async () => {
+  const sendMonthlyReport = async (deliveryMode = 'gifty') => {
     if (!monthFilter || sendingReport) return;
-    setSendingReport(true);
+    setSendingReport(deliveryMode);
     setSendReportMessage('');
     try {
-      const response = await axios.post(`${API_BASE}/api/tpo/reports/send`, { month: monthFilter }, { timeout: 60000 });
+      const response = await axios.post(`${API_BASE}/api/tpo/reports/send`, { month: monthFilter, deliveryMode }, { timeout: 60000 });
       if (!response.data?.success) throw new Error(response.data?.message || 'The report could not be sent.');
-      setSendReportMessage(response.data.queued
-        ? `Monthly report queued for gifty@ipcsglobal.com (${displayMonthName}).`
-        : `Monthly report sent to gifty@ipcsglobal.com (${displayMonthName}).`);
+      const cc = Array.isArray(response.data.cc) ? response.data.cc : [];
+      const delivery = response.data.queued ? 'queued as a new email' : 'sent as a new email';
+      setSendReportMessage(`Monthly report ${delivery} to ${response.data.to || 'gifty@ipcsglobal.com'}${cc.length ? ` · CC: ${cc.join(', ')}` : ''} (${displayMonthName}).`);
     } catch (error) {
       setSendReportMessage(error.response?.data?.message || error.message || 'The report could not be sent.');
     } finally {
-      setSendingReport(false);
+      setSendingReport('');
     }
   };
 
@@ -615,10 +615,16 @@ export default function Reports() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <input type="month" className="sleek-input" style={{ background: '#0f1523', border: '1px solid var(--accent-primary)', color: 'var(--accent-primary)', fontWeight: 'bold', fontSize: '1.15rem', padding: '12px 20px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
-            {canSendMonthlyReport && <button type="button" onClick={sendMonthlyReport} disabled={reportLoading || sendingReport || !monthFilter} style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(52,211,153,.4)', background: 'linear-gradient(120deg, rgba(16,185,129,.2), rgba(14,165,233,.17))', color: '#a7f3d0', fontWeight: 800, cursor: reportLoading || sendingReport ? 'wait' : 'pointer', opacity: reportLoading || sendingReport ? .65 : 1 }}>
-              {sendingReport ? <CircleNotch size={17} className="ph-spin" /> : <PaperPlaneTilt size={17} weight="fill" />}
-              {sendingReport ? 'Sending…' : 'Send monthly report'}
-            </button>}
+            {canSendMonthlyReport && <>
+              <button type="button" onClick={() => sendMonthlyReport('gifty')} disabled={reportLoading || Boolean(sendingReport) || !monthFilter} title="To Gifty · CC the sending account" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(52,211,153,.4)', background: 'linear-gradient(120deg, rgba(16,185,129,.2), rgba(14,165,233,.17))', color: '#a7f3d0', fontWeight: 800, cursor: reportLoading || sendingReport ? 'wait' : 'pointer', opacity: reportLoading || sendingReport ? .65 : 1 }}>
+                {sendingReport === 'gifty' ? <CircleNotch size={17} className="ph-spin" /> : <PaperPlaneTilt size={17} weight="fill" />}
+                {sendingReport === 'gifty' ? 'Sending…' : 'Send monthly report'}
+              </button>
+              <button type="button" onClick={() => sendMonthlyReport('gifty_rakesh_cc')} disabled={reportLoading || Boolean(sendingReport) || !monthFilter} title="To Gifty · CC the sending account and Rakesh" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(96,165,250,.42)', background: 'linear-gradient(120deg, rgba(59,130,246,.2), rgba(139,92,246,.17))', color: '#bfdbfe', fontWeight: 800, cursor: reportLoading || sendingReport ? 'wait' : 'pointer', opacity: reportLoading || sendingReport ? .65 : 1 }}>
+                {sendingReport === 'gifty_rakesh_cc' ? <CircleNotch size={17} className="ph-spin" /> : <PaperPlaneTilt size={17} weight="fill" />}
+                {sendingReport === 'gifty_rakesh_cc' ? 'Sending…' : 'Send with Rakesh in CC'}
+              </button>
+            </>}
           </div>
         </div>
 
