@@ -118,6 +118,10 @@ const doc = {
     const sheets = {};
     for (const [group, spreadsheets] of Object.entries(documentsByGroup)) {
       for (const spreadsheet of spreadsheets) {
+        // A partial loadInfo() failure leaves that GoogleSpreadsheet instance
+        // without metadata. Its sheetsByTitle getter throws until a later
+        // retry; skip it here so a healthy workbook can still serve requests.
+        if (!spreadsheet?._rawProperties) continue;
         for (const [title, sheet] of Object.entries(spreadsheet.sheetsByTitle || {})) {
           if (getSheetGroup(title) === group || !sheets[title]) sheets[title] = sheet;
         }
@@ -126,9 +130,11 @@ const doc = {
     return sheets;
   },
   get sheetsByIndex() {
-    return allDocuments.flatMap(spreadsheet => spreadsheet.sheetsByIndex || []);
+    return allDocuments.flatMap(spreadsheet => spreadsheet?._rawProperties ? spreadsheet.sheetsByIndex || [] : []);
   },
-  loadInfo: async () => Promise.all(allDocuments.map(spreadsheet => spreadsheet.loadInfo())),
+  loadInfo: async () => Promise.all(allDocuments
+    .filter(spreadsheet => !spreadsheet?._rawProperties)
+    .map(spreadsheet => spreadsheet.loadInfo())),
   addSheet: async options => {
     const spreadsheet = getPreferredDocumentForSheet(options?.title);
     if (!spreadsheet) throw new Error('No Google Sheets document is configured. Set the spreadsheet IDs in the backend environment.');
@@ -302,7 +308,10 @@ async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
   const toAdd = (tpoLogs || []).flatMap((row, index) => {
     // Status in TPO_Log (column N) is the single source of truth. Other
     // placement and joining fields must not cancel an explicit Placed status.
-    if (normalizedPlacementStatus(tpoLogStatus(row)) !== 'placed') return [];
+    // Action-history rows copy the new status for audit purposes; they are not
+    // separate placement records and must never be projected as hires.
+    if (normalizedPlacementStatus(tpoLogStatus(row)) !== 'placed'
+      || /^(yes|true|1)$/i.test(placementRowValue(row, ['tpoactionlog']))) return [];
     const sourceRow = Number(row?.rowNumber) || index + 2;
     const recordKey = `TPO_Log:${sourceRow}`;
     const value = aliases => placementRowValue(row, aliases);
@@ -379,7 +388,8 @@ async function rebuildPlacedStudentsFromTpoLogs() {
   }
   const sheet = await ensurePlacedStudentsSheet();
   const existingRows = await sheet.getRows();
-  const desiredCount = (cache.tpoLogs || []).filter(row => normalizedPlacementStatus(tpoLogStatus(row)) === 'placed').length;
+  const desiredCount = (cache.tpoLogs || []).filter(row => normalizedPlacementStatus(tpoLogStatus(row)) === 'placed'
+    && !/^(yes|true|1)$/i.test(placementRowValue(row, ['tpoactionlog']))).length;
   const rebuiltRows = await rebuildPlacedStudents(sheet, cache.tpoLogs || [], existingRows);
   return { rebuilt: Array.isArray(rebuiltRows), sourceCount: desiredCount, projectionCount: Array.isArray(rebuiltRows) ? rebuiltRows.length : existingRows.length };
 }
@@ -469,11 +479,17 @@ const getCache = () => globalCache;
 async function loadDocInfo() {
   if (Date.now() < docInfoCachedUntil) return;
   if (!docInfoLoading) {
-    docInfoLoading = Promise.allSettled(allDocuments.map(spreadsheet => spreadsheet.loadInfo())).then(results => {
+    // Retry only workbooks that did not load. Re-requesting metadata for the
+    // already loaded documents on each partial retry needlessly consumes the
+    // service account's Sheets read quota.
+    const pendingDocuments = allDocuments.filter(spreadsheet => !spreadsheet?._rawProperties);
+    docInfoLoading = Promise.allSettled(pendingDocuments.map(spreadsheet => spreadsheet.loadInfo())).then(results => {
       const failures = results.filter(result => result.status === 'rejected');
-      if (failures.length === results.length && failures.length) throw failures[0].reason;
+      if (failures.length && !allDocuments.some(spreadsheet => spreadsheet?._rawProperties)) throw failures[0].reason;
       failures.forEach(result => console.warn('Could not load one configured spreadsheet:', result.reason?.message || result.reason));
-      docInfoCachedUntil = Date.now() + docInfoCacheMs;
+      // Keep retrying a failed workbook soon, while the successful workbooks
+      // stay loaded and are not fetched again.
+      docInfoCachedUntil = Date.now() + (failures.length ? Math.min(docInfoCacheMs, 15000) : docInfoCacheMs);
     }).catch(error => {
       // Avoid retrying all workbook metadata requests on every API call while
       // Google Sheets is rate limiting this service account.

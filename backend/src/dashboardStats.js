@@ -3,7 +3,10 @@ const { isPlacedStatus, isPlacementEligiblePending } = require('./placementMetri
 
 const isPlacementOutcome = (row, getValue) => {
   // TPO_Log's Status column is the sole authority for placement counts.
-  return isPlacedStatus(getValue(row, ['status']));
+  // Its action-history rows repeat the status change for auditing and are not
+  // additional placement records.
+  return isPlacedStatus(getValue(row, ['status']))
+    && !/^(yes|true|1)$/i.test(String(getValue(row, ['tpoactionlog']) || '').trim());
 };
 
 const countPlacementRecords = (placementRows, getValue, canAccessPlacement = () => true) =>
@@ -17,8 +20,7 @@ const calculateDashboardPlacementCounts = (students, placementRows, getValue, ca
   const pendingStudents = new Set();
 
   (Array.isArray(placementRows) ? placementRows : []).forEach(row => {
-    if (!canAccessPlacement(row) || !isPlacementOutcome(row, getValue)
-      || /^(yes|true|1)$/i.test(String(getValue(row, ['tpoactionlog']) || ''))) return;
+    if (!canAccessPlacement(row) || !isPlacementOutcome(row, getValue)) return;
     const roll = normalizePlacementText(getValue(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
     const name = normalizePlacementText(getValue(row, ['studentname', 'name']));
     const branch = normalizePlacementText(getValue(row, ['branch', 'sittingbranch']));

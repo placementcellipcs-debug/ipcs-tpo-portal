@@ -36,7 +36,7 @@ const { normalizePlacementText, placementIdentity, placementLogRecordKey, latest
 const { calculateDashboardPlacementCounts } = require('./dashboardStats');
 const { isPlacementEligiblePending, placementOutcome } = require('./placementMetrics');
 const { createPlacementLocationResolver } = require('./internationalPlacements');
-const { buildPlacementReconciliation } = require('./placementReconciliation');
+const { buildPlacementReconciliation, recoverablePlacementHistory } = require('./placementReconciliation');
 const { PLACEMENT_AUDIT_SHEET, PLACEMENT_AUDIT_HEADERS, createPlacementAuditEvent } = require('./placementAudit');
 const { createTalentinoSessionResolver } = require('./talentinoSessionMatch');
 const { formatIndiaTimestamp, formatIndiaDate, formatIndiaTime } = require('./utils/dateTime');
@@ -1823,7 +1823,7 @@ const upsertPlacementTpoLog = async record => {
     return existing ? getValByHeader(existing, aliases) || fallback : fallback;
   };
   const logData = {
-    TimeStamp: formatIndiaTimestamp(),
+    TimeStamp: record.timestamp || formatIndiaTimestamp(),
     'Student Name': value('name', ['studentname', 'name', 'candidate']),
     Contact: value('phone', ['contact', 'phone', 'mobilenumber']),
     'Mail ID': value('email', ['mailid', 'email', 'studentemail', 'mail']),
@@ -4437,6 +4437,101 @@ exports.repairManualPlacementSaves = async (req, res) => {
   } catch (error) {
     console.error('Partial manual placement recovery failed:', error);
     return res.status(500).json({ success: false, message: `Manual placement recovery stopped: ${error.message}` });
+  }
+};
+
+exports.recoverPlacementsFromActionHistory = async (req, res) => {
+  try {
+    await refreshCache();
+    const cache = getCache();
+    if (!cache?.cacheSheetHealth?.tpoLogs || !cache?.cacheSheetHealth?.placedStudents) {
+      return res.status(503).json({
+        success: false,
+        message: 'TPO_Log and Placed_Students must both refresh successfully before history recovery. No placement rows were changed.',
+        failedSheets: cache?.cacheFailedSheets || []
+      });
+    }
+
+    const candidates = recoverablePlacementHistory(cache.tpoLogs || [], getValByHeader);
+    if (!candidates.length) {
+      return res.json({ success: true, recovered: 0, message: 'No action-history-only placements need recovery.' });
+    }
+
+    const recoveredRows = [];
+    const warnings = [];
+    for (const candidate of candidates) {
+      const source = candidate._sourceRow;
+      const recovered = await upsertPlacementTpoLog({
+        timestamp: getValByHeader(source, ['timestamp', 'date', 'time']),
+        name: getValByHeader(source, ['studentname', 'name']),
+        phone: getValByHeader(source, ['contact', 'phone', 'mobilenumber']),
+        email: getValByHeader(source, ['mailid', 'email', 'studentemail']),
+        roll: getValByHeader(source, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']),
+        course: getValByHeader(source, ['course', 'program']),
+        branch: getValByHeader(source, ['branch', 'sittingbranch']),
+        qual: getValByHeader(source, ['qualification', 'qual']),
+        resume: getValByHeader(source, ['resume', 'cv']),
+        jobId: getValByHeader(source, ['jobid', 'job id']),
+        company: getValByHeader(source, ['companyname', 'company']),
+        position: getValByHeader(source, ['position', 'role']),
+        placementLocation: getValByHeader(source, ['placementlocation', 'worklocation', 'joblocation', 'location']),
+        placementOfficer: getValByHeader(source, ['placementofficer', 'tpo', 'tponame', 'createdby']),
+        status: 'Placed',
+        remarks: getValByHeader(source, ['remarks']),
+        datePlaced: getValByHeader(source, ['dateplaced']),
+        packageLpa: getValByHeader(source, ['package', 'packagelpa']),
+        joiningStatus: getValByHeader(source, ['joiningstatus']),
+        offerLetter: getValByHeader(source, ['offerletterstatus', 'offerletter']),
+        interviewDate: getValByHeader(source, ['interviewdate']),
+        interviewTime: getValByHeader(source, ['interviewtime', 'intervewtime']),
+        interviewVenue: getValByHeader(source, ['interviewvenue']),
+        entrySource: getValByHeader(source, ['entrysource']) || 'Recovered from TPO_Log action history',
+        statusHistory: getValByHeader(source, ['statushistory'])
+      });
+      recoveredRows.push({ candidate, recovered });
+      try {
+        const directoryWarning = await syncDirectoryPlacementStatusFromLog(recovered);
+        if (directoryWarning) warnings.push(`${candidate.name || candidate.roll}: ${directoryWarning}`);
+      } catch (error) {
+        warnings.push(`${candidate.name || candidate.roll}: student directory status could not be updated (${error.message})`);
+      }
+    }
+
+    // The projection is a derived sheet. Back it up and rebuild once, after all
+    // canonical rows are safely appended, excluding audit-history entries.
+    const projection = await rebuildPlacedStudentsFromTpoLogs();
+    let auditWarning = '';
+    try {
+      for (const { candidate } of recoveredRows) {
+        await appendPlacementAudit(createPlacementAuditEvent({
+          actor: req.portalUser,
+          action: 'Placement recovered from action history',
+          previousStatus: 'Interview Scheduled',
+          newStatus: 'Placed',
+          record: {
+            name: candidate.name, roll: candidate.roll, company: candidate.company,
+            position: candidate.position, entrySource: candidate.entrySource || 'TPO_Log action history'
+          },
+          details: `Restored canonical TPO_Log placement from status-history row ${candidate.rowNumber}; action history was preserved.`,
+          changedAt: formatIndiaTimestamp()
+        }));
+      }
+    } catch (error) {
+      auditWarning = `Placement rows were recovered, but the recovery audit could not be fully written: ${error.message}`;
+    }
+
+    await refreshCache();
+    return res.json({
+      success: true,
+      recovered: recoveredRows.length,
+      sourceCount: projection.sourceCount,
+      projectionCount: projection.projectionCount,
+      warnings: [...warnings, auditWarning].filter(Boolean),
+      message: `Recovered ${recoveredRows.length} missing canonical placement record(s) from TPO_Log action history. Placed_Students was backed up and rebuilt from canonical rows.`
+    });
+  } catch (error) {
+    console.error('Action-history placement recovery failed:', error);
+    return res.status(500).json({ success: false, message: `Placement recovery stopped safely: ${error.message}` });
   }
 };
 
