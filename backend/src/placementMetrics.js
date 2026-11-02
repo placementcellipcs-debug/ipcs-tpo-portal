@@ -31,7 +31,7 @@ const isPlacementPendingStatus = status => {
 };
 
 const isPlacementEligiblePending = (status, percentage) =>
-  isPlacementPendingStatus(status) && coursePercentageValue(percentage) >= 80;
+  isPlacementPendingStatus(status) && coursePercentageValue(percentage) >= 90;
 
 module.exports = {
   placementOutcome,

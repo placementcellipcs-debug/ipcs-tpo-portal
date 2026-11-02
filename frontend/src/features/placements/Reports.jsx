@@ -34,6 +34,7 @@ const createActivityItem = (type = 'company_visit') => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
   type,
   companies: type === 'company_visit' ? Array(10).fill('') : [],
+  title: '',
   value: ''
 });
 const getActivityTypeLabel = type => MONTHLY_ACTIVITY_TYPES.find(item => item.value === type)?.label || 'Activity';
@@ -44,6 +45,7 @@ const parseActivityItems = (serialized, legacy = {}) => {
       ...createActivityItem(item.type),
       type: MONTHLY_ACTIVITY_TYPES.some(type => type.value === item.type) ? item.type : 'company_visit',
       companies: Array.from({ length: 10 }, (_, index) => String(item.companies?.[index] || '')),
+      title: String(item.title || ''),
       value: String(item.value || '')
     }));
   } catch { /* Older TPO_Stats rows use the legacy text columns. */ }
@@ -72,6 +74,19 @@ const parseActivityItems = (serialized, legacy = {}) => {
   items.push(...links.values());
   return items;
 };
+const getTpoActivityMonth = stat => {
+  const reportMonth = String(getVal(stat, 'reportmonth') || '').trim();
+  if (/^\d{4}-(0[1-9]|1[0-2])$/.test(reportMonth)) return reportMonth;
+  const date = parsePortalDateTime(getVal(stat, 'timestamp'));
+  return date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : '';
+};
+const activityItemsFromStats = stat => parseActivityItems(stat ? getVal(stat, 'activityitems') : '', {
+  companyNamesVisited: stat ? getVal(stat, 'companynamesvisited') : '',
+  posterLinks: stat ? getVal(stat, 'posterlinks') : '',
+  videoLinks: stat ? getVal(stat, 'videolinks') : '',
+  linkedinLinks: stat ? getVal(stat, 'linkedinlinks') : '',
+  instagramLinks: stat ? getVal(stat, 'instagramlinks') : ''
+});
 
 export default function Reports() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -111,7 +126,7 @@ export default function Reports() {
   // 🚨 NEW STATES FOR TPO ACTIVITY
   const [tpoStatsData, setTpoStatsData] = useState([]);
   const [showActivityModal, setShowActivityModal] = useState(false);
-  const [activityForm, setActivityForm] = useState({ activityItems: [] });
+  const [activityForm, setActivityForm] = useState({ tpoName: '', reportMonth: currentMonthStr, activityItems: [], mode: 'add' });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -377,16 +392,8 @@ export default function Reports() {
     // 🚨 Find manual stats for this TPO in the selected month
     const currentMonthPrefix = monthFilter; // "YYYY-MM" format
     const manualStats = tpoStatsData.find(stat => {
-      const statUser = (stat['USER'] || stat['user'] || '').toLowerCase().trim();
-      let statMonth = '';
-      const ts = getVal(stat, 'timestamp') || '';
-      const reportMonth = String(getVal(stat, 'reportmonth') || '').trim();
-      if (reportMonth) statMonth = reportMonth;
-      else if (ts) {
-        const d = new Date(ts);
-        if (!isNaN(d)) statMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-      }
-      return statUser === targetName && statMonth === currentMonthPrefix;
+      const statUser = normalizePlacementText(getVal(stat, 'user'));
+      return statUser === normalizePlacementText(targetName) && getTpoActivityMonth(stat) === currentMonthPrefix;
     });
 
     // Application totals come from OpeningApplied; TPO_Log is only the status history.
@@ -417,14 +424,22 @@ export default function Reports() {
       linkedinLinks: manualStats ? getVal(manualStats, 'linkedinlinks') : '',
       instagramLinks: manualStats ? getVal(manualStats, 'instagramlinks') : ''
     };
+    const activityItems = activityItemsFromStats(manualStats);
+    const companyItems = [...new Map(activityItems.flatMap(item => item.type === 'company_visit' ? item.companies || [] : [])
+      .map(name => [normalizePlacementText(name), name]).filter(([key]) => key)).values()];
 
     return {
       tpo: t.userName || t.name,
-      companiesVisited: manualStats ? (parseInt(manualStats['Companies Visited'] || 0, 10) || 0) : autoUniqueCompanies,
-      branchVideos: manualStats ? parseInt(manualStats['Branch Videos'] || 0) : 0,
-      branchPosters: manualStats ? parseInt(manualStats['Branch Posters'] || 0) : 0,
+      reportMonth: currentMonthPrefix,
+      hasActivitySession: Boolean(manualStats),
+      companiesVisited: manualStats ? (companyItems.length || parseInt(manualStats['Companies Visited'] || 0, 10) || 0) : autoUniqueCompanies,
+      branchVideos: manualStats ? (activityItems.filter(item => ['instagram_video', 'linkedin_video'].includes(item.type) && item.value).length || parseInt(manualStats['Branch Videos'] || 0, 10) || 0) : 0,
+      branchPosters: manualStats ? (activityItems.filter(item => ['instagram_poster', 'linkedin_post'].includes(item.type) && item.value).length || parseInt(manualStats['Branch Posters'] || 0, 10) || 0) : 0,
       ...legacyActivity,
-      activityItems: parseActivityItems(manualStats ? getVal(manualStats, 'activityitems') : '', legacyActivity),
+      activityItems,
+      companyItems,
+      posterItems: activityItems.filter(item => ['instagram_poster', 'linkedin_post'].includes(item.type) && item.value),
+      videoItems: activityItems.filter(item => ['instagram_video', 'linkedin_video'].includes(item.type) && item.value),
       drivesConducted: drivesConducted,
       joining: joined,
       notJoining: notJoined,
@@ -436,8 +451,13 @@ export default function Reports() {
     e.preventDefault();
     const activityItems = activityForm.activityItems.map(item => item.type === 'company_visit'
       ? { type: item.type, companies: (item.companies || []).slice(0, 10).map(company => String(company || '').trim()).filter(Boolean) }
-      : { type: item.type, value: String(item.value || '').trim() })
+      : { type: item.type, title: String(item.title || '').trim(), value: String(item.value || '').trim() })
       .filter(item => item.type === 'company_visit' ? item.companies.length > 0 : item.value.length > 0);
+    const untitledItem = activityItems.find(item => item.type !== 'company_visit' && !item.title);
+    if (untitledItem) {
+      alert(`Add a title or name for each ${getActivityTypeLabel(untitledItem.type)}.`);
+      return;
+    }
     const invalidLinkItem = activityItems.find(item => {
       if (item.type === 'company_visit') return false;
       try { return !['http:', 'https:'].includes(new URL(item.value).protocol); } catch { return true; }
@@ -457,11 +477,11 @@ export default function Reports() {
     setIsSubmitting(true);
     try {
       const res = await axios.post(`${API_BASE}/api/tpo/activity`, {
-        tpoName: myName || tpoData?.name,
+        tpoName: activityForm.tpoName || tpoData?.name || tpoData?.userName,
         companiesVisited: uniqueCompanyNames.length,
         branchVideos: videoLinks.length,
         branchPosters: posterLinks.length,
-        reportMonth: monthFilter,
+        reportMonth: activityForm.reportMonth,
         activityItems,
         companyNamesVisited: uniqueCompanyNames.join('\n'),
         posterLinks: posterLinks.join('\n'),
@@ -470,6 +490,7 @@ export default function Reports() {
         instagramLinks: [...instagramPostLinks, ...instagramVideoLinks].join('\n')
       });
       if (res.data.success) {
+        setMonthFilter(activityForm.reportMonth);
         setShowActivityModal(false);
         setReportReloadKey(value => value + 1);
       }
@@ -482,8 +503,24 @@ export default function Reports() {
   };
 
   const handleAddActivityClick = () => {
-    const currentMyStat = tpoActivity.find(t => t.tpo === (tpoData?.name || tpoData?.userName));
-    setActivityForm({ activityItems: currentMyStat?.activityItems?.map(item => ({ ...item })) || [] });
+    const targetName = tpoData?.name || tpoData?.userName || myName;
+    const currentMyStat = tpoActivity.find(t => normalizePlacementText(t.tpo) === normalizePlacementText(targetName));
+    setActivityForm({
+      tpoName: targetName,
+      reportMonth: monthFilter,
+      activityItems: (currentMyStat?.activityItems || []).map(item => ({ ...item, companies: [...(item.companies || [])] })),
+      mode: currentMyStat?.hasActivitySession ? 'edit' : 'add'
+    });
+    setShowActivityModal(true);
+  };
+
+  const handleEditActivityClick = activity => {
+    setActivityForm({
+      tpoName: activity.tpo,
+      reportMonth: activity.reportMonth || monthFilter,
+      activityItems: activity.activityItems.map(item => ({ ...item, companies: [...(item.companies || [])] })),
+      mode: 'edit'
+    });
     setShowActivityModal(true);
   };
 
@@ -551,7 +588,7 @@ export default function Reports() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '18px', padding: '14px 18px', borderRadius: '12px', border: '1px solid rgba(245,158,11,.28)', background: 'rgba(120,75,17,.12)' }}>
-          <span style={{ color: '#fcd79a', fontWeight: 750 }}>Portal-wide placement pending · only students marked Pending / Placement Needed at 80%+ course completion</span>
+          <span style={{ color: '#fcd79a', fontWeight: 750 }}>Portal-wide placement pending · only students marked Pending / Placement Needed at 90%+ course completion</span>
           <strong style={{ color: '#fff', fontSize: '1.35rem' }}>{portalPlacementPending.toLocaleString('en-IN')}</strong>
         </div>
         {sendReportMessage && <div role="status" style={{ marginBottom: '18px', padding: '12px 15px', borderRadius: '10px', border: `1px solid ${sendReportMessage.includes('could not') || sendReportMessage.includes('failed') ? 'rgba(248,113,113,.4)' : 'rgba(52,211,153,.35)'}`, color: sendReportMessage.includes('could not') || sendReportMessage.includes('failed') ? '#fecaca' : '#a7f3d0', background: sendReportMessage.includes('could not') || sendReportMessage.includes('failed') ? 'rgba(127,29,29,.18)' : 'rgba(6,78,59,.18)' }}>{sendReportMessage}</div>}
@@ -561,7 +598,7 @@ export default function Reports() {
 
         {dataMeta && <DataSourceStatus
           source="TPO_Log"
-          detail="Monthly target counts use every row with Status = Placed; Date Placed is used, then Timestamp if blank."
+          detail="Monthly targets count each student once from canonical TPO_Log rows with Status = Placed. Action-history rows are excluded; Date Placed is used, then Timestamp if blank."
           health={targetLogHealthy}
           lastSyncedAt={targetLogLastSyncedAt}
           lastAttemptAt={dataMeta.lastRefreshAttemptAt}
@@ -916,34 +953,47 @@ export default function Reports() {
                   <thead>
                     <tr>
                       <th>Placement Officer</th>
-                      <th>Companies Visited</th>
+                      <th>Month</th>
+                      <th>Company Count</th>
+                      <th>Companies visited · S.No.</th>
                       <th>Drives Conducted</th>
-                      <th>Poster Items</th>
-                      <th>Video Items</th>
-                      <th>Visited Company Names</th>
-                      <th>Activity Links</th>
+                      <th>Poster Count</th>
+                      <th>Posters · S.No. / Title</th>
+                      <th>Video Count</th>
+                      <th>Videos · S.No. / Title</th>
                       <th style={{ color: '#10b981' }}>Total Joined</th>
                       <th style={{ color: '#ef4444' }}>Not Joining</th>
                       <th className="dt-total">Total Apps Handled</th>
+                      <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {tpoActivity.length === 0 ? <tr><td colSpan="10" style={{textAlign:'center', padding: '2rem'}}>No TPO activities logged this month.</td></tr> :
+                    {tpoActivity.length === 0 ? <tr><td colSpan="13" style={{textAlign:'center', padding: '2rem'}}>No TPO activities logged this month.</td></tr> :
                     tpoActivity.map(t => (
                       <tr key={`act-${t.tpo}`}>
                         <td>{t.tpo}</td>
+                        <td>{t.reportMonth}</td>
                         <td className={t.companiesVisited === 0 ? 'dt-zero' : ''}>{t.companiesVisited}</td>
+                        <td style={{ textAlign: 'left', minWidth: '190px' }}>
+                          {t.companyItems.length ? <ol style={{ margin: 0, paddingLeft: '24px' }}>{t.companyItems.map((company, index) => <li key={`${company}-${index}`} style={{ padding: '2px 0' }}>{company}</li>)}</ol> : '—'}
+                        </td>
                         <td className={t.drivesConducted === 0 ? 'dt-zero' : ''}>{t.drivesConducted}</td>
                         <td className={t.branchPosters === 0 ? 'dt-zero' : ''}>{t.branchPosters}</td>
-                        <td className={t.branchVideos === 0 ? 'dt-zero' : ''}>{t.branchVideos}</td>
-                        <td style={{ textAlign: 'left', minWidth: '180px' }}>{String(t.companyNamesVisited || '').split(/\r?\n/).filter(Boolean).join(', ') || '—'}</td>
                         <td style={{ textAlign: 'left', minWidth: '210px' }}>
-                          {t.activityItems.filter(item => item.type !== 'company_visit' && item.value).map((item, index) => <a key={`${item.type}-${item.value}-${index}`} href={item.value} target="_blank" rel="noreferrer" style={{ display: 'inline-block', margin: '2px 7px 2px 0', color: 'var(--accent-primary)' }}>{getActivityTypeLabel(item.type)}</a>)}
-                          {!t.activityItems.some(item => item.type !== 'company_visit' && item.value) ? '—' : null}
+                          {t.posterItems.length ? <ol style={{ margin: 0, paddingLeft: '24px' }}>{t.posterItems.map((item, index) => <li key={`${item.value}-${index}`} style={{ padding: '2px 0' }}><a href={item.value} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>{item.title || getActivityTypeLabel(item.type)}</a></li>)}</ol> : '—'}
+                        </td>
+                        <td className={t.branchVideos === 0 ? 'dt-zero' : ''}>{t.branchVideos}</td>
+                        <td style={{ textAlign: 'left', minWidth: '210px' }}>
+                          {t.videoItems.length ? <ol style={{ margin: 0, paddingLeft: '24px' }}>{t.videoItems.map((item, index) => <li key={`${item.value}-${index}`} style={{ padding: '2px 0' }}><a href={item.value} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>{item.title || getActivityTypeLabel(item.type)}</a></li>)}</ol> : '—'}
                         </td>
                         <td style={{ color: '#10b981', fontWeight: 'bold' }} className={t.joining === 0 ? 'dt-zero' : ''}>{t.joining}</td>
                         <td style={{ color: '#ef4444', fontWeight: 'bold' }} className={t.notJoining === 0 ? 'dt-zero' : ''}>{t.notJoining}</td>
                         <td className="dt-total">{t.totalApps}</td>
+                        <td>
+                          {(isSuperAdmin || myIdentities.includes(normalizePlacementText(t.tpo))) && t.hasActivitySession
+                            ? <button type="button" onClick={() => handleEditActivityClick(t)} style={{ border: '1px solid rgba(56,189,248,.35)', borderRadius: '7px', padding: '7px 11px', color: '#bae6fd', background: 'rgba(2,132,199,.12)', fontWeight: 750, cursor: 'pointer' }}>Edit</button>
+                            : '—'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -959,9 +1009,29 @@ export default function Reports() {
       {showActivityModal && (
         <div className="modal-backdrop" style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', background: 'rgba(0,0,0,0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setShowActivityModal(false); }}>
           <div style={{ background: '#0f1523', padding: '30px', borderRadius: '12px', border: '1px solid #1e293b', width: '680px', maxWidth: '94vw', maxHeight: '90vh', overflowY: 'auto' }}>
-            <h2 style={{ marginTop: 0, color: '#fff', borderBottom: '1px solid #1e293b', paddingBottom: '15px' }}>Monthly company and media activity</h2>
+            <h2 style={{ marginTop: 0, color: '#fff', borderBottom: '1px solid #1e293b', paddingBottom: '15px' }}>{activityForm.mode === 'edit' ? 'Edit activity session' : 'Add activity session'}</h2>
             <form onSubmit={submitActivityStats}>
-              <p style={{ color: '#94a3b8', fontSize: '.9rem', margin: '0 0 18px' }}>Add each visit or social post as its own activity. Counts in the monthly report are calculated from the entries below.</p>
+              <p style={{ color: '#94a3b8', fontSize: '.9rem', margin: '0 0 18px' }}>Choose the month, then add company visits and titled social posts or videos. The report numbers each item.</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', marginBottom: '18px' }}>
+                <label style={{ display: 'grid', gap: '6px', color: '#94a3b8', fontSize: '.8rem' }}>
+                  Report month
+                  <input type="month" required value={activityForm.reportMonth || monthFilter} onChange={event => {
+                    const reportMonth = event.target.value;
+                    const ownerKey = normalizePlacementText(activityForm.tpoName);
+                    const matchingSession = tpoStatsData.find(stat => normalizePlacementText(getVal(stat, 'user')) === ownerKey && getTpoActivityMonth(stat) === reportMonth);
+                    setActivityForm(current => ({
+                      ...current,
+                      reportMonth,
+                      activityItems: activityItemsFromStats(matchingSession).map(item => ({ ...item, companies: [...(item.companies || [])] })),
+                      mode: matchingSession ? 'edit' : 'add'
+                    }));
+                  }} style={{ width: '100%', boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#fff' }} />
+                </label>
+                <div style={{ display: 'grid', gap: '6px', color: '#94a3b8', fontSize: '.8rem' }}>
+                  Activity owner
+                  <div style={{ padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#121c2c', color: '#e2e8f0' }}>{activityForm.tpoName || tpoData?.name || 'Trainer'}</div>
+                </div>
+              </div>
               <div style={{ display: 'grid', gap: '14px', marginBottom: '16px' }}>
                 {activityForm.activityItems.map((item, itemIndex) => (
                   <section key={item.id} style={{ padding: '15px', border: '1px solid #29384f', borderRadius: '10px', background: '#121c2c' }}>
@@ -982,9 +1052,13 @@ export default function Reports() {
                         {Array.from({ length: 10 }, (_, companyIndex) => <input key={companyIndex} aria-label={`Company name ${companyIndex + 1} for visit ${itemIndex + 1}`} value={item.companies?.[companyIndex] || ''} onChange={event => setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...entry, companies: Array.from({ length: 10 }, (_, index) => index === companyIndex ? event.target.value : entry.companies?.[index] || '') } : entry) }))} placeholder={`Company ${companyIndex + 1}`} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#0d1522', color: '#fff' }} />)}
                       </div>
                     ) : (
-                      <div>
-                        <label htmlFor={`activity-link-${item.id}`} style={{ display: 'block', color: '#94a3b8', fontSize: '.8rem', marginBottom: '6px' }}>{getActivityTypeLabel(item.type)} URL</label>
-                        <input id={`activity-link-${item.id}`} type="url" inputMode="url" value={item.value || ''} onChange={event => setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...entry, value: event.target.value } : entry) }))} placeholder="https://..." style={{ width: '100%', boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#0d1522', color: '#fff' }} />
+                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(130px, .8fr) minmax(190px, 1.2fr)', gap: '10px' }}>
+                        <label htmlFor={`activity-title-${item.id}`} style={{ display: 'grid', gap: '6px', color: '#94a3b8', fontSize: '.8rem' }}>{getActivityTypeLabel(item.type)} title / name
+                          <input id={`activity-title-${item.id}`} type="text" maxLength={180} value={item.title || ''} onChange={event => setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...entry, title: event.target.value } : entry) }))} placeholder={`Name this ${item.type.includes('video') ? 'video' : 'poster'}`} style={{ width: '100%', boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#0d1522', color: '#fff' }} />
+                        </label>
+                        <label htmlFor={`activity-link-${item.id}`} style={{ display: 'grid', gap: '6px', color: '#94a3b8', fontSize: '.8rem' }}>{getActivityTypeLabel(item.type)} link
+                          <input id={`activity-link-${item.id}`} type="url" inputMode="url" value={item.value || ''} onChange={event => setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...entry, value: event.target.value } : entry) }))} placeholder="https://..." style={{ width: '100%', boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#0d1522', color: '#fff' }} />
+                        </label>
                       </div>
                     )}
                   </section>
@@ -994,7 +1068,7 @@ export default function Reports() {
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                 <button type="button" onClick={() => setShowActivityModal(false)} style={{ padding: '10px 20px', borderRadius: '6px', border: '1px solid #334155', background: 'transparent', color: '#fff', cursor: 'pointer' }}>Cancel</button>
                 <button type="submit" disabled={isSubmitting} style={{ padding: '10px 20px', borderRadius: '6px', border: 'none', background: 'var(--accent-primary)', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>
-                  {isSubmitting ? 'Saving...' : 'Save Stats'}
+                  {isSubmitting ? 'Saving...' : activityForm.mode === 'edit' ? 'Save changes' : 'Save activity'}
                 </button>
               </div>
             </form>
