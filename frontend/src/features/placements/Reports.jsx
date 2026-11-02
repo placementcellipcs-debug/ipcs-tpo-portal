@@ -12,6 +12,14 @@ const getVal = (obj, searchStr) => {
   const key = Object.keys(obj || {}).find(k => k.toLowerCase().replace(/\s/g, '').includes(searchStr.toLowerCase().replace(/\s/g, '')));
   return key ? obj[key] : '';
 };
+const isPlacementActionLog = row => /^(yes|true|1)$/i.test(String(getVal(row, 'tpoactionlog') || '').trim());
+const placementStudentIdentity = (row, index = 0) => {
+  const roll = normalizePlacementText(getVal(row, 'rollnumber') || getVal(row, 'rollno') || getVal(row, 'ipcsrollnumber') || getVal(row, 'roll'));
+  if (roll) return `roll:${roll}`;
+  const name = normalizePlacementText(getVal(row, 'studentname') || getVal(row, 'name'));
+  const branch = normalizePlacementText(getVal(row, 'branch') || getVal(row, 'sittingbranch'));
+  return name ? `name:${name}|${branch}` : `row:${row?.rowNumber || index}`;
+};
 const safeReportLinks = value => String(value || '').split(/\r?\n/).map(link => link.trim()).filter(link => {
   try { return ['http:', 'https:'].includes(new URL(link).protocol); } catch { return false; }
 });
@@ -209,7 +217,7 @@ export default function Reports() {
   };
 
   const displayMonthName = new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
-  const targetSourceRows = placementReportLogs.filter(log => isPlacedStatus(getVal(log, 'status')));
+  const targetSourceRows = placementReportLogs.filter(log => isPlacedStatus(getVal(log, 'status')) && !isPlacementActionLog(log));
   const targetSourceRowsThisMonth = targetSourceRows.filter(checkPlacementMonth);
   const reportTpoIdentities = new Set(tpoList.flatMap(tpo => [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean)));
   const currentMonthRowsWithoutMatchedTpo = targetSourceRowsThisMonth.filter(log => !reportTpoIdentities.has(normalizePlacementText(getVal(log, 'placementofficer')))).length;
@@ -595,21 +603,21 @@ export default function Reports() {
                 const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
                 const identities = [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean);
                 if (!logTpo || !identities.includes(logTpo)) return false;
-                if (!isPlacedStatus(getVal(log, 'status'))) return false;
+                if (!isPlacedStatus(getVal(log, 'status')) || isPlacementActionLog(log)) return false;
 
                 return checkPlacementMonth(log);
               });
 
-              const counts = { Others: 0 };
-              mainCourses.forEach(c => counts[c] = 0);
-              
-              placedStudentsLog.forEach(p => {
-                 const c = getCourse(getVal(p, 'course'));
-                 if (counts[c] !== undefined) counts[c]++;
-                 else counts.Others++;
+              const identitiesByCourse = new Map(mainCourses.concat(['Others']).map(course => [course, new Set()]));
+              const placedStudentIdentities = new Set();
+              placedStudentsLog.forEach((placement, placementIndex) => {
+                const identity = placementStudentIdentity(placement, placementIndex);
+                placedStudentIdentities.add(identity);
+                const course = getCourse(getVal(placement, 'course'));
+                (identitiesByCourse.get(course) || identitiesByCourse.get('Others')).add(identity);
               });
-
-              const totalPlacements = placedStudentsLog.length;
+              const counts = Object.fromEntries([...identitiesByCourse.entries()].map(([course, identities]) => [course, identities.size]));
+              const totalPlacements = placedStudentIdentities.size;
               const targetGoal = parseInt(tpo.target) || 20;
               const progressPercent = Math.min((totalPlacements / targetGoal) * 100, 100);
 
@@ -646,11 +654,12 @@ export default function Reports() {
                     <div style={{ background: '#0f1523', padding: '25px 30px', borderTop: '1px solid #1e293b' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                         <span style={{ color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '1.1rem' }}>Progress to Target</span>
-                        <span style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>{totalPlacements} / {targetGoal} Hires</span>
+                        <span style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>{totalPlacements} / {targetGoal} Students</span>
                       </div>
                       <div style={{ width: '100%', height: '14px', background: '#1e293b', borderRadius: '10px', overflow: 'hidden' }}>
                         <div style={{ width: `${progressPercent}%`, height: '100%', background: progressPercent >= 100 ? '#10b981' : 'var(--accent-primary)', transition: 'width 1s ease-in-out' }}></div>
                       </div>
+                      <div style={{ marginTop: '8px', color: 'var(--text-muted)', fontSize: '.82rem' }}>{totalPlacements} unique students · {placedStudentsLog.length} placement records</div>
                     </div>
                   </div>
 
