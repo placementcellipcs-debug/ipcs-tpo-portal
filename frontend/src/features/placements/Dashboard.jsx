@@ -309,9 +309,9 @@ export default function Dashboard() {
             <div className="kpi-header"><div className="icon-c purple"><Trophy weight="fill" size={20}/></div><div><div className="kpi-title">Total Placements</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div></div></div>
             <div className="kpi-trend green">All-time total</div>
           </div>
-          <div className="dash-card" title="Students marked Pending or Placement Needed with at least 80% course completion.">
+          <div className="dash-card" title="Students marked Pending or Placement Needed with at least 90% course completion.">
             <div className="kpi-header"><div className="icon-c orange"><Briefcase weight="fill" size={20}/></div><div><div className="kpi-title">Placement Pending</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placementPending}</div></div></div>
-            <div className="kpi-trend green">Pending / Placement Needed · 80%+</div>
+            <div className="kpi-trend green">Pending / Placement Needed · 90%+</div>
           </div>
           <div className="dash-card" title="Total placement records divided by the total student directory count. Repeat placement records count in the numerator.">
             <div className="kpi-header"><div className="icon-c orange"><Percent weight="bold" size={20}/></div><div><div className="kpi-title">Placement Rate</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : `${placementRate.toFixed(1)}%`}</div></div></div>

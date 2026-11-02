@@ -23,6 +23,7 @@ const MONTHLY_ACTIVITY_TYPES = [
   { value: 'linkedin_post', label: 'LinkedIn post', kind: 'link' },
   { value: 'linkedin_video', label: 'LinkedIn video', kind: 'link' }
 ];
+const MAX_MONTHLY_ACTIVITY_ITEMS = 100;
 const createActivityItem = (type = 'company_visit') => ({
   id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
   type,
@@ -1103,7 +1104,10 @@ export default function Reports() {
                   </section>
                 ))}
               </div>
-              <button type="button" disabled={activityForm.activityItems.length >= 20} onClick={() => setActivityForm(current => ({ ...current, activityItems: [...current.activityItems, createActivityItem()] }))} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', marginBottom: '20px', padding: '9px 13px', borderRadius: '7px', border: '1px solid rgba(45,212,191,.4)', background: 'rgba(13,148,136,.15)', color: '#99f6e4', fontWeight: 700, cursor: activityForm.activityItems.length >= 20 ? 'not-allowed' : 'pointer', opacity: activityForm.activityItems.length >= 20 ? .55 : 1 }}><Plus size={17} weight="bold" /> Add activity</button>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+                <button type="button" disabled={activityForm.activityItems.length >= MAX_MONTHLY_ACTIVITY_ITEMS} onClick={() => setActivityForm(current => ({ ...current, activityItems: [...current.activityItems, createActivityItem()] }))} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '9px 13px', borderRadius: '7px', border: '1px solid rgba(45,212,191,.4)', background: 'rgba(13,148,136,.15)', color: '#99f6e4', fontWeight: 700, cursor: activityForm.activityItems.length >= MAX_MONTHLY_ACTIVITY_ITEMS ? 'not-allowed' : 'pointer', opacity: activityForm.activityItems.length >= MAX_MONTHLY_ACTIVITY_ITEMS ? .55 : 1 }}><Plus size={17} weight="bold" /> Add activity</button>
+                <small style={{ color: '#94a3b8' }}>{activityForm.activityItems.length} of {MAX_MONTHLY_ACTIVITY_ITEMS} entries</small>
+              </div>
               <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                 <button type="button" onClick={() => setShowActivityModal(false)} style={{ padding: '10px 20px', borderRadius: '6px', border: '1px solid #334155', background: 'transparent', color: '#fff', cursor: 'pointer' }}>Cancel</button>
                 <button type="submit" disabled={isSubmitting} style={{ padding: '10px 20px', borderRadius: '6px', border: 'none', background: 'var(--accent-primary)', color: '#fff', fontWeight: 'bold', cursor: 'pointer' }}>

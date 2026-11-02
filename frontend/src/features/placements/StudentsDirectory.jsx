@@ -379,7 +379,7 @@ export default function StudentsDirectory() {
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.activeVacancies}</div><div className="kpi-label">Active Vacancies</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><Briefcase weight="fill"/></div></div>
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.pendingApps}</div><div className="kpi-label">Pending Apps</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><Files weight="fill"/></div></div>
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.placed}</div><div className="kpi-label">Total Hired</div></div><div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}><Confetti weight="fill"/></div></div>
-            <div className="kpi-card"><div><div className="kpi-val">{globalStats.placementPending || 0}</div><div className="kpi-label">Placement Pending · 80%+</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><ClockClockwise weight="fill"/></div></div>
+            <div className="kpi-card"><div><div className="kpi-val">{globalStats.placementPending || 0}</div><div className="kpi-label">Placement Pending · 90%+</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><ClockClockwise weight="fill"/></div></div>
           </div>
         )}
 

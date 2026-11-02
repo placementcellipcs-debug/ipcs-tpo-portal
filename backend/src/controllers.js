@@ -8106,6 +8106,7 @@ exports.getSessionUser = (email, sessionToken) => {
 // =========================================================
 // 🚨 SUBMIT TPO ACTIVITY STATS
 // =========================================================
+const MAX_TPO_MONTHLY_ACTIVITY_ITEMS = 100;
 exports.updateTpoActivity = async (req, res) => {
   const { companiesVisited, branchVideos, branchPosters, reportMonth, activityItems } = req.body || {};
   const user = req.portalUser || {};
@@ -8131,7 +8132,7 @@ exports.updateTpoActivity = async (req, res) => {
   let normalizedCounts = { companiesVisited, branchVideos, branchPosters };
   if (typedActivityWasProvided) {
     if (!Array.isArray(activityItems)) return res.status(400).json({ success: false, message: 'Activity entries must be a list.' });
-    if (activityItems.length > 20) return res.status(400).json({ success: false, message: 'Add up to 20 activity entries per month.' });
+    if (activityItems.length > MAX_TPO_MONTHLY_ACTIVITY_ITEMS) return res.status(400).json({ success: false, message: `Add up to ${MAX_TPO_MONTHLY_ACTIVITY_ITEMS} activity entries per month.` });
     for (const item of activityItems) {
       const type = String(item?.type || '').trim().toLowerCase();
       if (!activityTypeSet.has(type)) return res.status(400).json({ success: false, message: 'Choose a supported activity type for every entry.' });
@@ -8402,13 +8403,6 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     if (!summary) { unmappedOpeningPosts++; return; }
     summary.posts++;
   });
-  const visitedCompanyNames = [...new Map(activityRows.flatMap(row => monthlyReportLines(getValByHeader(row, ['companynamesvisited'])))
-    .map(company => [normalizePlacementText(company), company]).filter(([key]) => key)).values()].sort((a, b) => a.localeCompare(b));
-  const recordedCompanyVisitCount = activityRows.reduce((total, row) => total + Math.max(
-    Number(getValByHeader(row, ['companiesvisited'])) || 0,
-    new Set(monthlyReportLines(getValByHeader(row, ['companynamesvisited'])).map(normalizePlacementText).filter(Boolean)).size
-  ), 0);
-  const companiesVisitedCount = visitedCompanyNames.length || recordedCompanyVisitCount;
   const getMediaPostingCounts = (row, types, legacyField) => {
     const items = getMonthlyActivityItems(row).filter(item => types.includes(item.type));
     return {
@@ -8470,7 +8464,6 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   const branchPlacementCounts = new Map();
   const studentPlacementRows = new Map();
   const tpoPlacementRows = new Map();
-  const tpoBranchPlacementCounts = new Map();
   placementRows.forEach((row, index) => {
     const identity = studentKey(row, index);
     const course = placementMainCourse(row);
@@ -8487,8 +8480,6 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     branchPlacementCounts.set(branch, branchPlacementCounts.get(branch) + 1);
     studentPlacementRows.set(identity, [...(studentPlacementRows.get(identity) || []), row]);
     tpoPlacementRows.set(ownerKey, [...(tpoPlacementRows.get(ownerKey) || []), row]);
-    const tpoBranchKey = `${branch}\u0000${ownerKey}`;
-    tpoBranchPlacementCounts.set(tpoBranchKey, (tpoBranchPlacementCounts.get(tpoBranchKey) || 0) + 1);
   });
   const joinedStudentCount = [...studentPlacementRows.values()].filter(rows => rows.some(row => placementOutcome(getValByHeader(row, ['status']), getValByHeader(row, ['joiningstatus'])).joined)).length;
   const notJoinedStudentCount = [...studentPlacementRows.values()].filter(rows => rows.every(row => !placementOutcome(getValByHeader(row, ['status']), getValByHeader(row, ['joiningstatus'])).joined)
@@ -8520,12 +8511,6 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   });
   const driveEvents = eventRows.filter(row => /drive|job\s?fair|recruitment/i.test(`${getValByHeader(row, ['type', 'event', 'title'])} ${getValByHeader(row, ['title'])}`));
   const eventOwnerKey = row => normalizePlacementText(getValByHeader(row, ['tpo', 'placementofficer', 'coordinator', 'organizer'])) || 'unassigned';
-  driveEvents.forEach(row => {
-    const branch = getValByHeader(row, ['branch', 'sittingbranch']).trim();
-    if (!branch) return;
-    const key = `${branch}\u0000${eventOwnerKey(row)}`;
-    if (!tpoBranchPlacementCounts.has(key)) tpoBranchPlacementCounts.set(key, 0);
-  });
   const tpoNames = [...new Set([...activityByOwner.keys(), ...tpoPlacementRows.keys(), ...driveEvents.map(eventOwnerKey)])];
   const tpoSummaryRows = tpoNames.map(ownerKey => {
     const ownedPlacements = tpoPlacementRows.get(ownerKey) || [];
@@ -8564,33 +8549,23 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     const identity = roll ? `roll:${roll}` : name ? `name:${name}|${normalizePlacementText(branch)}` : `row:${row?.rowNumber || index}`;
     if (MONTHLY_REPORT_MAIN_COURSES.includes(course)) pendingByBranch.get(branch).get(course).add(identity);
   });
-  const applicationRows = (cache.applications || []).filter(row => {
-    if (!isMonthDate(getFirstNonEmptyValByHeader(row, ['date', 'timestamp', 'dateapplied']))) return false;
-    if (isAdmin) return true;
-    return placementOwnerMatchesUser(getValByHeader(row, ['tponame', 'placementofficer', 'createdby']), user);
-  });
   const placementRecordCount = placementRows.length;
   const unmappedPlacementRecords = courseCounts.get('Others') || 0;
   const mainCourseTotals = MONTHLY_REPORT_MAIN_COURSES.map(course => [course, courseCounts.get(course) || 0]);
   const mainCourseOpeningTotals = MONTHLY_REPORT_MAIN_COURSES.map(course => [course, openingCountsByCourse.get(course) || { posts: 0 }]);
   const highestPackageLabel = highestLpa === null ? 'No package recorded' : `${highestLpa.toFixed(2).replace(/\.00$/, '')} LPA`;
   const countWord = (count, singular, plural = `${singular}s`) => `${count} ${count === 1 ? singular : plural}`;
-  const table = (headers, rows, options = {}) => `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 18px;font-size:13px;color:#263a4a"><thead><tr>${headers.map(header => `<th style="padding:11px 10px;background:#152e43;border:1px solid #29465d;text-align:left;color:#ffffff;font-size:11px;letter-spacing:.45px;text-transform:uppercase">${monthlyReportEscape(header)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map((row, rowIndex) => `<tr>${row.map(value => `<td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:${rowIndex % 2 ? '#f4f8fb' : '#ffffff'}">${value}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}" style="padding:14px;border:1px solid #d8e3eb;color:#667789;background:#fbfdff">No records for this month.</td></tr>`}</tbody>${options.total ? `<tfoot><tr>${options.total.map(value => `<td style="padding:10px;border:1px solid #c6d8e2;background:#eaf4f5;color:#12384a;font-weight:bold">${value}</td>`).join('')}</tr></tfoot>` : ''}</table>`;
-  const sectionTitle = (kicker, title, color = '#087f8c') => `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:24px 0 10px;border-collapse:collapse"><tr><td style="border-left:4px solid ${color};padding:3px 0 3px 11px"><div style="font-size:10px;line-height:1.4;letter-spacing:1.4px;text-transform:uppercase;color:${color};font-weight:bold">${monthlyReportEscape(kicker)}</div><div style="font-size:19px;line-height:1.35;color:#152e43;font-weight:bold">${monthlyReportEscape(title)}</div></td></tr></table>`;
+  const table = (headers, rows, options = {}) => `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 26px;font-size:12px;color:#263a4a"><thead><tr>${headers.map(header => `<th style="padding:13px 12px;background:#152e43;border:1px solid #29465d;text-align:left;color:#ffffff;font-size:10px;letter-spacing:.55px;text-transform:uppercase">${monthlyReportEscape(header)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map((row, rowIndex) => `<tr>${row.map(value => `<td style="padding:12px;border:1px solid #d8e3eb;vertical-align:top;background:${rowIndex % 2 ? '#f4f8fb' : '#ffffff'}">${value}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}" style="padding:16px;border:1px solid #d8e3eb;color:#667789;background:#fbfdff">No records for this month.</td></tr>`}</tbody>${options.total ? `<tfoot><tr>${options.total.map(value => `<td style="padding:12px;border:1px solid #c6d8e2;background:#eaf4f5;color:#12384a;font-weight:bold">${value}</td>`).join('')}</tr></tfoot>` : ''}</table>`;
+  const sectionTitle = (kicker, title, color = '#087f8c') => `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:34px 0 16px;border-collapse:collapse"><tr><td style="border-left:4px solid ${color};padding:5px 0 5px 14px"><div style="font-size:10px;line-height:1.5;letter-spacing:1.5px;text-transform:uppercase;color:${color};font-weight:bold">${monthlyReportEscape(kicker)}</div><div style="font-size:20px;line-height:1.4;color:#152e43;font-weight:bold">${monthlyReportEscape(title)}</div></td></tr></table>`;
+  const numberedCompanyNames = names => names.length
+    ? `<ol style="margin:0;padding-left:20px">${names.map(name => `<li style="padding:2px 0">${monthlyReportEscape(name)}</li>`).join('')}</ol>`
+    : '<span style="color:#667085">—</span>';
   const mainCourseFootnote = [
     unmappedPlacementRecords ? `${countWord(unmappedPlacementRecords, 'placement record')} could not be mapped to a main course from the source record.` : ''
   ].filter(Boolean).join(' ');
   const placedRowsHtml = placementRows.map((row, index) => {
     const roll = getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']);
     const student = studentsByRoll.get(normalizePlacementText(roll));
-    const identity = studentKey(row, index);
-    const offersForStudent = studentPlacementRows.get(identity) || [row];
-    const outcome = placementOutcome(getValByHeader(row, ['status']), getValByHeader(row, ['joiningstatus']));
-    const placementNote = outcome.joined ? 'Joined' : outcome.notJoined ? 'Not joined' : 'Placed';
-    const hasDualPlacement = (companiesByPlacementStudent.get(identity)?.size || 0) > 1;
-    const hasEarlierPlacement = earlierPlacedStudents.has(identity);
-    const placementHistoryNote = [hasDualPlacement ? 'Dual placement' : '', hasEarlierPlacement ? 'Prior placement' : ''].filter(Boolean).join(' + ');
-    const remarks = `${placementHistoryNote ? `${placementHistoryNote} · ` : ''}${placementNote}`;
     const packageValue = getFirstNonEmptyValByHeader(row, ['package', 'salary', 'ctc', 'salarypackage', 'packageoffered']);
     const packageInfo = monthlyReportPackage(packageValue);
     const packageLabel = Number.isFinite(packageInfo.lpa) ? `${packageInfo.lpa.toFixed(2).replace(/\.00$/, '')} LPA` : packageValue || '—';
@@ -8601,7 +8576,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
       monthlyReportEscape(getValByHeader(row, ['companyname', 'company']) || '—'),
       monthlyReportEscape(getValByHeader(row, ['position', 'role']) || '—'),
       monthlyReportEscape(packageLabel),
-      monthlyReportEscape(remarks)
+      'Placed'
     ];
   });
   const pendingRowsHtml = [...pendingByBranch.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([branch, courseSets]) => {
@@ -8623,7 +8598,16 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     const posterCounts = getMediaPostingCounts(row, ['instagram_poster', 'linkedin_post'], 'branchposters');
     const videoCounts = getMediaPostingCounts(row, ['instagram_video', 'linkedin_video'], 'branchvideos');
     const companyCount = companyNames.length || Number(getValByHeader(row, ['companiesvisited'])) || 0;
-    return `<tr><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff"><b style="color:#183747">${monthlyReportEscape(owner)}</b></td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#f4f8fb">${monthlyReportEscape(getValByHeader(row, ['reportmonth']) || month)}</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff">${companyCount}</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#f4f8fb">${numberedActivityList(companyItems)}</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff">${tpoSummary?.placementRecords || 0} placements · ${tpoSummary?.drives || 0} drives</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#f4f8fb"><b>${posterCounts.completed} completed</b>${posterCounts.pending ? `<br><small style="color:#92400e">${posterCounts.pending} pending to post</small>` : ''}<br>${numberedActivityList(posterItems)}</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff"><b>${videoCounts.completed} completed</b>${videoCounts.pending ? `<br><small style="color:#92400e">${videoCounts.pending} pending to post</small>` : ''}<br>${numberedActivityList(videoItems)}</td></tr>`;
+    const placementActivitySummary = `${tpoSummary?.placementRecords || 0} placements${tpoSummary?.drives ? ` · ${tpoSummary.drives} drives` : ''}`;
+    return `<tr>
+      <td style="padding:13px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff"><b style="color:#183747">${monthlyReportEscape(owner)}</b></td>
+      <td style="padding:13px;border:1px solid #d8e3eb;vertical-align:top;background:#f4f8fb">${monthlyReportEscape(getValByHeader(row, ['reportmonth']) || month)}</td>
+      <td style="padding:13px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff">${companyCount}</td>
+      <td style="padding:13px;border:1px solid #d8e3eb;vertical-align:top;background:#f4f8fb">${numberedActivityList(companyItems)}</td>
+      <td style="padding:13px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff">${placementActivitySummary}</td>
+      <td style="padding:13px;border:1px solid #d8e3eb;vertical-align:top;background:#f4f8fb"><b>${posterCounts.completed} completed</b>${posterCounts.pending ? `<br><small style="color:#92400e">${posterCounts.pending} pending to post</small>` : ''}<br>${numberedActivityList(posterItems)}</td>
+      <td style="padding:13px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff"><b>${videoCounts.completed} completed</b>${videoCounts.pending ? `<br><small style="color:#92400e">${videoCounts.pending} pending to post</small>` : ''}<br>${numberedActivityList(videoItems)}</td>
+    </tr>`;
   }).join('');
   const monthName = new Date(`${month}-01T12:00:00`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' });
   const reportTitle = isAdmin ? `IPCS Global Placement Report · ${monthName}` : `${user.name || 'TPO'} · Placement Report · ${monthName}`;
@@ -8645,24 +8629,38 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     return `Conducted ${count} ${title}${branchLabel ? ` in ${branchLabel}` : ''}.`;
   });
   const achievementItems = [
-    `${countWord(placementRecordCount, 'placement')} recorded this month, independent of the number of placement drives conducted.`,
-    ...(eventAchievementLines.length ? eventAchievementLines : ['No placement drive was recorded for this month.']),
-    ...(highestLpa === null ? [] : [`Highest package: ${highestPackageLabel}, achieved by ${countWord(highestPackageStudents, 'student')}.`]),
+    ...eventAchievementLines,
     ...(totalOpeningPosts ? [`Published ${countWord(totalOpeningPosts, 'job opening post')} across the five main courses.`] : []),
-    ...(pendingPosterCount || pendingVideoCount ? [`${countWord(pendingPosterCount, 'poster')} and ${countWord(pendingVideoCount, 'video')} are pending to post.`] : []),
     ...(openingCompanies.size ? [`Connected ${countWord(openingCompanies.size, 'company')} through newsletter openings.`] : []),
-    ...(companiesVisitedCount ? [`Visited ${countWord(companiesVisitedCount, 'company')}${visitedCompanyNames.length ? `: ${visitedCompanyNames.join(', ')}` : ''}.`] : []),
-    ...(posterCount || videoCount ? [`Shared ${countWord(posterCount, 'poster')} and ${countWord(videoCount, 'video')} across Instagram and LinkedIn.`] : [])
+    ...(posterCount || videoCount ? [`Published ${countWord(posterCount, 'poster')} and ${countWord(videoCount, 'video')} on social media.`] : []),
+    ...(pendingPosterCount ? [`${countWord(pendingPosterCount, 'poster')} pending to post.`] : []),
+    ...(pendingVideoCount ? [`${countWord(pendingVideoCount, 'video')} pending to post.`] : [])
   ];
-  const achievementListHtml = achievementItems.map(item => `<li style="margin:0 0 7px;padding-left:3px">${monthlyReportEscape(item)}</li>`).join('');
-  const tpoBranchAchievementRows = [...tpoBranchPlacementCounts.entries()].map(([key, placementCount]) => {
-    const [branch, ownerKey] = key.split('\u0000');
-    const tpo = tpoSummaryRows.find(item => item.ownerKey === ownerKey);
-    const ownedBranchRows = (tpoPlacementRows.get(ownerKey) || []).filter(row => normalizePlacementText(getValByHeader(row, ['branch', 'sittingbranch'])) === normalizePlacementText(branch));
-    const joinedStudents = new Set(ownedBranchRows.filter(row => placementOutcome(getValByHeader(row, ['status']), getValByHeader(row, ['joiningstatus'])).joined).map(row => studentKey(row)));
-    const driveCountForBranch = driveEvents.filter(row => eventOwnerKey(row) === ownerKey && normalizePlacementText(getValByHeader(row, ['branch', 'sittingbranch'])) === normalizePlacementText(branch)).length;
-    return [monthlyReportEscape(monthName), monthlyReportEscape(tpo?.displayName || ownerKey), monthlyReportEscape(branch), String(placementCount), String(joinedStudents.size), String(driveCountForBranch)];
-  }).sort((a, b) => a[1].localeCompare(b[1]) || a[2].localeCompare(b[2]));
+  const achievementListHtml = achievementItems.map(item => `<li style="margin:0 0 9px;padding-left:3px">${monthlyReportEscape(item)}</li>`).join('');
+  const branchContributionMap = new Map();
+  const ensureBranchContribution = branchValue => {
+    const branch = String(branchValue || '').trim();
+    if (!branch) return null;
+    const key = normalizePlacementText(branch);
+    if (!branchContributionMap.has(key)) branchContributionMap.set(key, { branch, placementRecords: 0, drives: 0 });
+    return branchContributionMap.get(key);
+  };
+  branchPlacementCounts.forEach((placementRecords, branch) => {
+    const contribution = ensureBranchContribution(branch);
+    if (contribution) contribution.placementRecords += placementRecords;
+  });
+  driveEvents.forEach(row => {
+    const contribution = ensureBranchContribution(getValByHeader(row, ['branch', 'sittingbranch']));
+    if (contribution) contribution.drives++;
+  });
+  const branchContributionRows = [...branchContributionMap.values()].sort((a, b) => a.branch.localeCompare(b.branch)).map(item => {
+    const joinedStudents = new Set(placementRows
+      .filter(row => normalizePlacementText(getValByHeader(row, ['branch', 'sittingbranch'])) === normalizePlacementText(item.branch))
+      .filter(row => placementOutcome(getValByHeader(row, ['status']), getValByHeader(row, ['joiningstatus'])).joined)
+      .map(row => studentKey(row)));
+    return [monthlyReportEscape(item.branch), String(item.placementRecords), String(joinedStudents.size), ...(driveCount ? [String(item.drives)] : [])];
+  });
+  const branchContributionHeaders = ['Branch', 'Placement records', 'Students joined', ...(driveCount ? ['Drives conducted'] : [])];
   const branchMatrixRows = branchCourseCounts.map(item => [monthlyReportEscape(item.branch),
     ...MONTHLY_REPORT_MAIN_COURSES.map(course => String(branchCoursePlacementCounts.get(item.branch)?.get(course) || 0)), String(item.total)]);
   const placedStudentRowsByCourse = mainCourseTotals.map(([course, count]) => [monthlyReportEscape(course), String(count)]);
@@ -8677,26 +8675,26 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   const pendingScopeLabel = isAdmin ? 'Eligible pending across branches' : 'Eligible pending · assigned branches';
   const pendingScopeText = isAdmin ? 'eligible pending students across branches' : 'eligible pending students in assigned branches';
   const pendingTotalByCourse = MONTHLY_REPORT_MAIN_COURSES.map(course => new Set([...pendingByBranch.values()].flatMap(courseSets => [...courseSets.get(course)])).size);
+  const summaryMetrics = [
+    { value: String(placementRecordCount), label: 'Placements recorded', background: '#e9f7f3', border: '#c7e9df', color: '#087c70' },
+    { value: highestPackageLabel, label: `Highest package · ${highestPackageStudents} ${highestPackageStudents === 1 ? 'student' : 'students'}`, background: '#edf3ff', border: '#d6e1fa', color: '#4e67bb' },
+    { value: String(pendingTotalUnique), label: pendingScopeLabel, background: '#f8eff9', border: '#e8d8ee', color: '#8852a0' }
+  ];
+  const summaryCardsHtml = `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border-spacing:10px;margin:0 -10px 8px"><tr>${summaryMetrics.map(metric => `<td style="width:33.33%;padding:18px 20px;background:${metric.background};border:1px solid ${metric.border};border-radius:10px;vertical-align:top"><div style="font-size:24px;line-height:1.25;font-weight:bold;color:${metric.color}">${monthlyReportEscape(metric.value)}</div><div style="margin-top:6px;font-size:11px;line-height:1.5;color:#536879">${monthlyReportEscape(metric.label)}</div></td>`).join('')}</tr></table>`;
   const html = `
-    <div style="margin:0;padding:24px 10px;background:#f2f6f9;font-family:Arial,Helvetica,sans-serif;color:#263a4a;line-height:1.5">
-      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:980px;margin:0 auto;border-collapse:separate;border-spacing:0;background:#ffffff;border:1px solid #dce6ed;border-radius:16px;overflow:hidden">
-       <tr><td style="padding:28px 32px;background:#102c3d;color:#ffffff;border-bottom:4px solid #29b8aa">
+    <div style="margin:0;padding:30px 16px;background:#f2f6f9;font-family:Arial,Helvetica,sans-serif;color:#263a4a;line-height:1.65">
+      <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:920px;margin:0 auto;border-collapse:separate;border-spacing:0;background:#ffffff;border:1px solid #dce6ed;border-radius:16px;overflow:hidden">
+       <tr><td style="padding:34px 38px;background:#102c3d;color:#ffffff;border-bottom:4px solid #29b8aa">
         <div style="font-size:11px;letter-spacing:2px;color:#83e2d4;font-weight:bold">IPCS GLOBAL &nbsp;·&nbsp; MONTHLY PLACEMENT REPORT</div>
-        <h1 style="margin:9px 0 3px;font-size:27px;line-height:1.25;color:#ffffff">${monthlyReportEscape(reportTitle)}</h1>
+        <h1 style="margin:12px 0 4px;font-size:28px;line-height:1.3;color:#ffffff">${monthlyReportEscape(reportTitle)}</h1>
         <p style="margin:7px 0 0;color:#ccdae3;font-size:13px">Prepared by ${monthlyReportEscape(user.name || 'Placement team')} &nbsp;·&nbsp; ${isAdmin ? 'All portal records' : 'Assigned placement scope'}</p>
        </td></tr>
-       <tr><td style="padding:24px 30px 30px">
+       <tr><td style="padding:30px 38px 38px">
         <p style="margin:0 0 7px;color:#183747;font-size:15px"><b>Dear Gifty,</b></p>
-        <p style="margin:0 0 18px;color:#506476">Here is the placement and career activity report for <b>${monthlyReportEscape(monthName)}</b>.</p>
-        ${sectionTitle('Monthly at a glance', 'Achievements this month', '#078a83')}
-        <div style="margin:0 0 14px;padding:14px 18px;background:#edf8f6;border:1px solid #cceae3;border-radius:8px;color:#234b50;font-size:13px"><b>Highlights of the Month</b><ul style="margin:9px 0 0;padding-left:21px">${achievementListHtml}</ul></div>
-        <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border-spacing:7px;margin:0 -7px 8px"><tr>
-         <td style="width:25%;padding:14px;background:#e9f7f3;border:1px solid #c7e9df;border-radius:9px"><div style="font-size:24px;font-weight:bold;color:#087c70">${placementRecordCount}</div><div style="font-size:11px;color:#476773">Placements recorded</div></td>
-         <td style="width:25%;padding:14px;background:#fff5e8;border:1px solid #f3dfbd;border-radius:9px"><div style="font-size:24px;font-weight:bold;color:#b56b16">${driveCount}</div><div style="font-size:11px;color:#6c5a42">Placement drives</div></td>
-         <td style="width:25%;padding:14px;background:#edf3ff;border:1px solid #d6e1fa;border-radius:9px"><div style="font-size:22px;font-weight:bold;color:#4e67bb">${monthlyReportEscape(highestPackageLabel)}</div><div style="font-size:11px;color:#586b84">Highest package · ${highestPackageStudents} ${highestPackageStudents === 1 ? 'student' : 'students'}</div></td>
-         <td style="width:25%;padding:14px;background:#f8eff9;border:1px solid #e8d8ee;border-radius:9px"><div style="font-size:24px;font-weight:bold;color:#8852a0">${pendingTotalUnique}</div><div style="font-size:11px;color:#685673">${monthlyReportEscape(pendingScopeLabel)}</div></td>
-        </tr></table>
-        <p style="margin:0 0 4px;font-size:11px;color:#718394">Opening posts: <b>${totalOpeningPosts}</b> &nbsp;·&nbsp; Hiring companies connected: <b>${openingCompanies.size}</b> &nbsp;·&nbsp; Applications received: <b>${applicationRows.length}</b> &nbsp;·&nbsp; Eligible pending in this report scope: <b>${pendingTotalUnique}</b></p>
+        <p style="margin:0 0 12px;color:#506476">Here is the placement and career activity report for <b>${monthlyReportEscape(monthName)}</b>.</p>
+        ${sectionTitle('Monthly at a glance', 'Placement and progress summary', '#078a83')}
+        ${summaryCardsHtml}
+        ${achievementItems.length ? `<div style="margin:10px 0 20px;padding:19px 22px;background:#edf8f6;border:1px solid #cceae3;border-radius:10px;color:#234b50;font-size:13px"><b style="font-size:14px">Activity highlights</b><ul style="margin:10px 0 0;padding-left:22px">${achievementListHtml}</ul></div>` : ''}
 
         ${sectionTitle('Placement Status', 'Placement records by main course', '#3478c4')}
         ${table(['Main course', 'Placement records'], placedStudentRowsByCourse, { total: ['<b>Total placement records</b>', `<b>${placementRecordCount}</b>`] })}
@@ -8705,8 +8703,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
         ${sectionTitle('Newsletter Status', 'Openings published', '#8a5caf')}
         ${table(['Main course', 'Opening posts'], openingRowsByCourse, { total: ['<b>Total</b>', `<b>${totalOpeningPostCount}</b>`] })}
         ${unmappedOpeningPosts ? `<p style="margin:-8px 0 14px;color:#8a5c2d;font-size:11px">${countWord(unmappedOpeningPosts, 'opening post')} could not be mapped to one of the five main courses in the source sheet.</p>` : ''}
-        ${table(['Companies connected through openings', 'Count'], [[monthlyReportEscape([...openingCompanies.values()].sort().join(', ') || '—'), String(openingCompanies.size)]])}
-        ${table(['Companies visited', 'Count'], [[monthlyReportEscape(visitedCompanyNames.join(', ') || '—'), String(companiesVisitedCount)]])}
+        ${table(['Companies connected through openings', 'Count'], [[numberedCompanyNames([...openingCompanies.values()].sort()), String(openingCompanies.size)]])}
 
         ${sectionTitle('Placed Students Details', 'Placement register', '#087f8c')}
         ${table(['Sl. No.', 'Student', 'Main course · branch', 'Placed at', 'Role', 'Package (LPA)', 'Remarks'], placedRowsHtml)}
@@ -8726,8 +8723,8 @@ exports.sendMonthlyTpoReport = async (req, res) => {
         ${sectionTitle('Center wise Placement', 'Branch totals across the placement team', '#3478c4')}
         ${table(['Branch', ...MONTHLY_REPORT_MAIN_COURSES, 'Branch total'], branchMatrixRows)}
         ${unmappedPlacementRecords ? `<p style="margin:-8px 0 14px;color:#8a5c2d;font-size:11px">${countWord(unmappedPlacementRecords, 'placement record')} could not be mapped to a main course in the source sheet.</p>` : ''}
-        ${sectionTitle('TPO Wise Placement', 'Branch and TPO contributions', '#8a5caf')}
-        ${table(['Month', 'TPO name', 'Branch', 'Placement records', 'Students joined', 'Drives conducted'], tpoBranchAchievementRows)}
+        ${sectionTitle('TPO Wise Placement', 'Branch contributions', '#8a5caf')}
+        ${table(branchContributionHeaders, branchContributionRows)}
 
         ${sectionTitle('Company Visits and Media', 'Company names and activity links', '#c07a23')}
         ${activityHtml ? `<table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 18px;font-size:12px"><thead><tr>${['TPO', 'Month', 'Company count', 'Company names · S.No.', 'Placement activity', 'Poster count · S.No. / title', 'Video count · S.No. / title'].map(header => `<th style="padding:10px;background:#152e43;border:1px solid #29465d;text-align:left;color:#fff;font-size:10px;text-transform:uppercase">${header}</th>`).join('')}</tr></thead><tbody>${activityHtml}</tbody></table>` : '<p style="color:#667789">No company visit or media details were entered for this report month.</p>'}
@@ -8747,7 +8744,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
       from: process.env.EMAIL_USER ? `"IPCS Global Placement Team" <${process.env.EMAIL_USER}>` : undefined,
       to: MONTHLY_TPO_REPORT_RECIPIENT,
       subject,
-      text: `IPCS Global monthly placement report for ${monthName}. ${placementRecordCount} placement records were recorded in the report month, independent of ${driveCount} placement drives. Highest package: ${highestPackageLabel}, achieved by ${highestPackageStudents} student(s). ${pendingTotalUnique} ${pendingScopeText}.`,
+      text: `IPCS Global monthly placement report for ${monthName}. ${placementRecordCount} placement records were recorded in the report month.${driveCount ? ` ${driveCount} placement drives were conducted.` : ''} Highest package: ${highestPackageLabel}, achieved by ${highestPackageStudents} student(s). ${pendingTotalUnique} ${pendingScopeText}.`,
       html
     }, { name: user.name || 'IPCS Global Placement Team', email: MONTHLY_TPO_REPORT_RECIPIENT, type: 'Monthly TPO Placement Report', category: 'placement' });
     return res.json({ success: true, queued: Boolean(delivery?.queued), recipient: MONTHLY_TPO_REPORT_RECIPIENT, month });
