@@ -1,9 +1,10 @@
-const { normalizePlacementText } = require('./placementRecords');
+const { normalizePlacementText, isTpoActionLog } = require('./placementRecords');
 const { isPlacedStatus, isPlacementEligiblePending } = require('./placementMetrics');
 
 const isPlacementOutcome = (row, getValue) => {
-  // Every source row with a Placed status counts, including repeat entries.
-  return isPlacedStatus(getValue(row, ['status']));
+  // Keep every real Placed event, including repeat placements. Audit snapshots
+  // marked as TPO action logs are not separate placement events.
+  return !isTpoActionLog(row, getValue) && isPlacedStatus(getValue(row, ['status']));
 };
 
 const countPlacementRecords = (placementRows, getValue, canAccessPlacement = () => true) =>
@@ -41,8 +42,8 @@ const calculateDashboardPlacementCounts = (students, placementRows, getValue, ca
   return {
     totalStudents: eligibleStudents.size,
     placementPending: pendingStudents.size,
-    // Every TPO_Log row marked Placed is one placement, including repeat rows
-    // for a student who has more than one placement record.
+    // Count each actual placement event. Repeat placements remain separate;
+    // TPO action-history snapshots are excluded by isPlacementOutcome.
     placed: countPlacementRecords(placementRows, getValue, canAccessPlacement)
   };
 };

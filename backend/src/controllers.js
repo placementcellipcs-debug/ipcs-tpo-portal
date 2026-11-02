@@ -32,7 +32,7 @@ const {
 } = require('./config');
 
 const { autoCreateDesignTask } = require('./designControllers');
-const { normalizePlacementText, placementLogRecordKey } = require('./placementRecords');
+const { normalizePlacementText, isTpoActionLog, placementLogRecordKey } = require('./placementRecords');
 const { calculateDashboardPlacementCounts } = require('./dashboardStats');
 const { isPlacementEligiblePending, placementOutcome } = require('./placementMetrics');
 const { createPlacementLocationResolver, normalizeInternationalPlacementFlag } = require('./internationalPlacements');
@@ -1146,6 +1146,7 @@ exports.getDashboardStats = async (req, res) => {
   const resolvePlacementLocation = createPlacementLocationResolver(getValByHeader, cache);
   const internationalPlacementCount = placementRows.filter(row =>
     normalizePlacementText(getValByHeader(row, ['status'])) === 'placed'
+    && !isTpoActionLog(row, getValByHeader)
     && resolvePlacementLocation(row).isInternationalPlacement
   ).length;
 
@@ -1202,8 +1203,8 @@ exports.getDashboardStats = async (req, res) => {
     stats: { 
       totalStudents: placementCounts.totalStudents,
       pendingApps, 
-      // Count every TPO_Log row whose Status is exactly Placed, matching the
-      // source-of-truth rule used by the monthly placement report.
+      // Count every canonical TPO_Log placement event. Repeated placements
+      // count separately; edit-history snapshots do not.
       placed: placementCounts.placed,
       internationalPlacements: internationalPlacementCount,
       placementPending: placementCounts.placementPending,
@@ -1237,6 +1238,7 @@ exports.getStudents = async (req, res) => {
   const placedRolls = new Set();
   const placedNameBranches = new Set();
   placementLogRows.forEach(log => {
+    if (isTpoActionLog(log, getValByHeader)) return;
     if (normalizePlacementText(getValByHeader(log, ['status'])) !== 'placed') return;
     const roll = normalizePlacementText(getValByHeader(log, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
     const name = normalizePlacementText(getValByHeader(log, ['studentname', 'name']));
@@ -1818,20 +1820,6 @@ const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentCo
     'Action Details': actionDetails || ''
   };
   const savedActionRow = await logSheet.addRow(mapPlacementRowData(logSheet, actionRow), { insert: true });
-  if (normalizePlacementText(status) === 'placed') {
-    try {
-      await syncPlacedStudent({
-        name: studentName, phone: studentContact, email: studentEmail, roll: studentRoll,
-        course, branch, qual: qualification, resume, jobId, company, position,
-        placementOfficer: changedBy, status, remarks, datePlaced, packageLpa, joiningStatus,
-        internationalPlacement: normalizeInternationalPlacementFlag(internationalPlacement),
-        sourceSheet: 'TPO_Log', sourceRow: savedActionRow.rowNumber
-      });
-    } catch (error) {
-      savedActionRow.placementProjectionWarning = `The placed action row was saved to TPO_Log, but Placed_Students could not be updated: ${error.message}`;
-      console.error(savedActionRow.placementProjectionWarning);
-    }
-  }
   return savedActionRow;
 };
 
@@ -3871,6 +3859,7 @@ exports.getReports = async (req, res) => {
   const placedStudentRolls = new Set();
   const placedStudentNameBranches = new Set();
   sourceTpoLogs.forEach(log => {
+    if (isTpoActionLog(log, getValByHeader)) return;
     if (normalizePlacementText(getValByHeader(log, ['status'])) !== 'placed') return;
     const roll = normalizePlacementText(getValByHeader(log, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
     const name = normalizePlacementText(getValByHeader(log, ['studentname', 'name']));
@@ -3993,10 +3982,11 @@ exports.getReports = async (req, res) => {
   });
   tpoLogs = [...reportTpoNames].sort((a, b) => a.localeCompare(b)).map(name => ({ placementofficer: name }));
 
-  // Count every source TPO_Log row marked Placed, including repeated entries
-  // and rows written by TPO action workflows. Do not depend on the derived
-  // Placed_Students cache; it can lag during a partial Sheets sync.
+  // Count every canonical placement row, including repeat placements. Do not
+  // depend on the derived Placed_Students cache; it can lag during a partial
+  // Sheets sync. TPO action-history snapshots are filtered above.
   sourceTpoLogs.forEach(row => {
+    if (isTpoActionLog(row, getValByHeader)) return;
     if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed') return;
     const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame']);
     const belongsToUser = isPlacementTrackerTpo(reportUser)
@@ -4058,6 +4048,7 @@ exports.getPlacedStudents = async (req, res) => {
   const resolvePlacementLocation = createPlacementLocationResolver(getValByHeader, cache || {});
 
   for (const row of sourceRows) {
+    if (isTpoActionLog(row, getValByHeader)) continue;
     if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed') continue;
 
     const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']);
@@ -8804,6 +8795,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     return date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : '';
   };
   const placementRows = sourceTpoLogs.filter(row => {
+    if (isTpoActionLog(row, getValByHeader)) return false;
     if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed') return false;
     if (!isMonthDate(getFirstNonEmptyValByHeader(row, ['dateplaced', 'timestamp', 'date']))) return false;
     if (isAdmin) return true;
@@ -8908,6 +8900,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   const placedRolls = new Set();
   const placedNamesByBranch = new Set();
   sourceTpoLogs.forEach(row => {
+    if (isTpoActionLog(row, getValByHeader)) return;
     if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed') return;
     const roll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
     const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
@@ -8977,6 +8970,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   const dualPlacementStudents = [...companiesByPlacementStudent.values()].filter(companies => companies.size > 1).length;
   const reportMonthStart = new Date(`${month}-01T00:00:00`);
   const earlierPlacedStudents = new Set(sourceTpoLogs.filter(row => {
+    if (isTpoActionLog(row, getValByHeader)) return false;
     if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed') return false;
     const date = safeParseDate(getFirstNonEmptyValByHeader(row, ['dateplaced', 'timestamp', 'date']));
     return Boolean(date && date < reportMonthStart);

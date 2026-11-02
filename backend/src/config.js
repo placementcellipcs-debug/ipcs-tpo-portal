@@ -306,10 +306,10 @@ const cachePlacedRow = (sheet, rowNumber, rowData) => {
 
 async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
   const toAdd = (tpoLogs || []).flatMap((row, index) => {
-    // Every TPO_Log row currently marked Placed is a placement record. Keep
-    // repeated rows and action rows; their source row number gives each one a
-    // separate identity in the reporting projection.
+    // Keep every actual placement event, including repeat placements. Action
+    // history rows are snapshots of edits, not additional placement events.
     if (normalizedPlacementStatus(tpoLogStatus(row)) !== 'placed') return [];
+    if (/^(yes|true|1)$/i.test(placementRowValue(row, ['tpoactionlog']))) return [];
     const sourceRow = Number(row?.rowNumber) || index + 2;
     const recordKey = `TPO_Log:${sourceRow}`;
     const value = aliases => placementRowValue(row, aliases);
@@ -387,7 +387,8 @@ async function rebuildPlacedStudentsFromTpoLogs() {
   }
   const sheet = await ensurePlacedStudentsSheet();
   const existingRows = await sheet.getRows();
-  const desiredCount = (cache.tpoLogs || []).filter(row => normalizedPlacementStatus(tpoLogStatus(row)) === 'placed').length;
+  const desiredCount = (cache.tpoLogs || []).filter(row => normalizedPlacementStatus(tpoLogStatus(row)) === 'placed'
+    && !/^(yes|true|1)$/i.test(placementRowValue(row, ['tpoactionlog']))).length;
   const rebuiltRows = await rebuildPlacedStudents(sheet, cache.tpoLogs || [], existingRows);
   return { rebuilt: Array.isArray(rebuiltRows), sourceCount: desiredCount, projectionCount: Array.isArray(rebuiltRows) ? rebuiltRows.length : existingRows.length };
 }

@@ -1,5 +1,8 @@
 const normalizePlacementText = value => String(value || '').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
 
+const isTpoActionLog = (record, getValue) =>
+  /^(yes|true|1)$/i.test(String(getValue?.(record, ['tpoactionlog']) ?? '').trim());
+
 const placementLogRecordKey = record => {
   const normalizedRoll = normalizePlacementText(record?.roll || record?.rollNumber || record?.ipcsRollNumber);
   const name = normalizePlacementText(record?.name || record?.studentName);
@@ -52,4 +55,4 @@ const latestPlacementRows = (rows, getValue) => {
   );
 };
 
-module.exports = { normalizePlacementText, placementIdentity, placementLogRecordKey, latestPlacementRows };
+module.exports = { normalizePlacementText, isTpoActionLog, placementIdentity, placementLogRecordKey, latestPlacementRows };

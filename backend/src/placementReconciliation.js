@@ -1,5 +1,5 @@
 const { isPlacedStatus } = require('./placementMetrics');
-const { normalizePlacementText, placementLogRecordKey } = require('./placementRecords');
+const { normalizePlacementText, isTpoActionLog, placementLogRecordKey } = require('./placementRecords');
 
 const placementKey = (row, getValue) => placementLogRecordKey({
   roll: getValue(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']),
@@ -11,9 +11,10 @@ const placementKey = (row, getValue) => placementLogRecordKey({
 
 const buildPlacementReconciliation = ({ tpoLogs = [], placedStudents = [], applications = [], getValue }) => {
   // A source row number is the identity. Do not collapse repeated placements
-  // by student, phone, email, company, or status-history flag.
+  // by student, phone, email, or company. Exclude audit snapshots marked by
+  // TPO Action Log so they do not look like missing placement projections.
   const sourceRows = (Array.isArray(tpoLogs) ? tpoLogs : []).filter(row =>
-    isPlacedStatus(getValue(row, ['status']))
+    !isTpoActionLog(row, getValue) && isPlacedStatus(getValue(row, ['status']))
   );
   const sourceByKey = new Map(sourceRows.map((row, index) => {
     const rowNumber = Number(row?.rowNumber) || index + 2;
@@ -43,8 +44,10 @@ const buildPlacementReconciliation = ({ tpoLogs = [], placedStudents = [], appli
     .map(([key, row]) => ({ key, rowNumber: row.rowNumber, name: getValue(row, ['studentname', 'name']), roll: getValue(row, ['rollnumber', 'rollno', 'roll']), company: getValue(row, ['companyname', 'company']), status: getValue(row, ['status']) }));
 
   // Manual application recovery is only a diagnostic. Match each saved
-  // application to a TPO_Log placement key, without excluding action rows.
-  const logKeys = new Set((Array.isArray(tpoLogs) ? tpoLogs : []).map(row => placementKey(row, getValue)).filter(Boolean));
+  // application to a canonical TPO_Log placement key.
+  const logKeys = new Set((Array.isArray(tpoLogs) ? tpoLogs : [])
+    .filter(row => !isTpoActionLog(row, getValue))
+    .map(row => placementKey(row, getValue)).filter(Boolean));
   const missingManualLogRows = (Array.isArray(applications) ? applications : [])
     .filter(row => {
       const source = normalizePlacementText(getValue(row, ['entrysource', 'recordorigin', 'origin', 'source']));
