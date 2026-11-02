@@ -1,14 +1,14 @@
 const { isPlacedStatus } = require('./placementMetrics');
-const { normalizePlacementText } = require('./placementRecords');
+const { placementLogRecordKey } = require('./placementRecords');
 
 const placementKey = (row, getValue) => {
-  const student = normalizePlacementText(getValue(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']))
-    || normalizePlacementText(getValue(row, ['studentname', 'name']));
-  if (!student) return '';
-  const jobId = normalizePlacementText(getValue(row, ['jobid', 'job id']));
-  const company = normalizePlacementText(getValue(row, ['companyname', 'company']));
-  const position = normalizePlacementText(getValue(row, ['position', 'role']));
-  return `${student}|${jobId || (company || position ? `${company}|${position}` : 'general')}`;
+  return placementLogRecordKey({
+    roll: getValue(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']),
+    name: getValue(row, ['studentname', 'name']),
+    jobId: getValue(row, ['jobid', 'job id']),
+    company: getValue(row, ['companyname', 'company']),
+    position: getValue(row, ['position', 'role'])
+  });
 };
 
 const buildPlacementReconciliation = ({ tpoLogs = [], placedStudents = [], applications = [], getValue }) => {

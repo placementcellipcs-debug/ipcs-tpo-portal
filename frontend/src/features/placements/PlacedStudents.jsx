@@ -286,15 +286,18 @@ export default function PlacedStudents() {
 
   const deletePlacement = async app => {
     if (!app?.rowNumber) return alert('This placement does not have a TPO_Log row reference. Refresh the list and try again.');
-    const confirmed = window.confirm(
-      `Delete ${app.name || 'this student'}'s placement at ${app.company || 'this company'}? This removes the placement from TPO_Log and its matching Opening_Applied row, then refreshes Placed_Students. This cannot be undone.`
-    );
+    const reason = isTpo ? window.prompt(`Why should ${app.name || 'this placement'} be deleted? Gifty will review this reason.`) : '';
+    if (isTpo && (reason === null || reason.trim().length < 5)) return;
+    const confirmed = window.confirm(isTpo
+      ? `Send a deletion request for ${app.name || 'this student'}'s placement at ${app.company || 'this company'} to Gifty? The placement will stay visible until she approves.`
+      : `Delete ${app.name || 'this student'}'s placement at ${app.company || 'this company'}? This removes the placement from TPO_Log and its matching Opening_Applied row, then refreshes Placed_Students. This cannot be undone.`);
     if (!confirmed) return;
 
     setDeletingRow(app.rowNumber);
     try {
       const response = await axios.post(`${API_BASE}/api/tpo/placed-students/delete`, {
         rowNumber: app.rowNumber,
+        reason: isTpo ? reason.trim() : '',
         expected: {
           name: app.name,
           roll: app.roll,
@@ -304,6 +307,10 @@ export default function PlacedStudents() {
         }
       }, { timeout: 60000 });
       if (!response.data?.success) throw new Error(response.data?.message || 'The placement delete was rejected.');
+      if (response.data.requestSubmitted) {
+        alert(`${response.data.message}${response.data.requestId ? ` Request ID: ${response.data.requestId}` : ''}`);
+        return;
+      }
       await fetchData();
       if (response.data.warning) alert(`Placement deleted. ${response.data.warning}`);
     } catch (error) {
@@ -531,11 +538,11 @@ export default function PlacedStudents() {
                               style={{ padding: '6px 10px', fontSize: '0.8rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '6px', color: '#f87171', borderColor: 'rgba(248, 113, 113, 0.4)' }}
                               onClick={() => deletePlacement(app)}
                               disabled={Boolean(deletingRow)}
-                              aria-label={`Delete ${app.name || 'student'} placement`}
-                              title="Delete placement record"
+                              aria-label={`${isTpo ? 'Request deletion of' : 'Delete'} ${app.name || 'student'} placement`}
+                              title={isTpo ? 'Ask Gifty to approve deletion' : 'Delete placement record'}
                             >
                               {deletingRow === app.rowNumber ? <CircleNotch size={14} className="ph-spin" /> : <Trash weight="bold" size={14} />}
-                              Delete
+                              {isTpo ? 'Request delete' : 'Delete'}
                             </button>
                           )}
                         </>

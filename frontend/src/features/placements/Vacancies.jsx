@@ -309,7 +309,7 @@ function VacanciesContent() {
   const accessType = String(tpoData?.accessType || '').toLowerCase();
   
   const isSuperAdmin = accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(userRole);
-  const isTpo = userRole.includes('TPO');
+  const isTpo = userRole.includes('TPO') || userRole.includes('PLACEMENT OFFICER');
   const isBranchManager = userRole === 'BM' || userRole.includes('BRANCH MANAGER');
   const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(userRole) || userRole.includes('REGIONAL TECHNICAL HEAD');
   const hideTpoFilter = isBranchManager || isRth;
@@ -350,10 +350,19 @@ function VacanciesContent() {
 
   const deleteVacancy = async vacancy => {
     const companyLabel = vacancy?.company || 'this company';
-    if (!window.confirm(`Delete the ${vacancy?.position || 'opening'} at ${companyLabel}? This removes the vacancy row from the NewsLetter sheet.`)) return;
+    const reason = isTpo ? window.prompt(`Why should the ${vacancy?.position || 'opening'} at ${companyLabel} be deleted? Gifty will review this reason.`) : '';
+    if (isTpo && (reason === null || reason.trim().length < 5)) return;
+    if (!window.confirm(isTpo
+      ? `Send a deletion request for this opening to Gifty? It will stay active until she approves.`
+      : `Delete the ${vacancy?.position || 'opening'} at ${companyLabel}? This removes the vacancy row from the NewsLetter sheet.`)) return;
     try {
-      const response = await axios.delete(`${API_BASE}/api/tpo/vacancies/${encodeURIComponent(vacancy.id)}`);
+      const response = await axios.delete(`${API_BASE}/api/tpo/vacancies/${encodeURIComponent(vacancy.id)}`, { data: { reason: isTpo ? reason.trim() : '' } });
       if (!response.data?.success) throw new Error(response.data?.message || 'The vacancy could not be deleted.');
+      if (response.data.requestSubmitted) {
+        setOpeningNoticeIsError(false);
+        setOpeningNotice(`${response.data.message}${response.data.requestId ? ` Request ID: ${response.data.requestId}` : ''}`);
+        return;
+      }
       setVacancies(previous => previous.filter(item => String(item.id) !== String(vacancy.id)));
       setOpeningNoticeIsError(false);
       setOpeningNotice(response.data.message || 'Vacancy deleted.');
@@ -717,7 +726,7 @@ function VacanciesContent() {
                             <PencilSimple size={18} /> Edit Opening
                           </button>
                           <button className="premium-btn secondary" onClick={() => deleteVacancy(v)}>
-                            <Trash size={18} /> Delete Opening
+                            <Trash size={18} /> {isTpo ? 'Request Deletion' : 'Delete Opening'}
                           </button>
                         </>}
                       </div>

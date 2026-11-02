@@ -52,6 +52,7 @@ const ExamsHub = lazyRoute(() => import('../features/learning/ExamsHub'));
 const Branches = lazyRoute(() => import('../features/placements/Branches'));
 const SecurityActivity = lazyRoute(() => import('../features/admin/SecurityActivity'));
 const PlacementReconciliation = lazyRoute(() => import('../features/admin/PlacementReconciliation'));
+const DeleteApprovals = lazyRoute(() => import('../features/placements/DeleteApprovals'));
 const CorporateTrainingInquiries = lazyRoute(() => import('../features/admin/CorporateTrainingInquiries'));
 const HiringInquiries = lazyRoute(() => import('../features/admin/HiringInquiries'));
 const PublicSitePage = lazyRoute(() => import('../features/public/PublicSitePage'));
@@ -136,6 +137,15 @@ function PlacementReconciliationRoute() {
   if (!account) return <Navigate to="/login" replace />;
   return String(account.email || '').trim().toLowerCase() === 'gifty@ipcsglobal.com'
     ? <PlacementReconciliation />
+    : <Navigate to="/dashboard" replace />;
+}
+
+function DeleteApprovalsRoute() {
+  let account = null;
+  try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
+  if (!account) return <Navigate to="/login" replace />;
+  return String(account.email || '').trim().toLowerCase() === 'gifty@ipcsglobal.com'
+    ? <DeleteApprovals />
     : <Navigate to="/dashboard" replace />;
 }
 
@@ -253,6 +263,7 @@ function RoutedContent() {
         <Route path="/exams/talentino" element={<TalentinoExams />} />
         <Route path="/security-logs" element={<SecurityActivity />} />
         <Route path="/placement-reconciliation" element={<PlacementReconciliationRoute />} />
+        <Route path="/delete-approvals" element={<DeleteApprovalsRoute />} />
         <Route path="/admin/corporate-training" element={<CorporateTrainingInquiries />} />
         <Route path="/hiring-inquiries" element={<HiringInquiries />} />
         

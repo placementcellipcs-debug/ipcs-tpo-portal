@@ -32,7 +32,7 @@ const {
 } = require('./config');
 
 const { autoCreateDesignTask } = require('./designControllers');
-const { normalizePlacementText, placementIdentity, latestPlacementRows } = require('./placementRecords');
+const { normalizePlacementText, placementIdentity, placementLogRecordKey, latestPlacementRows } = require('./placementRecords');
 const { calculateDashboardPlacementCounts } = require('./dashboardStats');
 const { isPlacementEligiblePending, placementOutcome } = require('./placementMetrics');
 const { createPlacementLocationResolver } = require('./internationalPlacements');
@@ -40,6 +40,15 @@ const { buildPlacementReconciliation } = require('./placementReconciliation');
 const { PLACEMENT_AUDIT_SHEET, PLACEMENT_AUDIT_HEADERS, createPlacementAuditEvent } = require('./placementAudit');
 const { createTalentinoSessionResolver } = require('./talentinoSessionMatch');
 const { formatIndiaTimestamp, formatIndiaDate, formatIndiaTime } = require('./utils/dateTime');
+
+const TPO_DELETE_REQUEST_SHEET = 'TPO_Delete_Requests';
+const TPO_DELETE_REQUEST_HEADERS = [
+  'Request ID', 'Status', 'Record Type', 'Requested At', 'Requested By Name', 'Requested By Email',
+  'Requested By Role', 'Target ID', 'Target Row Number', 'Target Summary', 'Target Snapshot', 'Reason',
+  'Reviewed By Name', 'Reviewed By Email', 'Reviewed At', 'Decision Notes', 'Execution Message'
+];
+const TPO_DELETE_APPROVER_EMAIL = 'gifty@ipcsglobal.com';
+const tpoDeleteApprovalLocks = new Set();
 
 const FOLDER_OFFER_LETTERS = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5';
 const FOLDER_CLIENT_LOGOS = '11M8jGi1ISWP2mOpWRZncHhThHLoc7cDi'; 
@@ -1572,6 +1581,85 @@ const appendPlacementAudit = async event => {
   });
   return saved;
 };
+
+const isTpoDeleteApprover = user => String(user?.email || '').trim().toLowerCase() === TPO_DELETE_APPROVER_EMAIL;
+const safeSheetText = (value, limit = 2000) => {
+  const text = String(value ?? '').trim().slice(0, limit);
+  return /^[=+\-@]/.test(text) ? `'${text}` : text;
+};
+
+const ensureTpoDeleteRequestSheet = async () => {
+  await loadDocInfo();
+  let sheet = doc.sheetsByTitle[TPO_DELETE_REQUEST_SHEET];
+  if (!sheet) sheet = await doc.addSheet({ title: TPO_DELETE_REQUEST_SHEET, headerValues: TPO_DELETE_REQUEST_HEADERS });
+  await ensurePlacementHeaders(sheet, TPO_DELETE_REQUEST_HEADERS);
+  return sheet;
+};
+
+const createTpoDeleteRequest = async ({ requester, recordType, targetId, targetRowNumber = '', summary, snapshot, reason }) => {
+  const sheet = await ensureTpoDeleteRequestSheet();
+  const requestId = `DEL-${randomBytes(12).toString('hex').toUpperCase()}`;
+  const requestedAt = formatIndiaTimestamp();
+  const cleanReason = safeSheetText(reason, 500);
+  const values = {
+    'Request ID': requestId,
+    Status: 'Pending',
+    'Record Type': recordType,
+    'Requested At': requestedAt,
+    'Requested By Name': safeSheetText(requester?.name, 160),
+    'Requested By Email': safeSheetText(requester?.email, 254),
+    'Requested By Role': safeSheetText(requester?.role, 100),
+    'Target ID': safeSheetText(targetId, 200),
+    'Target Row Number': targetRowNumber,
+    'Target Summary': safeSheetText(summary, 500),
+    'Target Snapshot': JSON.stringify(snapshot || {}),
+    Reason: cleanReason,
+    'Reviewed By Name': '',
+    'Reviewed By Email': '',
+    'Reviewed At': '',
+    'Decision Notes': '',
+    'Execution Message': ''
+  };
+  await sheet.addRow(values);
+  logPortalAuditEvent({
+    requestId,
+    actor: { name: requester?.name, email: requester?.email, role: requester?.role },
+    actorType: 'Human',
+    source: 'Deletion approval workflow',
+    action: 'Deletion approval requested',
+    resource: recordType,
+    result: 'Pending',
+    details: { requestId, targetId, targetRowNumber, summary, reason: cleanReason }
+  });
+  return { requestId, requestedAt };
+};
+
+const serializeTpoDeleteRequest = row => {
+  const get = name => String(row.get(name) ?? '').trim();
+  let target = {};
+  try { target = JSON.parse(get('Target Snapshot') || '{}'); } catch { /* Keep a malformed snapshot visible as an empty target. */ }
+  return {
+    requestId: get('Request ID'),
+    status: get('Status'),
+    recordType: get('Record Type'),
+    requestedAt: get('Requested At'),
+    requestedByName: get('Requested By Name'),
+    requestedByEmail: get('Requested By Email'),
+    requestedByRole: get('Requested By Role'),
+    targetId: get('Target ID'),
+    targetRowNumber: get('Target Row Number'),
+    summary: get('Target Summary'),
+    target,
+    reason: get('Reason'),
+    reviewedByName: get('Reviewed By Name'),
+    reviewedByEmail: get('Reviewed By Email'),
+    reviewedAt: get('Reviewed At'),
+    decisionNotes: get('Decision Notes'),
+    executionMessage: get('Execution Message'),
+    rowNumber: Number(row.rowNumber)
+  };
+};
+
 const placementAuditChanges = fields => (fields || [])
   .filter(([, before, after]) => String(before ?? '').trim() !== String(after ?? '').trim())
   .map(([label, before, after]) => `${label}: ${String(before || '—').trim()} → ${String(after || '—').trim()}`);
@@ -1705,14 +1793,6 @@ const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentCo
   return logSheet.addRow(mapPlacementRowData(logSheet, actionRow), { insert: true });
 };
 
-const placementLogRecordKey = record => {
-  const student = normalizePlacementText(record.roll || record.rollNumber || record.ipcsRollNumber || record.name || record.studentName);
-  if (!student) return '';
-  const jobId = normalizePlacementText(record.jobId || '');
-  const company = normalizePlacementText(record.company || record.companyName || '');
-  const position = normalizePlacementText(record.position || '');
-  return `${student}|${jobId || (company || position ? `${company}|${position}` : 'general')}`;
-};
 const getPlacementLogRowKey = row => placementLogRecordKey({
   roll: getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']),
   name: getValByHeader(row, ['studentname', 'name', 'candidate']),
@@ -3458,12 +3538,45 @@ exports.deleteVacancy = async (req, res) => {
       row = legacyMatches[0] || null;
     }
     if (!row) return res.status(404).json({ success: false, message: 'This vacancy no longer exists.' });
-    if (!canManageVacancyRow(req.portalUser, row)) return res.status(403).json({ success: false, message: 'You can delete only vacancies created by your placement account.' });
-
+    const approvalExecution = Boolean(req.deleteApprovalExecution);
+    if (approvalExecution) {
+      const expected = req.deleteApprovalExecution.snapshot || {};
+      const expectedCompany = normalizePlacementText(expected.company);
+      const expectedPosition = normalizePlacementText(expected.position);
+      const currentCompany = normalizePlacementText(getValByHeader(row, ['companyname', 'company']));
+      const currentPosition = normalizePlacementText(getValByHeader(row, ['position', 'role']));
+      if ((expectedCompany && expectedCompany !== currentCompany) || (expectedPosition && expectedPosition !== currentPosition)) {
+        return res.status(409).json({ success: false, message: 'This vacancy changed after the request was submitted. Nothing was deleted; ask the TPO to submit a fresh request.' });
+      }
+    }
+    if (!approvalExecution && !canManageVacancyRow(req.portalUser, row)) return res.status(403).json({ success: false, message: 'You can delete only vacancies created by your placement account.' });
     const linkedApplications = (getCache()?.applications || []).filter(application =>
       String(getValByHeader(application, ['jobid', 'job id', 'job_id']) || '').trim() === jobId
     );
-    if (linkedApplications.length) {
+    if (isPlacementTrackerTpo(req.portalUser) && !approvalExecution) {
+      const reason = String(req.body?.reason || '').trim();
+      if (reason.length < 5) return res.status(400).json({ success: false, message: 'Add a short reason for this deletion request (at least 5 characters).' });
+      const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']);
+      const summary = `${jobId} · ${getValByHeader(row, ['companyname', 'company']) || 'Company not listed'} · ${getValByHeader(row, ['position', 'role']) || 'Position not listed'}`;
+      const request = await createTpoDeleteRequest({
+        requester: req.portalUser,
+        recordType: 'Vacancy',
+        targetId: jobId,
+        targetRowNumber: row.rowNumber,
+        summary,
+        snapshot: {
+          type: 'vacancy', jobId, rowNumber: Number(row.rowNumber), owner,
+          company: getValByHeader(row, ['companyname', 'company']),
+          position: getValByHeader(row, ['position', 'role']),
+          branch: getValByHeader(row, ['branch', 'sittingbranch', 'location']),
+          course: getValByHeader(row, ['course', 'program']),
+          linkedApplicationCount: linkedApplications.length
+        },
+        reason
+      });
+      return res.status(202).json({ success: true, requestSubmitted: true, requestId: request.requestId, message: 'Deletion request sent to Gifty for approval. The vacancy is still active until she approves it.' });
+    }
+    if (linkedApplications.length && !approvalExecution) {
       return res.status(409).json({
         success: false,
         message: `This vacancy has ${linkedApplications.length} linked application${linkedApplications.length === 1 ? '' : 's'}. Keep the row so those applications remain traceable.`
@@ -3472,7 +3585,19 @@ exports.deleteVacancy = async (req, res) => {
 
     await row.delete();
     refreshCache();
-    return res.json({ success: true, message: 'Vacancy deleted from the NewsLetter sheet.' });
+    if (approvalExecution) {
+      logPortalAuditEvent({
+        requestId: req.deleteApprovalExecution.requestId,
+        actor: req.portalUser,
+        actorType: 'Human',
+        source: 'Deletion approval workflow',
+        action: 'Approved vacancy deletion executed',
+        resource: jobId,
+        result: 'Success',
+        details: { requestId: req.deleteApprovalExecution.requestId, company: getValByHeader(row, ['companyname', 'company']), position: getValByHeader(row, ['position', 'role']), linkedApplicationsPreserved: linkedApplications.length }
+      });
+    }
+    return res.json({ success: true, message: approvalExecution ? 'Approved vacancy deletion completed.' : 'Vacancy deleted from the NewsLetter sheet.' });
   } catch (error) {
     console.error('Vacancy deletion failed:', error.message);
     return res.status(500).json({ success: false, message: error.message || 'The vacancy could not be deleted.' });
@@ -3825,7 +3950,8 @@ exports.getPlacedStudents = async (req, res) => {
 
 exports.deletePlacedStudent = async (req, res) => {
   const user = req.portalUser || {};
-  if (!isPlacementTrackerAdmin(user) && !isPlacementTrackerTpo(user)) {
+  const approvalExecution = Boolean(req.deleteApprovalExecution);
+  if (!isPlacementTrackerAdmin(user) && !isPlacementTrackerTpo(user) && !approvalExecution) {
     return res.status(403).json({ success: false, message: 'Only TPOs and placement administrators can delete placed-student records.' });
   }
 
@@ -3889,13 +4015,50 @@ exports.deletePlacedStudent = async (req, res) => {
       return res.status(409).json({ success: false, message: 'The placement details changed after this list loaded. Refresh the page and check the record again.' });
     }
 
-    if (!isPlacementTrackerAdmin(user)) {
+    if (!isPlacementTrackerAdmin(user) && !approvalExecution) {
       const allowed = record.owner
         ? placementOwnerMatchesUser(record.owner, user)
         : hasPlacementBranchAccess(record.branch, user);
       if (!allowed) {
         return res.status(403).json({ success: false, message: 'You can delete only placements assigned to you. Ask a placement administrator if this record needs correction.' });
       }
+    }
+
+    if (isPlacementTrackerTpo(user) && !approvalExecution) {
+      const reason = String(req.body?.reason || '').trim();
+      if (reason.length < 5) return res.status(400).json({ success: false, message: 'Add a short reason for this deletion request (at least 5 characters).' });
+      const summary = `${record.name || 'Student'} · ${record.roll || 'No roll number'} · ${record.company || 'Company not listed'} · ${record.position || 'Position not listed'}`;
+      const request = await createTpoDeleteRequest({
+        requester: user,
+        recordType: 'Placed student',
+        targetId: `${record.roll || record.name}|${record.jobId || record.company}|${record.position}`,
+        targetRowNumber: rowNumber,
+        summary,
+        snapshot: {
+          type: 'placed-student',
+          rowNumber,
+          expected: { name: record.name, roll: record.roll, jobId: record.jobId, company: record.company, position: record.position },
+          branch: record.branch,
+          course: record.course,
+          owner: record.owner,
+          entrySource: record.entrySource
+        },
+        reason
+      });
+      try {
+        await appendPlacementAudit(createPlacementAuditEvent({
+          actor: user,
+          action: 'Placed-student deletion requested',
+          previousStatus: record.status,
+          newStatus: 'Delete pending',
+          record,
+          details: `Request ${request.requestId} sent to Gifty for approval. Reason: ${reason}`,
+          changedAt: request.requestedAt
+        }));
+      } catch (auditError) {
+        console.error('Deletion request was saved, but its placement audit entry failed:', auditError.message);
+      }
+      return res.status(202).json({ success: true, requestSubmitted: true, requestId: request.requestId, message: 'Deletion request sent to Gifty for approval. The placement remains in the portal until she approves it.' });
     }
 
     const normalize = value => normalizePlacementText(value);
@@ -3934,12 +4097,14 @@ exports.deletePlacedStudent = async (req, res) => {
       return res.status(409).json({ success: false, message: 'The matching Opening_Applied row has an invalid row reference; no records were deleted.' });
     }
 
-    const placementAuditDetails = `Delete requested from Placed Students. TPO_Log row ${rowNumber}; matching Opening_Applied row ${applicationRow?.rowNumber || 'not found'}.`;
+    const placementAuditDetails = approvalExecution
+      ? `Approved request ${req.deleteApprovalExecution.requestId}. TPO_Log row ${rowNumber}; matching Opening_Applied row ${applicationRow?.rowNumber || 'not found'}.`
+      : `Delete requested from Placed Students. TPO_Log row ${rowNumber}; matching Opening_Applied row ${applicationRow?.rowNumber || 'not found'}.`;
     auditRecord = createPlacementAuditEvent({
       actor: user,
-      action: 'Placed-student deletion requested',
+      action: approvalExecution ? 'Placed-student deletion approved' : 'Placed-student deletion requested',
       previousStatus: record.status,
-      newStatus: 'Delete pending',
+      newStatus: approvalExecution ? 'Delete approved' : 'Delete pending',
       record,
       details: placementAuditDetails,
       changedAt: formatIndiaTimestamp()
@@ -3963,6 +4128,18 @@ exports.deletePlacedStudent = async (req, res) => {
       requestBody: { requests }
     });
     deletionCompleted = true;
+    if (approvalExecution) {
+      logPortalAuditEvent({
+        requestId: req.deleteApprovalExecution.requestId,
+        actor: user,
+        actorType: 'Human',
+        source: 'Deletion approval workflow',
+        action: 'Approved placement deletion executed',
+        resource: 'TPO_Log',
+        result: 'Success',
+        details: { requestId: req.deleteApprovalExecution.requestId, name: record.name, roll: record.roll, company: record.company, position: record.position }
+      });
+    }
 
     const warnings = [];
     let projectionRebuilt = false;
@@ -3988,7 +4165,7 @@ exports.deletePlacedStudent = async (req, res) => {
         previousStatus: record.status,
         newStatus: 'Deleted',
         record,
-        details: `Deleted TPO_Log row ${rowNumber}${applicationRow ? ` and Opening_Applied row ${applicationRow.rowNumber}` : ''}; Placed_Students projection ${projectionRebuilt ? 'rebuilt' : 'not confirmed rebuilt'}.`,
+        details: `${approvalExecution ? `Approved request ${req.deleteApprovalExecution.requestId}; ` : ''}Deleted TPO_Log row ${rowNumber}${applicationRow ? ` and Opening_Applied row ${applicationRow.rowNumber}` : ''}; Placed_Students projection ${projectionRebuilt ? 'rebuilt' : 'not confirmed rebuilt'}.`,
         changedAt: formatIndiaTimestamp()
       }));
     } catch (auditError) {
@@ -4023,6 +4200,130 @@ exports.deletePlacedStudent = async (req, res) => {
       }
     }
     return res.status(500).json({ success: false, message: `Could not delete this placement: ${error.message}` });
+  }
+};
+
+exports.getTpoDeleteRequests = async (req, res) => {
+  const user = req.portalUser || {};
+  const isApprover = isTpoDeleteApprover(user);
+  if (!isApprover && !isPlacementTrackerTpo(user)) {
+    return res.status(403).json({ success: false, message: 'Deletion requests are available only to TPOs and Gifty.' });
+  }
+  try {
+    const sheet = await ensureTpoDeleteRequestSheet();
+    const rows = await sheet.getRows();
+    const requests = rows
+      .map(serializeTpoDeleteRequest)
+      .filter(request => isApprover || String(request.requestedByEmail || '').trim().toLowerCase() === String(user.email || '').trim().toLowerCase())
+      .sort((left, right) => Number(right.rowNumber) - Number(left.rowNumber));
+    return res.json({ success: true, canReview: isApprover, requests });
+  } catch (error) {
+    console.error('Could not load TPO deletion requests:', error.message);
+    return res.status(503).json({ success: false, message: `Deletion requests could not be loaded: ${error.message}` });
+  }
+};
+
+exports.reviewTpoDeleteRequest = async (req, res) => {
+  const reviewer = req.portalUser || {};
+  if (!isTpoDeleteApprover(reviewer)) {
+    return res.status(403).json({ success: false, message: 'Only gifty@ipcsglobal.com can approve or reject TPO deletion requests.' });
+  }
+  const requestId = String(req.params.requestId || '').trim();
+  const decision = String(req.body?.decision || '').trim().toLowerCase();
+  const decisionNotes = String(req.body?.notes || '').trim().slice(0, 1000);
+  if (!requestId || !['approve', 'reject'].includes(decision)) {
+    return res.status(400).json({ success: false, message: 'Choose a deletion request and approve or reject it.' });
+  }
+  if (tpoDeleteApprovalLocks.has(requestId)) {
+    return res.status(409).json({ success: false, message: 'This request is already being reviewed. Refresh the list in a moment.' });
+  }
+
+  try {
+    const sheet = await ensureTpoDeleteRequestSheet();
+    const rows = await sheet.getRows();
+    const row = rows.find(item => String(item.get('Request ID') || '').trim() === requestId);
+    if (!row) return res.status(404).json({ success: false, message: 'The deletion request was not found.' });
+    if (String(row.get('Status') || '').trim().toLowerCase() !== 'pending') {
+      return res.status(409).json({ success: false, message: `This request is already ${String(row.get('Status') || 'processed').toLowerCase()}.` });
+    }
+
+    const reviewedAt = formatIndiaTimestamp();
+    const reviewerFields = {
+      'Reviewed By Name': safeSheetText(reviewer.name, 160),
+      'Reviewed By Email': TPO_DELETE_APPROVER_EMAIL,
+      'Reviewed At': reviewedAt,
+      'Decision Notes': safeSheetText(decisionNotes, 1000)
+    };
+    if (decision === 'reject') {
+      row.assign({ ...reviewerFields, Status: 'Rejected', 'Execution Message': 'No data was deleted.' });
+      await row.save();
+      logPortalAuditEvent({
+        requestId,
+        actor: reviewer,
+        actorType: 'Human',
+        source: 'Deletion approval workflow',
+        action: 'Deletion request rejected',
+        resource: String(row.get('Record Type') || ''),
+        result: 'Rejected',
+        details: { requestId, summary: row.get('Target Summary') || '', notes: decisionNotes }
+      });
+      return res.json({ success: true, status: 'Rejected', message: 'Request rejected. No data was deleted.' });
+    }
+
+    tpoDeleteApprovalLocks.add(requestId);
+    row.assign({ ...reviewerFields, Status: 'Processing', 'Execution Message': 'Approval recorded; verifying the live record before deletion.' });
+    await row.save();
+    const request = serializeTpoDeleteRequest(row);
+    const target = request.target || {};
+    let executionResult = null;
+    let executionStatus = 200;
+    const executionRes = {
+      status(code) { executionStatus = Number(code) || 200; return this; },
+      json(payload) { executionResult = payload; return this; }
+    };
+    const executionReq = { portalUser: reviewer, deleteApprovalExecution: { requestId, snapshot: target } };
+    if (target.type === 'placed-student') {
+      executionReq.body = { rowNumber: Number(target.rowNumber), expected: target.expected || {} };
+      await exports.deletePlacedStudent(executionReq, executionRes);
+    } else if (target.type === 'vacancy') {
+      executionReq.params = { jobId: String(target.jobId || request.targetId || '') };
+      await exports.deleteVacancy(executionReq, executionRes);
+    } else {
+      throw new Error('The saved request type is unsupported. No data was deleted.');
+    }
+    if (executionStatus < 200 || executionStatus >= 300 || !executionResult?.success || executionResult?.requestSubmitted) {
+      throw new Error(executionResult?.message || 'The live record could not be verified, so nothing was deleted.');
+    }
+
+    row.assign({ Status: 'Approved', ...reviewerFields, 'Execution Message': executionResult.message || 'Approved deletion completed.' });
+    await row.save();
+    logPortalAuditEvent({
+      requestId,
+      actor: reviewer,
+      actorType: 'Human',
+      source: 'Deletion approval workflow',
+      action: 'Deletion request approved and executed',
+      resource: request.recordType,
+      result: 'Success',
+      details: { requestId, summary: request.summary, requester: request.requestedByEmail }
+    });
+    return res.json({ success: true, status: 'Approved', message: executionResult.message || 'Approved deletion completed.' });
+  } catch (error) {
+    console.error('TPO deletion approval failed:', error.message);
+    try {
+      const sheet = await ensureTpoDeleteRequestSheet();
+      const rows = await sheet.getRows();
+      const row = rows.find(item => String(item.get('Request ID') || '').trim() === requestId);
+      if (row && String(row.get('Status') || '').trim().toLowerCase() === 'processing') {
+        row.assign({ Status: 'Failed', 'Execution Message': safeSheetText(error.message || 'Deletion failed; the live row was not confirmed deleted.', 1000) });
+        await row.save();
+      }
+    } catch (ledgerError) {
+      console.error('Could not record failed TPO deletion review:', ledgerError.message);
+    }
+    return res.status(409).json({ success: false, message: error.message || 'The record could not be deleted.' });
+  } finally {
+    tpoDeleteApprovalLocks.delete(requestId);
   }
 };
 
