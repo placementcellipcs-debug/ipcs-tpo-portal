@@ -456,7 +456,7 @@ export default function StudentsDirectory() {
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Student status:</span>
             <select className="sleek-select" style={{ minWidth: '150px' }} value={placementStatusFilter} onChange={(e) => setPlacementStatusFilter(e.target.value)}>
               <option value="All">All Students</option>
-              <option value="Pending">Pending for Placement (80%+)</option>
+              <option value="Pending">Pending for Placement (90%+)</option>
               <option value="Placed">Placed</option>
               <option value="Has Resume">Resume Attached</option>
               <option value="Not Responding">Not Responding</option>
