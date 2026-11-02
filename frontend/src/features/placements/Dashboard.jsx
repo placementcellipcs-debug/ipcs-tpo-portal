@@ -4,7 +4,7 @@ import axios from 'axios';
 import { 
   Users, Briefcase, Trophy, CalendarCheck, CircleNotch, 
   BookOpen, NotePencil, FolderOpen, ListChecks, Buildings,
-  ChartBar, CheckCircle, CaretLeft, CaretRight, Percent
+  ChartBar, CheckCircle, CaretLeft, CaretRight, Percent, Globe
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { formatPortalDate, parsePortalDateTime } from '../../utils/dateFormat';
@@ -44,7 +44,7 @@ export default function Dashboard() {
   const isPlacementDriveAdmin = accessType === 'superadmin' || userRole.includes('ADMIN') || ['GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(userRole);
   const canViewPlacementDrives = isPlacementDriveAdmin || isBranchManager || isPlacementOfficer;
   const canViewHiringPartners = !userRole.includes('TRAINER') && !userRole.includes('TECHNICAL LEAD') && !userRole.includes('REGIONAL TECHNICAL HEAD') && !userRole.includes('RTH') && !userRole.includes('TTH');
-  const [stats, setStats] = useState({ totalStudents: 0, pendingApps: 0, placementPending: 0, placed: 0, activeVacancies: 0, totalCompanies: 0 });
+  const [stats, setStats] = useState({ totalStudents: 0, pendingApps: 0, placementPending: 0, placed: 0, internationalPlacements: 0, activeVacancies: 0, totalCompanies: 0 });
   const [events, setEvents] = useState([]);
   const [recentPlacements, setRecentPlacements] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -308,6 +308,10 @@ export default function Dashboard() {
           <div className="dash-card" title="All-time placement total.">
             <div className="kpi-header"><div className="icon-c purple"><Trophy weight="fill" size={20}/></div><div><div className="kpi-title">Total Placements</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placed}</div></div></div>
             <div className="kpi-trend green">All-time total</div>
+          </div>
+          <div className="dash-card" role="link" tabIndex={0} title="View placement records with a destination outside India." onClick={() => navigate('/placed?international=1')} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); navigate('/placed?international=1'); } }} style={{ cursor: 'pointer', borderColor: 'rgba(56,189,248,.55)', boxShadow: '0 8px 22px rgba(14,165,233,.08)' }}>
+            <div className="kpi-header"><div className="icon-c blue"><Globe weight="fill" size={20}/></div><div><div className="kpi-title">International Placements</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.internationalPlacements}</div></div></div>
+            <div className="kpi-trend" style={{ color: '#7dd3fc' }}>Outside India · View records →</div>
           </div>
           <div className="dash-card" title="Students marked Pending or Placement Needed with at least 90% course completion.">
             <div className="kpi-header"><div className="icon-c orange"><Briefcase weight="fill" size={20}/></div><div><div className="kpi-title">Placement Pending</div><div className="kpi-val">{loading ? <CircleNotch className="ph-spin"/> : stats.placementPending}</div></div></div>

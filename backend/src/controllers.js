@@ -35,6 +35,7 @@ const { autoCreateDesignTask } = require('./designControllers');
 const { normalizePlacementText, placementIdentity, latestPlacementRows } = require('./placementRecords');
 const { calculateDashboardPlacementCounts } = require('./dashboardStats');
 const { isPlacementEligiblePending, placementOutcome } = require('./placementMetrics');
+const { createPlacementLocationResolver } = require('./internationalPlacements');
 const { buildPlacementReconciliation } = require('./placementReconciliation');
 const { PLACEMENT_AUDIT_SHEET, PLACEMENT_AUDIT_HEADERS, createPlacementAuditEvent } = require('./placementAudit');
 const { createTalentinoSessionResolver } = require('./talentinoSessionMatch');
@@ -1124,6 +1125,12 @@ exports.getDashboardStats = async (req, res) => {
     () => true,
     () => true
   );
+  const resolvePlacementLocation = createPlacementLocationResolver(getValByHeader, cache);
+  const internationalPlacementCount = (cache.tpoLogs || []).filter(row =>
+    normalizePlacementText(getValByHeader(row, ['status'])) === 'placed'
+    && !/^(yes|true|1)$/i.test(getValByHeader(row, ['tpoactionlog']))
+    && resolvePlacementLocation(row).isInternationalPlacement
+  ).length;
 
   const studentByRoll = new Map();
   const studentsByName = new Map();
@@ -1181,6 +1188,7 @@ exports.getDashboardStats = async (req, res) => {
       // Count every TPO_Log row whose Status is exactly Placed, matching the
       // source-of-truth rule used by the monthly placement report.
       placed: placementCounts.placed,
+      internationalPlacements: internationalPlacementCount,
       placementPending: placementCounts.placementPending,
       activeVacancies: activeVacs,
       totalCompanies
@@ -1747,6 +1755,7 @@ const upsertPlacementTpoLog = async record => {
     'Job ID': value('jobId', ['jobid', 'job id']),
     'Company Name': value('company', ['companyname', 'company']),
     Position: value('position', ['position', 'role']),
+    'Placement Location': value('placementLocation', ['placementlocation', 'worklocation', 'joblocation', 'location']),
     'Placement Officer': value('placementOfficer', ['placementofficer', 'tpo', 'tponame', 'createdby']) || value('tpoName', ['placementofficer', 'tpo', 'tponame', 'createdby']),
     Status: record.status !== undefined ? record.status : (existing ? getValByHeader(existing, ['status']) : ''),
     Remarks: record.remarks !== undefined ? record.remarks : (existing ? getValByHeader(existing, ['remarks']) : ''),
@@ -2464,7 +2473,7 @@ exports.addApplication = async (req, res) => {
       'Student Name': appData.name || '', 'Contact': appData.phone || '', 'Mail ID': appData.email || '', 
       'Roll Number': appData.roll || '', 'Course': appData.course || '', 'Branch': appData.branch || '', 
       'Qualification': appData.qual || '', 'Resume': appData.resume || '', 'Job ID': 'MANUAL-ADD', 
-      'Company Name': appData.company || '', 'Position': appData.position || '', 
+      'Company Name': appData.company || '', 'Position': appData.position || '', 'Placement Location': appData.placementLocation || '',
       'Placement Officer': tpoName || '', 'Status': appData.status || 'Placed', 
       'Entry Source': 'Manual Add',
       'Remarks': appData.remarks || '', 'DATE PLACED': formatIndiaDate(appData.datePlaced || ''),
@@ -3705,6 +3714,7 @@ exports.getReports = async (req, res) => {
   // user directory is unavailable. Return distinct names instead of copying
   // every historical TPO_Log row into the report response.
   const reportTpoNames = new Set();
+  const resolvePlacementLocation = createPlacementLocationResolver(getValByHeader, cache);
   sourceTpoLogs.forEach(row => {
     if (!checkPlacementReportAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) return;
     const name = getValByHeader(row, ['placementofficer', 'tpo', 'tponame']);
@@ -3724,7 +3734,10 @@ exports.getReports = async (req, res) => {
       ? placementOwnerMatchesUser(owner, reportUser)
       : isCentralTeamReportUser || isAdminReportUser || checkPlacementReportAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']));
     if (!belongsToUser) return;
-    try { placementReportLogs.push({ ...row.toObject(), rowNumber: row.rowNumber, sourceSheet: 'TPO_Log' }); }
+    try {
+      const locationInfo = resolvePlacementLocation(row);
+      placementReportLogs.push({ ...row.toObject(), rowNumber: row.rowNumber, sourceSheet: 'TPO_Log', ...locationInfo });
+    }
     catch (error) {}
   });
   // 🚨 EXPORT TPO STATS FOR FRONTEND
@@ -3773,6 +3786,7 @@ exports.getPlacedStudents = async (req, res) => {
   }
   const sourceReadAt = new Date().toISOString();
   const records = [];
+  const resolvePlacementLocation = createPlacementLocationResolver(getValByHeader, cache || {});
 
   for (const row of sourceRows) {
     if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed'
@@ -3787,7 +3801,10 @@ exports.getPlacedStudents = async (req, res) => {
         : hasPlacementAccess(branch, course, user));
     if (!allowed) continue;
 
-    try { records.push({ ...row.toObject(), rowNumber: row.rowNumber, sourceSheet: 'TPO_Log' }); }
+    try {
+      const locationInfo = resolvePlacementLocation(row);
+      records.push({ ...row.toObject(), rowNumber: row.rowNumber, sourceSheet: 'TPO_Log', ...locationInfo });
+    }
     catch (error) { console.warn('Could not serialize a placed-student TPO_Log row:', error.message); }
   }
 
@@ -8329,6 +8346,11 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']);
     return placementOwnerMatchesUser(owner, user);
   });
+  const resolvePlacementLocation = createPlacementLocationResolver(getValByHeader, cache);
+  const internationalPlacementRows = placementRows.map(row => ({
+    row,
+    locationInfo: resolvePlacementLocation(row)
+  })).filter(item => item.locationInfo.isInternationalPlacement);
 
   const activityRows = (cache.tpoStats || []).filter(row => {
     if (statMonth(row) !== month) return false;
@@ -8579,6 +8601,12 @@ exports.sendMonthlyTpoReport = async (req, res) => {
       'Placed'
     ];
   });
+  const internationalPlacementRowsHtml = internationalPlacementRows.map(({ row, locationInfo }, index) => [
+    String(index + 1),
+    monthlyReportEscape(getValByHeader(row, ['studentname', 'name']) || '—'),
+    monthlyReportEscape(getValByHeader(row, ['companyname', 'company']) || '—'),
+    monthlyReportEscape(locationInfo.location || 'International')
+  ]);
   const pendingRowsHtml = [...pendingByBranch.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([branch, courseSets]) => {
     const total = new Set([...courseSets.values()].flatMap(students => [...students])).size;
     const monthLabel = new Date(`${month}-01T12:00:00`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' });
@@ -8673,6 +8701,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   });
   const achievementItems = [
     `${countWord(placementRecordCount, 'placement')} recorded this month.`,
+    ...(internationalPlacementRows.length ? [`${countWord(internationalPlacementRows.length, 'international placement')} recorded.`] : []),
     ...eventAchievementLines,
     ...(highestLpa === null ? [] : [`Highest package: ${highestPackageLabel}, achieved by ${countWord(highestPackageStudents, 'student')}.`]),
     ...(totalOpeningPosts ? [`Published ${countWord(totalOpeningPosts, 'job opening post')} across the five main courses.`] : []),
@@ -8705,6 +8734,9 @@ exports.sendMonthlyTpoReport = async (req, res) => {
         ${sectionTitle('Placement Status', 'Placement records by main course', '#3478c4')}
         ${table(['Main course', 'Placement records'], placedStudentRowsByCourse, { total: ['<b>Total placement records</b>', `<b>${placementRecordCount}</b>`] })}
         ${mainCourseFootnote ? `<p style="margin:-8px 0 14px;color:#8a5c2d;font-size:11px">${monthlyReportEscape(mainCourseFootnote)}</p>` : ''}
+
+        ${sectionTitle('International placements', `${internationalPlacementRows.length} international placement${internationalPlacementRows.length === 1 ? '' : 's'}`, '#176fa6')}
+        ${table(['Sl. No.', 'Student', 'Company', 'Country / location'], internationalPlacementRowsHtml)}
 
         ${sectionTitle('Newsletter Status', 'Openings published', '#8a5caf')}
         ${table(['Main course', 'Opening posts'], openingRowsByCourse, { total: ['<b>Total</b>', `<b>${totalOpeningPostCount}</b>`] })}

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { 
@@ -41,6 +42,7 @@ const getDrivePdf = (url) => {
 
 export default function PlacedStudents() {
   const tpoData = readTpoData();
+  const [searchParams] = useSearchParams();
   
   const [applications, setApplications] = useState([]);
   const [existingApplications, setExistingApplications] = useState([]);
@@ -71,7 +73,8 @@ export default function PlacedStudents() {
     const rowBranch = String(branch || '').trim().toLowerCase();
     return rowBranch && (rowBranch === assigned || rowBranch.includes(assigned) || assigned.includes(rowBranch));
   });
-  const [selectedMonth, setSelectedMonth] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(() => searchParams.get('international') === '1' ? 'all' : '');
+  const [placementFilter, setPlacementFilter] = useState(() => searchParams.get('international') === '1' ? 'International' : 'All');
   const [branchFilter, setBranchFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [courseFilter, setCourseFilter] = useState('All');
@@ -87,7 +90,7 @@ export default function PlacedStudents() {
   const [editForm, setEditForm] = useState({});
   const [addForm, setAddForm] = useState({ 
     name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', 
-    company: '', position: '', status: 'Placed', remarks: '', 
+    company: '', position: '', placementLocation: '', status: 'Placed', remarks: '',
     datePlaced: getTodayPortalDateInput(), packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null
   });
 
@@ -144,6 +147,8 @@ export default function PlacedStudents() {
         branch: getVal(row, ['branch']),
         qual: getVal(row, ['qualification', 'qual']),
         company: getVal(row, ['companyname', 'company']),
+        placementLocation: row.location || getVal(row, ['placementlocation', 'worklocation', 'joblocation', 'location']),
+        isInternationalPlacement: row.isInternationalPlacement === true,
         position: getVal(row, ['position', 'role']),
         status: getVal(row, ['status']) || 'Placed',
         remarks: getVal(row, ['remarks']),
@@ -171,7 +176,7 @@ export default function PlacedStudents() {
   useEffect(() => { fetchData(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resetFilters = () => {
-    setSearchQuery(''); setCourseFilter('All'); setStatusFilter('All'); setBranchFilter('All'); setSortOrder('newest');
+    setSearchQuery(''); setCourseFilter('All'); setStatusFilter('All'); setBranchFilter('All'); setSortOrder('newest'); setPlacementFilter('All');
   };
 
   // 🚨 MULTI-COURSE SCOPING
@@ -187,6 +192,8 @@ export default function PlacedStudents() {
 
   const globallyFiltered = scopedApps.filter(a => {
     let cMatch = courseFilter === 'All' || getStandardCourse(a.course) === getStandardCourse(courseFilter);
+    const internationalMatch = placementFilter === 'All'
+      || (placementFilter === 'International' ? a.isInternationalPlacement : !a.isInternationalPlacement);
     let sMatch = true;
     if (statusFilter !== 'All') {
       const stat = (a.status || '').toLowerCase();
@@ -198,16 +205,18 @@ export default function PlacedStudents() {
       else if (statusFilter === 'Placed') sMatch = stat.includes('placed');
     }
     
-    return cMatch && sMatch;
+    return cMatch && sMatch && internationalMatch;
   });
 
   const getMonthKey = app => {
     const date = parseDate(app.datePlaced || app.date);
     return date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : 'undated';
   };
-  const formatMonthKey = key => key === 'undated'
-    ? 'Date not recorded'
-    : new Date(`${key}-01T12:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  const formatMonthKey = key => key === 'all'
+    ? 'All international placements'
+    : key === 'undated'
+      ? 'Date not recorded'
+      : new Date(`${key}-01T12:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
   const monthCounts = new Map();
   globallyFiltered.forEach(app => {
     const key = getMonthKey(app);
@@ -219,7 +228,7 @@ export default function PlacedStudents() {
     return right.localeCompare(left);
   });
   const activeMonthApps = selectedMonth
-    ? globallyFiltered.filter(app => getMonthKey(app) === selectedMonth)
+    ? selectedMonth === 'all' ? globallyFiltered : globallyFiltered.filter(app => getMonthKey(app) === selectedMonth)
     : [];
   const branchList = [...new Set(activeMonthApps.map(app => app.branch || 'Unknown'))].sort((a, b) => a.localeCompare(b));
   const branchFilteredApps = branchFilter === 'All'
@@ -230,7 +239,8 @@ export default function PlacedStudents() {
     return searchQuery === '' || 
       (a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
       (a.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-      (a.roll || '').toLowerCase().includes(searchQuery.toLowerCase());
+      (a.roll || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (a.placementLocation || '').toLowerCase().includes(searchQuery.toLowerCase());
   }).sort((a, b) => {
     if (sortOrder === 'newest') return (parseDate(b.datePlaced || b.date) || 0) - (parseDate(a.datePlaced || a.date) || 0);
     if (sortOrder === 'az') return (a.name || '').localeCompare(b.name || '');
@@ -326,7 +336,7 @@ export default function PlacedStudents() {
       const response = await axios.post(`${API_BASE}/api/tpo/applications/add`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       if (!response.data?.success) throw new Error(response.data?.message || 'The placement could not be added.');
       setIsAddModalOpen(false);
-      setAddForm({ name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', company: '', position: '', status: 'Placed', remarks: '', datePlaced: getTodayPortalDateInput(), packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null });
+      setAddForm({ name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', company: '', position: '', placementLocation: '', status: 'Placed', remarks: '', datePlaced: getTodayPortalDateInput(), packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null });
       if (response.data.warning) alert(`Placement added. ${response.data.warning}`);
       fetchData();
     } catch (error) {
@@ -348,8 +358,8 @@ export default function PlacedStudents() {
             {selectedMonth && <button type="button" onClick={() => { setSelectedMonth(''); setBranchFilter('All'); setSearchQuery(''); }} style={{ marginBottom: '12px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
               <CaretLeft weight="bold" size={18} /> Back to Months
             </button>}
-            <h1 style={{ fontSize: '2rem', margin: '0 0 5px' }}>{selectedMonth ? formatMonthKey(selectedMonth) : 'Placed Students'}</h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>{selectedMonth ? 'Placement records for this month.' : 'Choose a month to view its placement records.'}</p>
+            <h1 style={{ fontSize: '2rem', margin: '0 0 5px' }}>{selectedMonth ? formatMonthKey(selectedMonth) : placementFilter === 'International' ? 'International Placements' : 'Placed Students'}</h1>
+            <p style={{ color: 'var(--text-muted)', margin: 0 }}>{selectedMonth ? 'Placement records for this month.' : placementFilter === 'International' ? 'International placement records across all months.' : 'Choose a month to view its placement records.'}</p>
           </div>
           
           {canEditPlacement && (
@@ -405,9 +415,18 @@ export default function PlacedStudents() {
             </select>
           </div>
 
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Placement:</span>
+            <select aria-label="Filter domestic or international placements" className="sleek-select" style={{ minWidth: '180px' }} value={placementFilter} onChange={e => setPlacementFilter(e.target.value)}>
+              <option value="All">All placements</option>
+              <option value="International">International only</option>
+              <option value="India">India / not identified as international</option>
+            </select>
+          </div>
+
           {selectedMonth && (
             <>
-              <input type="text" className="sleek-input" placeholder="Search student, roll, or company..." style={{ minWidth: '220px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
+              <input type="text" className="sleek-input" placeholder="Search student, roll, company, or location..." style={{ minWidth: '220px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               <select className="sleek-select" style={{ minWidth: '160px' }} value={branchFilter} onChange={e => setBranchFilter(e.target.value)}>
                 <option value="All">All branches</option>
                 {branchList.map(branch => <option key={branch} value={branch}>{branch}</option>)}
@@ -420,7 +439,7 @@ export default function PlacedStudents() {
             </>
           )}
 
-          {(courseFilter !== 'All' || statusFilter !== 'All' || searchQuery !== '' || branchFilter !== 'All') && (
+          {(courseFilter !== 'All' || statusFilter !== 'All' || searchQuery !== '' || branchFilter !== 'All' || placementFilter !== 'All') && (
             <button onClick={resetFilters} style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem' }}>
               <ArrowsClockwise size={14} /> Reset
             </button>
@@ -461,8 +480,9 @@ export default function PlacedStudents() {
           )
         ) : (
           <div style={{ marginTop: '1.5rem' }}>
-            <section className="placed-overview" aria-label={`${formatMonthKey(selectedMonth)} placement summary`} style={{ marginBottom: '18px' }}>
+            <section className="placed-overview" aria-label={`${formatMonthKey(selectedMonth)} placement summary`} style={{ marginBottom: '18px', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
               <div><span>Placed rows</span><strong>{activeMonthApps.length}</strong><small>From TPO_Log Status = Placed</small></div>
+              <div style={{ borderColor: 'rgba(56,189,248,.5)', background: 'linear-gradient(145deg, rgba(14,116,144,.18), var(--card-bg))' }}><span style={{ color: '#7dd3fc' }}>International</span><strong style={{ color: '#7dd3fc' }}>{activeMonthApps.filter(item => item.isInternationalPlacement).length}</strong><small>Highlighted by destination</small></div>
               <div><span>Companies</span><strong>{new Set(activeMonthApps.map(item => (item.company || '').trim().toLowerCase()).filter(Boolean)).size}</strong><small>Unique employers this month</small></div>
               <div><span>Branches</span><strong>{branchList.length}</strong><small>With placement records</small></div>
               <div><span>Average Package</span><strong>{(() => { const values = activeMonthApps.map(item => Number.parseFloat(String(item.packageLpa || '').replace(/[^\d.]/g, ''))).filter(value => Number.isFinite(value) && value > 0); return values.length ? `${(values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(1)} LPA` : '—'; })()}</strong><small>Where reported</small></div>
@@ -478,7 +498,7 @@ export default function PlacedStudents() {
                 </div>
 
                 {filteredApps.map((app, i) => (
-                  <div key={app.rowNumber || i} style={{ background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '12px', padding: '1rem 1.5rem', display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 2fr minmax(150px, 1.2fr)', alignItems: 'center', gap: '15px' }}>
+                  <div key={app.rowNumber || i} style={{ background: app.isInternationalPlacement ? 'linear-gradient(100deg, rgba(14,116,144,.16), var(--card-bg) 50%)' : 'var(--card-bg)', border: `1px solid ${app.isInternationalPlacement ? 'rgba(56,189,248,.58)' : 'var(--card-border)'}`, borderLeft: app.isInternationalPlacement ? '5px solid #38bdf8' : '1px solid var(--card-border)', borderRadius: '12px', padding: '1rem 1.5rem', display: 'grid', gridTemplateColumns: '2fr 2fr 1.5fr 2fr minmax(150px, 1.2fr)', alignItems: 'center', gap: '15px' }}>
                     <div>
                       <strong style={{ display: 'block', color: '#fff', fontSize: '1.05rem', marginBottom: '4px' }}>{app.name || `Student details missing · row ${app.rowNumber}`}</strong>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{app.roll || 'No Roll #'} • {app.course}</span>
@@ -486,6 +506,8 @@ export default function PlacedStudents() {
                     <div>
                       <strong style={{ display: 'block', color: '#fff', fontSize: '1rem', marginBottom: '4px' }}>{app.company || 'Company details missing'}</strong>
                       <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{app.position || 'Position N/A'}</span>
+                      {app.isInternationalPlacement && <span style={{ display: 'inline-flex', alignItems: 'center', margin: '7px 0 0', padding: '4px 8px', borderRadius: '999px', background: 'rgba(14,165,233,.18)', border: '1px solid rgba(56,189,248,.4)', color: '#7dd3fc', fontSize: '.72rem', fontWeight: 800 }}>INTERNATIONAL · {app.placementLocation || 'Outside India'}</span>}
+                      {!app.isInternationalPlacement && app.placementLocation && <span style={{ display: 'block', marginTop: '5px', color: 'var(--text-muted)', fontSize: '.75rem' }}>Location: {app.placementLocation}</span>}
                     </div>
                     <div>
                       <strong style={{ display: 'block', color: '#fff', fontSize: '1rem', marginBottom: '4px' }}>
@@ -612,6 +634,7 @@ export default function PlacedStudents() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
               <div><label className="data-label">Company Name *</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.company} onChange={e=>setAddForm({...addForm, company: e.target.value})} /></div>
               <div><label className="data-label">Position / Role</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.position} onChange={e=>setAddForm({...addForm, position: e.target.value})} /></div>
+              <div><label className="data-label">Work location / country</label><input type="text" className="sleek-input" placeholder="e.g. Bengaluru, India or Dubai, UAE" style={{ width: '100%' }} value={addForm.placementLocation} onChange={e=>setAddForm({...addForm, placementLocation: e.target.value})} /></div>
               <div><label className="data-label">Date Placed</label><DateInput className="sleek-input" style={{ width: '100%' }} value={addForm.datePlaced} onChange={e=>setAddForm({...addForm, datePlaced: e.target.value})} /></div>
               <div><label className="data-label">Package (LPA)</label><input type="number" step="0.1" className="sleek-input" style={{ width: '100%' }} value={addForm.packageLpa} onChange={e=>setAddForm({...addForm, packageLpa: e.target.value})} /></div>
               <div>

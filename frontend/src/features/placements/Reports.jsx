@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus, PaperPlaneTilt, Trash } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import DataSourceStatus from '../../components/DataSourceStatus';
@@ -88,6 +89,7 @@ const activityItemsFromStats = stat => parseActivityItems(stat ? getVal(stat, 'a
 });
 
 export default function Reports() {
+  const navigate = useNavigate();
   const tpoDataStr = localStorage.getItem('tpoData');
   let tpoData = null;
   try { tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null; } catch { tpoData = null; }
@@ -233,6 +235,7 @@ export default function Reports() {
   const displayMonthName = new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
   const targetSourceRows = placementReportLogs.filter(log => isPlacedStatus(getVal(log, 'status')) && !isPlacementActionLog(log));
   const targetSourceRowsThisMonth = targetSourceRows.filter(checkPlacementMonth);
+  const internationalRowsThisMonth = targetSourceRowsThisMonth.filter(log => log.isInternationalPlacement === true);
   const reportTpoIdentities = new Set(tpoList.flatMap(tpo => [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean)));
   const currentMonthRowsWithoutMatchedTpo = targetSourceRowsThisMonth.filter(log => !reportTpoIdentities.has(normalizePlacementText(getVal(log, 'placementofficer')))).length;
   const placedRowsWithoutUsableDate = targetSourceRows.filter(log => !getPlacementDate(log)).length;
@@ -267,11 +270,11 @@ export default function Reports() {
 
   // 2. BRANCH PLACEMENT MATRIX
   const branchPlaces = {};
-  const placeTotals = { Others: 0, Total: 0 };
+  const placeTotals = { Others: 0, International: 0, Total: 0 };
   mainCourses.forEach(c => placeTotals[c] = 0);
 
   allBranchesList.forEach(b => {
-    branchPlaces[b] = { Others: 0, Total: 0 };
+    branchPlaces[b] = { Others: 0, International: 0, Total: 0 };
     mainCourses.forEach(c => branchPlaces[b][c] = 0);
   });
 
@@ -295,6 +298,10 @@ export default function Reports() {
         }
         branchPlaces[b].Total++;
         placeTotals.Total++;
+        if (log.isInternationalPlacement === true) {
+          branchPlaces[b].International++;
+          placeTotals.International++;
+        }
       }
     }
   });
@@ -663,6 +670,11 @@ export default function Reports() {
                 <p style={{ gridColumn: '1 / -1', margin: 0, color: 'var(--text-muted)', fontSize: '.85rem' }}>This compares source rows with the TPO accounts shown below. Rows without a matching owner or usable date cannot be assigned to a TPO/month total.</p>
               </section>
             )}
+            <section aria-label="International placement summary" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px', flexWrap: 'wrap', margin: '0 0 22px', padding: '15px 18px', borderRadius: '12px', border: '1px solid rgba(56,189,248,.38)', background: 'linear-gradient(100deg, rgba(14,116,144,.2), rgba(15,23,42,.68))' }}>
+              <div><div style={{ color: '#7dd3fc', fontWeight: 800 }}>International placements · {displayMonthName}</div><small style={{ color: 'var(--text-muted)' }}>Placed records with a destination outside India</small></div>
+              <strong style={{ color: '#7dd3fc', fontSize: '1.5rem' }}>{internationalRowsThisMonth.length}</strong>
+              <button type="button" onClick={() => navigate('/placed?international=1')} style={{ padding: '8px 12px', borderRadius: '9px', border: '1px solid rgba(56,189,248,.48)', color: '#bae6fd', background: 'rgba(14,116,144,.18)', cursor: 'pointer', fontWeight: 750 }}>View international records →</button>
+            </section>
             {tpoList.map((tpo, idx) => {
               const placedStudentsLog = placementReportLogs.filter(log => {
                 const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
@@ -701,7 +713,7 @@ export default function Reports() {
                       </div>
                     </div>
 
-                    <div className="hc-subheader"><Briefcase size={24} weight="fill" /> Current Status On Placements</div>
+                    <div className="hc-subheader" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><Briefcase size={24} weight="fill" /> Current Status On Placements</span><span style={{ color: '#7dd3fc', fontSize: '.9rem', padding: '6px 10px', border: '1px solid rgba(56,189,248,.35)', borderRadius: '999px', background: 'rgba(14,116,144,.14)' }}>International · {placedStudentsLog.filter(log => log.isInternationalPlacement === true).length}</span></div>
                     
                     <div className="hc-grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
                       {mainCourses.concat(['Others']).map(c => (
@@ -824,13 +836,14 @@ export default function Reports() {
               <div style={{ overflowX: 'auto' }}>
                 <table className="dt">
                   <thead>
-                    <tr><th>Branch Name</th>{mainCourses.map(c => <th key={c}>{c}</th>)}<th>Others</th><th className="dt-total" style={{ color: '#10b981' }}>Total Placed</th></tr>
+                    <tr><th>Branch Name</th>{mainCourses.map(c => <th key={c}>{c}</th>)}<th>Others</th><th style={{ color: '#7dd3fc' }}>International</th><th className="dt-total" style={{ color: '#10b981' }}>Total Placed</th></tr>
                   </thead>
                   <tbody>
                     {allBranchesList.map(b => (
                       <tr key={`pl-${b}`}>
                         <td>{b}</td>
                         {mainCourses.concat(['Others']).map(c => <td key={c} className={branchPlaces[b][c] === 0 ? 'dt-zero' : ''}>{branchPlaces[b][c]}</td>)}
+                        <td style={{ color: branchPlaces[b].International > 0 ? '#7dd3fc' : '' }} className={branchPlaces[b].International === 0 ? 'dt-zero' : ''}>{branchPlaces[b].International}</td>
                         <td className="dt-total" style={{ color: '#10b981' }}>{branchPlaces[b].Total}</td>
                       </tr>
                     ))}
@@ -839,6 +852,7 @@ export default function Reports() {
                     <tr>
                       <td>TOTAL PLACED</td>
                       {mainCourses.concat(['Others']).map(c => <td key={`pfoot-${c}`}>{placeTotals[c]}</td>)}
+                      <td style={{ color: '#7dd3fc' }}>{placeTotals.International}</td>
                       <td style={{ color: '#10b981' }}>{placeTotals.Total}</td>
                     </tr>
                   </tfoot>
