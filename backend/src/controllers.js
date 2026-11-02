@@ -207,12 +207,13 @@ const syncTpoStats = async (userName, updates, reportMonth) => {
      targetRow.assign(normalizedUpdates);
      await targetRow.save();
   } else {
-     await sheet.addRow({
+     targetRow = await sheet.addRow({
        'TimeStamp': formatIndiaTimestamp(),
        'USER': userName,
        ...normalizedUpdates
      });
   }
+  return targetRow;
 };
 
 // =========================================================
@@ -2765,6 +2766,7 @@ exports.emailStudent = async (req, res) => {
 // ---------------------------------------------------------
 
 let vacancySheetReadPromise = null;
+let lastVacancyBackgroundRefreshAt = 0;
 const readCurrentVacancyRows = async () => {
   if (!vacancySheetReadPromise) {
     vacancySheetReadPromise = (async () => {
@@ -2785,16 +2787,29 @@ const readCurrentVacancyRows = async () => {
 exports.getVacancies = async (req, res) => {
   try {
     const cache = getCache();
-    // Read NewsLetter directly here so additions made by another API instance
-    // appear immediately instead of waiting for the shared five-minute cache.
-    let vacancyRows = Array.isArray(cache?.vacancies) ? cache.vacancies : [];
+    let vacancyRows = Array.isArray(cache?.vacancies) ? cache.vacancies : null;
     let vacancyReadWarning = '';
-    try {
-      vacancyRows = await readCurrentVacancyRows();
-      if (Array.isArray(cache?.vacancies)) cache.vacancies = vacancyRows;
-    } catch (refreshError) {
-      console.warn('Using cached vacancy rows because NewsLetter could not be refreshed:', refreshError.message);
-      vacancyReadWarning = 'Could not refresh the NewsLetter sheet. This list is cached and may not include recent openings.';
+    if (vacancyRows) {
+      // Serve the warm cache immediately. Refresh just this sheet in the
+      // background when needed, instead of making the page wait on Google Sheets.
+      const refreshedAt = Date.parse(cache?.cacheUpdatedAt || '');
+      if ((!refreshedAt || Date.now() - refreshedAt > 120000) && Date.now() - lastVacancyBackgroundRefreshAt > 120000) {
+        lastVacancyBackgroundRefreshAt = Date.now();
+        void readCurrentVacancyRows().then(rows => {
+          const latestCache = getCache();
+          if (Array.isArray(latestCache?.vacancies)) latestCache.vacancies = rows;
+        }).catch(error => console.warn('Background vacancy refresh failed:', error.message));
+      }
+    } else {
+      // On a cold start, read only the newsletter tab instead of holding this
+      // page open for the first full multi-workbook cache pass.
+      try {
+        vacancyRows = await readCurrentVacancyRows();
+      } catch (refreshError) {
+        console.warn('Could not load the initial NewsLetter rows:', refreshError.message);
+        vacancyRows = [];
+        vacancyReadWarning = 'Could not load the NewsLetter sheet. Try refreshing the openings list.';
+      }
     }
 
     const companyLogos = new Map((cache?.clients || []).map(row => {
@@ -8102,7 +8117,15 @@ exports.updateTpoActivity = async (req, res) => {
       if (!title) return res.status(400).json({ success: false, message: 'Add a title or name for each poster or video.' });
       if (title.length > 180) return res.status(400).json({ success: false, message: 'Poster and video titles must be 180 characters or fewer.' });
       const value = String(item?.value || '').trim();
-      if (!value) continue;
+      const requestedStatus = String(item?.postingStatus || '').trim().toLowerCase();
+      const postingStatus = requestedStatus === 'completed' || requestedStatus === 'pending'
+        ? requestedStatus
+        : (value ? 'completed' : 'pending');
+      if (!value && postingStatus === 'completed') return res.status(400).json({ success: false, message: 'Add the published link or set the posting status to Pending to post.' });
+      if (!value) {
+        normalizedActivityItems.push({ type, title, value: '', postingStatus });
+        continue;
+      }
       if (value.length > 1800) return res.status(400).json({ success: false, message: 'Activity links must be 1,800 characters or fewer.' });
       try {
         const url = new URL(value);
@@ -8110,18 +8133,18 @@ exports.updateTpoActivity = async (req, res) => {
       } catch {
         return res.status(400).json({ success: false, message: `Enter a valid http or https URL for ${type.replace(/_/g, ' ')}.` });
       }
-      normalizedActivityItems.push({ type, title, value });
+      normalizedActivityItems.push({ type, title, value, postingStatus });
     }
     const seenMediaItems = new Set();
     normalizedActivityItems = normalizedActivityItems.filter(item => {
       if (item.type === 'company_visit') return true;
-      const key = `${item.type}|${item.value.toLowerCase()}`;
+      const key = `${item.type}|${item.value.toLowerCase() || normalizePlacementText(item.title)}`;
       if (seenMediaItems.has(key)) return false;
       seenMediaItems.add(key);
       return true;
     });
     const companies = [...new Map(normalizedActivityItems.filter(item => item.type === 'company_visit').flatMap(item => item.companies).map(company => [normalizePlacementText(company), company])).values()];
-    const linksOfType = type => normalizedActivityItems.filter(item => item.type === type).map(item => item.value);
+    const linksOfType = type => normalizedActivityItems.filter(item => item.type === type && item.postingStatus === 'completed' && item.value).map(item => item.value);
     const uniqueLinks = values => [...new Map(values.map(value => [value.toLowerCase(), value])).values()];
     const instagramPosterLinks = uniqueLinks(linksOfType('instagram_poster'));
     const instagramVideoLinks = uniqueLinks(linksOfType('instagram_video'));
@@ -8168,7 +8191,7 @@ exports.updateTpoActivity = async (req, res) => {
     const uniqueCompanies = [...new Set(normalizedText.companyNamesVisited.split('\n').map(value => normalizePlacementText(value)).filter(Boolean))].length;
     const posterLinksCount = normalizedText.posterLinks ? normalizedText.posterLinks.split('\n').length : 0;
     const videoLinksCount = normalizedText.videoLinks ? normalizedText.videoLinks.split('\n').length : 0;
-    await syncTpoStats(tpoName, {
+    const savedStatsRow = await syncTpoStats(tpoName, {
       'Companies Visited': typedActivityWasProvided ? Number(normalizedCounts.companiesVisited) : Math.max(Number(normalizedCounts.companiesVisited), uniqueCompanies),
       'Branch Videos': typedActivityWasProvided ? Number(normalizedCounts.branchVideos) : Math.max(Number(normalizedCounts.branchVideos), videoLinksCount),
       'Branch Posters': typedActivityWasProvided ? Number(normalizedCounts.branchPosters) : Math.max(Number(normalizedCounts.branchPosters), posterLinksCount),
@@ -8179,8 +8202,25 @@ exports.updateTpoActivity = async (req, res) => {
       'Instagram Links': normalizedText.instagramLinks,
       'Activity Items': typedActivityWasProvided ? JSON.stringify(normalizedActivityItems) : ''
     }, reportMonth);
-    try { await refreshCache(); }
-    catch (refreshError) { console.warn('TPO activity saved, but the live cache refresh failed:', refreshError.message); }
+    const liveCache = getCache();
+    const statsSheet = doc.sheetsByTitle['TPO_Stats'];
+    if (liveCache && Array.isArray(liveCache.tpoStats) && savedStatsRow && statsSheet) {
+      const headers = statsSheet.headerValues || [];
+      const cachedRow = {
+        _worksheet: statsSheet,
+        _rawData: headers.map(header => String(savedStatsRow.get(header) ?? '')),
+        rowNumber: savedStatsRow.rowNumber
+      };
+      const savedMonth = getValByHeader(cachedRow, ['reportmonth']);
+      const savedOwner = normalizePlacementText(getValByHeader(cachedRow, ['user', 'tponame', 'placementofficer']));
+      let cacheIndex = liveCache.tpoStats.findIndex(row => Number(row?.rowNumber) === Number(cachedRow.rowNumber));
+      if (cacheIndex < 0) cacheIndex = liveCache.tpoStats.findIndex(row =>
+        normalizePlacementText(getValByHeader(row, ['user', 'tponame', 'placementofficer'])) === savedOwner
+        && getValByHeader(row, ['reportmonth']) === savedMonth
+      );
+      if (cacheIndex >= 0) liveCache.tpoStats[cacheIndex] = cachedRow;
+      else liveCache.tpoStats.push(cachedRow);
+    }
     res.json({ success: true, message: "Activity stats updated successfully!" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
@@ -8266,6 +8306,9 @@ exports.sendMonthlyTpoReport = async (req, res) => {
         ...item,
         title: String(item.title || ''),
         value: String(item.value || ''),
+        postingStatus: item.postingStatus === 'completed' || item.postingStatus === 'pending'
+          ? item.postingStatus
+          : (item.value ? 'completed' : 'pending'),
         companies: Array.isArray(item.companies) ? item.companies.map(company => String(company || '').trim()).filter(Boolean) : []
       }));
     } catch {}
@@ -8284,7 +8327,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
         : /linkedin\.com/.test(lower)
           ? (/video|clip/.test(lower) ? 'linkedin_video' : 'linkedin_post')
           : fallbackType;
-      if (!linkMap.has(lower)) linkMap.set(lower, { type, title: '', value });
+      if (!linkMap.has(lower)) linkMap.set(lower, { type, title: '', value, postingStatus: 'completed' });
     }));
     items.push(...linkMap.values());
     return items;
@@ -8296,9 +8339,12 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   const numberedActivityList = items => items.length
     ? `<ol style="margin:0;padding-left:20px">${items.map(item => {
       const label = monthlyReportEscape(item.title || monthlyActivityTypeLabel(item.type));
+      const postingStatus = item.postingStatus === 'completed' || (!item.postingStatus && item.value) ? 'completed' : 'pending';
       let href = '';
-      try { const url = new URL(String(item.value || '')); if (['http:', 'https:'].includes(url.protocol)) href = url.href; } catch {}
-      return `<li style="padding:2px 0">${href ? `<a href="${monthlyReportEscape(href)}" style="color:#087f8c">${label}</a>` : label}<small style="color:#718394"> · ${monthlyReportEscape(monthlyActivityTypeLabel(item.type))}</small></li>`;
+      try { const url = new URL(String(item.value || '')); if (postingStatus === 'completed' && ['http:', 'https:'].includes(url.protocol)) href = url.href; } catch {}
+      const isMediaItem = item.type !== 'company_visit';
+      const statusBadge = isMediaItem ? `<span style="display:inline-block;margin-left:6px;padding:2px 6px;border-radius:10px;background:${postingStatus === 'completed' ? '#dcfce7' : '#fef3c7'};color:${postingStatus === 'completed' ? '#166534' : '#92400e'};font-size:10px;font-weight:700">${postingStatus === 'completed' ? 'Post completed' : 'Pending to post'}</span>` : '';
+      return `<li style="padding:2px 0">${href ? `<a href="${monthlyReportEscape(href)}" style="color:#087f8c">${label}</a>` : label}<small style="color:#718394"> · ${monthlyReportEscape(monthlyActivityTypeLabel(item.type))}</small>${statusBadge}</li>`;
     }).join('')}</ol>`
     : '<span style="color:#667085">—</span>';
   const openingRows = (cache.vacancies || []).filter(row => {
@@ -8326,14 +8372,21 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     new Set(monthlyReportLines(getValByHeader(row, ['companynamesvisited'])).map(normalizePlacementText).filter(Boolean)).size
   ), 0);
   const companiesVisitedCount = visitedCompanyNames.length || recordedCompanyVisitCount;
-  const posterCount = activityRows.reduce((total, row) => {
-    const itemCount = getMonthlyActivityItems(row).filter(item => ['instagram_poster', 'linkedin_post'].includes(item.type) && item.value).length;
-    return total + (itemCount || Number(getValByHeader(row, ['branchposters'])) || 0);
-  }, 0);
-  const videoCount = activityRows.reduce((total, row) => {
-    const itemCount = getMonthlyActivityItems(row).filter(item => ['instagram_video', 'linkedin_video'].includes(item.type) && item.value).length;
-    return total + (itemCount || Number(getValByHeader(row, ['branchvideos'])) || 0);
-  }, 0);
+  const getMediaPostingCounts = (row, types, legacyField) => {
+    const items = getMonthlyActivityItems(row).filter(item => types.includes(item.type));
+    return {
+      completed: items.length
+        ? items.filter(item => (item.postingStatus === 'completed' || (!item.postingStatus && item.value)) && item.value).length
+        : Number(getValByHeader(row, [legacyField])) || 0,
+      pending: items.filter(item => item.postingStatus === 'pending' || (!item.postingStatus && !item.value)).length
+    };
+  };
+  const posterCountsByRow = activityRows.map(row => getMediaPostingCounts(row, ['instagram_poster', 'linkedin_post'], 'branchposters'));
+  const videoCountsByRow = activityRows.map(row => getMediaPostingCounts(row, ['instagram_video', 'linkedin_video'], 'branchvideos'));
+  const posterCount = posterCountsByRow.reduce((total, counts) => total + counts.completed, 0);
+  const pendingPosterCount = posterCountsByRow.reduce((total, counts) => total + counts.pending, 0);
+  const videoCount = videoCountsByRow.reduce((total, counts) => total + counts.completed, 0);
+  const pendingVideoCount = videoCountsByRow.reduce((total, counts) => total + counts.pending, 0);
   const pendingStudents = [];
   const placedRolls = new Set();
   const placedNamesByBranch = new Set();
@@ -8531,12 +8584,12 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     const companyItems = companyNames.length
       ? companyNames.map(title => ({ type: 'company_visit', title }))
       : monthlyReportLines(getValByHeader(row, ['companynamesvisited'])).map(title => ({ type: 'company_visit', title }));
-    const posterItems = items.filter(item => ['instagram_poster', 'linkedin_post'].includes(item.type) && item.value);
-    const videoItems = items.filter(item => ['instagram_video', 'linkedin_video'].includes(item.type) && item.value);
+    const posterItems = items.filter(item => ['instagram_poster', 'linkedin_post'].includes(item.type));
+    const videoItems = items.filter(item => ['instagram_video', 'linkedin_video'].includes(item.type));
+    const posterCounts = getMediaPostingCounts(row, ['instagram_poster', 'linkedin_post'], 'branchposters');
+    const videoCounts = getMediaPostingCounts(row, ['instagram_video', 'linkedin_video'], 'branchvideos');
     const companyCount = companyNames.length || Number(getValByHeader(row, ['companiesvisited'])) || 0;
-    const posterItemCount = posterItems.length || Number(getValByHeader(row, ['branchposters'])) || 0;
-    const videoItemCount = videoItems.length || Number(getValByHeader(row, ['branchvideos'])) || 0;
-    return `<tr><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff"><b style="color:#183747">${monthlyReportEscape(owner)}</b></td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#f4f8fb">${monthlyReportEscape(getValByHeader(row, ['reportmonth']) || month)}</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff">${companyCount}</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#f4f8fb">${numberedActivityList(companyItems)}</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff">${tpoSummary?.studentsPlaced || 0} placed · ${tpoSummary?.drives || 0} drives</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#f4f8fb"><b>${posterItemCount}</b><br>${numberedActivityList(posterItems)}</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff"><b>${videoItemCount}</b><br>${numberedActivityList(videoItems)}</td></tr>`;
+    return `<tr><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff"><b style="color:#183747">${monthlyReportEscape(owner)}</b></td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#f4f8fb">${monthlyReportEscape(getValByHeader(row, ['reportmonth']) || month)}</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff">${companyCount}</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#f4f8fb">${numberedActivityList(companyItems)}</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff">${tpoSummary?.studentsPlaced || 0} placed · ${tpoSummary?.drives || 0} drives</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#f4f8fb"><b>${posterCounts.completed} completed</b>${posterCounts.pending ? `<br><small style="color:#92400e">${posterCounts.pending} pending to post</small>` : ''}<br>${numberedActivityList(posterItems)}</td><td style="padding:10px;border:1px solid #d8e3eb;vertical-align:top;background:#ffffff"><b>${videoCounts.completed} completed</b>${videoCounts.pending ? `<br><small style="color:#92400e">${videoCounts.pending} pending to post</small>` : ''}<br>${numberedActivityList(videoItems)}</td></tr>`;
   }).join('');
   const monthName = new Date(`${month}-01T12:00:00`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' });
   const reportTitle = isAdmin ? `IPCS Global Placement Report · ${monthName}` : `${user.name || 'TPO'} · Placement Report · ${monthName}`;
@@ -8562,6 +8615,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     ...(eventAchievementLines.length ? eventAchievementLines : ['No placement drive was recorded for this month.']),
     ...(highestLpa === null ? [] : [`Highest package: ${highestPackageLabel}, achieved by ${countWord(highestPackageStudents, 'student')}.`]),
     ...(totalOpeningPosts ? [`Published ${countWord(totalOpeningPosts, 'job opening post')} across the five main courses.`] : []),
+    ...(pendingPosterCount || pendingVideoCount ? [`${countWord(pendingPosterCount, 'poster')} and ${countWord(pendingVideoCount, 'video')} are pending to post.`] : []),
     ...(openingCompanies.size ? [`Connected ${countWord(openingCompanies.size, 'company')} through newsletter openings.`] : []),
     ...(companiesVisitedCount ? [`Visited ${countWord(companiesVisitedCount, 'company')}${visitedCompanyNames.length ? `: ${visitedCompanyNames.join(', ')}` : ''}.`] : []),
     ...(posterCount || videoCount ? [`Shared ${countWord(posterCount, 'poster')} and ${countWord(videoCount, 'video')} across Instagram and LinkedIn.`] : [])
@@ -8634,7 +8688,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
         ])}
 
         ${sectionTitle('Poster / Video Status', 'Social media activity collected', '#9b5a9b')}
-        ${table(['Activity', 'Count'], [['Posters collected', String(posterCount)], ['Videos collected', String(videoCount)]])}
+        ${table(['Activity', 'Count'], [['Posters completed', String(posterCount)], ['Posters pending to post', String(pendingPosterCount)], ['Videos completed', String(videoCount)], ['Videos pending to post', String(pendingVideoCount)]])}
 
         ${sectionTitle('Center wise Placement', 'Branch totals across the placement team', '#3478c4')}
         ${table(['Branch', ...MONTHLY_REPORT_MAIN_COURSES, 'Branch total'], branchMatrixRows)}

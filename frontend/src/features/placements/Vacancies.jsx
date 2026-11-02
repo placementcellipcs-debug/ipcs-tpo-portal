@@ -331,6 +331,8 @@ function VacanciesContent() {
   const [vacancies, setVacancies] = useState([]);
   const [applications, setApplications] = useState([]); 
   const [loading, setLoading] = useState(true);
+  const [applicantsLoading, setApplicantsLoading] = useState(true);
+  const [applicantsError, setApplicantsError] = useState('');
   
   const [activeTab, setActiveTab] = useState('Open'); 
   const [searchQuery, setSearchQuery] = useState('');
@@ -362,40 +364,59 @@ function VacanciesContent() {
   };
 
   useEffect(() => {
+    let active = true;
     const fetchAllData = async () => {
       const localTpoStr = localStorage.getItem('tpoData');
       if (!localTpoStr) {
         setLoading(false);
+        setApplicantsLoading(false);
         return;
       }
-      const localTpo = JSON.parse(localTpoStr);
-      
-      try {
-        const [vacRes, appRes] = await Promise.all([
-          axios.get(`${API_BASE}/api/tpo/vacancies`),
-          axios.post(`${API_BASE}/api/tpo/applications`, { 
-            assignedBranchesArray: localTpo.assignedBranchesArray,
-            tpoName: localTpo.name,
-            role: localTpo.role,
-            assignedCourse: localTpo.assignedCourse
-          })
-        ]);
-        
-        if (vacRes.data.success) {
+      let localTpo;
+      try { localTpo = JSON.parse(localTpoStr); }
+      catch {
+        setLoading(false);
+        setApplicantsLoading(false);
+        setApplicantsError('Could not read the signed-in account. Sign out and sign back in.');
+        return;
+      }
+
+      // Render opening cards as soon as their request completes. Applicant history
+      // can come from a larger sheet, so it loads independently for the dialog.
+      axios.get(`${API_BASE}/api/tpo/vacancies`)
+        .then(vacRes => {
+          if (!active) return;
+          if (!vacRes.data?.success) throw new Error(vacRes.data?.message || 'Could not load vacancies.');
           setVacancies(Array.isArray(vacRes.data.vacancies) ? vacRes.data.vacancies : []);
           if (vacRes.data.warning) {
             setOpeningNotice(vacRes.data.warning);
             setOpeningNoticeIsError(true);
           }
-        }
-        if (appRes.data.success) setApplications(Array.isArray(appRes.data.applications) ? appRes.data.applications : []);
-      } catch (error) { 
-        console.error("Failed to fetch data", error); 
-      } finally { 
-        setLoading(false); 
-      }
+        })
+        .catch(error => { if (active) console.error('Failed to fetch vacancies', error); })
+        .finally(() => { if (active) setLoading(false); });
+
+      setApplicantsError('');
+      axios.post(`${API_BASE}/api/tpo/applications`, {
+        assignedBranchesArray: localTpo.assignedBranchesArray,
+        tpoName: localTpo.name,
+        role: localTpo.role,
+        assignedCourse: localTpo.assignedCourse
+      })
+        .then(appRes => {
+          if (!active) return;
+          if (!appRes.data?.success) throw new Error(appRes.data?.message || 'Could not load applicants.');
+          setApplications(Array.isArray(appRes.data.applications) ? appRes.data.applications : []);
+        })
+        .catch(error => {
+          if (!active) return;
+          console.error('Failed to fetch vacancy applicants', error);
+          setApplicantsError(error.response?.data?.message || error.message || 'Could not load applicants.');
+        })
+        .finally(() => { if (active) setApplicantsLoading(false); });
     };
     fetchAllData();
+    return () => { active = false; };
   }, []);
 
   const today = new Date();
@@ -763,7 +784,7 @@ function VacanciesContent() {
       ), document.body)}
 
       {/* APPLICANTS MODAL */}
-      {isApplicantsModalOpen && selectedJob && (
+      {isApplicantsModalOpen && selectedJob && createPortal((
         <div className="modal-backdrop" onClick={(e) => { if(e.target === e.currentTarget) setIsApplicantsModalOpen(false); }}>
           <div className="premium-modal glass-panel" style={{ maxWidth: '900px', padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '85vh' }}>
             <div className="modal-header" style={{ padding: '25px', background: 'rgba(15, 23, 42, 0.95)', borderBottom: '1px solid rgba(255,255,255,0.05)', marginBottom: 0 }}>
@@ -771,12 +792,19 @@ function VacanciesContent() {
                 <h2>Applicants List</h2>
                 <div className="modal-subtitle">{String(selectedJob.id || 'N/A')} | {String(selectedJob.company || 'N/A')}</div>
               </div>
-              <button className="close-btn" onClick={() => setIsApplicantsModalOpen(false)}><X size={24} /></button>
+              <button type="button" className="close-btn" onClick={() => setIsApplicantsModalOpen(false)}><X size={24} /></button>
             </div>
 
             <div style={{ overflowY: 'auto', padding: '20px' }}>
               <div className="clean-list">
-                {appsMap[String(selectedJob.id || '').trim()] && appsMap[String(selectedJob.id || '').trim()].length > 0 ? (
+                {applicantsLoading ? (
+                  <div className="empty-state-card" role="status" style={{ background: 'transparent', border: 'none' }}>
+                    <CircleNotch size={38} className="ph-spin" style={{ marginBottom: '12px' }} />
+                    <span style={{ fontSize: '1rem' }}>Loading applicants…</span>
+                  </div>
+                ) : applicantsError ? (
+                  <div className="empty-state-card" role="alert" style={{ color: '#fca5a5' }}>{applicantsError}</div>
+                ) : appsMap[String(selectedJob.id || '').trim()] && appsMap[String(selectedJob.id || '').trim()].length > 0 ? (
                   appsMap[String(selectedJob.id || '').trim()].map((app, i) => {
                     if (!app) return null;
                     return (
@@ -813,7 +841,7 @@ function VacanciesContent() {
             </div>
           </div>
         </div>
-      )}
+      ), document.body)}
 
       <style>{`
         .premium-dashboard-wrapper { font-family: 'Inter', sans-serif; color: #f8fafc; }

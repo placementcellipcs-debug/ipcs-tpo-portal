@@ -35,8 +35,10 @@ const createActivityItem = (type = 'company_visit') => ({
   type,
   companies: type === 'company_visit' ? Array(10).fill('') : [],
   title: '',
-  value: ''
+  value: '',
+  postingStatus: 'pending'
 });
+const getActivityPostingStatus = item => item?.postingStatus === 'completed' || (!item?.postingStatus && item?.value) ? 'completed' : 'pending';
 const getActivityTypeLabel = type => MONTHLY_ACTIVITY_TYPES.find(item => item.value === type)?.label || 'Activity';
 const parseActivityItems = (serialized, legacy = {}) => {
   try {
@@ -46,7 +48,10 @@ const parseActivityItems = (serialized, legacy = {}) => {
       type: MONTHLY_ACTIVITY_TYPES.some(type => type.value === item.type) ? item.type : 'company_visit',
       companies: Array.from({ length: 10 }, (_, index) => String(item.companies?.[index] || '')),
       title: String(item.title || ''),
-      value: String(item.value || '')
+      value: String(item.value || ''),
+      postingStatus: item.postingStatus === 'completed' || item.postingStatus === 'pending'
+        ? item.postingStatus
+        : (item.value ? 'completed' : 'pending')
     }));
   } catch { /* Older TPO_Stats rows use the legacy text columns. */ }
 
@@ -433,13 +438,17 @@ export default function Reports() {
       reportMonth: currentMonthPrefix,
       hasActivitySession: Boolean(manualStats),
       companiesVisited: manualStats ? (companyItems.length || parseInt(manualStats['Companies Visited'] || 0, 10) || 0) : autoUniqueCompanies,
-      branchVideos: manualStats ? (activityItems.filter(item => ['instagram_video', 'linkedin_video'].includes(item.type) && item.value).length || parseInt(manualStats['Branch Videos'] || 0, 10) || 0) : 0,
-      branchPosters: manualStats ? (activityItems.filter(item => ['instagram_poster', 'linkedin_post'].includes(item.type) && item.value).length || parseInt(manualStats['Branch Posters'] || 0, 10) || 0) : 0,
+      branchVideos: manualStats ? (activityItems.some(item => ['instagram_video', 'linkedin_video'].includes(item.type))
+        ? activityItems.filter(item => ['instagram_video', 'linkedin_video'].includes(item.type) && getActivityPostingStatus(item) === 'completed' && item.value).length
+        : parseInt(manualStats['Branch Videos'] || 0, 10) || 0) : 0,
+      branchPosters: manualStats ? (activityItems.some(item => ['instagram_poster', 'linkedin_post'].includes(item.type))
+        ? activityItems.filter(item => ['instagram_poster', 'linkedin_post'].includes(item.type) && getActivityPostingStatus(item) === 'completed' && item.value).length
+        : parseInt(manualStats['Branch Posters'] || 0, 10) || 0) : 0,
       ...legacyActivity,
       activityItems,
       companyItems,
-      posterItems: activityItems.filter(item => ['instagram_poster', 'linkedin_post'].includes(item.type) && item.value),
-      videoItems: activityItems.filter(item => ['instagram_video', 'linkedin_video'].includes(item.type) && item.value),
+      posterItems: activityItems.filter(item => ['instagram_poster', 'linkedin_post'].includes(item.type)),
+      videoItems: activityItems.filter(item => ['instagram_video', 'linkedin_video'].includes(item.type)),
       drivesConducted: drivesConducted,
       joining: joined,
       notJoining: notJoined,
@@ -451,8 +460,8 @@ export default function Reports() {
     e.preventDefault();
     const activityItems = activityForm.activityItems.map(item => item.type === 'company_visit'
       ? { type: item.type, companies: (item.companies || []).slice(0, 10).map(company => String(company || '').trim()).filter(Boolean) }
-      : { type: item.type, title: String(item.title || '').trim(), value: String(item.value || '').trim() })
-      .filter(item => item.type === 'company_visit' ? item.companies.length > 0 : item.value.length > 0);
+      : { type: item.type, title: String(item.title || '').trim(), value: String(item.value || '').trim(), postingStatus: getActivityPostingStatus(item) })
+      .filter(item => item.type === 'company_visit' ? item.companies.length > 0 : (item.title || item.value));
     const untitledItem = activityItems.find(item => item.type !== 'company_visit' && !item.title);
     if (untitledItem) {
       alert(`Add a title or name for each ${getActivityTypeLabel(untitledItem.type)}.`);
@@ -460,18 +469,22 @@ export default function Reports() {
     }
     const invalidLinkItem = activityItems.find(item => {
       if (item.type === 'company_visit') return false;
+      if (item.postingStatus === 'completed' && !item.value) return true;
+      if (!item.value) return false;
       try { return !['http:', 'https:'].includes(new URL(item.value).protocol); } catch { return true; }
     });
     if (invalidLinkItem) {
-      alert(`Enter a valid http or https link for ${getActivityTypeLabel(invalidLinkItem.type)}.`);
+      alert(invalidLinkItem.postingStatus === 'completed' && !invalidLinkItem.value
+        ? `Add the published link or set ${getActivityTypeLabel(invalidLinkItem.type)} to Pending to post.`
+        : `Enter a valid http or https link for ${getActivityTypeLabel(invalidLinkItem.type)}.`);
       return;
     }
     const companyNames = activityItems.filter(item => item.type === 'company_visit').flatMap(item => item.companies);
     const uniqueCompanyNames = [...new Map(companyNames.map(company => [company.toLowerCase(), company])).values()];
-    const instagramPostLinks = activityItems.filter(item => item.type === 'instagram_poster').map(item => item.value);
-    const instagramVideoLinks = activityItems.filter(item => item.type === 'instagram_video').map(item => item.value);
-    const linkedinPostLinks = activityItems.filter(item => item.type === 'linkedin_post').map(item => item.value);
-    const linkedinVideoLinks = activityItems.filter(item => item.type === 'linkedin_video').map(item => item.value);
+    const instagramPostLinks = activityItems.filter(item => item.type === 'instagram_poster' && item.postingStatus === 'completed' && item.value).map(item => item.value);
+    const instagramVideoLinks = activityItems.filter(item => item.type === 'instagram_video' && item.postingStatus === 'completed' && item.value).map(item => item.value);
+    const linkedinPostLinks = activityItems.filter(item => item.type === 'linkedin_post' && item.postingStatus === 'completed' && item.value).map(item => item.value);
+    const linkedinVideoLinks = activityItems.filter(item => item.type === 'linkedin_video' && item.postingStatus === 'completed' && item.value).map(item => item.value);
     const posterLinks = [...instagramPostLinks, ...linkedinPostLinks];
     const videoLinks = [...instagramVideoLinks, ...linkedinVideoLinks];
     setIsSubmitting(true);
@@ -491,8 +504,29 @@ export default function Reports() {
       });
       if (res.data.success) {
         setMonthFilter(activityForm.reportMonth);
+        const ownerName = activityForm.tpoName || tpoData?.name || tpoData?.userName;
+        const updatedStats = {
+          USER: ownerName,
+          'Report Month': activityForm.reportMonth,
+          'Activity Items': JSON.stringify(activityItems),
+          'Company Names Visited': uniqueCompanyNames.join('\n'),
+          'Poster Links': posterLinks.join('\n'),
+          'Video Links': videoLinks.join('\n'),
+          'LinkedIn Links': [...linkedinPostLinks, ...linkedinVideoLinks].join('\n'),
+          'Instagram Links': [...instagramPostLinks, ...instagramVideoLinks].join('\n'),
+          'Companies Visited': uniqueCompanyNames.length,
+          'Branch Videos': videoLinks.length,
+          'Branch Posters': posterLinks.length
+        };
+        setTpoStatsData(current => {
+          const matchingIndex = current.findIndex(stat =>
+            normalizePlacementText(getVal(stat, 'user')) === normalizePlacementText(ownerName)
+            && getTpoActivityMonth(stat) === activityForm.reportMonth
+          );
+          if (matchingIndex < 0) return [...current, updatedStats];
+          return current.map((stat, index) => index === matchingIndex ? { ...stat, ...updatedStats } : stat);
+        });
         setShowActivityModal(false);
-        setReportReloadKey(value => value + 1);
       }
     } catch (err) {
       const errorMsg = err.response?.data?.message || err.message || "Unknown error occurred";
@@ -980,11 +1014,21 @@ export default function Reports() {
                         <td className={t.drivesConducted === 0 ? 'dt-zero' : ''}>{t.drivesConducted}</td>
                         <td className={t.branchPosters === 0 ? 'dt-zero' : ''}>{t.branchPosters}</td>
                         <td style={{ textAlign: 'left', minWidth: '210px' }}>
-                          {t.posterItems.length ? <ol style={{ margin: 0, paddingLeft: '24px' }}>{t.posterItems.map((item, index) => <li key={`${item.value}-${index}`} style={{ padding: '2px 0' }}><a href={item.value} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>{item.title || getActivityTypeLabel(item.type)}</a></li>)}</ol> : '—'}
+                          {t.posterItems.length ? <ol style={{ margin: 0, paddingLeft: '24px' }}>{t.posterItems.map((item, index) => <li key={`${item.id || item.value || item.title}-${index}`} style={{ padding: '2px 0' }}>
+                            {getActivityPostingStatus(item) === 'completed' && item.value
+                              ? <a href={item.value} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>{item.title || getActivityTypeLabel(item.type)}</a>
+                              : <span style={{ color: '#cbd5e1' }}>{item.title || getActivityTypeLabel(item.type)}</span>}
+                            <span style={{ marginLeft: 7, fontSize: '.72rem', color: getActivityPostingStatus(item) === 'completed' ? '#6ee7b7' : '#fbbf24' }}>{getActivityPostingStatus(item) === 'completed' ? 'Post completed' : 'Pending to post'}</span>
+                          </li>)}</ol> : '—'}
                         </td>
                         <td className={t.branchVideos === 0 ? 'dt-zero' : ''}>{t.branchVideos}</td>
                         <td style={{ textAlign: 'left', minWidth: '210px' }}>
-                          {t.videoItems.length ? <ol style={{ margin: 0, paddingLeft: '24px' }}>{t.videoItems.map((item, index) => <li key={`${item.value}-${index}`} style={{ padding: '2px 0' }}><a href={item.value} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>{item.title || getActivityTypeLabel(item.type)}</a></li>)}</ol> : '—'}
+                          {t.videoItems.length ? <ol style={{ margin: 0, paddingLeft: '24px' }}>{t.videoItems.map((item, index) => <li key={`${item.id || item.value || item.title}-${index}`} style={{ padding: '2px 0' }}>
+                            {getActivityPostingStatus(item) === 'completed' && item.value
+                              ? <a href={item.value} target="_blank" rel="noreferrer" style={{ color: 'var(--accent-primary)' }}>{item.title || getActivityTypeLabel(item.type)}</a>
+                              : <span style={{ color: '#cbd5e1' }}>{item.title || getActivityTypeLabel(item.type)}</span>}
+                            <span style={{ marginLeft: 7, fontSize: '.72rem', color: getActivityPostingStatus(item) === 'completed' ? '#6ee7b7' : '#fbbf24' }}>{getActivityPostingStatus(item) === 'completed' ? 'Post completed' : 'Pending to post'}</span>
+                          </li>)}</ol> : '—'}
                         </td>
                         <td style={{ color: '#10b981', fontWeight: 'bold' }} className={t.joining === 0 ? 'dt-zero' : ''}>{t.joining}</td>
                         <td style={{ color: '#ef4444', fontWeight: 'bold' }} className={t.notJoining === 0 ? 'dt-zero' : ''}>{t.notJoining}</td>
@@ -1011,7 +1055,7 @@ export default function Reports() {
           <div style={{ background: '#0f1523', padding: '30px', borderRadius: '12px', border: '1px solid #1e293b', width: '680px', maxWidth: '94vw', maxHeight: '90vh', overflowY: 'auto' }}>
             <h2 style={{ marginTop: 0, color: '#fff', borderBottom: '1px solid #1e293b', paddingBottom: '15px' }}>{activityForm.mode === 'edit' ? 'Edit activity session' : 'Add activity session'}</h2>
             <form onSubmit={submitActivityStats}>
-              <p style={{ color: '#94a3b8', fontSize: '.9rem', margin: '0 0 18px' }}>Choose the month, then add company visits and titled social posts or videos. The report numbers each item.</p>
+              <p style={{ color: '#94a3b8', fontSize: '.9rem', margin: '0 0 18px' }}>Choose the month, then add company visits and titled social posts or videos. Completed posts are counted; pending posts stay listed until they are published.</p>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: '12px', marginBottom: '18px' }}>
                 <label style={{ display: 'grid', gap: '6px', color: '#94a3b8', fontSize: '.8rem' }}>
                   Report month
@@ -1052,12 +1096,18 @@ export default function Reports() {
                         {Array.from({ length: 10 }, (_, companyIndex) => <input key={companyIndex} aria-label={`Company name ${companyIndex + 1} for visit ${itemIndex + 1}`} value={item.companies?.[companyIndex] || ''} onChange={event => setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...entry, companies: Array.from({ length: 10 }, (_, index) => index === companyIndex ? event.target.value : entry.companies?.[index] || '') } : entry) }))} placeholder={`Company ${companyIndex + 1}`} style={{ width: '100%', minWidth: 0, boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#0d1522', color: '#fff' }} />)}
                       </div>
                     ) : (
-                      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(130px, .8fr) minmax(190px, 1.2fr)', gap: '10px' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: '10px' }}>
                         <label htmlFor={`activity-title-${item.id}`} style={{ display: 'grid', gap: '6px', color: '#94a3b8', fontSize: '.8rem' }}>{getActivityTypeLabel(item.type)} title / name
                           <input id={`activity-title-${item.id}`} type="text" maxLength={180} value={item.title || ''} onChange={event => setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...entry, title: event.target.value } : entry) }))} placeholder={`Name this ${item.type.includes('video') ? 'video' : 'poster'}`} style={{ width: '100%', boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#0d1522', color: '#fff' }} />
                         </label>
                         <label htmlFor={`activity-link-${item.id}`} style={{ display: 'grid', gap: '6px', color: '#94a3b8', fontSize: '.8rem' }}>{getActivityTypeLabel(item.type)} link
-                          <input id={`activity-link-${item.id}`} type="url" inputMode="url" value={item.value || ''} onChange={event => setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...entry, value: event.target.value } : entry) }))} placeholder="https://..." style={{ width: '100%', boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#0d1522', color: '#fff' }} />
+                          <input id={`activity-link-${item.id}`} type="url" inputMode="url" value={item.value || ''} onChange={event => setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...entry, value: event.target.value } : entry) }))} placeholder={item.postingStatus === 'pending' ? 'Optional until posted' : 'https://...'} style={{ width: '100%', boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#0d1522', color: '#fff' }} />
+                        </label>
+                        <label htmlFor={`activity-status-${item.id}`} style={{ display: 'grid', gap: '6px', color: '#94a3b8', fontSize: '.8rem' }}>Posting status
+                          <select id={`activity-status-${item.id}`} value={getActivityPostingStatus(item)} onChange={event => setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...entry, postingStatus: event.target.value } : entry) }))} style={{ width: '100%', boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#1e293b', color: '#fff' }}>
+                            <option value="completed">Post completed</option>
+                            <option value="pending">Pending to post</option>
+                          </select>
                         </label>
                       </div>
                     )}
