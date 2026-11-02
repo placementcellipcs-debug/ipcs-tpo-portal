@@ -6,6 +6,7 @@ import {
   Trophy, UserList, Clock, MapPin, CalendarBlank, WarningCircle, WhatsappLogo, FilePdf
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import InternationalPlacementPrompt from '../../components/InternationalPlacementPrompt';
 import { API_BASE } from '../../services/apiConfig';
 import { formatPortalDate, parsePortalDateTime } from '../../utils/dateFormat';
 
@@ -27,6 +28,7 @@ export default function PlacementDrives() {
   const [activeInterestTab, setActiveInterestTab] = useState('interested'); 
   
   const [savingRow, setSavingRow] = useState(null);
+  const [internationalPrompt, setInternationalPrompt] = useState(null);
 
   const fetchDrives = async () => {
     try {
@@ -52,16 +54,21 @@ export default function PlacementDrives() {
     return myName !== '' && myName === driveOwner;
   };
 
-  const updateStudentStatus = async (rowNumber, newStatus) => {
+  const updateStudentStatus = async (student, newStatus, internationalChoice) => {
+    const rowNumber = student.rowNumber;
+    if (/^placed$/i.test(String(newStatus || '').trim()) && !/^placed$/i.test(String(student.studentStatus || '').trim()) && internationalChoice === undefined) {
+      setInternationalPrompt({ student, newStatus });
+      return;
+    }
     setSavingRow(rowNumber);
     try {
-      const res = await axios.post(`${API_BASE}/api/tpo/drives/update`, { rowNumber, studentStatus: newStatus });
+      const res = await axios.post(`${API_BASE}/api/tpo/drives/update`, { rowNumber, studentStatus: newStatus, isInternationalPlacement: internationalChoice });
       if (res.data.success) {
-        setDrives(drives.map(d => d.rowNumber === rowNumber ? { ...d, studentStatus: newStatus } : d));
+        setDrives(drives.map(d => d.rowNumber === rowNumber ? { ...d, studentStatus: newStatus, ...(internationalChoice === undefined ? {} : { isInternationalPlacement: internationalChoice }) } : d));
         if (selectedDrive) {
            setSelectedDrive(prev => ({
               ...prev,
-              applicants: prev.applicants.map(a => a.rowNumber === rowNumber ? { ...a, studentStatus: newStatus } : a)
+              applicants: prev.applicants.map(a => a.rowNumber === rowNumber ? { ...a, studentStatus: newStatus, ...(internationalChoice === undefined ? {} : { isInternationalPlacement: internationalChoice }) } : a)
            }));
         }
       }
@@ -389,7 +396,7 @@ export default function PlacementDrives() {
                               cursor: canEditDrive(selectedDrive) ? 'pointer' : 'not-allowed'
                             }} 
                             value={currStat} 
-                            onChange={(e) => updateStudentStatus(app.rowNumber, e.target.value)}
+                            onChange={(e) => updateStudentStatus(app, e.target.value)}
                             disabled={!canEditDrive(selectedDrive)}
                           >
                             <option style={{ color: '#fff' }} value="Pending / Unknown">Pending / Unknown</option>
@@ -411,6 +418,16 @@ export default function PlacementDrives() {
         )}
       </div>
 
+      <InternationalPlacementPrompt
+        open={Boolean(internationalPrompt)}
+        studentName={internationalPrompt?.student?.name}
+        onCancel={() => setInternationalPrompt(null)}
+        onChoose={choice => {
+          const pending = internationalPrompt;
+          setInternationalPrompt(null);
+          if (pending) void updateStudentStatus(pending.student, pending.newStatus, choice);
+        }}
+      />
       <style>{`
         .pd-wrapper { font-family: 'Inter', sans-serif; color: #f8fafc; }
         .glass-panel { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); }

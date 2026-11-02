@@ -35,7 +35,7 @@ const { autoCreateDesignTask } = require('./designControllers');
 const { normalizePlacementText, placementLogRecordKey } = require('./placementRecords');
 const { calculateDashboardPlacementCounts } = require('./dashboardStats');
 const { isPlacementEligiblePending, placementOutcome } = require('./placementMetrics');
-const { createPlacementLocationResolver } = require('./internationalPlacements');
+const { createPlacementLocationResolver, normalizeInternationalPlacementFlag } = require('./internationalPlacements');
 const { buildPlacementReconciliation } = require('./placementReconciliation');
 const { PLACEMENT_AUDIT_SHEET, PLACEMENT_AUDIT_HEADERS, createPlacementAuditEvent } = require('./placementAudit');
 const { createTalentinoSessionResolver } = require('./talentinoSessionMatch');
@@ -1400,6 +1400,8 @@ exports.getStudents = async (req, res) => {
 
 exports.updateStudent = async (req, res) => {
   const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus, coursePercentage } = req.body || {};
+  const internationalPlacement = req.body?.isInternationalPlacement === undefined
+    ? '' : normalizeInternationalPlacementFlag(req.body.isInternationalPlacement);
   const rowIndex = Number(rowNumber);
   const user = req.portalUser;
   const role = String(user?.role || '').toUpperCase();
@@ -1419,6 +1421,11 @@ exports.updateStudent = async (req, res) => {
     if (!stuSheet) return res.status(503).json({ success: false, message: 'Student register is unavailable.' });
     const rows = await stuSheet.getRows({ offset: rowIndex - 2, limit: 1 });
     if (rows.length > 0) {
+      const previousPlacementStatus = getValByHeader(rows[0], ['placementstatus', 'placementstat']);
+      if (normalizePlacementText(placementStatus) === 'placed'
+        && normalizePlacementText(previousPlacementStatus) !== 'placed' && !internationalPlacement) {
+        return res.status(422).json({ success: false, message: 'Choose whether this placement is International or within India before marking the student Placed.' });
+      }
       const studentBranch = getValByHeader(rows[0], ['branch']) || '';
       const studentCourse = getValByHeader(rows[0], ['course']) || '';
       const canEditBranchStudent = isPlacementTrackerTpo(user) || isPlacementTrackerAdmin(user)
@@ -1496,6 +1503,7 @@ exports.updateStudent = async (req, res) => {
             ? user?.name || user?.email || ''
             : getValByHeader(rows[0], ['placementofficer', 'tpo', 'tponame']) || '',
           status: placementStatus.trim(),
+          internationalPlacement,
           joiningStatus: getValByHeader(rows[0], ['joiningstatus']),
           remarks: getValByHeader(rows[0], ['remarks']),
           datePlaced: getValByHeader(rows[0], ['dateplaced']),
@@ -1772,10 +1780,10 @@ const appendPlacementHistory = ({ row, oldStatus, status, oldRemarks, remarks, o
   return history.slice(-60);
 };
 
-const placementTrackingHeaders = ['Interview Date', 'Interview Time', 'Interview Venue', 'Status History'];
+const placementTrackingHeaders = ['Interview Date', 'Interview Time', 'Interview Venue', 'Status History', 'International Placement'];
 const placementActionHeaders = ['TPO Action Log', 'Action Type', 'Action Details'];
 
-const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentContact, studentEmail, studentRoll, course, branch, qualification, resume, jobId, company, position, status, remarks, interviewDate, interviewTime, interviewVenue, datePlaced, packageLpa, joiningStatus, entrySource, actionType, actionDetails, historyEntry }) => {
+const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentContact, studentEmail, studentRoll, course, branch, qualification, resume, jobId, company, position, status, remarks, interviewDate, interviewTime, interviewVenue, datePlaced, packageLpa, joiningStatus, internationalPlacement, entrySource, actionType, actionDetails, historyEntry }) => {
   await loadDocInfo();
   const logSheet = doc.sheetsByTitle['TPO_Log'];
   if (!logSheet) throw new Error('The TPO_Log sheet is unavailable.');
@@ -1802,6 +1810,7 @@ const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentCo
     'Interview Date': interviewDate || '',
     'Interview Time': interviewTime || '',
     'Interview Venue': interviewVenue || '',
+    'International Placement': normalizeInternationalPlacementFlag(internationalPlacement),
     'Entry Source': entrySource || 'Job Tracker',
     'Status History': JSON.stringify(historyEntry ? [historyEntry] : []),
     'TPO Action Log': 'YES',
@@ -1815,6 +1824,7 @@ const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentCo
         name: studentName, phone: studentContact, email: studentEmail, roll: studentRoll,
         course, branch, qual: qualification, resume, jobId, company, position,
         placementOfficer: changedBy, status, remarks, datePlaced, packageLpa, joiningStatus,
+        internationalPlacement: normalizeInternationalPlacementFlag(internationalPlacement),
         sourceSheet: 'TPO_Log', sourceRow: savedActionRow.rowNumber
       });
     } catch (error) {
@@ -1868,6 +1878,8 @@ const upsertPlacementTpoLog = async record => {
     'Company Name': value('company', ['companyname', 'company']),
     Position: value('position', ['position', 'role']),
     'Placement Location': value('placementLocation', ['placementlocation', 'worklocation', 'joblocation', 'location']),
+    'International Placement': normalizeInternationalPlacementFlag(record.internationalPlacement ?? record.isInternationalPlacement)
+      || (existing ? normalizeInternationalPlacementFlag(getValByHeader(existing, ['internationalplacement', 'isinternationalplacement'])) : ''),
     'Placement Officer': value('placementOfficer', ['placementofficer', 'tpo', 'tponame', 'createdby']) || value('tpoName', ['placementofficer', 'tpo', 'tponame', 'createdby']),
     Status: record.status !== undefined ? record.status : (existing ? getValByHeader(existing, ['status']) : ''),
     Remarks: record.remarks !== undefined ? record.remarks : (existing ? getValByHeader(existing, ['remarks']) : ''),
@@ -1937,6 +1949,8 @@ const syncPositivePlacement = async record => {
       console.error('The TPO log status could not be copied to the student directory:', error.message);
       directoryStatusWarning = `The placement is recorded, but the student directory status could not be updated: ${error.message}`;
     }
+    const internationalPlacement = normalizeInternationalPlacementFlag(record.internationalPlacement ?? record.isInternationalPlacement)
+      || normalizeInternationalPlacementFlag(getValByHeader(logRow, ['internationalplacement', 'isinternationalplacement']));
     await syncPlacedStudent({
       name: getValByHeader(logRow, ['studentname', 'name']),
       phone: getValByHeader(logRow, ['contact', 'phone']),
@@ -1956,13 +1970,103 @@ const syncPositivePlacement = async record => {
       packageLpa: getValByHeader(logRow, ['package', 'packagelpa']),
       joiningStatus: getValByHeader(logRow, ['joiningstatus']),
       offerLetter: getValByHeader(logRow, ['offerletterstatus', 'offerletter']),
+      internationalPlacement,
       sourceSheet: 'TPO_Log', sourceRow: logRow.rowNumber
     });
-    return directoryStatusWarning;
+    let applicationFlagWarning = '';
+    if (internationalPlacement) {
+      try {
+        applicationFlagWarning = await syncOpeningAppliedInternationalFlag(logRow, internationalPlacement, record.applicationRowNumber);
+      } catch (error) {
+        console.error('The international placement flag could not be copied to Opening_Applied:', error.message);
+        applicationFlagWarning = `The placement was saved, but Opening_Applied international classification could not be updated: ${error.message}`;
+      }
+    }
+    return [directoryStatusWarning, applicationFlagWarning].filter(Boolean).join(' ');
   } catch (error) {
     console.error('Placement was saved but the Placed_Students sheet could not be updated:', error.message);
     return `The placement was saved, but the Placed_Students sheet could not be updated: ${error.message}`;
   }
+};
+
+const syncOpeningAppliedInternationalFlag = async (logRow, internationalPlacement, preferredRowNumber) => {
+  const flag = normalizeInternationalPlacementFlag(internationalPlacement);
+  if (!flag) return '';
+  await loadDocInfo();
+  const sheet = doc.sheetsByTitle['Opening_Applied'];
+  if (!sheet) return 'Opening_Applied is unavailable.';
+  const headers = await ensurePlacementHeaders(sheet, placementTrackingHeaders);
+  const flagHeader = findPlacementHeader(headers, ['International Placement']);
+  if (!flagHeader) return 'Opening_Applied has no International Placement column.';
+  const cachedRows = getCache()?.applications || [];
+  let target = Number(preferredRowNumber) >= 2
+    ? cachedRows.find(row => Number(row.rowNumber) === Number(preferredRowNumber))
+    : null;
+  const roll = normalizePlacementText(getValByHeader(logRow, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+  const name = normalizePlacementText(getValByHeader(logRow, ['studentname', 'name']));
+  const jobId = normalizePlacementText(getValByHeader(logRow, ['jobid', 'job id']));
+  const company = normalizePlacementText(getValByHeader(logRow, ['companyname', 'company']));
+  const position = normalizePlacementText(getValByHeader(logRow, ['position', 'role']));
+  const findMatches = rows => rows.filter(row => {
+      const rowRoll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+      const rowName = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+      const sameStudent = roll ? rowRoll === roll : Boolean(name && rowName === name);
+      if (!sameStudent) return false;
+      const rowJobId = normalizePlacementText(getValByHeader(row, ['jobid', 'job id']));
+      const rowCompany = normalizePlacementText(getValByHeader(row, ['companyname', 'company']));
+      const rowPosition = normalizePlacementText(getValByHeader(row, ['position', 'role']));
+      if (jobId && rowJobId === jobId) return true;
+      return Boolean(company && rowCompany === company && (!position || !rowPosition || rowPosition === position));
+    });
+  let matchCount = 0;
+  if (!target) {
+    let matches = findMatches(cachedRows);
+    if (!matches.length) {
+      // The portal cache may lag a recent sheet edit from another TPO session.
+      // Read the live tab before deciding that this placement needs a new row.
+      matches = findMatches(await sheet.getRows());
+    }
+    matchCount = matches.length;
+    if (matches.length === 1) [target] = matches;
+    else if (matches.length > 1) return 'Multiple Opening_Applied rows match this student and employer, so their international flag was left unchanged.';
+  }
+  if (target) {
+    await updateCachedSheetRow(sheet, target, { [flagHeader]: flag });
+    return '';
+  }
+  // Drive and directory placements may not have an application row yet. Add
+  // the placed event once, with its source details, so the classification is
+  // present in all three placement workbooks.
+  if (matchCount === 0 && (roll || name) && company
+    && normalizePlacementText(getValByHeader(logRow, ['status'])) === 'placed') {
+    const rowData = mapPlacementRowData(sheet, {
+      TimeStamp: getValByHeader(logRow, ['timestamp', 'dateplaced']),
+      'Student Name': getValByHeader(logRow, ['studentname', 'name']),
+      Contact: getValByHeader(logRow, ['contact', 'phone']),
+      'Mail ID': getValByHeader(logRow, ['mailid', 'email', 'studentemail']),
+      'Roll Number': getValByHeader(logRow, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']),
+      Course: getValByHeader(logRow, ['course', 'program']),
+      Branch: getValByHeader(logRow, ['branch', 'sittingbranch']),
+      Qualification: getValByHeader(logRow, ['qualification', 'qual']),
+      Resume: getValByHeader(logRow, ['resume', 'cv']),
+      'Job ID': getValByHeader(logRow, ['jobid', 'job id']),
+      'Company Name': getValByHeader(logRow, ['companyname', 'company']),
+      Position: getValByHeader(logRow, ['position', 'role']),
+      'Placement Location': getValByHeader(logRow, ['placementlocation', 'worklocation', 'joblocation', 'location']),
+      'Placement Officer': getValByHeader(logRow, ['placementofficer', 'tpo', 'tponame']),
+      Status: 'Placed',
+      Remarks: getValByHeader(logRow, ['remarks']),
+      'DATE PLACED': getValByHeader(logRow, ['dateplaced']),
+      'PACKAGE (LPA)': getValByHeader(logRow, ['package', 'packagelpa']),
+      'Joining Status': getValByHeader(logRow, ['joiningstatus']),
+      'Offer Letter': getValByHeader(logRow, ['offerletterstatus', 'offerletter']),
+      'International Placement': flag,
+      'Entry Source': getValByHeader(logRow, ['entrysource']) || 'Placement record'
+    });
+    const added = await sheet.addRow(rowData);
+    addRowToCache('applications', added);
+  }
+  return '';
 };
 
 exports.getApplications = async (req, res) => {
@@ -1973,6 +2077,7 @@ exports.getApplications = async (req, res) => {
   const portalUser = req.portalUser || {};
   const scope = String(req.body?.scope || '').toLowerCase();
   const showBranchRecords = scope === 'branch';
+  const resolveApplicationLocation = createPlacementLocationResolver(getValByHeader, cache);
   
   const sourceData = cache.applications || [];
   const studentByRoll = new Map();
@@ -2050,8 +2155,10 @@ exports.getApplications = async (req, res) => {
       if (!statusHistory.length && (status || remarks || interviewDate || interviewTime || interviewVenue)) {
         statusHistory = [placementHistoryEntry({ status, remarks, interviewDate, interviewTime, interviewVenue, changedBy: tpoName || 'Placement team', changedAt: getValByHeader(row, ['timestamp', 'date', 'time']), event: 'Current record' })];
       }
+      const locationInfo = resolveApplicationLocation(row);
       appsList.push({
-        rowNumber: row.rowNumber, recordType: 'application', origin: getValByHeader(row, ['entrysource', 'recordorigin', 'origin', 'source']), name: getValByHeader(row, ['studentname', 'name', 'candidate']) || (studentData && getValByHeader(studentData, ['studentname', 'name'])) || '', roll, branch, course, qual: qual || 'Not Specified', jobId, company: getValByHeader(row, ['companyname', 'company']) || 'Unknown Company', position: getValByHeader(row, ['position', 'role']) || 'Unknown Position', date: getValByHeader(row, ['timestamp', 'date', 'time']) || '', status, remarks, statusHistory, interviewDate, interviewTime, interviewVenue, tpoName, phone, email, resume, datePlaced: getValByHeader(row, ['dateplaced']) || '', packageLpa: getValByHeader(row, ['package']) || '', offerLetter: getValByHeader(row, ['offerletter']) || '', joiningStatus: getValByHeader(row, ['joiningstatus']) || ''
+        rowNumber: row.rowNumber, recordType: 'application', origin: getValByHeader(row, ['entrysource', 'recordorigin', 'origin', 'source']), name: getValByHeader(row, ['studentname', 'name', 'candidate']) || (studentData && getValByHeader(studentData, ['studentname', 'name'])) || '', roll, branch, course, qual: qual || 'Not Specified', jobId, company: getValByHeader(row, ['companyname', 'company']) || 'Unknown Company', position: getValByHeader(row, ['position', 'role']) || 'Unknown Position', date: getValByHeader(row, ['timestamp', 'date', 'time']) || '', status, remarks, statusHistory, interviewDate, interviewTime, interviewVenue, tpoName, phone, email, resume, datePlaced: getValByHeader(row, ['dateplaced']) || '', packageLpa: getValByHeader(row, ['package']) || '', offerLetter: getValByHeader(row, ['offerletter']) || '', joiningStatus: getValByHeader(row, ['joiningstatus']) || '',
+        isInternationalPlacement: locationInfo.isInternationalPlacement, placementLocation: locationInfo.location
       });
     }
   });
@@ -2155,6 +2262,16 @@ exports.updateApplication = async (req, res) => {
     const oldPackage = getValByHeader(sourceRow, ['package', 'packagelpa']);
     const oldJoiningStatus = getValByHeader(sourceRow, ['joiningstatus']);
     const oldOfferLetter = getValByHeader(sourceRow, ['offerletter', 'offerletterstatus']);
+    const oldInternationalPlacement = normalizeInternationalPlacementFlag(getValByHeader(sourceRow, ['internationalplacement', 'isinternationalplacement']));
+    const suppliedInternationalPlacement = req.body.isInternationalPlacement;
+    const nextInternationalPlacement = suppliedInternationalPlacement !== undefined
+      ? normalizeInternationalPlacementFlag(suppliedInternationalPlacement)
+      : oldInternationalPlacement;
+    const requestedNextStatus = status !== undefined ? status : oldStatus;
+    if (normalizePlacementText(requestedNextStatus) === 'placed'
+      && normalizePlacementText(oldStatus) !== 'placed' && !nextInternationalPlacement) {
+      return res.status(422).json({ success: false, message: 'Choose whether this placement is International or within India before marking the student Placed.' });
+    }
 
     // Treat the selected sheet row as the source of placement identity; the
     // browser's fullApp payload is only presentation data and is not trusted.
@@ -2173,6 +2290,8 @@ exports.updateApplication = async (req, res) => {
 
     const updateObj = {};
     if (oldStatusH && status !== undefined) updateObj[oldStatusH] = status;
+    const hInternationalPlacement = getSafeH(['internationalplacement']);
+    if (hInternationalPlacement && nextInternationalPlacement) updateObj[hInternationalPlacement] = nextInternationalPlacement;
     
     const hRemarks = getSafeH(['remarks']); if (hRemarks && remarks !== undefined) updateObj[hRemarks] = remarks;
     const hDatePlaced = getSafeH(['dateplaced']); if (hDatePlaced && datePlaced !== undefined) updateObj[hDatePlaced] = formatIndiaDate(datePlaced);
@@ -2261,6 +2380,7 @@ exports.updateApplication = async (req, res) => {
         setLogH('interviewtime', nextInterviewTime || '');
         setLogH('intervewtime', nextInterviewTime || '');
         setLogH('interviewvenue', nextInterviewVenue || '');
+        if (nextInternationalPlacement) setLogH('internationalplacement', nextInternationalPlacement);
         setLogH('statushistory', JSON.stringify(nextHistory));
 
         const logKey = placementLogRecordKey({ roll: sRoll, name: sName, jobId: sJobId, company: sCompany, position: sPosition });
@@ -2288,6 +2408,7 @@ exports.updateApplication = async (req, res) => {
           studentRoll: sRoll, course: sCourse, branch: sBranch, qualification: sQual, resume: sResume,
           jobId: sJobId, company: sCompany, position: sPosition, status: nextStatus, remarks: nextRemarks,
           interviewDate: nextInterviewDate, interviewTime: nextInterviewTime, interviewVenue: nextInterviewVenue,
+          internationalPlacement: nextInternationalPlacement,
           datePlaced: nextDatePlaced, packageLpa: nextPackage, joiningStatus: nextJoiningStatus,
           entrySource: getValByHeader(sourceRow, ['entrysource', 'recordorigin', 'origin']) || 'Job Application',
           actionType: actionChanges.map(change => change.split(':')[0]).join(', '),
@@ -2331,7 +2452,8 @@ exports.updateApplication = async (req, res) => {
       qual: sQual, resume: sResume, jobId: sJobId, company: sCompany, position: sPosition,
       placementOfficer: sTpo, status: nextStatus, remarks: nextRemarks, datePlaced: nextDatePlaced,
       packageLpa: nextPackage, joiningStatus: nextJoiningStatus, offerLetter: nextOfferLetter,
-      sourceSheet: 'TPO_Log', sourceRow: updatedLogRow?.rowNumber,
+      internationalPlacement: nextInternationalPlacement,
+      applicationRowNumber: sourceRow.rowNumber, sourceSheet: 'TPO_Log', sourceRow: updatedLogRow?.rowNumber,
       tpoLogRow: updatedLogRow || undefined
     });
     if (!placedSheetWarning) tpoLogSyncWarning = '';
@@ -2374,6 +2496,7 @@ exports.updatePlacementLog = async (req, res) => {
     await loadDocInfo();
     const logSheet = doc.sheetsByTitle['TPO_Log'];
     if (!logSheet) return res.status(503).json({ success: false, message: 'The placement log sheet is unavailable.' });
+    await ensurePlacementHeaders(logSheet, placementTrackingHeaders);
     const rows = await logSheet.getRows({ offset: rowNumber - 2, limit: 1 });
     if (!rows.length || Number(rows[0].rowNumber) !== rowNumber) {
       return res.status(404).json({ success: false, message: 'Placement log record was not found.' });
@@ -2386,6 +2509,7 @@ exports.updatePlacementLog = async (req, res) => {
     const previousPackage = getValByHeader(row, ['package', 'packagelpa']);
     const previousJoiningStatus = getValByHeader(row, ['joiningstatus']);
     const previousOfferLetter = getValByHeader(row, ['offerletterstatus', 'offerletter']);
+    const previousInternationalPlacement = normalizeInternationalPlacementFlag(getValByHeader(row, ['internationalplacement', 'isinternationalplacement']));
     const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']);
     const branch = getValByHeader(row, ['branch']);
     const course = getValByHeader(row, ['course']);
@@ -2423,6 +2547,14 @@ exports.updatePlacementLog = async (req, res) => {
     setValue(['dateplaced'], formatIndiaDate(req.body.datePlaced || ''));
     setValue(['package', 'package(lpa)'], req.body.packageLpa || '');
     setValue(['joiningstatus'], req.body.joiningStatus || '');
+    const internationalPlacement = req.body.isInternationalPlacement !== undefined
+      ? normalizeInternationalPlacementFlag(req.body.isInternationalPlacement)
+      : previousInternationalPlacement;
+    if (normalizePlacementText(req.body.status || 'Placed') === 'placed'
+      && normalizePlacementText(previousStatus) !== 'placed' && !internationalPlacement) {
+      return res.status(422).json({ success: false, message: 'Choose whether this placement is International or within India before marking the student Placed.' });
+    }
+    if (internationalPlacement) setValue(['internationalplacement'], internationalPlacement);
     if (offerLetterLink) setValue(['offerletterstatus', 'offerletter'], offerLetterLink);
     if (!Object.keys(update).length) return res.status(422).json({ success: false, message: 'No editable placement fields were found in the log sheet.' });
 
@@ -2447,6 +2579,7 @@ exports.updatePlacementLog = async (req, res) => {
       position: getValByHeader(row, ['position', 'role']), placementOfficer: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || user?.name || user?.email || '',
       status: req.body.status || 'Placed', remarks: req.body.remarks || '', datePlaced: formatIndiaDate(req.body.datePlaced || ''),
       packageLpa: req.body.packageLpa || '', joiningStatus: req.body.joiningStatus || '',
+      internationalPlacement,
       offerLetter: offerLetterLink, sourceSheet: 'TPO_Log', sourceRow: row.rowNumber, tpoLogRow: row
     });
     let auditWarning = '';
@@ -2499,12 +2632,20 @@ exports.updatePlacedStudent = async (req, res) => {
     const previousDatePlaced = getValByHeader(row, ['dateplaced']);
     const previousPackage = getValByHeader(row, ['package', 'packagelpa']);
     const previousOfferLetter = getValByHeader(row, ['offerletter', 'offerletterstatus']);
+    const previousInternationalPlacement = normalizeInternationalPlacementFlag(getValByHeader(row, ['internationalplacement', 'isinternationalplacement']));
     const joiningStatus = req.body.joiningStatus ?? getValByHeader(row, ['joiningstatus']);
     const remarks = req.body.remarks ?? getValByHeader(row, ['remarks']);
     const datePlaced = formatIndiaDate(req.body.datePlaced ?? getValByHeader(row, ['dateplaced']));
     const packageLpa = req.body.packageLpa ?? getValByHeader(row, ['package', 'packagelpa']);
     let offerLetter = getValByHeader(row, ['offerletter', 'offerletterstatus']);
     if (req.file) offerLetter = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
+    const internationalPlacement = req.body.isInternationalPlacement !== undefined
+      ? normalizeInternationalPlacementFlag(req.body.isInternationalPlacement)
+      : previousInternationalPlacement;
+    if (normalizePlacementText(status) === 'placed'
+      && normalizePlacementText(previousStatus) !== 'placed' && !internationalPlacement) {
+      return res.status(422).json({ success: false, message: 'Choose whether this placement is International or within India before marking the student Placed.' });
+    }
     const warning = await syncPositivePlacement({
       name: getValByHeader(row, ['studentname', 'name']), phone: getValByHeader(row, ['contact', 'phone']),
       email: getValByHeader(row, ['mailid', 'email']), roll: getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']),
@@ -2512,6 +2653,7 @@ exports.updatePlacedStudent = async (req, res) => {
       jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']),
       position: getValByHeader(row, ['position', 'role']), placementOfficer: (isTpo ? user?.name || user?.email : owner) || owner,
       status, joiningStatus, remarks, datePlaced, packageLpa, offerLetter,
+      internationalPlacement,
       entrySource: 'Placed Students edit',
       statusHistory: getValByHeader(row, ['statushistory'])
     });
@@ -2556,6 +2698,10 @@ exports.addApplication = async (req, res) => {
   
   const user = req.portalUser;
   const tpoName = user?.name || '';
+  const internationalPlacement = normalizeInternationalPlacementFlag(appData.isInternationalPlacement ?? appData.internationalPlacement);
+  if (normalizePlacementText(appData.status || 'Placed') === 'placed' && !internationalPlacement) {
+    return res.status(422).json({ success: false, message: 'Choose whether this placement is International or within India before adding the placed student.' });
+  }
   const saveProgress = [];
   let failedAt = 'Preparing placement';
   if (!isPlacementTrackerTpo(user) && !hasPlacementAccess(appData.branch, appData.course, user)) {
@@ -2589,6 +2735,7 @@ exports.addApplication = async (req, res) => {
       'Qualification': appData.qual || '', 'Resume': appData.resume || '', 'Job ID': manualJobId,
       'Company Name': appData.company || '', 'Position': appData.position || '', 'Placement Location': appData.placementLocation || '',
       'Placement Officer': tpoName || '', 'Status': appData.status || 'Placed', 
+      'International Placement': internationalPlacement,
       'Entry Source': 'Manual Add',
       'Remarks': appData.remarks || '', 'DATE PLACED': formatIndiaDate(appData.datePlaced || ''),
       'PACKAGE (LPA)': appData.packageLpa || '', 'Offer Letter': offerLetterLink, 
@@ -2611,6 +2758,7 @@ exports.addApplication = async (req, res) => {
       status: appData.status || 'Placed',
       datePlaced: formatIndiaDate(appData.datePlaced || ''),
       offerLetter: offerLetterLink,
+      internationalPlacement,
       entrySource: 'Manual Add',
       statusHistory: JSON.stringify(initialHistory)
     });
@@ -2624,6 +2772,8 @@ exports.addApplication = async (req, res) => {
       status: appData.status || 'Placed',
       datePlaced: formatIndiaDate(appData.datePlaced || ''),
       offerLetter: offerLetterLink,
+      internationalPlacement,
+      applicationRowNumber: savedApplicationRow.rowNumber,
       sourceSheet: 'TPO_Log',
       sourceRow: logRow.rowNumber,
       tpoLogRow: logRow
@@ -8026,6 +8176,7 @@ exports.updateDriveStatus = async (req, res) => {
     const oldInterviewDate = getValByHeader(current, ['interviewdate']);
     const oldInterviewTime = getValByHeader(current, ['interviewtime', 'intervewtime']);
     const oldInterviewVenue = getValByHeader(current, ['interviewvenue']);
+    const oldInternationalPlacement = normalizeInternationalPlacementFlag(getValByHeader(current, ['internationalplacement', 'isinternationalplacement']));
     const cleanInterviewDate = interviewDate !== undefined ? formatIndiaDate(interviewDate) : undefined;
     const cleanInterviewTime = interviewTime !== undefined ? formatIndiaTime(interviewTime) : undefined;
     const nextStatus = studentStatus !== undefined ? studentStatus : oldStatus;
@@ -8033,6 +8184,14 @@ exports.updateDriveStatus = async (req, res) => {
     const nextInterviewDate = interviewDate !== undefined ? cleanInterviewDate : oldInterviewDate;
     const nextInterviewTime = interviewTime !== undefined ? cleanInterviewTime : oldInterviewTime;
     const nextInterviewVenue = interviewVenue !== undefined ? interviewVenue : oldInterviewVenue;
+    const suppliedInternationalPlacement = req.body.isInternationalPlacement;
+    const internationalPlacement = suppliedInternationalPlacement !== undefined
+      ? normalizeInternationalPlacementFlag(suppliedInternationalPlacement)
+      : oldInternationalPlacement;
+    if (normalizePlacementText(nextStatus) === 'placed'
+      && normalizePlacementText(oldStatus) !== 'placed' && !internationalPlacement) {
+      return res.status(422).json({ success: false, message: 'Choose whether this placement is International or within India before marking the student Placed.' });
+    }
     const headers = sheet.headerValues || [];
     const findHeader = aliases => findPlacementHeader(headers, aliases);
     const update = {};
@@ -8041,6 +8200,7 @@ exports.updateDriveStatus = async (req, res) => {
     if (interviewDate !== undefined) update[findHeader(['interviewdate'])] = cleanInterviewDate;
     if (interviewTime !== undefined) update[findHeader(['interviewtime'])] = cleanInterviewTime;
     if (interviewVenue !== undefined) update[findHeader(['interviewvenue'])] = interviewVenue;
+    if (internationalPlacement) update[findHeader(['internationalplacement'])] = internationalPlacement;
     if (!Object.keys(update).length) return res.status(400).json({ success: false, message: 'There are no placement drive changes to save.' });
 
     const changedAt = formatIndiaTimestamp();
@@ -8070,6 +8230,7 @@ exports.updateDriveStatus = async (req, res) => {
       position: getValByHeader(current, ['position', 'role']) || 'Placement drive participant',
       placementOfficer: getValByHeader(current, ['placementofficer', 'tpo', 'tponame']) || getPlacementDriveOwner(findPlacementDriveEvent(getCache()?.events || [], current)) || user?.name || user?.email || '',
       status: nextStatus, joiningStatus: getValByHeader(current, ['joiningstatus']), remarks: nextRemarks,
+      internationalPlacement,
       datePlaced: getValByHeader(current, ['dateplaced']), packageLpa: getValByHeader(current, ['package']),
       interviewDate: nextInterviewDate, interviewTime: nextInterviewTime, interviewVenue: nextInterviewVenue,
       statusHistory: JSON.stringify(nextHistory), entrySource: 'Placement Drive'
@@ -8109,6 +8270,7 @@ exports.updateDriveStatus = async (req, res) => {
           position: getValByHeader(current, ['position', 'role']) || 'Placement drive participant',
           status: nextStatus, remarks: nextRemarks, interviewDate: nextInterviewDate,
           interviewTime: nextInterviewTime, interviewVenue: nextInterviewVenue,
+          internationalPlacement,
           entrySource: 'Placement Drive', actionType: actionChanges.map(change => change.split(':')[0]).join(', '),
           actionDetails: actionChanges.join('\n'), historyEntry: actionHistory
         });

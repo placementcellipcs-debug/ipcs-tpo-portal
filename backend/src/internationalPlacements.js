@@ -46,6 +46,15 @@ const includesLocationName = (value, names) => {
 
 const isIndiaCountry = value => INDIA_COUNTRY_NAMES.has(normalizeLocationText(value));
 
+const normalizeInternationalPlacementFlag = value => {
+  if (value === true || value === 1) return 'Yes';
+  if (value === false || value === 0) return 'No';
+  const normalized = normalizeLocationText(value);
+  if (['yes', 'y', 'true', '1', 'international', 'international placement'].includes(normalized)) return 'Yes';
+  if (['no', 'n', 'false', '0', 'domestic', 'india', 'indian', 'not international'].includes(normalized)) return 'No';
+  return '';
+};
+
 const classifyPlacementLocation = ({ country = '', state = '', location = '' } = {}) => {
   const cleanCountry = cleanLocation(country);
   const cleanState = cleanLocation(state);
@@ -85,6 +94,7 @@ const createPlacementLocationResolver = (getValue, cache = {}) => {
   });
 
   return row => {
+    const explicitFlag = normalizeInternationalPlacementFlag(read(row, ['internationalplacement', 'isinternationalplacement', 'international']));
     const direct = {
       country: read(row, ['placementcountry', 'workcountry', 'jobcountry', 'companycountry', 'country']),
       state: read(row, ['placementstate', 'workstate', 'jobstate', 'state']),
@@ -116,11 +126,12 @@ const createPlacementLocationResolver = (getValue, cache = {}) => {
       location,
       country: source.country,
       state: source.state,
-      isInternationalPlacement: classifyPlacementLocation(source)
+      internationalPlacement: explicitFlag || '',
+      isInternationalPlacement: explicitFlag ? explicitFlag === 'Yes' : classifyPlacementLocation(source)
     };
   };
 };
 
 const getPlacementLocationInfo = (row, getValue, cache = {}) => createPlacementLocationResolver(getValue, cache)(row);
 
-module.exports = { classifyPlacementLocation, createPlacementLocationResolver, getPlacementLocationInfo };
+module.exports = { classifyPlacementLocation, normalizeInternationalPlacementFlag, createPlacementLocationResolver, getPlacementLocationInfo };

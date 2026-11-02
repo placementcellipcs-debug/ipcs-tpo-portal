@@ -4,6 +4,7 @@ import { CalendarBlank, CaretDown, CircleNotch, FloppyDisk, MagnifyingGlass, Map
 import { API_BASE } from '../../services/apiConfig';
 import { getStatusTone } from '../../utils/statusTone';
 import { formatPortalDate } from '../../utils/dateFormat';
+import InternationalPlacementPrompt from '../../components/InternationalPlacementPrompt';
 
 const DRIVE_STATUSES = [
   'Pending', 'Shortlisted', 'Interview Scheduled', 'Interview Attended', 'Interview Not Attended',
@@ -18,6 +19,7 @@ export default function PlacementDriveTracker() {
   const [openDrives, setOpenDrives] = useState({});
   const [edits, setEdits] = useState({});
   const [saving, setSaving] = useState({});
+  const [internationalPrompt, setInternationalPrompt] = useState(null);
 
   useEffect(() => {
     let active = true;
@@ -55,18 +57,23 @@ export default function PlacementDriveTracker() {
     [student.rowNumber]: { ...current[student.rowNumber], [field]: value }
   }));
 
-  const saveStudent = async student => {
+  const saveStudent = async (student, internationalChoice) => {
     const currentEdit = edits[student.rowNumber] || {};
     const studentStatus = currentEdit.studentStatus ?? student.studentStatus ?? 'Pending';
     const remarks = currentEdit.remarks ?? student.remarks ?? '';
+    const isNewPlacement = /^placed$/i.test(String(studentStatus || '').trim()) && !/^placed$/i.test(String(student.studentStatus || '').trim());
+    if (isNewPlacement && internationalChoice === undefined) {
+      setInternationalPrompt(student);
+      return;
+    }
     setSaving(current => ({ ...current, [student.rowNumber]: 'saving' }));
     try {
       const response = await axios.post(`${API_BASE}/api/tpo/drives/update`, {
-        rowNumber: student.rowNumber, studentStatus, remarks
+        rowNumber: student.rowNumber, studentStatus, remarks, isInternationalPlacement: internationalChoice
       });
       if (!response.data?.success) throw new Error(response.data?.message || 'Unable to save this student.');
       setLoadError('');
-      setDrives(current => current.map(row => row.rowNumber === student.rowNumber ? { ...row, studentStatus, remarks } : row));
+      setDrives(current => current.map(row => row.rowNumber === student.rowNumber ? { ...row, studentStatus, remarks, ...(internationalChoice === undefined ? {} : { isInternationalPlacement: internationalChoice }) } : row));
       setEdits(current => { const next = { ...current }; delete next[student.rowNumber]; return next; });
       setSaving(current => ({ ...current, [student.rowNumber]: 'success' }));
       window.setTimeout(() => setSaving(current => ({ ...current, [student.rowNumber]: null })), 2600);
@@ -119,6 +126,16 @@ export default function PlacementDriveTracker() {
           })}
         </div>
       )}
+      <InternationalPlacementPrompt
+        open={Boolean(internationalPrompt)}
+        studentName={internationalPrompt?.name}
+        onCancel={() => setInternationalPrompt(null)}
+        onChoose={choice => {
+          const student = internationalPrompt;
+          setInternationalPrompt(null);
+          if (student) void saveStudent(student, choice);
+        }}
+      />
     </section>
   );
 }

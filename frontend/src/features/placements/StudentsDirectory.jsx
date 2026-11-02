@@ -9,6 +9,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import DataSourceStatus from '../../components/DataSourceStatus';
+import InternationalPlacementPrompt from '../../components/InternationalPlacementPrompt';
 import SafeAvatar from '../../components/SafeAvatar';
 import { API_BASE } from '../../services/apiConfig';
 import StatusBadge from '../../components/StatusBadge';
@@ -95,6 +96,7 @@ export default function StudentsDirectory() {
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [savingStatus, setSavingStatus] = useState(false);
+  const [internationalPromptOpen, setInternationalPromptOpen] = useState(false);
   
   const [localVacState, setLocalVacState] = useState('');
   const [localPlacementState, setLocalPlacementState] = useState('');
@@ -248,13 +250,20 @@ export default function StudentsDirectory() {
     }
   };
 
-  const saveStudentUpdates = async () => {
+  const saveStudentUpdates = async (internationalChoice) => {
+    const placingNow = /^placed$/i.test(String(localPlacementState || '').trim())
+      && !/^placed$/i.test(String(selectedStudent?.placementStatus || '').trim());
+    if (placingNow && internationalChoice === undefined) {
+      setInternationalPromptOpen(true);
+      return;
+    }
     setSavingStatus(true);
     try {
       const response = await axios.post(`${API_BASE}/api/tpo/students/update-student`, {
         rowNumber: selectedStudent.rowIdx,
         vacOpen: localVacState, 
         placementStatus: localPlacementState,
+        ...(placingNow || internationalChoice !== undefined ? { isInternationalPlacement: internationalChoice } : {}),
         studyAccess: localStudyAccess, 
         examAccess: localExamAccess,
         courseStatus: localCourseStatus,
@@ -874,6 +883,15 @@ export default function StudentsDirectory() {
         </div>
       </div>
       ), document.body)}
+      <InternationalPlacementPrompt
+        open={internationalPromptOpen}
+        studentName={selectedStudent?.name}
+        onCancel={() => setInternationalPromptOpen(false)}
+        onChoose={choice => {
+          setInternationalPromptOpen(false);
+          void saveStudentUpdates(choice);
+        }}
+      />
     </Layout>
   );
 }

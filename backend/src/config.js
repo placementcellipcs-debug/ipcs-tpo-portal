@@ -165,7 +165,7 @@ let placedStudentsBackupSheetId = null;
 const placedStudentsHeaders = [
   'Record Key', 'Student Name', 'Contact', 'Mail ID', 'Roll Number', 'Course', 'Branch', 'Qualification', 'Resume',
   'Job ID', 'Company Name', 'Position', 'Placement Officer', 'Status', 'Remarks', 'DATE PLACED', 'PACKAGE (LPA)',
-  'Joining Status', 'Offer Letter', 'Source Sheet', 'Source Row', 'Updated At'
+  'Joining Status', 'Offer Letter', 'International Placement', 'Source Sheet', 'Source Row', 'Updated At'
 ];
 
 async function ensurePlacedStudentsSheet() {
@@ -333,6 +333,7 @@ async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
       'PACKAGE (LPA)': value(['package', 'packagelpa']),
       'Joining Status': value(['joiningstatus']),
       'Offer Letter': value(['offerletterstatus', 'offerletter']),
+      'International Placement': value(['internationalplacement', 'isinternationalplacement', 'international']),
       'Source Sheet': 'TPO_Log',
       'Source Row': sourceRow,
       'Updated At': value(['timestamp', 'updatedat', 'dateplaced'])
@@ -444,6 +445,7 @@ async function syncPlacedStudent(record = {}) {
     'PACKAGE (LPA)': record.packageLpa || record.package || '',
     'Joining Status': record.joiningStatus || '',
     'Offer Letter': record.offerLetter || '',
+    'International Placement': record.internationalPlacement ?? record.isInternationalPlacement ?? '',
     'Source Sheet': record.sourceSheet === 'Placed_Students' && existing
       ? placementRowValue(existing, ['sourcesheet']) || 'Placed_Students'
       : record.sourceSheet || '',

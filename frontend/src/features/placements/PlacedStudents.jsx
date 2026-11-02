@@ -12,6 +12,7 @@ import DataSourceStatus from '../../components/DataSourceStatus';
 import { formatPortalDate, getTodayPortalDateInput, parsePortalDateTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
 import StatusBadge from '../../components/StatusBadge';
+import InternationalPlacementPrompt from '../../components/InternationalPlacementPrompt';
 import { normalizePlacementText } from '../../utils/placementRecords';
 
 const TILE_COLORS = ['#3b82f6', 'var(--accent-primary)', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
@@ -85,6 +86,7 @@ export default function PlacedStudents() {
   const [selectedApp, setSelectedApp] = useState(null);
   const [savingStatus, setSavingStatus] = useState(false);
   const [deletingRow, setDeletingRow] = useState(null);
+  const [internationalPromptOpen, setInternationalPromptOpen] = useState(false);
 
   const [editForm, setEditForm] = useState({});
   const [addForm, setAddForm] = useState({ 
@@ -245,7 +247,7 @@ export default function PlacedStudents() {
       return;
     }
     setSelectedApp(app);
-    setEditForm({ remarks: app.remarks, datePlaced: app.datePlaced, packageLpa: app.packageLpa, offerLetterFile: null, joiningStatus: app.joiningStatus });
+    setEditForm({ remarks: app.remarks, datePlaced: app.datePlaced, packageLpa: app.packageLpa, offerLetterFile: null, joiningStatus: app.joiningStatus, isInternationalPlacement: app.isInternationalPlacement === true });
     setIsEditModalOpen(true);
   };
 
@@ -261,6 +263,7 @@ export default function PlacedStudents() {
       formData.append('datePlaced', editForm.datePlaced || '');
       formData.append('packageLpa', editForm.packageLpa || '');
       formData.append('joiningStatus', editForm.joiningStatus || '');
+      formData.append('isInternationalPlacement', String(Boolean(editForm.isInternationalPlacement)));
       if (editForm.offerLetterFile) formData.append('offerLetterFile', editForm.offerLetterFile);
 
       const updatePath = selectedApp.sourceSheet === 'Placed_Students' ? 'update-placed' : selectedApp.sourceSheet === 'TPO_Log' ? 'update-log' : 'update';
@@ -312,13 +315,17 @@ export default function PlacedStudents() {
     }
   };
 
-  const submitAdd = async () => {
+  const submitAdd = async (internationalChoice) => {
     if (!addForm.roll || !addForm.name || !addForm.company) return alert("Student Name, Roll Number, and Company Name are required.");
+    if (/^placed$/i.test(String(addForm.status || '').trim()) && internationalChoice === undefined && addForm.isInternationalPlacement === undefined) {
+      setInternationalPromptOpen(true);
+      return;
+    }
     setSavingStatus(true);
     try {
       const formData = new FormData();
       formData.append('tpoName', tpoData?.name || 'Admin');
-      formData.append('appData', JSON.stringify(addForm));
+      formData.append('appData', JSON.stringify({ ...addForm, isInternationalPlacement: internationalChoice ?? addForm.isInternationalPlacement }));
       if (addForm.offerLetterFile) formData.append('offerLetterFile', addForm.offerLetterFile);
 
       const response = await axios.post(`${API_BASE}/api/tpo/applications/add`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
@@ -555,6 +562,12 @@ export default function PlacedStudents() {
             
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
               <div>
+                <label className="data-label">International placement</label>
+                <select className="sleek-select" style={{ width: '100%' }} value={String(Boolean(editForm.isInternationalPlacement))} onChange={e => setEditForm({ ...editForm, isInternationalPlacement: e.target.value === 'true' })}>
+                  <option value="false">Within India</option><option value="true">Outside India</option>
+                </select>
+              </div>
+              <div>
                 <label className="data-label">Date Placed</label>
                 <DateInput className="sleek-input" style={{ width: '100%' }} value={editForm.datePlaced || ''} onChange={e => setEditForm({...editForm, datePlaced: e.target.value})} />
               </div>
@@ -646,6 +659,15 @@ export default function PlacedStudents() {
           </div>
         </div>
       ), document.body)}
+      <InternationalPlacementPrompt
+        open={internationalPromptOpen}
+        studentName={addForm.name}
+        onCancel={() => setInternationalPromptOpen(false)}
+        onChoose={choice => {
+          setInternationalPromptOpen(false);
+          void submitAdd(choice);
+        }}
+      />
     </Layout>
   );
 }

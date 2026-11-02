@@ -9,6 +9,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import DateInput from '../../components/DateInput';
+import InternationalPlacementPrompt from '../../components/InternationalPlacementPrompt';
 import { API_BASE } from '../../services/apiConfig';
 import { getStatusTone } from '../../utils/statusTone';
 import { formatPortalDate, formatPortalDateTime, formatPortalTime, parsePortalDateTime } from '../../utils/dateFormat';
@@ -119,6 +120,7 @@ export default function JobTracker() {
   const [emailSaving, setEmailSaving] = useState(false);
   const [detailsRecord, setDetailsRecord] = useState(null);
   const [collapsedGroups, setCollapsedGroups] = useState({});
+  const [internationalPrompt, setInternationalPrompt] = useState(null);
 
   const reloadRecords = useCallback(async () => {
     if (reloadInFlight.current) return false;
@@ -200,13 +202,19 @@ export default function JobTracker() {
   const setEdit = (record, field, value) => setEdits(current => ({ ...current, [record.recordKey]: { ...current[record.recordKey], [field]: value } }));
   const updateLocalRecord = (record, changes) => {
     if (record.sourceType === 'application') setApplications(current => current.map(item => item.rowNumber === record.rowNumber ? { ...item, ...changes } : item));
-    else setDrives(current => current.map(item => item.rowNumber === record.rowNumber ? { ...item, studentStatus: changes.status ?? item.studentStatus, remarks: changes.remarks ?? item.remarks, interviewDate: changes.interviewDate ?? item.interviewDate, interviewTime: changes.interviewTime ?? item.interviewTime, interviewVenue: changes.interviewVenue ?? item.interviewVenue, statusHistory: changes.statusHistory ?? item.statusHistory } : item));
+    else setDrives(current => current.map(item => item.rowNumber === record.rowNumber ? { ...item, studentStatus: changes.status ?? item.studentStatus, remarks: changes.remarks ?? item.remarks, interviewDate: changes.interviewDate ?? item.interviewDate, interviewTime: changes.interviewTime ?? item.interviewTime, interviewVenue: changes.interviewVenue ?? item.interviewVenue, isInternationalPlacement: changes.isInternationalPlacement ?? item.isInternationalPlacement, statusHistory: changes.statusHistory ?? item.statusHistory } : item));
   };
 
   const saveRecord = async (record, extra = {}) => {
     const changes = edits[record.recordKey] || {};
     const status = extra.status ?? changes.status ?? record.status;
     const remarks = extra.remarks ?? changes.remarks ?? record.remarks ?? '';
+    const isNewPlacement = /^placed$/i.test(String(status || '').trim()) && !/^placed$/i.test(String(record.status || '').trim());
+    const internationalChoice = extra.isInternationalPlacement ?? changes.isInternationalPlacement;
+    if (isNewPlacement && internationalChoice === undefined) {
+      setInternationalPrompt({ record, extra });
+      return false;
+    }
     if (isInterview(status) && [extra.interviewDate ?? record.interviewDate, extra.interviewTime ?? record.interviewTime, extra.interviewVenue ?? record.interviewVenue].some(value => !String(value || '').trim())) {
       setNotice({ tone: 'error', text: 'Add the interview date, time, and venue before saving this status.' });
       return false;
@@ -215,11 +223,11 @@ export default function JobTracker() {
     try {
       const url = record.sourceType === 'application' ? '/api/tpo/applications/update' : '/api/tpo/drives/update';
       const payload = record.sourceType === 'application'
-        ? { rowNumber: record.rowNumber, status, remarks, fullApp: record, currentUserEmail: account?.email || '', interviewDate: extra.interviewDate ?? record.interviewDate ?? '', interviewTime: extra.interviewTime ?? record.interviewTime ?? '', interviewVenue: extra.interviewVenue ?? record.interviewVenue ?? '' }
-        : { rowNumber: record.rowNumber, driveId: record.driveId, roll: record.roll, name: record.name, regDate: record.regDate, studentStatus: status, remarks, interviewDate: extra.interviewDate ?? record.interviewDate ?? '', interviewTime: extra.interviewTime ?? record.interviewTime ?? '', interviewVenue: extra.interviewVenue ?? record.interviewVenue ?? '' };
+        ? { rowNumber: record.rowNumber, status, remarks, fullApp: record, currentUserEmail: account?.email || '', isInternationalPlacement: internationalChoice, interviewDate: extra.interviewDate ?? record.interviewDate ?? '', interviewTime: extra.interviewTime ?? record.interviewTime ?? '', interviewVenue: extra.interviewVenue ?? record.interviewVenue ?? '' }
+        : { rowNumber: record.rowNumber, driveId: record.driveId, roll: record.roll, name: record.name, regDate: record.regDate, studentStatus: status, remarks, isInternationalPlacement: internationalChoice, interviewDate: extra.interviewDate ?? record.interviewDate ?? '', interviewTime: extra.interviewTime ?? record.interviewTime ?? '', interviewVenue: extra.interviewVenue ?? record.interviewVenue ?? '' };
       const response = await axios.post(`${API_BASE}${url}`, payload);
       if (!response.data?.success) throw new Error(response.data?.message || 'The update could not be saved.');
-      updateLocalRecord(record, { status, remarks, ...extra, statusHistory: response.data.statusHistory });
+      updateLocalRecord(record, { status, remarks, ...extra, isInternationalPlacement: internationalChoice, statusHistory: response.data.statusHistory });
       setEdits(current => { const next = { ...current }; delete next[record.recordKey]; return next; });
       setNotice(response.data.warning ? { tone: 'warning', text: response.data.warning } : { tone: 'success', text: 'Student update saved.' });
       setTimeout(() => setNotice(null), 6000);
@@ -320,6 +328,17 @@ export default function JobTracker() {
         </div>}
       </section>
     </main>
+
+    <InternationalPlacementPrompt
+      open={Boolean(internationalPrompt)}
+      studentName={internationalPrompt?.record?.name}
+      onCancel={() => setInternationalPrompt(null)}
+      onChoose={choice => {
+        const pending = internationalPrompt;
+        setInternationalPrompt(null);
+        if (pending) void saveRecord(pending.record, { ...pending.extra, isInternationalPlacement: choice });
+      }}
+    />
 
     {typeof document !== 'undefined' && createPortal(<AnimatePresence>
       {interviewTarget && <motion.div className="tracker-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.currentTarget === event.target) closeSchedule(); }}><motion.form className="tracker-modal" onSubmit={event => { event.preventDefault(); if (!interviewTarget.interviewDate || !interviewTarget.interviewTime || !interviewTarget.interviewVenue.trim()) return; saveRecord(interviewTarget.record, { status: 'Interview Scheduled', interviewDate: interviewTarget.interviewDate, interviewTime: interviewTarget.interviewTime, interviewVenue: interviewTarget.interviewVenue }); }} initial={{ opacity: 0, y: 16, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .985 }}>
