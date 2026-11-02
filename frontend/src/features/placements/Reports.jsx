@@ -13,7 +13,6 @@ const getVal = (obj, searchStr) => {
   const key = Object.keys(obj || {}).find(k => k.toLowerCase().replace(/\s/g, '').includes(searchStr.toLowerCase().replace(/\s/g, '')));
   return key ? obj[key] : '';
 };
-const isPlacementActionLog = row => /^(yes|true|1)$/i.test(String(getVal(row, 'tpoactionlog') || '').trim());
 const safeReportLinks = value => String(value || '').split(/\r?\n/).map(link => link.trim()).filter(link => {
   try { return ['http:', 'https:'].includes(new URL(link).protocol); } catch { return false; }
 });
@@ -233,7 +232,7 @@ export default function Reports() {
   };
 
   const displayMonthName = new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
-  const targetSourceRows = placementReportLogs.filter(log => isPlacedStatus(getVal(log, 'status')) && !isPlacementActionLog(log));
+  const targetSourceRows = placementReportLogs.filter(log => isPlacedStatus(getVal(log, 'status')));
   const targetSourceRowsThisMonth = targetSourceRows.filter(checkPlacementMonth);
   const internationalRowsThisMonth = targetSourceRowsThisMonth.filter(log => log.isInternationalPlacement === true);
   const reportTpoIdentities = new Set(tpoList.flatMap(tpo => [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean)));
@@ -639,7 +638,7 @@ export default function Reports() {
 
         {dataMeta && <DataSourceStatus
           source="TPO_Log"
-          detail="Monthly targets count every canonical TPO_Log row with Status = Placed. Action-history rows are excluded; Date Placed is used, then Timestamp if blank."
+          detail="Monthly targets count every TPO_Log row with Status = Placed, including repeated and action-history rows. Date Placed is used, then Timestamp if blank."
           health={targetLogHealthy}
           lastSyncedAt={targetLogLastSyncedAt}
           lastAttemptAt={dataMeta.lastRefreshAttemptAt}
@@ -686,7 +685,7 @@ export default function Reports() {
                 const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
                 const identities = [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean);
                 if (!logTpo || !identities.includes(logTpo)) return false;
-                if (!isPlacedStatus(getVal(log, 'status')) || isPlacementActionLog(log)) return false;
+                if (!isPlacedStatus(getVal(log, 'status'))) return false;
 
                 return checkPlacementMonth(log);
               });

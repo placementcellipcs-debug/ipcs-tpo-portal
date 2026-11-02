@@ -562,7 +562,6 @@ app.get('/api/admin/security-logs', controllers.getSecurityLogs);
 app.get('/api/admin/placement-reconciliation', requirePlacementReconciliationOwner, controllers.getPlacementReconciliation);
 app.post('/api/admin/placement-reconciliation/refresh', requirePlacementReconciliationOwner, controllers.refreshPlacementReconciliation);
 app.post('/api/admin/placement-reconciliation/repair-manual-saves', requirePlacementReconciliationOwner, controllers.repairManualPlacementSaves);
-app.post('/api/admin/placement-reconciliation/recover-history', requirePlacementReconciliationOwner, controllers.recoverPlacementsFromActionHistory);
 app.post('/api/admin/placement-reconciliation/rebuild', requirePlacementReconciliationOwner, controllers.rebuildPlacedStudentProjection);
 app.get('/api/admin/placement-audit', requirePlacementReconciliationOwner, controllers.getPlacementAudit);
 app.post('/api/admin/trigger-resume-delivery', controllers.triggerDailyCron);

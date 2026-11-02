@@ -2,11 +2,8 @@ const { normalizePlacementText } = require('./placementRecords');
 const { isPlacedStatus, isPlacementEligiblePending } = require('./placementMetrics');
 
 const isPlacementOutcome = (row, getValue) => {
-  // TPO_Log's Status column is the sole authority for placement counts.
-  // Its action-history rows repeat the status change for auditing and are not
-  // additional placement records.
-  return isPlacedStatus(getValue(row, ['status']))
-    && !/^(yes|true|1)$/i.test(String(getValue(row, ['tpoactionlog']) || '').trim());
+  // Every source row with a Placed status counts, including repeat entries.
+  return isPlacedStatus(getValue(row, ['status']));
 };
 
 const countPlacementRecords = (placementRows, getValue, canAccessPlacement = () => true) =>

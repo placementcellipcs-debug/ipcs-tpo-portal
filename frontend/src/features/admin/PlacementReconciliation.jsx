@@ -91,15 +91,14 @@ export default function PlacementReconciliation() {
   if (!isAuthorized) return <Layout><div className="page-container"><h1>Access restricted</h1><p>Placement reconciliation is available only to gifty@ipcsglobal.com.</p></div></Layout>;
 
   const mismatchCount = Number(reconciliation?.missingCount || 0) + Number(reconciliation?.staleCount || 0)
-    + Number(reconciliation?.duplicateCount || 0) + Number(reconciliation?.recoverableHistoryCount || 0);
+    + Number(reconciliation?.duplicateCount || 0);
   const cards = [
     { label: 'Placed source rows', value: reconciliation?.sourceCount, note: 'TPO_Log · exact Placed status', tone: 'cyan', icon: Database },
     { label: 'Projection rows', value: reconciliation?.projectionCount, note: 'Placed_Students reporting sheet', tone: 'violet', icon: ClipboardText },
     { label: 'Missing from projection', value: reconciliation?.missingCount, note: 'Source rows not copied', tone: 'amber', icon: WarningCircle },
     { label: 'Stale projection rows', value: reconciliation?.staleCount, note: 'No matching source row', tone: 'rose', icon: ArrowCounterClockwise },
     { label: 'Duplicate projection keys', value: reconciliation?.duplicateCount, note: 'Rows sharing a source key', tone: 'blue', icon: WarningCircle },
-    { label: 'Manual saves to repair', value: reconciliation?.missingManualLogCount, note: 'Incomplete TPO_Log writes', tone: 'mint', icon: Wrench },
-    { label: 'Placed history to recover', value: reconciliation?.recoverableHistoryCount, note: 'Status history without a canonical row', tone: 'amber', icon: ArrowCounterClockwise }
+    { label: 'Manual saves to repair', value: reconciliation?.missingManualLogCount, note: 'Incomplete TPO_Log writes', tone: 'mint', icon: Wrench }
   ];
 
   return <Layout><main className="recon-page">
@@ -113,7 +112,6 @@ export default function PlacementReconciliation() {
       <div className="recon-action-buttons">
         <button type="button" className="recon-button secondary" onClick={() => void load(true)} disabled={loading || actionLoading}>{loading ? <CircleNotch className="ph-spin" /> : <ArrowClockwise />} Refresh source data</button>
         {reconciliation?.missingManualLogCount > 0 && <button type="button" className="recon-button warning" onClick={() => void runAdminAction('/api/admin/placement-reconciliation/repair-manual-saves', `Retry ${reconciliation.missingManualLogCount} incomplete manual placement save(s)? This will fill missing TPO_Log entries and refresh the derived sheet.`)} disabled={loading || actionLoading}>{actionLoading ? <CircleNotch className="ph-spin" /> : <Wrench />} Retry manual saves <span>{reconciliation.missingManualLogCount}</span></button>}
-        {reconciliation?.recoverableHistoryCount > 0 && <button type="button" className="recon-button warning" onClick={() => void runAdminAction('/api/admin/placement-reconciliation/recover-history', `Recover ${reconciliation.recoverableHistoryCount} placed record(s) that exist only in status history? This appends canonical TPO_Log rows, keeps the history rows, backs up Placed_Students, and rebuilds the projection.`)} disabled={loading || actionLoading || !meta?.sourceHealthy || !meta?.projectionHealthy}>{actionLoading ? <CircleNotch className="ph-spin" /> : <ArrowCounterClockwise />} Recover placed history <span>{reconciliation.recoverableHistoryCount}</span></button>}
         <button type="button" className="recon-button primary" onClick={() => void runAdminAction('/api/admin/placement-reconciliation/rebuild', 'Rebuild the entire Placed_Students projection from TPO_Log? The current sheet will be backed up before it is cleared and rebuilt.')} disabled={loading || actionLoading || !meta?.sourceHealthy}>{actionLoading ? <CircleNotch className="ph-spin" /> : <ArrowCounterClockwise />} Rebuild placed sheet</button>
         <button type="button" className="recon-button report" onClick={() => void runAdminAction('/api/admin/company-opening-report', 'Send yesterday’s company resume delivery report to the configured recipients? The daily guard prevents a second report for the same date.')} disabled={loading || actionLoading || !meta?.sourceHealthy}>{actionLoading ? <CircleNotch className="ph-spin" /> : <ClipboardText />} Send company report</button>
       </div>
@@ -135,8 +133,6 @@ export default function PlacementReconciliation() {
       </section>
 
       <div className="recon-tables-grid"><ReconciliationTable title="Source rows missing from Placed_Students" rows={reconciliation.missingRows} emptyText="No source rows are missing from the projection." /><ReconciliationTable title="Projection rows with no matching source" rows={reconciliation.staleRows} emptyText="No stale projection rows were found." /></div>
-
-      {reconciliation.recoverableHistoryCount > 0 && <div className="recon-tables-grid recon-history-grid"><ReconciliationTable title="Placed status history without a canonical placement row" rows={reconciliation.recoverableHistoryRows} emptyText="No placed history-only rows need review." /></div>}
 
       {!auditAvailable
         ? <section className="recon-panel recon-audit-unavailable"><ClipboardText size={24} /><div><h2>Recent placement changes</h2><p>No placement audit sheet exists yet. It will be created automatically when the next placement change is saved.</p></div></section>

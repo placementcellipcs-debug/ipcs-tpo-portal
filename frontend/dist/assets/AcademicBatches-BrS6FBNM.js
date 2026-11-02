@@ -1,1 +1,0 @@
-import{n as e}from"./index-D49S1Nek.js";import t from"./AcademicWorkspace-Dix4CELX.js";var n=e();function r(){return(0,n.jsx)(t,{module:`batches`})}export{r as default};

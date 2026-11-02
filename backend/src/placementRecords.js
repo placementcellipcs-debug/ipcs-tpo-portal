@@ -46,21 +46,10 @@ const placementTimestamp = (record, getValue) => parsePlacementTime(
 );
 
 const latestPlacementRows = (rows, getValue) => {
-  const latest = new Map();
-  (Array.isArray(rows) ? rows : []).filter(row => !/^\s*(?:yes|true|1)\s*$/i.test(String(getValue(row, ['tpoactionlog']) || ''))).forEach((row, index) => {
-    const identity = placementIdentity(row, getValue);
-    if (!identity) {
-      latest.set(`unkeyed:${row?.rowNumber || index}`, row);
-      return;
-    }
-    const existing = latest.get(identity);
-    const currentTime = placementTimestamp(row, getValue);
-    const existingTime = existing ? placementTimestamp(existing, getValue) : -1;
-    if (!existing || currentTime > existingTime || (currentTime === existingTime && Number(row.rowNumber || 0) >= Number(existing.rowNumber || 0))) {
-      latest.set(identity, row);
-    }
-  });
-  return [...latest.values()].sort((a, b) => placementTimestamp(b, getValue) - placementTimestamp(a, getValue) || Number(b.rowNumber || 0) - Number(a.rowNumber || 0));
+  return (Array.isArray(rows) ? rows : []).slice().sort((a, b) =>
+    placementTimestamp(b, getValue) - placementTimestamp(a, getValue)
+      || Number(b.rowNumber || 0) - Number(a.rowNumber || 0)
+  );
 };
 
 module.exports = { normalizePlacementText, placementIdentity, placementLogRecordKey, latestPlacementRows };

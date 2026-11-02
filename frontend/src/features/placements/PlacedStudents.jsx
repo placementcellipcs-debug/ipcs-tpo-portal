@@ -45,7 +45,6 @@ export default function PlacedStudents() {
   const [searchParams] = useSearchParams();
   
   const [applications, setApplications] = useState([]);
-  const [existingApplications, setExistingApplications] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [dataMeta, setDataMeta] = useState(null);
@@ -113,14 +112,6 @@ export default function PlacedStudents() {
         role: localTpo.role,
         assignedCourse: localTpo.assignedCourse
       };
-
-      // This list is only used to warn about duplicate manual entries. It must
-      // not hold up the source-of-truth TPO_Log records from rendering.
-      void axios.post(`${API_BASE}/api/tpo/applications`, payload, { timeout: 30000 })
-        .then(appRes => {
-          if (appRes.data?.success && Array.isArray(appRes.data.applications)) setExistingApplications(appRes.data.applications);
-        })
-        .catch(error => console.warn('Could not load applications for duplicate checking:', error.message));
 
       const placedResponse = await axios.post(`${API_BASE}/api/tpo/placed-students`, payload, { timeout: 30000 });
       if (!placedResponse.data?.success) throw new Error(placedResponse.data?.message || 'Placed student records could not be loaded.');
@@ -323,16 +314,6 @@ export default function PlacedStudents() {
 
   const submitAdd = async () => {
     if (!addForm.roll || !addForm.name || !addForm.company) return alert("Student Name, Roll Number, and Company Name are required.");
-    const targetRoll = normalizePlacementText(addForm.roll);
-    const targetName = normalizePlacementText(addForm.name);
-    const targetCompany = normalizePlacementText(addForm.company);
-    const duplicateExists = [...applications, ...existingApplications].some(application => {
-      const company = normalizePlacementText(application.company || application.companyName);
-      if (!targetCompany || company !== targetCompany) return false;
-      const existingRoll = normalizePlacementText(application.roll || application.rollNumber || application.ipcsRollNumber);
-      return targetRoll && existingRoll ? targetRoll === existingRoll : targetName === normalizePlacementText(application.name || application.studentName);
-    });
-    if (duplicateExists) return alert('This student is already recorded for this company. Please find their name on the list and use the Edit button instead.');
     setSavingStatus(true);
     try {
       const formData = new FormData();
