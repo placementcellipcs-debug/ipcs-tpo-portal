@@ -13,13 +13,6 @@ const getVal = (obj, searchStr) => {
   return key ? obj[key] : '';
 };
 const isPlacementActionLog = row => /^(yes|true|1)$/i.test(String(getVal(row, 'tpoactionlog') || '').trim());
-const placementStudentIdentity = (row, index = 0) => {
-  const roll = normalizePlacementText(getVal(row, 'rollnumber') || getVal(row, 'rollno') || getVal(row, 'ipcsrollnumber') || getVal(row, 'roll'));
-  if (roll) return `roll:${roll}`;
-  const name = normalizePlacementText(getVal(row, 'studentname') || getVal(row, 'name'));
-  const branch = normalizePlacementText(getVal(row, 'branch') || getVal(row, 'sittingbranch'));
-  return name ? `name:${name}|${branch}` : `row:${row?.rowNumber || index}`;
-};
 const safeReportLinks = value => String(value || '').split(/\r?\n/).map(link => link.trim()).filter(link => {
   try { return ['http:', 'https:'].includes(new URL(link).protocol); } catch { return false; }
 });
@@ -242,8 +235,8 @@ export default function Reports() {
   const reportTpoIdentities = new Set(tpoList.flatMap(tpo => [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean)));
   const currentMonthRowsWithoutMatchedTpo = targetSourceRowsThisMonth.filter(log => !reportTpoIdentities.has(normalizePlacementText(getVal(log, 'placementofficer')))).length;
   const placedRowsWithoutUsableDate = targetSourceRows.filter(log => !getPlacementDate(log)).length;
-  const targetLogHealthy = dataMeta?.sheetHealth?.tpoLogs;
-  const targetLogLastSyncedAt = dataMeta?.sheetLastSuccessfulSyncAt?.tpoLogs || '';
+  const targetLogHealthy = dataMeta?.tpoLogSourceHealthy ?? dataMeta?.sheetHealth?.tpoLogs;
+  const targetLogLastSyncedAt = dataMeta?.tpoLogSourceReadAt || dataMeta?.sheetLastSuccessfulSyncAt?.tpoLogs || '';
 
   // 1. BRANCH ENROLLMENTS
   const assignedBranches = [...new Set(students.filter(s => isAssignedBranch(s.branch)).map(s => s.branch))].filter(Boolean).sort();
@@ -632,7 +625,7 @@ export default function Reports() {
 
         {dataMeta && <DataSourceStatus
           source="TPO_Log"
-          detail="Monthly targets count each student once from canonical TPO_Log rows with Status = Placed. Action-history rows are excluded; Date Placed is used, then Timestamp if blank."
+          detail="Monthly targets count every canonical TPO_Log row with Status = Placed. Action-history rows are excluded; Date Placed is used, then Timestamp if blank."
           health={targetLogHealthy}
           lastSyncedAt={targetLogLastSyncedAt}
           lastAttemptAt={dataMeta.lastRefreshAttemptAt}
@@ -679,16 +672,12 @@ export default function Reports() {
                 return checkPlacementMonth(log);
               });
 
-              const identitiesByCourse = new Map(mainCourses.concat(['Others']).map(course => [course, new Set()]));
-              const placedStudentIdentities = new Set();
-              placedStudentsLog.forEach((placement, placementIndex) => {
-                const identity = placementStudentIdentity(placement, placementIndex);
-                placedStudentIdentities.add(identity);
+              const counts = Object.fromEntries(mainCourses.concat(['Others']).map(course => [course, 0]));
+              placedStudentsLog.forEach(placement => {
                 const course = getCourse(getVal(placement, 'course'));
-                (identitiesByCourse.get(course) || identitiesByCourse.get('Others')).add(identity);
+                counts[course] = (counts[course] || 0) + 1;
               });
-              const counts = Object.fromEntries([...identitiesByCourse.entries()].map(([course, identities]) => [course, identities.size]));
-              const totalPlacements = placedStudentIdentities.size;
+              const totalPlacements = placedStudentsLog.length;
               const targetGoal = parseInt(tpo.target) || 20;
               const progressPercent = Math.min((totalPlacements / targetGoal) * 100, 100);
 
@@ -725,12 +714,12 @@ export default function Reports() {
                     <div style={{ background: '#0f1523', padding: '25px 30px', borderTop: '1px solid #1e293b' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                         <span style={{ color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '1.1rem' }}>Progress to Target</span>
-                        <span style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>{totalPlacements} / {targetGoal} Students</span>
+                        <span style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>{totalPlacements} / {targetGoal} Placements</span>
                       </div>
                       <div style={{ width: '100%', height: '14px', background: '#1e293b', borderRadius: '10px', overflow: 'hidden' }}>
                         <div style={{ width: `${progressPercent}%`, height: '100%', background: progressPercent >= 100 ? '#10b981' : 'var(--accent-primary)', transition: 'width 1s ease-in-out' }}></div>
                       </div>
-                      <div style={{ marginTop: '8px', color: 'var(--text-muted)', fontSize: '.82rem' }}>{totalPlacements} unique students · {placedStudentsLog.length} placement records</div>
+                      <div style={{ marginTop: '8px', color: 'var(--text-muted)', fontSize: '.82rem' }}>{placedStudentsLog.length} placement records counted for this TPO and month.</div>
                     </div>
                   </div>
 

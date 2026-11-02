@@ -132,7 +132,8 @@ app.use(cors({
       .split(',')
       .map(value => value.trim())
       .filter(Boolean);
-    if ([...allowedOrigins, ...configuredOrigins].includes(origin)) {
+    const isTrustedPortalPreview = /^https:\/\/ipcs-tpo-portal-[a-z0-9-]+-placement5\.vercel\.app$/i.test(origin);
+    if ([...allowedOrigins, ...configuredOrigins].includes(origin) || isTrustedPortalPreview) {
       return callback(null, true);
     } else {
       const rejectedOrigin = String(origin || '(missing)')
