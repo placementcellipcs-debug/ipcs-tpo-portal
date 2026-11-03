@@ -6,12 +6,14 @@ export const placementOutcome = (status, joiningStatus = '') => {
   const normalizedStatus = normalizePlacementText(status);
   const normalizedJoining = normalizePlacementText(joiningStatus);
   const placed = normalizedStatus === 'placed';
+  const joined = normalizedStatus === 'joined' || normalizedJoining === 'joined';
   return {
     placed,
-    joined: normalizedStatus === 'joined' || normalizedJoining === 'joined',
+    joined,
     offer: ['offer', 'offered', 'offerreleased', 'offeraccepted'].includes(normalizedStatus),
-    notJoined: !placed && (['notjoined', 'notplaced', 'rejected', 'notattended', 'declined'].includes(normalizedStatus)
-      || ['notjoined', 'notjoinedyet'].includes(normalizedJoining)),
+    // Joining is independent of placement: a Placed student may still be Not Joined.
+    notJoined: !joined && (['notjoined', 'notjoining', 'notplaced', 'rejected', 'notattended', 'declined'].includes(normalizedStatus)
+      || ['notjoined', 'notjoining', 'notjoinedyet', 'willnotjoin'].includes(normalizedJoining)),
   };
 };
 

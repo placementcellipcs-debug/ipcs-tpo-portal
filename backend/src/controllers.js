@@ -1408,7 +1408,7 @@ exports.updateStudent = async (req, res) => {
   const user = req.portalUser;
   const role = String(user?.role || '').toUpperCase();
   const isAdmin = user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
-  const isPlacementEditor = isAdmin || role === 'TPO' || role.includes('PLACEMENT OFFICER') || isCentralPlacementTeam(user);
+  const isPlacementEditor = isAdmin || isPlacementTrackerTpo(user) || isCentralPlacementTeam(user);
   const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(role) || /(^|[^A-Z0-9])TL([^A-Z0-9]|$)/.test(role);
   const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(role) || role === 'REGIONAL TECHNICAL HEAD';
   const isTth = /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(role) || role === 'TERRITORY TECHNICAL HEAD';
@@ -1782,7 +1782,7 @@ const appendPlacementHistory = ({ row, oldStatus, status, oldRemarks, remarks, o
   return history.slice(-60);
 };
 
-const placementTrackingHeaders = ['Interview Date', 'Interview Time', 'Interview Venue', 'Status History', 'International Placement'];
+const placementTrackingHeaders = ['Interview Date', 'Interview Time', 'Interview Venue', 'Status History', 'International Placement', 'Joining Status'];
 const placementActionHeaders = ['TPO Action Log', 'Action Type', 'Action Details'];
 
 const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentContact, studentEmail, studentRoll, course, branch, qualification, resume, jobId, company, position, status, remarks, interviewDate, interviewTime, interviewVenue, datePlaced, packageLpa, joiningStatus, internationalPlacement, entrySource, actionType, actionDetails, historyEntry }) => {

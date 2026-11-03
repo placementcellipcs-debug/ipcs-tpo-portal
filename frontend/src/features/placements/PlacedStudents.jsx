@@ -317,7 +317,10 @@ export default function PlacedStudents() {
 
   const submitAdd = async (internationalChoice) => {
     if (!addForm.roll || !addForm.name || !addForm.company) return alert("Student Name, Roll Number, and Company Name are required.");
-    if (/^placed$/i.test(String(addForm.status || '').trim()) && internationalChoice === undefined && addForm.isInternationalPlacement === undefined) {
+    const selectedInternationalChoice = typeof internationalChoice === 'boolean'
+      ? internationalChoice
+      : (typeof addForm.isInternationalPlacement === 'boolean' ? addForm.isInternationalPlacement : undefined);
+    if (/^placed$/i.test(String(addForm.status || '').trim()) && selectedInternationalChoice === undefined) {
       setInternationalPromptOpen(true);
       return;
     }
@@ -325,7 +328,24 @@ export default function PlacedStudents() {
     try {
       const formData = new FormData();
       formData.append('tpoName', tpoData?.name || 'Admin');
-      formData.append('appData', JSON.stringify({ ...addForm, isInternationalPlacement: internationalChoice ?? addForm.isInternationalPlacement }));
+      const appData = {
+        name: addForm.name,
+        phone: addForm.phone,
+        email: addForm.email,
+        roll: addForm.roll,
+        course: addForm.course,
+        branch: addForm.branch,
+        company: addForm.company,
+        position: addForm.position,
+        placementLocation: addForm.placementLocation,
+        status: addForm.status,
+        remarks: addForm.remarks,
+        datePlaced: addForm.datePlaced,
+        packageLpa: addForm.packageLpa,
+        joiningStatus: addForm.joiningStatus,
+        ...(selectedInternationalChoice === undefined ? {} : { isInternationalPlacement: selectedInternationalChoice })
+      };
+      formData.append('appData', JSON.stringify(appData));
       if (addForm.offerLetterFile) formData.append('offerLetterFile', addForm.offerLetterFile);
 
       const response = await axios.post(`${API_BASE}/api/tpo/applications/add`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
@@ -653,7 +673,7 @@ export default function PlacedStudents() {
               <input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.remarks} onChange={e=>setAddForm({...addForm, remarks: e.target.value})} />
             </div>
 
-            <button className="btn-action" style={{ background: '#10b981', color: '#fff', width: '100%' }} onClick={submitAdd} disabled={savingStatus}>
+            <button className="btn-action" style={{ background: '#10b981', color: '#fff', width: '100%' }} onClick={() => void submitAdd()} disabled={savingStatus}>
               {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> Save New Placement</>}
             </button>
           </div>

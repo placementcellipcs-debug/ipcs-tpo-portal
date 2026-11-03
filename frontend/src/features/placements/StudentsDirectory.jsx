@@ -251,9 +251,12 @@ export default function StudentsDirectory() {
   };
 
   const saveStudentUpdates = async (internationalChoice) => {
+    const selectedInternationalChoice = typeof internationalChoice === 'boolean'
+      ? internationalChoice
+      : undefined;
     const placingNow = /^placed$/i.test(String(localPlacementState || '').trim())
       && !/^placed$/i.test(String(selectedStudent?.placementStatus || '').trim());
-    if (placingNow && internationalChoice === undefined) {
+    if (placingNow && selectedInternationalChoice === undefined) {
       setInternationalPromptOpen(true);
       return;
     }
@@ -263,7 +266,7 @@ export default function StudentsDirectory() {
         rowNumber: selectedStudent.rowIdx,
         vacOpen: localVacState, 
         placementStatus: localPlacementState,
-        ...(placingNow || internationalChoice !== undefined ? { isInternationalPlacement: internationalChoice } : {}),
+        ...(placingNow || selectedInternationalChoice !== undefined ? { isInternationalPlacement: selectedInternationalChoice } : {}),
         studyAccess: localStudyAccess, 
         examAccess: localExamAccess,
         courseStatus: localCourseStatus,
@@ -304,7 +307,10 @@ export default function StudentsDirectory() {
         setSelectedStudent(updatedSelectedStudent);
         setIsModalOpen(false);
       }
-    } catch { alert("Failed to update student data"); } finally { setSavingStatus(false); }
+    } catch (error) {
+      const message = error.response?.data?.message || error.message || 'The student update could not be saved.';
+      alert(`Failed to update student data: ${message}`);
+    } finally { setSavingStatus(false); }
   };
 
   const scopedStudents = rawStudents.filter(s => {
@@ -873,7 +879,7 @@ export default function StudentsDirectory() {
 
                   <div style={{ display: 'flex', justifyContent: !canSave ? 'space-between' : 'flex-end', alignItems: 'center', marginTop: '1.5rem' }}>
                      {!canSave && <span style={{ color: '#f59e0b', fontSize: '0.85rem', fontWeight: 600 }}>* View Only Permission for Toggles</span>}
-                     <button className="btn-action" style={{ width: 'auto', background: !canSave ? '#1e293b' : 'var(--accent-primary)', color: !canSave ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: !canSave ? 'not-allowed' : 'pointer', opacity: canSave ? 1 : 0.5 }} onClick={saveStudentUpdates} disabled={savingStatus || !canSave}>
+                     <button className="btn-action" style={{ width: 'auto', background: !canSave ? '#1e293b' : 'var(--accent-primary)', color: !canSave ? '#94a3b8' : '#0f172a', padding: '0.8rem 2rem', fontSize: '1rem', margin: 0, cursor: !canSave ? 'not-allowed' : 'pointer', opacity: canSave ? 1 : 0.5 }} onClick={() => void saveStudentUpdates()} disabled={savingStatus || !canSave}>
                         {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> {!canSave ? 'Locked' : 'Save Changes'}</>}
                       </button>
                   </div>
