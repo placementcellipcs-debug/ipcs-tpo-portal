@@ -814,9 +814,17 @@ export default function Reports() {
                         <span style={{ color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '1.1rem' }}>Progress to Target</span>
                         <span style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>{hasTarget ? `${totalPlacements} / ${targetGoal} Placements` : `${totalPlacements} placements · No target set`}</span>
                       </div>
-                      {hasTarget ? <div style={{ width: '100%', height: '14px', background: '#1e293b', borderRadius: '10px', overflow: 'hidden' }}>
-                        <div style={{ width: `${progressPercent}%`, height: '100%', background: progressPercent >= 100 ? '#10b981' : 'var(--accent-primary)', transition: 'width 1s ease-in-out' }}></div>
-                      </div> : <div style={{ width: '100%', padding: '11px 14px', boxSizing: 'border-box', borderRadius: '10px', border: '1px dashed #475569', color: 'var(--text-muted)', fontSize: '.85rem' }}>No monthly target is recorded for {displayMonthName}.</div>}
+                      <div
+                        role="progressbar"
+                        aria-label={hasTarget ? `Monthly placement target progress: ${totalPlacements} of ${targetGoal}` : 'Monthly placement target progress; no target recorded'}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-valuenow={hasTarget ? progressPercent : 0}
+                        style={{ width: '100%', height: '14px', background: '#1e293b', borderRadius: '10px', overflow: 'hidden' }}
+                      >
+                        <div style={{ width: `${hasTarget ? progressPercent : 0}%`, height: '100%', background: progressPercent >= 100 ? '#10b981' : 'var(--accent-primary)', transition: 'width 1s ease-in-out' }}></div>
+                      </div>
+                      {!hasTarget && <div style={{ marginTop: '8px', color: 'var(--text-muted)', fontSize: '.82rem' }}>Progress will fill when a monthly target is recorded for {displayMonthName}.</div>}
                       <div style={{ marginTop: '8px', color: 'var(--text-muted)', fontSize: '.82rem' }}>{placedStudentsLog.length} placement records counted for this TPO and month.</div>
                     </div>
                   </div>
