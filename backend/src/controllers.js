@@ -4142,6 +4142,71 @@ exports.getReports = async (req, res) => {
   });
 };
 
+exports.getPlacementClassificationSuggestion = async (req, res) => {
+  const user = req.portalUser || {};
+  if (!isPlacementTrackerTpo(user) && !isPlacementTrackerAdmin(user)) {
+    return res.status(403).json({ success: false, message: 'Only TPOs and placement administrators can check placement classifications.' });
+  }
+
+  const input = req.body || {};
+  const name = normalizePlacementText(input.name);
+  const roll = normalizePlacementText(input.roll);
+  const phone = normalizePlacementText(input.phone);
+  const email = normalizePlacementText(input.email);
+  const branch = normalizePlacementText(input.branch).replace(/branch/g, '');
+  const company = normalizePlacementText(input.company);
+  const monthYearKey = value => {
+    const match = formatIndiaDate(value).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    return match ? `${match[3]}-${match[2]}` : '';
+  };
+  const selectedMonth = monthYearKey(input.datePlaced);
+  const excludedRow = Number(input.excludeRowNumber) || 0;
+  const unusableRolls = new Set(['noroll', 'norollnumber', 'na', 'none', 'null', 'unknown', 'notavailable', '0']);
+  const usableRoll = roll && !unusableRolls.has(roll) ? roll : '';
+
+  if ((!usableRoll && !email && !phone && !name) || !company || !selectedMonth) {
+    return res.status(400).json({ success: false, message: 'Enter a student identifier, company, and placement date to check the suggestion.' });
+  }
+
+  try {
+    const sourceRows = await readLiveTpoLogRows();
+    const matchesStudent = row => {
+      if (Number(row?.rowNumber) === excludedRow) return false;
+      if (isTpoActionLog(row, getValByHeader) || normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed') return false;
+      const rowRoll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+      const rowEmail = normalizePlacementText(getValByHeader(row, ['mailid', 'email', 'studentemail']));
+      const rowPhone = normalizePlacementText(getValByHeader(row, ['contact', 'phone', 'mobilenumber']));
+      const rowName = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+      const rowBranch = normalizePlacementText(getValByHeader(row, ['branch', 'sittingbranch'])).replace(/branch/g, '');
+
+      if (usableRoll && rowRoll && !unusableRolls.has(rowRoll)) return usableRoll === rowRoll;
+      if (email && rowEmail) return email === rowEmail;
+      if (phone && rowPhone) return phone === rowPhone;
+      return Boolean(name && rowName === name && (!branch || !rowBranch || branch === rowBranch));
+    };
+    const differentCompanyRecords = sourceRows.filter(row => matchesStudent(row)
+      && normalizePlacementText(getValByHeader(row, ['companyname', 'company']))
+      && normalizePlacementText(getValByHeader(row, ['companyname', 'company'])) !== company);
+    const sameMonthDifferentCompany = differentCompanyRecords.some(row => {
+      const rowMonth = monthYearKey(getValByHeader(row, ['dateplaced', 'timestamp', 'date']));
+      return rowMonth && rowMonth === selectedMonth;
+    });
+    const suggestedStatus = sameMonthDifferentCompany
+      ? 'Dual Placement'
+      : differentCompanyRecords.length ? 'Multiple Placement' : '';
+    const suggestionReason = sameMonthDifferentCompany
+      ? 'A different-company placement for this student is recorded in the same month.'
+      : differentCompanyRecords.length
+        ? 'This student has a different-company placement in another month or year.'
+        : '';
+
+    return res.json({ success: true, suggestedStatus, suggestionReason });
+  } catch (error) {
+    console.error('Could not check placement classification suggestion:', error.message);
+    return res.status(503).json({ success: false, message: `Placement history could not be checked: ${error.message}` });
+  }
+};
+
 exports.getPlacedStudents = async (req, res) => {
   const user = req.portalUser || {};
   let cache = getCache();

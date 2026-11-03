@@ -4,7 +4,7 @@ import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { 
   CircleNotch, Plus, PencilSimple, X, FloppyDisk, 
-  CaretLeft, ArrowsClockwise, FilePdf, Trash
+  CaretLeft, ArrowsClockwise, FilePdf, Trash, Info
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import DateInput from '../../components/DateInput';
@@ -39,6 +39,48 @@ const getDrivePdf = (url) => {
   if (!url || typeof url !== 'string') return null;
   const match = url.match(/(?:file\/d\/|id=|\/d\/)([\w-]{25,})/);
   return match ? `https://drive.google.com/file/d/${match[1]}/view` : url;
+};
+
+const PlacementClassificationGuide = ({ suggestion, selectedStatus }) => {
+  const guideStyle = {
+    marginTop: '10px',
+    padding: '12px 14px',
+    border: '1px solid rgba(56, 189, 248, 0.24)',
+    borderRadius: '10px',
+    background: 'rgba(14, 165, 233, 0.07)',
+    color: 'var(--text-secondary, #cbd5e1)',
+    fontSize: '0.78rem',
+    lineHeight: 1.55
+  };
+  const statusColor = suggestion?.suggestedStatus === 'Dual Placement' ? '#a78bfa' : '#f0abfc';
+
+  return (
+    <div style={guideStyle} role="status" aria-live="polite">
+      <div style={{ display: 'flex', gap: '8px', alignItems: 'flex-start' }}>
+        <Info size={17} weight="fill" color="#38bdf8" style={{ flex: '0 0 auto', marginTop: '1px' }} />
+        <div>
+          <strong style={{ color: '#e2e8f0' }}>Placement classification reminder</strong>
+          <div><strong style={{ color: '#c4b5fd' }}>Dual:</strong> same student, a different company, and the same month.</div>
+          <div><strong style={{ color: '#f0abfc' }}>Multiple:</strong> same student and a different company in another month or year.</div>
+          <div style={{ marginTop: '4px', color: '#94a3b8' }}>A same-month match takes priority and is suggested as Dual. This check does not change your selection.</div>
+          {suggestion?.loading ? (
+            <div style={{ marginTop: '7px', color: '#7dd3fc' }}>Checking this student’s placement history…</div>
+          ) : suggestion?.error ? (
+            <div style={{ marginTop: '7px', color: '#fbbf24' }}>History could not be checked. Please choose the status using the definitions above.</div>
+          ) : suggestion?.suggestedStatus ? (
+            <div style={{ marginTop: '7px', color: statusColor, fontWeight: 700 }}>
+              Suggested: {suggestion.suggestedStatus}. {suggestion.suggestionReason}{' '}
+              {String(selectedStatus || '').trim().toLowerCase() === suggestion.suggestedStatus.toLowerCase()
+                ? 'Your selected status matches.'
+                : `Consider selecting “${suggestion.suggestedStatus}” before saving.`}
+            </div>
+          ) : suggestion?.checked ? (
+            <div style={{ marginTop: '7px', color: '#94a3b8' }}>No different-company placement match was found for these details and date.</div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export default function PlacedStudents() {
@@ -89,6 +131,8 @@ export default function PlacedStudents() {
   const [internationalPromptOpen, setInternationalPromptOpen] = useState(false);
 
   const [editForm, setEditForm] = useState({});
+  const [editClassificationSuggestion, setEditClassificationSuggestion] = useState(null);
+  const [addClassificationSuggestion, setAddClassificationSuggestion] = useState(null);
   const [addForm, setAddForm] = useState({ 
     name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', 
     company: '', position: '', placementLocation: '', status: 'Placed', remarks: '',
@@ -101,6 +145,69 @@ export default function PlacedStudents() {
     document.body.style.overflow = 'hidden';
     return () => { document.body.style.overflow = previousOverflow; };
   }, [isEditModalOpen, isAddModalOpen]);
+
+  useEffect(() => {
+    if (!isEditModalOpen || !selectedApp) {
+      setEditClassificationSuggestion(null);
+      return undefined;
+    }
+    const payload = {
+      name: selectedApp.name,
+      roll: selectedApp.roll,
+      phone: selectedApp.phone,
+      email: selectedApp.email,
+      branch: selectedApp.branch,
+      company: selectedApp.company,
+      datePlaced: editForm.datePlaced,
+      excludeRowNumber: selectedApp.rowNumber
+    };
+    if (!payload.company || !payload.datePlaced || !(payload.roll || payload.email || payload.phone || payload.name)) {
+      setEditClassificationSuggestion(null);
+      return undefined;
+    }
+    let active = true;
+    setEditClassificationSuggestion({ loading: true });
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await axios.post(`${API_BASE}/api/tpo/placed-students/classification-suggestion`, payload, { timeout: 15000 });
+        if (active) setEditClassificationSuggestion({ ...response.data, checked: true });
+      } catch {
+        if (active) setEditClassificationSuggestion({ error: true, checked: true });
+      }
+    }, 350);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [isEditModalOpen, selectedApp, editForm.datePlaced]);
+
+  useEffect(() => {
+    if (!isAddModalOpen) {
+      setAddClassificationSuggestion(null);
+      return undefined;
+    }
+    const payload = {
+      name: addForm.name,
+      roll: addForm.roll,
+      phone: addForm.phone,
+      email: addForm.email,
+      branch: addForm.branch,
+      company: addForm.company,
+      datePlaced: addForm.datePlaced
+    };
+    if (!payload.company || !payload.datePlaced || !(payload.roll || payload.email || payload.phone || payload.name)) {
+      setAddClassificationSuggestion(null);
+      return undefined;
+    }
+    let active = true;
+    setAddClassificationSuggestion({ loading: true });
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await axios.post(`${API_BASE}/api/tpo/placed-students/classification-suggestion`, payload, { timeout: 15000 });
+        if (active) setAddClassificationSuggestion({ ...response.data, checked: true });
+      } catch {
+        if (active) setAddClassificationSuggestion({ error: true, checked: true });
+      }
+    }, 350);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [isAddModalOpen, addForm.name, addForm.roll, addForm.phone, addForm.email, addForm.branch, addForm.company, addForm.datePlaced]);
 
   const fetchData = async () => {
     setLoading(true);
@@ -634,14 +741,15 @@ export default function PlacedStudents() {
                 <input type="file" className="sleek-input" style={{ width: '100%', padding: '6px' }} onChange={e => setEditForm({...editForm, offerLetterFile: e.target.files[0]})} />
               </div>
             </div>
+            <PlacementClassificationGuide suggestion={editClassificationSuggestion} selectedStatus={editForm.joiningStatus} />
 
             <div style={{ marginBottom: '1.5rem' }}>
               <label className="data-label">Remarks</label>
               <input type="text" className="sleek-input" placeholder="Add remarks..." style={{ width: '100%' }} value={editForm.remarks || ''} onChange={e => setEditForm({...editForm, remarks: e.target.value})} />
             </div>
 
-            <button className="btn-action" style={{ background: '#10b981', color: '#fff', width: '100%' }} onClick={submitEdit} disabled={savingStatus}>
-              {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> Save Updates</>}
+            <button className="btn-action" style={{ background: '#10b981', color: '#fff', width: '100%' }} onClick={submitEdit} disabled={savingStatus || Boolean(editClassificationSuggestion?.loading)}>
+              {savingStatus || editClassificationSuggestion?.loading ? <><CircleNotch size={20} className="ph-spin" /> {savingStatus ? 'Saving…' : 'Checking placement history…'}</> : <><FloppyDisk size={20} weight="bold"/> Save Updates</>}
             </button>
           </div>
         </div>
@@ -693,14 +801,15 @@ export default function PlacedStudents() {
               </div>
               <div><label className="data-label">Upload Offer Letter</label><input type="file" className="sleek-input" style={{ width: '100%', padding: '6px' }} onChange={e=>setAddForm({...addForm, offerLetterFile: e.target.files[0]})} /></div>
             </div>
+            <PlacementClassificationGuide suggestion={addClassificationSuggestion} selectedStatus={addForm.joiningStatus} />
 
             <div style={{ marginBottom: '1.5rem' }}>
               <label className="data-label">Remarks</label>
               <input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.remarks} onChange={e=>setAddForm({...addForm, remarks: e.target.value})} />
             </div>
 
-            <button className="btn-action" style={{ background: '#10b981', color: '#fff', width: '100%' }} onClick={() => void submitAdd()} disabled={savingStatus}>
-              {savingStatus ? <CircleNotch size={20} className="ph-spin" /> : <><FloppyDisk size={20} weight="bold"/> Save New Placement</>}
+            <button className="btn-action" style={{ background: '#10b981', color: '#fff', width: '100%' }} onClick={() => void submitAdd()} disabled={savingStatus || Boolean(addClassificationSuggestion?.loading)}>
+              {savingStatus || addClassificationSuggestion?.loading ? <><CircleNotch size={20} className="ph-spin" /> {savingStatus ? 'Saving…' : 'Checking placement history…'}</> : <><FloppyDisk size={20} weight="bold"/> Save New Placement</>}
             </button>
           </div>
         </div>
