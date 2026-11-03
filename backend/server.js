@@ -708,6 +708,21 @@ if (runsBackgroundJobs) {
     timezone: "Asia/Kolkata"
   });
 
+  // A branch digest is sent the morning after a Talentino session, once its
+  // attendance rows are available. The sheet ledger makes each branch/date
+  // delivery idempotent across ordinary cron retries.
+  cron.schedule('30 08 * * *', async () => {
+    const requestId = randomUUID();
+    logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Talentino branch report started', resource: 'Talentino daily report', result: 'Started', details: { schedule: '08:30 Asia/Kolkata', reportWindow: 'previous IST day' } });
+    try {
+      const result = await controllers.sendPreviousDayTalentinoReports();
+      logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Talentino branch report completed', resource: 'Talentino daily report', result: 'Success', details: result || {} });
+    } catch (error) {
+      console.error('[TALENTINO DAILY REPORT] Scheduled report run failed:', error.message);
+      logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Talentino branch report failed', resource: 'Talentino daily report', result: 'Error', details: { error: String(error.message || error).slice(0, 500) } });
+    }
+  }, { scheduled: true, timezone: 'Asia/Kolkata' });
+
   // Mail dashboards refresh independently of outgoing mail.
   startMailDashboardRefresh();
 } else {

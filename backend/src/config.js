@@ -56,7 +56,7 @@ const sheetGroups = {
   students: ['Data', 'Student_Diary', 'Leave_Applications'],
   placements: ['NewsLetter', 'Event', 'Drive_Registration', 'Opening_Applied', 'Clients', 'TPO_Log', 'Placed_Students', 'TPO_Stats', 'Corporate Training Inquiries', 'Hiring Inquiries'],
   learning: [
-    'Talentino_Schedule', 'Talentino_Attendance', 'Courses', 'Study_Materials', 'StudyMaterials',
+    'Talentino_Schedule', 'Talentino_Attendance', 'Talentino_Daily_Report_Log', 'Courses', 'Study_Materials', 'StudyMaterials',
     'Tech_Questions', 'Tech_Results', 'Aptitude_Questions', 'Aptitude_Results', 'Talentino_Questions', 'Talentino_Results',
     'Training', 'Batches', 'Topics', 'Sessions', 'Attendance', 'Topic_Progress', 'Diary', 'Trainer_Remarks',
     'Assignments', 'Assessments', 'Assessment_Results', 'Activities', 'Certificate_Requests', 'Certificates',
@@ -165,7 +165,7 @@ let placedStudentsBackupSheetId = null;
 const placedStudentsHeaders = [
   'Record Key', 'Student Name', 'Contact', 'Mail ID', 'Roll Number', 'Course', 'Branch', 'Qualification', 'Resume',
   'Job ID', 'Company Name', 'Position', 'Placement Officer', 'Status', 'Remarks', 'DATE PLACED', 'PACKAGE (LPA)',
-  'Joining Status', 'Offer Letter', 'International Placement', 'Source Sheet', 'Source Row', 'Updated At'
+  'Joining Status', 'Offer Letter', 'International Placement', 'Dual Placement', 'Multiple Placement', 'Source Sheet', 'Source Row', 'Updated At'
 ];
 
 async function ensurePlacedStudentsSheet() {
@@ -334,6 +334,8 @@ async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
       'Joining Status': value(['joiningstatus']),
       'Offer Letter': value(['offerletterstatus', 'offerletter']),
       'International Placement': value(['internationalplacement', 'isinternationalplacement', 'international']),
+      'Dual Placement': value(['dualplacement']) || (/^dual$/i.test(value(['placementtype'])) ? 'Yes' : 'No'),
+      'Multiple Placement': value(['multipleplacement']) || (/^multiple$/i.test(value(['placementtype'])) ? 'Yes' : 'No'),
       'Source Sheet': 'TPO_Log',
       'Source Row': sourceRow,
       'Updated At': value(['timestamp', 'updatedat', 'dateplaced'])
@@ -447,6 +449,8 @@ async function syncPlacedStudent(record = {}) {
     'Joining Status': record.joiningStatus || '',
     'Offer Letter': record.offerLetter || '',
     'International Placement': record.internationalPlacement ?? record.isInternationalPlacement ?? '',
+    'Dual Placement': record.dualPlacement === undefined ? '' : record.dualPlacement ? 'Yes' : 'No',
+    'Multiple Placement': record.multiplePlacement === undefined ? '' : record.multiplePlacement ? 'Yes' : 'No',
     'Source Sheet': record.sourceSheet === 'Placed_Students' && existing
       ? placementRowValue(existing, ['sourcesheet']) || 'Placed_Students'
       : record.sourceSheet || '',

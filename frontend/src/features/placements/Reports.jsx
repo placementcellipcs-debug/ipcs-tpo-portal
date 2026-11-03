@@ -13,6 +13,12 @@ const getVal = (obj, searchStr) => {
   const key = Object.keys(obj || {}).find(k => k.toLowerCase().replace(/\s/g, '').includes(searchStr.toLowerCase().replace(/\s/g, '')));
   return key ? obj[key] : '';
 };
+const isPlacementTypeMarked = (row, type) => {
+  const explicit = getVal(row, type === 'dual' ? 'dualplacement' : 'multipleplacement');
+  if (String(explicit || '').trim()) return /^(yes|true|1|marked)$/i.test(String(explicit).trim());
+  return normalizePlacementText(getVal(row, 'placementtype')) === type;
+};
+const reportTpoKey = tpo => normalizePlacementText(tpo?.userName || tpo?.name || tpo?.email);
 const safeReportLinks = value => String(value || '').split(/\r?\n/).map(link => link.trim()).filter(link => {
   try { return ['http:', 'https:'].includes(new URL(link).protocol); } catch { return false; }
 });
@@ -104,12 +110,12 @@ export default function Reports() {
   const today = new Date();
   const currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   const [monthFilter, setMonthFilter] = useState(currentMonthStr);
+  const [reportTpoFilter, setReportTpoFilter] = useState('all');
 
   const [students, setStudents] = useState([]);
   const [applications, setApplications] = useState([]);
   const [events, setEvents] = useState([]);
   const [placementReportLogs, setPlacementReportLogs] = useState([]);
-  const placementLogs = placementReportLogs;
   
   const [tpoList, setTpoList] = useState(() => !isSuperAdmin && tpoData ? [tpoData] : []);
   const [allBranchesList, setAllBranchesList] = useState([]);
@@ -165,7 +171,7 @@ export default function Reports() {
       .finally(() => { if (active) setReportLoading(false); });
 
     const auxiliaryRequests = [
-      isSuperAdmin ? axios.get(`${API_BASE}/api/admin/users`) : Promise.resolve(null),
+      isSuperAdmin ? axios.get(`${API_BASE}/api/admin/users`, { params: { month: monthFilter } }) : Promise.resolve(null),
       isSuperAdmin ? axios.get(`${API_BASE}/api/admin/branches`) : Promise.resolve(null),
       axios.get(`${API_BASE}/api/courses`).catch(() => null)
     ];
@@ -187,7 +193,7 @@ export default function Reports() {
     });
 
     return () => { active = false; };
-  }, [isSuperAdmin, myName, reportReloadKey]);
+  }, [isSuperAdmin, myName, reportReloadKey, monthFilter]);
 
   // Course normalizer for matrix alignment
   const getCourse = (c) => {
@@ -218,12 +224,20 @@ export default function Reports() {
     .find(Boolean) || null;
   const checkPlacementMonth = row => checkMonth(getPlacementDate(row));
 
+  const selectedReportTpo = isSuperAdmin && reportTpoFilter !== 'all'
+    ? tpoList.find(tpo => reportTpoKey(tpo) === reportTpoFilter || [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).includes(reportTpoFilter))
+    : null;
+  const selectedTpoIdentities = new Set([selectedReportTpo?.userName, selectedReportTpo?.name, selectedReportTpo?.email].map(normalizePlacementText).filter(Boolean));
+  const isSelectedTpoLog = log => !selectedReportTpo || selectedTpoIdentities.has(normalizePlacementText(getVal(log, 'placementofficer')));
+  const visibleTpoList = selectedReportTpo ? [selectedReportTpo] : tpoList;
+  const placementLogs = selectedReportTpo ? placementReportLogs.filter(isSelectedTpoLog) : placementReportLogs;
   const isAssignedBranch = (b) => {
     if (!tpoData) return false;
-    if (isSuperAdmin) return true;
-    const assignedBranches = Array.isArray(tpoData.assignedBranchesArray)
-      ? tpoData.assignedBranchesArray
-      : String(tpoData.assignedBranchesArray || '').split(/[\n,;]+/);
+    if (isSuperAdmin && !selectedReportTpo) return true;
+    const scopeUser = selectedReportTpo || tpoData;
+    const assignedBranches = Array.isArray(scopeUser.assignedBranchesArray)
+      ? scopeUser.assignedBranchesArray
+      : String(scopeUser.assignedBranchesArray || scopeUser.assignedBranches || scopeUser.sittingBranch || '').split(/[\n,;]+/);
     const target = String(b || '').trim().toLowerCase();
     return assignedBranches.some(value => {
       const assigned = String(value || '').trim().toLowerCase();
@@ -232,9 +246,11 @@ export default function Reports() {
   };
 
   const displayMonthName = new Date(monthFilter + '-01').toLocaleString('default', { month: 'long', year: 'numeric' });
-  const targetSourceRows = placementReportLogs.filter(log => isPlacedStatus(getVal(log, 'status')));
+  const targetSourceRows = placementLogs.filter(log => isPlacedStatus(getVal(log, 'status')));
   const targetSourceRowsThisMonth = targetSourceRows.filter(checkPlacementMonth);
   const internationalRowsThisMonth = targetSourceRowsThisMonth.filter(log => log.isInternationalPlacement === true);
+  const dualPlacementsThisMonth = targetSourceRowsThisMonth.filter(log => isPlacementTypeMarked(log, 'dual')).length;
+  const multiplePlacementsThisMonth = targetSourceRowsThisMonth.filter(log => isPlacementTypeMarked(log, 'multiple')).length;
   const reportTpoIdentities = new Set(tpoList.flatMap(tpo => [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean)));
   const currentMonthRowsWithoutMatchedTpo = targetSourceRowsThisMonth.filter(log => !reportTpoIdentities.has(normalizePlacementText(getVal(log, 'placementofficer')))).length;
   const placedRowsWithoutUsableDate = targetSourceRows.filter(log => !getPlacementDate(log)).length;
@@ -308,7 +324,7 @@ export default function Reports() {
   // 3. BRANCH VS TPO STATUS
   const branchTPO = {};
   // Determine which TPOs to show as columns based on access level
-  const displayTpos = isSuperAdmin ? tpoList.map(t => t.userName || t.name) : [tpoData?.name || tpoData?.email || 'My Placements'];
+  const displayTpos = isSuperAdmin ? visibleTpoList.map(t => t.userName || t.name) : [tpoData?.name || tpoData?.email || 'My Placements'];
   
   allBranchesList.forEach(b => {
     branchTPO[b] = { Total: 0 };
@@ -344,7 +360,7 @@ export default function Reports() {
 
   // 4. PIPELINE TRACKER
   const pipeline = {};
-  mainCourses.concat(['Others']).forEach(c => pipeline[c] = { placed: 0, joined: 0, offers: 0, notJoined: 0 });
+  mainCourses.concat(['Others']).forEach(c => pipeline[c] = { placed: 0, joined: 0, offers: 0, notJoined: 0, dual: 0, multiple: 0 });
 
   placementLogs.forEach(log => {
     const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
@@ -357,6 +373,8 @@ export default function Reports() {
     if (!pipeline[c]) return;
     const outcome = placementOutcome(getVal(log, 'status'), getVal(log, 'joiningstatus'));
     if (outcome.placed) pipeline[c].placed++;
+    if (isPlacementTypeMarked(log, 'dual')) pipeline[c].dual++;
+    if (isPlacementTypeMarked(log, 'multiple')) pipeline[c].multiple++;
     if (outcome.joined) pipeline[c].joined++;
     if (outcome.offer) pipeline[c].offers++;
     if (outcome.notJoined) pipeline[c].notJoined++;
@@ -390,7 +408,7 @@ export default function Reports() {
   });
 
   // TPO ACTIVITY LOGIC
-  const tpoActivity = tpoList.map(t => {
+  const tpoActivity = visibleTpoList.map(t => {
     const targetName = (t.userName || t.name || '').toLowerCase().trim();
     const tpoIdentities = [t.userName, t.name, t.email].map(normalizePlacementText).filter(Boolean);
     
@@ -614,6 +632,10 @@ export default function Reports() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
             <input type="month" className="sleek-input" style={{ background: '#0f1523', border: '1px solid var(--accent-primary)', color: 'var(--accent-primary)', fontWeight: 'bold', fontSize: '1.15rem', padding: '12px 20px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
+            {isSuperAdmin && <select aria-label="Filter reports by TPO" className="sleek-input" style={{ background: '#0f1523', border: '1px solid var(--card-border)', color: 'var(--text-main)', fontWeight: 700, padding: '12px 16px', minWidth: '210px' }} value={reportTpoFilter} onChange={event => setReportTpoFilter(event.target.value)}>
+              <option value="all">All TPOs</option>
+              {tpoList.map((tpo, index) => <option key={`${reportTpoKey(tpo)}-${index}`} value={reportTpoKey(tpo)}>{tpo.userName || tpo.name || tpo.email}</option>)}
+            </select>}
             {canSendMonthlyReport && <>
               <button type="button" onClick={() => sendMonthlyReport('gifty')} disabled={reportLoading || Boolean(sendingReport) || !monthFilter} title="To Gifty · CC the sending account" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(52,211,153,.4)', background: 'linear-gradient(120deg, rgba(16,185,129,.2), rgba(14,165,233,.17))', color: '#a7f3d0', fontWeight: 800, cursor: reportLoading || sendingReport ? 'wait' : 'pointer', opacity: reportLoading || sendingReport ? .65 : 1 }}>
                 {sendingReport === 'gifty' ? <CircleNotch size={17} className="ph-spin" /> : <PaperPlaneTilt size={17} weight="fill" />}
@@ -628,8 +650,8 @@ export default function Reports() {
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap', marginBottom: '18px', padding: '14px 18px', borderRadius: '12px', border: '1px solid rgba(245,158,11,.28)', background: 'rgba(120,75,17,.12)' }}>
-          <span style={{ color: '#fcd79a', fontWeight: 750 }}>Portal-wide placement pending · only students marked Pending / Placement Needed at 90%+ course completion</span>
-          <strong style={{ color: '#fff', fontSize: '1.35rem' }}>{portalPlacementPending.toLocaleString('en-IN')}</strong>
+          <span style={{ color: '#fcd79a', fontWeight: 750 }}>{selectedReportTpo ? `Eligible pending · assigned branches for ${selectedReportTpo.userName || selectedReportTpo.name}` : 'Portal-wide placement pending'} · only students marked Pending / Placement Needed at 90%+ course completion</span>
+          <strong style={{ color: '#fff', fontSize: '1.35rem' }}>{(selectedReportTpo ? pendTotals.Total : portalPlacementPending).toLocaleString('en-IN')}</strong>
         </div>
         {sendReportMessage && <div role="status" style={{ marginBottom: '18px', padding: '12px 15px', borderRadius: '10px', border: `1px solid ${sendReportMessage.includes('could not') || sendReportMessage.includes('failed') ? 'rgba(248,113,113,.4)' : 'rgba(52,211,153,.35)'}`, color: sendReportMessage.includes('could not') || sendReportMessage.includes('failed') ? '#fecaca' : '#a7f3d0', background: sendReportMessage.includes('could not') || sendReportMessage.includes('failed') ? 'rgba(127,29,29,.18)' : 'rgba(6,78,59,.18)' }}>{sendReportMessage}</div>}
 
@@ -638,7 +660,7 @@ export default function Reports() {
 
         {dataMeta && <DataSourceStatus
           source="TPO_Log"
-          detail="Monthly targets count every TPO_Log row with Status = Placed, including repeated and action-history rows. Date Placed is used, then Timestamp if blank."
+          detail="Monthly targets count every canonical TPO_Log row with Status = Placed, including repeat placements. Action-history snapshots are excluded. Date Placed is used, then Timestamp if blank."
           health={targetLogHealthy}
           lastSyncedAt={targetLogLastSyncedAt}
           lastAttemptAt={dataMeta.lastRefreshAttemptAt}
@@ -675,13 +697,13 @@ export default function Reports() {
                 <p style={{ gridColumn: '1 / -1', margin: 0, color: 'var(--text-muted)', fontSize: '.85rem' }}>This compares source rows with the TPO accounts shown below. Rows without a matching owner or usable date cannot be assigned to a TPO/month total.</p>
               </section>
             )}
-            <section aria-label="International placement summary" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px', flexWrap: 'wrap', margin: '0 0 22px', padding: '15px 18px', borderRadius: '12px', border: '1px solid rgba(56,189,248,.38)', background: 'linear-gradient(100deg, rgba(14,116,144,.2), rgba(15,23,42,.68))' }}>
-              <div><div style={{ color: '#7dd3fc', fontWeight: 800 }}>International placements · {displayMonthName}</div><small style={{ color: 'var(--text-muted)' }}>Placed records with a destination outside India</small></div>
-              <strong style={{ color: '#7dd3fc', fontSize: '1.5rem' }}>{internationalRowsThisMonth.length}</strong>
+            <section aria-label="Placement classifications for selected month" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px', flexWrap: 'wrap', margin: '0 0 22px', padding: '15px 18px', borderRadius: '12px', border: '1px solid rgba(56,189,248,.38)', background: 'linear-gradient(100deg, rgba(14,116,144,.2), rgba(15,23,42,.68))' }}>
+              <div><div style={{ color: '#7dd3fc', fontWeight: 800 }}>Placements · {displayMonthName}</div><small style={{ color: 'var(--text-muted)' }}>International counts are inferred from destination. Dual and Multiple count only records explicitly marked with that type for this month.</small></div>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}><strong style={{ color: '#7dd3fc', fontSize: '1rem', padding: '7px 10px', borderRadius: '9px', background: 'rgba(14,116,144,.16)' }}>International · {internationalRowsThisMonth.length}</strong><strong style={{ color: '#c4b5fd', fontSize: '1rem', padding: '7px 10px', borderRadius: '9px', background: 'rgba(109,40,217,.16)' }}>Dual · {dualPlacementsThisMonth}</strong><strong style={{ color: '#f9a8d4', fontSize: '1rem', padding: '7px 10px', borderRadius: '9px', background: 'rgba(190,24,93,.15)' }}>Multiple · {multiplePlacementsThisMonth}</strong></div>
               <button type="button" onClick={() => navigate('/placed?international=1')} style={{ padding: '8px 12px', borderRadius: '9px', border: '1px solid rgba(56,189,248,.48)', color: '#bae6fd', background: 'rgba(14,116,144,.18)', cursor: 'pointer', fontWeight: 750 }}>View international records →</button>
             </section>
-            {tpoList.map((tpo, idx) => {
-              const placedStudentsLog = placementReportLogs.filter(log => {
+            {visibleTpoList.map((tpo, idx) => {
+              const placedStudentsLog = placementLogs.filter(log => {
                 const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
                 const identities = [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean);
                 if (!logTpo || !identities.includes(logTpo)) return false;
@@ -696,8 +718,11 @@ export default function Reports() {
                 counts[course] = (counts[course] || 0) + 1;
               });
               const totalPlacements = placedStudentsLog.length;
-              const targetGoal = parseInt(tpo.target) || 20;
-              const progressPercent = Math.min((totalPlacements / targetGoal) * 100, 100);
+              const parsedTarget = Number.parseInt(tpo.target, 10);
+              const targetGoal = Number.isFinite(parsedTarget) ? parsedTarget : 0;
+              const dualCount = placedStudentsLog.filter(log => isPlacementTypeMarked(log, 'dual')).length;
+              const multipleCount = placedStudentsLog.filter(log => isPlacementTypeMarked(log, 'multiple')).length;
+              const progressPercent = targetGoal > 0 ? Math.min((totalPlacements / targetGoal) * 100, 100) : 0;
 
               return (
                 <div key={idx} style={{ marginBottom: '4rem' }}>
@@ -718,7 +743,7 @@ export default function Reports() {
                       </div>
                     </div>
 
-                    <div className="hc-subheader" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><Briefcase size={24} weight="fill" /> Current Status On Placements</span><span style={{ color: '#7dd3fc', fontSize: '.9rem', padding: '6px 10px', border: '1px solid rgba(56,189,248,.35)', borderRadius: '999px', background: 'rgba(14,116,144,.14)' }}>International · {placedStudentsLog.filter(log => log.isInternationalPlacement === true).length}</span></div>
+                    <div className="hc-subheader" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><Briefcase size={24} weight="fill" /> Current Status On Placements</span><div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}><span style={{ color: '#7dd3fc', fontSize: '.82rem', padding: '6px 10px', border: '1px solid rgba(56,189,248,.35)', borderRadius: '999px', background: 'rgba(14,116,144,.14)' }}>International · {placedStudentsLog.filter(log => log.isInternationalPlacement === true).length}</span><span style={{ color: '#c4b5fd', fontSize: '.82rem', padding: '6px 10px', border: '1px solid rgba(167,139,250,.35)', borderRadius: '999px', background: 'rgba(109,40,217,.13)' }}>Dual marked · {dualCount}</span><span style={{ color: '#f9a8d4', fontSize: '.82rem', padding: '6px 10px', border: '1px solid rgba(244,114,182,.35)', borderRadius: '999px', background: 'rgba(190,24,93,.12)' }}>Multiple marked · {multipleCount}</span></div></div>
                     
                     <div className="hc-grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
                       {mainCourses.concat(['Others']).map(c => (
@@ -917,6 +942,8 @@ export default function Reports() {
                       <th>Students Joined</th>
                       <th>Offers</th>
                       <th>Not Joined</th>
+                      <th style={{ color: '#c4b5fd' }}>Dual marked</th>
+                      <th style={{ color: '#f9a8d4' }}>Multiple marked</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -929,6 +956,8 @@ export default function Reports() {
                           <td className={d.joined === 0 ? 'dt-zero' : ''}>{d.joined}</td>
                           <td className={d.offers === 0 ? 'dt-zero' : ''}>{d.offers}</td>
                           <td className={d.notJoined === 0 ? 'dt-zero' : ''}>{d.notJoined}</td>
+                          <td style={{ color: d.dual ? '#c4b5fd' : undefined }} className={d.dual === 0 ? 'dt-zero' : ''}>{d.dual}</td>
+                          <td style={{ color: d.multiple ? '#f9a8d4' : undefined }} className={d.multiple === 0 ? 'dt-zero' : ''}>{d.multiple}</td>
                         </tr>
                       );
                     })}

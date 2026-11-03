@@ -314,7 +314,8 @@ const getBranchManagerEmail = (branch) => {
     const br2 = getValByHeader(row, ['assignedbranches']).toLowerCase();
     
     if (rawRole.includes('branchmanager') && (br1.includes(searchBranch) || br2.includes(searchBranch) || searchBranch === 'all')) {
-      return getValByHeader(row, ['mailid', 'email']);
+      const email = String(getValByHeader(row, ['mailid', 'email']) || '').trim();
+      if (email) return email;
     }
   }
   return '';
@@ -1782,10 +1783,17 @@ const appendPlacementHistory = ({ row, oldStatus, status, oldRemarks, remarks, o
   return history.slice(-60);
 };
 
-const placementTrackingHeaders = ['Interview Date', 'Interview Time', 'Interview Venue', 'Status History', 'International Placement', 'Joining Status'];
+const placementTrackingHeaders = ['Interview Date', 'Interview Time', 'Interview Venue', 'Status History', 'International Placement', 'Joining Status', 'Dual Placement', 'Multiple Placement'];
 const placementActionHeaders = ['TPO Action Log', 'Action Type', 'Action Details'];
+const normalizePlacementMarker = value => /^(yes|true|1|marked|dual|multiple)$/i.test(String(value || '').trim());
+const isMarkedPlacementType = (row, type) => {
+  const typeKey = String(type || '').toLowerCase() === 'dual' ? 'dualplacement' : 'multipleplacement';
+  const explicit = getValByHeader(row, [typeKey]);
+  if (String(explicit || '').trim()) return normalizePlacementMarker(explicit);
+  return normalizePlacementText(getValByHeader(row, ['placementtype'])) === String(type || '').toLowerCase();
+};
 
-const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentContact, studentEmail, studentRoll, course, branch, qualification, resume, jobId, company, position, status, remarks, interviewDate, interviewTime, interviewVenue, datePlaced, packageLpa, joiningStatus, internationalPlacement, entrySource, actionType, actionDetails, historyEntry }) => {
+const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentContact, studentEmail, studentRoll, course, branch, qualification, resume, jobId, company, position, status, remarks, interviewDate, interviewTime, interviewVenue, datePlaced, packageLpa, joiningStatus, internationalPlacement, dualPlacement, multiplePlacement, entrySource, actionType, actionDetails, historyEntry }) => {
   await loadDocInfo();
   const logSheet = doc.sheetsByTitle['TPO_Log'];
   if (!logSheet) throw new Error('The TPO_Log sheet is unavailable.');
@@ -1813,6 +1821,8 @@ const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentCo
     'Interview Time': interviewTime || '',
     'Interview Venue': interviewVenue || '',
     'International Placement': normalizeInternationalPlacementFlag(internationalPlacement),
+    'Dual Placement': dualPlacement ? 'Yes' : 'No',
+    'Multiple Placement': multiplePlacement ? 'Yes' : 'No',
     'Entry Source': entrySource || 'Job Tracker',
     'Status History': JSON.stringify(historyEntry ? [historyEntry] : []),
     'TPO Action Log': 'YES',
@@ -1868,6 +1878,8 @@ const upsertPlacementTpoLog = async record => {
     'Placement Location': value('placementLocation', ['placementlocation', 'worklocation', 'joblocation', 'location']),
     'International Placement': normalizeInternationalPlacementFlag(record.internationalPlacement ?? record.isInternationalPlacement)
       || (existing ? normalizeInternationalPlacementFlag(getValByHeader(existing, ['internationalplacement', 'isinternationalplacement'])) : ''),
+    'Dual Placement': record.dualPlacement !== undefined ? (record.dualPlacement ? 'Yes' : 'No') : (existing ? getValByHeader(existing, ['dualplacement']) || (isMarkedPlacementType(existing, 'dual') ? 'Yes' : '') : ''),
+    'Multiple Placement': record.multiplePlacement !== undefined ? (record.multiplePlacement ? 'Yes' : 'No') : (existing ? getValByHeader(existing, ['multipleplacement']) || (isMarkedPlacementType(existing, 'multiple') ? 'Yes' : '') : ''),
     'Placement Officer': value('placementOfficer', ['placementofficer', 'tpo', 'tponame', 'createdby']) || value('tpoName', ['placementofficer', 'tpo', 'tponame', 'createdby']),
     Status: record.status !== undefined ? record.status : (existing ? getValByHeader(existing, ['status']) : ''),
     Remarks: record.remarks !== undefined ? record.remarks : (existing ? getValByHeader(existing, ['remarks']) : ''),
@@ -1959,15 +1971,20 @@ const syncPositivePlacement = async record => {
       joiningStatus: getValByHeader(logRow, ['joiningstatus']),
       offerLetter: getValByHeader(logRow, ['offerletterstatus', 'offerletter']),
       internationalPlacement,
+      dualPlacement: normalizePlacementMarker(getValByHeader(logRow, ['dualplacement'])) || isMarkedPlacementType(logRow, 'dual'),
+      multiplePlacement: normalizePlacementMarker(getValByHeader(logRow, ['multipleplacement'])) || isMarkedPlacementType(logRow, 'multiple'),
       sourceSheet: 'TPO_Log', sourceRow: logRow.rowNumber
     });
     let applicationFlagWarning = '';
-    if (internationalPlacement) {
+    const dualPlacement = normalizePlacementMarker(getValByHeader(logRow, ['dualplacement'])) || isMarkedPlacementType(logRow, 'dual');
+    const multiplePlacement = normalizePlacementMarker(getValByHeader(logRow, ['multipleplacement'])) || isMarkedPlacementType(logRow, 'multiple');
+    if (internationalPlacement || dualPlacement || multiplePlacement
+      || record.dualPlacement !== undefined || record.multiplePlacement !== undefined || record.internationalPlacement !== undefined || record.isInternationalPlacement !== undefined) {
       try {
-        applicationFlagWarning = await syncOpeningAppliedInternationalFlag(logRow, internationalPlacement, record.applicationRowNumber);
+        applicationFlagWarning = await syncOpeningAppliedPlacementFields(logRow, internationalPlacement, record.applicationRowNumber);
       } catch (error) {
-        console.error('The international placement flag could not be copied to Opening_Applied:', error.message);
-        applicationFlagWarning = `The placement was saved, but Opening_Applied international classification could not be updated: ${error.message}`;
+        console.error('Placement classification could not be copied to Opening_Applied:', error.message);
+        applicationFlagWarning = `The placement was saved, but Opening_Applied placement classification could not be updated: ${error.message}`;
       }
     }
     return [directoryStatusWarning, applicationFlagWarning].filter(Boolean).join(' ');
@@ -1977,15 +1994,19 @@ const syncPositivePlacement = async record => {
   }
 };
 
-const syncOpeningAppliedInternationalFlag = async (logRow, internationalPlacement, preferredRowNumber) => {
+const syncOpeningAppliedPlacementFields = async (logRow, internationalPlacement, preferredRowNumber) => {
   const flag = normalizeInternationalPlacementFlag(internationalPlacement);
-  if (!flag) return '';
+  const dualPlacement = normalizePlacementMarker(getValByHeader(logRow, ['dualplacement'])) || isMarkedPlacementType(logRow, 'dual');
+  const multiplePlacement = normalizePlacementMarker(getValByHeader(logRow, ['multipleplacement'])) || isMarkedPlacementType(logRow, 'multiple');
   await loadDocInfo();
   const sheet = doc.sheetsByTitle['Opening_Applied'];
   if (!sheet) return 'Opening_Applied is unavailable.';
   const headers = await ensurePlacementHeaders(sheet, placementTrackingHeaders);
   const flagHeader = findPlacementHeader(headers, ['International Placement']);
-  if (!flagHeader) return 'Opening_Applied has no International Placement column.';
+  const dualHeader = findPlacementHeader(headers, ['Dual Placement']);
+  const multipleHeader = findPlacementHeader(headers, ['Multiple Placement']);
+  const fieldsToUpdate = Object.fromEntries([[flagHeader, flag], [dualHeader, dualPlacement ? 'Yes' : 'No'], [multipleHeader, multiplePlacement ? 'Yes' : 'No']].filter(([header, value]) => header && value !== ''));
+  if (!Object.keys(fieldsToUpdate).length) return 'Opening_Applied has no placement classification columns.';
   const cachedRows = getCache()?.applications || [];
   let target = Number(preferredRowNumber) >= 2
     ? cachedRows.find(row => Number(row.rowNumber) === Number(preferredRowNumber))
@@ -2016,10 +2037,10 @@ const syncOpeningAppliedInternationalFlag = async (logRow, internationalPlacemen
     }
     matchCount = matches.length;
     if (matches.length === 1) [target] = matches;
-    else if (matches.length > 1) return 'Multiple Opening_Applied rows match this student and employer, so their international flag was left unchanged.';
+    else if (matches.length > 1) return 'Multiple Opening_Applied rows match this student and employer, so placement classifications were left unchanged.';
   }
   if (target) {
-    await updateCachedSheetRow(sheet, target, { [flagHeader]: flag });
+    await updateCachedSheetRow(sheet, target, fieldsToUpdate);
     return '';
   }
   // Drive and directory placements may not have an application row yet. Add
@@ -2049,6 +2070,8 @@ const syncOpeningAppliedInternationalFlag = async (logRow, internationalPlacemen
       'Joining Status': getValByHeader(logRow, ['joiningstatus']),
       'Offer Letter': getValByHeader(logRow, ['offerletterstatus', 'offerletter']),
       'International Placement': flag,
+      'Dual Placement': dualPlacement ? 'Yes' : 'No',
+      'Multiple Placement': multiplePlacement ? 'Yes' : 'No',
       'Entry Source': getValByHeader(logRow, ['entrysource']) || 'Placement record'
     });
     const added = await sheet.addRow(rowData);
@@ -2496,6 +2519,8 @@ exports.updatePlacementLog = async (req, res) => {
     const previousDatePlaced = getValByHeader(row, ['dateplaced']);
     const previousPackage = getValByHeader(row, ['package', 'packagelpa']);
     const previousJoiningStatus = getValByHeader(row, ['joiningstatus']);
+    const previousDualPlacement = isMarkedPlacementType(row, 'dual');
+    const previousMultiplePlacement = isMarkedPlacementType(row, 'multiple');
     const previousOfferLetter = getValByHeader(row, ['offerletterstatus', 'offerletter']);
     const previousInternationalPlacement = normalizeInternationalPlacementFlag(getValByHeader(row, ['internationalplacement', 'isinternationalplacement']));
     const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']);
@@ -2535,6 +2560,10 @@ exports.updatePlacementLog = async (req, res) => {
     setValue(['dateplaced'], formatIndiaDate(req.body.datePlaced || ''));
     setValue(['package', 'package(lpa)'], req.body.packageLpa || '');
     setValue(['joiningstatus'], req.body.joiningStatus || '');
+    const dualPlacement = req.body.dualPlacement !== undefined ? normalizePlacementMarker(req.body.dualPlacement) : previousDualPlacement;
+    const multiplePlacement = req.body.multiplePlacement !== undefined ? normalizePlacementMarker(req.body.multiplePlacement) : previousMultiplePlacement;
+    setValue(['dualplacement'], dualPlacement ? 'Yes' : 'No');
+    setValue(['multipleplacement'], multiplePlacement ? 'Yes' : 'No');
     const internationalPlacement = req.body.isInternationalPlacement !== undefined
       ? normalizeInternationalPlacementFlag(req.body.isInternationalPlacement)
       : previousInternationalPlacement;
@@ -2556,7 +2585,10 @@ exports.updatePlacementLog = async (req, res) => {
     const changedFields = placementAuditChanges([
       ['Status', previousStatus, newStatus], ['Remarks', previousRemarks, newRemarks],
       ['Date placed', previousDatePlaced, newDatePlaced], ['Package', previousPackage, newPackage],
-      ['Joining status', previousJoiningStatus, newJoiningStatus], ['Offer letter', previousOfferLetter, offerLetterLink]
+      ['Joining status', previousJoiningStatus, newJoiningStatus],
+      ['International placement', previousInternationalPlacement, internationalPlacement],
+      ['Dual placement', previousDualPlacement, dualPlacement], ['Multiple placement', previousMultiplePlacement, multiplePlacement],
+      ['Offer letter', previousOfferLetter, offerLetterLink]
     ]);
     const placedSheetWarning = await syncPositivePlacement({
       name: getValByHeader(row, ['studentname', 'name']), phone: getValByHeader(row, ['contact', 'phone']),
@@ -2567,6 +2599,7 @@ exports.updatePlacementLog = async (req, res) => {
       position: getValByHeader(row, ['position', 'role']), placementOfficer: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || user?.name || user?.email || '',
       status: req.body.status || 'Placed', remarks: req.body.remarks || '', datePlaced: formatIndiaDate(req.body.datePlaced || ''),
       packageLpa: req.body.packageLpa || '', joiningStatus: req.body.joiningStatus || '',
+      dualPlacement, multiplePlacement,
       internationalPlacement,
       offerLetter: offerLetterLink, sourceSheet: 'TPO_Log', sourceRow: row.rowNumber, tpoLogRow: row
     });
@@ -2616,12 +2649,16 @@ exports.updatePlacedStudent = async (req, res) => {
     const status = req.body.status ?? getValByHeader(row, ['status']);
     const previousStatus = getValByHeader(row, ['status']);
     const previousJoiningStatus = getValByHeader(row, ['joiningstatus']);
+    const previousDualPlacement = isMarkedPlacementType(row, 'dual');
+    const previousMultiplePlacement = isMarkedPlacementType(row, 'multiple');
     const previousRemarks = getValByHeader(row, ['remarks']);
     const previousDatePlaced = getValByHeader(row, ['dateplaced']);
     const previousPackage = getValByHeader(row, ['package', 'packagelpa']);
     const previousOfferLetter = getValByHeader(row, ['offerletter', 'offerletterstatus']);
     const previousInternationalPlacement = normalizeInternationalPlacementFlag(getValByHeader(row, ['internationalplacement', 'isinternationalplacement']));
     const joiningStatus = req.body.joiningStatus ?? getValByHeader(row, ['joiningstatus']);
+    const dualPlacement = req.body.dualPlacement !== undefined ? normalizePlacementMarker(req.body.dualPlacement) : previousDualPlacement;
+    const multiplePlacement = req.body.multiplePlacement !== undefined ? normalizePlacementMarker(req.body.multiplePlacement) : previousMultiplePlacement;
     const remarks = req.body.remarks ?? getValByHeader(row, ['remarks']);
     const datePlaced = formatIndiaDate(req.body.datePlaced ?? getValByHeader(row, ['dateplaced']));
     const packageLpa = req.body.packageLpa ?? getValByHeader(row, ['package', 'packagelpa']);
@@ -2641,6 +2678,7 @@ exports.updatePlacedStudent = async (req, res) => {
       jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']),
       position: getValByHeader(row, ['position', 'role']), placementOfficer: (isTpo ? user?.name || user?.email : owner) || owner,
       status, joiningStatus, remarks, datePlaced, packageLpa, offerLetter,
+      dualPlacement, multiplePlacement,
       internationalPlacement,
       entrySource: 'Placed Students edit',
       statusHistory: getValByHeader(row, ['statushistory'])
@@ -2649,7 +2687,10 @@ exports.updatePlacedStudent = async (req, res) => {
     const changedFields = placementAuditChanges([
       ['Status', previousStatus, status], ['Joining status', previousJoiningStatus, joiningStatus],
       ['Remarks', previousRemarks, remarks], ['Date placed', previousDatePlaced, datePlaced],
-      ['Package', previousPackage, packageLpa], ['Offer letter', previousOfferLetter, offerLetter]
+      ['Package', previousPackage, packageLpa],
+      ['International placement', previousInternationalPlacement, internationalPlacement],
+      ['Dual placement', previousDualPlacement, dualPlacement], ['Multiple placement', previousMultiplePlacement, multiplePlacement],
+      ['Offer letter', previousOfferLetter, offerLetter]
     ]);
     let auditWarning = '';
     try {
@@ -2724,6 +2765,8 @@ exports.addApplication = async (req, res) => {
       'Company Name': appData.company || '', 'Position': appData.position || '', 'Placement Location': appData.placementLocation || '',
       'Placement Officer': tpoName || '', 'Status': appData.status || 'Placed', 
       'International Placement': internationalPlacement,
+      'Dual Placement': normalizePlacementMarker(appData.dualPlacement) ? 'Yes' : 'No',
+      'Multiple Placement': normalizePlacementMarker(appData.multiplePlacement) ? 'Yes' : 'No',
       'Entry Source': 'Manual Add',
       'Remarks': appData.remarks || '', 'DATE PLACED': formatIndiaDate(appData.datePlaced || ''),
       'PACKAGE (LPA)': appData.packageLpa || '', 'Offer Letter': offerLetterLink, 
@@ -2746,6 +2789,8 @@ exports.addApplication = async (req, res) => {
       status: appData.status || 'Placed',
       datePlaced: formatIndiaDate(appData.datePlaced || ''),
       offerLetter: offerLetterLink,
+      dualPlacement: normalizePlacementMarker(appData.dualPlacement),
+      multiplePlacement: normalizePlacementMarker(appData.multiplePlacement),
       internationalPlacement,
       entrySource: 'Manual Add',
       statusHistory: JSON.stringify(initialHistory)
@@ -2760,6 +2805,8 @@ exports.addApplication = async (req, res) => {
       status: appData.status || 'Placed',
       datePlaced: formatIndiaDate(appData.datePlaced || ''),
       offerLetter: offerLetterLink,
+      dualPlacement: normalizePlacementMarker(appData.dualPlacement),
+      multiplePlacement: normalizePlacementMarker(appData.multiplePlacement),
       internationalPlacement,
       applicationRowNumber: savedApplicationRow.rowNumber,
       sourceSheet: 'TPO_Log',
@@ -4696,6 +4743,232 @@ exports.getTalentino = async (req, res) => {
       visibleScheduledSessions: sessions.length
     }
   });
+};
+
+const TALENTINO_DAILY_REPORT_LOG = 'Talentino_Daily_Report_Log';
+const TALENTINO_DAILY_REPORT_HEADERS = [
+  'Delivery Key', 'Report Date', 'Branch', 'Recipient', 'Status', 'Session Count',
+  'Check-in Count', 'Generated At', 'Delivery Reference', 'Last Error'
+];
+
+const talentinoDateKey = value => {
+  const date = value instanceof Date ? value : safeParseDate(value);
+  if (!date || Number.isNaN(date.getTime())) return '';
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+  }).formatToParts(date);
+  const part = type => parts.find(item => item.type === type)?.value || '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
+};
+
+const talentinoBranchKey = value => normalizePlacementText(value).replace(/branch/g, '').trim();
+const talentinoHtmlEscape = value => String(value ?? '').replace(/[&<>"']/g, character => ({
+  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+}[character]));
+
+/**
+ * Send one branch digest for completed recent sessions. A scheduled session
+ * counts as completed when its status says it was conducted or when attendance
+ * was recorded. The three-day window catches attendance entered after the first
+ * morning run; the ledger prevents queued/sent messages from being delivered twice.
+ */
+exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
+  await refreshCache();
+  let cache = getCache();
+  if (!cache) throw new Error('Talentino data is not available after the cache refresh.');
+  if (cache.cacheSheetHealth?.tSched !== true || cache.cacheSheetHealth?.tAtt !== true) {
+    throw new Error('Talentino schedule or attendance sheet is unavailable; no branch report was sent.');
+  }
+
+  const previousIstDate = talentinoDateKey(new Date(Date.now() - 24 * 60 * 60 * 1000));
+  const requestedDate = String(reportDate || '').trim();
+  if (requestedDate && !/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) throw new Error('A valid Talentino report date is required.');
+  const targetDate = requestedDate || previousIstDate;
+  const parsedTargetDate = new Date(`${targetDate}T12:00:00Z`);
+  if (Number.isNaN(parsedTargetDate.getTime()) || parsedTargetDate.toISOString().slice(0, 10) !== targetDate) throw new Error('A valid Talentino report date is required.');
+  const reportDateWindow = new Set([targetDate]);
+  if (!requestedDate) {
+    for (let offset = 1; offset <= 2; offset++) {
+      const shifted = new Date(Date.UTC(parsedTargetDate.getUTCFullYear(), parsedTargetDate.getUTCMonth(), parsedTargetDate.getUTCDate() - offset, 12));
+      reportDateWindow.add(talentinoDateKey(shifted));
+    }
+  }
+  const scheduleRows = Array.isArray(cache.tSched) ? cache.tSched : [];
+  const attendanceRows = Array.isArray(cache.tAtt) ? cache.tAtt : [];
+  const resolveSession = createTalentinoSessionResolver(scheduleRows, getValByHeader, safeParseDate);
+  const schedulesByBranchDate = new Map();
+  const sessions = scheduleRows.filter(row => {
+    const branch = getValByHeader(row, ['branch', 'sittingbranch']);
+    const date = talentinoDateKey(getFirstNonEmptyValByHeader(row, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']));
+    const status = normalizePlacementText(getValByHeader(row, ['status', 'sessionstatus']));
+    if (!branch || !reportDateWindow.has(date) || /cancel|deleted|rejected/.test(status)) return false;
+    const key = `${talentinoBranchKey(branch)}|${date}`;
+    schedulesByBranchDate.set(key, [...(schedulesByBranchDate.get(key) || []), row]);
+    return true;
+  });
+
+  const matchedAttendances = new Map(sessions.map(row => [row, []]));
+  const scheduleSessionIdentity = row => normalizePlacementText(getValByHeader(row, ['sessionid', 'eventid', 'event id', 'id']));
+  const attendanceSessionIdentity = row => normalizePlacementText(getValByHeader(row, ['sessionid', 'eventid', 'event id']));
+  const getExactTalentinoValue = (row, aliases) => {
+    const headers = row?._worksheet?.headerValues || [];
+    const normalizeHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    for (const alias of aliases) {
+      const index = headers.findIndex(header => normalizeHeader(header) === normalizeHeader(alias));
+      if (index >= 0 && row._rawData?.[index] !== undefined && row._rawData[index] !== null) return String(row._rawData[index]).trim();
+    }
+    return '';
+  };
+  const talentinoTimeToken = row => {
+    const raw = getExactTalentinoValue(row, ['starttime', 'sessionstarttime', 'sessiontime', 'time', 'checkintime'])
+      || getExactTalentinoValue(row, ['timestamp', 'datetime', 'checkindate']);
+    const match = String(raw || '').match(/(?:^|[\sT])(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?/i);
+    if (!match) return normalizePlacementText(raw);
+    let hour = Number(match[1]);
+    const period = String(match[3] || '').toUpperCase();
+    if (period === 'AM' && hour === 12) hour = 0;
+    if (period === 'PM' && hour < 12) hour += 12;
+    return `${String(hour).padStart(2, '0')}:${match[2]}`;
+  };
+  const attendanceBelongsTo = (attendance, schedule) => {
+    const attendanceId = attendanceSessionIdentity(attendance);
+    const scheduleId = scheduleSessionIdentity(schedule);
+    if (attendanceId && scheduleId && attendanceId !== scheduleId) return false;
+    const resolved = resolveSession(attendance);
+    if (resolved.session) return resolved.session === schedule;
+    if (attendanceId || scheduleId) return Boolean(attendanceId && scheduleId && attendanceId === scheduleId);
+
+    const branch = getValByHeader(schedule, ['branch', 'sittingbranch']);
+    const date = talentinoDateKey(getFirstNonEmptyValByHeader(schedule, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']));
+    const candidates = schedulesByBranchDate.get(`${talentinoBranchKey(branch)}|${date}`) || [];
+    if (candidates.length === 1) return candidates[0] === schedule;
+    const attendanceCourse = normalizePlacementText(getValByHeader(attendance, ['course', 'program']));
+    const attendanceTitle = normalizePlacementText(getValByHeader(attendance, ['sessiontitle', 'title', 'topic', 'session']));
+    const attendanceTime = talentinoTimeToken(attendance);
+    const candidatesMatching = candidates.filter(candidate => {
+      const comparisons = [];
+      const scheduleCourse = normalizePlacementText(getValByHeader(candidate, ['course', 'program', 'assignedcourse']));
+      const scheduleTitle = normalizePlacementText(getValByHeader(candidate, ['sessiontitle', 'title', 'topic', 'session']));
+      const scheduleTime = talentinoTimeToken(candidate);
+      if (attendanceCourse && scheduleCourse) comparisons.push(attendanceCourse === scheduleCourse);
+      if (attendanceTitle && scheduleTitle) comparisons.push(attendanceTitle === scheduleTitle);
+      if (attendanceTime && scheduleTime) comparisons.push(attendanceTime === scheduleTime);
+      return comparisons.length > 0 && comparisons.every(Boolean);
+    });
+    return candidatesMatching.length === 1 && candidatesMatching[0] === schedule;
+  };
+
+  attendanceRows.forEach(row => {
+    const date = talentinoDateKey(getFirstNonEmptyValByHeader(row, ['timestamp', 'date', 'time', 'present check-ins date']));
+    if (!reportDateWindow.has(date)) return;
+    sessions.forEach(session => {
+      if (talentinoBranchKey(getValByHeader(session, ['branch', 'sittingbranch'])) !== talentinoBranchKey(getValByHeader(row, ['branch', 'sittingbranch']))) return;
+      if (attendanceBelongsTo(row, session)) matchedAttendances.get(session).push(row);
+    });
+  });
+
+  const branchDigests = new Map();
+  sessions.forEach(session => {
+    const attendees = matchedAttendances.get(session) || [];
+    const status = normalizePlacementText(getValByHeader(session, ['status', 'sessionstatus']));
+    const explicitlyCompleted = !/(^|\b)(not|pending|cancelled|canceled|scheduled|rejected)\b/.test(status)
+      && /\b(completed|complete|finished|conducted|done|held)\b/.test(status);
+    if (!attendees.length && !explicitlyCompleted) return;
+    const branch = getValByHeader(session, ['branch', 'sittingbranch']).trim();
+    const branchKey = talentinoBranchKey(branch);
+    const reportDate = talentinoDateKey(getFirstNonEmptyValByHeader(session, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']));
+    const digestKey = `${branchKey}|${reportDate}`;
+    if (!branchDigests.has(digestKey)) branchDigests.set(digestKey, { branch, reportDate, branchKey, sessions: [] });
+    branchDigests.get(digestKey).sessions.push({ schedule: session, attendees });
+  });
+
+  if (!branchDigests.size) return { reportDate: targetDate, checkedDates: [...reportDateWindow], sent: 0, queued: 0, skipped: 0, message: 'No completed Talentino sessions with attendance were found.' };
+
+  await loadDocInfo();
+  let ledger = doc.sheetsByTitle[TALENTINO_DAILY_REPORT_LOG];
+  if (!ledger) ledger = await doc.addSheet({ title: TALENTINO_DAILY_REPORT_LOG, headerValues: TALENTINO_DAILY_REPORT_HEADERS });
+  await ensurePlacementHeaders(ledger, TALENTINO_DAILY_REPORT_HEADERS);
+  const ledgerRows = await ledger.getRows();
+  let sent = 0;
+  let queued = 0;
+  let skipped = 0;
+  const cc = ['gifty@ipcsglobal.com', 'rakesh@ipcsglobal.com'];
+  const statusesThatMustNotRepeat = new Set(['sending', 'sent', 'queued', 'review']);
+  const formatDateLabel = key => {
+    const [year, month, day] = key.split('-').map(Number);
+    return new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+  };
+
+  for (const [branchKey, digest] of branchDigests) {
+    const deliveryKey = `talentino|${digest.reportDate}|${branchKey}`;
+    const previous = [...ledgerRows].reverse().find(row => getValByHeader(row, ['deliverykey']) === deliveryKey);
+    const previousStatus = normalizePlacementText(getValByHeader(previous, ['status']));
+    if (previous && statusesThatMustNotRepeat.has(previousStatus)) { skipped++; continue; }
+    const recipient = String(getBranchManagerEmail(digest.branch) || '').trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+      skipped++;
+      console.warn(`[TALENTINO DAILY REPORT] No valid branch-manager email was found for ${digest.branch} (${digest.reportDate}).`);
+      continue;
+    }
+
+    const allAttendanceRows = digest.sessions.flatMap(item => item.attendees);
+    const renderedSessions = digest.sessions.map(({ schedule, attendees }, sessionIndex) => {
+      const title = getValByHeader(schedule, ['sessiontitle', 'title', 'topic', 'session']) || 'Talentino training session';
+      const course = getValByHeader(schedule, ['course', 'program', 'assignedcourse']) || 'Course not specified';
+      const time = getValByHeader(schedule, ['starttime', 'time', 'sessiontime']);
+      const location = getValByHeader(schedule, ['location', 'venue', 'classroom']);
+      const rowsHtml = attendees.map((row, index) => {
+        const name = getValByHeader(row, ['name', 'student', 'studentname']) || 'Learner';
+        const roll = getValByHeader(row, ['roll', 'rollno', 'rollnumber', 'ipcsrollnumber']);
+        const rating = getValByHeader(row, ['rating', 'feedbackrating']);
+        const notes = getValByHeader(row, ['notes', 'remark', 'feedback']);
+        return `<tr><td style="padding:9px;border:1px solid #dbe5ec">${index + 1}</td><td style="padding:9px;border:1px solid #dbe5ec"><b>${talentinoHtmlEscape(name)}</b>${roll ? `<br><span style="color:#68798a;font-size:11px">${talentinoHtmlEscape(roll)}</span>` : ''}</td><td style="padding:9px;border:1px solid #dbe5ec">${talentinoHtmlEscape(rating || '—')}</td><td style="padding:9px;border:1px solid #dbe5ec">${talentinoHtmlEscape(notes || '—')}</td></tr>`;
+      }).join('') || '<tr><td colspan="4" style="padding:12px;border:1px solid #dbe5ec;color:#68798a">No attendance check-ins were recorded for this session.</td></tr>';
+      return `<section style="margin:0 0 22px"><div style="padding:14px 16px;background:#edf6f7;border-left:4px solid #12a99c"><b style="font-size:16px;color:#15364b">${sessionIndex + 1}. ${talentinoHtmlEscape(title)}</b><div style="margin-top:5px;font-size:12px;color:#526a7a">${talentinoHtmlEscape(course)}${time ? ` · ${talentinoHtmlEscape(time)}` : ''}${location ? ` · ${talentinoHtmlEscape(location)}` : ''} · ${attendees.length} check-in${attendees.length === 1 ? '' : 's'}</div></div><table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>${['S.No.', 'Learner', 'Rating', 'Notes'].map(label => `<th style="padding:9px;border:1px solid #dbe5ec;background:#173247;color:#fff;text-align:left">${label}</th>`).join('')}</tr></thead><tbody>${rowsHtml}</tbody></table></section>`;
+    }).join('');
+    const reportReference = `TAL-${digest.reportDate.replace(/-/g, '')}-${randomBytes(4).toString('hex').toUpperCase()}`;
+    const subject = `Talentino daily training report · ${digest.branch} · ${formatDateLabel(digest.reportDate)} [${reportReference}]`;
+    const html = `<div style="margin:0;padding:24px 12px;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#263a4a;line-height:1.6"><table cellpadding="0" cellspacing="0" style="width:100%;max-width:800px;margin:0 auto;background:#fff;border:1px solid #dce6ed;border-radius:14px;overflow:hidden"><tr><td style="padding:25px 30px;background:#102c3d;border-bottom:4px solid #29b8aa;color:#fff"><div style="font-size:11px;letter-spacing:2px;color:#83e2d4;font-weight:bold">IPCS GLOBAL · TALENTINO</div><h1 style="margin:8px 0 2px;font-size:25px">Daily training report</h1><div style="color:#ccdae3">${talentinoHtmlEscape(digest.branch)} · ${talentinoHtmlEscape(formatDateLabel(digest.reportDate))}</div></td></tr><tr><td style="padding:26px 30px"><p style="margin:0 0 16px">Dear Branch Manager,</p><p style="margin:0 0 20px">Here is the Talentino activity completed in your branch on <b>${talentinoHtmlEscape(formatDateLabel(digest.reportDate))}</b>. Sessions marked complete or with learner attendance are included.</p><div style="display:flex;gap:10px;margin:0 0 22px"><div style="padding:13px 16px;background:#e9f7f3;border-radius:8px"><b style="font-size:22px;color:#087c70">${digest.sessions.length}</b><div style="font-size:11px">sessions</div></div><div style="padding:13px 16px;background:#edf3ff;border-radius:8px"><b style="font-size:22px;color:#4e67bb">${allAttendanceRows.length}</b><div style="font-size:11px">attendance check-ins</div></div></div>${renderedSessions}<p style="margin:20px 0 0;color:#506476">Regards,<br><b>IPCS Global · Talentino</b></p></td></tr></table></div>`;
+
+    const rowData = {
+      'Delivery Key': deliveryKey,
+      'Report Date': digest.reportDate,
+      Branch: digest.branch,
+      Recipient: recipient,
+      Status: 'Sending',
+      'Session Count': String(digest.sessions.length),
+      'Check-in Count': String(allAttendanceRows.length),
+      'Generated At': formatIndiaTimestamp(),
+      'Delivery Reference': reportReference,
+      'Last Error': ''
+    };
+    let ledgerRow = previous;
+    if (ledgerRow) { ledgerRow.assign(rowData); await ledgerRow.save(); }
+    else { ledgerRow = await ledger.addRow(rowData); ledgerRows.push(ledgerRow); }
+
+    try {
+      const delivery = await sendMailAndLog({
+        from: process.env.EMAIL_USER ? `"IPCS Global Talentino" <${process.env.EMAIL_USER}>` : undefined,
+        to: recipient,
+        cc: cc.filter(address => address !== recipient),
+        subject,
+        text: `Talentino training report for ${digest.branch} on ${formatDateLabel(digest.reportDate)}: ${digest.sessions.length} session(s), ${allAttendanceRows.length} attendance check-in(s).`,
+        html
+      }, { name: `${digest.branch} Branch Manager`, email: recipient, type: 'Talentino next-day branch report', category: 'portal' });
+      const finalStatus = delivery?.queued ? 'Queued' : 'Sent';
+      ledgerRow.assign({ Status: finalStatus, 'Generated At': formatIndiaTimestamp(), 'Last Error': '' });
+      try { await ledgerRow.save(); } catch (saveError) { console.error(`[TALENTINO DAILY REPORT] Email accepted for ${digest.branch}, but its ledger status could not be saved:`, saveError.message); }
+      if (delivery?.queued) queued++; else sent++;
+    } catch (error) {
+      const status = isMailDeliveryUncertain(error) ? 'Review' : 'Failed';
+      ledgerRow.assign({ Status: status, 'Generated At': formatIndiaTimestamp(), 'Last Error': String(error.message || error).slice(0, 500) });
+      await ledgerRow.save().catch(saveError => console.error(`[TALENTINO DAILY REPORT] Could not record the ${status.toLowerCase()} status for ${digest.branch}:`, saveError.message));
+      console.error(`[TALENTINO DAILY REPORT] Could not send the ${digest.branch} report:`, error.message);
+      if (status === 'Review') skipped++;
+    }
+  }
+
+  return { reportDate: targetDate, checkedDates: [...reportDateWindow], sent, queued, skipped, branches: branchDigests.size };
 };
 
 const MAIN_PLACEMENT_COURSES = [
@@ -7222,6 +7495,24 @@ exports.getAdminUsers = (req, res) => {
   try {
     const cache = getCache();
     let allUsers = [];
+    const requestedTargetMonth = String(req.query?.month || '').trim();
+    const targetMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedTargetMonth)
+      ? requestedTargetMonth
+      : new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
+    const monthForStatsRow = row => {
+      const explicitMonth = String(getValByHeader(row, ['reportmonth']) || '').trim();
+      if (/^\d{4}-(0[1-9]|1[0-2])$/.test(explicitMonth)) return explicitMonth;
+      const date = safeParseDate(getFirstNonEmptyValByHeader(row, ['timestamp', 'date']));
+      return date ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(date).slice(0, 7) : '';
+    };
+    const monthlyTargetFor = (name, legacyTarget) => {
+      const normalizedName = normalizePlacementText(name);
+      const row = (cache?.tpoStats || []).find(stat => normalizePlacementText(getValByHeader(stat, ['user', 'tponame', 'placementofficer'])) === normalizedName
+        && monthForStatsRow(stat) === targetMonth);
+      const savedTarget = row ? getValByHeader(row, ['monthlytarget']) : '';
+      const currentMonth = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
+      return { target: savedTarget || (targetMonth === currentMonth ? legacyTarget || '' : ''), targetMonth };
+    };
 
     // 1. Process Contact Sheet (TPOs)
     if (cache.contacts) {
@@ -7244,7 +7535,7 @@ exports.getAdminUsers = (req, res) => {
             profilePhoto: getValByHeader(row, ['profilephoto', 'photo']) || '',
             // 🚨 READ THE NEW FIELDS
             empId: getValByHeader(row, ['empid', 'employeeid']) || '',
-            target: getValByHeader(row, ['targetofthemonth', 'target']) || ''
+            ...monthlyTargetFor(name, getValByHeader(row, ['targetofthemonth', 'target']))
           });
         }
       });
@@ -7271,7 +7562,7 @@ exports.getAdminUsers = (req, res) => {
             profilePhoto: getValByHeader(row, ['profile_photo_url', 'profilephoto']) || '',
             // 🚨 READ THE NEW FIELDS
             empId: getValByHeader(row, ['empid', 'employeeid']) || '',
-            target: getValByHeader(row, ['targetofthemonth', 'target']) || ''
+            ...monthlyTargetFor(name, getValByHeader(row, ['targetofthemonth', 'target']))
           });
         }
       });
@@ -7292,11 +7583,15 @@ const invalidateStaffAccountSessions = (email, row = null) => {
 
 exports.addAdminUser = async (req, res) => {
   try {
-    const { userName, contact, email, sittingBranch, assignedBranches, role, course, access, empId, target } = req.body;
+    const { userName, contact, email, sittingBranch, assignedBranches, role, course, access, empId, target, targetMonth } = req.body;
     const password = typeof req.body.newPassword === 'string' ? req.body.newPassword : req.body.password;
     const cleanEmail = String(email || '').trim().toLowerCase();
     if (!String(userName || '').trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return res.status(400).json({ success: false, message: 'Enter the employee name and a valid login email.' });
+    }
+    if (String(target ?? '').trim() && (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(targetMonth || '').trim())
+      || !isPlacementTrackerTpo({ role }))) {
+      return res.status(400).json({ success: false, message: 'Monthly targets require a TPO account and a selected target month.' });
     }
     const passwordError = validatePassword(password);
     if (passwordError) return res.status(400).json({ success: false, message: passwordError });
@@ -7354,15 +7649,11 @@ exports.addAdminUser = async (req, res) => {
     const hEmp = getSafeH(['empid', 'employeeid']); 
     if(hEmp && empId !== undefined) newRow[hEmp] = empId;
     
-    const hTgt = getSafeH(['targetofthemonth', 'target']); 
-    if(hTgt && target !== undefined) newRow[hTgt] = target;
-
     if (!getSafeH(['password'])) return res.status(500).json({ success: false, message: `The ${sheetName} sheet needs a Password column.` });
     await s.addRow(newRow);
 
-    // 🚨 NEW: Sync to TPO_Stats if Target is updated
-    if (target !== undefined && userName) {
-      await syncTpoStats(userName, { 'Monthly Target': target });
+    if (String(target ?? '').trim() && userName) {
+      await syncTpoStats(userName, { 'Monthly Target': String(target).trim() }, targetMonth);
     }
 
     await refreshCache();
@@ -7374,7 +7665,7 @@ exports.addAdminUser = async (req, res) => {
 
 exports.updateAdminUser = async (req, res) => {
   try {
-    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, role, course, access, empId, target } = req.body;
+    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, role, course, access, empId, target, targetMonth } = req.body;
     const passwordToSet = typeof req.body.newPassword === 'string' ? req.body.newPassword : (typeof req.body.password === 'string' ? req.body.password : '');
     const cleanEmail = String(email || '').trim().toLowerCase();
     const cleanSheet = String(sheet || '');
@@ -7384,6 +7675,10 @@ exports.updateAdminUser = async (req, res) => {
     }
     if (!String(userName || '').trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return res.status(400).json({ success: false, message: 'Enter the employee name and a valid login email.' });
+    }
+    if (String(target ?? '').trim() && (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(targetMonth || '').trim())
+      || !isPlacementTrackerTpo({ role }))) {
+      return res.status(400).json({ success: false, message: 'Monthly targets require a TPO account and a selected target month.' });
     }
     if (passwordToSet) {
       const passwordError = validatePassword(passwordToSet);
@@ -7444,9 +7739,6 @@ exports.updateAdminUser = async (req, res) => {
       const hEmp = getSafeH(['empid', 'employeeid']); 
       if(hEmp && empId !== undefined) updateObj[hEmp] = empId;
       
-      const hTgt = getSafeH(['targetofthemonth', 'target']); 
-      if(hTgt && target !== undefined) updateObj[hTgt] = target;
-
       if (passwordToSet) {
         const passwordHeader = getSafeH(['password']);
         if (!passwordHeader) return res.status(500).json({ success: false, message: `The ${cleanSheet} sheet needs a Password column.` });
@@ -7459,9 +7751,8 @@ exports.updateAdminUser = async (req, res) => {
       invalidateStaffAccountSessions(previousEmail);
       invalidateStaffAccountSessions(cleanEmail, rows[0]);
 
-      // 🚨 NEW: Sync to TPO_Stats if Target is updated
-      if (target !== undefined && userName) {
-        await syncTpoStats(userName, { 'Monthly Target': target });
+      if (String(target ?? '').trim() && userName) {
+        await syncTpoStats(userName, { 'Monthly Target': String(target).trim() }, targetMonth);
       }
 
       await refreshCache();
@@ -8963,19 +9254,11 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   const joinedStudentCount = [...studentPlacementRows.values()].filter(rows => rows.some(row => placementOutcome(getValByHeader(row, ['status']), getValByHeader(row, ['joiningstatus'])).joined)).length;
   const notJoinedStudentCount = [...studentPlacementRows.values()].filter(rows => rows.every(row => !placementOutcome(getValByHeader(row, ['status']), getValByHeader(row, ['joiningstatus'])).joined)
     && rows.some(row => placementOutcome(getValByHeader(row, ['status']), getValByHeader(row, ['joiningstatus'])).notJoined)).length;
-  const companiesByPlacementStudent = new Map([...studentPlacementRows.entries()].map(([identity, rows]) => [
-    identity,
-    new Set(rows.map(row => normalizePlacementText(getValByHeader(row, ['companyname', 'company']))).filter(Boolean))
-  ]));
-  const dualPlacementStudents = [...companiesByPlacementStudent.values()].filter(companies => companies.size > 1).length;
-  const reportMonthStart = new Date(`${month}-01T00:00:00`);
-  const earlierPlacedStudents = new Set(sourceTpoLogs.filter(row => {
-    if (isTpoActionLog(row, getValByHeader)) return false;
-    if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed') return false;
-    const date = safeParseDate(getFirstNonEmptyValByHeader(row, ['dateplaced', 'timestamp', 'date']));
-    return Boolean(date && date < reportMonthStart);
-  }).map((row, index) => studentKey(row, index)));
-  const multiplePlacementStudents = [...studentPlacementRows.keys()].filter(identity => earlierPlacedStudents.has(identity)).length;
+  // Dual and multiple counts follow the explicit classification saved on each
+  // placement row. This keeps them scoped to the selected month and never
+  // infers a category by scanning a student's older placement history.
+  const dualPlacementCount = placementRows.filter(row => isMarkedPlacementType(row, 'dual')).length;
+  const multiplePlacementCount = placementRows.filter(row => isMarkedPlacementType(row, 'multiple')).length;
   const packageRows = placementRows.map((row, index) => ({ row, identity: studentKey(row, index), ...monthlyReportPackage(getFirstNonEmptyValByHeader(row, ['package', 'salary', 'ctc', 'salarypackage', 'packageoffered'])) }))
     .filter(item => Number.isFinite(item.lpa));
   const highestLpa = packageRows.length ? Math.max(...packageRows.map(item => item.lpa)) : null;
@@ -9209,8 +9492,8 @@ exports.sendMonthlyTpoReport = async (req, res) => {
           ['Placement records', String(totalPlacementRecords)],
           ['Students joined', String(joinedStudentCount)],
           ['Students not joined', String(notJoinedStudentCount)],
-          ['Dual placements', String(dualPlacementStudents)],
-          ['Multiple placements', String(multiplePlacementStudents)]
+          ['Dual placements marked this month', String(dualPlacementCount)],
+          ['Multiple placements marked this month', String(multiplePlacementCount)]
         ])}
 
         ${sectionTitle('Poster / Video Status', 'Social media activity collected', '#9b5a9b')}

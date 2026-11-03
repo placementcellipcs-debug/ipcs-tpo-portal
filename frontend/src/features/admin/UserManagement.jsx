@@ -9,6 +9,7 @@ import { API_BASE } from '../../services/apiConfig';
 import SafeAvatar from '../../components/SafeAvatar';
 
 const TILE_COLORS = ['#10b981', '#3b82f6', 'var(--accent-primary)', '#f59e0b', '#ec4899', '#0ea5e9', '#ef4444', '#f43f5e'];
+const currentIndiaMonth = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
 
 const ALL_BRANCHES = [
   "Trivandrum", "Attingal", "Kollam", "Calicut", "Kannur", "Perinthalmanna", 
@@ -40,13 +41,13 @@ export default function UserManagement() {
     sheet: 'User', rowNumber: null, userName: '', email: '', contact: '', newPassword: '',
     role: 'Regional Technical Head', course: '', sittingBranch: '', 
     assignedBranches: [], access: 'View Only',
-    empId: '', target: '' 
+    empId: '', target: '', targetMonth: currentIndiaMonth()
   };
   const [formData, setFormData] = useState(initialFormState);
 
-  const fetchUsers = async () => {
+  const fetchUsers = async (month = currentIndiaMonth()) => {
     try {
-      const res = await axios.get(`${API_BASE}/api/admin/users`);
+      const res = await axios.get(`${API_BASE}/api/admin/users`, { params: { month } });
       if (res.data && res.data.success) {
         setUsers(res.data.users || []);
       }
@@ -63,7 +64,8 @@ export default function UserManagement() {
   }, []);
 
   const handleInputChange = (e) => {
-    setFormData({ ...formData, [e.target.name]: e.target.value });
+    const { name, value } = e.target;
+    setFormData(current => ({ ...current, [name]: value, ...(name === 'targetMonth' ? { target: '' } : {}) }));
   };
 
   const toggleBranchSelection = (branch) => {
@@ -98,7 +100,8 @@ export default function UserManagement() {
       assignedBranches: user.assignedBranches ? user.assignedBranches.split(',').map(b => b.trim()) : [],
       access: user.access,
       empId: user.empId || '', 
-      target: user.target || ''
+      target: user.target || '',
+      targetMonth: user.targetMonth || currentIndiaMonth()
     });
     setIsEditMode(true);
     setError('');
@@ -310,7 +313,7 @@ export default function UserManagement() {
                       <th>User Details</th>
                       <th>Access Level</th>
                       <th>Scope (Course/Branch)</th>
-                      <th>Employee targets</th>
+                      <th>Employee targets · {currentIndiaMonth()}</th>
                       <th style={{ textAlign: 'center' }}>Actions</th>
                     </tr>
                   </thead>
@@ -406,10 +409,14 @@ export default function UserManagement() {
                     <label style={{ color: '#a855f7', fontWeight: 'bold' }}>Employee ID (Gifty Access)</label>
                     <input type="text" name="empId" value={formData.empId} onChange={handleInputChange} className="sleek-input" placeholder="e.g. IPCS-EMP-1024" />
                   </div>
-                  <div className="form-group">
-                    <label style={{ color: '#a855f7', fontWeight: 'bold' }}>Target of the Month</label>
-                    <input type="number" name="target" value={formData.target} onChange={handleInputChange} className="sleek-input" placeholder="e.g. 15" />
-                  </div>
+                  {String(formData.role || '').toLowerCase().includes('tpo') || String(formData.role || '').toLowerCase().includes('placement officer') ? <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                    <label style={{ color: '#a855f7', fontWeight: 'bold' }}>Placement target · choose month</label>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <input type="month" name="targetMonth" value={formData.targetMonth || currentIndiaMonth()} onChange={handleInputChange} className="sleek-input" aria-label="Month for this TPO placement target" />
+                      <input type="number" name="target" min="0" step="1" value={formData.target} onChange={handleInputChange} className="sleek-input" placeholder="Target for selected month" />
+                    </div>
+                    <small style={{ display: 'block', color: 'var(--text-muted)', marginTop: '6px' }}>This changes the selected month only. To clear a target, enter 0.</small>
+                  </div> : null}
                 </div>
               )}
 

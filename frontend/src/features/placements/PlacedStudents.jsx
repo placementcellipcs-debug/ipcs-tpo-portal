@@ -92,7 +92,7 @@ export default function PlacedStudents() {
   const [addForm, setAddForm] = useState({ 
     name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', 
     company: '', position: '', placementLocation: '', status: 'Placed', remarks: '',
-    datePlaced: getTodayPortalDateInput(), packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null
+    datePlaced: getTodayPortalDateInput(), packageLpa: '', joiningStatus: 'Joined', dualPlacement: false, multiplePlacement: false, offerLetterFile: null
   });
 
   useEffect(() => {
@@ -128,6 +128,11 @@ export default function PlacedStudents() {
         }
         return '';
       };
+      const isMarkedPlacementType = (row, type) => {
+        const explicit = getVal(row, [type === 'dual' ? 'dualplacement' : 'multipleplacement']);
+        if (String(explicit || '').trim()) return /^(yes|true|1|marked)$/i.test(String(explicit).trim());
+        return String(getVal(row, ['placementtype']) || '').trim().toLowerCase() === type;
+      };
 
       const placedRecords = (placedResponse.data.records || []).map(row => ({
         rowNumber: row.rowNumber,
@@ -148,6 +153,8 @@ export default function PlacedStudents() {
         datePlaced: getVal(row, ['dateplaced', 'timestamp', 'date']),
         packageLpa: getVal(row, ['package', 'package(lpa)']),
         joiningStatus: getVal(row, ['joiningstatus']),
+        dualPlacement: isMarkedPlacementType(row, 'dual'),
+        multiplePlacement: isMarkedPlacementType(row, 'multiple'),
         offerLetter: getVal(row, ['offerletterstatus', 'offerletter']),
         tpoName: getVal(row, ['placementofficer', 'tpo']),
         tpoActionLog: getVal(row, ['tpoactionlog']),
@@ -247,7 +254,7 @@ export default function PlacedStudents() {
       return;
     }
     setSelectedApp(app);
-    setEditForm({ remarks: app.remarks, datePlaced: app.datePlaced, packageLpa: app.packageLpa, offerLetterFile: null, joiningStatus: app.joiningStatus, isInternationalPlacement: app.isInternationalPlacement === true });
+    setEditForm({ remarks: app.remarks, datePlaced: app.datePlaced, packageLpa: app.packageLpa, offerLetterFile: null, joiningStatus: app.joiningStatus, dualPlacement: app.dualPlacement === true, multiplePlacement: app.multiplePlacement === true, isInternationalPlacement: app.isInternationalPlacement === true });
     setIsEditModalOpen(true);
   };
 
@@ -263,6 +270,8 @@ export default function PlacedStudents() {
       formData.append('datePlaced', editForm.datePlaced || '');
       formData.append('packageLpa', editForm.packageLpa || '');
       formData.append('joiningStatus', editForm.joiningStatus || '');
+      formData.append('dualPlacement', String(Boolean(editForm.dualPlacement)));
+      formData.append('multiplePlacement', String(Boolean(editForm.multiplePlacement)));
       formData.append('isInternationalPlacement', String(Boolean(editForm.isInternationalPlacement)));
       if (editForm.offerLetterFile) formData.append('offerLetterFile', editForm.offerLetterFile);
 
@@ -343,6 +352,8 @@ export default function PlacedStudents() {
         datePlaced: addForm.datePlaced,
         packageLpa: addForm.packageLpa,
         joiningStatus: addForm.joiningStatus,
+        dualPlacement: Boolean(addForm.dualPlacement),
+        multiplePlacement: Boolean(addForm.multiplePlacement),
         ...(selectedInternationalChoice === undefined ? {} : { isInternationalPlacement: selectedInternationalChoice })
       };
       formData.append('appData', JSON.stringify(appData));
@@ -351,7 +362,7 @@ export default function PlacedStudents() {
       const response = await axios.post(`${API_BASE}/api/tpo/applications/add`, formData, { headers: { 'Content-Type': 'multipart/form-data' }});
       if (!response.data?.success) throw new Error(response.data?.message || 'The placement could not be added.');
       setIsAddModalOpen(false);
-      setAddForm({ name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', company: '', position: '', placementLocation: '', status: 'Placed', remarks: '', datePlaced: getTodayPortalDateInput(), packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null });
+      setAddForm({ name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', company: '', position: '', placementLocation: '', status: 'Placed', remarks: '', datePlaced: getTodayPortalDateInput(), packageLpa: '', joiningStatus: 'Joined', dualPlacement: false, multiplePlacement: false, offerLetterFile: null });
       if (response.data.warning) alert(`Placement added. ${response.data.warning}`);
       fetchData();
     } catch (error) {
@@ -595,6 +606,11 @@ export default function PlacedStudents() {
                 <label className="data-label">Package (LPA)</label>
                 <input type="number" step="0.1" className="sleek-input" placeholder="e.g. 4.5" style={{ width: '100%' }} value={editForm.packageLpa || ''} onChange={e => setEditForm({...editForm, packageLpa: e.target.value})} />
               </div>
+              <div style={{ gridColumn: '1 / -1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '11px', border: '1px solid rgba(167,139,250,.3)', borderRadius: '10px', color: '#c4b5fd' }}><input type="checkbox" checked={Boolean(editForm.dualPlacement)} onChange={e => setEditForm({ ...editForm, dualPlacement: e.target.checked })} /> Dual placement</label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '11px', border: '1px solid rgba(244,114,182,.3)', borderRadius: '10px', color: '#f9a8d4' }}><input type="checkbox" checked={Boolean(editForm.multiplePlacement)} onChange={e => setEditForm({ ...editForm, multiplePlacement: e.target.checked })} /> Multiple placement</label>
+                <small style={{ gridColumn: '1 / -1', color: 'var(--text-muted)' }}>Both can be marked; reports count each flag in the placement month.</small>
+              </div>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
@@ -658,6 +674,8 @@ export default function PlacedStudents() {
               <div><label className="data-label">Work location / country</label><input type="text" className="sleek-input" placeholder="e.g. Bengaluru, India or Dubai, UAE" style={{ width: '100%' }} value={addForm.placementLocation} onChange={e=>setAddForm({...addForm, placementLocation: e.target.value})} /></div>
               <div><label className="data-label">Date Placed</label><DateInput className="sleek-input" style={{ width: '100%' }} value={addForm.datePlaced} onChange={e=>setAddForm({...addForm, datePlaced: e.target.value})} /></div>
               <div><label className="data-label">Package (LPA)</label><input type="number" step="0.1" className="sleek-input" style={{ width: '100%' }} value={addForm.packageLpa} onChange={e=>setAddForm({...addForm, packageLpa: e.target.value})} /></div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '11px', border: '1px solid rgba(167,139,250,.3)', borderRadius: '10px', color: '#c4b5fd' }}><input type="checkbox" checked={Boolean(addForm.dualPlacement)} onChange={e => setAddForm({ ...addForm, dualPlacement: e.target.checked })} /> Dual placement</label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '11px', border: '1px solid rgba(244,114,182,.3)', borderRadius: '10px', color: '#f9a8d4' }}><input type="checkbox" checked={Boolean(addForm.multiplePlacement)} onChange={e => setAddForm({ ...addForm, multiplePlacement: e.target.checked })} /> Multiple placement</label>
               <div>
                 <label className="data-label">Joining Status</label>
                 <select className="sleek-select" style={{ width: '100%' }} value={addForm.joiningStatus} onChange={e=>setAddForm({...addForm, joiningStatus: e.target.value})}>
