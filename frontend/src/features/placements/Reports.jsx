@@ -246,9 +246,16 @@ export default function Reports() {
   }, [isSuperAdmin, myName, reportReloadKey, monthFilter]);
 
   const getCourse = course => reportMainCourse(course) || 'Information technology (IT)';
+  const matchesTpoStatsOwner = (stat, tpo) => {
+    const statOwner = normalizePlacementText(getVal(stat, 'user'));
+    if (tpoIdentityValues(tpo).includes(statOwner)) return true;
+    // The report API limits a TPO response to that signed-in officer's own
+    // TPO_Stats rows. Trust that server-side scope if an old row has a name
+    // that no longer exactly matches the current account profile.
+    return isTpo && !isSuperAdmin && tpoList.length === 1;
+  };
   const getMonthlyTarget = (tpo, reportMonth) => {
-    const identities = new Set(tpoIdentityValues(tpo));
-    const matchingRows = tpoStatsData.filter(stat => identities.has(normalizePlacementText(getVal(stat, 'user')))
+    const matchingRows = tpoStatsData.filter(stat => matchesTpoStatsOwner(stat, tpo)
       && getTpoActivityMonth(stat) === reportMonth);
     const rowsWithTarget = matchingRows.filter(stat => String(getVal(stat, 'monthlytarget') ?? '').trim() !== '');
     const savedTarget = rowsWithTarget.length ? getVal(rowsWithTarget[rowsWithTarget.length - 1], 'monthlytarget') : '';
@@ -466,7 +473,8 @@ export default function Reports() {
     const currentMonthPrefix = monthFilter; // "YYYY-MM" format
     const manualStats = tpoStatsData.filter(stat => {
       const statUser = normalizePlacementText(getVal(stat, 'user'));
-      return tpoIdentities.includes(statUser) && getTpoActivityMonth(stat) === currentMonthPrefix;
+      return matchesTpoStatsOwner(stat, t) && (tpoIdentities.includes(statUser) || (isTpo && !isSuperAdmin))
+        && getTpoActivityMonth(stat) === currentMonthPrefix;
     }).at(-1);
     const reportTarget = getMonthlyTarget(t, currentMonthPrefix);
 

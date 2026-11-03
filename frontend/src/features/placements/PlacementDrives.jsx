@@ -7,10 +7,12 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import InternationalPlacementPrompt from '../../components/InternationalPlacementPrompt';
+import { PortalToast } from '../../components/PortalFeedback';
 import { API_BASE } from '../../services/apiConfig';
 import { formatPortalDate, parsePortalDateTime } from '../../utils/dateFormat';
 
 const parseDate = dStr => parsePortalDateTime(dStr)?.getTime() || 0;
+const isPlacedDriveStatus = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '').startsWith('placed');
 
 export default function PlacementDrives() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -29,6 +31,7 @@ export default function PlacementDrives() {
   
   const [savingRow, setSavingRow] = useState(null);
   const [internationalPrompt, setInternationalPrompt] = useState(null);
+  const [toast, setToast] = useState(null);
 
   const fetchDrives = async () => {
     try {
@@ -56,23 +59,33 @@ export default function PlacementDrives() {
 
   const updateStudentStatus = async (student, newStatus, internationalChoice) => {
     const rowNumber = student.rowNumber;
-    if (/^placed$/i.test(String(newStatus || '').trim()) && !/^placed$/i.test(String(student.studentStatus || '').trim()) && internationalChoice === undefined) {
+    const hasSavedInternationalChoice = ['yes', 'no'].includes(String(student.isInternationalPlacement || '').trim().toLowerCase());
+    if (isPlacedDriveStatus(newStatus) && internationalChoice === undefined
+      && (!isPlacedDriveStatus(student.studentStatus) || !hasSavedInternationalChoice)) {
       setInternationalPrompt({ student, newStatus });
       return;
     }
     setSavingRow(rowNumber);
     try {
       const res = await axios.post(`${API_BASE}/api/tpo/drives/update`, { rowNumber, studentStatus: newStatus, isInternationalPlacement: internationalChoice });
-      if (res.data.success) {
-        setDrives(drives.map(d => d.rowNumber === rowNumber ? { ...d, studentStatus: newStatus, ...(internationalChoice === undefined ? {} : { isInternationalPlacement: internationalChoice }) } : d));
-        if (selectedDrive) {
-           setSelectedDrive(prev => ({
-              ...prev,
-              applicants: prev.applicants.map(a => a.rowNumber === rowNumber ? { ...a, studentStatus: newStatus, ...(internationalChoice === undefined ? {} : { isInternationalPlacement: internationalChoice }) } : a)
-           }));
-        }
+      if (!res.data?.success) throw new Error(res.data?.message || 'The drive status could not be saved.');
+      setDrives(previous => previous.map(d => d.rowNumber === rowNumber ? { ...d, studentStatus: newStatus, ...(internationalChoice === undefined ? {} : { isInternationalPlacement: internationalChoice ? 'Yes' : 'No' }) } : d));
+      if (selectedDrive) {
+        setSelectedDrive(prev => ({
+          ...prev,
+          applicants: prev.applicants.map(a => a.rowNumber === rowNumber ? { ...a, studentStatus: newStatus, ...(internationalChoice === undefined ? {} : { isInternationalPlacement: internationalChoice ? 'Yes' : 'No' }) } : a)
+        }));
       }
-    } catch { alert("Failed to update status"); }
+      setToast({
+        type: res.data.warning ? 'info' : 'success',
+        title: isPlacedDriveStatus(newStatus) ? 'Placement status saved' : 'Drive status saved',
+        message: res.data.warning || (isPlacedDriveStatus(newStatus)
+          ? 'Placement was synced to the TPO log, student directory, and placed-student register.'
+          : 'The student’s placement-drive status was saved.')
+      });
+    } catch (error) {
+      setToast({ type: 'error', title: 'Status could not be saved', message: error.response?.data?.message || error.message || 'Failed to update status.' });
+    }
     finally { setSavingRow(null); }
   };
 
@@ -383,6 +396,7 @@ export default function PlacementDrives() {
                             <CircleNotch size={24} className="ph-spin" /> Updating...
                           </div>
                         ) : (
+                          <>
                           <select 
                             className="premium-select" 
                             style={{ 
@@ -406,6 +420,24 @@ export default function PlacementDrives() {
                             <option style={{ color: '#fff' }} value="Offer Rejected">Offer Rejected</option>
                             <option style={{ color: '#fff' }} value="Not Interested">Not Interested</option>
                           </select>
+                          {isPlacedDriveStatus(currStat) && canEditDrive(selectedDrive) && (
+                            <button
+                              type="button"
+                              className="premium-btn secondary"
+                              onClick={() => updateStudentStatus(app, currStat)}
+                              style={{
+                                width: '100%',
+                                maxWidth: '220px',
+                                border: '1px solid rgba(45, 212, 191, .55)',
+                                color: '#99f6e4',
+                                background: 'rgba(13, 148, 136, .12)',
+                                cursor: 'pointer',
+                                fontWeight: 700
+                              }}
+                              title="Retry syncing this already placed drive entry to the placement register"
+                            >Sync placement record</button>
+                          )}
+                          </>
                         )}
                       </div>
 
@@ -428,6 +460,7 @@ export default function PlacementDrives() {
           if (pending) void updateStudentStatus(pending.student, pending.newStatus, choice);
         }}
       />
+      <PortalToast toast={toast} onDismiss={() => setToast(null)} />
       <style>{`
         .pd-wrapper { font-family: 'Inter', sans-serif; color: #f8fafc; }
         .glass-panel { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.05); }

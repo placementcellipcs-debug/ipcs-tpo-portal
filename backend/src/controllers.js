@@ -1829,6 +1829,7 @@ const appendPlacementHistory = ({ row, oldStatus, status, oldRemarks, remarks, o
 
 const placementTrackingHeaders = ['Interview Date', 'Interview Time', 'Interview Venue', 'Status History', 'International Placement', 'Joining Status'];
 const placementActionHeaders = ['TPO Action Log', 'Action Type', 'Action Details'];
+const isDrivePlacedOutcome = value => normalizePlacementText(value).startsWith('placed');
 const normalizePlacementMarker = value => /^(yes|true|1|marked|dual|multiple)$/i.test(String(value || '').trim());
 const effectivePlacementJoiningStatus = row => {
   const stored = String(getValByHeader(row, ['joiningstatus']) || '').trim();
@@ -1913,6 +1914,13 @@ const upsertPlacementTpoLog = async record => {
       if (liveSourceRow && Number(liveSourceRow.rowNumber) === Number(record.sourceRow)) existing = liveSourceRow;
     }
     if (!existing) throw new Error('The selected placement row is no longer available. Refresh the placed list before editing it.');
+  }
+  if (!existing && record.entrySource === 'Placement Drive') {
+    // Drive outcomes can be re-synced long after the UI first recorded them.
+    // Consult the live register so an old or replica-local cache cannot append
+    // the same drive placement a second time.
+    const liveRows = await logSheet.getRows();
+    existing = findLatestCanonicalPlacementLog(liveRows, targetKey);
   }
   if (!existing) existing = findLatestCanonicalPlacementLog(cachedRows, targetKey);
   const value = (key, aliases, fallback = '') => {
@@ -3977,6 +3985,14 @@ const readLiveTpoLogRows = async () => {
   return sheet.getRows();
 };
 
+const readLiveTpoStatsRows = async () => {
+  await loadDocInfo();
+  const sheet = doc.sheetsByTitle['TPO_Stats'];
+  if (!sheet) throw new Error('The TPO_Stats target sheet is unavailable.');
+  await sheet.loadHeaderRow();
+  return sheet.getRows();
+};
+
 exports.getReports = async (req, res) => {
   const { assignedBranchesArray, role, assignedCourse, department } = req.body;
   const reportUser = req.portalUser || {};
@@ -4157,15 +4173,48 @@ exports.getReports = async (req, res) => {
   });
   // 🚨 EXPORT TPO STATS FOR FRONTEND
   let tpoStatsList = [];
-  if (cache.tpoStats) {
-    cache.tpoStats.forEach(r => {
-      try {
-        const row = r.toObject();
-        const owner = getValByHeader(row, ['user', 'tponame', 'placementofficer']);
-        if (isAdminReportUser || isCentralTeamReportUser || placementOwnerMatchesUser(owner, reportUser)) tpoStatsList.push(row);
-      } catch(e) {}
-    });
+  let tpoStatsSourceHealthy = false;
+  let reportTpoStatsRows = cache.tpoStats || [];
+  try {
+    // Targets are month-specific and small; read their source tab live so a
+    // newly assigned target is visible even if the general portal cache lags.
+    reportTpoStatsRows = await readLiveTpoStatsRows();
+    tpoStatsSourceHealthy = true;
+  } catch (error) {
+    console.warn('Live TPO_Stats read failed; using the last cached target rows:', error.message);
   }
+  const reportUserIdentities = new Set([
+    reportUser.name, reportUser.email, reportUser.username, reportUser.loginId, reportUser.employeeId, reportUser.empId
+  ].map(normalizePlacementText).filter(Boolean));
+  const reportUserAccountKeys = new Set([
+    reportUser.email, reportUser.username, reportUser.loginId, reportUser.employeeId, reportUser.empId
+  ].map(normalizePlacementText).filter(Boolean));
+  const accountRows = [...(cache.contacts || []), ...(cache.users || [])];
+  const matchingAccountRows = accountRows.filter(account => {
+    const accountKeys = [
+      getValByHeader(account, ['email', 'mailid', 'mail']),
+      getValByHeader(account, ['username', 'loginid', 'login_id', 'userid', 'employeeid', 'empid'])
+    ].map(normalizePlacementText).filter(Boolean);
+    if (accountKeys.some(key => reportUserAccountKeys.has(key))) return true;
+    const accountName = normalizePlacementText(getValByHeader(account, ['name', 'username']));
+    return reportUserAccountKeys.size === 0 && accountName && accountName === normalizePlacementText(reportUser.name);
+  });
+  matchingAccountRows.forEach(account => {
+    [
+      getValByHeader(account, ['name', 'tponame', 'placementofficer']),
+      getValByHeader(account, ['email', 'mailid', 'mail']),
+      getValByHeader(account, ['username', 'loginid', 'login_id', 'userid']),
+      getValByHeader(account, ['employeeid', 'empid'])
+    ].map(normalizePlacementText).filter(Boolean).forEach(identity => reportUserIdentities.add(identity));
+  });
+  reportTpoStatsRows.forEach(r => {
+    try {
+      const row = typeof r?.toObject === 'function' ? r.toObject() : r;
+      const owner = getValByHeader(r, ['user', 'tponame', 'placementofficer']) || getValByHeader(row, ['user', 'tponame', 'placementofficer']);
+      const ownerMatches = reportUserIdentities.has(normalizePlacementText(owner));
+      if (isAdminReportUser || isCentralTeamReportUser || ownerMatches) tpoStatsList.push(row);
+    } catch(e) {}
+  });
 
   res.json({
     success: true,
@@ -4184,6 +4233,7 @@ exports.getReports = async (req, res) => {
       tpoLogSourceReadAt,
       tpoLogSourceHealthy: true,
       tpoLogSourceRowCount: sourceTpoLogs.length,
+      tpoStatsSourceHealthy,
       sheetLastSuccessfulSyncAt: cache.cacheSheetUpdatedAt || {},
       sheetHealth: cache.cacheSheetHealth || {},
       failedSheets: cache.cacheFailedSheets || []
@@ -7669,9 +7719,12 @@ exports.submitMou = async (req, res) => {
 // =========================================================
 // 🚨 ADMIN USERS & LMS MANAGEMENT
 // =========================================================
-exports.getAdminUsers = (req, res) => {
+exports.getAdminUsers = async (req, res) => {
   try {
     const cache = getCache();
+    let targetStatsRows = cache?.tpoStats || [];
+    try { targetStatsRows = await readLiveTpoStatsRows(); }
+    catch (error) { console.warn('Live TPO_Stats read failed while loading user targets; using cache:', error.message); }
     let allUsers = [];
     const requestedTargetMonth = String(req.query?.month || '').trim();
     const targetMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedTargetMonth)
@@ -7688,7 +7741,7 @@ exports.getAdminUsers = (req, res) => {
     const monthlyTargetFor = (identities, legacyTarget, role) => {
       if (!isPlacementTrackerTpo({ role })) return { target: '', targetMonth };
       const normalizedIdentities = new Set(identities.map(normalizePlacementText).filter(Boolean));
-      const matchingRows = (cache?.tpoStats || []).filter(stat => normalizedIdentities.has(normalizePlacementText(getValByHeader(stat, ['user', 'tponame', 'placementofficer'])))
+      const matchingRows = targetStatsRows.filter(stat => normalizedIdentities.has(normalizePlacementText(getValByHeader(stat, ['user', 'tponame', 'placementofficer'])))
         && monthForStatsRow(stat) === targetMonth);
       const rowsWithTarget = matchingRows.filter(stat => String(getValByHeader(stat, ['monthlytarget']) ?? '').trim() !== '');
       const row = rowsWithTarget[rowsWithTarget.length - 1] || matchingRows[matchingRows.length - 1];
@@ -8562,6 +8615,7 @@ exports.getDrives = async (req, res) => {
         regStatus: getValByHeader(row, ['status']) || '',
         regDate: getValByHeader(row, ['registeddate', 'timestamp', 'date']) || '',
         studentStatus: getValByHeader(row, ['studentstatus']) || '',
+        isInternationalPlacement: normalizeInternationalPlacementFlag(getValByHeader(row, ['internationalplacement', 'isinternationalplacement'])),
         remarks: getValByHeader(row, ['studentremarks', 'remarks', 'remark', 'tpo remarks']) || '',
         interviewDate: getValByHeader(row, ['interviewdate']) || '',
         interviewTime: getValByHeader(row, ['interviewtime', 'intervewtime']) || '',
@@ -8725,8 +8779,8 @@ exports.updateDriveStatus = async (req, res) => {
     const internationalPlacement = suppliedInternationalPlacement !== undefined
       ? normalizeInternationalPlacementFlag(suppliedInternationalPlacement)
       : oldInternationalPlacement;
-    if (normalizePlacementText(nextStatus) === 'placed'
-      && normalizePlacementText(oldStatus) !== 'placed' && !internationalPlacement) {
+    const isNextStatusPlaced = isDrivePlacedOutcome(nextStatus);
+    if (isNextStatusPlaced && !internationalPlacement) {
       return res.status(422).json({ success: false, message: 'Choose whether this placement is International or within India before marking the student Placed.' });
     }
     const headers = registrationHeaders;
@@ -8767,7 +8821,13 @@ exports.updateDriveStatus = async (req, res) => {
     // pending, and rejection changes are preserved as TPO action-audit rows;
     // they must not create or overwrite a canonical placed record.
     let placedSheetWarning = '';
-    if (normalizePlacementText(nextStatus) === 'placed') placedSheetWarning = await syncPositivePlacement({
+    if (isNextStatusPlaced) {
+      const matchingDriveEvent = findPlacementDriveEvent(getCache()?.events || [], current);
+      const driveName = getValByHeader(current, ['driveid', 'drivename', 'eventid', 'companyname']) || 'Placement Drive';
+      const driveCompany = getValByHeader(current, ['companyname', 'company', 'employer', 'organization'])
+        || getValByHeader(matchingDriveEvent, ['companyname', 'company', 'employer', 'organization', 'title', 'drivename'])
+        || `Drive ${driveName}`;
+      placedSheetWarning = await syncPositivePlacement({
       name: studentName || getValByHeader(student, ['studentname', 'name']),
       phone: getValByHeader(current, ['contact', 'phone']) || getValByHeader(student, ['contact', 'phone']),
       email: getValByHeader(current, ['mailid', 'email']) || getValByHeader(student, ['mailid', 'email']),
@@ -8776,16 +8836,17 @@ exports.updateDriveStatus = async (req, res) => {
       branch: getValByHeader(current, ['branch', 'sittingbranch']) || getValByHeader(student, ['branch', 'sittingbranch']),
       qual: getValByHeader(current, ['qualification', 'qual']) || getValByHeader(student, ['qualification', 'qual']),
       resume: getValByHeader(current, ['resume', 'cv']) || getValByHeader(student, ['resume', 'cv']),
-      jobId: `DRIVE - ${getValByHeader(current, ['driveid', 'drivename', 'eventid', 'companyname'])}`,
-      company: getValByHeader(current, ['companyname', 'company', 'driveid', 'drivename']),
+      jobId: `DRIVE - ${driveName}`,
+      company: driveCompany,
       position: getValByHeader(current, ['position', 'role']) || 'Placement drive participant',
       placementOfficer: getValByHeader(current, ['placementofficer', 'tpo', 'tponame']) || getPlacementDriveOwner(findPlacementDriveEvent(getCache()?.events || [], current)) || user?.name || user?.email || '',
-      status: nextStatus, joiningStatus: getValByHeader(current, ['joiningstatus']), remarks: nextRemarks,
+      status: 'Placed', joiningStatus: getValByHeader(current, ['joiningstatus']), remarks: nextRemarks,
       internationalPlacement,
-      datePlaced: getValByHeader(current, ['dateplaced']), packageLpa: getValByHeader(current, ['package']),
+      datePlaced: getValByHeader(current, ['dateplaced']) || changedAt, packageLpa: getValByHeader(current, ['package']),
       interviewDate: nextInterviewDate, interviewTime: nextInterviewTime, interviewVenue: nextInterviewVenue,
       statusHistory: JSON.stringify(nextHistory), entrySource: 'Placement Drive'
-    });
+      });
+    }
 
     const actionChanges = [];
     const recordActionChange = (label, before, after, wasProvided = true) => {
