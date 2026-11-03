@@ -69,10 +69,12 @@ export default function PlacementDriveTracker() {
     setSaving(current => ({ ...current, [student.rowNumber]: 'saving' }));
     try {
       const response = await axios.post(`${API_BASE}/api/tpo/drives/update`, {
-        rowNumber: student.rowNumber, studentStatus, remarks, isInternationalPlacement: internationalChoice
+        rowNumber: student.rowNumber, driveId: student.driveId || '',
+        roll: student.roll || '', name: student.name || '', regDate: student.regDate || '',
+        studentStatus, remarks, isInternationalPlacement: internationalChoice
       });
       if (!response.data?.success) throw new Error(response.data?.message || 'Unable to save this student.');
-      setLoadError('');
+      setLoadError(response.data.warning || '');
       setDrives(current => current.map(row => row.rowNumber === student.rowNumber ? { ...row, studentStatus, remarks, ...(internationalChoice === undefined ? {} : { isInternationalPlacement: internationalChoice }) } : row));
       setEdits(current => { const next = { ...current }; delete next[student.rowNumber]; return next; });
       setSaving(current => ({ ...current, [student.rowNumber]: 'success' }));

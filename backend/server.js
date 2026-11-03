@@ -555,6 +555,7 @@ app.use('/api/admin', requireSession('portal-admin'));
 app.get('/api/admin/users', controllers.getAdminUsers);
 app.post('/api/admin/users/add', controllers.addAdminUser);
 app.post('/api/admin/users/update', controllers.updateAdminUser);
+app.post('/api/admin/users/profile-photo', upload.single('photo'), controllers.updateAdminUserPhoto);
 app.post('/api/admin/users/delete', controllers.deleteAdminUser);
 app.get('/api/admin/courses', controllers.getCourses);
 app.post('/api/admin/courses/add', controllers.addCourse);

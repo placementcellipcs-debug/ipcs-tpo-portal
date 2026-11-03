@@ -1,15 +1,18 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import { createPortal } from 'react-dom';
 import { 
-  Users, UserPlus, Trash, PencilSimple, CircleNotch, WarningCircle, X, Prohibit,
+  Users, UserPlus, Trash, PencilSimple, CircleNotch, WarningCircle, X, Prohibit, Camera,
   CaretLeft, SquaresFour, List
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
 import SafeAvatar from '../../components/SafeAvatar';
+import { PortalConfirmDialog, PortalToast } from '../../components/PortalFeedback';
 
 const TILE_COLORS = ['#10b981', '#3b82f6', 'var(--accent-primary)', '#f59e0b', '#ec4899', '#0ea5e9', '#ef4444', '#f43f5e'];
 const currentIndiaMonth = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
+const isTpoRole = role => /\b(tpo|placement officer)\b/i.test(String(role || ''));
 
 const ALL_BRANCHES = [
   "Trivandrum", "Attingal", "Kollam", "Calicut", "Kannur", "Perinthalmanna", 
@@ -33,6 +36,13 @@ export default function UserManagement() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
   const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
+  const [targetDisplayMonth, setTargetDisplayMonth] = useState(currentIndiaMonth());
+  const [photoFile, setPhotoFile] = useState(null);
+  const [photoPreview, setPhotoPreview] = useState('');
+  const [photoSaving, setPhotoSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [deleteWorking, setDeleteWorking] = useState(false);
+  const [toast, setToast] = useState(null);
 
   // 🚨 SECURITY CHECK: IS THIS GIFTY?
   const isGifty = String(tpoData?.email || '').toLowerCase().includes('gifty');
@@ -41,11 +51,12 @@ export default function UserManagement() {
     sheet: 'User', rowNumber: null, userName: '', email: '', contact: '', newPassword: '',
     role: 'Regional Technical Head', course: '', sittingBranch: '', 
     assignedBranches: [], access: 'View Only',
-    empId: '', target: '', targetMonth: currentIndiaMonth()
+    empId: '', target: '', targetMonth: currentIndiaMonth(), profilePhoto: ''
   };
   const [formData, setFormData] = useState(initialFormState);
 
   const fetchUsers = async (month = currentIndiaMonth()) => {
+    setTargetDisplayMonth(month);
     try {
       const res = await axios.get(`${API_BASE}/api/admin/users`, { params: { month } });
       if (res.data && res.data.success) {
@@ -62,6 +73,41 @@ export default function UserManagement() {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    if (!isModalOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = event => { if (event.key === 'Escape' && !isSubmitting) setIsModalOpen(false); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isModalOpen, isSubmitting]);
+
+  useEffect(() => {
+    if (!photoFile) { setPhotoPreview(''); return undefined; }
+    const previewUrl = URL.createObjectURL(photoFile);
+    setPhotoPreview(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [photoFile]);
+
+  useEffect(() => {
+    const isTpoAccount = /tpo|placement officer/i.test(String(formData.role || ''));
+    if (!isModalOpen || !isEditMode || !isTpoAccount || !formData.rowNumber || !formData.targetMonth) return undefined;
+    let active = true;
+    axios.get(`${API_BASE}/api/admin/users`, { params: { month: formData.targetMonth } })
+      .then(response => {
+        if (!active || !response.data?.success) return;
+        const match = (response.data.users || []).find(user => user.sheet === formData.sheet && Number(user.rowNumber) === Number(formData.rowNumber));
+        setFormData(current => current.targetMonth === formData.targetMonth && current.target === ''
+          ? { ...current, target: match?.target ?? '' }
+          : current);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, [isModalOpen, isEditMode, formData.sheet, formData.rowNumber, formData.role, formData.targetMonth]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -81,6 +127,7 @@ export default function UserManagement() {
 
   const openAddModal = () => {
     setFormData(initialFormState);
+    setPhotoFile(null);
     setIsEditMode(false);
     setError('');
     setIsModalOpen(true);
@@ -101,8 +148,10 @@ export default function UserManagement() {
       access: user.access,
       empId: user.empId || '', 
       target: user.target || '',
-      targetMonth: user.targetMonth || currentIndiaMonth()
+      targetMonth: user.targetMonth || targetDisplayMonth || currentIndiaMonth(),
+      profilePhoto: user.profilePhoto || ''
     });
+    setPhotoFile(null);
     setIsEditMode(true);
     setError('');
     setIsModalOpen(true);
@@ -125,26 +174,76 @@ export default function UserManagement() {
         
       const res = await axios.post(endpoint, payload);
       if (res.data.success) {
+        let photoWarning = '';
+        if (!isEditMode && photoFile && res.data.user?.sheet && res.data.user?.rowNumber) {
+          const photoPayload = new FormData();
+          photoPayload.append('photo', photoFile);
+          photoPayload.append('sheet', res.data.user.sheet);
+          photoPayload.append('rowNumber', String(res.data.user.rowNumber));
+          try {
+            const photoResponse = await axios.post(`${API_BASE}/api/admin/users/profile-photo`, photoPayload);
+            if (!photoResponse.data?.success) throw new Error(photoResponse.data?.message || 'Photo could not be saved.');
+          } catch (photoError) {
+            photoWarning = ` The account was created, but its photo could not be saved: ${photoError.response?.data?.message || photoError.message}`;
+          }
+        }
         setIsModalOpen(false);
         setLoading(true);
-        fetchUsers(); 
+        setToast({ type: photoWarning ? 'info' : 'success', title: isEditMode ? 'User updated' : 'User created', message: `${formData.userName} was ${isEditMode ? 'updated' : 'added'} successfully.${photoWarning}` });
+        fetchUsers(formData.targetMonth || currentIndiaMonth());
       }
     } catch (err) {
-      setError(err.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'add'} user.`);
+      const message = err.response?.data?.message || `Failed to ${isEditMode ? 'update' : 'add'} user.`;
+      setError(message);
+      setToast({ type: 'error', title: isEditMode ? 'User could not be updated' : 'User could not be created', message });
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const handleDeleteUser = async (sheet, rowNumber, userName) => {
-    if (!window.confirm(`Are you sure you want to permanently delete user: ${userName}?`)) return;
+  const handleDeleteUser = (sheet, rowNumber, userName) => setDeleteTarget({ sheet, rowNumber, userName });
+
+  const confirmDeleteUser = async () => {
+    if (!deleteTarget) return;
+    setDeleteWorking(true);
     try {
-      const res = await axios.post(`${API_BASE}/api/admin/users/delete`, { sheet, rowNumber });
+      const res = await axios.post(`${API_BASE}/api/admin/users/delete`, { sheet: deleteTarget.sheet, rowNumber: deleteTarget.rowNumber });
       if (res.data.success) {
-        setUsers(users.filter(u => u.rowNumber !== rowNumber || u.sheet !== sheet));
+        setUsers(users.filter(u => u.rowNumber !== deleteTarget.rowNumber || u.sheet !== deleteTarget.sheet));
+        setToast({ type: 'success', title: 'User removed', message: `${deleteTarget.userName || 'The user'} was removed.` });
+        setDeleteTarget(null);
+      } else throw new Error(res.data?.message || 'The user could not be removed.');
+    } catch (deleteError) {
+      setToast({ type: 'error', title: 'Could not remove user', message: deleteError.response?.data?.message || deleteError.message || 'Please try again.' });
+    } finally {
+      setDeleteWorking(false);
+    }
+  };
+
+  const saveProfilePhoto = async (remove = false) => {
+    if (!formData.sheet || !formData.rowNumber || (!remove && !photoFile)) return;
+    setPhotoSaving(true);
+    try {
+      let response;
+      if (remove) {
+        response = await axios.post(`${API_BASE}/api/admin/users/profile-photo`, { sheet: formData.sheet, rowNumber: formData.rowNumber, remove: true });
+      } else {
+        const payload = new FormData();
+        payload.append('photo', photoFile);
+        payload.append('sheet', formData.sheet);
+        payload.append('rowNumber', String(formData.rowNumber));
+        response = await axios.post(`${API_BASE}/api/admin/users/profile-photo`, payload);
       }
-    } catch {
-      alert("Failed to delete user.");
+      if (!response.data?.success) throw new Error(response.data?.message || 'The profile photo could not be updated.');
+      const profilePhoto = remove ? '' : response.data.photoUrl || '';
+      setFormData(current => ({ ...current, profilePhoto }));
+      setPhotoFile(null);
+      setUsers(current => current.map(user => user.sheet === formData.sheet && Number(user.rowNumber) === Number(formData.rowNumber) ? { ...user, profilePhoto } : user));
+      setToast({ type: 'success', title: remove ? 'Profile photo removed' : 'Profile photo updated', message: `${formData.userName}'s profile photo was ${remove ? 'removed' : 'saved'}.` });
+    } catch (photoError) {
+      setToast({ type: 'error', title: 'Profile photo could not be saved', message: photoError.response?.data?.message || photoError.message || 'Please try again.' });
+    } finally {
+      setPhotoSaving(false);
     }
   };
 
@@ -288,9 +387,9 @@ export default function UserManagement() {
                         <div className="sc-detail-row"><span>Course</span><strong style={{ color: 'var(--text-main)' }}>{user.course === 'All Courses' ? 'Global Scope' : user.course}</strong></div>
                         <div className="sc-detail-row"><span>Branches</span><strong style={{ color: 'var(--text-main)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.assignedBranches}>{user.assignedBranches || 'Global'}</strong></div>
                         
-                        {(user.empId || user.target) && (
-                          <div className="sc-detail-row"><span>EMP ID / Tgt</span><strong style={{ color: '#a855f7' }}>{user.empId || 'N/A'} / {user.target || '0'}</strong></div>
-                        )}
+                        {isTpoRole(user.role)
+                          ? <div className="sc-detail-row"><span>Employee ID / target · {targetDisplayMonth}</span><strong style={{ color: '#a855f7' }}>{user.empId || 'N/A'} / {user.target || '0'}</strong></div>
+                          : user.empId && <div className="sc-detail-row"><span>Employee ID</span><strong style={{ color: '#a855f7' }}>{user.empId}</strong></div>}
                       </div>
                       
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', width: '100%' }}>
@@ -313,7 +412,7 @@ export default function UserManagement() {
                       <th>User Details</th>
                       <th>Access Level</th>
                       <th>Scope (Course/Branch)</th>
-                      <th>Employee targets · {currentIndiaMonth()}</th>
+                      <th>Employee ID{activeUsers.some(user => isTpoRole(user.role)) ? ` / monthly TPO target · ${targetDisplayMonth}` : ''}</th>
                       <th style={{ textAlign: 'center' }}>Actions</th>
                     </tr>
                   </thead>
@@ -352,7 +451,9 @@ export default function UserManagement() {
                             <span className="sub-text" style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={user.assignedBranches || user.sittingBranch}>{user.assignedBranches || user.sittingBranch || 'Global Scope'}</span>
                           </td>
                           <td>
-                            <span className="primary-text" style={{ color: '#a855f7', fontWeight: 'bold', fontSize: '0.85rem' }}>ID: {user.empId || 'N/A'} | Tgt: {user.target || '0'}</span>
+                            <span className="primary-text" style={{ color: '#a855f7', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                              ID: {user.empId || 'N/A'}{isTpoRole(user.role) ? ` | Target: ${user.target || '0'} · ${targetDisplayMonth}` : ''}
+                            </span>
                           </td>
                           <td style={{ textAlign: 'center' }}>
                             <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
@@ -383,25 +484,26 @@ export default function UserManagement() {
         )}
       </div>
 
-      {isModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(5px)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setIsModalOpen(false); }}>
-          <div className="modal-card" style={{ maxWidth: '650px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: '2rem', maxHeight: '90vh', overflowY: 'auto' }}>
+      {isModalOpen && typeof document !== 'undefined' && createPortal(
+        <div role="presentation" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.78)', backdropFilter: 'blur(6px)', zIndex: 100200, display: 'grid', placeItems: 'center', overflowY: 'auto', padding: '16px' }} onMouseDown={event => { if (event.target === event.currentTarget && !isSubmitting) setIsModalOpen(false); }}>
+          <div role="dialog" aria-modal="true" aria-labelledby="user-editor-title" className="modal-card" style={{ maxWidth: '760px', width: '100%', background: '#0f1523', border: '1px solid var(--card-border)', borderRadius: '16px', padding: 0, maxHeight: 'min(92dvh, 920px)', overflow: 'hidden', display: 'flex', flexDirection: 'column', colorScheme: 'dark' }}>
             
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '1rem', marginBottom: '1.5rem' }}>
-              <h2 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, background: '#121c2c', borderBottom: '1px solid #1e293b', padding: '18px 24px' }}>
+              <h2 id="user-editor-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '10px', fontSize: '1.25rem' }}>
                 {isEditMode ? <PencilSimple color="var(--accent-primary)" /> : <UserPlus color="var(--accent-primary)" />} 
                 {isEditMode ? 'Edit System User' : 'Add New System User'}
               </h2>
-              <X size={24} style={{ cursor: 'pointer', color: 'var(--text-muted)' }} onClick={() => setIsModalOpen(false)} />
+              <button type="button" aria-label="Close user editor" onClick={() => setIsModalOpen(false)} style={{ display: 'grid', placeItems: 'center', width: 36, height: 36, borderRadius: 9, border: '1px solid #334155', background: '#0b1320', color: 'var(--text-muted)', cursor: 'pointer' }}><X size={20} /></button>
             </div>
 
             {error && (
-              <div className="alert alert-error" style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="alert alert-error" style={{ margin: '14px 24px 0', display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
                 <WarningCircle size={20} /> {error}
               </div>
             )}
 
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+              <div style={{ overflowY: 'auto', overscrollBehavior: 'contain', scrollBehavior: 'smooth', scrollbarWidth: 'thin', scrollbarColor: '#475569 transparent', minHeight: 0, flex: 1, padding: '18px 24px' }}>
               
               {isGifty && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px', padding: '15px', background: 'rgba(168, 85, 247, 0.05)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '12px' }}>
@@ -418,6 +520,26 @@ export default function UserManagement() {
                     <small style={{ display: 'block', color: 'var(--text-muted)', marginTop: '6px' }}>This changes the selected month only. To clear a target, enter 0.</small>
                   </div> : null}
                 </div>
+              )}
+
+              {(
+                <section style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 18, padding: 14, borderRadius: 12, border: '1px solid rgba(56,189,248,.25)', background: 'rgba(14,165,233,.06)' }}>
+                  <div style={{ width: 64, height: 64, flexShrink: 0, overflow: 'hidden', borderRadius: '50%', border: '1px solid rgba(56,189,248,.45)', background: '#0b1320' }}>
+                    <SafeAvatar src={photoPreview || getDriveImage(formData.profilePhoto)} alt={`${formData.userName || 'User'} profile`} initial={formData.userName ? formData.userName.charAt(0).toUpperCase() : '?'} imageStyle={{ width: '100%', height: '100%', objectFit: 'cover' }} fallbackStyle={{ width: '100%', height: '100%', display: 'grid', placeItems: 'center', color: '#7dd3fc', fontWeight: 800, fontSize: 22 }} />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 210 }}>
+                    <strong style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#e2e8f0', marginBottom: 4 }}><Camera size={17} color="#7dd3fc" /> Profile photo</strong>
+                    <small style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>{isEditMode ? 'Choose a new image, then save it to this user’s profile.' : 'Choose an image to save with this new user account.'} JPG, PNG, or WebP.</small>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 11px', border: '1px solid #315171', borderRadius: 9, background: '#14243a', color: '#bae6fd', fontWeight: 750, cursor: 'pointer' }}>
+                      <Camera size={16} /> Choose photo
+                      <input type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setPhotoFile(event.target.files?.[0] || null)} style={{ display: 'none' }} />
+                    </label>
+                    {isEditMode && photoFile && <button type="button" disabled={photoSaving} onClick={() => saveProfilePhoto(false)} style={{ padding: '9px 11px', border: '1px solid rgba(52,211,153,.45)', borderRadius: 9, background: 'rgba(6,78,59,.3)', color: '#a7f3d0', fontWeight: 800, cursor: 'pointer' }}>{photoSaving ? 'Saving…' : 'Save photo'}</button>}
+                    {formData.profilePhoto && <button type="button" disabled={photoSaving} onClick={() => saveProfilePhoto(true)} style={{ padding: '9px 11px', border: '1px solid rgba(248,113,113,.35)', borderRadius: 9, background: 'rgba(127,29,29,.2)', color: '#fecaca', fontWeight: 750, cursor: 'pointer' }}>{photoSaving ? 'Working…' : 'Remove photo'}</button>}
+                  </div>
+                </section>
               )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
@@ -523,7 +645,8 @@ export default function UserManagement() {
                 )}
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              </div>
+              <div style={{ position: 'sticky', bottom: 0, zIndex: 2, display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 24px', borderTop: '1px solid #1e293b', background: '#121c2c', flexShrink: 0 }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>
                 <button type="submit" className="btn-action" style={{ width: 'auto' }} disabled={isSubmitting}>
                   {isSubmitting ? <CircleNotch size={20} className="ph-spin" /> : (isEditMode ? 'Save Changes' : 'Create User')}
@@ -532,8 +655,10 @@ export default function UserManagement() {
             </form>
 
           </div>
-        </div>
+        </div>, document.body
       )}
+      <PortalConfirmDialog open={Boolean(deleteTarget)} title="Remove system user?" message={`${deleteTarget?.userName || 'This account'} will lose portal access after this row is removed from the account sheet.`} confirmLabel="Remove user" tone="danger" busy={deleteWorking} onCancel={() => setDeleteTarget(null)} onConfirm={confirmDeleteUser} />
+      <PortalToast toast={toast} onDismiss={() => setToast(null)} />
     </Layout>
   );
 }

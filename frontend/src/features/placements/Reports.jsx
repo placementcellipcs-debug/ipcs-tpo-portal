@@ -4,15 +4,42 @@ import { useNavigate } from 'react-router-dom';
 import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus, PaperPlaneTilt, Trash } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import DataSourceStatus from '../../components/DataSourceStatus';
+import { PortalToast } from '../../components/PortalFeedback';
 import { API_BASE } from '../../services/apiConfig';
 import { normalizePlacementText } from '../../utils/placementRecords';
 import { isPlacedStatus, isPlacementEligiblePending, placementOutcome } from '../../utils/placementMetrics';
 import { parsePortalDateTime } from '../../utils/dateFormat';
 
+const REPORT_MAIN_COURSES = [
+  'Industrial Automation',
+  'BMS AND CCTV',
+  'Information technology (IT)',
+  'Digital Marketing',
+  'Embedded and IoT'
+];
+const reportMainCourse = value => {
+  const course = String(value || '').trim().toLowerCase().replace(/[_&/+-]+/g, ' ').replace(/\s+/g, ' ');
+  if (!course) return '';
+  if (course.includes('bms') || course.includes('cctv') || course.includes('building management')) return 'BMS AND CCTV';
+  if (course.includes('embedded') || course.includes('internet of things') || /(^|[^a-z])iot([^a-z]|$)/.test(course)
+    || ['microcontroller', 'vlsi'].some(token => course.includes(token))) return 'Embedded and IoT';
+  if (course.includes('automation') || course.includes('industrial') || course.includes('plc') || course.includes('scada')
+    || course.includes('robotics') || course.includes('mechatronics')) return 'Industrial Automation';
+  if (course.includes('digital') || course.includes('marketing') || /(^|[^a-z])dm([^a-z]|$)/.test(course)
+    || ['accdm', 'aidm', 'pdmdm'].includes(course.replace(/[^a-z]/g, ''))
+    || ['seo', 'social media marketing', 'content marketing'].some(token => course.includes(token))) return 'Digital Marketing';
+  if (course.includes('information technology') || /(^|[^a-z])it([^a-z]|$)/.test(course)
+    || ['python', 'java', 'software', 'data science', 'data analytics', 'artificial intelligence', 'machine learning',
+      'cyber security', 'web development', 'full stack', 'mern', 'mean stack', 'cloud computing', 'networking',
+      'programming', 'dotnet', '.net', 'php', 'bde'].some(token => course.includes(token))) return 'Information technology (IT)';
+  return '';
+};
+
 const getVal = (obj, searchStr) => {
   const key = Object.keys(obj || {}).find(k => k.toLowerCase().replace(/\s/g, '').includes(searchStr.toLowerCase().replace(/\s/g, '')));
   return key ? obj[key] : '';
 };
+const normalizeHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const effectiveJoiningStatus = row => {
   const status = String(getVal(row, 'joiningstatus') || '').trim();
   if (status) return status;
@@ -23,7 +50,28 @@ const effectiveJoiningStatus = row => {
   return '';
 };
 const isPlacementTypeMarked = (row, type) => normalizePlacementText(effectiveJoiningStatus(row)) === `${type}placement`;
-const reportTpoKey = tpo => normalizePlacementText(tpo?.userName || tpo?.name || tpo?.email);
+const tpoDisplayName = tpo => String(tpo?.userName || tpo?.name || tpo?.email || tpo?.username || tpo?.loginId || tpo?.empId || tpo?.employeeId || 'Unassigned TPO').trim();
+const tpoIdentityValues = tpo => [tpo?.userName, tpo?.name, tpo?.email, tpo?.username, tpo?.loginId, tpo?.empId, tpo?.employeeId].map(normalizePlacementText).filter(Boolean);
+const reportTpoKey = tpo => normalizePlacementText(tpo?.email || tpo?.userName || tpo?.name || tpo?.username || tpo?.loginId || tpo?.empId || tpo?.employeeId);
+const placementOwnerValue = row => {
+  const keys = Object.keys(row || {}).filter(key => !key.startsWith('_'));
+  for (const field of ['placementofficer', 'tponame', 'tpo', 'createdby', 'createdbyname', 'owner', 'postedby', 'addedby']) {
+    const key = keys.find(candidate => normalizeHeader(candidate) === field);
+    const value = key ? String(row[key] || '').trim() : '';
+    if (value) return value;
+  }
+  return '';
+};
+const normalizeBranch = value => normalizePlacementText(String(value || '').trim());
+const uniqueBranches = values => {
+  const branches = new Map();
+  (values || []).forEach(value => {
+    const label = String(value || '').trim();
+    const key = normalizeBranch(label);
+    if (key && !branches.has(key)) branches.set(key, label);
+  });
+  return [...branches.values()].sort((a, b) => a.localeCompare(b));
+};
 const safeReportLinks = value => String(value || '').split(/\r?\n/).map(link => link.trim()).filter(link => {
   try { return ['http:', 'https:'].includes(new URL(link).protocol); } catch { return false; }
 });
@@ -105,10 +153,10 @@ export default function Reports() {
   try { tpoData = tpoDataStr ? JSON.parse(tpoDataStr) : null; } catch { tpoData = null; }
   const role = String(tpoData?.role || '').toUpperCase();
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || role.includes('ADMIN') || role.includes('PLACEMENT TEAM') || ['GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].some(adminRole => role.includes(adminRole));
-  const isTpo = role === 'TPO' || role.includes('PLACEMENT OFFICER');
+  const isTpo = /\b(TPO|PLACEMENT OFFICER)\b/.test(role);
   const canSendMonthlyReport = isSuperAdmin || isTpo;
   const myName = (tpoData?.name || '').toLowerCase().trim();
-  const myIdentities = [tpoData?.name, tpoData?.email].map(normalizePlacementText).filter(Boolean);
+  const myIdentities = tpoIdentityValues(tpoData);
   
   const [activeTab, setActiveTab] = useState(1);
 
@@ -131,8 +179,8 @@ export default function Reports() {
   const [portalPlacementPending, setPortalPlacementPending] = useState(0);
   const [sendingReport, setSendingReport] = useState('');
   const [sendReportMessage, setSendReportMessage] = useState('');
-  // Replaced hardcoded courses with dynamic state (initialized with the 5 defaults)
-  const [mainCourses, setMainCourses] = useState(['Industrial Automation', 'BMS AND CCTV', 'Information technology (IT)', 'Digital Marketing', 'Embedded and IoT']);
+  const [toast, setToast] = useState(null);
+  const mainCourses = REPORT_MAIN_COURSES;
 
   // 🚨 NEW STATES FOR TPO ACTIVITY
   const [tpoStatsData, setTpoStatsData] = useState([]);
@@ -160,9 +208,10 @@ export default function Reports() {
         setEvents(data.events || []);
         setPlacementReportLogs(Array.isArray(data.placementReportLogs) ? data.placementReportLogs : []);
         setTpoStatsData(data.tpoStats || []);
-        setAllBranchesList([...new Set([...reportStudents, ...reportLogs].map(item => item.branch).filter(Boolean))].sort((a, b) => a.localeCompare(b)));
+        setAllBranchesList(uniqueBranches([...reportStudents, ...reportLogs, ...(Array.isArray(data.placementReportLogs) ? data.placementReportLogs : [])]
+          .map(item => item?.branch)));
         if (isSuperAdmin) {
-          const loggedTpos = [...new Set(reportLogs.map(log => getVal(log, 'placementofficer')).filter(Boolean))]
+          const loggedTpos = [...new Set(reportLogs.map(placementOwnerValue).filter(Boolean))]
             .map(name => ({ name, userName: name }));
           setTpoList(current => current.length ? current : loggedTpos);
         }
@@ -177,10 +226,9 @@ export default function Reports() {
 
     const auxiliaryRequests = [
       isSuperAdmin ? axios.get(`${API_BASE}/api/admin/users`, { params: { month: monthFilter } }) : Promise.resolve(null),
-      isSuperAdmin ? axios.get(`${API_BASE}/api/admin/branches`) : Promise.resolve(null),
-      axios.get(`${API_BASE}/api/courses`).catch(() => null)
+      isSuperAdmin ? axios.get(`${API_BASE}/api/admin/branches`) : Promise.resolve(null)
     ];
-    Promise.allSettled(auxiliaryRequests).then(([usersResult, branchesResult, coursesResult]) => {
+    Promise.allSettled(auxiliaryRequests).then(([usersResult, branchesResult]) => {
       if (!active) return;
       if (isSuperAdmin && usersResult.status === 'fulfilled' && usersResult.value?.data?.success) {
         const tpos = (usersResult.value.data.users || []).filter(user => /tpo|placement officer/i.test(user.role || ''));
@@ -188,33 +236,26 @@ export default function Reports() {
       }
       if (isSuperAdmin && branchesResult.status === 'fulfilled' && branchesResult.value?.data?.success) {
         const branches = (branchesResult.value.data.branches || []).map(branch => branch.branch).filter(Boolean).sort((a, b) => a.localeCompare(b));
-        if (branches.length) setAllBranchesList(branches);
-      }
-      const coursesResponse = coursesResult.status === 'fulfilled' ? coursesResult.value : null;
-      if (coursesResponse?.data?.success && coursesResponse.data.courses) {
-        const fetchedCourses = Object.keys(coursesResponse.data.courses).filter(course => course.trim() && course !== 'Others');
-        if (fetchedCourses.length) setMainCourses(fetchedCourses);
+        if (branches.length) setAllBranchesList(current => uniqueBranches([...current, ...branches]));
       }
     });
 
     return () => { active = false; };
   }, [isSuperAdmin, myName, reportReloadKey, monthFilter]);
 
-  // Course normalizer for matrix alignment
-  const getCourse = (c) => {
-    if(!c) return 'Others';
-    const lower = c.toLowerCase();
-    const matched = mainCourses.find(mc => lower.includes(mc.toLowerCase().split(' ')[0]));
-    if (matched) return matched;
-    
-    // Fallback mappings if names are abbreviated in students sheet
-    if(lower.includes('auto')) return mainCourses.find(c => c.includes('Automation')) || 'Industrial Automation';
-    if(lower.includes('bms') || lower.includes('cctv')) return mainCourses.find(c => c.includes('BMS')) || 'BMS AND CCTV';
-    if(lower.includes('it') || lower.includes('software')) return mainCourses.find(c => c.includes('IT') || c.includes('Information')) || 'Information technology (IT)';
-    if(lower.includes('dm') || lower.includes('digital')) return mainCourses.find(c => c.includes('Digital')) || 'Digital Marketing';
-    if(lower.includes('embed') || lower.includes('iot')) return mainCourses.find(c => c.includes('Embed')) || 'Embedded and IoT';
-    
-    return 'Others';
+  const getCourse = course => reportMainCourse(course) || 'Information technology (IT)';
+  const getPlacementCourse = placement => {
+    const course = reportMainCourse(getVal(placement, 'course'));
+    if (course) return course;
+    const roll = normalizePlacementText(getVal(placement, 'rollnumber'));
+    const name = normalizePlacementText(getVal(placement, 'studentname'));
+    const branch = normalizeBranch(getVal(placement, 'branch'));
+    const student = students.find(row => {
+      const rowRoll = normalizePlacementText(row.roll);
+      const rowName = normalizePlacementText(row.name);
+      return roll ? rowRoll === roll : Boolean(name && rowName === name && (!branch || normalizeBranch(row.branch) === branch));
+    });
+    return reportMainCourse(student?.course) || 'Information technology (IT)';
   };
 
   const checkMonth = (dateStr) => {
@@ -230,10 +271,10 @@ export default function Reports() {
   const checkPlacementMonth = row => checkMonth(getPlacementDate(row));
 
   const selectedReportTpo = isSuperAdmin && reportTpoFilter !== 'all'
-    ? tpoList.find(tpo => reportTpoKey(tpo) === reportTpoFilter || [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).includes(reportTpoFilter))
+    ? tpoList.find(tpo => reportTpoKey(tpo) === reportTpoFilter || tpoIdentityValues(tpo).includes(reportTpoFilter))
     : null;
-  const selectedTpoIdentities = new Set([selectedReportTpo?.userName, selectedReportTpo?.name, selectedReportTpo?.email].map(normalizePlacementText).filter(Boolean));
-  const isSelectedTpoLog = log => !selectedReportTpo || selectedTpoIdentities.has(normalizePlacementText(getVal(log, 'placementofficer')));
+  const selectedTpoIdentities = new Set(tpoIdentityValues(selectedReportTpo));
+  const isSelectedTpoLog = log => !selectedReportTpo || selectedTpoIdentities.has(normalizePlacementText(placementOwnerValue(log)));
   const visibleTpoList = selectedReportTpo ? [selectedReportTpo] : tpoList;
   const placementLogs = selectedReportTpo ? placementReportLogs.filter(isSelectedTpoLog) : placementReportLogs;
   const isAssignedBranch = (b) => {
@@ -256,51 +297,51 @@ export default function Reports() {
   const internationalRowsThisMonth = targetSourceRowsThisMonth.filter(log => log.isInternationalPlacement === true);
   const dualPlacementsThisMonth = targetSourceRowsThisMonth.filter(log => isPlacementTypeMarked(log, 'dual')).length;
   const multiplePlacementsThisMonth = targetSourceRowsThisMonth.filter(log => isPlacementTypeMarked(log, 'multiple')).length;
-  const reportTpoIdentities = new Set(tpoList.flatMap(tpo => [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean)));
-  const currentMonthRowsWithoutMatchedTpo = targetSourceRowsThisMonth.filter(log => !reportTpoIdentities.has(normalizePlacementText(getVal(log, 'placementofficer')))).length;
+  const reportTpoIdentities = new Set(tpoList.flatMap(tpoIdentityValues));
+  const currentMonthRowsWithoutMatchedTpo = targetSourceRowsThisMonth.filter(log => !reportTpoIdentities.has(normalizePlacementText(placementOwnerValue(log)))).length;
   const placedRowsWithoutUsableDate = targetSourceRows.filter(log => !getPlacementDate(log)).length;
   const targetLogHealthy = dataMeta?.tpoLogSourceHealthy ?? dataMeta?.sheetHealth?.tpoLogs;
   const targetLogLastSyncedAt = dataMeta?.tpoLogSourceReadAt || dataMeta?.sheetLastSuccessfulSyncAt?.tpoLogs || '';
 
   // 1. BRANCH ENROLLMENTS
-  const assignedBranches = [...new Set(students.filter(s => isAssignedBranch(s.branch)).map(s => s.branch))].filter(Boolean).sort();
+  const canonicalBranch = value => {
+    const target = normalizeBranch(value);
+    return allBranchesList.find(branch => normalizeBranch(branch) === target) || String(value || '').trim();
+  };
+  const assignedBranches = [...new Set(students.filter(s => isAssignedBranch(s.branch)).map(s => canonicalBranch(s.branch)))].filter(Boolean).sort((a, b) => a.localeCompare(b));
   const branchEnrolls = {};
-  const enrollTotals = { Others: 0, Total: 0 };
+  const enrollTotals = { Total: 0 };
   mainCourses.forEach(c => enrollTotals[c] = 0);
 
   assignedBranches.forEach(b => {
-    branchEnrolls[b] = { Others: 0, Total: 0 };
+    branchEnrolls[b] = { Total: 0 };
     mainCourses.forEach(c => branchEnrolls[b][c] = 0);
   });
 
   students.forEach(s => {
-    if (isAssignedBranch(s.branch) && branchEnrolls[s.branch]) {
+    const branch = canonicalBranch(s.branch);
+    if (isAssignedBranch(s.branch) && branchEnrolls[branch]) {
       const c = getCourse(s.course);
-      if (branchEnrolls[s.branch][c] !== undefined) {
-        branchEnrolls[s.branch][c]++;
-        enrollTotals[c]++;
-      } else {
-        branchEnrolls[s.branch].Others++;
-        enrollTotals.Others++;
-      }
-      branchEnrolls[s.branch].Total++;
+      branchEnrolls[branch][c]++;
+      enrollTotals[c]++;
+      branchEnrolls[branch].Total++;
       enrollTotals.Total++;
     }
   });
 
   // 2. BRANCH PLACEMENT MATRIX
   const branchPlaces = {};
-  const placeTotals = { Others: 0, International: 0, Total: 0 };
+  const placeTotals = { International: 0, Total: 0 };
   mainCourses.forEach(c => placeTotals[c] = 0);
 
   allBranchesList.forEach(b => {
-    branchPlaces[b] = { Others: 0, International: 0, Total: 0 };
+    branchPlaces[b] = { International: 0, Total: 0 };
     mainCourses.forEach(c => branchPlaces[b][c] = 0);
   });
 
   placementLogs.forEach(log => {
-    const b = getVal(log, 'branch');
-    const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
+    const b = canonicalBranch(getVal(log, 'branch'));
+    const logTpo = normalizePlacementText(placementOwnerValue(log));
     
     // Admins see all, TPOs see only their own placements
     const hasAccessToLog = isSuperAdmin || !logTpo || myIdentities.includes(logTpo);
@@ -308,14 +349,9 @@ export default function Reports() {
     if (branchPlaces[b] && checkPlacementMonth(log) && hasAccessToLog) {
       const outcome = placementOutcome(getVal(log, 'status'), effectiveJoiningStatus(log));
       if (outcome.placed) {
-        const c = getCourse(getVal(log, 'course'));
-        if (branchPlaces[b][c] !== undefined) {
-          branchPlaces[b][c]++;
-          placeTotals[c]++;
-        } else {
-          branchPlaces[b].Others++;
-          placeTotals.Others++;
-        }
+        const c = getPlacementCourse(log);
+        branchPlaces[b][c]++;
+        placeTotals[c]++;
         branchPlaces[b].Total++;
         placeTotals.Total++;
         if (log.isInternationalPlacement === true) {
@@ -329,17 +365,20 @@ export default function Reports() {
   // 3. BRANCH VS TPO STATUS
   const branchTPO = {};
   // Determine which TPOs to show as columns based on access level
-  const displayTpos = isSuperAdmin ? visibleTpoList.map(t => t.userName || t.name) : [tpoData?.name || tpoData?.email || 'My Placements'];
+  const displayTpos = isSuperAdmin
+    ? visibleTpoList.map(person => ({ key: reportTpoKey(person) || normalizePlacementText(tpoDisplayName(person)), label: tpoDisplayName(person), person }))
+      .filter((entry, index, list) => entry.key && list.findIndex(item => item.key === entry.key) === index)
+    : [{ key: reportTpoKey(tpoData) || 'my-placements', label: tpoDisplayName(tpoData), person: tpoData }];
   
   allBranchesList.forEach(b => {
     branchTPO[b] = { Total: 0 };
-    displayTpos.forEach(tName => branchTPO[b][tName] = 0);
+    displayTpos.forEach(tpo => branchTPO[b][tpo.key] = 0);
   });
 
   placementLogs.forEach(log => {
-    const b = getVal(log, 'branch');
+    const b = canonicalBranch(getVal(log, 'branch'));
     const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
-    const logTpoRaw = getVal(log, 'placementofficer');
+    const logTpoRaw = placementOwnerValue(log);
     const logTpo = normalizePlacementText(logTpoRaw);
 
     if (branchTPO[b] && checkMonth(dStr)) {
@@ -347,16 +386,13 @@ export default function Reports() {
       if (outcome.placed) {
         
         // Find matching column
-        const matchedTpoColumn = displayTpos.find(t => {
-           const owner = isSuperAdmin
-             ? tpoList.find(person => (person.userName || person.name) === t)
-             : tpoData;
-           const identities = [owner?.userName, owner?.name, owner?.email].map(normalizePlacementText).filter(Boolean);
+        const matchedTpoColumn = displayTpos.find(tpo => {
+           const identities = tpoIdentityValues(tpo.person);
            return identities.includes(logTpo);
         });
 
-        if (matchedTpoColumn && branchTPO[b][matchedTpoColumn] !== undefined) {
-          branchTPO[b][matchedTpoColumn]++;
+        if (matchedTpoColumn && branchTPO[b][matchedTpoColumn.key] !== undefined) {
+          branchTPO[b][matchedTpoColumn.key]++;
           branchTPO[b].Total++;
         }
       }
@@ -365,16 +401,16 @@ export default function Reports() {
 
   // 4. PIPELINE TRACKER
   const pipeline = {};
-  mainCourses.concat(['Others']).forEach(c => pipeline[c] = { placed: 0, joined: 0, offers: 0, notJoined: 0, pendingJoining: 0, dual: 0, multiple: 0 });
+  mainCourses.forEach(c => pipeline[c] = { placed: 0, joined: 0, offers: 0, notJoined: 0, pendingJoining: 0, dual: 0, multiple: 0 });
 
   placementLogs.forEach(log => {
     const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
-    const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
+    const logTpo = normalizePlacementText(placementOwnerValue(log));
     const hasAccessToLog = isSuperAdmin || !logTpo || myIdentities.includes(logTpo);
 
     if (!checkMonth(dStr) || !hasAccessToLog) return;
     
-    const c = getCourse(getVal(log, 'course'));
+    const c = getPlacementCourse(log);
     if (!pipeline[c]) return;
     const outcome = placementOutcome(getVal(log, 'status'), effectiveJoiningStatus(log));
     if (outcome.placed) pipeline[c].placed++;
@@ -388,26 +424,22 @@ export default function Reports() {
 
   // 5. PENDING STUDENTS
   const pendingByCourse = {};
-  const pendTotals = { Others: 0, Total: 0 };
+  const pendTotals = { Total: 0 };
   mainCourses.forEach(c => pendTotals[c] = 0);
 
   assignedBranches.forEach(b => {
-    pendingByCourse[b] = { Others: 0, Total: 0 };
+    pendingByCourse[b] = { Total: 0 };
     mainCourses.forEach(c => pendingByCourse[b][c] = 0);
   });
   
   students.forEach(s => {
-    if (isAssignedBranch(s.branch) && pendingByCourse[s.branch]) {
+    const branch = canonicalBranch(s.branch);
+    if (isAssignedBranch(s.branch) && pendingByCourse[branch]) {
       if (isPlacementEligiblePending(s.placementStatus, s.coursePercentage)) {
         const c = getCourse(s.course);
-        if (pendingByCourse[s.branch][c] !== undefined) {
-          pendingByCourse[s.branch][c]++;
-          pendTotals[c]++;
-        } else {
-          pendingByCourse[s.branch].Others++;
-          pendTotals.Others++;
-        }
-        pendingByCourse[s.branch].Total++;
+        pendingByCourse[branch][c]++;
+        pendTotals[c]++;
+        pendingByCourse[branch].Total++;
         pendTotals.Total++;
       }
     }
@@ -415,15 +447,17 @@ export default function Reports() {
 
   // TPO ACTIVITY LOGIC
   const tpoActivity = visibleTpoList.map(t => {
-    const targetName = (t.userName || t.name || '').toLowerCase().trim();
-    const tpoIdentities = [t.userName, t.name, t.email].map(normalizePlacementText).filter(Boolean);
+    const targetName = normalizePlacementText(tpoDisplayName(t));
+    const tpoIdentities = tpoIdentityValues(t);
     
     // 🚨 Find manual stats for this TPO in the selected month
     const currentMonthPrefix = monthFilter; // "YYYY-MM" format
     const manualStats = tpoStatsData.find(stat => {
       const statUser = normalizePlacementText(getVal(stat, 'user'));
-      return statUser === normalizePlacementText(targetName) && getTpoActivityMonth(stat) === currentMonthPrefix;
+      return tpoIdentities.includes(statUser) && getTpoActivityMonth(stat) === currentMonthPrefix;
     });
+    const reportTarget = getVal(manualStats, 'monthlytarget')
+      || (String(t.targetMonth || '') === currentMonthPrefix ? t.target : '');
 
     // Application totals come from OpeningApplied; TPO_Log is only the status history.
     const appsForTpo = applications.filter(application => {
@@ -433,7 +467,7 @@ export default function Reports() {
 
     // Joining Status from TPO Logs
     const logs = placementLogs.filter(log => {
-       const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
+       const logTpo = normalizePlacementText(placementOwnerValue(log));
        const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
        return checkMonth(dStr) && tpoIdentities.includes(logTpo);
     });
@@ -458,7 +492,8 @@ export default function Reports() {
       .map(name => [normalizePlacementText(name), name]).filter(([key]) => key)).values()];
 
     return {
-      tpo: t.userName || t.name,
+      tpo: tpoDisplayName(t),
+      reportTarget,
       reportMonth: currentMonthPrefix,
       hasActivitySession: Boolean(manualStats),
       companiesVisited: manualStats ? (companyItems.length || parseInt(manualStats['Companies Visited'] || 0, 10) || 0) : autoUniqueCompanies,
@@ -486,11 +521,6 @@ export default function Reports() {
       ? { type: item.type, companies: (item.companies || []).slice(0, 10).map(company => String(company || '').trim()).filter(Boolean) }
       : { type: item.type, title: String(item.title || '').trim(), value: String(item.value || '').trim(), postingStatus: getActivityPostingStatus(item) })
       .filter(item => item.type === 'company_visit' ? item.companies.length > 0 : (item.title || item.value));
-    const untitledItem = activityItems.find(item => item.type !== 'company_visit' && !item.title);
-    if (untitledItem) {
-      alert(`Add a title or name for each ${getActivityTypeLabel(untitledItem.type)}.`);
-      return;
-    }
     const invalidLinkItem = activityItems.find(item => {
       if (item.type === 'company_visit') return false;
       if (item.postingStatus === 'completed' && !item.value) return true;
@@ -498,9 +528,9 @@ export default function Reports() {
       try { return !['http:', 'https:'].includes(new URL(item.value).protocol); } catch { return true; }
     });
     if (invalidLinkItem) {
-      alert(invalidLinkItem.postingStatus === 'completed' && !invalidLinkItem.value
+      setToast({ type: 'error', title: 'Check the activity link', message: invalidLinkItem.postingStatus === 'completed' && !invalidLinkItem.value
         ? `Add the published link or set ${getActivityTypeLabel(invalidLinkItem.type)} to Pending to post.`
-        : `Enter a valid http or https link for ${getActivityTypeLabel(invalidLinkItem.type)}.`);
+        : `Enter a valid http or https link for ${getActivityTypeLabel(invalidLinkItem.type)}.` });
       return;
     }
     const companyNames = activityItems.filter(item => item.type === 'company_visit').flatMap(item => item.companies);
@@ -551,10 +581,11 @@ export default function Reports() {
           return current.map((stat, index) => index === matchingIndex ? { ...stat, ...updatedStats } : stat);
         });
         setShowActivityModal(false);
+        setToast({ type: 'success', title: activityForm.mode === 'edit' ? 'Activity updated' : 'Activity saved', message: `${activityItems.length} item${activityItems.length === 1 ? '' : 's'} saved for ${activityForm.reportMonth}.` });
       }
     } catch (err) {
       const errorMsg = err.response?.data?.message || err.message || "Unknown error occurred";
-      alert(`Failed to update stats: ${errorMsg}`);
+      setToast({ type: 'error', title: 'Activity could not be saved', message: errorMsg });
     } finally {
       setIsSubmitting(false);
     }
@@ -591,9 +622,13 @@ export default function Reports() {
       if (!response.data?.success) throw new Error(response.data?.message || 'The report could not be sent.');
       const cc = Array.isArray(response.data.cc) ? response.data.cc : [];
       const delivery = response.data.queued ? 'queued as a new email' : 'sent as a new email';
-      setSendReportMessage(`Monthly report ${delivery} to ${response.data.to || 'gifty@ipcsglobal.com'}${cc.length ? ` · CC: ${cc.join(', ')}` : ''} (${displayMonthName}).`);
+      const message = `Monthly report ${delivery} to ${response.data.to || 'gifty@ipcsglobal.com'}${cc.length ? ` · CC: ${cc.join(', ')}` : ''} (${displayMonthName}).`;
+      setSendReportMessage(message);
+      setToast({ type: 'success', title: 'Monthly report sent', message });
     } catch (error) {
-      setSendReportMessage(error.response?.data?.message || error.message || 'The report could not be sent.');
+      const message = error.response?.data?.message || error.message || 'The report could not be sent.';
+      setSendReportMessage(message);
+      setToast({ type: 'error', title: 'Monthly report could not be sent', message });
     } finally {
       setSendingReport('');
     }
@@ -710,21 +745,25 @@ export default function Reports() {
             </section>
             {visibleTpoList.map((tpo, idx) => {
               const placedStudentsLog = placementLogs.filter(log => {
-                const logTpo = normalizePlacementText(getVal(log, 'placementofficer'));
-                const identities = [tpo.userName, tpo.name, tpo.email].map(normalizePlacementText).filter(Boolean);
+                const logTpo = normalizePlacementText(placementOwnerValue(log));
+                const identities = tpoIdentityValues(tpo);
                 if (!logTpo || !identities.includes(logTpo)) return false;
                 if (!isPlacedStatus(getVal(log, 'status'))) return false;
 
                 return checkPlacementMonth(log);
               });
 
-              const counts = Object.fromEntries(mainCourses.concat(['Others']).map(course => [course, 0]));
+              const counts = Object.fromEntries(mainCourses.map(course => [course, 0]));
               placedStudentsLog.forEach(placement => {
-                const course = getCourse(getVal(placement, 'course'));
+                const course = getPlacementCourse(placement);
                 counts[course] = (counts[course] || 0) + 1;
               });
               const totalPlacements = placedStudentsLog.length;
-              const parsedTarget = Number.parseInt(tpo.target, 10);
+              const tpoIdentities = tpoIdentityValues(tpo);
+              const targetStatsRow = tpoStatsData.find(stat => tpoIdentities.includes(normalizePlacementText(getVal(stat, 'user'))) && getTpoActivityMonth(stat) === monthFilter);
+              const reportTarget = getVal(targetStatsRow, 'monthlytarget')
+                || (String(tpo.targetMonth || '') === monthFilter ? tpo.target : '');
+              const parsedTarget = Number.parseInt(reportTarget, 10);
               const targetGoal = Number.isFinite(parsedTarget) ? parsedTarget : 0;
               const dualCount = placedStudentsLog.filter(log => isPlacementTypeMarked(log, 'dual')).length;
               const multipleCount = placedStudentsLog.filter(log => isPlacementTypeMarked(log, 'multiple')).length;
@@ -751,8 +790,8 @@ export default function Reports() {
 
                     <div className="hc-subheader" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><Briefcase size={24} weight="fill" /> Current Status On Placements</span><div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}><span style={{ color: '#7dd3fc', fontSize: '.82rem', padding: '6px 10px', border: '1px solid rgba(56,189,248,.35)', borderRadius: '999px', background: 'rgba(14,116,144,.14)' }}>International · {placedStudentsLog.filter(log => log.isInternationalPlacement === true).length}</span><span style={{ color: '#c4b5fd', fontSize: '.82rem', padding: '6px 10px', border: '1px solid rgba(167,139,250,.35)', borderRadius: '999px', background: 'rgba(109,40,217,.13)' }}>Dual placement · {dualCount}</span><span style={{ color: '#f9a8d4', fontSize: '.82rem', padding: '6px 10px', border: '1px solid rgba(244,114,182,.35)', borderRadius: '999px', background: 'rgba(190,24,93,.12)' }}>Multiple placement · {multipleCount}</span></div></div>
                     
-                    <div className="hc-grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
-                      {mainCourses.concat(['Others']).map(c => (
+                    <div className="hc-grid" style={{ gridTemplateColumns: 'repeat(5, minmax(0, 1fr))' }}>
+                      {mainCourses.map(c => (
                         <div key={c} className="hc-item" style={{ textAlign: 'center' }}>
                           <div className="hc-label">{c}</div>
                           <div className="hc-value" style={{ fontSize: '2.4rem', color: counts[c] > 0 ? 'var(--accent-primary)' : '#475569' }}>{counts[c]}</div>
@@ -839,14 +878,14 @@ export default function Reports() {
               <div style={{ overflowX: 'auto' }}>
                 <table className="dt">
                   <thead>
-                    <tr><th>Branch Name</th>{mainCourses.map(c => <th key={c}>{c}</th>)}<th>Others</th><th className="dt-total">Total Students</th></tr>
+                    <tr><th>Branch Name</th>{mainCourses.map(c => <th key={c}>{c}</th>)}<th className="dt-total">Total Students</th></tr>
                   </thead>
                   <tbody>
-                    {assignedBranches.length === 0 ? <tr><td colSpan={mainCourses.length + 3} style={{textAlign:'center', padding: '2rem'}}>No students found in assigned branches.</td></tr> : 
+                    {assignedBranches.length === 0 ? <tr><td colSpan={mainCourses.length + 2} style={{textAlign:'center', padding: '2rem'}}>No students found in assigned branches.</td></tr> : 
                     assignedBranches.map(b => (
                       <tr key={`en-${b}`}>
                         <td>{b}</td>
-                        {mainCourses.concat(['Others']).map(c => <td key={c} className={branchEnrolls[b][c] === 0 ? 'dt-zero' : ''}>{branchEnrolls[b][c]}</td>)}
+                        {mainCourses.map(c => <td key={c} className={branchEnrolls[b][c] === 0 ? 'dt-zero' : ''}>{branchEnrolls[b][c]}</td>)}
                         <td className="dt-total">{branchEnrolls[b].Total}</td>
                       </tr>
                     ))}
@@ -855,7 +894,7 @@ export default function Reports() {
                     <tfoot>
                       <tr>
                         <td>TOTAL ENROLLMENT</td>
-                        {mainCourses.concat(['Others']).map(c => <td key={`foot-${c}`}>{enrollTotals[c]}</td>)}
+                        {mainCourses.map(c => <td key={`foot-${c}`}>{enrollTotals[c]}</td>)}
                         <td style={{ color: 'var(--accent-primary)' }}>{enrollTotals.Total}</td>
                       </tr>
                     </tfoot>
@@ -872,22 +911,22 @@ export default function Reports() {
               <div style={{ overflowX: 'auto' }}>
                 <table className="dt">
                   <thead>
-                    <tr><th>Branch Name</th>{mainCourses.map(c => <th key={c}>{c}</th>)}<th>Others</th><th style={{ color: '#7dd3fc' }}>International</th><th className="dt-total" style={{ color: '#10b981' }}>Total Placed</th></tr>
+                    <tr><th>Branch Name</th>{mainCourses.map(c => <th key={c}>{c}</th>)}<th style={{ color: '#7dd3fc' }}>International</th><th className="dt-total" style={{ color: '#10b981' }}>Total Placed</th></tr>
                   </thead>
                   <tbody>
                     {allBranchesList.map(b => (
                       <tr key={`pl-${b}`}>
                         <td>{b}</td>
-                        {mainCourses.concat(['Others']).map(c => <td key={c} className={branchPlaces[b][c] === 0 ? 'dt-zero' : ''}>{branchPlaces[b][c]}</td>)}
-                        <td style={{ color: branchPlaces[b].International > 0 ? '#7dd3fc' : '' }} className={branchPlaces[b].International === 0 ? 'dt-zero' : ''}>{branchPlaces[b].International}</td>
-                        <td className="dt-total" style={{ color: '#10b981' }}>{branchPlaces[b].Total}</td>
+                        {mainCourses.map(c => <td key={c} className={(branchPlaces[b]?.[c] ?? 0) === 0 ? 'dt-zero' : ''}>{branchPlaces[b]?.[c] ?? 0}</td>)}
+                        <td style={{ color: (branchPlaces[b]?.International ?? 0) > 0 ? '#7dd3fc' : '' }} className={(branchPlaces[b]?.International ?? 0) === 0 ? 'dt-zero' : ''}>{branchPlaces[b]?.International ?? 0}</td>
+                        <td className="dt-total" style={{ color: '#10b981' }}>{branchPlaces[b]?.Total ?? 0}</td>
                       </tr>
                     ))}
                   </tbody>
                   <tfoot>
                     <tr>
                       <td>TOTAL PLACED</td>
-                      {mainCourses.concat(['Others']).map(c => <td key={`pfoot-${c}`}>{placeTotals[c]}</td>)}
+                      {mainCourses.map(c => <td key={`pfoot-${c}`}>{placeTotals[c]}</td>)}
                       <td style={{ color: '#7dd3fc' }}>{placeTotals.International}</td>
                       <td style={{ color: '#10b981' }}>{placeTotals.Total}</td>
                     </tr>
@@ -906,7 +945,7 @@ export default function Reports() {
                   <thead>
                     <tr>
                       <th>Branch Name</th>
-                      {displayTpos.map(tName => <th key={tName} style={{ color: '#fff' }}>{tName.toUpperCase()}</th>)}
+                      {displayTpos.map(tpo => <th key={tpo.key} style={{ color: '#fff' }}>{tpo.label.toUpperCase()}</th>)}
                       <th className="dt-total" style={{ color: 'var(--accent-primary)' }}>Branch Total</th>
                     </tr>
                   </thead>
@@ -914,12 +953,12 @@ export default function Reports() {
                     {allBranchesList.map(b => (
                       <tr key={`tpo-${b}`}>
                         <td>{b}</td>
-                        {displayTpos.map(tName => (
-                          <td key={tName} className={branchTPO[b][tName] === 0 ? 'dt-zero' : ''} style={{ color: branchTPO[b][tName] > 0 ? '#fff' : '' }}>
-                            {branchTPO[b][tName]}
+                        {displayTpos.map(tpo => (
+                          <td key={tpo.key} className={(branchTPO[b]?.[tpo.key] ?? 0) === 0 ? 'dt-zero' : ''} style={{ color: (branchTPO[b]?.[tpo.key] ?? 0) > 0 ? '#fff' : '' }}>
+                            {branchTPO[b]?.[tpo.key] ?? 0}
                           </td>
                         ))}
-                        <td className="dt-total" style={{ color: 'var(--accent-primary)' }}>{branchTPO[b].Total}</td>
+                        <td className="dt-total" style={{ color: 'var(--accent-primary)' }}>{branchTPO[b]?.Total ?? 0}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -954,7 +993,7 @@ export default function Reports() {
                     </tr>
                   </thead>
                   <tbody>
-                    {mainCourses.concat(['Others']).map(c => {
+                    {mainCourses.map(c => {
                       const d = pipeline[c];
                       return (
                         <tr key={`trk-${c}`}>
@@ -982,14 +1021,14 @@ export default function Reports() {
               <div style={{ overflowX: 'auto' }}>
                 <table className="dt">
                   <thead>
-                    <tr><th>Branch Name</th>{mainCourses.map(c => <th key={c}>{c}</th>)}<th>Others</th><th className="dt-total" style={{ color: '#f59e0b' }}>Total Pending</th></tr>
+                    <tr><th>Branch Name</th>{mainCourses.map(c => <th key={c}>{c}</th>)}<th className="dt-total" style={{ color: '#f59e0b' }}>Total Pending</th></tr>
                   </thead>
                   <tbody>
-                    {assignedBranches.length === 0 ? <tr><td colSpan={mainCourses.length + 3} style={{textAlign:'center', padding: '2rem'}}>No pending students in assigned branches.</td></tr> : 
+                    {assignedBranches.length === 0 ? <tr><td colSpan={mainCourses.length + 2} style={{textAlign:'center', padding: '2rem'}}>No pending students in assigned branches.</td></tr> : 
                     assignedBranches.map(b => (
                       <tr key={`pend-${b}`}>
                         <td>{b}</td>
-                        {mainCourses.concat(['Others']).map(c => <td key={c} className={pendingByCourse[b][c] === 0 ? 'dt-zero' : ''}>{pendingByCourse[b][c]}</td>)}
+                        {mainCourses.map(c => <td key={c} className={pendingByCourse[b][c] === 0 ? 'dt-zero' : ''}>{pendingByCourse[b][c]}</td>)}
                         <td className="dt-total" style={{ color: '#f59e0b' }}>{pendingByCourse[b].Total}</td>
                       </tr>
                     ))}
@@ -998,7 +1037,7 @@ export default function Reports() {
                     <tfoot>
                       <tr>
                         <td>TOTAL PENDING</td>
-                        {mainCourses.concat(['Others']).map(c => <td key={`pdfoot-${c}`}>{pendTotals[c]}</td>)}
+                        {mainCourses.map(c => <td key={`pdfoot-${c}`}>{pendTotals[c]}</td>)}
                         <td style={{ color: '#f59e0b' }}>{pendTotals.Total}</td>
                       </tr>
                     </tfoot>
@@ -1143,8 +1182,8 @@ export default function Reports() {
                       </div>
                     ) : (
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(175px, 1fr))', gap: '10px' }}>
-                        <label htmlFor={`activity-title-${item.id}`} style={{ display: 'grid', gap: '6px', color: '#94a3b8', fontSize: '.8rem' }}>{getActivityTypeLabel(item.type)} title / name
-                          <input id={`activity-title-${item.id}`} type="text" maxLength={180} value={item.title || ''} onChange={event => setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...entry, title: event.target.value } : entry) }))} placeholder={`Name this ${item.type.includes('video') ? 'video' : 'poster'}`} style={{ width: '100%', boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#0d1522', color: '#fff' }} />
+                        <label htmlFor={`activity-title-${item.id}`} style={{ display: 'grid', gap: '6px', color: '#94a3b8', fontSize: '.8rem' }}>{getActivityTypeLabel(item.type)} title / name <span style={{ color: '#64748b', fontSize: '.7rem' }}>Optional</span>
+                          <input id={`activity-title-${item.id}`} type="text" maxLength={180} value={item.title || ''} onChange={event => setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...entry, title: event.target.value } : entry) }))} placeholder={`Optional: name this ${item.type.includes('video') ? 'video' : 'poster'}`} style={{ width: '100%', boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#0d1522', color: '#fff' }} />
                         </label>
                         <label htmlFor={`activity-link-${item.id}`} style={{ display: 'grid', gap: '6px', color: '#94a3b8', fontSize: '.8rem' }}>{getActivityTypeLabel(item.type)} link
                           <input id={`activity-link-${item.id}`} type="url" inputMode="url" value={item.value || ''} onChange={event => setActivityForm(current => ({ ...current, activityItems: current.activityItems.map(entry => entry.id === item.id ? { ...entry, value: event.target.value } : entry) }))} placeholder={item.postingStatus === 'pending' ? 'Optional until posted' : 'https://...'} style={{ width: '100%', boxSizing: 'border-box', padding: '10px', borderRadius: '6px', border: '1px solid #334155', background: '#0d1522', color: '#fff' }} />
@@ -1175,6 +1214,7 @@ export default function Reports() {
         </div>
       )}
 
+      <PortalToast toast={toast} onDismiss={() => setToast(null)} />
     </Layout>
   );
 }

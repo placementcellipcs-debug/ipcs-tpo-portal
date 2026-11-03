@@ -103,6 +103,37 @@ const getFirstNonEmptyValByHeader = (row, headerOptions) => {
   return '';
 };
 
+// Resolve a placement owner only from an actual owner column. The usual fuzzy
+// header reader can mistake "TPO Action Log" (a yes/no audit field) for the
+// TPO name when the preferred owner column is blank or absent.
+const getExactValByHeader = (row, headerOptions) => {
+  const aliases = (Array.isArray(headerOptions) ? headerOptions : [headerOptions])
+    .map(value => normalizePlacementHeader(value));
+  const headers = row?._worksheet?.headerValues;
+  const rawData = row?._rawData;
+  if (Array.isArray(headers) && Array.isArray(rawData)) {
+    for (const alias of aliases) {
+      const index = headers.findIndex(header => normalizePlacementHeader(header) === alias);
+      if (index >= 0 && index < rawData.length && rawData[index] !== undefined && rawData[index] !== null) {
+        const value = String(rawData[index]).trim();
+        if (value) return value;
+      }
+    }
+  }
+
+  const keys = Object.keys(row || {}).filter(key => !key.startsWith('_'));
+  for (const alias of aliases) {
+    const key = keys.find(candidate => normalizePlacementHeader(candidate) === alias);
+    const value = key ? String(row[key] ?? '').trim() : '';
+    if (value) return value;
+  }
+  return '';
+};
+
+const getPlacementTpoOwner = row => getExactValByHeader(row, [
+  'placementofficer', 'tponame', 'tpo', 'createdby', 'createdbyname', 'owner', 'postedby', 'addedby'
+]);
+
 const accountAuthState = (row, passwordOverride) => ({
   email: getValByHeader(row, ['email', 'mailid', 'mail']).toLowerCase(),
   loginId: getValByHeader(row, ['loginid', 'userid', 'user_id', 'employeeid', 'username']).toLowerCase(),
@@ -1054,7 +1085,7 @@ const isPlacementTrackerTpo = user => /(^|\b)(TPO|PLACEMENT OFFICER)(\b|$)/i.tes
 const placementOwnerMatchesUser = (owner, user) => {
   const normalizedOwner = normalizePlacementText(owner);
   if (!normalizedOwner) return false;
-  return [user?.name, user?.email, user?.username, user?.loginId, user?.employeeId]
+  return [user?.name, user?.email, user?.username, user?.loginId, user?.employeeId, user?.empId]
     .some(identity => normalizePlacementText(identity) === normalizedOwner);
 };
 const placementDriveIdentityHeaders = ['driveid', 'drivename', 'eventid', 'title', 'companyname', 'company'];
@@ -1489,7 +1520,10 @@ exports.updateStudent = async (req, res) => {
       }
 
       let placedSheetWarning = '';
-      if (isPlacementEditor && typeof placementStatus === 'string' && placementStatus.trim()) {
+      // TPO_Log and Placed_Students are placement-event records. A directory
+      // status such as Pending or Not Responding belongs in Data only; sending
+      // it through the placement sync would overwrite a real placement row.
+      if (isPlacementEditor && normalizePlacementText(placementStatus) === 'placed') {
         placedSheetWarning = await syncPositivePlacement({
           name: getValByHeader(rows[0], ['name', 'studentname']),
           phone: getValByHeader(rows[0], ['phone', 'contact', 'mobilenumber']),
@@ -1737,6 +1771,16 @@ const addRowToCache = (field, row) => {
   }
 };
 
+const updateCachedRowData = (field, rowNumber, updates) => {
+  const row = (getCache()?.[field] || []).find(item => Number(item?.rowNumber) === Number(rowNumber));
+  const headers = row?._worksheet?.headerValues || [];
+  if (!row || !Array.isArray(row._rawData) || !headers.length) return;
+  Object.entries(updates || {}).forEach(([key, value]) => {
+    const index = headers.findIndex(header => normalizePlacementHeader(header) === normalizePlacementHeader(key));
+    if (index >= 0) row._rawData[index] = String(value ?? '');
+  });
+};
+
 const parsePlacementHistory = value => {
   if (!value) return [];
   try {
@@ -1836,6 +1880,7 @@ const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentCo
     'Action Details': actionDetails || ''
   };
   const savedActionRow = await logSheet.addRow(mapPlacementRowData(logSheet, actionRow), { insert: true });
+  addRowToCache('tpoLogs', savedActionRow);
   return savedActionRow;
 };
 
@@ -1861,7 +1906,7 @@ const upsertPlacementTpoLog = async record => {
   if (!targetKey) throw new Error('A student roll number or name is required to record a placement in TPO_Log.');
   const cachedRows = getCache()?.tpoLogs || [];
   let existing = record.tpoLogRow || null;
-  if (!existing && Number(record.sourceRow) >= 2) {
+  if (!existing && record.sourceSheet === 'TPO_Log' && Number(record.sourceRow) >= 2) {
     existing = cachedRows.find(row => Number(row.rowNumber) === Number(record.sourceRow)) || null;
     if (!existing) {
       const [liveSourceRow] = await logSheet.getRows({ offset: Number(record.sourceRow) - 2, limit: 1 });
@@ -4088,7 +4133,7 @@ exports.getReports = async (req, res) => {
   const resolvePlacementLocation = createPlacementLocationResolver(getValByHeader, cache);
   sourceTpoLogs.forEach(row => {
     if (!checkPlacementReportAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']))) return;
-    const name = getValByHeader(row, ['placementofficer', 'tpo', 'tponame']);
+    const name = getPlacementTpoOwner(row);
     if (name) reportTpoNames.add(name.trim());
   });
   tpoLogs = [...reportTpoNames].sort((a, b) => a.localeCompare(b)).map(name => ({ placementofficer: name }));
@@ -4099,7 +4144,7 @@ exports.getReports = async (req, res) => {
   sourceTpoLogs.forEach(row => {
     if (isTpoActionLog(row, getValByHeader)) return;
     if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed') return;
-    const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame']);
+    const owner = getPlacementTpoOwner(row);
     const belongsToUser = isPlacementTrackerTpo(reportUser)
       ? placementOwnerMatchesUser(owner, reportUser)
       : isCentralTeamReportUser || isAdminReportUser || checkPlacementReportAccess(getValByHeader(row, ['branch']), getValByHeader(row, ['course']));
@@ -4114,7 +4159,11 @@ exports.getReports = async (req, res) => {
   let tpoStatsList = [];
   if (cache.tpoStats) {
     cache.tpoStats.forEach(r => {
-      try { tpoStatsList.push(r.toObject()); } catch(e) {}
+      try {
+        const row = r.toObject();
+        const owner = getValByHeader(row, ['user', 'tponame', 'placementofficer']);
+        if (isAdminReportUser || isCentralTeamReportUser || placementOwnerMatchesUser(owner, reportUser)) tpoStatsList.push(row);
+      } catch(e) {}
     });
   }
 
@@ -4227,7 +4276,7 @@ exports.getPlacedStudents = async (req, res) => {
     if (isTpoActionLog(row, getValByHeader)) continue;
     if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed') continue;
 
-    const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']);
+    const owner = getPlacementTpoOwner(row);
     const branch = getValByHeader(row, ['branch', 'sittingbranch']);
     const course = getValByHeader(row, ['course', 'program']);
     const allowed = isPlacementTrackerAdmin(user)
@@ -7634,9 +7683,10 @@ exports.getAdminUsers = (req, res) => {
       const date = safeParseDate(getFirstNonEmptyValByHeader(row, ['timestamp', 'date']));
       return date ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(date).slice(0, 7) : '';
     };
-    const monthlyTargetFor = (name, legacyTarget) => {
-      const normalizedName = normalizePlacementText(name);
-      const row = (cache?.tpoStats || []).find(stat => normalizePlacementText(getValByHeader(stat, ['user', 'tponame', 'placementofficer'])) === normalizedName
+    const monthlyTargetFor = (identities, legacyTarget, role) => {
+      if (!isPlacementTrackerTpo({ role })) return { target: '', targetMonth };
+      const normalizedIdentities = new Set(identities.map(normalizePlacementText).filter(Boolean));
+      const row = (cache?.tpoStats || []).find(stat => normalizedIdentities.has(normalizePlacementText(getValByHeader(stat, ['user', 'tponame', 'placementofficer'])))
         && monthForStatsRow(stat) === targetMonth);
       const savedTarget = row ? getValByHeader(row, ['monthlytarget']) : '';
       const currentMonth = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
@@ -7656,15 +7706,16 @@ exports.getAdminUsers = (req, res) => {
             userName: name,
             contact: getValByHeader(row, ['contactnumber', 'phone', 'contact']) || '',
             email: email, 
+            loginId: getValByHeader(row, ['loginid', 'username']) || '',
             sittingBranch: getValByHeader(row, ['sittingbranch', 'branch']) || '',
             assignedBranches: getValByHeader(row, ['assignedbranches']) || '',
             role: getValByHeader(row, ['role']) || 'TPO',
             course: 'All Courses', 
             access: 'View & Edit',
-            profilePhoto: getValByHeader(row, ['profilephoto', 'photo']) || '',
+            profilePhoto: getValByHeader(row, ['profilephoto', 'profilephotourl', 'profileimageurl', 'photo']) || '',
             // 🚨 READ THE NEW FIELDS
             empId: getValByHeader(row, ['empid', 'employeeid']) || '',
-            ...monthlyTargetFor(name, getValByHeader(row, ['targetofthemonth', 'target']))
+            ...monthlyTargetFor([name, email, getValByHeader(row, ['loginid', 'username']), getValByHeader(row, ['empid', 'employeeid'])], getValByHeader(row, ['targetofthemonth', 'target']), getValByHeader(row, ['role']) || 'TPO')
           });
         }
       });
@@ -7683,6 +7734,7 @@ exports.getAdminUsers = (req, res) => {
             userName: name,
             contact: getValByHeader(row, ['contact_number', 'contactnumber', 'phone']) || '',
             email: email, 
+            loginId: getValByHeader(row, ['login_id', 'loginid', 'username']) || '',
             sittingBranch: getValByHeader(row, ['sitting_branch', 'sittingbranch', 'branch']) || '',
             assignedBranches: getValByHeader(row, ['assigned_branches', 'assignedbranches']) || '',
             role: getValByHeader(row, ['role']) || 'Unassigned',
@@ -7691,7 +7743,7 @@ exports.getAdminUsers = (req, res) => {
             profilePhoto: getValByHeader(row, ['profile_photo_url', 'profilephoto']) || '',
             // 🚨 READ THE NEW FIELDS
             empId: getValByHeader(row, ['empid', 'employeeid']) || '',
-            ...monthlyTargetFor(name, getValByHeader(row, ['targetofthemonth', 'target']))
+            ...monthlyTargetFor([name, email, getValByHeader(row, ['login_id', 'loginid', 'username']), getValByHeader(row, ['emp_id', 'empid', 'employeeid'])], getValByHeader(row, ['targetofthemonth', 'target']), getValByHeader(row, ['role']))
           });
         }
       });
@@ -7779,14 +7831,14 @@ exports.addAdminUser = async (req, res) => {
     if(hEmp && empId !== undefined) newRow[hEmp] = empId;
     
     if (!getSafeH(['password'])) return res.status(500).json({ success: false, message: `The ${sheetName} sheet needs a Password column.` });
-    await s.addRow(newRow);
+    const createdRow = await s.addRow(newRow);
 
     if (String(target ?? '').trim() && userName) {
       await syncTpoStats(userName, { 'Monthly Target': String(target).trim() }, targetMonth);
     }
 
     await refreshCache();
-    res.json({ success: true, message: "User added" });
+    res.json({ success: true, message: "User added", user: { sheet: sheetName, rowNumber: createdRow?.rowNumber || null } });
   } catch (err) { 
     res.status(500).json({ success: false, message: err.message }); 
   }
@@ -7891,6 +7943,57 @@ exports.updateAdminUser = async (req, res) => {
     }
   } catch (err) { 
     res.status(500).json({ success: false, message: err.message }); 
+  }
+};
+
+exports.updateAdminUserPhoto = async (req, res) => {
+  try {
+    if (req.portalUser?.accessType !== 'superadmin') {
+      return res.status(403).json({ success: false, message: 'Only a Super Admin can manage another user’s profile photo.' });
+    }
+    const sheetName = String(req.body?.sheet || '').trim();
+    const rowNumber = Number(req.body?.rowNumber);
+    const remove = String(req.body?.remove || '').toLowerCase() === 'true';
+    if (!['Contact', 'User'].includes(sheetName) || !Number.isInteger(rowNumber) || rowNumber < 2) {
+      return res.status(400).json({ success: false, message: 'Choose a valid user account before changing its profile photo.' });
+    }
+    if (!remove && !req.file) return res.status(400).json({ success: false, message: 'Choose an image file to upload.' });
+    if (req.file && !['image/jpeg', 'image/png', 'image/webp'].includes(String(req.file.mimetype || '').toLowerCase())) {
+      return res.status(415).json({ success: false, message: 'Upload a JPG, PNG, or WebP image.' });
+    }
+
+    await loadDocInfo();
+    const worksheet = doc.sheetsByTitle[sheetName];
+    if (!worksheet) return res.status(503).json({ success: false, message: `The ${sheetName} account sheet is unavailable.` });
+    const rows = await worksheet.getRows({ offset: rowNumber - 2, limit: 1 });
+    const targetRow = rows[0];
+    if (!targetRow || Number(targetRow.rowNumber) !== rowNumber) {
+      return res.status(404).json({ success: false, message: 'The selected user account could not be found.' });
+    }
+
+    let headers = worksheet.headerValues || [];
+    const photoHeader = headers.find(header => ['profilephotourl', 'profilephoto', 'profileimageurl', 'photo'].includes(normalizePlacementHeader(header)))
+      || headers.find(header => normalizePlacementHeader(header).includes('profile') && normalizePlacementHeader(header).includes('photo'));
+    let targetPhotoHeader = photoHeader;
+    if (!targetPhotoHeader && !remove) {
+      await worksheet.loadHeaderRow();
+      headers = worksheet.headerValues || [];
+      targetPhotoHeader = headers.find(header => ['profilephotourl', 'profilephoto', 'profileimageurl', 'photo'].includes(normalizePlacementHeader(header)))
+        || 'Profile_Photo_URL';
+      if (!headers.some(header => normalizePlacementHeader(header) === normalizePlacementHeader(targetPhotoHeader))) {
+        await worksheet.setHeaderRow([...headers, targetPhotoHeader]);
+        await worksheet.loadHeaderRow();
+      }
+    }
+    if (!targetPhotoHeader) return res.json({ success: true, photoUrl: '', message: 'This account has no saved profile photo.' });
+
+    const photoUrl = remove ? '' : await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS);
+    targetRow.assign({ [targetPhotoHeader]: photoUrl });
+    await targetRow.save();
+    void refreshCache();
+    return res.json({ success: true, photoUrl, message: remove ? 'Profile photo removed.' : 'Profile photo updated.' });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'The profile photo could not be updated.' });
   }
 };
 
@@ -8514,22 +8617,41 @@ exports.updateDriveStatus = async (req, res) => {
     await loadDocInfo();
     const sheet = doc.sheetsByTitle['Drive_Registration'] || doc.sheetsByIndex.find(item => item.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('driveregistration'));
     if (!sheet) return res.status(503).json({ success: false, message: 'The Drive Registration sheet is unavailable.' });
-    await ensurePlacementHeaders(sheet, ['Student Status', 'Student Remarks', ...placementTrackingHeaders]);
+    const registrationHeaders = await ensurePlacementHeaders(sheet, ['Student Status', 'Student Remarks', ...placementTrackingHeaders]);
     let rows;
     if (hasRecordIdentity) {
       const sheetRows = await sheet.getRows();
-      const matchingRows = sheetRows.filter(row => {
+      const matchingDriveRows = sheetRows.filter(row => {
         const driveId = normalizePlacementText(getValByHeader(row, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(row, ['eventid', 'event_id', 'companyname']));
+        return driveId === requestedDriveId;
+      });
+      const matchingRows = matchingDriveRows.filter(row => {
         const roll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
         const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
-        return driveId === requestedDriveId
-          && (requestedRoll ? roll === requestedRoll : name === requestedName);
+        // Drive registrations often have no roll-number column. The UI may
+        // enrich that row from the Data sheet, so use its saved student name
+        // when the source registration itself has no roll number.
+        if (requestedRoll && roll) return roll === requestedRoll;
+        return Boolean(requestedName && name === requestedName);
       });
       const dateMatchedRows = requestedRegDate ? matchingRows.filter(row => normalizePlacementText(getValByHeader(row, ['registeddate', 'timestamp', 'date'])) === requestedRegDate) : [];
       const identityMatches = dateMatchedRows.length ? dateMatchedRows : matchingRows;
-      const matchedRow = identityMatches.length === 1
+      let matchedRow = identityMatches.length === 1
         ? identityMatches[0]
         : identityMatches.find(row => Number(row.rowNumber) === numericRow) || null;
+      if (!matchedRow && Number.isInteger(numericRow) && numericRow >= 2) {
+        const rowAtRequestedNumber = sheetRows.find(row => Number(row.rowNumber) === numericRow);
+        if (rowAtRequestedNumber) {
+          const rowDriveId = normalizePlacementText(getValByHeader(rowAtRequestedNumber, ['driveid', 'drive id', 'drive_id', 'drivename', 'drive name']) || getValByHeader(rowAtRequestedNumber, ['eventid', 'event_id', 'companyname']));
+          const rowRoll = normalizePlacementText(getValByHeader(rowAtRequestedNumber, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+          const rowName = normalizePlacementText(getValByHeader(rowAtRequestedNumber, ['studentname', 'name']));
+          const sameDrive = !rowDriveId || rowDriveId === requestedDriveId;
+          const sameStudent = requestedRoll && rowRoll
+            ? rowRoll === requestedRoll
+            : Boolean(requestedName && rowName === requestedName);
+          if (sameDrive && sameStudent) matchedRow = rowAtRequestedNumber;
+        }
+      }
       if (identityMatches.length > 1 && !matchedRow) return res.status(409).json({ success: false, message: 'This drive registration matches multiple rows. Refresh the tracker and try again.' });
       rows = matchedRow ? [matchedRow] : [];
     } else {
@@ -8603,23 +8725,33 @@ exports.updateDriveStatus = async (req, res) => {
       && normalizePlacementText(oldStatus) !== 'placed' && !internationalPlacement) {
       return res.status(422).json({ success: false, message: 'Choose whether this placement is International or within India before marking the student Placed.' });
     }
-    const headers = sheet.headerValues || [];
+    const headers = registrationHeaders;
     const findHeader = aliases => findPlacementHeader(headers, aliases);
     const update = {};
-    if (studentStatus !== undefined) update[findHeader(['studentstatus'])] = studentStatus;
-    if (remarks !== undefined) update[findHeader(['studentremarks', 'tpo remarks', 'remarks', 'remark'])] = remarks;
-    if (interviewDate !== undefined) update[findHeader(['interviewdate'])] = cleanInterviewDate;
-    if (interviewTime !== undefined) update[findHeader(['interviewtime'])] = cleanInterviewTime;
-    if (interviewVenue !== undefined) update[findHeader(['interviewvenue'])] = interviewVenue;
-    if (internationalPlacement) update[findHeader(['internationalplacement'])] = internationalPlacement;
+    const setField = (aliases, value) => {
+      const header = findHeader(aliases);
+      if (header) update[header] = value;
+      return header;
+    };
+    const studentStatusHeader = findHeader(['studentstatus']);
+    const statusHistoryHeader = findHeader(['statushistory']);
+    if (studentStatus !== undefined && !studentStatusHeader) return res.status(503).json({ success: false, message: 'The Student Status column could not be prepared in Drive_Registration. Reload and retry.' });
+    if (!statusHistoryHeader) return res.status(503).json({ success: false, message: 'The status history column could not be prepared in Drive_Registration. Reload and retry.' });
+    if (studentStatus !== undefined) setField(['studentstatus'], studentStatus);
+    if (remarks !== undefined) setField(['studentremarks', 'tpo remarks', 'remarks', 'remark'], remarks);
+    if (interviewDate !== undefined) setField(['interviewdate'], cleanInterviewDate);
+    if (interviewTime !== undefined) setField(['interviewtime'], cleanInterviewTime);
+    if (interviewVenue !== undefined) setField(['interviewvenue'], interviewVenue);
+    if (internationalPlacement) setField(['internationalplacement'], internationalPlacement);
     if (!Object.keys(update).length) return res.status(400).json({ success: false, message: 'There are no placement drive changes to save.' });
 
     const changedAt = formatIndiaTimestamp();
     const nextHistory = appendPlacementHistory({ row: current, oldStatus, status: nextStatus, oldRemarks, remarks: nextRemarks, oldInterviewDate, interviewDate: nextInterviewDate, oldInterviewTime, interviewTime: nextInterviewTime, oldInterviewVenue, interviewVenue: nextInterviewVenue, changedBy: user?.name || 'Placement team', changedAt });
-    update[findHeader(['statushistory'])] = JSON.stringify(nextHistory);
+    update[statusHistoryHeader] = JSON.stringify(nextHistory);
 
     current.assign(update);
     await current.save();
+    updateCachedRowData('drives', current.rowNumber, update);
 
     const studentRoll = getValByHeader(current, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']);
     const studentName = getValByHeader(current, ['name', 'studentname']);
@@ -8627,7 +8759,11 @@ exports.updateDriveStatus = async (req, res) => {
       const rowRoll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
       return studentRoll ? rowRoll === normalizePlacementText(studentRoll) : normalizePlacementText(getValByHeader(row, ['name', 'studentname'])) === normalizePlacementText(studentName);
     });
-    const placedSheetWarning = await syncPositivePlacement({
+    // Only a Placed drive outcome is a placement record. Interview, offer,
+    // pending, and rejection changes are preserved as TPO action-audit rows;
+    // they must not create or overwrite a canonical placed record.
+    let placedSheetWarning = '';
+    if (normalizePlacementText(nextStatus) === 'placed') placedSheetWarning = await syncPositivePlacement({
       name: studentName || getValByHeader(student, ['studentname', 'name']),
       phone: getValByHeader(current, ['contact', 'phone']) || getValByHeader(student, ['contact', 'phone']),
       email: getValByHeader(current, ['mailid', 'email']) || getValByHeader(student, ['mailid', 'email']),
@@ -9029,7 +9165,6 @@ exports.updateTpoActivity = async (req, res) => {
         continue;
       }
       const title = String(item?.title || '').trim();
-      if (!title) return res.status(400).json({ success: false, message: 'Add a title or name for each poster or video.' });
       if (title.length > 180) return res.status(400).json({ success: false, message: 'Poster and video titles must be 180 characters or fewer.' });
       const value = String(item?.value || '').trim();
       const requestedStatus = String(item?.postingStatus || '').trim().toLowerCase();
@@ -9148,16 +9283,16 @@ const monthlyReportEscape = value => String(value ?? '').replace(/[&<>"']/g, cha
 const monthlyReportLines = value => String(value || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean);
 const monthlyReportMainCourse = value => {
   const course = String(value || '').trim().toLowerCase().replace(/[_&\/+-]+/g, ' ').replace(/\s+/g, ' ');
-  if (!course) return 'Others';
-  if (course.includes('automation') || course.includes('plc') || course.includes('scada') || course.includes('robotics')) return 'Industrial Automation';
+  if (!course) return '';
   if (course.includes('bms') || course.includes('cctv') || course.includes('building management')) return 'BMS AND CCTV';
-  if (course.includes('digital') || course.includes('marketing') || /(^|[^a-z])dm([^a-z]|$)/.test(course) || /^(accdm|aidm|pdmdm)$/.test(course.replace(/[^a-z]/g, ''))) return 'Digital Marketing';
-  if (course.includes('embedded') || course.includes('iot') || course.includes('internet of things')) return 'Embedded and IoT';
+  if (course.includes('embedded') || course.includes('iot') || course.includes('internet of things') || course.includes('microcontroller') || course.includes('vlsi')) return 'Embedded and IoT';
+  if (course.includes('automation') || course.includes('industrial') || course.includes('plc') || course.includes('scada') || course.includes('robotics') || course.includes('mechatronics')) return 'Industrial Automation';
+  if (course.includes('digital') || course.includes('marketing') || /(^|[^a-z])dm([^a-z]|$)/.test(course) || /^(accdm|aidm|pdmdm)$/.test(course.replace(/[^a-z]/g, '')) || ['seo', 'social media marketing', 'content marketing'].some(token => course.includes(token))) return 'Digital Marketing';
   if (course.includes('information technology') || /(^|[^a-z])it([^a-z]|$)/.test(course)
-    || ['python', 'software', 'data science', 'data analytics', 'artificial intelligence', 'cyber security', 'web development', 'java', 'php', 'full stack', 'mern', 'mean stack', 'cloud computing', 'networking'].some(token => course.includes(token))) {
+    || ['python', 'software', 'data science', 'data analytics', 'artificial intelligence', 'machine learning', 'cyber security', 'web development', 'java', 'php', 'full stack', 'mern', 'mean stack', 'cloud computing', 'networking', 'programming', 'dotnet', '.net', 'bde'].some(token => course.includes(token))) {
     return 'Information technology (IT)';
   }
-  return 'Others';
+  return '';
 };
 const monthlyReportPackage = value => {
   const raw = String(value || '').trim();
@@ -9219,7 +9354,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     if (normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed') return false;
     if (!isMonthDate(getFirstNonEmptyValByHeader(row, ['dateplaced', 'timestamp', 'date']))) return false;
     if (isAdmin) return true;
-    const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']);
+    const owner = getPlacementTpoOwner(row);
     return placementOwnerMatchesUser(owner, user);
   });
   const resolvePlacementLocation = createPlacementLocationResolver(getValByHeader, cache);
@@ -9286,7 +9421,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   const openingRows = (cache.vacancies || []).filter(row => {
     if (!isMonthDate(getFirstNonEmptyValByHeader(row, ['timestamp', 'dateposted', 'posteddate', 'dateofposting', 'createdat', 'date']))) return false;
     if (isAdmin) return true;
-    const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby', 'postedby', 'owner']);
+    const owner = getPlacementTpoOwner(row);
     return placementOwnerMatchesUser(owner, user)
       || (!owner && hasPlacementBranchAccess(getValByHeader(row, ['branch', 'sittingbranch']), user));
   });
@@ -9294,7 +9429,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   let unmappedOpeningPosts = 0;
   const openingCompanies = new Map();
   openingRows.forEach(row => {
-    const course = monthlyReportMainCourse(getValByHeader(row, ['course', 'program']));
+    const course = monthlyReportMainCourse(getValByHeader(row, ['course', 'program'])) || 'Information technology (IT)';
     const company = getValByHeader(row, ['companyname', 'company']).trim();
     if (company) openingCompanies.set(normalizePlacementText(company), company);
     const summary = openingCountsByCourse.get(course);
@@ -9345,7 +9480,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     if (roll && !studentsByRoll.has(roll)) studentsByRoll.set(roll, row);
   });
   const activityByOwner = new Map(activityRows.map(row => [normalizePlacementText(getValByHeader(row, ['user', 'tponame', 'placementofficer'])), row]));
-  const groupKey = row => normalizePlacementText(getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby'])) || 'unassigned';
+  const groupKey = row => normalizePlacementText(getPlacementTpoOwner(row)) || 'unassigned';
   const studentKey = (row, index = 0) => {
     const roll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
     const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
@@ -9354,11 +9489,17 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   };
   const placementMainCourse = row => {
     const course = monthlyReportMainCourse(getValByHeader(row, ['course', 'program']));
-    if (course !== 'Others') return course;
+    if (course) return course;
     const roll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
-    return monthlyReportMainCourse(getValByHeader(studentsByRoll.get(roll), ['course', 'program']));
+    const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+    const branch = normalizePlacementText(getValByHeader(row, ['branch', 'sittingbranch']));
+    const student = studentsByRoll.get(roll) || (name ? (cache.students || []).find(candidate =>
+      normalizePlacementText(getValByHeader(candidate, ['studentname', 'name'])) === name
+      && (!branch || normalizePlacementText(getValByHeader(candidate, ['branch', 'sittingbranch'])) === branch)
+    ) : null);
+    return monthlyReportMainCourse(getValByHeader(student, ['course', 'program'])) || 'Information technology (IT)';
   };
-  const coursePlacementCounts = new Map(MONTHLY_REPORT_MAIN_COURSES.concat('Others').map(course => [course, 0]));
+  const coursePlacementCounts = new Map(MONTHLY_REPORT_MAIN_COURSES.map(course => [course, 0]));
   const branchCoursePlacementCounts = new Map();
   const branchPlacementCounts = new Map();
   const tpoPlacementRows = new Map();
@@ -9366,10 +9507,10 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     const course = placementMainCourse(row);
     const branch = getValByHeader(row, ['branch', 'sittingbranch']) || 'Unspecified';
     const ownerKey = groupKey(row);
-    const normalizedCourse = coursePlacementCounts.has(course) ? course : 'Others';
+    const normalizedCourse = MONTHLY_REPORT_MAIN_COURSES.includes(course) ? course : 'Information technology (IT)';
     coursePlacementCounts.set(normalizedCourse, coursePlacementCounts.get(normalizedCourse) + 1);
     if (!branchCoursePlacementCounts.has(branch)) {
-      branchCoursePlacementCounts.set(branch, new Map(MONTHLY_REPORT_MAIN_COURSES.concat('Others').map(mainCourse => [mainCourse, 0])));
+      branchCoursePlacementCounts.set(branch, new Map(MONTHLY_REPORT_MAIN_COURSES.map(mainCourse => [mainCourse, 0])));
       branchPlacementCounts.set(branch, 0);
     }
     const branchCourses = branchCoursePlacementCounts.get(branch);
@@ -9405,7 +9546,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     const activity = activityByOwner.get(ownerKey);
     const ownerEventRows = driveEvents.filter(row => eventOwnerKey(row) === ownerKey);
     const displayName = activity ? getValByHeader(activity, ['user', 'tponame', 'placementofficer'])
-      : (ownedPlacements.length ? getValByHeader(ownedPlacements[0], ['placementofficer', 'tpo', 'tponame'])
+      : (ownedPlacements.length ? getPlacementTpoOwner(ownedPlacements[0])
         : ownerEventRows.length ? getValByHeader(ownerEventRows[0], ['tpo', 'placementofficer', 'coordinator']) : ownerKey);
     const companies = monthlyReportLines(activity && getValByHeader(activity, ['companynamesvisited']));
     const distinctCompanies = [...new Set(companies.map(name => normalizePlacementText(name)))].length;
@@ -9425,11 +9566,9 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     total: branchPlacementCounts.get(branch) || 0
   })).sort((a, b) => a.branch.localeCompare(b.branch));
   const pendingByBranch = new Map();
-  let unmappedPendingStudents = 0;
   pendingStudents.forEach((row, index) => {
     const branch = getValByHeader(row, ['branch', 'sittingbranch']) || 'Unspecified';
-    const course = monthlyReportMainCourse(getValByHeader(row, ['course', 'program']));
-    if (!MONTHLY_REPORT_MAIN_COURSES.includes(course)) unmappedPendingStudents++;
+    const course = monthlyReportMainCourse(getValByHeader(row, ['course', 'program'])) || 'Information technology (IT)';
     if (!pendingByBranch.has(branch)) pendingByBranch.set(branch, new Map(MONTHLY_REPORT_MAIN_COURSES.map(mainCourse => [mainCourse, new Set()])));
     const roll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
     const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
@@ -9437,7 +9576,6 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     if (MONTHLY_REPORT_MAIN_COURSES.includes(course)) pendingByBranch.get(branch).get(course).add(identity);
   });
   const placementRecordCount = placementRows.length;
-  const unmappedPlacementRecords = courseCounts.get('Others') || 0;
   const mainCourseTotals = MONTHLY_REPORT_MAIN_COURSES.map(course => [course, courseCounts.get(course) || 0]);
   const mainCourseOpeningTotals = MONTHLY_REPORT_MAIN_COURSES.map(course => [course, openingCountsByCourse.get(course) || { posts: 0 }]);
   const highestPackageLabel = highestLpa === null ? 'No package recorded' : `${highestLpa.toFixed(2).replace(/\.00$/, '')} LPA`;
@@ -9447,9 +9585,6 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   const numberedCompanyNames = names => names.length
     ? `<ol style="margin:0;padding-left:20px">${names.map(name => `<li style="padding:2px 0">${monthlyReportEscape(name)}</li>`).join('')}</ol>`
     : '<span style="color:#667085">—</span>';
-  const mainCourseFootnote = [
-    unmappedPlacementRecords ? `${countWord(unmappedPlacementRecords, 'placement record')} could not be mapped to a main course from the source record.` : ''
-  ].filter(Boolean).join(' ');
   const placedRowsHtml = placementRows.map((row, index) => {
     const roll = getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']);
     const student = studentsByRoll.get(normalizePlacementText(roll));
@@ -9598,7 +9733,6 @@ exports.sendMonthlyTpoReport = async (req, res) => {
 
         ${sectionTitle('Placement Status', 'Placement records by main course', '#3478c4')}
         ${table(['Main course', 'Placement records'], placedStudentRowsByCourse, { total: ['<b>Total placement records</b>', `<b>${placementRecordCount}</b>`] })}
-        ${mainCourseFootnote ? `<p style="margin:-8px 0 14px;color:#8a5c2d;font-size:11px">${monthlyReportEscape(mainCourseFootnote)}</p>` : ''}
 
         ${sectionTitle('International placements', `${internationalPlacementRows.length} international placement${internationalPlacementRows.length === 1 ? '' : 's'}`, '#176fa6')}
         ${table(['Sl. No.', 'Student', 'Company', 'Country / location'], internationalPlacementRowsHtml)}
@@ -9626,7 +9760,6 @@ exports.sendMonthlyTpoReport = async (req, res) => {
 
         ${sectionTitle('Center wise Placement', 'Branch totals across the placement team', '#3478c4')}
         ${table(['Branch', ...MONTHLY_REPORT_MAIN_COURSES, 'Branch total'], branchMatrixRows)}
-        ${unmappedPlacementRecords ? `<p style="margin:-8px 0 14px;color:#8a5c2d;font-size:11px">${countWord(unmappedPlacementRecords, 'placement record')} could not be mapped to a main course in the source sheet.</p>` : ''}
         ${sectionTitle('TPO Wise Placement', 'Branch contributions', '#8a5caf')}
         ${table(branchContributionHeaders, branchContributionRows)}
 
@@ -9636,7 +9769,6 @@ exports.sendMonthlyTpoReport = async (req, res) => {
         ${sectionTitle('Placement Pending List', 'Eligible students awaiting placement', '#bf5a55')}
         <p style="margin:0 0 12px;padding:12px 14px;background:#fff6f3;border:1px solid #f1d6ce;border-radius:8px;color:#6d514d;font-size:12px">Counts include only students marked <b>Pending</b> or <b>Placement Needed</b> with at least <b>90% course completion</b>. Students already marked Placed in the placement log are excluded.</p>
         ${table(['Month', 'Branch', ...MONTHLY_REPORT_MAIN_COURSES, 'Total pending'], pendingRowsHtml, { total: [monthlyReportEscape(monthName), '<b>Total</b>', ...pendingTotalByCourse.map(count => `<b>${count}</b>`), `<b>${pendingTotalUnique}</b>`] })}
-        ${unmappedPendingStudents ? `<p style="margin:-8px 0 14px;color:#8a5c2d;font-size:11px">${countWord(unmappedPendingStudents, 'pending student')} could not be mapped to a main course in the source sheet.</p>` : ''}
         <p style="margin:20px 0 0;color:#506476">Regards,<br><b>${monthlyReportEscape(user.name || 'IPCS Global Placement Team')}</b><br><span style="font-size:11px;color:#8494a2">IPCS Global · Placement & Career Services</span></p>
        </td></tr>
       </table>

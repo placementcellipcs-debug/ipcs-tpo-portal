@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { 
   ShieldCheck, CircleNotch,
@@ -24,6 +25,18 @@ export default function SecurityActivity() {
     const timer = window.setInterval(() => setCurrentTime(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!selectedUser) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const closeOnEscape = event => { if (event.key === 'Escape') setSelectedUser(null); };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [selectedUser]);
 
   useEffect(() => {
     const fetchLogs = async () => {
@@ -182,20 +195,20 @@ export default function SecurityActivity() {
           </table>
         </div>
 
-        {selectedUser && (
-          <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.85)', zIndex: 99999, display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '20px' }} onClick={event => { if (event.target === event.currentTarget) setSelectedUser(null); }}>
-            <div className="modal-card" style={{ maxWidth: '650px', width: '100%', maxHeight: '85vh', background: '#0f1523', border: '1px solid var(--accent-primary)', borderRadius: '16px', padding: '2rem', overflowY: 'auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #1e293b', paddingBottom: '12px', marginBottom: '20px' }}>
+        {selectedUser && typeof document !== 'undefined' && createPortal(
+          <div role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) setSelectedUser(null); }} style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(2,6,14,.78)', backdropFilter: 'blur(7px)', zIndex: 100300, display: 'grid', placeItems: 'center', padding: '18px' }}>
+            <div role="dialog" aria-modal="true" aria-labelledby="security-user-history-title" style={{ maxWidth: '700px', width: '100%', maxHeight: 'min(86dvh, 800px)', display: 'flex', flexDirection: 'column', background: 'linear-gradient(145deg, #172338, #0f1523)', border: '1px solid rgba(56,189,248,.5)', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 30px 90px rgba(0,0,0,.5)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 16, borderBottom: '1px solid #1e293b', padding: '18px 22px', flexShrink: 0 }}>
                 <div>
-                  <h3 style={{ margin: 0, fontSize: '1.3rem', color: '#fff' }}>Login History: {selectedUser.userName}</h3>
+                  <h3 id="security-user-history-title" style={{ margin: 0, fontSize: '1.3rem', color: '#fff' }}>Login History: {selectedUser.userName || 'Staff user'}</h3>
                   <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>{selectedUser.email} • {selectedUser.role}</span>
                 </div>
-                <button onClick={() => setSelectedUser(null)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer' }}>Close</button>
+                <button type="button" onClick={() => setSelectedUser(null)} style={{ background: '#0b1320', border: '1px solid #334155', borderRadius: 9, padding: '8px 11px', color: '#cbd5e1', cursor: 'pointer' }}>Close</button>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {selectedUser.history.map((item, idx) => (
-                  <div key={idx} style={{ background: '#161e2e', border: '1px solid #1e293b', borderRadius: '10px', padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '18px 22px 22px', overflowY: 'auto', overscrollBehavior: 'contain' }}>
+                {(Array.isArray(selectedUser.history) ? selectedUser.history : []).length ? selectedUser.history.map((item, idx) => (
+                  <div key={`${item.timestamp || 'login'}-${idx}`} style={{ background: '#111b2b', border: '1px solid #26354a', borderRadius: '10px', padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
                     <div>
                       <div style={{ color: '#fff', fontWeight: 'bold', fontSize: '0.95rem' }}>{item.os} • {item.browser} ({item.device})</div>
                       <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '4px' }}>IP Network: <span style={{ fontFamily: 'monospace', color: 'var(--accent-primary)' }}>{item.ipAddress}</span></div>
@@ -205,10 +218,10 @@ export default function SecurityActivity() {
                       <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>{formatPortalDateTime(item.timestamp, String(item.timestamp || ''))}</div>
                     </div>
                   </div>
-                ))}
+                )) : <div style={{ padding: 22, color: '#94a3b8', textAlign: 'center' }}>No sign-in history is recorded for this account yet.</div>}
               </div>
             </div>
-          </div>
+          </div>, document.body
         )}
 
       </div>

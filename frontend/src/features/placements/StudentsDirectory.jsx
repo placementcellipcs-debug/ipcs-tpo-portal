@@ -254,6 +254,11 @@ export default function StudentsDirectory() {
     const selectedInternationalChoice = typeof internationalChoice === 'boolean'
       ? internationalChoice
       : undefined;
+    const existingPlacementRecorded = isStudentPlaced(selectedStudent);
+    if (existingPlacementRecorded && normalizeStatus(localPlacementState) !== 'placed') {
+      alert('This student already has a placement record. Update the placement in the Placed Students tab, or submit a deletion request if the record is incorrect.');
+      return;
+    }
     const placingNow = /^placed$/i.test(String(localPlacementState || '').trim())
       && !/^placed$/i.test(String(selectedStudent?.placementStatus || '').trim());
     if (placingNow && selectedInternationalChoice === undefined) {
@@ -306,6 +311,11 @@ export default function StudentsDirectory() {
         setRawStudents(updatedStudents);
         setSelectedStudent(updatedSelectedStudent);
         setIsModalOpen(false);
+        if (response.data.warning) {
+          alert(`Student record saved, but a related placement sheet could not be fully synchronized: ${response.data.warning}`);
+        }
+      } else {
+        throw new Error(response.data.message || 'The student update was not saved.');
       }
     } catch (error) {
       const message = error.response?.data?.message || error.message || 'The student update could not be saved.';

@@ -4,6 +4,7 @@ import { CheckCircle, CircleNotch, Clock, ShieldCheck, XCircle, ArrowsClockwise 
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
 import { formatPortalDateTime } from '../../utils/dateFormat';
+import { PortalConfirmDialog, PortalToast } from '../../components/PortalFeedback';
 
 const filters = ['Pending', 'Approved', 'Rejected', 'Failed', 'All'];
 const statusColors = {
@@ -20,6 +21,9 @@ export default function DeleteApprovals() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [workingId, setWorkingId] = useState('');
+  const [reviewDialog, setReviewDialog] = useState(null);
+  const [reviewNotes, setReviewNotes] = useState('');
+  const [toast, setToast] = useState(null);
 
   const loadRequests = useCallback(async () => {
     setLoading(true);
@@ -42,24 +46,27 @@ export default function DeleteApprovals() {
     ? requests
     : requests.filter(request => String(request.status || '').toLowerCase() === filter.toLowerCase()), [filter, requests]);
 
-  const review = async (request, decision) => {
+  const review = async () => {
+    if (!reviewDialog) return;
+    const { request, decision } = reviewDialog;
     const isApprove = decision === 'approve';
-    const notes = isApprove ? '' : window.prompt(`Why are you rejecting request ${request.requestId}?`) ?? null;
-    if (notes === null) return;
-    const promptText = isApprove
-      ? `Approve deletion of ${request.summary}? This will delete the target row from its source sheet.`
-      : `Reject this deletion request? No data will be deleted.`;
-    if (!window.confirm(promptText)) return;
+    if (!isApprove && !reviewNotes.trim()) {
+      setToast({ type: 'error', title: 'Reason required', message: 'Add a short reason before rejecting this request.' });
+      return;
+    }
     setWorkingId(request.requestId);
     try {
       const response = await axios.post(`${API_BASE}/api/tpo/delete-requests/${encodeURIComponent(request.requestId)}/review`, {
         decision,
-        notes
+        notes: isApprove ? '' : reviewNotes.trim()
       }, { timeout: 60000 });
       if (!response.data?.success) throw new Error(response.data?.message || 'The request could not be reviewed.');
+      setReviewDialog(null);
+      setReviewNotes('');
+      setToast({ type: 'success', title: isApprove ? 'Record deletion approved' : 'Request rejected', message: isApprove ? `${request.summary} was deleted from its source sheet.` : `The request for ${request.summary} was rejected. No record was deleted.` });
       await loadRequests();
     } catch (error) {
-      window.alert(error.response?.data?.message || error.message || 'The request could not be reviewed.');
+      setToast({ type: 'error', title: 'Review failed', message: error.response?.data?.message || error.message || 'The request could not be reviewed.' });
       await loadRequests();
     } finally {
       setWorkingId('');
@@ -125,8 +132,8 @@ export default function DeleteApprovals() {
                       </div>
                     </div>
                     {isPending && <div style={{ display: 'flex', gap: 8 }}>
-                      <button type="button" disabled={Boolean(workingId)} onClick={() => review(request, 'reject')} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: '1px solid rgba(248,113,113,.4)', color: '#fca5a5', background: 'rgba(127,29,29,.18)', borderRadius: 10, padding: '10px 13px', cursor: 'pointer', fontWeight: 800 }}><XCircle size={17} /> Reject</button>
-                      <button type="button" disabled={Boolean(workingId)} onClick={() => review(request, 'approve')} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: '1px solid rgba(45,212,191,.45)', color: '#99f6e4', background: 'rgba(13,148,136,.22)', borderRadius: 10, padding: '10px 13px', cursor: 'pointer', fontWeight: 800 }}>{workingId === request.requestId ? <CircleNotch size={17} className="ph-spin" /> : <CheckCircle size={17} />} Approve &amp; delete</button>
+                      <button type="button" disabled={Boolean(workingId)} onClick={() => { setReviewNotes(''); setReviewDialog({ request, decision: 'reject' }); }} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: '1px solid rgba(248,113,113,.4)', color: '#fca5a5', background: 'rgba(127,29,29,.18)', borderRadius: 10, padding: '10px 13px', cursor: 'pointer', fontWeight: 800 }}><XCircle size={17} /> Reject</button>
+                      <button type="button" disabled={Boolean(workingId)} onClick={() => { setReviewNotes(''); setReviewDialog({ request, decision: 'approve' }); }} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, border: '1px solid rgba(45,212,191,.45)', color: '#99f6e4', background: 'rgba(13,148,136,.22)', borderRadius: 10, padding: '10px 13px', cursor: 'pointer', fontWeight: 800 }}>{workingId === request.requestId ? <CircleNotch size={17} className="ph-spin" /> : <CheckCircle size={17} />} Approve &amp; delete</button>
                     </div>}
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 15 }}>
@@ -146,6 +153,22 @@ export default function DeleteApprovals() {
           </div>
         )}
       </main>
+      <PortalConfirmDialog
+        open={Boolean(reviewDialog)}
+        title={reviewDialog?.decision === 'approve' ? 'Approve record deletion?' : 'Reject deletion request?'}
+        message={reviewDialog?.decision === 'approve'
+          ? `${reviewDialog?.request?.summary || 'This record'} will be deleted from its source sheet after approval.`
+          : `${reviewDialog?.request?.summary || 'This request'} will be declined. The source record will stay in place.`}
+        confirmLabel={reviewDialog?.decision === 'approve' ? 'Approve & delete' : 'Reject request'}
+        tone={reviewDialog?.decision === 'approve' ? 'danger' : 'info'}
+        busy={Boolean(workingId)}
+        onCancel={() => { setReviewDialog(null); setReviewNotes(''); }}
+        onConfirm={review}
+      >
+        {reviewDialog?.decision === 'approve' && <div style={{ padding: 12, borderRadius: 10, border: '1px solid rgba(248,113,113,.3)', background: 'rgba(127,29,29,.18)', color: '#fecaca', fontSize: 12, lineHeight: 1.5 }}>This action removes the selected row from its source sheet. It cannot be undone from this approval screen.</div>}
+        {reviewDialog?.decision === 'reject' && <label style={{ display: 'grid', gap: 7, color: '#cbd5e1', fontSize: 13, fontWeight: 700 }}>Reason for rejection<textarea value={reviewNotes} onChange={event => setReviewNotes(event.target.value)} rows={3} maxLength={1000} placeholder="Explain why the request was rejected" style={{ width: '100%', boxSizing: 'border-box', resize: 'vertical', padding: 11, borderRadius: 9, border: '1px solid #334155', background: '#0b1320', color: '#f8fafc' }} /></label>}
+      </PortalConfirmDialog>
+      <PortalToast toast={toast} onDismiss={() => setToast(null)} />
     </Layout>
   );
 }
