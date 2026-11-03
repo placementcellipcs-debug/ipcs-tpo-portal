@@ -1,19 +1,28 @@
 import { normalizePlacementText } from './placementRecords.js';
 
-// TPO_Log.Status is the sole source for Placed counts. Offers and joining
-// outcomes are separate measures and must not be folded into the placed total.
+// TPO_Log.Status is the source for Placed counts. When a Joining Status value
+// exists, it is the source of truth for joining classifications.
 export const placementOutcome = (status, joiningStatus = '') => {
   const normalizedStatus = normalizePlacementText(status);
   const normalizedJoining = normalizePlacementText(joiningStatus);
   const placed = normalizedStatus === 'placed';
-  const joined = normalizedStatus === 'joined' || normalizedJoining === 'joined';
+  const explicitJoiningStatuses = new Set([
+    'joined', 'notjoined', 'notjoining', 'notjoinedyet', 'willnotjoin',
+    'pendingjoining', 'dualplacement', 'multipleplacement'
+  ]);
+  const hasExplicitJoiningStatus = explicitJoiningStatuses.has(normalizedJoining);
+  const joined = hasExplicitJoiningStatus
+    ? normalizedJoining === 'joined'
+    : normalizedStatus === 'joined';
   return {
     placed,
     joined,
     offer: ['offer', 'offered', 'offerreleased', 'offeraccepted'].includes(normalizedStatus),
-    // Joining is independent of placement: a Placed student may still be Not Joined.
-    notJoined: !joined && (['notjoined', 'notjoining', 'notplaced', 'rejected', 'notattended', 'declined'].includes(normalizedStatus)
-      || ['notjoined', 'notjoining', 'notjoinedyet', 'willnotjoin'].includes(normalizedJoining)),
+    // A populated Joining Status is exclusive: each placement row belongs to
+    // one joining category, including Pending Joining, Dual, or Multiple.
+    notJoined: hasExplicitJoiningStatus
+      ? ['notjoined', 'notjoining', 'notjoinedyet', 'willnotjoin'].includes(normalizedJoining)
+      : ['notjoined', 'notjoining', 'notplaced', 'rejected', 'notattended', 'declined'].includes(normalizedStatus),
   };
 };
 

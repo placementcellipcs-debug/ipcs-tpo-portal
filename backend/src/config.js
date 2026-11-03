@@ -165,7 +165,7 @@ let placedStudentsBackupSheetId = null;
 const placedStudentsHeaders = [
   'Record Key', 'Student Name', 'Contact', 'Mail ID', 'Roll Number', 'Course', 'Branch', 'Qualification', 'Resume',
   'Job ID', 'Company Name', 'Position', 'Placement Officer', 'Status', 'Remarks', 'DATE PLACED', 'PACKAGE (LPA)',
-  'Joining Status', 'Offer Letter', 'International Placement', 'Dual Placement', 'Multiple Placement', 'Source Sheet', 'Source Row', 'Updated At'
+  'Joining Status', 'Offer Letter', 'International Placement', 'Source Sheet', 'Source Row', 'Updated At'
 ];
 
 async function ensurePlacedStudentsSheet() {
@@ -313,6 +313,13 @@ async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
     const sourceRow = Number(row?.rowNumber) || index + 2;
     const recordKey = `TPO_Log:${sourceRow}`;
     const value = aliases => placementRowValue(row, aliases);
+    const rawJoiningStatus = value(['joiningstatus']);
+    const normalizedJoiningStatus = String(rawJoiningStatus || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const legacyMultiple = /^(yes|true|1|marked)$/i.test(value(['multipleplacement']));
+    const legacyDual = /^(yes|true|1|marked)$/i.test(value(['dualplacement']));
+    const joiningStatus = normalizedJoiningStatus === 'dualplacement' || normalizedJoiningStatus === 'multipleplacement'
+      ? rawJoiningStatus
+      : legacyMultiple ? 'Multiple Placement' : legacyDual ? 'Dual Placement' : rawJoiningStatus;
     return [{
       'Record Key': recordKey,
       'Student Name': value(['studentname', 'name', 'candidate']),
@@ -331,11 +338,11 @@ async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
       Remarks: value(['remarks', 'studentremarks']),
       'DATE PLACED': value(['dateplaced', 'timestamp', 'date', 'time']),
       'PACKAGE (LPA)': value(['package', 'packagelpa']),
-      'Joining Status': value(['joiningstatus']),
+      'Joining Status': joiningStatus,
       'Offer Letter': value(['offerletterstatus', 'offerletter']),
       'International Placement': value(['internationalplacement', 'isinternationalplacement', 'international']),
-      'Dual Placement': value(['dualplacement']) || (/^dual$/i.test(value(['placementtype'])) ? 'Yes' : 'No'),
-      'Multiple Placement': value(['multipleplacement']) || (/^multiple$/i.test(value(['placementtype'])) ? 'Yes' : 'No'),
+      'Dual Placement': 'No',
+      'Multiple Placement': 'No',
       'Source Sheet': 'TPO_Log',
       'Source Row': sourceRow,
       'Updated At': value(['timestamp', 'updatedat', 'dateplaced'])
@@ -449,8 +456,8 @@ async function syncPlacedStudent(record = {}) {
     'Joining Status': record.joiningStatus || '',
     'Offer Letter': record.offerLetter || '',
     'International Placement': record.internationalPlacement ?? record.isInternationalPlacement ?? '',
-    'Dual Placement': record.dualPlacement === undefined ? '' : record.dualPlacement ? 'Yes' : 'No',
-    'Multiple Placement': record.multiplePlacement === undefined ? '' : record.multiplePlacement ? 'Yes' : 'No',
+    'Dual Placement': 'No',
+    'Multiple Placement': 'No',
     'Source Sheet': record.sourceSheet === 'Placed_Students' && existing
       ? placementRowValue(existing, ['sourcesheet']) || 'Placed_Students'
       : record.sourceSheet || '',

@@ -1,20 +1,28 @@
 const { normalizePlacementText } = require('./placementRecords');
 
-// TPO_Log.Status is the sole source for the portal's Placed measure. Keep
-// joining and offer outcomes as separate measures so they never inflate it.
+// TPO_Log.Status is the source for the portal's Placed measure. When a Joining
+// Status value exists, it is the source of truth for joining classifications.
 const placementOutcome = (status, joiningStatus = '') => {
   const normalizedStatus = normalizePlacementText(status);
   const normalizedJoining = normalizePlacementText(joiningStatus);
   const placed = normalizedStatus === 'placed';
-  const joined = normalizedStatus === 'joined' || normalizedJoining === 'joined';
+  const explicitJoiningStatuses = new Set([
+    'joined', 'notjoined', 'notjoining', 'notjoinedyet', 'willnotjoin',
+    'pendingjoining', 'dualplacement', 'multipleplacement'
+  ]);
+  const hasExplicitJoiningStatus = explicitJoiningStatuses.has(normalizedJoining);
+  const joined = hasExplicitJoiningStatus
+    ? normalizedJoining === 'joined'
+    : normalizedStatus === 'joined';
   return {
     placed,
     joined,
     offer: ['offer', 'offered', 'offerreleased', 'offeraccepted'].includes(normalizedStatus),
-    // Joining is a separate outcome from placement. A student can be Placed
-    // and still have a Not Joined outcome, so do not suppress it when placed.
-    notJoined: !joined && (['notjoined', 'notjoining', 'notplaced', 'rejected', 'notattended', 'declined'].includes(normalizedStatus)
-      || ['notjoined', 'notjoining', 'notjoinedyet', 'willnotjoin'].includes(normalizedJoining)),
+    // A populated Joining Status is exclusive: each placement row belongs to
+    // one joining category, including Pending Joining, Dual, or Multiple.
+    notJoined: hasExplicitJoiningStatus
+      ? ['notjoined', 'notjoining', 'notjoinedyet', 'willnotjoin'].includes(normalizedJoining)
+      : ['notjoined', 'notjoining', 'notplaced', 'rejected', 'notattended', 'declined'].includes(normalizedStatus),
   };
 };
 

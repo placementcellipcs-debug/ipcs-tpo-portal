@@ -13,11 +13,17 @@ const getVal = (obj, searchStr) => {
   const key = Object.keys(obj || {}).find(k => k.toLowerCase().replace(/\s/g, '').includes(searchStr.toLowerCase().replace(/\s/g, '')));
   return key ? obj[key] : '';
 };
-const isPlacementTypeMarked = (row, type) => {
-  const explicit = getVal(row, type === 'dual' ? 'dualplacement' : 'multipleplacement');
-  if (String(explicit || '').trim()) return /^(yes|true|1|marked)$/i.test(String(explicit).trim());
-  return normalizePlacementText(getVal(row, 'placementtype')) === type;
+const effectiveJoiningStatus = row => {
+  const status = String(getVal(row, 'joiningstatus') || '').trim();
+  const normalizedStatus = normalizePlacementText(status);
+  if (normalizedStatus === 'dualplacement' || normalizedStatus === 'multipleplacement') return normalizedStatus === 'dualplacement' ? 'Dual Placement' : 'Multiple Placement';
+  // Legacy records from the former checkbox UI are interpreted as the new
+  // single dropdown value until the record is next saved.
+  if (/^(yes|true|1|marked)$/i.test(String(getVal(row, 'multipleplacement') || '').trim())) return 'Multiple Placement';
+  if (/^(yes|true|1|marked)$/i.test(String(getVal(row, 'dualplacement') || '').trim())) return 'Dual Placement';
+  return status;
 };
+const isPlacementTypeMarked = (row, type) => normalizePlacementText(effectiveJoiningStatus(row)) === `${type}placement`;
 const reportTpoKey = tpo => normalizePlacementText(tpo?.userName || tpo?.name || tpo?.email);
 const safeReportLinks = value => String(value || '').split(/\r?\n/).map(link => link.trim()).filter(link => {
   try { return ['http:', 'https:'].includes(new URL(link).protocol); } catch { return false; }
@@ -301,7 +307,7 @@ export default function Reports() {
     const hasAccessToLog = isSuperAdmin || !logTpo || myIdentities.includes(logTpo);
 
     if (branchPlaces[b] && checkPlacementMonth(log) && hasAccessToLog) {
-      const outcome = placementOutcome(getVal(log, 'status'), getVal(log, 'joiningstatus'));
+      const outcome = placementOutcome(getVal(log, 'status'), effectiveJoiningStatus(log));
       if (outcome.placed) {
         const c = getCourse(getVal(log, 'course'));
         if (branchPlaces[b][c] !== undefined) {
@@ -338,7 +344,7 @@ export default function Reports() {
     const logTpo = normalizePlacementText(logTpoRaw);
 
     if (branchTPO[b] && checkMonth(dStr)) {
-      const outcome = placementOutcome(getVal(log, 'status'), getVal(log, 'joiningstatus'));
+      const outcome = placementOutcome(getVal(log, 'status'), effectiveJoiningStatus(log));
       if (outcome.placed) {
         
         // Find matching column
@@ -360,7 +366,7 @@ export default function Reports() {
 
   // 4. PIPELINE TRACKER
   const pipeline = {};
-  mainCourses.concat(['Others']).forEach(c => pipeline[c] = { placed: 0, joined: 0, offers: 0, notJoined: 0, dual: 0, multiple: 0 });
+  mainCourses.concat(['Others']).forEach(c => pipeline[c] = { placed: 0, joined: 0, offers: 0, notJoined: 0, pendingJoining: 0, dual: 0, multiple: 0 });
 
   placementLogs.forEach(log => {
     const dStr = getVal(log, 'dateplaced') || getVal(log, 'timestamp');
@@ -371,13 +377,14 @@ export default function Reports() {
     
     const c = getCourse(getVal(log, 'course'));
     if (!pipeline[c]) return;
-    const outcome = placementOutcome(getVal(log, 'status'), getVal(log, 'joiningstatus'));
+    const outcome = placementOutcome(getVal(log, 'status'), effectiveJoiningStatus(log));
     if (outcome.placed) pipeline[c].placed++;
     if (isPlacementTypeMarked(log, 'dual')) pipeline[c].dual++;
     if (isPlacementTypeMarked(log, 'multiple')) pipeline[c].multiple++;
     if (outcome.joined) pipeline[c].joined++;
     if (outcome.offer) pipeline[c].offers++;
     if (outcome.notJoined) pipeline[c].notJoined++;
+    if (normalizePlacementText(effectiveJoiningStatus(log)) === 'pendingjoining') pipeline[c].pendingJoining++;
   });
 
   // 5. PENDING STUDENTS
@@ -432,8 +439,8 @@ export default function Reports() {
        return checkMonth(dStr) && tpoIdentities.includes(logTpo);
     });
     
-    const joined = logs.filter(log => placementOutcome(getVal(log, 'status'), getVal(log, 'joiningstatus')).joined).length;
-    const notJoined = logs.filter(log => placementOutcome(getVal(log, 'status'), getVal(log, 'joiningstatus')).notJoined).length;
+    const joined = logs.filter(log => placementOutcome(getVal(log, 'status'), effectiveJoiningStatus(log)).joined).length;
+    const notJoined = logs.filter(log => placementOutcome(getVal(log, 'status'), effectiveJoiningStatus(log)).notJoined).length;
     const autoUniqueCompanies = new Set(logs.map(log => normalizePlacementText(getVal(log, 'companyname') || getVal(log, 'company'))).filter(Boolean)).size;
 
     // Drives Conducted from Event Sheet
@@ -698,7 +705,7 @@ export default function Reports() {
               </section>
             )}
             <section aria-label="Placement classifications for selected month" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '14px', flexWrap: 'wrap', margin: '0 0 22px', padding: '15px 18px', borderRadius: '12px', border: '1px solid rgba(56,189,248,.38)', background: 'linear-gradient(100deg, rgba(14,116,144,.2), rgba(15,23,42,.68))' }}>
-              <div><div style={{ color: '#7dd3fc', fontWeight: 800 }}>Placements · {displayMonthName}</div><small style={{ color: 'var(--text-muted)' }}>International counts are inferred from destination. Dual and Multiple count only records explicitly marked with that type for this month.</small></div>
+              <div><div style={{ color: '#7dd3fc', fontWeight: 800 }}>Placements · {displayMonthName}</div><small style={{ color: 'var(--text-muted)' }}>Joined, Not Joined, Pending Joining, Dual, and Multiple counts come from the single Joining Status dropdown.</small></div>
               <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}><strong style={{ color: '#7dd3fc', fontSize: '1rem', padding: '7px 10px', borderRadius: '9px', background: 'rgba(14,116,144,.16)' }}>International · {internationalRowsThisMonth.length}</strong><strong style={{ color: '#c4b5fd', fontSize: '1rem', padding: '7px 10px', borderRadius: '9px', background: 'rgba(109,40,217,.16)' }}>Dual · {dualPlacementsThisMonth}</strong><strong style={{ color: '#f9a8d4', fontSize: '1rem', padding: '7px 10px', borderRadius: '9px', background: 'rgba(190,24,93,.15)' }}>Multiple · {multiplePlacementsThisMonth}</strong></div>
               <button type="button" onClick={() => navigate('/placed?international=1')} style={{ padding: '8px 12px', borderRadius: '9px', border: '1px solid rgba(56,189,248,.48)', color: '#bae6fd', background: 'rgba(14,116,144,.18)', cursor: 'pointer', fontWeight: 750 }}>View international records →</button>
             </section>
@@ -743,7 +750,7 @@ export default function Reports() {
                       </div>
                     </div>
 
-                    <div className="hc-subheader" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><Briefcase size={24} weight="fill" /> Current Status On Placements</span><div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}><span style={{ color: '#7dd3fc', fontSize: '.82rem', padding: '6px 10px', border: '1px solid rgba(56,189,248,.35)', borderRadius: '999px', background: 'rgba(14,116,144,.14)' }}>International · {placedStudentsLog.filter(log => log.isInternationalPlacement === true).length}</span><span style={{ color: '#c4b5fd', fontSize: '.82rem', padding: '6px 10px', border: '1px solid rgba(167,139,250,.35)', borderRadius: '999px', background: 'rgba(109,40,217,.13)' }}>Dual marked · {dualCount}</span><span style={{ color: '#f9a8d4', fontSize: '.82rem', padding: '6px 10px', border: '1px solid rgba(244,114,182,.35)', borderRadius: '999px', background: 'rgba(190,24,93,.12)' }}>Multiple marked · {multipleCount}</span></div></div>
+                    <div className="hc-subheader" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}><span style={{ display: 'inline-flex', alignItems: 'center', gap: '10px' }}><Briefcase size={24} weight="fill" /> Current Status On Placements</span><div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}><span style={{ color: '#7dd3fc', fontSize: '.82rem', padding: '6px 10px', border: '1px solid rgba(56,189,248,.35)', borderRadius: '999px', background: 'rgba(14,116,144,.14)' }}>International · {placedStudentsLog.filter(log => log.isInternationalPlacement === true).length}</span><span style={{ color: '#c4b5fd', fontSize: '.82rem', padding: '6px 10px', border: '1px solid rgba(167,139,250,.35)', borderRadius: '999px', background: 'rgba(109,40,217,.13)' }}>Dual placement · {dualCount}</span><span style={{ color: '#f9a8d4', fontSize: '.82rem', padding: '6px 10px', border: '1px solid rgba(244,114,182,.35)', borderRadius: '999px', background: 'rgba(190,24,93,.12)' }}>Multiple placement · {multipleCount}</span></div></div>
                     
                     <div className="hc-grid" style={{ gridTemplateColumns: 'repeat(6, 1fr)' }}>
                       {mainCourses.concat(['Others']).map(c => (
@@ -942,8 +949,9 @@ export default function Reports() {
                       <th>Students Joined</th>
                       <th>Offers</th>
                       <th>Not Joined</th>
-                      <th style={{ color: '#c4b5fd' }}>Dual marked</th>
-                      <th style={{ color: '#f9a8d4' }}>Multiple marked</th>
+                      <th>Pending Joining</th>
+                      <th style={{ color: '#c4b5fd' }}>Dual Placement</th>
+                      <th style={{ color: '#f9a8d4' }}>Multiple Placement</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -956,6 +964,7 @@ export default function Reports() {
                           <td className={d.joined === 0 ? 'dt-zero' : ''}>{d.joined}</td>
                           <td className={d.offers === 0 ? 'dt-zero' : ''}>{d.offers}</td>
                           <td className={d.notJoined === 0 ? 'dt-zero' : ''}>{d.notJoined}</td>
+                          <td className={d.pendingJoining === 0 ? 'dt-zero' : ''}>{d.pendingJoining}</td>
                           <td style={{ color: d.dual ? '#c4b5fd' : undefined }} className={d.dual === 0 ? 'dt-zero' : ''}>{d.dual}</td>
                           <td style={{ color: d.multiple ? '#f9a8d4' : undefined }} className={d.multiple === 0 ? 'dt-zero' : ''}>{d.multiple}</td>
                         </tr>

@@ -1783,17 +1783,27 @@ const appendPlacementHistory = ({ row, oldStatus, status, oldRemarks, remarks, o
   return history.slice(-60);
 };
 
-const placementTrackingHeaders = ['Interview Date', 'Interview Time', 'Interview Venue', 'Status History', 'International Placement', 'Joining Status', 'Dual Placement', 'Multiple Placement'];
+const placementTrackingHeaders = ['Interview Date', 'Interview Time', 'Interview Venue', 'Status History', 'International Placement', 'Joining Status'];
 const placementActionHeaders = ['TPO Action Log', 'Action Type', 'Action Details'];
 const normalizePlacementMarker = value => /^(yes|true|1|marked|dual|multiple)$/i.test(String(value || '').trim());
+const effectivePlacementJoiningStatus = row => {
+  const stored = String(getValByHeader(row, ['joiningstatus']) || '').trim();
+  const normalized = normalizePlacementText(stored);
+  if (normalized === 'dualplacement' || normalized === 'multipleplacement') return normalized === 'dualplacement' ? 'Dual Placement' : 'Multiple Placement';
+  // Preserve classifications saved by the earlier checkbox UI while moving
+  // them into the single Joining Status dropdown on the next edit.
+  if (normalizePlacementMarker(getValByHeader(row, ['multipleplacement']))) return 'Multiple Placement';
+  if (normalizePlacementMarker(getValByHeader(row, ['dualplacement']))) return 'Dual Placement';
+  const legacyType = normalizePlacementText(getValByHeader(row, ['placementtype']));
+  if (legacyType === 'multiple') return 'Multiple Placement';
+  if (legacyType === 'dual') return 'Dual Placement';
+  return stored;
+};
 const isMarkedPlacementType = (row, type) => {
-  const typeKey = String(type || '').toLowerCase() === 'dual' ? 'dualplacement' : 'multipleplacement';
-  const explicit = getValByHeader(row, [typeKey]);
-  if (String(explicit || '').trim()) return normalizePlacementMarker(explicit);
-  return normalizePlacementText(getValByHeader(row, ['placementtype'])) === String(type || '').toLowerCase();
+  return normalizePlacementText(effectivePlacementJoiningStatus(row)) === `${String(type || '').toLowerCase()}placement`;
 };
 
-const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentContact, studentEmail, studentRoll, course, branch, qualification, resume, jobId, company, position, status, remarks, interviewDate, interviewTime, interviewVenue, datePlaced, packageLpa, joiningStatus, internationalPlacement, dualPlacement, multiplePlacement, entrySource, actionType, actionDetails, historyEntry }) => {
+const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentContact, studentEmail, studentRoll, course, branch, qualification, resume, jobId, company, position, status, remarks, interviewDate, interviewTime, interviewVenue, datePlaced, packageLpa, joiningStatus, internationalPlacement, entrySource, actionType, actionDetails, historyEntry }) => {
   await loadDocInfo();
   const logSheet = doc.sheetsByTitle['TPO_Log'];
   if (!logSheet) throw new Error('The TPO_Log sheet is unavailable.');
@@ -1821,8 +1831,6 @@ const appendTpoActionLog = async ({ changedAt, changedBy, studentName, studentCo
     'Interview Time': interviewTime || '',
     'Interview Venue': interviewVenue || '',
     'International Placement': normalizeInternationalPlacementFlag(internationalPlacement),
-    'Dual Placement': dualPlacement ? 'Yes' : 'No',
-    'Multiple Placement': multiplePlacement ? 'Yes' : 'No',
     'Entry Source': entrySource || 'Job Tracker',
     'Status History': JSON.stringify(historyEntry ? [historyEntry] : []),
     'TPO Action Log': 'YES',
@@ -1878,15 +1886,13 @@ const upsertPlacementTpoLog = async record => {
     'Placement Location': value('placementLocation', ['placementlocation', 'worklocation', 'joblocation', 'location']),
     'International Placement': normalizeInternationalPlacementFlag(record.internationalPlacement ?? record.isInternationalPlacement)
       || (existing ? normalizeInternationalPlacementFlag(getValByHeader(existing, ['internationalplacement', 'isinternationalplacement'])) : ''),
-    'Dual Placement': record.dualPlacement !== undefined ? (record.dualPlacement ? 'Yes' : 'No') : (existing ? getValByHeader(existing, ['dualplacement']) || (isMarkedPlacementType(existing, 'dual') ? 'Yes' : '') : ''),
-    'Multiple Placement': record.multiplePlacement !== undefined ? (record.multiplePlacement ? 'Yes' : 'No') : (existing ? getValByHeader(existing, ['multipleplacement']) || (isMarkedPlacementType(existing, 'multiple') ? 'Yes' : '') : ''),
     'Placement Officer': value('placementOfficer', ['placementofficer', 'tpo', 'tponame', 'createdby']) || value('tpoName', ['placementofficer', 'tpo', 'tponame', 'createdby']),
     Status: record.status !== undefined ? record.status : (existing ? getValByHeader(existing, ['status']) : ''),
     Remarks: record.remarks !== undefined ? record.remarks : (existing ? getValByHeader(existing, ['remarks']) : ''),
     'DATE PLACED': record.datePlaced !== undefined ? record.datePlaced : (existing ? getValByHeader(existing, ['dateplaced']) : ''),
     'PACKAGE (LPA)': record.packageLpa !== undefined ? record.packageLpa : (existing ? getValByHeader(existing, ['package', 'packagelpa']) : ''),
     'Offer Letter Status': value('offerLetter', ['offerletterstatus', 'offerletter']),
-    'Joining Status': record.joiningStatus !== undefined ? record.joiningStatus : (existing ? getValByHeader(existing, ['joiningstatus']) : ''),
+    'Joining Status': record.joiningStatus !== undefined ? record.joiningStatus : (existing ? effectivePlacementJoiningStatus(existing) : ''),
     'Interview Date': record.interviewDate !== undefined ? record.interviewDate : (existing ? getValByHeader(existing, ['interviewdate']) : ''),
     'Interview Time': record.interviewTime !== undefined ? record.interviewTime : (existing ? getValByHeader(existing, ['interviewtime', 'intervewtime']) : ''),
     'Interview Venue': record.interviewVenue !== undefined ? record.interviewVenue : (existing ? getValByHeader(existing, ['interviewvenue']) : ''),
@@ -1896,6 +1902,12 @@ const upsertPlacementTpoLog = async record => {
   };
   await ensurePlacementHeaders(logSheet, Object.keys(logData));
   const rowData = mapPlacementRowData(logSheet, logData);
+  if (existing && record.joiningStatus !== undefined) {
+    for (const legacyFlag of ['Dual Placement', 'Multiple Placement']) {
+      const legacyHeader = findPlacementHeader(logSheet.headerValues || [], [legacyFlag]);
+      if (legacyHeader) rowData[legacyHeader] = 'No';
+    }
+  }
   let savedRow = existing || null;
   if (savedRow) {
     await updateCachedSheetRow(logSheet, savedRow, rowData);
@@ -1911,9 +1923,20 @@ const syncDirectoryPlacementStatusFromLog = async logRow => {
   await loadDocInfo();
   const studentSheet = doc.sheetsByTitle['Data'];
   if (!studentSheet) return 'The placement is recorded, but the student directory sheet is unavailable.';
-  const headers = studentSheet.headerValues || [];
-  const statusHeader = findPlacementHeader(headers, ['Placement Status', 'Placement Status (Current)', 'Placement Status\u00a0']);
-  if (!statusHeader) return 'The placement is recorded, but the Data sheet has no Placement Status column to update.';
+  let headers = [...(studentSheet.headerValues || [])];
+  if (!headers.length) {
+    await studentSheet.loadHeaderRow();
+    headers = [...(studentSheet.headerValues || [])];
+  }
+  const statusAliases = [
+    'Placement Status', 'Placement Status (Current)', 'Student Placement Status', 'Placement Status (TPO)', 'Placement Status\u00a0'
+  ];
+  let statusHeader = findPlacementHeader(headers, statusAliases);
+  if (!statusHeader) {
+    headers = await ensurePlacementHeaders(studentSheet, ['Placement Status']);
+    statusHeader = findPlacementHeader(headers, statusAliases);
+  }
+  if (!statusHeader) return 'The placement is recorded, but the student directory placement-status field could not be prepared.';
 
   const rollKey = normalizePlacementText(getValByHeader(logRow, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
   const nameKey = normalizePlacementText(getValByHeader(logRow, ['studentname', 'name']));
@@ -1951,6 +1974,7 @@ const syncPositivePlacement = async record => {
     }
     const internationalPlacement = normalizeInternationalPlacementFlag(record.internationalPlacement ?? record.isInternationalPlacement)
       || normalizeInternationalPlacementFlag(getValByHeader(logRow, ['internationalplacement', 'isinternationalplacement']));
+    const joiningStatus = record.joiningStatus !== undefined ? record.joiningStatus : effectivePlacementJoiningStatus(logRow);
     await syncPlacedStudent({
       name: getValByHeader(logRow, ['studentname', 'name']),
       phone: getValByHeader(logRow, ['contact', 'phone']),
@@ -1968,23 +1992,19 @@ const syncPositivePlacement = async record => {
       remarks: getValByHeader(logRow, ['remarks']),
       datePlaced: getValByHeader(logRow, ['dateplaced']),
       packageLpa: getValByHeader(logRow, ['package', 'packagelpa']),
-      joiningStatus: getValByHeader(logRow, ['joiningstatus']),
+      joiningStatus,
       offerLetter: getValByHeader(logRow, ['offerletterstatus', 'offerletter']),
       internationalPlacement,
-      dualPlacement: normalizePlacementMarker(getValByHeader(logRow, ['dualplacement'])) || isMarkedPlacementType(logRow, 'dual'),
-      multiplePlacement: normalizePlacementMarker(getValByHeader(logRow, ['multipleplacement'])) || isMarkedPlacementType(logRow, 'multiple'),
       sourceSheet: 'TPO_Log', sourceRow: logRow.rowNumber
     });
     let applicationFlagWarning = '';
-    const dualPlacement = normalizePlacementMarker(getValByHeader(logRow, ['dualplacement'])) || isMarkedPlacementType(logRow, 'dual');
-    const multiplePlacement = normalizePlacementMarker(getValByHeader(logRow, ['multipleplacement'])) || isMarkedPlacementType(logRow, 'multiple');
-    if (internationalPlacement || dualPlacement || multiplePlacement
-      || record.dualPlacement !== undefined || record.multiplePlacement !== undefined || record.internationalPlacement !== undefined || record.isInternationalPlacement !== undefined) {
+    if (internationalPlacement || joiningStatus !== undefined
+      || record.internationalPlacement !== undefined || record.isInternationalPlacement !== undefined) {
       try {
-        applicationFlagWarning = await syncOpeningAppliedPlacementFields(logRow, internationalPlacement, record.applicationRowNumber);
+        applicationFlagWarning = await syncOpeningAppliedPlacementFields(logRow, internationalPlacement, joiningStatus, record.applicationRowNumber);
       } catch (error) {
-        console.error('Placement classification could not be copied to Opening_Applied:', error.message);
-        applicationFlagWarning = `The placement was saved, but Opening_Applied placement classification could not be updated: ${error.message}`;
+        console.error('Placement status could not be copied to Opening_Applied:', error.message);
+        applicationFlagWarning = `The placement was saved, but Opening_Applied joining status could not be updated: ${error.message}`;
       }
     }
     return [directoryStatusWarning, applicationFlagWarning].filter(Boolean).join(' ');
@@ -1994,19 +2014,21 @@ const syncPositivePlacement = async record => {
   }
 };
 
-const syncOpeningAppliedPlacementFields = async (logRow, internationalPlacement, preferredRowNumber) => {
+const syncOpeningAppliedPlacementFields = async (logRow, internationalPlacement, joiningStatus, preferredRowNumber) => {
   const flag = normalizeInternationalPlacementFlag(internationalPlacement);
-  const dualPlacement = normalizePlacementMarker(getValByHeader(logRow, ['dualplacement'])) || isMarkedPlacementType(logRow, 'dual');
-  const multiplePlacement = normalizePlacementMarker(getValByHeader(logRow, ['multipleplacement'])) || isMarkedPlacementType(logRow, 'multiple');
+  const status = joiningStatus === undefined ? effectivePlacementJoiningStatus(logRow) : joiningStatus;
   await loadDocInfo();
   const sheet = doc.sheetsByTitle['Opening_Applied'];
   if (!sheet) return 'Opening_Applied is unavailable.';
   const headers = await ensurePlacementHeaders(sheet, placementTrackingHeaders);
   const flagHeader = findPlacementHeader(headers, ['International Placement']);
+  const joiningHeader = findPlacementHeader(headers, ['Joining Status']);
   const dualHeader = findPlacementHeader(headers, ['Dual Placement']);
   const multipleHeader = findPlacementHeader(headers, ['Multiple Placement']);
-  const fieldsToUpdate = Object.fromEntries([[flagHeader, flag], [dualHeader, dualPlacement ? 'Yes' : 'No'], [multipleHeader, multiplePlacement ? 'Yes' : 'No']].filter(([header, value]) => header && value !== ''));
-  if (!Object.keys(fieldsToUpdate).length) return 'Opening_Applied has no placement classification columns.';
+  const fieldsToUpdate = Object.fromEntries([
+    [flagHeader, flag], [joiningHeader, status], [dualHeader, 'No'], [multipleHeader, 'No']
+  ].filter(([header, value]) => header && value !== ''));
+  if (!Object.keys(fieldsToUpdate).length) return 'Opening_Applied has no joining-status column.';
   const cachedRows = getCache()?.applications || [];
   let target = Number(preferredRowNumber) >= 2
     ? cachedRows.find(row => Number(row.rowNumber) === Number(preferredRowNumber))
@@ -2037,7 +2059,7 @@ const syncOpeningAppliedPlacementFields = async (logRow, internationalPlacement,
     }
     matchCount = matches.length;
     if (matches.length === 1) [target] = matches;
-    else if (matches.length > 1) return 'Multiple Opening_Applied rows match this student and employer, so placement classifications were left unchanged.';
+    else if (matches.length > 1) return 'Multiple Opening_Applied rows match this student and employer, so the joining status was left unchanged.';
   }
   if (target) {
     await updateCachedSheetRow(sheet, target, fieldsToUpdate);
@@ -2067,11 +2089,9 @@ const syncOpeningAppliedPlacementFields = async (logRow, internationalPlacement,
       Remarks: getValByHeader(logRow, ['remarks']),
       'DATE PLACED': getValByHeader(logRow, ['dateplaced']),
       'PACKAGE (LPA)': getValByHeader(logRow, ['package', 'packagelpa']),
-      'Joining Status': getValByHeader(logRow, ['joiningstatus']),
       'Offer Letter': getValByHeader(logRow, ['offerletterstatus', 'offerletter']),
       'International Placement': flag,
-      'Dual Placement': dualPlacement ? 'Yes' : 'No',
-      'Multiple Placement': multiplePlacement ? 'Yes' : 'No',
+      'Joining Status': status,
       'Entry Source': getValByHeader(logRow, ['entrysource']) || 'Placement record'
     });
     const added = await sheet.addRow(rowData);
@@ -2309,6 +2329,10 @@ exports.updateApplication = async (req, res) => {
     const hPackage = getSafeH(['package']); if (hPackage && packageLpa !== undefined) updateObj[hPackage] = packageLpa;
     const hOffer = getSafeH(['offerletter']); if (hOffer && offerLetterLink) updateObj[hOffer] = offerLetterLink;
     const hJoining = getSafeH(['joiningstatus']); if (hJoining && joiningStatus !== undefined) updateObj[hJoining] = joiningStatus;
+    if (joiningStatus !== undefined) {
+      const hDual = getSafeH(['dualplacement']); if (hDual) updateObj[hDual] = 'No';
+      const hMultiple = getSafeH(['multipleplacement']); if (hMultiple) updateObj[hMultiple] = 'No';
+    }
     
     const hDate = getSafeH(['interviewdate']);
     const hTime = getSafeH(['interviewtime', 'intervewtime']);
@@ -2387,6 +2411,10 @@ exports.updateApplication = async (req, res) => {
         setLogH('package', nextPackage || '');
         setLogH('offerletterstatus', nextOfferLetter || '');
         setLogH('joiningstatus', nextJoiningStatus || '');
+        if (joiningStatus !== undefined) {
+          setLogH('dualplacement', 'No');
+          setLogH('multipleplacement', 'No');
+        }
         setLogH('interviewdate', nextInterviewDate || '');
         setLogH('interviewtime', nextInterviewTime || '');
         setLogH('intervewtime', nextInterviewTime || '');
@@ -2519,8 +2547,6 @@ exports.updatePlacementLog = async (req, res) => {
     const previousDatePlaced = getValByHeader(row, ['dateplaced']);
     const previousPackage = getValByHeader(row, ['package', 'packagelpa']);
     const previousJoiningStatus = getValByHeader(row, ['joiningstatus']);
-    const previousDualPlacement = isMarkedPlacementType(row, 'dual');
-    const previousMultiplePlacement = isMarkedPlacementType(row, 'multiple');
     const previousOfferLetter = getValByHeader(row, ['offerletterstatus', 'offerletter']);
     const previousInternationalPlacement = normalizeInternationalPlacementFlag(getValByHeader(row, ['internationalplacement', 'isinternationalplacement']));
     const owner = getValByHeader(row, ['placementofficer', 'tpo', 'tponame', 'createdby']);
@@ -2559,11 +2585,12 @@ exports.updatePlacementLog = async (req, res) => {
     setValue(['remarks'], req.body.remarks || '');
     setValue(['dateplaced'], formatIndiaDate(req.body.datePlaced || ''));
     setValue(['package', 'package(lpa)'], req.body.packageLpa || '');
-    setValue(['joiningstatus'], req.body.joiningStatus || '');
-    const dualPlacement = req.body.dualPlacement !== undefined ? normalizePlacementMarker(req.body.dualPlacement) : previousDualPlacement;
-    const multiplePlacement = req.body.multiplePlacement !== undefined ? normalizePlacementMarker(req.body.multiplePlacement) : previousMultiplePlacement;
-    setValue(['dualplacement'], dualPlacement ? 'Yes' : 'No');
-    setValue(['multipleplacement'], multiplePlacement ? 'Yes' : 'No');
+    const joiningStatus = req.body.joiningStatus !== undefined
+      ? String(req.body.joiningStatus || '').trim()
+      : effectivePlacementJoiningStatus(row);
+    setValue(['joiningstatus'], joiningStatus);
+    setValue(['dualplacement'], 'No');
+    setValue(['multipleplacement'], 'No');
     const internationalPlacement = req.body.isInternationalPlacement !== undefined
       ? normalizeInternationalPlacementFlag(req.body.isInternationalPlacement)
       : previousInternationalPlacement;
@@ -2581,13 +2608,12 @@ exports.updatePlacementLog = async (req, res) => {
     const newRemarks = req.body.remarks || '';
     const newDatePlaced = formatIndiaDate(req.body.datePlaced || '');
     const newPackage = req.body.packageLpa || '';
-    const newJoiningStatus = req.body.joiningStatus || '';
+    const newJoiningStatus = joiningStatus;
     const changedFields = placementAuditChanges([
       ['Status', previousStatus, newStatus], ['Remarks', previousRemarks, newRemarks],
       ['Date placed', previousDatePlaced, newDatePlaced], ['Package', previousPackage, newPackage],
       ['Joining status', previousJoiningStatus, newJoiningStatus],
       ['International placement', previousInternationalPlacement, internationalPlacement],
-      ['Dual placement', previousDualPlacement, dualPlacement], ['Multiple placement', previousMultiplePlacement, multiplePlacement],
       ['Offer letter', previousOfferLetter, offerLetterLink]
     ]);
     const placedSheetWarning = await syncPositivePlacement({
@@ -2598,8 +2624,7 @@ exports.updatePlacementLog = async (req, res) => {
       jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']),
       position: getValByHeader(row, ['position', 'role']), placementOfficer: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || user?.name || user?.email || '',
       status: req.body.status || 'Placed', remarks: req.body.remarks || '', datePlaced: formatIndiaDate(req.body.datePlaced || ''),
-      packageLpa: req.body.packageLpa || '', joiningStatus: req.body.joiningStatus || '',
-      dualPlacement, multiplePlacement,
+      packageLpa: req.body.packageLpa || '', joiningStatus,
       internationalPlacement,
       offerLetter: offerLetterLink, sourceSheet: 'TPO_Log', sourceRow: row.rowNumber, tpoLogRow: row
     });
@@ -2649,16 +2674,12 @@ exports.updatePlacedStudent = async (req, res) => {
     const status = req.body.status ?? getValByHeader(row, ['status']);
     const previousStatus = getValByHeader(row, ['status']);
     const previousJoiningStatus = getValByHeader(row, ['joiningstatus']);
-    const previousDualPlacement = isMarkedPlacementType(row, 'dual');
-    const previousMultiplePlacement = isMarkedPlacementType(row, 'multiple');
     const previousRemarks = getValByHeader(row, ['remarks']);
     const previousDatePlaced = getValByHeader(row, ['dateplaced']);
     const previousPackage = getValByHeader(row, ['package', 'packagelpa']);
     const previousOfferLetter = getValByHeader(row, ['offerletter', 'offerletterstatus']);
     const previousInternationalPlacement = normalizeInternationalPlacementFlag(getValByHeader(row, ['internationalplacement', 'isinternationalplacement']));
-    const joiningStatus = req.body.joiningStatus ?? getValByHeader(row, ['joiningstatus']);
-    const dualPlacement = req.body.dualPlacement !== undefined ? normalizePlacementMarker(req.body.dualPlacement) : previousDualPlacement;
-    const multiplePlacement = req.body.multiplePlacement !== undefined ? normalizePlacementMarker(req.body.multiplePlacement) : previousMultiplePlacement;
+    const joiningStatus = req.body.joiningStatus ?? effectivePlacementJoiningStatus(row);
     const remarks = req.body.remarks ?? getValByHeader(row, ['remarks']);
     const datePlaced = formatIndiaDate(req.body.datePlaced ?? getValByHeader(row, ['dateplaced']));
     const packageLpa = req.body.packageLpa ?? getValByHeader(row, ['package', 'packagelpa']);
@@ -2678,7 +2699,6 @@ exports.updatePlacedStudent = async (req, res) => {
       jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']),
       position: getValByHeader(row, ['position', 'role']), placementOfficer: (isTpo ? user?.name || user?.email : owner) || owner,
       status, joiningStatus, remarks, datePlaced, packageLpa, offerLetter,
-      dualPlacement, multiplePlacement,
       internationalPlacement,
       entrySource: 'Placed Students edit',
       statusHistory: getValByHeader(row, ['statushistory'])
@@ -2689,7 +2709,6 @@ exports.updatePlacedStudent = async (req, res) => {
       ['Remarks', previousRemarks, remarks], ['Date placed', previousDatePlaced, datePlaced],
       ['Package', previousPackage, packageLpa],
       ['International placement', previousInternationalPlacement, internationalPlacement],
-      ['Dual placement', previousDualPlacement, dualPlacement], ['Multiple placement', previousMultiplePlacement, multiplePlacement],
       ['Offer letter', previousOfferLetter, offerLetter]
     ]);
     let auditWarning = '';
@@ -2765,8 +2784,6 @@ exports.addApplication = async (req, res) => {
       'Company Name': appData.company || '', 'Position': appData.position || '', 'Placement Location': appData.placementLocation || '',
       'Placement Officer': tpoName || '', 'Status': appData.status || 'Placed', 
       'International Placement': internationalPlacement,
-      'Dual Placement': normalizePlacementMarker(appData.dualPlacement) ? 'Yes' : 'No',
-      'Multiple Placement': normalizePlacementMarker(appData.multiplePlacement) ? 'Yes' : 'No',
       'Entry Source': 'Manual Add',
       'Remarks': appData.remarks || '', 'DATE PLACED': formatIndiaDate(appData.datePlaced || ''),
       'PACKAGE (LPA)': appData.packageLpa || '', 'Offer Letter': offerLetterLink, 
@@ -2789,8 +2806,6 @@ exports.addApplication = async (req, res) => {
       status: appData.status || 'Placed',
       datePlaced: formatIndiaDate(appData.datePlaced || ''),
       offerLetter: offerLetterLink,
-      dualPlacement: normalizePlacementMarker(appData.dualPlacement),
-      multiplePlacement: normalizePlacementMarker(appData.multiplePlacement),
       internationalPlacement,
       entrySource: 'Manual Add',
       statusHistory: JSON.stringify(initialHistory)
@@ -2805,8 +2820,6 @@ exports.addApplication = async (req, res) => {
       status: appData.status || 'Placed',
       datePlaced: formatIndiaDate(appData.datePlaced || ''),
       offerLetter: offerLetterLink,
-      dualPlacement: normalizePlacementMarker(appData.dualPlacement),
-      multiplePlacement: normalizePlacementMarker(appData.multiplePlacement),
       internationalPlacement,
       applicationRowNumber: savedApplicationRow.rowNumber,
       sourceSheet: 'TPO_Log',
@@ -9232,10 +9245,8 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   const coursePlacementCounts = new Map(MONTHLY_REPORT_MAIN_COURSES.concat('Others').map(course => [course, 0]));
   const branchCoursePlacementCounts = new Map();
   const branchPlacementCounts = new Map();
-  const studentPlacementRows = new Map();
   const tpoPlacementRows = new Map();
-  placementRows.forEach((row, index) => {
-    const identity = studentKey(row, index);
+  placementRows.forEach(row => {
     const course = placementMainCourse(row);
     const branch = getValByHeader(row, ['branch', 'sittingbranch']) || 'Unspecified';
     const ownerKey = groupKey(row);
@@ -9248,17 +9259,15 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     const branchCourses = branchCoursePlacementCounts.get(branch);
     branchCourses.set(normalizedCourse, branchCourses.get(normalizedCourse) + 1);
     branchPlacementCounts.set(branch, branchPlacementCounts.get(branch) + 1);
-    studentPlacementRows.set(identity, [...(studentPlacementRows.get(identity) || []), row]);
     tpoPlacementRows.set(ownerKey, [...(tpoPlacementRows.get(ownerKey) || []), row]);
   });
-  const joinedStudentCount = [...studentPlacementRows.values()].filter(rows => rows.some(row => placementOutcome(getValByHeader(row, ['status']), getValByHeader(row, ['joiningstatus'])).joined)).length;
-  const notJoinedStudentCount = [...studentPlacementRows.values()].filter(rows => rows.every(row => !placementOutcome(getValByHeader(row, ['status']), getValByHeader(row, ['joiningstatus'])).joined)
-    && rows.some(row => placementOutcome(getValByHeader(row, ['status']), getValByHeader(row, ['joiningstatus'])).notJoined)).length;
-  // Dual and multiple counts follow the explicit classification saved on each
-  // placement row. This keeps them scoped to the selected month and never
-  // infers a category by scanning a student's older placement history.
+  const joinedPlacementCount = placementRows.filter(row => placementOutcome(getValByHeader(row, ['status']), effectivePlacementJoiningStatus(row)).joined).length;
+  const notJoinedPlacementCount = placementRows.filter(row => placementOutcome(getValByHeader(row, ['status']), effectivePlacementJoiningStatus(row)).notJoined).length;
+  // Dual and multiple counts come from the same Joining Status dropdown used
+  // for Joined and Not Joined. Legacy flags only provide a read fallback.
   const dualPlacementCount = placementRows.filter(row => isMarkedPlacementType(row, 'dual')).length;
   const multiplePlacementCount = placementRows.filter(row => isMarkedPlacementType(row, 'multiple')).length;
+  const pendingJoiningCount = placementRows.filter(row => normalizePlacementText(effectivePlacementJoiningStatus(row)) === 'pendingjoining').length;
   const packageRows = placementRows.map((row, index) => ({ row, identity: studentKey(row, index), ...monthlyReportPackage(getFirstNonEmptyValByHeader(row, ['package', 'salary', 'ctc', 'salarypackage', 'packageoffered'])) }))
     .filter(item => Number.isFinite(item.lpa));
   const highestLpa = packageRows.length ? Math.max(...packageRows.map(item => item.lpa)) : null;
@@ -9284,12 +9293,11 @@ exports.sendMonthlyTpoReport = async (req, res) => {
         : ownerEventRows.length ? getValByHeader(ownerEventRows[0], ['tpo', 'placementofficer', 'coordinator']) : ownerKey);
     const companies = monthlyReportLines(activity && getValByHeader(activity, ['companynamesvisited']));
     const distinctCompanies = [...new Set(companies.map(name => normalizePlacementText(name)))].length;
-    const ownedJoinedStudents = new Set(ownedPlacements.filter(row => placementOutcome(getValByHeader(row, ['status']), getValByHeader(row, ['joiningstatus'])).joined).map((row, index) => studentKey(row, index)));
     return {
       ownerKey,
       displayName: displayName || ownerKey,
       placementRecords: ownedPlacements.length,
-      joinedStudents: ownedJoinedStudents.size,
+      joinedStudents: ownedPlacements.filter(row => placementOutcome(getValByHeader(row, ['status']), effectivePlacementJoiningStatus(row)).joined).length,
       drives: ownerEventRows.length,
       companiesVisited: Math.max(Number(getValByHeader(activity, ['companiesvisited'])) || 0, distinctCompanies),
       activity
@@ -9414,13 +9422,13 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     if (contribution) contribution.drives++;
   });
   const branchContributionRows = [...branchContributionMap.values()].sort((a, b) => a.branch.localeCompare(b.branch)).map(item => {
-    const joinedStudents = new Set(placementRows
+    const joinedPlacements = placementRows
       .filter(row => normalizePlacementText(getValByHeader(row, ['branch', 'sittingbranch'])) === normalizePlacementText(item.branch))
-      .filter(row => placementOutcome(getValByHeader(row, ['status']), getValByHeader(row, ['joiningstatus'])).joined)
-      .map(row => studentKey(row)));
-    return [monthlyReportEscape(item.branch), String(item.placementRecords), String(joinedStudents.size), ...(driveCount ? [String(item.drives)] : [])];
+      .filter(row => placementOutcome(getValByHeader(row, ['status']), effectivePlacementJoiningStatus(row)).joined)
+      .length;
+    return [monthlyReportEscape(item.branch), String(item.placementRecords), String(joinedPlacements), ...(driveCount ? [String(item.drives)] : [])];
   });
-  const branchContributionHeaders = ['Branch', 'Placement records', 'Students joined', ...(driveCount ? ['Drives conducted'] : [])];
+  const branchContributionHeaders = ['Branch', 'Placement records', 'Joined placement records', ...(driveCount ? ['Drives conducted'] : [])];
   const branchMatrixRows = branchCourseCounts.map(item => [monthlyReportEscape(item.branch),
     ...MONTHLY_REPORT_MAIN_COURSES.map(course => String(branchCoursePlacementCounts.get(item.branch)?.get(course) || 0)), String(item.total)]);
   const placedStudentRowsByCourse = mainCourseTotals.map(([course, count]) => [monthlyReportEscape(course), String(count)]);
@@ -9490,10 +9498,11 @@ exports.sendMonthlyTpoReport = async (req, res) => {
         ${sectionTitle('Placement Status', 'Joining and offer outcomes', '#c07a23')}
         ${table(['Placement summary', 'Count'], [
           ['Placement records', String(totalPlacementRecords)],
-          ['Students joined', String(joinedStudentCount)],
-          ['Students not joined', String(notJoinedStudentCount)],
-          ['Dual placements marked this month', String(dualPlacementCount)],
-          ['Multiple placements marked this month', String(multiplePlacementCount)]
+          ['Joined placement records', String(joinedPlacementCount)],
+          ['Not joined placement records', String(notJoinedPlacementCount)],
+          ['Pending joining', String(pendingJoiningCount)],
+          ['Dual placement', String(dualPlacementCount)],
+          ['Multiple placement', String(multiplePlacementCount)]
         ])}
 
         ${sectionTitle('Poster / Video Status', 'Social media activity collected', '#9b5a9b')}
