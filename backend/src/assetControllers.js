@@ -18,8 +18,13 @@ async function ensureAssetHeaders(sheet, requiredHeaders) {
   const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const missing = requiredHeaders.filter(header => !headers.some(existing => normalized(existing) === normalized(header)));
   if (missing.length) {
+    const requiredColumnCount = headers.length + missing.length;
+    if ((Number(sheet.columnCount) || 0) < requiredColumnCount) {
+      await sheet.resize({ columnCount: requiredColumnCount });
+    }
     headers = [...headers, ...missing];
     await sheet.setHeaderRow(headers);
+    sheet._headerValues = headers;
   }
   return headers;
 }
@@ -605,7 +610,12 @@ exports.addAsset = async (req, res) => {
 
     if (!assetSheet) return res.status(404).json({ success: false, message: "Asset sheet missing in database." });
     if (req.file && !documentsSheet) return res.status(503).json({ success: false, message: 'Asset photo history is unavailable. No asset was registered.' });
-    const assetHeaders = await ensureAssetHeaders(assetSheet, ['Depreciation_Method', 'Useful_Life_Years', 'Salvage_Value']);
+    const assetHeaders = await ensureAssetHeaders(assetSheet, [
+      'Asset_ID', 'Asset_Name', 'Category', 'Subcategory', 'Branch', 'Location',
+      'Status', 'Condition', 'Brand', 'Model', 'Purchase_Date', 'Purchase_Cost',
+      'Vendor', 'Invoice_Number', 'Warranty_End', 'Depreciation_Method',
+      'Useful_Life_Years', 'Salvage_Value', 'Created_By', 'Timestamp'
+    ]);
 
     // Generate Unique IDs
     const timestamp = formatIndiaTimestamp();
