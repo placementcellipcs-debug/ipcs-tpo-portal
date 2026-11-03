@@ -15,13 +15,12 @@ const getVal = (obj, searchStr) => {
 };
 const effectiveJoiningStatus = row => {
   const status = String(getVal(row, 'joiningstatus') || '').trim();
-  const normalizedStatus = normalizePlacementText(status);
-  if (normalizedStatus === 'dualplacement' || normalizedStatus === 'multipleplacement') return normalizedStatus === 'dualplacement' ? 'Dual Placement' : 'Multiple Placement';
+  if (status) return status;
   // Legacy records from the former checkbox UI are interpreted as the new
-  // single dropdown value until the record is next saved.
+  // single dropdown value only if this placement row has no saved dropdown.
   if (/^(yes|true|1|marked)$/i.test(String(getVal(row, 'multipleplacement') || '').trim())) return 'Multiple Placement';
   if (/^(yes|true|1|marked)$/i.test(String(getVal(row, 'dualplacement') || '').trim())) return 'Dual Placement';
-  return status;
+  return '';
 };
 const isPlacementTypeMarked = (row, type) => normalizePlacementText(effectiveJoiningStatus(row)) === `${type}placement`;
 const reportTpoKey = tpo => normalizePlacementText(tpo?.userName || tpo?.name || tpo?.email);

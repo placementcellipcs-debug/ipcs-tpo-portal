@@ -1788,15 +1788,13 @@ const placementActionHeaders = ['TPO Action Log', 'Action Type', 'Action Details
 const normalizePlacementMarker = value => /^(yes|true|1|marked|dual|multiple)$/i.test(String(value || '').trim());
 const effectivePlacementJoiningStatus = row => {
   const stored = String(getValByHeader(row, ['joiningstatus']) || '').trim();
-  const normalized = normalizePlacementText(stored);
-  if (normalized === 'dualplacement' || normalized === 'multipleplacement') return normalized === 'dualplacement' ? 'Dual Placement' : 'Multiple Placement';
+  // The selected value in this row's Joining Status cell is authoritative.
+  // Only read the old checkboxes for legacy rows where it is still blank.
+  if (stored) return stored;
   // Preserve classifications saved by the earlier checkbox UI while moving
   // them into the single Joining Status dropdown on the next edit.
   if (normalizePlacementMarker(getValByHeader(row, ['multipleplacement']))) return 'Multiple Placement';
   if (normalizePlacementMarker(getValByHeader(row, ['dualplacement']))) return 'Dual Placement';
-  const legacyType = normalizePlacementText(getValByHeader(row, ['placementtype']));
-  if (legacyType === 'multiple') return 'Multiple Placement';
-  if (legacyType === 'dual') return 'Dual Placement';
   return stored;
 };
 const isMarkedPlacementType = (row, type) => {
@@ -1862,9 +1860,16 @@ const upsertPlacementTpoLog = async record => {
   const targetKey = placementLogRecordKey(record);
   if (!targetKey) throw new Error('A student roll number or name is required to record a placement in TPO_Log.');
   const cachedRows = getCache()?.tpoLogs || [];
-  const existing = record.tpoLogRow || (Number(record.sourceRow) >= 2
-    ? cachedRows.find(row => Number(row.rowNumber) === Number(record.sourceRow))
-    : null) || findLatestCanonicalPlacementLog(cachedRows, targetKey);
+  let existing = record.tpoLogRow || null;
+  if (!existing && Number(record.sourceRow) >= 2) {
+    existing = cachedRows.find(row => Number(row.rowNumber) === Number(record.sourceRow)) || null;
+    if (!existing) {
+      const [liveSourceRow] = await logSheet.getRows({ offset: Number(record.sourceRow) - 2, limit: 1 });
+      if (liveSourceRow && Number(liveSourceRow.rowNumber) === Number(record.sourceRow)) existing = liveSourceRow;
+    }
+    if (!existing) throw new Error('The selected placement row is no longer available. Refresh the placed list before editing it.');
+  }
+  if (!existing) existing = findLatestCanonicalPlacementLog(cachedRows, targetKey);
   const value = (key, aliases, fallback = '') => {
     const supplied = record[key];
     if (supplied !== undefined && supplied !== null && String(supplied).trim() !== '') return supplied;
@@ -1923,11 +1928,8 @@ const syncDirectoryPlacementStatusFromLog = async logRow => {
   await loadDocInfo();
   const studentSheet = doc.sheetsByTitle['Data'];
   if (!studentSheet) return 'The placement is recorded, but the student directory sheet is unavailable.';
+  await studentSheet.loadHeaderRow();
   let headers = [...(studentSheet.headerValues || [])];
-  if (!headers.length) {
-    await studentSheet.loadHeaderRow();
-    headers = [...(studentSheet.headerValues || [])];
-  }
   const statusAliases = [
     'Placement Status', 'Placement Status (Current)', 'Student Placement Status', 'Placement Status (TPO)', 'Placement Status\u00a0'
   ];
@@ -1941,16 +1943,42 @@ const syncDirectoryPlacementStatusFromLog = async logRow => {
   const rollKey = normalizePlacementText(getValByHeader(logRow, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
   const nameKey = normalizePlacementText(getValByHeader(logRow, ['studentname', 'name']));
   const branchKey = normalizePlacementText(getValByHeader(logRow, ['branch', 'sittingbranch']));
-  const students = getCache()?.students || [];
-  let studentRow = rollKey
-    ? students.find(row => normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])) === rollKey)
+  const phoneKey = normalizePlacementText(getValByHeader(logRow, ['contact', 'phone', 'mobilenumber']));
+  const emailKey = normalizePlacementText(getValByHeader(logRow, ['mailid', 'email', 'studentemail']));
+  const unusableRolls = new Set(['noroll', 'norollnumber', 'na', 'none', 'null', 'unknown', 'notavailable', '0']);
+  const usableRollKey = rollKey && !unusableRolls.has(rollKey) ? rollKey : '';
+  // Read the live directory after loading its headers. Cached student rows can
+  // belong to an older worksheet object and may not have usable headers.
+  const students = await studentSheet.getRows();
+  const exactStudentValue = (row, aliases) => {
+    const wanted = new Set(aliases.map(normalizePlacementHeader));
+    const index = (studentSheet.headerValues || []).findIndex(header => wanted.has(normalizePlacementHeader(header)));
+    return index >= 0 ? String(row?._rawData?.[index] ?? '').trim() : '';
+  };
+  const findUniqueStudent = predicate => {
+    const matches = students.filter(row => predicate(row));
+    return matches.length === 1 ? matches[0] : null;
+  };
+  const normalizeBranchKey = value => normalizePlacementText(value).replace(/branch/g, '');
+  const sameBranch = row => {
+    if (!branchKey) return true;
+    const studentBranch = normalizeBranchKey(exactStudentValue(row, ['branch', 'branchname', 'sittingbranch']));
+    const logBranch = normalizeBranchKey(branchKey);
+    return !studentBranch || studentBranch === logBranch;
+  };
+  let studentRow = usableRollKey
+    ? findUniqueStudent(row => normalizePlacementText(exactStudentValue(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])) === usableRollKey && sameBranch(row))
     : null;
-  if (!studentRow && nameKey) {
-    const matches = students.filter(row => normalizePlacementText(getValByHeader(row, ['name', 'studentname'])) === nameKey
-      && (!branchKey || normalizePlacementText(getValByHeader(row, ['branch', 'sittingbranch'])) === branchKey));
-    if (matches.length === 1) [studentRow] = matches;
+  if (!studentRow && phoneKey) {
+    studentRow = findUniqueStudent(row => normalizePlacementText(exactStudentValue(row, ['contact', 'phone', 'phoneno', 'phonenumber', 'mobile', 'mobileno', 'mobilenumber', 'studentphone'])) === phoneKey && sameBranch(row));
   }
-  if (!studentRow) return 'The placement is recorded, but its student could not be matched to the Data sheet.';
+  if (!studentRow && emailKey) {
+    studentRow = findUniqueStudent(row => normalizePlacementText(exactStudentValue(row, ['mailid', 'email', 'studentemail'])) === emailKey && sameBranch(row));
+  }
+  if (!studentRow && nameKey) {
+    studentRow = findUniqueStudent(row => normalizePlacementText(exactStudentValue(row, ['name', 'studentname', 'nameofstudent'])) === nameKey && sameBranch(row));
+  }
+  if (!studentRow) return 'The placement is recorded, but its student could not be matched to one unique row in the Data sheet.';
   if (normalizePlacementText(getValByHeader(studentRow, ['placementstatus', 'placementstat'])) === 'placed') return '';
   await updateCachedSheetRow(studentSheet, studentRow, { [statusHeader]: 'Placed' });
   return '';
@@ -2025,9 +2053,11 @@ const syncOpeningAppliedPlacementFields = async (logRow, internationalPlacement,
   const joiningHeader = findPlacementHeader(headers, ['Joining Status']);
   const dualHeader = findPlacementHeader(headers, ['Dual Placement']);
   const multipleHeader = findPlacementHeader(headers, ['Multiple Placement']);
+  const positionHeader = findPlacementHeader(headers, ['Position', 'Role']);
   const fieldsToUpdate = Object.fromEntries([
     [flagHeader, flag], [joiningHeader, status], [dualHeader, 'No'], [multipleHeader, 'No']
   ].filter(([header, value]) => header && value !== ''));
+  if (positionHeader) fieldsToUpdate[positionHeader] = getValByHeader(logRow, ['position', 'role']);
   if (!Object.keys(fieldsToUpdate).length) return 'Opening_Applied has no joining-status column.';
   const cachedRows = getCache()?.applications || [];
   let target = Number(preferredRowNumber) >= 2
@@ -2049,13 +2079,25 @@ const syncOpeningAppliedPlacementFields = async (logRow, internationalPlacement,
       if (jobId && rowJobId === jobId) return true;
       return Boolean(company && rowCompany === company && (!position || !rowPosition || rowPosition === position));
     });
+  const findUniqueCompanyMatch = rows => {
+    if (jobId || !company) return [];
+    return rows.filter(row => {
+      const rowRoll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+      const rowName = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+      const sameStudent = roll ? rowRoll === roll : Boolean(name && rowName === name);
+      return sameStudent && normalizePlacementText(getValByHeader(row, ['companyname', 'company'])) === company;
+    });
+  };
   let matchCount = 0;
   if (!target) {
     let matches = findMatches(cachedRows);
+    if (!matches.length) matches = findUniqueCompanyMatch(cachedRows);
     if (!matches.length) {
       // The portal cache may lag a recent sheet edit from another TPO session.
       // Read the live tab before deciding that this placement needs a new row.
-      matches = findMatches(await sheet.getRows());
+      const liveRows = await sheet.getRows();
+      matches = findMatches(liveRows);
+      if (!matches.length) matches = findUniqueCompanyMatch(liveRows);
     }
     matchCount = matches.length;
     if (matches.length === 1) [target] = matches;
@@ -2546,6 +2588,7 @@ exports.updatePlacementLog = async (req, res) => {
     const previousRemarks = getValByHeader(row, ['remarks']);
     const previousDatePlaced = getValByHeader(row, ['dateplaced']);
     const previousPackage = getValByHeader(row, ['package', 'packagelpa']);
+    const previousPosition = getValByHeader(row, ['position', 'role']);
     const previousJoiningStatus = getValByHeader(row, ['joiningstatus']);
     const previousOfferLetter = getValByHeader(row, ['offerletterstatus', 'offerletter']);
     const previousInternationalPlacement = normalizeInternationalPlacementFlag(getValByHeader(row, ['internationalplacement', 'isinternationalplacement']));
@@ -2585,6 +2628,8 @@ exports.updatePlacementLog = async (req, res) => {
     setValue(['remarks'], req.body.remarks || '');
     setValue(['dateplaced'], formatIndiaDate(req.body.datePlaced || ''));
     setValue(['package', 'package(lpa)'], req.body.packageLpa || '');
+    const position = req.body.position !== undefined ? String(req.body.position || '').trim() : previousPosition;
+    setValue(['position', 'role'], position);
     const joiningStatus = req.body.joiningStatus !== undefined
       ? String(req.body.joiningStatus || '').trim()
       : effectivePlacementJoiningStatus(row);
@@ -2608,10 +2653,12 @@ exports.updatePlacementLog = async (req, res) => {
     const newRemarks = req.body.remarks || '';
     const newDatePlaced = formatIndiaDate(req.body.datePlaced || '');
     const newPackage = req.body.packageLpa || '';
+    const newPosition = position;
     const newJoiningStatus = joiningStatus;
     const changedFields = placementAuditChanges([
       ['Status', previousStatus, newStatus], ['Remarks', previousRemarks, newRemarks],
       ['Date placed', previousDatePlaced, newDatePlaced], ['Package', previousPackage, newPackage],
+      ['Position', previousPosition, newPosition],
       ['Joining status', previousJoiningStatus, newJoiningStatus],
       ['International placement', previousInternationalPlacement, internationalPlacement],
       ['Offer letter', previousOfferLetter, offerLetterLink]
@@ -2624,7 +2671,7 @@ exports.updatePlacementLog = async (req, res) => {
       jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']),
       position: getValByHeader(row, ['position', 'role']), placementOfficer: getValByHeader(row, ['placementofficer', 'tpo', 'tponame']) || user?.name || user?.email || '',
       status: req.body.status || 'Placed', remarks: req.body.remarks || '', datePlaced: formatIndiaDate(req.body.datePlaced || ''),
-      packageLpa: req.body.packageLpa || '', joiningStatus,
+      packageLpa: req.body.packageLpa || '', position: newPosition, joiningStatus,
       internationalPlacement,
       offerLetter: offerLetterLink, sourceSheet: 'TPO_Log', sourceRow: row.rowNumber, tpoLogRow: row
     });
@@ -2677,10 +2724,12 @@ exports.updatePlacedStudent = async (req, res) => {
     const previousRemarks = getValByHeader(row, ['remarks']);
     const previousDatePlaced = getValByHeader(row, ['dateplaced']);
     const previousPackage = getValByHeader(row, ['package', 'packagelpa']);
+    const previousPosition = getValByHeader(row, ['position', 'role']);
     const previousOfferLetter = getValByHeader(row, ['offerletter', 'offerletterstatus']);
     const previousInternationalPlacement = normalizeInternationalPlacementFlag(getValByHeader(row, ['internationalplacement', 'isinternationalplacement']));
     const joiningStatus = req.body.joiningStatus ?? effectivePlacementJoiningStatus(row);
     const remarks = req.body.remarks ?? getValByHeader(row, ['remarks']);
+    const position = req.body.position ?? previousPosition;
     const datePlaced = formatIndiaDate(req.body.datePlaced ?? getValByHeader(row, ['dateplaced']));
     const packageLpa = req.body.packageLpa ?? getValByHeader(row, ['package', 'packagelpa']);
     let offerLetter = getValByHeader(row, ['offerletter', 'offerletterstatus']);
@@ -2697,17 +2746,19 @@ exports.updatePlacedStudent = async (req, res) => {
       email: getValByHeader(row, ['mailid', 'email']), roll: getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']),
       course, branch, qual: getValByHeader(row, ['qualification', 'qual']), resume: getValByHeader(row, ['resume', 'cv']),
       jobId: getValByHeader(row, ['jobid']), company: getValByHeader(row, ['companyname', 'company']),
-      position: getValByHeader(row, ['position', 'role']), placementOfficer: (isTpo ? user?.name || user?.email : owner) || owner,
+      position, placementOfficer: (isTpo ? user?.name || user?.email : owner) || owner,
       status, joiningStatus, remarks, datePlaced, packageLpa, offerLetter,
       internationalPlacement,
       entrySource: 'Placed Students edit',
+      sourceSheet: getValByHeader(row, ['sourcesheet']) || 'TPO_Log',
+      sourceRow: Number(getValByHeader(row, ['sourcerow'])) || undefined,
       statusHistory: getValByHeader(row, ['statushistory'])
     });
     if (warning) return res.status(503).json({ success: false, message: warning });
     const changedFields = placementAuditChanges([
       ['Status', previousStatus, status], ['Joining status', previousJoiningStatus, joiningStatus],
       ['Remarks', previousRemarks, remarks], ['Date placed', previousDatePlaced, datePlaced],
-      ['Package', previousPackage, packageLpa],
+      ['Package', previousPackage, packageLpa], ['Position', previousPosition, position],
       ['International placement', previousInternationalPlacement, internationalPlacement],
       ['Offer letter', previousOfferLetter, offerLetter]
     ]);

@@ -130,14 +130,13 @@ export default function PlacedStudents() {
       };
       const getJoiningCategory = row => {
         const current = String(getVal(row, ['joiningstatus']) || '').trim();
-        if (/^(dual placement|multiple placement)$/i.test(current)) return current;
+        if (current) return current;
         // Display older checkbox records as the new dropdown value until the
-        // trainer saves them into the single Joining Status column.
+        // trainer saves them into the single Joining Status column. A saved
+        // Joining Status on this placement row always takes precedence.
         if (/^(yes|true|1|marked)$/i.test(String(getVal(row, ['multipleplacement']) || '').trim())) return 'Multiple Placement';
         if (/^(yes|true|1|marked)$/i.test(String(getVal(row, ['dualplacement']) || '').trim())) return 'Dual Placement';
-        if (current) return current;
-        const legacyType = String(getVal(row, ['placementtype']) || '').trim().toLowerCase();
-        return legacyType === 'dual' ? 'Dual Placement' : legacyType === 'multiple' ? 'Multiple Placement' : 'Joined';
+        return 'Joined';
       };
 
       const placedRecords = (placedResponse.data.records || []).map(row => ({
@@ -261,7 +260,7 @@ export default function PlacedStudents() {
       return;
     }
     setSelectedApp(app);
-    setEditForm({ remarks: app.remarks, datePlaced: app.datePlaced, packageLpa: app.packageLpa, offerLetterFile: null, joiningStatus: app.joiningStatus, isInternationalPlacement: app.isInternationalPlacement === true });
+    setEditForm({ position: app.position || '', remarks: app.remarks, datePlaced: app.datePlaced, packageLpa: app.packageLpa, offerLetterFile: null, joiningStatus: app.joiningStatus, isInternationalPlacement: app.isInternationalPlacement === true });
     setIsEditModalOpen(true);
   };
 
@@ -274,6 +273,7 @@ export default function PlacedStudents() {
       formData.append('fullApp', JSON.stringify(selectedApp));
       formData.append('status', selectedApp.status || 'Placed'); 
       formData.append('remarks', editForm.remarks || '');
+      formData.append('position', editForm.position || '');
       formData.append('datePlaced', editForm.datePlaced || '');
       formData.append('packageLpa', editForm.packageLpa || '');
       formData.append('joiningStatus', editForm.joiningStatus || '');
@@ -603,6 +603,10 @@ export default function PlacedStudents() {
                 <select className="sleek-select" style={{ width: '100%' }} value={String(Boolean(editForm.isInternationalPlacement))} onChange={e => setEditForm({ ...editForm, isInternationalPlacement: e.target.value === 'true' })}>
                   <option value="false">Within India</option><option value="true">Outside India</option>
                 </select>
+              </div>
+              <div>
+                <label className="data-label">Position / Role</label>
+                <input type="text" className="sleek-input" placeholder="e.g. Project Engineer" style={{ width: '100%' }} value={editForm.position || ''} onChange={e => setEditForm({ ...editForm, position: e.target.value })} />
               </div>
               <div>
                 <label className="data-label">Date Placed</label>

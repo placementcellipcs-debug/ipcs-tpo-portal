@@ -314,12 +314,9 @@ async function rebuildPlacedStudents(sheet, tpoLogs = [], existingRows = []) {
     const recordKey = `TPO_Log:${sourceRow}`;
     const value = aliases => placementRowValue(row, aliases);
     const rawJoiningStatus = value(['joiningstatus']);
-    const normalizedJoiningStatus = String(rawJoiningStatus || '').toLowerCase().replace(/[^a-z0-9]/g, '');
     const legacyMultiple = /^(yes|true|1|marked)$/i.test(value(['multipleplacement']));
     const legacyDual = /^(yes|true|1|marked)$/i.test(value(['dualplacement']));
-    const joiningStatus = normalizedJoiningStatus === 'dualplacement' || normalizedJoiningStatus === 'multipleplacement'
-      ? rawJoiningStatus
-      : legacyMultiple ? 'Multiple Placement' : legacyDual ? 'Dual Placement' : rawJoiningStatus;
+    const joiningStatus = rawJoiningStatus || (legacyMultiple ? 'Multiple Placement' : legacyDual ? 'Dual Placement' : '');
     return [{
       'Record Key': recordKey,
       'Student Name': value(['studentname', 'name', 'candidate']),
