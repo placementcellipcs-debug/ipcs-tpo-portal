@@ -7680,14 +7680,18 @@ exports.getAdminUsers = (req, res) => {
     const monthForStatsRow = row => {
       const explicitMonth = String(getValByHeader(row, ['reportmonth']) || '').trim();
       if (/^\d{4}-(0[1-9]|1[0-2])$/.test(explicitMonth)) return explicitMonth;
+      const explicitDate = safeParseDate(explicitMonth);
+      if (explicitDate) return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(explicitDate).slice(0, 7);
       const date = safeParseDate(getFirstNonEmptyValByHeader(row, ['timestamp', 'date']));
       return date ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(date).slice(0, 7) : '';
     };
     const monthlyTargetFor = (identities, legacyTarget, role) => {
       if (!isPlacementTrackerTpo({ role })) return { target: '', targetMonth };
       const normalizedIdentities = new Set(identities.map(normalizePlacementText).filter(Boolean));
-      const row = (cache?.tpoStats || []).find(stat => normalizedIdentities.has(normalizePlacementText(getValByHeader(stat, ['user', 'tponame', 'placementofficer'])))
+      const matchingRows = (cache?.tpoStats || []).filter(stat => normalizedIdentities.has(normalizePlacementText(getValByHeader(stat, ['user', 'tponame', 'placementofficer'])))
         && monthForStatsRow(stat) === targetMonth);
+      const rowsWithTarget = matchingRows.filter(stat => String(getValByHeader(stat, ['monthlytarget']) ?? '').trim() !== '');
+      const row = rowsWithTarget[rowsWithTarget.length - 1] || matchingRows[matchingRows.length - 1];
       const savedTarget = row ? getValByHeader(row, ['monthlytarget']) : '';
       const currentMonth = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
       return { target: savedTarget || (targetMonth === currentMonth ? legacyTarget || '' : ''), targetMonth };

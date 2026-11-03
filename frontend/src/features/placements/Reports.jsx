@@ -135,6 +135,8 @@ const parseActivityItems = (serialized, legacy = {}) => {
 const getTpoActivityMonth = stat => {
   const reportMonth = String(getVal(stat, 'reportmonth') || '').trim();
   if (/^\d{4}-(0[1-9]|1[0-2])$/.test(reportMonth)) return reportMonth;
+  const reportMonthDate = parsePortalDateTime(reportMonth);
+  if (reportMonthDate) return `${reportMonthDate.getFullYear()}-${String(reportMonthDate.getMonth() + 1).padStart(2, '0')}`;
   const date = parsePortalDateTime(getVal(stat, 'timestamp'));
   return date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` : '';
 };
@@ -244,6 +246,16 @@ export default function Reports() {
   }, [isSuperAdmin, myName, reportReloadKey, monthFilter]);
 
   const getCourse = course => reportMainCourse(course) || 'Information technology (IT)';
+  const getMonthlyTarget = (tpo, reportMonth) => {
+    const identities = new Set(tpoIdentityValues(tpo));
+    const matchingRows = tpoStatsData.filter(stat => identities.has(normalizePlacementText(getVal(stat, 'user')))
+      && getTpoActivityMonth(stat) === reportMonth);
+    const rowsWithTarget = matchingRows.filter(stat => String(getVal(stat, 'monthlytarget') ?? '').trim() !== '');
+    const savedTarget = rowsWithTarget.length ? getVal(rowsWithTarget[rowsWithTarget.length - 1], 'monthlytarget') : '';
+    return String(savedTarget ?? '').trim() !== ''
+      ? savedTarget
+      : (String(tpo?.targetMonth || '') === reportMonth ? tpo?.target : '');
+  };
   const getPlacementCourse = placement => {
     const course = reportMainCourse(getVal(placement, 'course'));
     if (course) return course;
@@ -452,12 +464,11 @@ export default function Reports() {
     
     // 🚨 Find manual stats for this TPO in the selected month
     const currentMonthPrefix = monthFilter; // "YYYY-MM" format
-    const manualStats = tpoStatsData.find(stat => {
+    const manualStats = tpoStatsData.filter(stat => {
       const statUser = normalizePlacementText(getVal(stat, 'user'));
       return tpoIdentities.includes(statUser) && getTpoActivityMonth(stat) === currentMonthPrefix;
-    });
-    const reportTarget = getVal(manualStats, 'monthlytarget')
-      || (String(t.targetMonth || '') === currentMonthPrefix ? t.target : '');
+    }).at(-1);
+    const reportTarget = getMonthlyTarget(t, currentMonthPrefix);
 
     // Application totals come from OpeningApplied; TPO_Log is only the status history.
     const appsForTpo = applications.filter(application => {
@@ -760,11 +771,10 @@ export default function Reports() {
               });
               const totalPlacements = placedStudentsLog.length;
               const tpoIdentities = tpoIdentityValues(tpo);
-              const targetStatsRow = tpoStatsData.find(stat => tpoIdentities.includes(normalizePlacementText(getVal(stat, 'user'))) && getTpoActivityMonth(stat) === monthFilter);
-              const reportTarget = getVal(targetStatsRow, 'monthlytarget')
-                || (String(tpo.targetMonth || '') === monthFilter ? tpo.target : '');
+              const reportTarget = getMonthlyTarget(tpo, monthFilter);
               const parsedTarget = Number.parseInt(reportTarget, 10);
               const targetGoal = Number.isFinite(parsedTarget) ? parsedTarget : 0;
+              const hasTarget = targetGoal > 0;
               const dualCount = placedStudentsLog.filter(log => isPlacementTypeMarked(log, 'dual')).length;
               const multipleCount = placedStudentsLog.filter(log => isPlacementTypeMarked(log, 'multiple')).length;
               const progressPercent = targetGoal > 0 ? Math.min((totalPlacements / targetGoal) * 100, 100) : 0;
@@ -784,7 +794,7 @@ export default function Reports() {
                       <div className="hc-item"><div className="hc-label">Assigned Branches</div><div className="hc-value" style={{ fontSize: '1rem' }}>{Array.isArray(tpo.assignedBranchesArray) ? tpo.assignedBranchesArray.join(', ').toUpperCase() : (tpo.assignedBranches || '').toUpperCase()}</div></div>
                       <div className="hc-item" style={{ background: 'rgba(16, 185, 129, 0.05)' }}>
                         <div className="hc-label" style={{ color: '#10b981' }}>Target For The Month</div>
-                        <div className="hc-value" style={{ color: '#10b981', fontSize: '2rem' }}>{targetGoal}</div>
+                        <div className="hc-value" style={{ color: '#10b981', fontSize: hasTarget ? '2rem' : '1.2rem' }}>{hasTarget ? targetGoal : 'Not set'}</div>
                       </div>
                     </div>
 
@@ -802,11 +812,11 @@ export default function Reports() {
                     <div style={{ background: '#0f1523', padding: '25px 30px', borderTop: '1px solid #1e293b' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                         <span style={{ color: 'var(--text-muted)', fontWeight: 'bold', fontSize: '1.1rem' }}>Progress to Target</span>
-                        <span style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>{totalPlacements} / {targetGoal} Placements</span>
+                        <span style={{ color: '#fff', fontSize: '1.4rem', fontWeight: 'bold' }}>{hasTarget ? `${totalPlacements} / ${targetGoal} Placements` : `${totalPlacements} placements · No target set`}</span>
                       </div>
-                      <div style={{ width: '100%', height: '14px', background: '#1e293b', borderRadius: '10px', overflow: 'hidden' }}>
+                      {hasTarget ? <div style={{ width: '100%', height: '14px', background: '#1e293b', borderRadius: '10px', overflow: 'hidden' }}>
                         <div style={{ width: `${progressPercent}%`, height: '100%', background: progressPercent >= 100 ? '#10b981' : 'var(--accent-primary)', transition: 'width 1s ease-in-out' }}></div>
-                      </div>
+                      </div> : <div style={{ width: '100%', padding: '11px 14px', boxSizing: 'border-box', borderRadius: '10px', border: '1px dashed #475569', color: 'var(--text-muted)', fontSize: '.85rem' }}>No monthly target is recorded for {displayMonthName}.</div>}
                       <div style={{ marginTop: '8px', color: 'var(--text-muted)', fontSize: '.82rem' }}>{placedStudentsLog.length} placement records counted for this TPO and month.</div>
                     </div>
                   </div>
