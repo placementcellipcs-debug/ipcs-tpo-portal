@@ -156,7 +156,7 @@ export default function Reports() {
   const role = String(tpoData?.role || '').toUpperCase();
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || role.includes('ADMIN') || role.includes('PLACEMENT TEAM') || ['GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].some(adminRole => role.includes(adminRole));
   const isTpo = /\b(TPO|PLACEMENT OFFICER)\b/.test(role);
-  const canSendMonthlyReport = isSuperAdmin || isTpo;
+  const canSendMonthlyReport = isTpo;
   const myName = (tpoData?.name || '').toLowerCase().trim();
   const myIdentities = tpoIdentityValues(tpoData);
   

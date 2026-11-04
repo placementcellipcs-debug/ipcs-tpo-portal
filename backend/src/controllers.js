@@ -9373,8 +9373,8 @@ const monthlyReportPackage = value => {
 };
 exports.sendMonthlyTpoReport = async (req, res) => {
   const user = req.portalUser || {};
-  if (!isPlacementTrackerAdmin(user) && !isPlacementTrackerTpo(user)) {
-    return res.status(403).json({ success: false, message: 'Only TPOs and placement administrators can send the monthly report.' });
+  if (!isPlacementTrackerTpo(user)) {
+    return res.status(403).json({ success: false, message: 'Only TPOs can send the monthly report.' });
   }
   const month = String(req.body?.month || '').trim();
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
@@ -9645,25 +9645,62 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   const mainCourseOpeningTotals = MONTHLY_REPORT_MAIN_COURSES.map(course => [course, openingCountsByCourse.get(course) || { posts: 0 }]);
   const highestPackageLabel = highestLpa === null ? 'No package recorded' : `${highestLpa.toFixed(2).replace(/\.00$/, '')} LPA`;
   const countWord = (count, singular, plural = `${singular}s`) => `${count} ${count === 1 ? singular : plural}`;
-  const table = (headers, rows, options = {}) => `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 26px;font-size:12px;color:#263a4a"><thead><tr>${headers.map(header => `<th style="padding:13px 12px;background:#152e43;border:1px solid #29465d;text-align:left;color:#ffffff;font-size:10px;letter-spacing:.55px;text-transform:uppercase">${monthlyReportEscape(header)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map((row, rowIndex) => `<tr>${row.map(value => `<td style="padding:12px;border:1px solid #d8e3eb;vertical-align:top;background:${rowIndex % 2 ? '#f4f8fb' : '#ffffff'}">${value}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}" style="padding:16px;border:1px solid #d8e3eb;color:#667789;background:#fbfdff">No records for this month.</td></tr>`}</tbody>${options.total ? `<tfoot><tr>${options.total.map(value => `<td style="padding:12px;border:1px solid #c6d8e2;background:#eaf4f5;color:#12384a;font-weight:bold">${value}</td>`).join('')}</tr></tfoot>` : ''}</table>`;
+  const table = (headers, rows, options = {}) => `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;margin:0 0 26px;font-size:12px;color:#263a4a"><thead><tr>${headers.map(header => `<th style="padding:13px 12px;background:#152e43;border:1px solid #29465d;text-align:left;color:#ffffff;font-size:10px;letter-spacing:.55px;text-transform:uppercase">${monthlyReportEscape(header)}</th>`).join('')}</tr></thead><tbody>${rows.length ? rows.map((row, rowIndex) => {
+    const background = options.rowColors?.[rowIndex] || (rowIndex % 2 ? '#f4f8fb' : '#ffffff');
+    const accent = options.rowAccents?.[rowIndex];
+    return `<tr>${row.map((value, cellIndex) => `<td style="padding:12px;border:1px solid #d8e3eb;vertical-align:top;background:${background};${cellIndex === 0 && accent ? `border-left:5px solid ${accent};` : ''}">${value}</td>`).join('')}</tr>`;
+  }).join('') : `<tr><td colspan="${headers.length}" style="padding:16px;border:1px solid #d8e3eb;color:#667789;background:#fbfdff">No records for this month.</td></tr>`}</tbody>${options.total ? `<tfoot><tr>${options.total.map(value => `<td style="padding:12px;border:1px solid #c6d8e2;background:#eaf4f5;color:#12384a;font-weight:bold">${value}</td>`).join('')}</tr></tfoot>` : ''}</table>`;
   const sectionTitle = (kicker, title, color = '#087f8c') => `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:34px 0 16px;border-collapse:collapse"><tr><td style="border-left:4px solid ${color};padding:5px 0 5px 14px"><div style="font-size:10px;line-height:1.5;letter-spacing:1.5px;text-transform:uppercase;color:${color};font-weight:bold">${monthlyReportEscape(kicker)}</div><div style="font-size:20px;line-height:1.4;color:#152e43;font-weight:bold">${monthlyReportEscape(title)}</div></td></tr></table>`;
   const numberedCompanyNames = names => names.length
     ? `<ol style="margin:0;padding-left:20px">${names.map(name => `<li style="padding:2px 0">${monthlyReportEscape(name)}</li>`).join('')}</ol>`
     : '<span style="color:#667085">—</span>';
+  const placementRowColors = [];
+  const placementRowAccents = [];
+  const internationalPlacementSet = new Set(internationalPlacementRows.map(item => item.row));
+  const joiningColorStyle = {
+    joined: '#e8f5e9',
+    notjoined: '#fde8e7',
+    dualplacement: '#fff3e0',
+    multipleplacement: '#e3f2fd'
+  };
   const placedRowsHtml = placementRows.map((row, index) => {
     const roll = getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']);
-    const student = studentsByRoll.get(normalizePlacementText(roll));
+    const student = studentsByRoll.get(normalizePlacementText(roll)) || (() => {
+      const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+      const branch = normalizePlacementText(getValByHeader(row, ['branch', 'sittingbranch']));
+      return name ? (cache.students || []).find(candidate =>
+        normalizePlacementText(getValByHeader(candidate, ['studentname', 'name'])) === name
+        && (!branch || normalizePlacementText(getValByHeader(candidate, ['branch', 'sittingbranch'])) === branch)
+      ) : null;
+    })();
     const packageValue = getFirstNonEmptyValByHeader(row, ['package', 'salary', 'ctc', 'salarypackage', 'packageoffered']);
     const packageInfo = monthlyReportPackage(packageValue);
     const packageLabel = Number.isFinite(packageInfo.lpa) ? `${packageInfo.lpa.toFixed(2).replace(/\.00$/, '')} LPA` : packageValue || '—';
+    const joiningStatus = effectivePlacementJoiningStatus(row) || 'Not recorded';
+    const normalizedJoiningStatus = normalizePlacementText(joiningStatus);
+    const isInternational = internationalPlacementSet.has(row);
+    placementRowColors.push(joiningColorStyle[normalizedJoiningStatus] || '#f8fafc');
+    placementRowAccents.push(isInternational ? '#8b5cf6' : '');
+    const studentName = monthlyReportEscape(getValByHeader(row, ['studentname', 'name']) || getValByHeader(student, ['name', 'studentname']) || '—');
+    const internationalBadge = isInternational
+      ? '<br><span style="display:inline-block;margin-top:5px;padding:3px 7px;border-radius:10px;background:#ede9fe;color:#6d28d9;font-size:10px;font-weight:bold">INTERNATIONAL PLACEMENT</span>'
+      : '';
+    const joiningBadgeColor = normalizedJoiningStatus === 'joined' ? '#15803d'
+      : normalizedJoiningStatus === 'notjoined' ? '#b91c1c'
+        : normalizedJoiningStatus === 'dualplacement' ? '#c2410c'
+          : normalizedJoiningStatus === 'multipleplacement' ? '#1d4ed8' : '#475569';
+    const remarks = monthlyReportEscape(getValByHeader(row, ['remarks']) || '—');
     return [
       String(index + 1),
-      monthlyReportEscape(getValByHeader(row, ['studentname', 'name']) || getValByHeader(student, ['name', 'studentname']) || '—'),
-      monthlyReportEscape(`${placementMainCourse(row)}${getValByHeader(row, ['branch', 'sittingbranch']) ? ` · ${getValByHeader(row, ['branch', 'sittingbranch'])}` : ''}`),
+      `${studentName}${internationalBadge}`,
+      monthlyReportEscape(placementMainCourse(row)),
+      monthlyReportEscape(getValByHeader(row, ['branch', 'sittingbranch']) || getValByHeader(student, ['branch', 'sittingbranch']) || '—'),
+      monthlyReportEscape(getValByHeader(row, ['contactnumber', 'contactno', 'phone', 'phonenumber', 'mobilenumber', 'mobile', 'contact']) || getValByHeader(student, ['contactnumber', 'contactno', 'phone', 'phonenumber', 'mobilenumber', 'mobile', 'contact']) || '—'),
+      monthlyReportEscape(getValByHeader(row, ['mailid', 'emailid', 'email', 'emailaddress']) || getValByHeader(student, ['mailid', 'emailid', 'email', 'emailaddress']) || '—'),
       monthlyReportEscape(getValByHeader(row, ['companyname', 'company']) || '—'),
       monthlyReportEscape(getValByHeader(row, ['position', 'role']) || '—'),
       monthlyReportEscape(packageLabel),
-      'Placed'
+      `<span style="display:inline-block;padding:4px 8px;border-radius:12px;background:#ffffff;color:${joiningBadgeColor};border:1px solid ${joiningBadgeColor};font-weight:bold">${monthlyReportEscape(joiningStatus)}</span><br><span style="display:inline-block;margin-top:5px;color:#526476">${remarks}</span>`
     ];
   });
   const internationalPlacementRowsHtml = internationalPlacementRows.map(({ row, locationInfo }, index) => [
@@ -9808,7 +9845,11 @@ exports.sendMonthlyTpoReport = async (req, res) => {
         ${table(['Companies connected through openings', 'Count'], [[numberedCompanyNames([...openingCompanies.values()].sort()), String(openingCompanies.size)]])}
 
         ${sectionTitle('Placed Students Details', 'Placement register', '#087f8c')}
-        ${table(['Sl. No.', 'Student', 'Main course · branch', 'Placed at', 'Role', 'Package (LPA)', 'Remarks'], placedRowsHtml)}
+        ${table(['Sl. No.', 'Student', 'Main course', 'Student branch', 'Contact number', 'Mail ID', 'Placed at', 'Role', 'Package (LPA)', 'Joining status / remarks'], placedRowsHtml, { rowColors: placementRowColors, rowAccents: placementRowAccents })}
+        <div style="margin:-10px 0 24px;padding:13px 15px;background:#f8fafc;border:1px solid #d8e3eb;border-radius:8px;color:#34495e;font-size:11px;line-height:1.9">
+          <b>Note:</b> <span style="color:#15803d;font-weight:bold">Green — Joined</span> &nbsp;·&nbsp; <span style="color:#b91c1c;font-weight:bold">Red — Not Joined</span> &nbsp;·&nbsp; <span style="color:#c2410c;font-weight:bold">Orange — Dual Placement</span> &nbsp;·&nbsp; <span style="color:#1d4ed8;font-weight:bold">Blue — Multitime Placement</span>.<br>
+          <span style="display:inline-block;margin-top:3px;padding:2px 6px;border-radius:8px;background:#ede9fe;color:#6d28d9;font-weight:bold">Violet accent — International placement</span> (shown in addition to the joining-status color).
+        </div>
 
         ${sectionTitle('Placement Status', 'Joining and offer outcomes', '#c07a23')}
         ${table(['Placement summary', 'Count'], [

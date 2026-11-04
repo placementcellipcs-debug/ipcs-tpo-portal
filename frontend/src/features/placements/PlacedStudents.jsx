@@ -116,6 +116,8 @@ export default function PlacedStudents() {
     return rowBranch && (rowBranch === assigned || rowBranch.includes(assigned) || assigned.includes(rowBranch));
   });
   const [selectedMonth, setSelectedMonth] = useState(() => searchParams.get('international') === '1' ? 'all' : '');
+  const [rangeStart, setRangeStart] = useState('');
+  const [rangeEnd, setRangeEnd] = useState('');
   const [placementFilter, setPlacementFilter] = useState(() => searchParams.get('international') === '1' ? 'International' : 'All');
   const [branchFilter, setBranchFilter] = useState('All');
   const [searchQuery, setSearchQuery] = useState('');
@@ -287,6 +289,7 @@ export default function PlacedStudents() {
 
   const resetFilters = () => {
     setSearchQuery(''); setCourseFilter('All'); setStatusFilter('All'); setBranchFilter('All'); setSortOrder('newest'); setPlacementFilter('All');
+    setRangeStart(''); setRangeEnd('');
   };
 
   // 🚨 MULTI-COURSE SCOPING
@@ -330,6 +333,15 @@ export default function PlacedStudents() {
     : key === 'undated'
       ? 'Date not recorded'
       : new Date(`${key}-01T12:00:00`).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' });
+  const dateRangeActive = Boolean(rangeStart || rangeEnd);
+  const dateRangeValid = !(rangeStart && rangeEnd && rangeStart > rangeEnd);
+  const showPlacementRecords = Boolean(selectedMonth) || dateRangeActive;
+  const getDateKey = value => {
+    const date = parseDate(value);
+    return date ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : '';
+  };
+  const dateRangeLabel = `${rangeStart ? formatPortalDate(rangeStart) : 'First record'} – ${rangeEnd ? formatPortalDate(rangeEnd) : 'Latest record'}`;
+  const periodTitle = dateRangeActive ? dateRangeLabel : formatMonthKey(selectedMonth);
   const monthCounts = new Map();
   globallyFiltered.forEach(app => {
     const key = getMonthKey(app);
@@ -342,7 +354,12 @@ export default function PlacedStudents() {
   });
   const activeMonthApps = selectedMonth
     ? selectedMonth === 'all' ? globallyFiltered : globallyFiltered.filter(app => getMonthKey(app) === selectedMonth)
-    : [];
+    : dateRangeActive && dateRangeValid
+      ? globallyFiltered.filter(app => {
+        const dateKey = getDateKey(app.datePlaced || app.date);
+        return Boolean(dateKey) && (!rangeStart || dateKey >= rangeStart) && (!rangeEnd || dateKey <= rangeEnd);
+      })
+      : [];
   const branchList = [...new Set(activeMonthApps.map(app => app.branch || 'Unknown'))].sort((a, b) => a.localeCompare(b));
   const branchFilteredApps = branchFilter === 'All'
     ? activeMonthApps
@@ -491,11 +508,11 @@ export default function PlacedStudents() {
         
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '15px' }}>
           <div>
-            {selectedMonth && <button type="button" onClick={() => { setSelectedMonth(''); setBranchFilter('All'); setSearchQuery(''); }} style={{ marginBottom: '12px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
-              <CaretLeft weight="bold" size={18} /> Back to Months
+            {showPlacementRecords && <button type="button" onClick={() => { setSelectedMonth(''); setRangeStart(''); setRangeEnd(''); setBranchFilter('All'); setSearchQuery(''); }} style={{ marginBottom: '12px', background: 'var(--card-bg)', border: '1px solid var(--card-border)', color: '#fff', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+              <CaretLeft weight="bold" size={18} /> Back to month list
             </button>}
-            <h1 style={{ fontSize: '2rem', margin: '0 0 5px' }}>{selectedMonth ? formatMonthKey(selectedMonth) : placementFilter === 'International' ? 'International Placements' : 'Placed Students'}</h1>
-            <p style={{ color: 'var(--text-muted)', margin: 0 }}>{selectedMonth ? 'Placement records for this month.' : placementFilter === 'International' ? 'International placement records across all months.' : 'Choose a month to view its placement records.'}</p>
+            <h1 style={{ fontSize: '2rem', margin: '0 0 5px' }}>{dateRangeActive ? `Placed ${periodTitle}` : selectedMonth ? periodTitle : placementFilter === 'International' ? 'International Placements' : 'Placed Students'}</h1>
+            <p style={{ color: 'var(--text-muted)', margin: 0 }}>{dateRangeActive ? 'Placement records within the selected date range.' : selectedMonth ? 'Placement records for this month.' : placementFilter === 'International' ? 'International placement records across all months.' : 'Choose a month or set a date range to view placement records.'}</p>
           </div>
           
           {canEditPlacement && (
@@ -563,7 +580,18 @@ export default function PlacedStudents() {
             </select>
           </div>
 
-          {selectedMonth && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Date range:</span>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+              From <input aria-label="Placed from date" type="date" className="sleek-input" value={rangeStart} max={rangeEnd || undefined} onChange={event => { setSelectedMonth(''); setRangeStart(event.target.value); }} />
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
+              To <input aria-label="Placed to date" type="date" className="sleek-input" value={rangeEnd} min={rangeStart || undefined} onChange={event => { setSelectedMonth(''); setRangeEnd(event.target.value); }} />
+            </label>
+          </div>
+          {dateRangeActive && !dateRangeValid && <span role="alert" style={{ color: '#fca5a5', fontSize: '.82rem' }}>The end date must be the same as or later than the start date.</span>}
+
+          {showPlacementRecords && (
             <>
               <input type="text" className="sleek-input" placeholder="Search student, roll, company, or location..." style={{ minWidth: '220px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
               <select className="sleek-select" style={{ minWidth: '160px' }} value={branchFilter} onChange={e => setBranchFilter(e.target.value)}>
@@ -578,7 +606,7 @@ export default function PlacedStudents() {
             </>
           )}
 
-          {(courseFilter !== 'All' || statusFilter !== 'All' || searchQuery !== '' || branchFilter !== 'All' || placementFilter !== 'All') && (
+          {(courseFilter !== 'All' || statusFilter !== 'All' || searchQuery !== '' || branchFilter !== 'All' || placementFilter !== 'All' || dateRangeActive) && (
             <button onClick={resetFilters} style={{ background: 'transparent', border: '1px solid #64748b', color: '#94a3b8', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '0.85rem' }}>
               <ArrowsClockwise size={14} /> Reset
             </button>
@@ -595,7 +623,7 @@ export default function PlacedStudents() {
             <p style={{ margin: '0 0 16px', color: 'var(--text-muted)' }}>{loadError}</p>
             <button type="button" onClick={fetchData} style={{ padding: '9px 18px', border: 0, borderRadius: '9px', background: 'var(--accent-primary)', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>Retry</button>
           </div>
-        ) : !selectedMonth ? (
+        ) : !showPlacementRecords ? (
           monthOptions.length === 0 ? (
             <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
               <p style={{ fontSize: '1.1rem', color: 'var(--text-muted)', margin: 0 }}>No placed students matched these filters.</p>
@@ -605,7 +633,7 @@ export default function PlacedStudents() {
               {monthOptions.map(([monthKey, count], index) => {
                 const color = TILE_COLORS[index % TILE_COLORS.length];
                 return (
-                  <button key={monthKey} type="button" onClick={() => { setSelectedMonth(monthKey); setBranchFilter('All'); setSearchQuery(''); }} style={{ textAlign: 'left', background: 'linear-gradient(145deg, color-mix(in srgb, var(--card-bg) 82%, white), var(--card-bg))', border: '1px solid var(--card-border)', borderLeft: `4px solid ${color}`, borderRadius: '15px', padding: '20px', cursor: 'pointer', color: 'var(--text-main)', boxShadow: '0 8px 24px rgba(0,0,0,.16)', transition: 'transform .15s ease, border-color .15s ease' }}>
+                  <button key={monthKey} type="button" onClick={() => { setSelectedMonth(monthKey); setRangeStart(''); setRangeEnd(''); setBranchFilter('All'); setSearchQuery(''); }} style={{ textAlign: 'left', background: 'linear-gradient(145deg, color-mix(in srgb, var(--card-bg) 82%, white), var(--card-bg))', border: '1px solid var(--card-border)', borderLeft: `4px solid ${color}`, borderRadius: '15px', padding: '20px', cursor: 'pointer', color: 'var(--text-main)', boxShadow: '0 8px 24px rgba(0,0,0,.16)', transition: 'transform .15s ease, border-color .15s ease' }}>
                     <span style={{ display: 'block', color: 'var(--text-muted)', fontSize: '.78rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.08em', marginBottom: '10px' }}>Placement month</span>
                     <span style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
                       <strong style={{ fontSize: '1.25rem' }}>{formatMonthKey(monthKey)}</strong>
@@ -619,7 +647,7 @@ export default function PlacedStudents() {
           )
         ) : (
           <div style={{ marginTop: '1.5rem' }}>
-            <section className="placed-overview" aria-label={`${formatMonthKey(selectedMonth)} placement summary`} style={{ marginBottom: '18px', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
+            <section className="placed-overview" aria-label={`${periodTitle} placement summary`} style={{ marginBottom: '18px', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
               <div><span>Placed rows</span><strong>{activeMonthApps.length}</strong><small>From TPO_Log Status = Placed</small></div>
               <div style={{ borderColor: 'rgba(56,189,248,.5)', background: 'linear-gradient(145deg, rgba(14,116,144,.18), var(--card-bg))' }}><span style={{ color: '#7dd3fc' }}>International</span><strong style={{ color: '#7dd3fc' }}>{activeMonthApps.filter(item => item.isInternationalPlacement).length}</strong><small>Highlighted by destination</small></div>
               <div><span>Companies</span><strong>{new Set(activeMonthApps.map(item => (item.company || '').trim().toLowerCase()).filter(Boolean)).size}</strong><small>Unique employers this month</small></div>
@@ -628,7 +656,7 @@ export default function PlacedStudents() {
             </section>
             {filteredApps.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '3rem', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
-                No placed students found in {formatMonthKey(selectedMonth)} matching these filters.
+                No placed students found in {periodTitle} matching these filters.
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
