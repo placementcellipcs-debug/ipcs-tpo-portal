@@ -12,6 +12,8 @@ const readUser = () => {
 };
 const clean = value => String(value || '').trim().toLowerCase();
 const branchKey = value => clean(value).replace(/\b(branch|office)\b/g, '').replace(/[^a-z0-9]/g, '');
+const isQuantityGroup = item => String(item?.trackingMode || 'INDIVIDUAL').toUpperCase() === 'QUANTITY';
+const unitCount = item => isQuantityGroup(item) ? Math.max(1, Number.parseInt(item.quantity, 10) || 1) : 1;
 const fileImage = value => {
   if (!value) return '';
   const match = String(value).match(/(?:file\/d\/|[?&]id=|\/d\/)([\w-]{20,})/);
@@ -130,9 +132,9 @@ export default function AssetList() {
   const spaceAssets = branchAssets.filter(asset => (asset.location?.trim() || 'Unassigned space') === selectedSpace && matchesSearch(asset));
   const registryAssets = assets.filter(asset => matchesSearch(asset) && (assetView === 'retired' ? asset.status === 'DISPOSED' : assetView === 'assignments' ? asset.status === 'ASSIGNED' : asset.status !== 'DISPOSED')).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   const selectedBranchStats = {
-    total: branchAssets.length,
-    assigned: branchAssets.filter(item => item.status === 'ASSIGNED').length,
-    available: branchAssets.filter(item => item.status === 'AVAILABLE').length
+    total: branchAssets.reduce((sum, item) => sum + unitCount(item), 0),
+    assigned: branchAssets.filter(item => item.status === 'ASSIGNED').reduce((sum, item) => sum + unitCount(item), 0),
+    available: branchAssets.filter(item => item.status === 'AVAILABLE').reduce((sum, item) => sum + unitCount(item), 0)
   };
   const showToast = text => { setMessage(text); };
 
@@ -263,18 +265,18 @@ export default function AssetList() {
         {message && <div className="asset-toast" role="status">{message}<button type="button" onClick={() => setMessage('')} aria-label="Dismiss"><X size={16} /></button></div>}
         <section className="asset-overview-hero">
           <div className="asset-overview-icon"><Barcode size={25} weight="duotone" /></div>
-          <div className="asset-overview-copy"><span>IPCS · OPERATIONS</span><h1>Asset management</h1><p>Explore the branch inventory, manage assignment and return, and follow each item through its full lifecycle.</p></div>
+          <div className="asset-overview-copy"><span>IPCS · OPERATIONS</span><h1>Asset management</h1><p>Count identical stock together or track important equipment one item at a time.</p></div>
           {canManage && <button type="button" className="asset-action-primary" onClick={() => navigate('/assets/add')}>Register an item <ArrowRight size={17} /></button>}
         </section>
 
         <section className="asset-summary-strip" aria-label="Asset summary">
-          <div><span>Tracked items</span><strong>{assets.length}</strong></div>
-          <div><span>Branches</span><strong>{dbData.branches.length}</strong></div>
-          <div><span>Assigned</span><strong>{assets.filter(item => item.status === 'ASSIGNED').length}</strong></div>
-          <div><span>Available</span><strong>{assets.filter(item => item.status === 'AVAILABLE').length}</strong></div>
+          <div><span>Physical units</span><strong>{assets.reduce((sum, item) => sum + unitCount(item), 0)}</strong></div>
+          <div><span>Asset records</span><strong>{assets.length}</strong></div>
+          <div><span>Assigned units</span><strong>{assets.filter(item => item.status === 'ASSIGNED').reduce((sum, item) => sum + unitCount(item), 0)}</strong></div>
+          <div><span>Available units</span><strong>{assets.filter(item => item.status === 'AVAILABLE').reduce((sum, item) => sum + unitCount(item), 0)}</strong></div>
         </section>
 
-        <details className="asset-howto"><summary>How asset tracking works</summary><div><span><b>1 · Register</b> Add an item with its branch, office space, vendor, purchase details, photo, and auto-generated ID/QR.</span><span><b>2 · Assign</b> Record the employee, issued condition, accessories, and a handover photo.</span><span><b>3 · Return</b> Record the new condition and return photo; items needing repair move to maintenance.</span><span><b>4 · Track or dispose</b> Open any item for its audit timeline, assignments, photos, vendor and warranty data. Retire available items with a reason and disposal method.</span></div></details>
+        <details className="asset-howto"><summary>How asset tracking works</summary><div><span><b>1 · Choose tracking style</b> Track one piece at a time when it needs its own ID, assignment, or QR label; use a quantity group for identical stock.</span><span><b>2 · Register</b> Give the record a category, branch, and location. Purchase details and photos can be added when available.</span><span><b>3 · Assign individual equipment</b> Record the employee, condition, and handover. Quantity groups stay together and cannot be assigned as an individual item.</span><span><b>4 · Follow the record</b> View history, condition, vendor, and warranty details; transfer, maintain, or retire it through the normal asset tools.</span></div></details>
 
         <div className="asset-workspace-layout">
         <section className="asset-module-content" aria-label={assetView === 'branches' ? 'Branch spaces and items' : assetView === 'assignments' ? 'Asset assignments' : assetView === 'retired' ? 'Retired assets' : 'Item register'}>
@@ -292,14 +294,15 @@ export default function AssetList() {
           <div className="asset-state-card"><CircleNotch size={28} className="ph-spin" /><p>Loading branch inventory…</p></div>
         ) : assetView !== 'branches' ? (
           <section className="asset-register-panel" aria-label={assetView === 'retired' ? 'Retired assets' : assetView === 'assignments' ? 'Assigned assets' : 'Asset register'}>
-            {registryAssets.length ? <div className="asset-register-scroll"><table className="asset-register-table"><thead><tr><th>Asset</th><th>Branch &amp; space</th><th>{assetView === 'assignments' ? 'Current custodian' : 'Vendor'}</th><th>Condition</th><th>Status</th><th><span className="sr-only">Open</span></th></tr></thead><tbody>
+            {registryAssets.length ? <div className="asset-register-scroll"><table className="asset-register-table"><thead><tr><th>Asset</th><th>Tracking / quantity</th><th>Branch &amp; space</th><th>{assetView === 'assignments' ? 'Current custodian' : 'Vendor'}</th><th>Condition</th><th>Status</th><th><span className="sr-only">Open</span></th></tr></thead><tbody>
               {registryAssets.map(item => <tr key={item.assetId}>
                 <td><button type="button" className="asset-register-item" onClick={() => openDetails(item)}><b>{item.name}</b><span>{item.assetId}</span></button></td>
+                <td><span className={`asset-tracking-pill ${isQuantityGroup(item) ? 'quantity' : ''}`}>{isQuantityGroup(item) ? `${unitCount(item)} units · grouped` : 'Individual · 1'}</span></td>
                 <td><b>{item.branch || '—'}</b><span>{item.location || 'Unassigned space'}</span></td>
                 <td>{assetView === 'assignments' ? item.assignedTo || item.employeeName || item.custodian || 'Assigned' : item.vendor || '—'}</td>
                 <td>{item.condition || 'GOOD'}</td>
                 <td><span className={`asset-status status-${String(item.status || 'AVAILABLE').toLowerCase()}`}>{statusLabel(item.status)}</span></td>
-                <td><div className="asset-row-actions"><button type="button" className="asset-register-open" onClick={() => openDetails(item)}>History <ArrowRight size={15} /></button>{canManage && item.status === 'AVAILABLE' && <button type="button" className="asset-register-open asset-assign-inline" onClick={() => openAssignment(item)}>Assign</button>}{canManage && item.status === 'ASSIGNED' && <><button type="button" className="asset-register-open asset-assign-inline" onClick={() => openAssignment(item)}>Reassign</button><button type="button" className="asset-register-open asset-return-inline" onClick={() => openReturn(item)}>Return item</button></>}</div></td>
+                <td><div className="asset-row-actions"><button type="button" className="asset-register-open" onClick={() => openDetails(item)}>Details <ArrowRight size={15} /></button>{canManage && !isQuantityGroup(item) && item.status === 'AVAILABLE' && <button type="button" className="asset-register-open asset-assign-inline" onClick={() => openAssignment(item)}>Assign</button>}{canManage && !isQuantityGroup(item) && item.status === 'ASSIGNED' && <><button type="button" className="asset-register-open asset-assign-inline" onClick={() => openAssignment(item)}>Reassign</button><button type="button" className="asset-register-open asset-return-inline" onClick={() => openReturn(item)}>Return item</button></>}</div></td>
               </tr>)}
             </tbody></table></div> : <div className="asset-state-card">{assetView === 'retired' ? 'No retired items match this search.' : 'No items match this search.'}</div>}
           </section>
@@ -311,7 +314,7 @@ export default function AssetList() {
               return (
                 <button className="asset-branch-card" type="button" key={branch} onClick={() => openBranch(branch)}>
                   <span className="asset-card-kicker">BRANCH INVENTORY</span><span className="asset-branch-glyph"><Buildings size={23} weight="duotone" /></span>
-                  <h2>{branch}</h2><p>{roomCount} office spaces · {list.length} items</p>
+                  <h2>{branch}</h2><p>{roomCount} office spaces · {list.reduce((sum, item) => sum + unitCount(item), 0)} units · {list.length} records</p>
                   <span className="asset-card-foot">Open branch <ArrowRight size={16} /></span>
                 </button>
               );
@@ -327,7 +330,7 @@ export default function AssetList() {
                 return (
                   <button className="asset-space-card" type="button" key={space} onClick={() => setSelectedSpace(space)}>
                     <span className="asset-space-glyph"><MapPinLine size={24} weight="duotone" /></span><div className="asset-space-title"><span>OFFICE SPACE</span><h3>{space}</h3></div>
-                    <div className="asset-space-metrics"><span><b>{list.length}</b> total items</span><span><b>{list.filter(item => item.status === 'ASSIGNED').length}</b> assigned</span></div>
+                    <div className="asset-space-metrics"><span><b>{list.reduce((sum, item) => sum + unitCount(item), 0)}</b> units</span><span><b>{list.length}</b> records</span></div>
                     <span className="asset-space-open">View items <ArrowRight size={16} /></span>
                   </button>
                 );
@@ -345,12 +348,12 @@ export default function AssetList() {
                     {itemPhoto(item) ? <img src={itemPhoto(item)} alt={item.name} loading="lazy" /> : <span><Cube size={38} weight="duotone" /></span>}
                     <b className={`asset-status status-${String(item.status || 'AVAILABLE').toLowerCase()}`}>{statusLabel(item.status)}</b>
                   </button>
-                  <div className="asset-item-info"><div className="asset-item-code">{item.assetId}</div><h3>{item.name}</h3><p>{[item.brand, item.model].filter(Boolean).join(' · ') || item.subcategory || item.category}</p><div className="asset-condition"><span>Condition</span><b>{item.condition || 'GOOD'}</b></div></div>
+                  <div className="asset-item-info"><div className="asset-item-code">{item.assetId}</div><h3>{item.name}</h3><p>{[item.brand, item.model].filter(Boolean).join(' · ') || item.subcategory || item.category}</p>{isQuantityGroup(item) && <span className="asset-unit-count">{unitCount(item)} identical units in this group</span>}<div className="asset-condition"><span>Condition</span><b>{item.condition || 'GOOD'}</b></div></div>
                   <div className="asset-item-actions">
                     <button type="button" className="asset-icon-button" title="Item history and photos" onClick={() => openDetails(item)}><ImageIcon size={17} /></button>
-                    <button type="button" className="asset-icon-button" title="Print asset QR" onClick={() => void prepareQrLabel(item)}><QrCode size={17} /></button>
-                    {canManage && item.status === 'AVAILABLE' && <button type="button" className="asset-small-action" onClick={() => openAssignment(item)}><UserCheck size={16} /> Assign</button>}
-                    {canManage && item.status === 'ASSIGNED' && <><button type="button" className="asset-small-action" onClick={() => openAssignment(item)}><ArrowsLeftRight size={16} /> Reassign</button><button type="button" className="asset-small-action return-action" onClick={() => openReturn(item)}><ArrowLeft size={16} /> Return</button></>}
+                    {!isQuantityGroup(item) && <button type="button" className="asset-icon-button" title="Print asset QR" onClick={() => void prepareQrLabel(item)}><QrCode size={17} /></button>}
+                    {canManage && !isQuantityGroup(item) && item.status === 'AVAILABLE' && <button type="button" className="asset-small-action" onClick={() => openAssignment(item)}><UserCheck size={16} /> Assign</button>}
+                    {canManage && !isQuantityGroup(item) && item.status === 'ASSIGNED' && <><button type="button" className="asset-small-action" onClick={() => openAssignment(item)}><ArrowsLeftRight size={16} /> Reassign</button><button type="button" className="asset-small-action return-action" onClick={() => openReturn(item)}><ArrowLeft size={16} /> Return</button></>}
                     {item.status === 'UNDER_MAINTENANCE' && <span className="asset-maintenance-tag"><Wrench size={14} /> Service</span>}
                   </div>
                 </article>
@@ -370,7 +373,7 @@ export default function AssetList() {
                 <button type="button" className={detailTab === 'history' ? 'active' : ''} onClick={() => setDetailTab('history')}><ClockCounterClockwise size={16} /> History &amp; disposal</button>
               </nav>
               {detailTab === 'overview' && <>
-              <div className="asset-detail-overview"><div><span>Current condition</span><b>{details.condition || 'GOOD'}</b></div><div><span>Status</span><b>{statusLabel(details.status)}</b></div><div><span>Category</span><b>{details.category || '—'}</b></div><div><span>Model</span><b>{[details.brand, details.model].filter(Boolean).join(' ') || '—'}</b></div></div>
+              <div className="asset-detail-overview"><div><span>Tracking</span><b>{isQuantityGroup(details) ? 'Quantity group' : 'Individual item'}</b></div><div><span>Unit count</span><b>{unitCount(details)}</b></div><div><span>Current condition</span><b>{details.condition || 'GOOD'}</b></div><div><span>Status</span><b>{statusLabel(details.status)}</b></div><div><span>Category</span><b>{details.category || '—'}</b></div><div><span>Model</span><b>{[details.brand, details.model].filter(Boolean).join(' ') || '—'}</b></div></div>
               <h3>Purchase &amp; vendor</h3>
               <div className="asset-spec-grid asset-vendor-grid">
                 <div><span>Vendor</span><b>{detailData.asset.vendorDetails?.name || detailData.asset.vendor || details.vendor || 'Not recorded'}</b></div>

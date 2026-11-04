@@ -30,7 +30,8 @@ export default function AssetQrCenter() {
   }, []);
   useEffect(() => { void load(); }, [load]);
 
-  const filtered = useMemo(() => assets.filter(asset => [asset.assetId, asset.name, asset.branch, asset.location, asset.category].some(value => text(value).includes(text(search)))), [assets, search]);
+  const labelableAssets = useMemo(() => assets.filter(asset => String(asset.trackingMode || 'INDIVIDUAL').toUpperCase() !== 'QUANTITY'), [assets]);
+  const filtered = useMemo(() => labelableAssets.filter(asset => [asset.assetId, asset.name, asset.branch, asset.location, asset.category].some(value => text(value).includes(text(search)))), [labelableAssets, search]);
   const createLabel = async asset => {
     setCreatingLabel(true); setError('');
     try {
@@ -42,7 +43,7 @@ export default function AssetQrCenter() {
   };
 
   return <Layout><main className="asset-ops-page">
-    <header className="asset-ops-hero qr-hero"><span className="asset-ops-hero-icon"><QrCode size={23} weight="duotone" /></span><div><span className="asset-ops-eyebrow">SCAN TO TRACE</span><h1>QR labels</h1><p>Each label opens the signed-in asset workspace directly to the item record and its history.</p></div><div className="asset-ops-hero-stat"><b>{assets.length.toLocaleString('en-IN')}</b><span>Items in your scope</span></div></header>
+    <header className="asset-ops-hero qr-hero"><span className="asset-ops-hero-icon"><QrCode size={23} weight="duotone" /></span><div><span className="asset-ops-eyebrow">SCAN TO TRACE</span><h1>QR labels</h1><p>Each label opens the signed-in asset workspace directly to the individual item and its history.</p></div><div className="asset-ops-hero-stat"><b>{labelableAssets.length.toLocaleString('en-IN')}</b><span>Individually tracked items</span></div></header>
     <div className="asset-ops-toolbar"><label className="asset-ops-search"><MagnifyingGlass size={18} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search ID, item, category, branch" /></label><span><Barcode size={17} /> Private portal link inside every label</span></div>
     {error && <div className="asset-ops-message error" role="alert"><WarningCircle size={18} />{error}<button onClick={() => void load()}>Retry</button></div>}
     {loading ? <div className="asset-ops-loading"><CircleNotch className="ph-spin" size={24} /> Loading items…</div> : <section className="asset-qr-grid">{filtered.map(asset => <article className="asset-qr-row" key={asset.assetId}><span className="asset-qr-row-icon"><QrCode size={20} /></span><div><b>{asset.name || 'Unnamed asset'}</b><small>{asset.assetId} · {asset.branch || 'No branch'} · {asset.location || 'No room'}</small></div><span className={`asset-ops-status ${String(asset.status || 'available').toLowerCase()}`}>{String(asset.status || 'AVAILABLE').replaceAll('_', ' ')}</span><button className="asset-qr-open" disabled={creatingLabel} onClick={() => void createLabel(asset)}>{creatingLabel ? 'Preparing…' : 'Create label'}</button></article>)}{!filtered.length && <div className="asset-ops-empty"><QrCode size={24} /><b>No assets found</b><span>Try another asset name, ID, or branch.</span></div>}</section>}

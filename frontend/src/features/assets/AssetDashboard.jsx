@@ -53,9 +53,9 @@ export default function AssetDashboard() {
 
   const total = Number(stats.totalAssets || 0);
   const cards = [
-    { label: 'Tracked items', value: total, hint: 'Across your permitted branches', icon: Cube, tone: 'blue' },
-    { label: 'Assigned to staff', value: Number(stats.assigned || 0), hint: 'Items currently in use', icon: Barcode, tone: 'violet' },
-    { label: 'Available', value: Number(stats.available || 0), hint: 'Ready for handover', icon: CheckCircle, tone: 'green' },
+    { label: 'Physical units', value: total, hint: 'Includes units in quantity groups', icon: Cube, tone: 'blue' },
+    { label: 'Assigned units', value: Number(stats.assigned || 0), hint: 'Individual items currently in use', icon: Barcode, tone: 'violet' },
+    { label: 'Available units', value: Number(stats.available || 0), hint: 'Ready to use or assign individually', icon: CheckCircle, tone: 'green' },
     { label: 'Awaiting approval', value: Number(stats.pendingApprovals || 0), hint: 'Transfer requests', icon: ClipboardText, tone: 'pink', to: '/assets/approvals' },
     { label: 'Service tickets', value: Number(stats.activeMaintenance || 0), hint: 'Open maintenance issues', icon: Wrench, tone: 'amber', to: '/assets/maintenance' }
   ];
@@ -82,7 +82,7 @@ export default function AssetDashboard() {
           <div className="asset-trend-foot"><span><i /> Asset history and activity records</span><Link to="/assets/activity">Open activity history <ArrowRight size={14} /></Link></div>
         </section>
 
-        <section className="asset-dashboard-panel asset-branch-panel"><div className="asset-panel-heading"><div><span>WHERE ITEMS ARE</span><h2>Branch inventory</h2></div><Buildings size={20} /></div>{stats.branches?.length ? <div className="asset-branch-list">{stats.branches.slice(0, 7).map(branch => { const share = total ? Math.max(2, Math.round(Number(branch.value || 0) / total * 100)) : 0; return <div className="asset-branch-row" key={branch.name}><div><b>{branch.name}</b><span>{Number(branch.value || 0).toLocaleString('en-IN')} items</span></div><div className="asset-branch-meter"><i style={{ width: `${share}%` }} /></div></div>; })}</div> : <div className="asset-dashboard-empty">No branch inventory is available in this account’s scope.</div>}<Link className="asset-panel-link" to="/assets/branches">Explore branches <ArrowRight size={15} /></Link></section>
+        <section className="asset-dashboard-panel asset-branch-panel"><div className="asset-panel-heading"><div><span>WHERE ITEMS ARE</span><h2>Branch inventory</h2></div><Buildings size={20} /></div>{stats.branches?.length ? <div className="asset-branch-list">{stats.branches.slice(0, 7).map(branch => { const share = total ? Math.max(2, Math.round(Number(branch.value || 0) / total * 100)) : 0; return <div className="asset-branch-row" key={branch.name}><div><b>{branch.name}</b><span>{Number(branch.value || 0).toLocaleString('en-IN')} physical units</span></div><div className="asset-branch-meter"><i style={{ width: `${share}%` }} /></div></div>; })}</div> : <div className="asset-dashboard-empty">No branch inventory is available in this account’s scope.</div>}<Link className="asset-panel-link" to="/assets/branches">Explore branches <ArrowRight size={15} /></Link></section>
 
         <section className="asset-dashboard-panel asset-category-panel"><div className="asset-panel-heading"><div><span>PORTFOLIO MIX</span><h2>Items by category</h2></div><Package size={20} /></div>{stats.categories?.length ? <div className="asset-category-list">{stats.categories.slice(0, 7).map((category, index) => { const peak = Math.max(...stats.categories.map(item => Number(item.value || 0)), 1); const count = Number(category.value || 0); return <div className="asset-category-row" key={category.name}><div><span className="asset-category-dot" style={{ '--category-color': categoryPalette[index % categoryPalette.length] }} /><b>{category.name}</b><strong>{count.toLocaleString('en-IN')}</strong></div><div className="asset-category-meter"><i style={{ width: `${Math.max(3, count / peak * 100)}%`, '--category-color': categoryPalette[index % categoryPalette.length] }} /></div></div>; })}</div> : <div className="asset-dashboard-empty">Category totals will appear as assets are registered.</div>}</section>
 

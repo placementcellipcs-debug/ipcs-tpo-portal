@@ -79,7 +79,7 @@
 .asset-state-card p { margin: 0; }
 .asset-register-panel { overflow: hidden; border: 1px solid rgba(104,146,193,.17); border-radius: 16px; background: linear-gradient(155deg,rgba(21,37,57,.96),rgba(13,24,39,.97)); box-shadow: 0 14px 35px rgba(0,0,0,.12); }
 .asset-register-scroll { overflow-x: auto; }
-.asset-register-table { width: 100%; border-collapse: collapse; min-width: 760px; text-align: left; }
+.asset-register-table { width: 100%; border-collapse: collapse; min-width: 900px; text-align: left; }
 .asset-register-table th { padding: 13px 15px; border-bottom: 1px solid rgba(127,157,192,.15); color: #7790ac; background: rgba(255,255,255,.02); font-size: .62rem; font-weight: 900; letter-spacing: .1em; text-transform: uppercase; }
 .asset-register-table td { padding: 12px 15px; border-bottom: 1px solid rgba(127,157,192,.095); color: #b8c8d9; font-size: .73rem; }
 .asset-register-table tr:last-child td { border-bottom: 0; }
@@ -92,6 +92,9 @@
 .asset-register-table .asset-status { position: static; display: inline-flex; backdrop-filter: none; }
 .asset-register-open { display: inline-flex; align-items: center; gap: 5px; padding: 6px 8px; border: 1px solid rgba(115,158,201,.16); border-radius: 8px; color: #9fc9ef; background: rgba(255,255,255,.035); font: inherit; font-size: .66rem; font-weight: 800; white-space: nowrap; cursor: pointer; }
 .asset-register-open:hover { border-color: rgba(84,159,227,.35); color: #fff; }
+.asset-tracking-pill { display:inline-flex;align-items:center;white-space:nowrap;padding:5px 8px;border:1px solid rgba(70,204,164,.24);border-radius:999px;color:#8ee2c5;background:rgba(31,145,111,.12);font-size:.63rem;font-weight:800; }
+.asset-tracking-pill.quantity { border-color:rgba(156,139,255,.3);color:#c4b9ff;background:rgba(101,81,186,.15); }
+.asset-unit-count { display:inline-flex;width:max-content;margin-top:8px;padding:5px 8px;border:1px solid rgba(156,139,255,.25);border-radius:8px;color:#c4b9ff;background:rgba(101,81,186,.12);font-size:.64rem;font-weight:800; }
 .asset-toast { position: fixed; z-index: 10001; right: 25px; bottom: 24px; max-width: min(500px,calc(100% - 32px)); display: flex; align-items: center; gap: 15px; padding: 13px 16px; border: 1px solid rgba(105,173,238,.34); border-radius: 12px; color: #e7f3ff; background: #142943; box-shadow: 0 16px 38px rgba(0,0,0,.35); font-size: .81rem; }
 .asset-toast button { display: grid; place-items: center; border: 0; color: #a9c6e4; background: transparent; cursor: pointer; }
 .asset-reassign-current { grid-column: 1 / -1; display: grid; gap: 5px; padding: 13px 14px; border: 1px solid rgba(92,157,217,.24); border-radius: 12px; background: rgba(36,107,169,.12); }

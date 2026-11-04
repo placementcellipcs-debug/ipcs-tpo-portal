@@ -45,6 +45,7 @@ const rowValue = (row, field) => {
   const key = Object.keys(values).find(header => normalizeHeader(header) === normalizeHeader(field));
   return key ? values[key] : '';
 };
+const isQuantityTracked = row => String(rowValue(row, 'Tracking_Mode') || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY';
 const parseJsonField = (value, fallback) => {
   if (typeof value !== 'string') return value ?? fallback;
   try { return JSON.parse(value); } catch { return fallback; }
@@ -163,6 +164,7 @@ exports.registerAssetQrLabel = async (req, res) => {
     if (!asset) return res.status(404).json({ success: false, message: 'That asset could not be found.' });
     const branch = rowValue(asset, 'Branch') || '';
     if (!canAccessAssetBranch(req, branch)) return res.status(403).json({ success: false, message: 'That asset is outside your branch access.' });
+    if (isQuantityTracked(asset)) return res.status(409).json({ success: false, message: 'Quantity groups do not receive individual QR labels. Register each serial-tracked item separately to label it.' });
     const saved = await appendAssetQrLabel({ assetId, createdBy: req.portalUser?.name || req.portalUser?.email || '' });
     if (!saved) return res.status(503).json({ success: false, message: 'The QR registry could not be updated, so the label was not prepared.' });
     await appendAssetActivity(req, { action: 'QR_LABEL_CREATED', entityType: 'Asset', entityId: assetId, branch, after: { qrVersion: 'PORTAL_LINK_V1' } });
@@ -329,20 +331,21 @@ exports.getAssetDashboardStats = async (req, res) => {
       const assetId = getV('assetid');
       if (!assetId) return;
 
-      totalAssets++;
+      const units = isQuantityTracked(r) ? Math.max(1, parseInt(getV('quantity'), 10) || 1) : 1;
+      totalAssets += units;
       const cost = parseFloat(getV('purchasecost')) || 0;
       totalValue += cost;
 
       const status = (getV('status') || '').toUpperCase();
-      if (status === 'ASSIGNED') assigned++;
-      else if (status === 'AVAILABLE') available++;
-      else if (status === 'UNDER_MAINTENANCE') underMaintenance++;
+      if (status === 'ASSIGNED') assigned += units;
+      else if (status === 'AVAILABLE') available += units;
+      else if (status === 'UNDER_MAINTENANCE') underMaintenance += units;
 
       const branch = getV('branch') || 'Unknown';
-      branchStats[branch] = (branchStats[branch] || 0) + 1;
+      branchStats[branch] = (branchStats[branch] || 0) + units;
 
       const category = getV('category') || 'Other';
-      categoryStats[category] = (categoryStats[category] || 0) + 1;
+      categoryStats[category] = (categoryStats[category] || 0) + units;
     });
 
     const formattedBranches = Object.keys(branchStats)
@@ -426,8 +429,9 @@ exports.sendAssetSummaryEmail = async (req, res) => {
     const assets = (cache.assets || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'Branch')));
     const inventory = (cache.inventory || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'Branch')));
     const transfers = (cache.transfers || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'From_Branch')));
-    const assigned = assets.filter(row => String(rowValue(row, 'Status') || '').toUpperCase() === 'ASSIGNED').length;
-    const available = assets.filter(row => String(rowValue(row, 'Status') || '').toUpperCase() === 'AVAILABLE').length;
+    const units = assets.reduce((sum, row) => sum + (isQuantityTracked(row) ? Math.max(1, parseInt(rowValue(row, 'Quantity'), 10) || 1) : 1), 0);
+    const assigned = assets.filter(row => String(rowValue(row, 'Status') || '').toUpperCase() === 'ASSIGNED').reduce((sum, row) => sum + (isQuantityTracked(row) ? Math.max(1, parseInt(rowValue(row, 'Quantity'), 10) || 1) : 1), 0);
+    const available = assets.filter(row => String(rowValue(row, 'Status') || '').toUpperCase() === 'AVAILABLE').reduce((sum, row) => sum + (isQuantityTracked(row) ? Math.max(1, parseInt(rowValue(row, 'Quantity'), 10) || 1) : 1), 0);
     const pendingTransfers = transfers.filter(row => String(rowValue(row, 'Status') || '').toUpperCase() === 'PENDING').length;
     const lowStock = inventory.filter(row => Number(rowValue(row, 'Quantity') || 0) <= Number(rowValue(row, 'Minimum_Quantity') || 0)).length;
     const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character]));
@@ -440,8 +444,8 @@ exports.sendAssetSummaryEmail = async (req, res) => {
     const mail = await sendIPCSMail({
       to: recipient,
       subject,
-      text: `Asset summary for ${branchLabel}: ${assets.length} tracked items, ${assigned} assigned, ${available} available, ${pendingTransfers} pending transfers, ${lowStock} low-stock alerts.`,
-      html: `<div style="font-family:Arial,sans-serif;color:#17253a;max-width:620px;margin:auto"><div style="padding:22px 24px;background:#10283b;color:#eaf6ff;border-radius:14px 14px 0 0"><small style="letter-spacing:2px;color:#7ee7d4">IPCS ASSET OPERATIONS</small><h1 style="font-size:23px;margin:9px 0 4px">Asset summary</h1><p style="margin:0;color:#b3c7da">${escapeHtml(branchLabel)} · ${escapeHtml(new Date().toLocaleDateString('en-IN'))}</p></div><div style="padding:22px 24px;background:#f5f9fc;border:1px solid #d9e5ed;border-top:0;border-radius:0 0 14px 14px"><table style="width:100%;border-collapse:collapse"><tbody>${[['Tracked items', assets.length], ['Assigned', assigned], ['Available', available], ['Pending transfers', pendingTransfers], ['Low stock alerts', lowStock]].map(([label, value]) => `<tr><td style="padding:12px;border-bottom:1px solid #dce6ed">${label}</td><td style="padding:12px;border-bottom:1px solid #dce6ed;text-align:right;font-weight:bold">${value}</td></tr>`).join('')}</tbody></table><p style="font-size:12px;color:#73869b;margin:18px 0 0">This report was requested from the IPCS Asset Management portal.</p></div></div>`
+      text: `Asset summary for ${branchLabel}: ${units} physical units across ${assets.length} asset records, ${assigned} assigned, ${available} available, ${pendingTransfers} pending transfers, ${lowStock} low-stock alerts.`,
+      html: `<div style="font-family:Arial,sans-serif;color:#17253a;max-width:620px;margin:auto"><div style="padding:22px 24px;background:#10283b;color:#eaf6ff;border-radius:14px 14px 0 0"><small style="letter-spacing:2px;color:#7ee7d4">IPCS ASSET OPERATIONS</small><h1 style="font-size:23px;margin:9px 0 4px">Asset summary</h1><p style="margin:0;color:#b3c7da">${escapeHtml(branchLabel)} · ${escapeHtml(new Date().toLocaleDateString('en-IN'))}</p></div><div style="padding:22px 24px;background:#f5f9fc;border:1px solid #d9e5ed;border-top:0;border-radius:0 0 14px 14px"><table style="width:100%;border-collapse:collapse"><tbody>${[['Physical units', units], ['Asset records', assets.length], ['Assigned units', assigned], ['Available units', available], ['Pending transfers', pendingTransfers], ['Low stock alerts', lowStock]].map(([label, value]) => `<tr><td style="padding:12px;border-bottom:1px solid #dce6ed">${label}</td><td style="padding:12px;border-bottom:1px solid #dce6ed;text-align:right;font-weight:bold">${value}</td></tr>`).join('')}</tbody></table><p style="font-size:12px;color:#73869b;margin:18px 0 0">This report was requested from the IPCS Asset Management portal.</p></div></div>`
     }, { category: 'portal', logDetails: { name: req.portalUser.name || '', email: recipient, type: 'asset-summary' }, context: { source: 'asset-management', branch: branchLabel } });
     await appendAssetNotification({ eventType: 'ASSET_SUMMARY', recipient, subject, status: mail.queued ? 'QUEUED' : 'SENT', provider: mail.provider || '', queueId: mail.queueId || '', branch: branchLabel });
     return res.json({ success: true, status: mail.queued ? 'QUEUED' : 'SENT', message: mail.queued ? 'The report was added to the email retry queue.' : 'The asset summary was sent to your portal email.' });
@@ -603,6 +607,12 @@ exports.addAsset = async (req, res) => {
     if (!asset?.name || !asset?.category || !asset?.branch) return res.status(400).json({ success: false, message: 'Asset name, category, and branch are required.' });
     if (!canAccessAssetBranch(req, asset.branch)) return res.status(403).json({ success: false, message: 'You cannot register an asset for that branch.' });
 
+    const trackingMode = String(asset.trackingMode || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY' ? 'QUANTITY' : 'INDIVIDUAL';
+    const quantity = trackingMode === 'QUANTITY' ? Number(asset.quantity) : 1;
+    if (trackingMode === 'QUANTITY' && (!Number.isSafeInteger(quantity) || quantity < 1)) {
+      return res.status(400).json({ success: false, message: 'Quantity must be a whole number of at least 1.' });
+    }
+
     const assetSheet = sheetByKey('assets');
     const customSheet = sheetByKey('assetcustomdata');
     const historySheet = sheetByKey('history');
@@ -614,7 +624,7 @@ exports.addAsset = async (req, res) => {
       'Asset_ID', 'Asset_Name', 'Category', 'Subcategory', 'Branch', 'Location',
       'Status', 'Condition', 'Brand', 'Model', 'Purchase_Date', 'Purchase_Cost',
       'Vendor', 'Invoice_Number', 'Warranty_End', 'Depreciation_Method',
-      'Useful_Life_Years', 'Salvage_Value', 'Created_By', 'Timestamp'
+      'Useful_Life_Years', 'Salvage_Value', 'Created_By', 'Timestamp', 'Tracking_Mode', 'Quantity'
     ]);
 
     // Generate Unique IDs
@@ -648,13 +658,15 @@ exports.addAsset = async (req, res) => {
       [getH(aH, 'Salvage_Value')]: asset.salvageValue || '',
       [getH(aH, 'Created_By')]: userName,
       [getH(aH, 'Timestamp')]: timestamp,
+      [getH(aH, 'Tracking_Mode')]: trackingMode,
+      [getH(aH, 'Quantity')]: quantity,
     });
     assetRecordSaved = true;
 
     if (req.file) await saveAssetPhoto(assetId, req.file, 'PHOTO_REGISTERED', userName, photoUrl);
 
     // 2. Write Dynamic Data to Custom Data Sheet (EAV Model)
-    if (customSheet && customFields && customFields.length > 0) {
+    if (trackingMode === 'INDIVIDUAL' && customSheet && customFields && customFields.length > 0) {
       const cH = customSheet.headerValues;
       const customRows = customFields.map((f, i) => ({
          [getH(cH, 'Field_ID')]: `${assetId}-F${i+1}`,
@@ -677,13 +689,15 @@ exports.addAsset = async (req, res) => {
          [getH(hH, 'Performed_By')]: userName,
          [getH(hH, 'Branch')]: asset.branch,
          [getH(hH, 'Timestamp')]: timestamp,
-         [getH(hH, 'Remarks')]: 'Initial Asset Registration'
+         [getH(hH, 'Remarks')]: trackingMode === 'QUANTITY'
+           ? `Initial quantity group registration · ${quantity} units`
+           : 'Initial Asset Registration'
       });
     }
 
     const followUpResults = await Promise.allSettled([
-      appendAssetQrLabel({ assetId, createdBy: userName }),
-      appendAssetActivity(req, { action: 'ASSET_REGISTERED', entityType: 'Asset', entityId: assetId, branch: asset.branch, after: { name: asset.name, category: asset.category, status: 'AVAILABLE' } })
+      trackingMode === 'INDIVIDUAL' ? appendAssetQrLabel({ assetId, createdBy: userName }) : Promise.resolve(),
+      appendAssetActivity(req, { action: 'ASSET_REGISTERED', entityType: trackingMode === 'QUANTITY' ? 'Asset quantity group' : 'Asset', entityId: assetId, branch: asset.branch, after: { name: asset.name, category: asset.category, status: 'AVAILABLE', trackingMode, quantity } })
     ]);
 
     const followUpFailed = followUpResults.some(result => result.status === 'rejected');
@@ -739,6 +753,8 @@ exports.getAssets = async (req, res) => {
         name: getVal('assetname'),
         category: getVal('category'),
         subcategory: getVal('subcategory'),
+        trackingMode: String(getVal('trackingmode') || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY' ? 'QUANTITY' : 'INDIVIDUAL',
+        quantity: String(getVal('trackingmode') || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY' ? Math.max(1, parseInt(getVal('quantity'), 10) || 1) : 1,
         branch: getVal('branch'),
         location: getVal('location'),
         status: getVal('status') || 'AVAILABLE',
@@ -854,6 +870,8 @@ exports.getAssetDetails = async (req, res) => {
     }).reverse();
     const asset = {
       vendor: readAssetValue('vendor'), invoice: readAssetValue('invoicenumber'), purchaseDate: readAssetValue('purchasedate'),
+      trackingMode: String(readAssetValue('trackingmode') || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY' ? 'QUANTITY' : 'INDIVIDUAL',
+      quantity: String(readAssetValue('trackingmode') || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY' ? Math.max(1, parseInt(readAssetValue('quantity'), 10) || 1) : 1,
       purchaseCost: isAssetAdmin(req) ? readAssetValue('purchasecost') : '', warrantyEnd: readAssetValue('warrantyend'),
       depreciationMethod: readAssetValue('depreciationmethod') || 'NONE', usefulLifeYears: readAssetValue('usefullifeyears'),
       salvageValue: isAssetAdmin(req) ? readAssetValue('salvagevalue') : '',
@@ -901,6 +919,7 @@ exports.assignAsset = async (req, res) => {
     if (!assetRow) return res.status(404).json({ success: false, message: "Asset row not found." });
     const assetBranch = assetRow.get(getH(assetSheet.headerValues, 'Branch')) || '';
     if (!canAccessAssetBranch(req, assetBranch)) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
+    if (isQuantityTracked(assetRow)) return res.status(409).json({ success: false, message: 'This is a quantity group. Register individual pieces separately before assigning them to a person.' });
     const currentStatus = String(assetRow.get(getH(assetSheet.headerValues, 'Status')) || '').toUpperCase();
     const isReassignment = currentStatus === 'ASSIGNED';
     if (!['AVAILABLE', 'ASSIGNED'].includes(currentStatus)) return res.status(409).json({ success: false, message: 'Only available or currently assigned assets can be handed over.' });
