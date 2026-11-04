@@ -626,6 +626,8 @@ app.post('/api/v1/assets/return', requireSession('asset-operations'), upload.sin
 app.get('/api/v1/assets/dashboard', assetControllers.getAssetDashboardStats);
 app.get('/api/v1/assets/activity', assetControllers.getAssetActivity);
 app.get('/api/v1/assets/notifications', assetControllers.getAssetNotifications);
+app.get('/api/v1/assets/approvals', assetControllers.getAssetApprovals);
+app.post('/api/v1/assets/approvals/:requestId/decision', requireSession('asset-operations'), assetControllers.decideAssetApproval);
 
 // 🚨 INVENTORY, TRANSFERS, AND MAINTENANCE ROUTES
 app.get('/api/v1/assets/inventory', assetControllers.getInventory);

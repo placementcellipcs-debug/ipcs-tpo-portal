@@ -20,7 +20,6 @@ const actionTitle = value => String(value || 'Asset updated').replaceAll('_', ' 
 
 const shortcuts = [
   { title: 'Scan & label', detail: 'Create item QR labels', path: '/assets/qr', icon: QrCode, tone: 'mint' },
-  { title: 'Approvals', detail: 'Review branch transfers', path: '/assets/approvals', icon: ClipboardText, tone: 'violet' },
   { title: 'Item register', detail: 'Search every tracked item', path: '/assets/register', icon: Barcode, tone: 'blue' },
   { title: 'Email center', detail: 'Send an asset summary', path: '/assets/mail', icon: EnvelopeSimple, tone: 'amber' }
 ];
@@ -33,6 +32,7 @@ export default function AssetDashboard() {
   let account = {};
   try { account = JSON.parse(localStorage.getItem('tpoData') || '{}'); } catch { /* The route gate handles an invalid session. */ }
   const canSeeValue = isAdminAccount(account);
+  const canApprove = String(account.email || '').trim().toLowerCase() === 'rakesh@ipcsglobal.com';
 
   const loadDashboard = useCallback(async (showLoading = true) => {
     if (showLoading) setLoading(true);
@@ -56,7 +56,7 @@ export default function AssetDashboard() {
     { label: 'Physical units', value: total, hint: 'Includes units in quantity groups', icon: Cube, tone: 'blue' },
     { label: 'Assigned units', value: Number(stats.assigned || 0), hint: 'Individual items currently in use', icon: Barcode, tone: 'violet' },
     { label: 'Available units', value: Number(stats.available || 0), hint: 'Ready to use or assign individually', icon: CheckCircle, tone: 'green' },
-    { label: 'Awaiting approval', value: Number(stats.pendingApprovals || 0), hint: 'Transfer requests', icon: ClipboardText, tone: 'pink', to: '/assets/approvals' },
+    ...(canApprove ? [{ label: 'Awaiting approval', value: Number(stats.pendingApprovals || 0), hint: 'Transfer and retirement requests', icon: ClipboardText, tone: 'pink', to: '/assets/approvals' }] : []),
     { label: 'Service tickets', value: Number(stats.activeMaintenance || 0), hint: 'Open maintenance issues', icon: Wrench, tone: 'amber', to: '/assets/maintenance' }
   ];
   const trend = stats.activityTrend?.length ? stats.activityTrend : [];
@@ -74,7 +74,7 @@ export default function AssetDashboard() {
     {loading ? <div className="asset-dashboard-loading" role="status"><CircleNotch size={30} className="ph-spin" /><span>Loading branch asset activity…</span></div> : <>
       <section className="asset-dashboard-metrics" aria-label="Asset summary">{cards.map(({ label, value, hint, icon: Icon, tone, to }) => <article className={`asset-metric-card ${tone}`} key={label}>{to ? <Link to={to} aria-label={`Open ${label}`} /> : null}<span className="asset-metric-icon"><Icon size={21} weight="duotone" /></span><div className="asset-metric-copy"><span>{label}</span><strong>{value.toLocaleString('en-IN')}</strong><small>{hint}</small></div></article>)}{canSeeValue && stats.totalValue != null && <article className="asset-metric-card cyan"><span className="asset-metric-icon">₹</span><div className="asset-metric-copy"><span>Recorded value</span><strong>{formatCurrency(stats.totalValue)}</strong><small>Registered purchase costs</small></div></article>}</section>
 
-      <section className="asset-dashboard-command-row">{shortcuts.map(({ title, detail, path, icon: Icon, tone }) => <Link className={`asset-shortcut ${tone}`} to={path} key={title}><span><Icon size={20} weight="duotone" /></span><div><b>{title}</b><small>{detail}</small></div><ArrowRight size={17} /></Link>)}</section>
+      <section className="asset-dashboard-command-row">{[...shortcuts, ...(canApprove ? [{ title: 'Approval desk', detail: 'Review transfers and retirements', path: '/assets/approvals', icon: ClipboardText, tone: 'violet' }] : [])].map(({ title, detail, path, icon: Icon, tone }) => <Link className={`asset-shortcut ${tone}`} to={path} key={title}><span><Icon size={20} weight="duotone" /></span><div><b>{title}</b><small>{detail}</small></div><ArrowRight size={17} /></Link>)}</section>
 
       <div className="asset-dashboard-main-grid">
         <section className="asset-dashboard-panel asset-trend-panel"><div className="asset-panel-heading"><div><span>ASSET LIFECYCLE SIGNAL</span><h2>Asset movement over time</h2><p>Recorded changes from the activity and history sheets · updates on the scheduled sheet sync</p></div><span className="asset-live-pill"><i /> SHEET SYNC</span></div>
@@ -88,7 +88,7 @@ export default function AssetDashboard() {
 
         <section className="asset-dashboard-panel asset-activity-panel"><div className="asset-panel-heading"><div><span>RECENT CHANGES</span><h2>Tracking feed</h2></div><Link to="/assets/activity">View all <ArrowRight size={14} /></Link></div>{stats.recentActivity?.length ? <div className="asset-feed-list">{stats.recentActivity.slice(0, 5).map((entry, index) => <article key={`${entry.historyId || entry.assetId}-${index}`}><span className="asset-feed-icon"><Activity size={16} /></span><div><b>{actionTitle(entry.action)}</b><small>{entry.assetId} · {entry.branch || 'Branch'}</small></div><time>{formatPortalDateTime(entry.timestamp, String(entry.timestamp || ''))}</time></article>)}</div> : <div className="asset-dashboard-empty">New asset actions will appear here as they are recorded.</div>}</section>
 
-        <section className="asset-dashboard-panel asset-alert-panel"><div className="asset-panel-heading"><div><span>ATTENTION NEEDED</span><h2>Operations signals</h2></div><WarningCircle size={20} /></div><div className="asset-signal-list"><Link to="/assets/approvals"><span className="asset-signal-icon violet"><ClipboardText size={17} /></span><div><b>Transfer approvals</b><small>Waiting for a decision</small></div><strong>{Number(stats.pendingApprovals || 0)}</strong><ArrowRight size={15} /></Link><Link to="/assets/maintenance"><span className="asset-signal-icon amber"><Wrench size={17} /></span><div><b>Open service tickets</b><small>Assets awaiting repair</small></div><strong>{Number(stats.activeMaintenance || 0)}</strong><ArrowRight size={15} /></Link><Link to="/assets/inventory"><span className="asset-signal-icon rose"><Package size={17} /></span><div><b>Low stock alerts</b><small>Consumables at or below minimum</small></div><strong>{stats.lowStock?.length || 0}</strong><ArrowRight size={15} /></Link></div></section>
+        <section className="asset-dashboard-panel asset-alert-panel"><div className="asset-panel-heading"><div><span>ATTENTION NEEDED</span><h2>Operations signals</h2></div><WarningCircle size={20} /></div><div className="asset-signal-list">{canApprove && <Link to="/assets/approvals"><span className="asset-signal-icon violet"><ClipboardText size={17} /></span><div><b>Asset approvals</b><small>Transfers and retirement requests</small></div><strong>{Number(stats.pendingApprovals || 0)}</strong><ArrowRight size={15} /></Link>}<Link to="/assets/maintenance"><span className="asset-signal-icon amber"><Wrench size={17} /></span><div><b>Open service tickets</b><small>Assets awaiting repair</small></div><strong>{Number(stats.activeMaintenance || 0)}</strong><ArrowRight size={15} /></Link><Link to="/assets/inventory"><span className="asset-signal-icon rose"><Package size={17} /></span><div><b>Low stock alerts</b><small>Consumables at or below minimum</small></div><strong>{stats.lowStock?.length || 0}</strong><ArrowRight size={15} /></Link></div></section>
       </div>
     </>}
   </main></Layout>;

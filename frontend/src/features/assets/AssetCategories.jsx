@@ -15,7 +15,8 @@ const childParentId = item => item.categoryid || item.category_id || item.parent
 const childParentName = item => item.categoryname || item.category_name || item.parentcategory || item.category || '';
 const categoryType = item => {
   const type = clean(item.type || item.categorytype || item.category_type).toUpperCase();
-  return type.includes('CONSUM') || type.includes('STOCK') ? 'CONSUMABLE' : type.includes('ASSET') ? 'ASSET' : 'GENERAL';
+  // Older category records have no Type value; keep them visible as assets.
+  return type.includes('CONSUM') || type.includes('STOCK') ? 'CONSUMABLE' : 'ASSET';
 };
 
 export default function AssetCategories() {

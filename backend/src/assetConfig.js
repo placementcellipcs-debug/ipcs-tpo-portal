@@ -14,10 +14,13 @@ const serviceAccountAuth = new JWT({
 const assetDoc = new GoogleSpreadsheet(process.env.ASSET_SPREADSHEET_ID || '17tEo324Xyfc3ku98hmsnKZDry4OgCt_hnUlK8hGtVXA', serviceAccountAuth);
 
 const managedOperationalSheets = [
-  { title: 'Asset_Approvals', headers: ['Approval_ID', 'Request_ID', 'Request_Type', 'Asset_ID', 'Branch', 'Requested_By', 'Requested_At', 'Decision', 'Decided_By', 'Decided_At', 'Reason'] },
+  { title: 'Asset_Approvals', headers: ['Approval_ID', 'Request_ID', 'Request_Type', 'Asset_ID', 'Branch', 'Requested_By', 'Requested_At', 'Decision', 'Decided_By', 'Decided_At', 'Reason', 'Requested_By_Email', 'Reviewed_By_Email', 'Payload_JSON'] },
   { title: 'Asset_Notification_Log', headers: ['Notification_ID', 'Event_Type', 'Recipient', 'Subject', 'Delivery_Status', 'Provider', 'Queue_ID', 'Attempt_Count', 'Created_At', 'Last_Error', 'Related_Entity_ID', 'Branch'] },
   { title: 'Asset_QR_Registry', headers: ['QR_ID', 'Asset_ID', 'QR_Value', 'QR_Version', 'Created_By', 'Created_At', 'Status'] },
-  { title: 'Asset_Activity_Log', headers: ['Event_ID', 'Timestamp', 'Actor_ID', 'Actor_Name', 'Actor_Email', 'Actor_Role', 'Branch', 'Action', 'Entity_Type', 'Entity_ID', 'Before_JSON', 'After_JSON', 'Source', 'Request_ID'] }
+  { title: 'Asset_Activity_Log', headers: ['Event_ID', 'Timestamp', 'Actor_ID', 'Actor_Name', 'Actor_Email', 'Actor_Role', 'Branch', 'Action', 'Entity_Type', 'Entity_ID', 'Before_JSON', 'After_JSON', 'Source', 'Request_ID'] },
+  { title: 'Asset_Assignments', aliases: ['Assignments', 'Asset Assignment', 'Asset Assignments'], headers: ['Assignment_ID', 'Asset_ID', 'Employee_ID', 'Employee_Name', 'Branch_ID', 'Assigned_By', 'Assigned_Date', 'Returned_Date', 'Condition_On_Issue', 'Condition_On_Return', 'Accessories', 'Remarks', 'Status'] },
+  { title: 'Asset_History', aliases: ['History', 'Asset History', 'Asset Register History'], headers: ['History_ID', 'Asset_ID', 'Action', 'Old_Value', 'New_Value', 'Performed_By', 'Branch', 'Timestamp', 'Remarks'] },
+  { title: 'Asset_Disposals', aliases: ['Disposals', 'Asset Disposal', 'Asset Disposals'], headers: ['Disposal_ID', 'Asset_ID', 'Reason', 'Disposal_Method', 'Disposal_Value', 'Requested_By', 'Approved_By', 'Disposed_Date', 'Remarks'] }
 ];
 
 let assetCache = null;
@@ -51,8 +54,16 @@ async function fetchAssetBatchWithRetry(sheetsApi, spreadsheetId, ranges, retrie
 
 async function ensureOperationalSheets() {
   const normalizeTitle = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const normalizedBase = value => normalizeTitle(value).replace(/^\d+/, '');
   for (const definition of managedOperationalSheets) {
-    const existing = assetDoc.sheetsByIndex.find(sheet => normalizeTitle(sheet.title) === normalizeTitle(definition.title));
+    const acceptedTitles = [definition.title, ...(definition.aliases || [])].map(normalizeTitle);
+    const existing = assetDoc.sheetsByIndex.find(sheet => {
+      const title = normalizeTitle(sheet.title);
+      const base = normalizedBase(sheet.title);
+      // Only exact aliases are safe here. Suffix matching made
+      // Asset_Activity_History look like the per-item Asset_History sheet.
+      return acceptedTitles.some(candidate => title === candidate || base === candidate);
+    });
     if (existing) continue;
     try {
       await assetDoc.addSheet({ title: definition.title, headerValues: definition.headers });
@@ -105,18 +116,20 @@ async function refreshAssetCache() {
       const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
       const sheets = assetDoc.sheetsByIndex;
       const normalizedTitle = sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const normalizedBase = sheet => normalizedTitle(sheet).replace(/^\d+/, '');
       const exact = sheets.find(sheet => normalizedTitle(sheet) === cleanKeyword);
       if (exact) return exact;
       if (cleanKeyword === 'categories') {
-        return sheets.find(sheet => {
-          const title = normalizedTitle(sheet);
-          return title.endsWith('categories') && !title.includes('subcategories');
-        });
+        return sheets.find(sheet => ['categories', 'assetcategories'].includes(normalizedBase(sheet)));
       }
       if (cleanKeyword === 'subcategories') {
-        return sheets.find(sheet => normalizedTitle(sheet).includes('subcategories'));
+        return sheets.find(sheet => ['subcategories', 'assetsubcategories'].includes(normalizedBase(sheet)));
       }
-      return sheets.find(sheet => normalizedTitle(sheet).includes(cleanKeyword));
+      const exactAlias = sheets.find(sheet => normalizedBase(sheet) === cleanKeyword || normalizedBase(sheet) === `asset${cleanKeyword}`);
+      if (exactAlias) return exactAlias;
+      // Numbered legacy tabs such as `07_Assets` remain supported. Avoid broad
+      // substring matching (for example, `Activity_History` as the History tab).
+      return sheets.find(sheet => normalizedBase(sheet) === cleanKeyword || normalizedBase(sheet) === `asset${cleanKeyword}`) || null;
     };
 
     const sheetKeys = [

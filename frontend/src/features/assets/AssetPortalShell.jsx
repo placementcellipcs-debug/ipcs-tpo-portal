@@ -13,7 +13,7 @@ const links = [
   { label: 'Asset register', to: '/assets/register', icon: Barcode, group: 'WORKSPACE' },
   { label: 'Assignments', to: '/assets/assignments', icon: UserCheck, group: 'WORKSPACE' },
   { label: 'QR labels', to: '/assets/qr', icon: QrCode, group: 'TRACKING' },
-  { label: 'Approvals', to: '/assets/approvals', icon: ClipboardText, group: 'TRACKING' },
+  { label: 'Approval desk', to: '/assets/approvals', icon: ClipboardText, approverOnly: true, group: 'TRACKING' },
   { label: 'Transfers', to: '/assets/transfers', icon: ArrowsLeftRight, group: 'TRACKING' },
   { label: 'Activity history', to: '/assets/activity', icon: Activity, group: 'TRACKING' },
   { label: 'Consumable stock', to: '/assets/inventory', icon: Package, group: 'OPERATIONS' },
@@ -56,6 +56,7 @@ export default function AssetPortalShell({ children, user }) {
   }, []);
   const role = String(account.role || '').toUpperCase();
   const isAdmin = isAdminAccount(account);
+  const isAssetApprover = String(account.email || '').trim().toLowerCase() === 'rakesh@ipcsglobal.com';
   const isBranchManager = role === 'BM' || role.includes('BRANCH MANAGER');
   const canManage = isAdmin || isBranchManager || role.includes('ASSET') || String(account.accessType || '').toLowerCase().includes('asset');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -88,7 +89,7 @@ export default function AssetPortalShell({ children, user }) {
 
         <nav className="asset-portal-nav">
           {['WORKSPACE', 'TRACKING', 'OPERATIONS', 'PREFERENCES', 'ADMINISTRATION'].map(group => {
-            const visibleLinks = links.filter(link => link.group === group && (!link.managerOnly || canManage) && (!link.adminOnly || isAdmin));
+            const visibleLinks = links.filter(link => link.group === group && (!link.managerOnly || canManage) && (!link.adminOnly || isAdmin) && (!link.approverOnly || isAssetApprover));
             return visibleLinks.length ? <section className="asset-nav-group" key={group}>
               <span className="asset-portal-nav-label">{group}</span>
               {visibleLinks.map(({ label, to, icon: Icon, end }) => <NavLink key={to} to={to} end={end} onClick={closeNav} className={({ isActive }) => `asset-portal-nav-link${isActive ? ' active' : ''}`}>

@@ -68,6 +68,7 @@ const AssetMaintenance = lazyRoute(() => import('../features/assets/AssetMainten
 const AssetSettings = lazyRoute(() => import('../features/assets/AssetSettings'));
 const AssetPreferences = lazyRoute(() => import('../features/assets/AssetPreferences'));
 const AssetApprovals = lazyRoute(() => import('../features/assets/AssetApprovals'));
+const AssetItemPage = lazyRoute(() => import('../features/assets/AssetItemPage'));
 const AssetQrCenter = lazyRoute(() => import('../features/assets/AssetQrCenter'));
 const AssetMailCenter = lazyRoute(() => import('../features/assets/AssetMailCenter'));
 const AssetActivity = lazyRoute(() => import('../features/assets/AssetActivity'));
@@ -117,7 +118,8 @@ function AssetManagementAccessRoute() {
   const role = String(account.role || '').trim().toUpperCase();
   const hasAssetAccess = role.includes('ASSET') || String(account.accessType || '').toLowerCase().includes('asset');
   const isBranchManager = role === 'BM' || role.includes('BRANCH MANAGER');
-  if (!isPortalAdminAccount(account) && !isBranchManager && !hasAssetAccess) return <Navigate to="/dashboard" replace />;
+  const isAssetApprover = String(account.email || '').trim().toLowerCase() === 'rakesh@ipcsglobal.com';
+  if (!isPortalAdminAccount(account) && !isBranchManager && !hasAssetAccess && !isAssetApprover) return <Navigate to="/dashboard" replace />;
   return <Outlet />;
 }
 
@@ -180,6 +182,15 @@ function AssetSystemSettingsAccessRoute({ children }) {
   let account = null;
   try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
   return isPortalAdminAccount(account) ? children : <Navigate to="/assets/dashboard" replace />;
+}
+
+function AssetApprovalAccessRoute({ children }) {
+  let account = null;
+  try { account = JSON.parse(localStorage.getItem('tpoData') || 'null'); } catch { /* Invalid local session data returns to sign in. */ }
+  if (!account) return <Navigate to="/login" replace />;
+  return String(account.email || '').trim().toLowerCase() === 'rakesh@ipcsglobal.com'
+    ? children
+    : <Navigate to="/assets/dashboard" replace />;
 }
 
 function UnknownRoute() {
@@ -275,12 +286,13 @@ function RoutedContent() {
           <Route path="register" element={<AssetList />} />
           <Route path="assignments" element={<AssetList />} />
           <Route path="retired" element={<AssetList />} />
+          <Route path="item/:assetId" element={<AssetItemPage />} />
           <Route path="add" element={<AssetManagerAccessRoute><AddAsset /></AssetManagerAccessRoute>} />
           <Route path="categories" element={<AssetManagerAccessRoute><AssetCategories /></AssetManagerAccessRoute>} />
           <Route path="inventory" element={<Inventory />} />
           <Route path="transfers" element={<AssetTransfers />} />
           <Route path="maintenance" element={<AssetMaintenance />} />
-          <Route path="approvals" element={<AssetApprovals />} />
+          <Route path="approvals" element={<AssetApprovalAccessRoute><AssetApprovals /></AssetApprovalAccessRoute>} />
           <Route path="qr" element={<AssetQrCenter />} />
           <Route path="mail" element={<AssetMailCenter />} />
           <Route path="activity" element={<AssetActivity />} />

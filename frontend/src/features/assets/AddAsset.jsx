@@ -8,7 +8,7 @@ import Layout from '../../layouts/Layout';
 import DateInput from '../../components/DateInput';
 import { API_BASE } from '../../services/apiConfig';
 import AssetCategoryFields from './AssetCategoryFields';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 
 const emptyAsset = branch => ({
   name: '', category: '', subcategory: '', branch: branch || '', location: '',
@@ -18,6 +18,8 @@ const emptyAsset = branch => ({
 const text = value => String(value || '').trim();
 
 export default function AddAsset() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [recordType, setRecordType] = useState(() => searchParams.get('type') === 'consumable' ? 'CONSUMABLE' : 'ASSET');
   let tpoData = {};
   try { tpoData = JSON.parse(localStorage.getItem('tpoData') || '{}'); } catch { /* The session guard handles invalid user data. */ }
 
@@ -33,6 +35,12 @@ export default function AddAsset() {
   const [assetPhotoPreview, setAssetPhotoPreview] = useState('');
   const previewRef = useRef('');
   const [customLocation, setCustomLocation] = useState('');
+  const [stock, setStock] = useState({ name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', quantity: '0', minQuantity: '5' });
+
+  useEffect(() => {
+    const nextType = searchParams.get('type') === 'consumable' ? 'CONSUMABLE' : 'ASSET';
+    setRecordType(nextType);
+  }, [searchParams]);
 
   const loadFormData = useCallback(async () => {
     setLoading(true);
@@ -81,6 +89,28 @@ export default function AddAsset() {
   const handleSubmit = async event => {
     event.preventDefault();
     if (isSubmitting) return;
+    if (recordType === 'CONSUMABLE') {
+      const quantity = Number(stock.quantity);
+      const minimumQuantity = Number(stock.minQuantity);
+      if (!Number.isSafeInteger(quantity) || quantity < 0 || !Number.isSafeInteger(minimumQuantity) || minimumQuantity < 0) {
+        setNotification({ type: 'error', text: 'Enter whole-number stock and alert quantities of 0 or more.' });
+        return;
+      }
+      setIsSubmitting(true);
+      setNotification(null);
+      try {
+        const response = await axios.post(`${API_BASE}/api/v1/assets/inventory/add`, { item: { ...stock, quantity, minQuantity: minimumQuantity }, userName: tpoData.name || '' }, { timeout: 30000 });
+        if (!response.data?.success) throw new Error(response.data?.message || 'The stock record was not saved.');
+        setNotification({ type: 'success', text: response.data.message || 'Consumable stock registered.' });
+        setStock({ name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', quantity: '0', minQuantity: '5' });
+      } catch (error) {
+        setNotification({ type: 'error', text: error.response?.data?.message || error.message || 'Failed to register stock.' });
+      } finally {
+        setIsSubmitting(false);
+        window.setTimeout(() => setNotification(null), 6000);
+      }
+      return;
+    }
     const quantity = Number(asset.quantity);
     if (asset.trackingMode === 'QUANTITY' && (!Number.isSafeInteger(quantity) || quantity < 1)) {
       setNotification({ type: 'error', text: 'Enter a whole-number quantity of at least 1.' });
@@ -131,13 +161,35 @@ export default function AddAsset() {
       </div>}
 
       <header className="asset-register-hero">
-        <div><span className="asset-register-eyebrow">IPCS ASSET OPERATIONS · NEW RECORD</span><h1>Register assets, simply.</h1><p>Choose whether you need to track each physical item or record a count of identical units.</p></div>
+        <div><span className="asset-register-eyebrow">IPCS ASSET OPERATIONS · ONE REGISTER</span><h1>Register an item</h1><p>Use one place for tracked equipment and counted consumable stock.</p></div>
         <Link to="/assets/register" className="asset-register-link">Open asset register <span aria-hidden="true">↗</span></Link>
       </header>
 
       {loading ? <div className="asset-register-state"><CircleNotch size={28} className="ph-spin" /> Loading branch and category choices…</div>
         : formLoadError ? <div className="asset-register-state error" role="alert"><WarningCircle size={24} /><span>{formLoadError}</span><button type="button" onClick={() => void loadFormData()}>Retry</button></div>
           : <form className="asset-register-form" onSubmit={handleSubmit}>
+            <section className="asset-register-card asset-track-card">
+              <div className="asset-card-heading"><div><span>RECORD TYPE</span><h2>What are you adding?</h2><p>Equipment can be tracked one by one or as a group. Consumables are tracked by quantity.</p></div><Package size={24} /></div>
+              <div className="asset-tracking-choice" role="group" aria-label="Choose what to register">
+                <button type="button" className={recordType === 'ASSET' ? 'selected' : ''} onClick={() => { setRecordType('ASSET'); setSearchParams({}); }}><span className="asset-choice-icon"><Cube size={22} weight="duotone" /></span><span><b>Equipment / asset</b><small>Furniture, devices, and reusable equipment.</small></span><i>{recordType === 'ASSET' ? 'Selected' : 'Tracked items'}</i></button>
+                <button type="button" className={`quantity${recordType === 'CONSUMABLE' ? ' selected' : ''}`} onClick={() => { setRecordType('CONSUMABLE'); setSearchParams({ type: 'consumable' }); }}><span className="asset-choice-icon"><Package size={22} weight="duotone" /></span><span><b>Consumable stock</b><small>Paper, stationery, cables, and other counted stock.</small></span><i>{recordType === 'CONSUMABLE' ? 'Selected' : 'Quantity only'}</i></button>
+              </div>
+            </section>
+            {recordType === 'CONSUMABLE' ? <>
+              <section className="asset-register-card">
+                <div className="asset-card-heading"><div><span>01 · STOCK DETAILS</span><h2>Describe the stock</h2><p>One row represents one stock type in one branch.</p></div><Link to="/assets/categories">Manage categories ↗</Link></div>
+                <AssetCategoryFields type="CONSUMABLE" category={stock.category} subcategory={stock.subcategory} subcategoryRequired categories={dbData.categories} subcategories={dbData.subcategories} dataReady={!loading}
+                  onCategoryChange={value => setStock(current => ({ ...current, category: value, subcategory: '' }))}
+                  onSubcategoryChange={value => setStock(current => ({ ...current, subcategory: value }))} />
+                <div className="asset-register-grid asset-register-grid-main">
+                  <label><span className="asset-register-label">Stock item name *</span><input value={stock.name} onChange={event => setStock(current => ({ ...current, name: event.target.value }))} placeholder="e.g. A4 paper ream" required /></label>
+                  <label><span className="asset-register-label">Branch *</span><select value={stock.branch} onChange={event => setStock(current => ({ ...current, branch: event.target.value }))} required><option value="">Select branch</option>{dbData.branches.map(branch => <option key={branch} value={branch}>{branch}</option>)}</select></label>
+                  <label><span className="asset-register-label">Initial quantity *</span><input type="number" min="0" step="1" value={stock.quantity} onChange={event => setStock(current => ({ ...current, quantity: event.target.value }))} required /></label>
+                  <label><span className="asset-register-label">Low stock alert at *</span><input type="number" min="0" step="1" value={stock.minQuantity} onChange={event => setStock(current => ({ ...current, minQuantity: event.target.value }))} required /></label>
+                </div>
+              </section>
+              <footer className="asset-register-submit"><span>Stock changes are logged as inventory transactions.</span><button type="submit" disabled={isSubmitting}>{isSubmitting ? <><CircleNotch size={19} className="ph-spin" /> Saving stock…</> : <><CheckCircle size={19} /> Register stock</>}</button></footer>
+            </> : <>
             <section className="asset-register-card asset-track-card">
               <div className="asset-card-heading"><div><span>01 · TRACKING STYLE</span><h2>How should these assets be counted?</h2><p>This controls how the record behaves after it is saved.</p></div><Barcode size={24} /></div>
               <div className="asset-tracking-choice" role="radiogroup" aria-label="Asset tracking style">
@@ -190,6 +242,7 @@ export default function AddAsset() {
             </details>
 
             <footer className="asset-register-submit"><span>Depreciation and accounting settings are managed separately from this quick registration.</span><button type="submit" disabled={isSubmitting}>{isSubmitting ? <><CircleNotch size={19} className="ph-spin" /> Saving record…</> : <><CheckCircle size={19} /> {isQuantity ? 'Save quantity group' : 'Register item'}</>}</button></footer>
+            </>}
           </form>}
     </main>
     <style>{`

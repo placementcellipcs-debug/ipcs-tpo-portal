@@ -7,8 +7,7 @@ import './AssetOperationsCenter.css';
 
 const text = value => String(value || '').trim().toLowerCase();
 const qrImage = assetId => {
-  const link = new URL('/assets/register', window.location.origin);
-  link.searchParams.set('assetId', assetId);
+  const link = new URL(`/assets/item/${encodeURIComponent(assetId)}`, window.location.origin);
   return `https://api.qrserver.com/v1/create-qr-code/?size=320x320&data=${encodeURIComponent(link.toString())}`;
 };
 

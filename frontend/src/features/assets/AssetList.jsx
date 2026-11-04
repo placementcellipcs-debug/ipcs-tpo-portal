@@ -113,6 +113,7 @@ export default function AssetList() {
     const timeout = window.setTimeout(() => setMessage(''), 5000);
     return () => window.clearTimeout(timeout);
   }, [message]);
+  useEffect(() => { setSearch(''); }, [location.pathname]);
 
   const branchAssets = useMemo(() => assets.filter(asset => branchKey(asset.branch) === branchKey(selectedBranch)), [assets, selectedBranch]);
   const spaces = useMemo(() => {
@@ -130,7 +131,13 @@ export default function AssetList() {
     return !query || [item.assetId, item.name, item.brand, item.model, item.category, item.subcategory, item.branch, item.location, item.vendor].some(value => clean(value).includes(query));
   };
   const spaceAssets = branchAssets.filter(asset => (asset.location?.trim() || 'Unassigned space') === selectedSpace && matchesSearch(asset));
-  const registryAssets = assets.filter(asset => matchesSearch(asset) && (assetView === 'retired' ? asset.status === 'DISPOSED' : assetView === 'assignments' ? asset.status === 'ASSIGNED' : asset.status !== 'DISPOSED')).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+  const registryAssets = assets.filter(asset => {
+    const status = String(asset.status || '').trim().toUpperCase();
+    const visibleInView = assetView === 'retired' ? status === 'DISPOSED'
+      : assetView === 'assignments' ? !isQuantityGroup(asset) && ['AVAILABLE', 'ASSIGNED'].includes(status)
+        : status !== 'DISPOSED';
+    return visibleInView && matchesSearch(asset);
+  }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   const selectedBranchStats = {
     total: branchAssets.reduce((sum, item) => sum + unitCount(item), 0),
     assigned: branchAssets.filter(item => item.status === 'ASSIGNED').reduce((sum, item) => sum + unitCount(item), 0),
@@ -230,7 +237,7 @@ export default function AssetList() {
 
   const submitDisposal = async event => {
     event.preventDefault();
-    if (!disposeItem || !window.confirm(`Permanently dispose ${disposeItem.assetId}? This action cannot be undone.`)) return;
+    if (!disposeItem || !window.confirm(`Send ${disposeItem.assetId} to Rakesh for retirement approval? The item will stay active until the request is approved.`)) return;
     setBusy(true);
     try {
       const response = await axios.post(`${API_BASE}/api/v1/assets/dispose`, {
@@ -242,16 +249,9 @@ export default function AssetList() {
         userName: user.name || ''
       });
       if (!response.data?.success) throw new Error(response.data?.message || 'Could not dispose of the asset.');
-      setAssets(current => current.map(item => item.assetId === disposeItem.assetId ? { ...item, status: 'DISPOSED' } : item));
-      setDetails(current => current?.assetId === disposeItem.assetId ? { ...current, status: 'DISPOSED' } : current);
-      setDetailData(current => ({
-        ...current,
-        disposals: [{ disposalId: response.data.disposalId, reason: disposalForm.reason, method: disposalForm.method, value: disposalForm.value || '0', date: response.data.disposedDate, remarks: disposalForm.remarks }, ...current.disposals],
-        history: [{ action: 'ASSET_DISPOSED', performedBy: user.name || '', timestamp: response.data.disposedDate, remarks: `${disposalForm.reason} · ${disposalForm.method}` }, ...current.history]
-      }));
       setDisposeItem(null);
       setDisposalForm({ reason: '', method: 'Recycling', value: '', remarks: '' });
-      showToast(response.data.message || 'Asset marked as disposed.');
+      showToast(response.data.message || 'Retirement request sent for approval.');
     } catch (error) { showToast(error.response?.data?.message || error.message || 'Could not dispose of the asset.'); }
     finally { setBusy(false); }
   };
@@ -294,17 +294,17 @@ export default function AssetList() {
           <div className="asset-state-card"><CircleNotch size={28} className="ph-spin" /><p>Loading branch inventory…</p></div>
         ) : assetView !== 'branches' ? (
           <section className="asset-register-panel" aria-label={assetView === 'retired' ? 'Retired assets' : assetView === 'assignments' ? 'Assigned assets' : 'Asset register'}>
-            {registryAssets.length ? <div className="asset-register-scroll"><table className="asset-register-table"><thead><tr><th>Asset</th><th>Tracking / quantity</th><th>Branch &amp; space</th><th>{assetView === 'assignments' ? 'Current custodian' : 'Vendor'}</th><th>Condition</th><th>Status</th><th><span className="sr-only">Open</span></th></tr></thead><tbody>
+            {registryAssets.length ? <div className="asset-register-scroll"><table className="asset-register-table"><thead><tr><th>Asset</th><th>Tracking / quantity</th><th>Branch &amp; space</th><th>{assetView === 'assignments' ? 'Custodian / next step' : 'Vendor'}</th><th>Condition</th><th>Status</th><th><span className="sr-only">Open</span></th></tr></thead><tbody>
               {registryAssets.map(item => <tr key={item.assetId}>
                 <td><button type="button" className="asset-register-item" onClick={() => openDetails(item)}><b>{item.name}</b><span>{item.assetId}</span></button></td>
                 <td><span className={`asset-tracking-pill ${isQuantityGroup(item) ? 'quantity' : ''}`}>{isQuantityGroup(item) ? `${unitCount(item)} units · grouped` : 'Individual · 1'}</span></td>
                 <td><b>{item.branch || '—'}</b><span>{item.location || 'Unassigned space'}</span></td>
-                <td>{assetView === 'assignments' ? item.assignedTo || item.employeeName || item.custodian || 'Assigned' : item.vendor || '—'}</td>
+                <td>{assetView === 'assignments' ? (String(item.status || '').toUpperCase() === 'ASSIGNED' ? item.assignedTo || item.employeeName || item.custodian || 'Assigned' : 'Ready to assign') : item.vendor || '—'}</td>
                 <td>{item.condition || 'GOOD'}</td>
                 <td><span className={`asset-status status-${String(item.status || 'AVAILABLE').toLowerCase()}`}>{statusLabel(item.status)}</span></td>
-                <td><div className="asset-row-actions"><button type="button" className="asset-register-open" onClick={() => openDetails(item)}>Details <ArrowRight size={15} /></button>{canManage && !isQuantityGroup(item) && item.status === 'AVAILABLE' && <button type="button" className="asset-register-open asset-assign-inline" onClick={() => openAssignment(item)}>Assign</button>}{canManage && !isQuantityGroup(item) && item.status === 'ASSIGNED' && <><button type="button" className="asset-register-open asset-assign-inline" onClick={() => openAssignment(item)}>Reassign</button><button type="button" className="asset-register-open asset-return-inline" onClick={() => openReturn(item)}>Return item</button></>}</div></td>
+                <td><div className="asset-row-actions"><button type="button" className="asset-register-open" onClick={() => openDetails(item)}>Details <ArrowRight size={15} /></button>{canManage && !isQuantityGroup(item) && String(item.status || '').toUpperCase() === 'AVAILABLE' && <button type="button" className="asset-register-open asset-assign-inline" onClick={() => openAssignment(item)}>Assign</button>}{canManage && !isQuantityGroup(item) && String(item.status || '').toUpperCase() === 'ASSIGNED' && <><button type="button" className="asset-register-open asset-assign-inline" onClick={() => openAssignment(item)}>Reassign</button><button type="button" className="asset-register-open asset-return-inline" onClick={() => openReturn(item)}>Return item</button></>}</div></td>
               </tr>)}
-            </tbody></table></div> : <div className="asset-state-card">{assetView === 'retired' ? 'No retired items match this search.' : 'No items match this search.'}</div>}
+            </tbody></table></div> : <div className="asset-state-card">{assetView === 'retired' ? 'No retired items match this search.' : assetView === 'assignments' && !search.trim() ? <><b>No individually tracked items are ready for assignment.</b><p>Only items registered one by one can be assigned to an employee. Quantity groups stay together as stock.</p>{canManage && <button type="button" className="asset-action-primary" onClick={() => navigate('/assets/add')}>Register an individual item <ArrowRight size={16} /></button>}</> : 'No items match this search.'}</div>}
           </section>
         ) : !selectedBranch ? (
           <section className="asset-branch-grid" aria-label="Branches">
@@ -403,7 +403,7 @@ export default function AssetList() {
               <h3>Specifications</h3>
               {detailData.loading ? <span className="asset-detail-loading"><CircleNotch size={18} className="ph-spin" /> Loading record…</span> : detailData.customSpecs.length ? <div className="asset-spec-grid">{detailData.customSpecs.map((spec, index) => <div key={`${spec.name}-${index}`}><span>{spec.name}</span><b>{spec.value || '—'}</b></div>)}</div> : <p className="asset-detail-empty">No additional technical specifications.</p>}
               <h3>Current custodian</h3>
-              {detailData.loading ? <span className="asset-detail-loading"><CircleNotch size={18} className="ph-spin" /> Loading record…</span> : (detailData.assignments.find(assignment => String(assignment.status || '').toUpperCase() === 'ASSIGNED') || (details.status === 'ASSIGNED' ? detailData.assignments[0] : null)) ? (() => { const assigned = detailData.assignments.find(assignment => String(assignment.status || '').toUpperCase() === 'ASSIGNED') || detailData.assignments[0]; return <div className="asset-current-holder"><b>{assigned.employeeName || 'Assigned user'}</b><span>{assigned.employeeId || 'Employee ID not recorded'} · Issued {formatPortalDateTime(assigned.assignedDate, String(assigned.assignedDate || 'date not recorded'))}</span></div>; })() : <p className="asset-detail-empty">This item is currently not assigned to a person.</p>}
+              {detailData.loading ? <span className="asset-detail-loading"><CircleNotch size={18} className="ph-spin" /> Loading record…</span> : (detailData.assignments.find(assignment => ['ACTIVE', 'ASSIGNED'].includes(String(assignment.status || '').toUpperCase())) || (details.status === 'ASSIGNED' ? detailData.assignments[0] : null)) ? (() => { const assigned = detailData.assignments.find(assignment => ['ACTIVE', 'ASSIGNED'].includes(String(assignment.status || '').toUpperCase())) || detailData.assignments[0]; return <div className="asset-current-holder"><b>{assigned.employeeName || 'Assigned user'}</b><span>{assigned.employeeId || 'Employee ID not recorded'} · Issued {formatPortalDateTime(assigned.assignedDate, String(assigned.assignedDate || 'date not recorded'))}</span></div>; })() : <p className="asset-detail-empty">This item is currently not assigned to a person.</p>}
               </>}
               {detailTab === 'history' && <>
               <h3>Complete item history</h3>
@@ -436,9 +436,9 @@ export default function AssetList() {
 
         {returnItem && <Modal title="Return this item" subtitle={`${returnItem.name} · ${returnItem.assetId}`} onClose={() => setReturnItem(null)}><form className="asset-form" onSubmit={submitReturn}><label>Condition on return<select value={returnForm.conditionOnReturn} onChange={event => setReturnForm({ ...returnForm, conditionOnReturn: event.target.value, returnStatus: event.target.value === 'DAMAGED' ? 'UNDER_MAINTENANCE' : returnForm.returnStatus })}><option>NEW</option><option>EXCELLENT</option><option>GOOD</option><option>FAIR</option><option>DAMAGED</option></select></label><label>Next status<select value={returnForm.returnStatus} onChange={event => setReturnForm({ ...returnForm, returnStatus: event.target.value })}><option value="AVAILABLE">Available</option><option value="UNDER_MAINTENANCE">Maintenance</option></select></label><label>Return notes<input value={returnForm.remarks} onChange={event => setReturnForm({ ...returnForm, remarks: event.target.value })} placeholder="Note visible damage or missing parts" /></label><PhotoField label="Add current return photo" value={returnForm.photo} onChange={photo => setReturnForm({ ...returnForm, photo })} required /><button className="asset-action-primary form-submit" type="submit" disabled={busy}>{busy ? <CircleNotch size={18} className="ph-spin" /> : <CheckCircle size={18} />} Record return</button></form></Modal>}
 
-        {disposeItem && <Modal title="Dispose of asset" subtitle={`${disposeItem.name} · ${disposeItem.assetId}`} onClose={() => setDisposeItem(null)}><form className="asset-form" onSubmit={submitDisposal}><div className="asset-permanent-note">This permanently retires the item and records who approved the disposal.</div><label>Reason for disposal<input value={disposalForm.reason} onChange={event => setDisposalForm({ ...disposalForm, reason: event.target.value })} placeholder="End of useful life, damaged beyond repair…" required /></label><label>Disposal method<select value={disposalForm.method} onChange={event => setDisposalForm({ ...disposalForm, method: event.target.value })}><option>Recycling</option><option>Sale</option><option>Donation</option><option>Secure destruction</option><option>Other</option></select></label><label>Recovery value<input type="number" min="0" step="0.01" value={disposalForm.value} onChange={event => setDisposalForm({ ...disposalForm, value: event.target.value })} placeholder="0" /></label><label>Disposal notes<textarea rows="3" value={disposalForm.remarks} onChange={event => setDisposalForm({ ...disposalForm, remarks: event.target.value })} placeholder="Add a reference number or handover details" /></label><button className="asset-dispose-button form-submit" type="submit" disabled={busy}>{busy ? <CircleNotch size={18} className="ph-spin" /> : 'Confirm permanent disposal'}</button></form></Modal>}
+        {disposeItem && <Modal title="Request asset retirement" subtitle={`${disposeItem.name} · ${disposeItem.assetId}`} onClose={() => setDisposeItem(null)}><form className="asset-form" onSubmit={submitDisposal}><div className="asset-permanent-note">This request goes to Rakesh for review. The item stays active unless approved.</div><label>Reason for retirement<input value={disposalForm.reason} onChange={event => setDisposalForm({ ...disposalForm, reason: event.target.value })} placeholder="End of useful life, damaged beyond repair…" required /></label><label>Proposed disposal method<select value={disposalForm.method} onChange={event => setDisposalForm({ ...disposalForm, method: event.target.value })}><option>Recycling</option><option>Sale</option><option>Donation</option><option>Secure destruction</option><option>Other</option></select></label><label>Estimated recovery value<input type="number" min="0" step="0.01" value={disposalForm.value} onChange={event => setDisposalForm({ ...disposalForm, value: event.target.value })} placeholder="0" /></label><label>Request notes<textarea rows="3" value={disposalForm.remarks} onChange={event => setDisposalForm({ ...disposalForm, remarks: event.target.value })} placeholder="Add a reference number or supporting details" /></label><button className="asset-dispose-button form-submit" type="submit" disabled={busy}>{busy ? <CircleNotch size={18} className="ph-spin" /> : 'Send request to Rakesh'}</button></form></Modal>}
 
-        {qrItem && <Modal title="Asset label" subtitle={qrItem.assetId} onClose={() => setQrItem(null)}><div className="asset-qr-card"><h3>{qrItem.name}</h3><img src={`https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(`${window.location.origin}/assets/register?assetId=${encodeURIComponent(qrItem.assetId)}`)}`} alt={`QR code for ${qrItem.assetId}`} /><p>{qrItem.branch} · {qrItem.location || 'Unassigned space'}</p><button type="button" className="asset-action-primary" onClick={() => window.print()}>Print label</button></div></Modal>}
+        {qrItem && <Modal title="Asset label" subtitle={qrItem.assetId} onClose={() => setQrItem(null)}><div className="asset-qr-card"><h3>{qrItem.name}</h3><img src={`https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(`${window.location.origin}/assets/item/${encodeURIComponent(qrItem.assetId)}`)}`} alt={`QR code for ${qrItem.assetId}`} /><p>{qrItem.branch} · {qrItem.location || 'Unassigned space'}</p><button type="button" className="asset-action-primary" onClick={() => window.print()}>Print label</button></div></Modal>}
       </main>
     </Layout>
   );
