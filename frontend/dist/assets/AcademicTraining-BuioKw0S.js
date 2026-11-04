@@ -1,1 +1,0 @@
-import{n as e}from"./index-Cn63YKec.js";import t from"./AcademicWorkspace-CLuHg3wO.js";var n=e();function r(){return(0,n.jsx)(t,{module:`training`})}export{r as default};
