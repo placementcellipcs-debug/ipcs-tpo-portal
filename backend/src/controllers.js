@@ -4895,6 +4895,53 @@ exports.getPlacementAudit = async (req, res) => {
   }
 };
 
+// Talentino_Attendance contains older form-response rows in some workbooks.
+// Their cells are still in the legacy order even when the sheet header row has
+// been replaced by the newer Attendance ID / Session ID schema. Read those
+// rows by their recognizable values so the header mismatch cannot hide them.
+const createTalentinoAttendanceValueReader = rows => {
+  const legacyRows = new WeakMap();
+  const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  (Array.isArray(rows) ? rows : []).forEach(row => {
+    const values = row?._rawData;
+    if (!Array.isArray(values)) return;
+    const timestamp = String(values[0] ?? '').trim();
+    const email = String(values[1] ?? '').trim();
+    const name = String(values[2] ?? '').trim();
+    const branch = String(values[3] ?? '').trim();
+    const course = String(values[4] ?? '').trim();
+    const rating = String(values[6] ?? '').trim();
+    const hasLegacyRating = /\b\d+(?:\.\d+)?\s*\/\s*5\b/i.test(rating);
+    if (!safeParseDate(timestamp) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !name || !branch || !course || !hasLegacyRating) return;
+    legacyRows.set(row, {
+      timestamp,
+      email,
+      name,
+      branch,
+      course,
+      rating,
+      notes: String(values[7] ?? '').trim()
+    });
+  });
+
+  return (row, aliases) => {
+    const legacy = row && legacyRows.get(row);
+    if (!legacy) return getValByHeader(row, aliases);
+    const requested = new Set((Array.isArray(aliases) ? aliases : [aliases]).map(normalize));
+    const asks = (...names) => names.some(name => requested.has(normalize(name)));
+    if (asks('sessionid', 'eventid', 'eventreference', 'sessionkey')) return '';
+    if (asks('timestamp', 'datetime', 'date', 'time', 'presentcheckinsdate', 'checkindate')) return legacy.timestamp;
+    if (asks('branch', 'sittingbranch')) return legacy.branch;
+    if (asks('course', 'program', 'assignedcourse', 'maincourse', 'subcourse')) return legacy.course;
+    if (asks('name', 'student', 'studentname')) return legacy.name;
+    if (asks('email', 'emailid', 'mailid', 'studentemail')) return legacy.email;
+    if (asks('rating', 'feedbackrating', 'stars')) return legacy.rating;
+    if (asks('notes', 'remark', 'comments', 'feedback')) return legacy.notes;
+    if (asks('roll', 'rollno', 'rollnumber', 'ipcsrollnumber')) return '';
+    return '';
+  };
+};
+
 exports.getTalentino = async (req, res) => {
   const actor = req.portalUser || {};
   const { assignedBranchesArray: requestedBranches, role: requestedRole, assignedCourse: requestedCourse } = req.body;
@@ -4919,6 +4966,7 @@ exports.getTalentino = async (req, res) => {
   const attendanceRows = Array.isArray(cache.tAtt) ? cache.tAtt : [];
   const studentRows = Array.isArray(cache.students) ? cache.students : [];
   const scheduleRows = Array.isArray(cache.tSched) ? cache.tSched : [];
+  const getTalentinoValue = createTalentinoAttendanceValueReader(attendanceRows);
   const studentsByRoll = new Map();
   const studentsByName = new Map();
   const normalizeKey = value => normalizePlacementText(value);
@@ -4930,7 +4978,7 @@ exports.getTalentino = async (req, res) => {
     if (name && !studentsByName.has(name)) studentsByName.set(name, student);
   });
 
-  const resolveSession = createTalentinoSessionResolver(scheduleRows, getValByHeader, safeParseDate);
+  const resolveSession = createTalentinoSessionResolver(scheduleRows, getTalentinoValue, safeParseDate);
   const assignedBranchCandidates = [
     ...(Array.isArray(assignedBranchesArray) ? assignedBranchesArray : []),
     ...String(actor.assignedBranches || '').split(/[\n,;]+/)
@@ -4939,23 +4987,23 @@ exports.getTalentino = async (req, res) => {
   const records = attendanceRows.map(row => {
     const match = resolveSession(row);
     const schedule = match.session;
-    const studentName = getValByHeader(row, ['name', 'student']) || '';
-    const studentRoll = normalizeKey(getValByHeader(row, ['roll', 'rollno', 'rollnumber', 'ipcsrollnumber']));
+    const studentName = getTalentinoValue(row, ['name', 'student']) || '';
+    const studentRoll = normalizeKey(getTalentinoValue(row, ['roll', 'rollno', 'rollnumber', 'ipcsrollnumber']));
     const studentData = (studentRoll && studentsByRoll.get(studentRoll)) || studentsByName.get(normalizeKey(studentName));
     // Older attendance rows may omit Branch. Recover it from the linked
     // session first, then the matched student directory record, before
     // applying branch access rules.
-    const rowBranch = getValByHeader(row, ['branch', 'sittingbranch'])
-      || getValByHeader(schedule, ['branch', 'sittingbranch'])
+    const rowBranch = getTalentinoValue(row, ['branch', 'sittingbranch'])
+      || getTalentinoValue(schedule, ['branch', 'sittingbranch'])
       || getValByHeader(studentData, ['branch', 'sittingbranch']);
-    const sCourse = getValByHeader(row, ['course', 'program']) || getValByHeader(schedule, ['course', 'program', 'assignedcourse']) || (studentData ? getValByHeader(studentData, ['course']) : 'Unknown');
+    const sCourse = getTalentinoValue(row, ['course', 'program']) || getTalentinoValue(schedule, ['course', 'program', 'assignedcourse']) || (studentData ? getValByHeader(studentData, ['course']) : 'Unknown');
     const allowed = isPlacementTrackerAdmin(actor) || isPlacementTrackerTpo(actor)
       ? hasPlacementBranchAccess(rowBranch, actor)
       : hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse, actor.department);
     return allowed ? { row, match, schedule, branch: rowBranch } : null;
   }).filter(Boolean).map(({ row, match, schedule, branch }) => {
-    const date = getValByHeader(row, ['timestamp', 'date', 'time', 'present check-ins date']);
-    return { name: getValByHeader(row, ['name', 'student']), branch, date, rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes', 'remark']), tpo: getValByHeader(row, ['tpo', 'placementofficer', 'conductedby', 'createdby']) || getValByHeader(schedule, ['tpo', 'placementofficer', 'conductedby', 'createdby']), sessionId: getValByHeader(row, ['sessionid', 'eventid', 'event id']) || getValByHeader(schedule, ['sessionid', 'eventid', 'event id']), sessionMatchType: match.matchType };
+    const date = getTalentinoValue(row, ['timestamp', 'date', 'time', 'present check-ins date']);
+    return { name: getTalentinoValue(row, ['name', 'student']), branch, date, rating: getTalentinoValue(row, ['rating']), notes: getTalentinoValue(row, ['notes', 'remark']), tpo: getTalentinoValue(row, ['tpo', 'placementofficer', 'conductedby', 'createdby']) || getTalentinoValue(schedule, ['tpo', 'placementofficer', 'conductedby', 'createdby']), sessionId: getTalentinoValue(row, ['sessionid', 'eventid', 'event id']) || getTalentinoValue(schedule, ['sessionid', 'eventid', 'event id']), sessionMatchType: match.matchType };
   });
   const sessions = scheduleRows.map(row => {
     const branch = getValByHeader(row, ['branch', 'sittingbranch']);
@@ -5056,7 +5104,8 @@ exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
   }
   const scheduleRows = Array.isArray(cache.tSched) ? cache.tSched : [];
   const attendanceRows = Array.isArray(cache.tAtt) ? cache.tAtt : [];
-  const resolveSession = createTalentinoSessionResolver(scheduleRows, getValByHeader, safeParseDate);
+  const getTalentinoValue = createTalentinoAttendanceValueReader(attendanceRows);
+  const resolveSession = createTalentinoSessionResolver(scheduleRows, getTalentinoValue, safeParseDate);
   const schedulesByBranchDate = new Map();
   const sessions = scheduleRows.filter(row => {
     const branch = getValByHeader(row, ['branch', 'sittingbranch']);
@@ -5070,7 +5119,7 @@ exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
 
   const matchedAttendances = new Map(sessions.map(row => [row, []]));
   const scheduleSessionIdentity = row => normalizePlacementText(getValByHeader(row, ['sessionid', 'eventid', 'event id', 'eventreference', 'sessionkey']));
-  const attendanceSessionIdentity = row => normalizePlacementText(getValByHeader(row, ['sessionid', 'eventid', 'event id']));
+  const attendanceSessionIdentity = row => normalizePlacementText(getTalentinoValue(row, ['sessionid', 'eventid', 'event id']));
   const getExactTalentinoValue = (row, aliases) => {
     const headers = row?._worksheet?.headerValues || [];
     const normalizeHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -5082,7 +5131,8 @@ exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
   };
   const talentinoTimeToken = row => {
     const raw = getExactTalentinoValue(row, ['starttime', 'sessionstarttime', 'sessiontime', 'time', 'checkintime'])
-      || getExactTalentinoValue(row, ['timestamp', 'datetime', 'checkindate']);
+      || getExactTalentinoValue(row, ['timestamp', 'datetime', 'checkindate'])
+      || getTalentinoValue(row, ['time', 'timestamp', 'date']);
     const match = String(raw || '').match(/(?:^|[\sT])(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)?/i);
     if (!match) return normalizePlacementText(raw);
     let hour = Number(match[1]);
@@ -5103,8 +5153,8 @@ exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
     const date = talentinoDateKey(getFirstNonEmptyValByHeader(schedule, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']));
     const candidates = schedulesByBranchDate.get(`${talentinoBranchKey(branch)}|${date}`) || [];
     if (candidates.length === 1) return candidates[0] === schedule;
-    const attendanceCourse = normalizePlacementText(getValByHeader(attendance, ['course', 'program']));
-    const attendanceTitle = normalizePlacementText(getValByHeader(attendance, ['sessiontitle', 'title', 'topic', 'session']));
+    const attendanceCourse = normalizePlacementText(getTalentinoValue(attendance, ['course', 'program']));
+    const attendanceTitle = normalizePlacementText(getTalentinoValue(attendance, ['sessiontitle', 'title', 'topic', 'session']));
     const attendanceTime = talentinoTimeToken(attendance);
     const candidatesMatching = candidates.filter(candidate => {
       const comparisons = [];
@@ -5120,10 +5170,10 @@ exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
   };
 
   attendanceRows.forEach(row => {
-    const date = talentinoDateKey(getFirstNonEmptyValByHeader(row, ['timestamp', 'date', 'time', 'present check-ins date']));
+    const date = talentinoDateKey(getTalentinoValue(row, ['timestamp', 'date', 'time', 'present check-ins date']));
     if (!reportDateWindow.has(date)) return;
     sessions.forEach(session => {
-      if (talentinoBranchKey(getValByHeader(session, ['branch', 'sittingbranch'])) !== talentinoBranchKey(getValByHeader(row, ['branch', 'sittingbranch']))) return;
+      if (talentinoBranchKey(getValByHeader(session, ['branch', 'sittingbranch'])) !== talentinoBranchKey(getTalentinoValue(row, ['branch', 'sittingbranch']))) return;
       if (attendanceBelongsTo(row, session)) matchedAttendances.get(session).push(row);
     });
   });
@@ -5179,10 +5229,10 @@ exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
       const time = getValByHeader(schedule, ['starttime', 'time', 'sessiontime']);
       const location = getValByHeader(schedule, ['location', 'venue', 'classroom']);
       const rowsHtml = attendees.map((row, index) => {
-        const name = getValByHeader(row, ['name', 'student', 'studentname']) || 'Learner';
-        const roll = getValByHeader(row, ['roll', 'rollno', 'rollnumber', 'ipcsrollnumber']);
-        const rating = getValByHeader(row, ['rating', 'feedbackrating']);
-        const notes = getValByHeader(row, ['notes', 'remark', 'feedback']);
+        const name = getTalentinoValue(row, ['name', 'student', 'studentname']) || 'Learner';
+        const roll = getTalentinoValue(row, ['roll', 'rollno', 'rollnumber', 'ipcsrollnumber']);
+        const rating = getTalentinoValue(row, ['rating', 'feedbackrating']);
+        const notes = getTalentinoValue(row, ['notes', 'remark', 'feedback']);
         return `<tr><td style="padding:9px;border:1px solid #dbe5ec">${index + 1}</td><td style="padding:9px;border:1px solid #dbe5ec"><b>${talentinoHtmlEscape(name)}</b>${roll ? `<br><span style="color:#68798a;font-size:11px">${talentinoHtmlEscape(roll)}</span>` : ''}</td><td style="padding:9px;border:1px solid #dbe5ec">${talentinoHtmlEscape(rating || '—')}</td><td style="padding:9px;border:1px solid #dbe5ec">${talentinoHtmlEscape(notes || '—')}</td></tr>`;
       }).join('') || '<tr><td colspan="4" style="padding:12px;border:1px solid #dbe5ec;color:#68798a">No attendance check-ins were recorded for this session.</td></tr>';
       return `<section style="margin:0 0 22px"><div style="padding:14px 16px;background:#edf6f7;border-left:4px solid #12a99c"><b style="font-size:16px;color:#15364b">${sessionIndex + 1}. ${talentinoHtmlEscape(title)}</b><div style="margin-top:5px;font-size:12px;color:#526a7a">${talentinoHtmlEscape(course)}${time ? ` · ${talentinoHtmlEscape(time)}` : ''}${location ? ` · ${talentinoHtmlEscape(location)}` : ''} · ${attendees.length} check-in${attendees.length === 1 ? '' : 's'}</div></div><table cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr>${['S.No.', 'Learner', 'Rating', 'Notes'].map(label => `<th style="padding:9px;border:1px solid #dbe5ec;background:#173247;color:#fff;text-align:left">${label}</th>`).join('')}</tr></thead><tbody>${rowsHtml}</tbody></table></section>`;
