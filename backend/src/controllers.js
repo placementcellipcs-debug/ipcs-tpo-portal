@@ -9382,12 +9382,14 @@ const getMonthlyReportRecipientDirectory = cache => {
     if (/(inactive|disabled|suspended|terminated|deleted|blocked|left|revoked)/.test(status)) return;
     const name = String(getValByHeader(row, ['name', 'tponame', 'placementofficer', 'username', 'fullname']) || '').trim();
     const position = String(getValByHeader(row, ['position', 'designation', 'role', 'title']) || fallbackRole || 'Portal user').trim();
+    const branch = String(getValByHeader(row, ['branch', 'sittingbranch', 'assignedbranch', 'assignedbranches', 'location']) || '').trim();
     const previous = byEmail.get(email);
     byEmail.set(email, previous ? {
       ...previous,
       name: previous.name === email ? (name || previous.name) : (previous.name || name),
-      position: previous.position === 'Portal user' ? position : previous.position
-    } : { email, name: name || email, position });
+      position: previous.position === 'Portal user' ? position : previous.position,
+      branch: previous.branch || branch
+    } : { email, name: name || email, position, branch });
   };
   (cache?.contacts || []).forEach(row => addRecipient(row, 'TPO'));
   (cache?.users || []).forEach(row => addRecipient(row, 'Portal user'));

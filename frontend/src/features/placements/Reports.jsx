@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus, PaperPlaneTilt, Trash } from '@phosphor-icons/react';
+import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus, PaperPlaneTilt, Trash, MagnifyingGlass } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import DataSourceStatus from '../../components/DataSourceStatus';
 import { PortalToast } from '../../components/PortalFeedback';
@@ -186,6 +186,7 @@ export default function Reports() {
   const [reportRecipientsError, setReportRecipientsError] = useState('');
   const [selectedReportCcEmails, setSelectedReportCcEmails] = useState([]);
   const [showReportCcPicker, setShowReportCcPicker] = useState(false);
+  const [reportRecipientSearch, setReportRecipientSearch] = useState('');
   const [toast, setToast] = useState(null);
   const mainCourses = REPORT_MAIN_COURSES;
 
@@ -196,6 +197,10 @@ export default function Reports() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const senderEmail = String(tpoData?.email || tpoData?.mailId || tpoData?.loginEmail || '').trim().toLowerCase();
+  const selectableReportRecipients = reportRecipients.filter(recipient => recipient.email !== senderEmail);
+  const normalizedRecipientSearch = reportRecipientSearch.trim().toLowerCase();
+  const filteredReportRecipients = selectableReportRecipients.filter(recipient => !normalizedRecipientSearch || [recipient.name, recipient.position, recipient.branch, recipient.email]
+    .some(value => String(value || '').toLowerCase().includes(normalizedRecipientSearch)));
   useEffect(() => {
     if (!canSendMonthlyReport) return undefined;
     let active = true;
@@ -685,6 +690,33 @@ export default function Reports() {
     .rt-tab { background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text-muted); padding: 14px 28px; border-radius: 30px; cursor: pointer; white-space: nowrap; font-weight: bold; font-size: 1.05rem; transition: all 0.2s; display: flex; align-items: center; gap: 10px; }
     .rt-tab:hover { background: #1e293b; color: #fff; }
     .rt-tab.active { background: rgba(56, 189, 248, 0.15); color: var(--accent-primary); border-color: var(--accent-primary); box-shadow: 0 4px 15px rgba(56, 189, 248, 0.2); }
+    .report-cc-search { display: flex; align-items: center; gap: 9px; width: 100%; box-sizing: border-box; margin: 0 0 9px; padding: 10px 11px; border: 1px solid rgba(148,163,184,.22); border-radius: 9px; background: #0b1220; }
+    .report-cc-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: #e5edf7; font: inherit; font-size: .86rem; }
+    .report-cc-search input::placeholder { color: #718096; }
+    .report-cc-search button { border: 0; background: transparent; color: #94a3b8; cursor: pointer; font-size: 1.15rem; line-height: 1; }
+    .report-cc-table { overflow: hidden; border: 1px solid rgba(148,163,184,.18); border-radius: 9px; }
+    .report-cc-row { display: grid; grid-template-columns: 22px minmax(125px, 1.1fr) minmax(90px, .75fr) minmax(145px, 1.25fr); align-items: center; gap: 10px; }
+    .report-cc-heading { padding: 8px 11px; background: #182235; color: #94a3b8; font-size: .68rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+    .report-cc-list { max-height: min(38vh, 330px); overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scroll-behavior: smooth; scrollbar-gutter: stable; }
+    .report-cc-person { box-sizing: border-box; min-height: 58px; padding: 8px 11px; border-top: 1px solid rgba(148,163,184,.1); background: #111a2a; cursor: pointer; transition: background .15s ease; }
+    .report-cc-person:hover { background: #1a2940; }
+    .report-cc-person:has(input:checked) { background: rgba(37,99,235,.13); }
+    .report-cc-checkbox { display: grid; place-items: center; }
+    .report-cc-person input { width: 16px; height: 16px; margin: 0; accent-color: #38bdf8; }
+    .report-cc-identity, .report-cc-branch, .report-cc-email { min-width: 0; overflow-wrap: anywhere; }
+    .report-cc-identity b { display: block; color: #e5edf7; font-size: .82rem; line-height: 1.25; }
+    .report-cc-identity span { display: block; margin-top: 3px; color: #8fa2bb; font-size: .72rem; line-height: 1.25; }
+    .report-cc-branch { color: #cbd5e1; font-size: .76rem; line-height: 1.35; }
+    .report-cc-email { color: #7dd3fc; font-size: .75rem; line-height: 1.35; }
+    .report-cc-empty { padding: 16px 12px; color: #94a3b8; font-size: .83rem; }
+    @media (max-width: 600px) {
+      .report-cc-picker { right: 0 !important; padding: 12px !important; }
+      .report-cc-heading { display: none; }
+      .report-cc-row { grid-template-columns: 22px minmax(0, 1fr); gap: 8px; }
+      .report-cc-identity { grid-column: 2; }
+      .report-cc-branch, .report-cc-email { grid-column: 2; }
+      .report-cc-person { padding: 9px 10px; }
+    }
     
     .hero-card { background: #0f1523; border: 1px solid #1e293b; border-radius: 16px; overflow: hidden; margin-bottom: 3rem; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
     .hc-header { background: linear-gradient(90deg, #0284c7, #3b82f6); color: #fff; padding: 22px 30px; font-size: 1.4rem; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; display: flex; justify-content: space-between; align-items: center; }
@@ -734,7 +766,7 @@ export default function Reports() {
                   {selectedReportCcEmails.length ? `Choose CC (${selectedReportCcEmails.length + 1})` : 'Choose CC recipients'}
                   <span aria-hidden="true">▾</span>
                 </button>
-                {showReportCcPicker && <div role="dialog" aria-label="Choose monthly report CC recipients" style={{ position: 'absolute', zIndex: 50, right: 0, top: 'calc(100% + 10px)', width: 'min(440px, calc(100vw - 32px))', padding: '16px', borderRadius: '14px', border: '1px solid rgba(96,165,250,.35)', background: '#111827', boxShadow: '0 22px 60px rgba(0,0,0,.55)', color: '#e5edf7' }}>
+                {showReportCcPicker && <div role="dialog" aria-label="Choose monthly report CC recipients" className="report-cc-picker" style={{ position: 'absolute', zIndex: 50, right: 0, top: 'calc(100% + 10px)', width: 'min(680px, calc(100vw - 32px))', boxSizing: 'border-box', padding: '16px', borderRadius: '14px', border: '1px solid rgba(96,165,250,.35)', background: '#111827', boxShadow: '0 22px 60px rgba(0,0,0,.55)', color: '#e5edf7' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '13px' }}>
                     <div>
                       <strong style={{ display: 'block', fontSize: '1rem' }}>Send report with CC</strong>
@@ -750,15 +782,35 @@ export default function Reports() {
                       <span><b>CC · Required</b> · Rakesh · rakesh@ipcsglobal.com</span>
                     </label>
                   </div>
-                  <div style={{ marginBottom: '7px', color: '#94a3b8', fontSize: '.75rem', fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase' }}>Additional recipients</div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', marginBottom: '8px' }}>
+                    <div style={{ color: '#94a3b8', fontSize: '.75rem', fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase' }}>Additional recipients</div>
+                    <span style={{ color: '#64748b', fontSize: '.75rem' }}>{filteredReportRecipients.length} of {selectableReportRecipients.length} people</span>
+                  </div>
                   {reportRecipientsLoading ? <div style={{ padding: '16px 8px', color: '#94a3b8', fontSize: '.85rem' }}><CircleNotch size={15} className="ph-spin" /> Loading portal users…</div>
                     : reportRecipientsError ? <div role="alert" style={{ padding: '10px', borderRadius: '8px', color: '#fecaca', background: 'rgba(127,29,29,.25)', fontSize: '.82rem' }}>{reportRecipientsError}</div>
-                      : <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid rgba(148,163,184,.18)', borderRadius: '9px' }}>
-                        {reportRecipients.filter(recipient => recipient.email !== senderEmail).length ? reportRecipients.filter(recipient => recipient.email !== senderEmail).map(recipient => <label key={recipient.email} style={{ display: 'flex', alignItems: 'flex-start', gap: '9px', padding: '9px 10px', borderBottom: '1px solid rgba(148,163,184,.1)', cursor: 'pointer' }}>
-                          <input type="checkbox" checked={selectedReportCcEmails.includes(recipient.email)} onChange={() => setSelectedReportCcEmails(current => current.includes(recipient.email) ? current.filter(email => email !== recipient.email) : [...current, recipient.email])} style={{ marginTop: '3px' }} />
-                          <span style={{ minWidth: 0 }}><b style={{ display: 'block', fontSize: '.84rem' }}>{recipient.name}</b><span style={{ color: '#94a3b8', fontSize: '.75rem' }}>{recipient.position} · {recipient.email}</span></span>
-                        </label>) : <div style={{ padding: '12px', color: '#94a3b8', fontSize: '.82rem' }}>No other portal users are available.</div>}
-                      </div>}
+                      : <>
+                        <div className="report-cc-search" role="search">
+                          <MagnifyingGlass size={17} color="#94a3b8" />
+                          <input aria-label="Search portal recipients" type="search" value={reportRecipientSearch} onChange={event => setReportRecipientSearch(event.target.value)} placeholder="Search name, role, branch, or email" />
+                          {reportRecipientSearch && <button type="button" onClick={() => setReportRecipientSearch('')} aria-label="Clear recipient search">×</button>}
+                        </div>
+                        <div className="report-cc-table" role="table" aria-label="Portal recipients">
+                          <div className="report-cc-row report-cc-heading" role="row">
+                            <span aria-hidden="true" />
+                            <span role="columnheader">Person / role</span>
+                            <span role="columnheader">Branch</span>
+                            <span role="columnheader">Email</span>
+                          </div>
+                          <div className="report-cc-list" role="rowgroup">
+                            {filteredReportRecipients.length ? filteredReportRecipients.map(recipient => <label className="report-cc-row report-cc-person" role="row" key={recipient.email}>
+                              <span role="cell" className="report-cc-checkbox"><input aria-label={`Select ${recipient.name}`} type="checkbox" checked={selectedReportCcEmails.includes(recipient.email)} onChange={() => setSelectedReportCcEmails(current => current.includes(recipient.email) ? current.filter(email => email !== recipient.email) : [...current, recipient.email])} /></span>
+                              <span role="cell" className="report-cc-identity"><b>{recipient.name}</b><span>{recipient.position || 'Portal user'}</span></span>
+                              <span role="cell" className="report-cc-branch">{recipient.branch || '—'}</span>
+                              <span role="cell" className="report-cc-email">{recipient.email}</span>
+                            </label>) : <div className="report-cc-empty">{normalizedRecipientSearch ? 'No people match that search.' : 'No other portal users are available.'}</div>}
+                          </div>
+                        </div>
+                      </>}
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginTop: '13px' }}>
                     <span style={{ color: '#94a3b8', fontSize: '.75rem' }}>{selectedReportCcEmails.length} additional selected</span>
                     <button type="button" onClick={() => sendMonthlyReport('gifty_custom_cc')} disabled={reportLoading || Boolean(sendingReport) || !monthFilter || reportRecipientsLoading || Boolean(reportRecipientsError)} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '10px 13px', borderRadius: '9px', border: '1px solid rgba(52,211,153,.4)', background: 'linear-gradient(120deg, rgba(16,185,129,.25), rgba(14,165,233,.19))', color: '#a7f3d0', fontWeight: 800, cursor: 'pointer', opacity: sendingReport ? .65 : 1 }}>

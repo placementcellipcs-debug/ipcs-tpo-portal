@@ -1,0 +1,1 @@
+import{n as e}from"./index-D7PgucuG.js";import t from"./AcademicWorkspace-DnmmOqVF.js";var n=e();function r(){return(0,n.jsx)(t,{module:`sessions`})}export{r as default};

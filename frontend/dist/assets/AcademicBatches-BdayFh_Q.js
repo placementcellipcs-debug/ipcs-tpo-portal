@@ -1,1 +1,0 @@
-import{n as e}from"./index-DUoG7UPO.js";import t from"./AcademicWorkspace-C5BsUxFQ.js";var n=e();function r(){return(0,n.jsx)(t,{module:`batches`})}export{r as default};
