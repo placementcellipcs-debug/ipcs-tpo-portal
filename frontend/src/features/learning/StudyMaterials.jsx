@@ -3,7 +3,7 @@ import axios from 'axios';
 import { 
   CircleNotch, BookOpenText, Plus, CaretLeft,
   FilePdf, FileImage, FileText, FileVideo, WarningCircle, X, Eye,
-  FolderOpen, BookBookmark, PencilSimple, Trash
+  FolderOpen, BookBookmark, PencilSimple, Trash, ArrowSquareOut
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
@@ -56,8 +56,10 @@ export default function StudyMaterials() {
   const [error, setError] = useState('');
   const [selectedMaterial, setSelectedMaterial] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
+  const [previewOpenUrl, setPreviewOpenUrl] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
+  const [previewFrameFailed, setPreviewFrameFailed] = useState(false);
   
   const [formData, setFormData] = useState({
     id: '', course: '', module: '', title: '', fileType: 'pdf', link: '', status: 'Active'
@@ -71,6 +73,8 @@ export default function StudyMaterials() {
       setIsModalOpen(false);
       setSelectedMaterial(null);
       setPreviewUrl('');
+      setPreviewOpenUrl('');
+      setPreviewFrameFailed(false);
     };
     document.body.style.overflow = 'hidden';
     window.addEventListener('keydown', closeOnEscape);
@@ -209,18 +213,30 @@ export default function StudyMaterials() {
   const openMaterialPreview = async material => {
     setSelectedMaterial(material);
     setPreviewUrl('');
+    setPreviewOpenUrl('');
     setPreviewError('');
+    setPreviewFrameFailed(false);
     setPreviewLoading(true);
     try {
       const response = await axios.get(`${API_BASE}/api/lms/materials/${encodeURIComponent(material.id)}/view`);
       if (!response.data?.success || !response.data.previewUrl) throw new Error('An in-app preview is unavailable for this file.');
       setPreviewUrl(response.data.previewUrl);
+      setPreviewOpenUrl(response.data.openUrl || response.data.previewUrl);
     } catch (err) {
       setPreviewError(err.response?.data?.message || err.message || 'This file could not be opened in the preview.');
     } finally {
       setPreviewLoading(false);
     }
   };
+
+  const closeMaterialPreview = () => {
+    setSelectedMaterial(null);
+    setPreviewUrl('');
+    setPreviewOpenUrl('');
+    setPreviewError('');
+    setPreviewFrameFailed(false);
+  };
+  const previewOpenLabel = String(selectedMaterial?.fileType || '').toLowerCase().includes('ppt') ? 'Open in PowerPoint' : 'Open file';
 
   return (
     <Layout>
@@ -313,13 +329,13 @@ export default function StudyMaterials() {
       </div>
 
       {selectedMaterial && (
-        <div role="presentation" onContextMenu={event => event.preventDefault()} onClick={event => { if (event.target === event.currentTarget) { setSelectedMaterial(null); setPreviewUrl(''); } }} style={{ position: 'fixed', inset: 0, zIndex: 100000, display: 'grid', placeItems: 'center', padding: 'clamp(8px, 2vw, 24px)', background: 'rgba(2,6,23,.78)', backdropFilter: 'blur(18px) saturate(145%)' }}>
-          <section role="dialog" aria-modal="true" aria-label={selectedMaterial.title} style={{ width: 'min(1200px, 100%)', height: 'min(820px, 92dvh)', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '22px', border: '1px solid rgba(255,255,255,.18)', background: 'rgba(15,23,42,.88)', boxShadow: '0 30px 90px rgba(0,0,0,.55)', backdropFilter: 'blur(28px) saturate(155%)', userSelect: 'none', WebkitUserSelect: 'none' }}>
-            <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '16px 20px', borderBottom: '1px solid rgba(148,163,184,.18)' }}><div style={{ minWidth: 0 }}><span style={{ color: 'var(--accent-primary)', fontSize: '.72rem', fontWeight: 800 }}>{selectedMaterial.module || 'Study Material'}</span><h2 style={{ margin: '3px 0 0', fontSize: '1rem', overflowWrap: 'anywhere' }}>{selectedMaterial.title}</h2></div><button type="button" aria-label="Close preview" onClick={() => { setSelectedMaterial(null); setPreviewUrl(''); }} style={{ flex: '0 0 auto', border: 0, borderRadius: '50%', width: '38px', height: '38px', color: '#cbd5e1', background: 'rgba(148,163,184,.14)', cursor: 'pointer' }}><X size={19} /></button></header>
-            <div style={{ flex: 1, minHeight: 0, position: 'relative', background: '#080d18' }} onContextMenu={event => event.preventDefault()}>
+        <div role="presentation" onContextMenu={event => event.preventDefault()} onClick={event => { if (event.target === event.currentTarget) closeMaterialPreview(); }} style={{ position: 'fixed', inset: 0, zIndex: 100000, display: 'grid', placeItems: 'center', padding: '16px', boxSizing: 'border-box', overflow: 'hidden', background: 'rgba(2,6,23,.78)', backdropFilter: 'blur(18px) saturate(145%)' }}>
+          <section role="dialog" aria-modal="true" aria-label={selectedMaterial.title} style={{ width: 'min(1200px, 100%)', height: 'min(820px, calc(100dvh - 32px))', maxHeight: 'calc(100dvh - 32px)', minHeight: '320px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '22px', border: '1px solid rgba(255,255,255,.18)', background: 'rgba(15,23,42,.96)', boxShadow: '0 30px 90px rgba(0,0,0,.55)', backdropFilter: 'blur(28px) saturate(155%)' }}>
+            <header style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '16px 20px', borderBottom: '1px solid rgba(148,163,184,.18)' }}><div style={{ minWidth: 0 }}><span style={{ color: 'var(--accent-primary)', fontSize: '.72rem', fontWeight: 800 }}>{selectedMaterial.module || 'Study Material'}</span><h2 style={{ margin: '3px 0 0', fontSize: '1rem', overflowWrap: 'anywhere' }}>{selectedMaterial.title}</h2></div><div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '0 0 auto' }}>{previewOpenUrl && <a href={previewOpenUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '9px 12px', border: '1px solid rgba(56,189,248,.35)', borderRadius: '9px', color: '#bae6fd', background: 'rgba(14,165,233,.12)', textDecoration: 'none', fontSize: '.82rem', fontWeight: 750 }}><ArrowSquareOut size={16} /> {previewOpenLabel}</a>}<button type="button" aria-label="Close preview" onClick={closeMaterialPreview} style={{ flex: '0 0 auto', border: 0, borderRadius: '50%', width: '38px', height: '38px', color: '#cbd5e1', background: 'rgba(148,163,184,.14)', cursor: 'pointer' }}><X size={19} /></button></div></header>
+            <div style={{ flex: '1 1 auto', minHeight: 0, minWidth: 0, position: 'relative', overflow: 'auto', overscrollBehavior: 'contain', background: '#080d18' }} onContextMenu={event => event.preventDefault()}>
               {previewLoading && <div style={{ position: 'absolute', inset: 0, zIndex: 1, display: 'grid', placeItems: 'center', color: 'var(--accent-primary)' }}><div style={{ textAlign: 'center' }}><CircleNotch size={38} className="ph-spin" /><p style={{ color: '#cbd5e1' }}>Preparing preview…</p></div></div>}
-              {previewError && <div role="alert" style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', padding: '24px', textAlign: 'center', color: '#fca5a5' }}>{previewError}</div>}
-              {previewUrl && <iframe src={previewUrl} title={`${selectedMaterial.title} preview`} referrerPolicy="no-referrer" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation" onContextMenu={event => event.preventDefault()} style={{ width: '100%', height: '100%', border: 0, userSelect: 'none' }} />}
+              {(previewError || previewFrameFailed) && <div role="alert" style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'grid', placeItems: 'center', alignContent: 'center', gap: '12px', padding: '24px', textAlign: 'center', color: '#fca5a5', background: 'rgba(8,13,24,.96)' }}><span>{previewError || `This file could not be shown inside the portal. Open it in ${previewOpenLabel.replace(/^Open in /, '')} instead.`}</span>{previewOpenUrl && <a href={previewOpenUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '10px 14px', borderRadius: '9px', color: '#07111f', background: '#7dd3fc', textDecoration: 'none', fontWeight: 800 }}><ArrowSquareOut size={17} /> {previewOpenLabel}</a>}</div>}
+              {previewUrl && !previewError && <iframe src={previewUrl} title={`${selectedMaterial.title} preview`} referrerPolicy="strict-origin-when-cross-origin" sandbox="allow-scripts allow-same-origin allow-forms allow-presentation allow-popups allow-popups-to-escape-sandbox allow-downloads" allow="fullscreen; clipboard-read; clipboard-write" scrolling="auto" onError={() => setPreviewFrameFailed(true)} onContextMenu={event => event.preventDefault()} style={{ display: 'block', width: '100%', height: '100%', minHeight: 0, border: 0, overflow: 'auto' }} />}
             </div>
           </section>
         </div>

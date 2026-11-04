@@ -8183,9 +8183,10 @@ exports.getMaterialViewLink = (req, res) => {
   }
   const course = getValByHeader(row, ['course']);
   if (!canReadMaterial(user, course)) return res.status(403).json({ success: false, message: 'Access denied for this course.' });
-  const previewUrl = makeMaterialPreviewUrl(getValByHeader(row, ['onedrivelink', 'link']));
+  const sourceLink = String(getValByHeader(row, ['onedrivelink', 'link']) || '').trim();
+  const previewUrl = makeMaterialPreviewUrl(sourceLink);
   if (!previewUrl) return res.status(422).json({ success: false, message: 'This file provider does not offer an in-app preview link.' });
-  res.json({ success: true, previewUrl });
+  res.json({ success: true, previewUrl, openUrl: sourceLink });
 };
 
 exports.addMaterial = async (req, res) => {
