@@ -8128,11 +8128,12 @@ exports.updatePhoto = async (req, res) => {
 // ---------------------------------------------------------
 const isLearningAdmin = user => user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(String(user?.role || '').toUpperCase());
 const canReadMaterial = (user, course) => isLearningAdmin(user) || hasAccess('All', course, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department);
-const makeMaterialPreviewUrl = rawLink => {
+const makeMaterialPreviewUrl = (rawLink, fileType = '') => {
   try {
     const source = new URL(String(rawLink || '').trim());
     if (source.protocol !== 'https:') return '';
     const host = source.hostname.toLowerCase();
+    const isPowerPoint = /pptx?/i.test(String(fileType || '')) || /\.pptx?(?:$|[?&#])/i.test(`${source.pathname}${source.search}`);
     const driveFile = source.pathname.match(/\/file\/d\/([\w-]+)/) || source.pathname.match(/^\/open$/) && source.searchParams.get('id')?.match(/^([\w-]+)/);
     if (host === 'drive.google.com' && driveFile) return `https://drive.google.com/file/d/${driveFile[1]}/preview`;
     if (host === 'docs.google.com' && /\/(document|presentation|spreadsheets)\/d\//.test(source.pathname)) {
@@ -8141,6 +8142,10 @@ const makeMaterialPreviewUrl = rawLink => {
       return source.toString();
     }
     if (host === '1drv.ms' || host.endsWith('onedrive.live.com') || host.endsWith('.sharepoint.com')) {
+      // A SharePoint/OneDrive share link can resolve to a raw PPTX response in
+      // an iframe. Use Microsoft's Office embed endpoint for PowerPoint files.
+      // The original share URL is retained separately for the open-in-new-tab action.
+      if (isPowerPoint) return `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(source.toString())}`;
       source.searchParams.set('web', '1');
       return source.toString();
     }
@@ -8184,7 +8189,8 @@ exports.getMaterialViewLink = (req, res) => {
   const course = getValByHeader(row, ['course']);
   if (!canReadMaterial(user, course)) return res.status(403).json({ success: false, message: 'Access denied for this course.' });
   const sourceLink = String(getValByHeader(row, ['onedrivelink', 'link']) || '').trim();
-  const previewUrl = makeMaterialPreviewUrl(sourceLink);
+  const fileType = getValByHeader(row, ['filetype']) || '';
+  const previewUrl = makeMaterialPreviewUrl(sourceLink, fileType);
   if (!previewUrl) return res.status(422).json({ success: false, message: 'This file provider does not offer an in-app preview link.' });
   res.json({ success: true, previewUrl, openUrl: sourceLink });
 };
