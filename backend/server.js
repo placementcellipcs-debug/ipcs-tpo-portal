@@ -513,6 +513,7 @@ app.post('/api/tpo/events/:eventKey/reschedule', requireSession('events-write'),
 app.post('/api/tpo/issues', controllers.getIssues);
 app.post('/api/tpo/issues/update', controllers.updateIssue);
 app.post('/api/tpo/reports', controllers.getReports);
+app.get('/api/tpo/reports/recipients', controllers.getMonthlyReportRecipients);
 app.post('/api/tpo/reports/send', controllers.sendMonthlyTpoReport);
 app.post('/api/tpo/placed-students', controllers.getPlacedStudents);
 app.post('/api/tpo/placed-students/classification-suggestion', controllers.getPlacementClassificationSuggestion);

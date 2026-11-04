@@ -9371,6 +9371,45 @@ const monthlyReportPackage = value => {
   else if (!/lpa|lakhs?|lacs?/.test(normalized) && amount >= 1000) amount /= 100000;
   return { raw, lpa: amount };
 };
+const MONTHLY_REPORT_RAKESH_CC = 'rakesh@ipcsglobal.com';
+const isValidReportEmail = value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+const getMonthlyReportRecipientDirectory = cache => {
+  const byEmail = new Map();
+  const addRecipient = (row, fallbackRole) => {
+    const email = String(getValByHeader(row, ['email', 'mailid', 'mail']) || '').trim().toLowerCase();
+    if (!isValidReportEmail(email) || [MONTHLY_TPO_REPORT_RECIPIENT, MONTHLY_REPORT_RAKESH_CC].includes(email)) return;
+    const status = normalizePlacementText(getValByHeader(row, ['status', 'accountstatus', 'userstatus']));
+    if (/(inactive|disabled|suspended|terminated|deleted|blocked|left|revoked)/.test(status)) return;
+    const name = String(getValByHeader(row, ['name', 'tponame', 'placementofficer', 'username', 'fullname']) || '').trim();
+    const position = String(getValByHeader(row, ['position', 'designation', 'role', 'title']) || fallbackRole || 'Portal user').trim();
+    const previous = byEmail.get(email);
+    byEmail.set(email, previous ? {
+      ...previous,
+      name: previous.name === email ? (name || previous.name) : (previous.name || name),
+      position: previous.position === 'Portal user' ? position : previous.position
+    } : { email, name: name || email, position });
+  };
+  (cache?.contacts || []).forEach(row => addRecipient(row, 'TPO'));
+  (cache?.users || []).forEach(row => addRecipient(row, 'Portal user'));
+  return [...byEmail.values()].sort((a, b) => a.name.localeCompare(b.name, 'en', { sensitivity: 'base' }));
+};
+exports.getMonthlyReportRecipients = async (req, res) => {
+  if (!isPlacementTrackerTpo(req.portalUser || {})) {
+    return res.status(403).json({ success: false, message: 'Only TPOs can view monthly report recipients.' });
+  }
+  try {
+    let cache = getCache();
+    if (!cache) { await refreshCache(); cache = getCache(); }
+    if (!cache) return res.status(503).json({ success: false, message: 'Portal users are still loading. Please retry.' });
+    const senderEmail = String(req.portalUser?.email || '').trim().toLowerCase();
+    return res.json({
+      success: true,
+      recipients: getMonthlyReportRecipientDirectory(cache).filter(recipient => recipient.email !== senderEmail)
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: error.message || 'Could not load report recipients.' });
+  }
+};
 exports.sendMonthlyTpoReport = async (req, res) => {
   const user = req.portalUser || {};
   if (!isPlacementTrackerTpo(user)) {
@@ -9381,7 +9420,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Choose a valid report month.' });
   }
   const deliveryMode = String(req.body?.deliveryMode || 'gifty').trim().toLowerCase();
-  if (!['gifty', 'gifty_rakesh_cc'].includes(deliveryMode)) {
+  if (!['gifty', 'gifty_rakesh_cc', 'gifty_custom_cc'].includes(deliveryMode)) {
     return res.status(400).json({ success: false, message: 'Choose a supported report delivery option.' });
   }
   const senderEmail = String(user.email || '').trim().toLowerCase();
@@ -9392,6 +9431,24 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   let cache = getCache();
   if (!cache) { await refreshCache(); cache = getCache(); }
   if (!cache) return res.status(503).json({ success: false, message: 'Placement data is still syncing. Please retry shortly.' });
+
+  const availableReportRecipients = getMonthlyReportRecipientDirectory(cache);
+  const requestedCcEmails = Array.isArray(req.body?.ccRecipients)
+    ? [...new Set(req.body.ccRecipients.map(value => String(value || '').trim().toLowerCase()).filter(Boolean))]
+    : [];
+  if (deliveryMode === 'gifty_custom_cc') {
+    const allowedCcEmails = new Set(availableReportRecipients.map(recipient => recipient.email));
+    const invalidCcEmails = requestedCcEmails.filter(email =>
+      !isValidReportEmail(email)
+      || email === MONTHLY_TPO_REPORT_RECIPIENT
+      || email === MONTHLY_REPORT_RAKESH_CC
+      || email === senderEmail
+      || !allowedCcEmails.has(email)
+    );
+    if (invalidCcEmails.length) {
+      return res.status(400).json({ success: false, message: 'One or more selected CC recipients are no longer available. Reload the recipient list and try again.' });
+    }
+  }
 
   let sourceTpoLogs = [];
   try {
@@ -9699,22 +9756,15 @@ exports.sendMonthlyTpoReport = async (req, res) => {
     const internationalBadge = isInternational
       ? '<br><span style="display:inline-block;margin-top:5px;padding:3px 7px;border-radius:10px;background:#ede9fe;color:#6d28d9;font-size:10px;font-weight:bold">INTERNATIONAL PLACEMENT</span>'
       : '';
-    const joiningBadgeColor = normalizedJoiningStatus === 'joined' ? '#15803d'
-      : normalizedJoiningStatus === 'notjoined' ? '#b91c1c'
-        : normalizedJoiningStatus === 'dualplacement' ? '#c2410c'
-          : normalizedJoiningStatus === 'multipleplacement' ? '#1d4ed8' : '#475569';
-    const remarks = monthlyReportEscape(getValByHeader(row, ['remarks']) || '—');
     return [
       String(index + 1),
       `${studentName}${internationalBadge}`,
       monthlyReportEscape(placementMainCourse(row)),
       monthlyReportEscape(getValByHeader(row, ['branch', 'sittingbranch']) || getValByHeader(student, ['branch', 'sittingbranch']) || '—'),
       monthlyReportEscape(getValByHeader(row, ['contactnumber', 'contactno', 'phone', 'phonenumber', 'mobilenumber', 'mobile', 'contact']) || getValByHeader(student, ['contactnumber', 'contactno', 'phone', 'phonenumber', 'mobilenumber', 'mobile', 'contact']) || '—'),
-      monthlyReportEscape(getValByHeader(row, ['mailid', 'emailid', 'email', 'emailaddress']) || getValByHeader(student, ['mailid', 'emailid', 'email', 'emailaddress']) || '—'),
       monthlyReportEscape(getValByHeader(row, ['companyname', 'company']) || '—'),
       monthlyReportEscape(getValByHeader(row, ['position', 'role']) || '—'),
-      monthlyReportEscape(packageLabel),
-      `<span style="display:inline-block;padding:4px 8px;border-radius:12px;background:#ffffff;color:${joiningBadgeColor};border:1px solid ${joiningBadgeColor};font-weight:bold">${monthlyReportEscape(joiningStatus)}</span><br><span style="display:inline-block;margin-top:5px;color:#526476">${remarks}</span>`
+      monthlyReportEscape(packageLabel)
     ];
   });
   const internationalPlacementRowsHtml = internationalPlacementRows.map(({ row, locationInfo }, index) => [
@@ -9859,7 +9909,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
         ${table(['Companies connected through openings', 'Count'], [[numberedCompanyNames([...openingCompanies.values()].sort()), String(openingCompanies.size)]])}
 
         ${sectionTitle('Placed Students Details', 'Placement register', '#087f8c')}
-        ${table(['Sl. No.', 'Student', 'Main course', 'Student branch', 'Contact number', 'Mail ID', 'Placed at', 'Role', 'Package (LPA)', 'Joining status / remarks'], placedRowsHtml, { rowColors: placementRowColors, rowAccents: placementRowAccents, rowExtraAccents: placementRowExtraAccents, rowCardStyle: true })}
+        ${table(['Sl. No.', 'Student', 'Main course', 'Student branch', 'Contact number', 'Placed at', 'Role', 'Package (LPA)'], placedRowsHtml, { rowColors: placementRowColors, rowAccents: placementRowAccents, rowExtraAccents: placementRowExtraAccents, rowCardStyle: true })}
         <div style="margin:-10px 0 24px;padding:13px 15px;background:#f8fafc;border:1px solid #d8e3eb;border-radius:8px;color:#34495e;font-size:11px;line-height:1.9">
           <b>Note:</b> <span style="color:#15803d;font-weight:bold">Green — Joined</span> &nbsp;·&nbsp; <span style="color:#b91c1c;font-weight:bold">Red — Not Joined</span> &nbsp;·&nbsp; <span style="color:#c2410c;font-weight:bold">Orange — Dual Placement</span> &nbsp;·&nbsp; <span style="color:#1d4ed8;font-weight:bold">Blue — Multitime Placement</span>.<br>
           <span style="display:inline-block;margin-top:3px;padding:2px 6px;border-radius:8px;background:#ede9fe;color:#6d28d9;font-weight:bold">Violet accent — International placement</span> (shown in addition to the joining-status color).
@@ -9899,7 +9949,8 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   const deliveryReference = `RPT-${month.replace('-', '')}-${Date.now().toString(36).toUpperCase()}-${randomBytes(4).toString('hex').toUpperCase()}`;
   const subject = `${subjectBase} [${deliveryReference}]`;
   const ccRecipients = [senderEmail];
-  if (deliveryMode === 'gifty_rakesh_cc') ccRecipients.push('rakesh@ipcsglobal.com');
+  if (deliveryMode === 'gifty_rakesh_cc' || deliveryMode === 'gifty_custom_cc') ccRecipients.push(MONTHLY_REPORT_RAKESH_CC);
+  if (deliveryMode === 'gifty_custom_cc') ccRecipients.push(...requestedCcEmails);
   const cc = [...new Set(ccRecipients.filter(email => email !== MONTHLY_TPO_REPORT_RECIPIENT))];
 
   try {
@@ -9910,7 +9961,7 @@ exports.sendMonthlyTpoReport = async (req, res) => {
       subject,
       text: `IPCS Global monthly placement report for ${monthName}. ${placementRecordCount} placement records were recorded in the report month.${driveCount ? ` ${driveCount} placement drives were conducted.` : ''} Highest package: ${highestPackageLabel}, achieved by ${highestPackageStudents} student(s). ${pendingTotalUnique} ${pendingScopeText}.`,
       html
-    }, { name: user.name || 'IPCS Global Placement Team', email: MONTHLY_TPO_REPORT_RECIPIENT, type: deliveryMode === 'gifty_rakesh_cc' ? 'Monthly TPO Placement Report · Gifty + Rakesh CC' : 'Monthly TPO Placement Report · Gifty', category: 'placement' });
+    }, { name: user.name || 'IPCS Global Placement Team', email: MONTHLY_TPO_REPORT_RECIPIENT, type: deliveryMode === 'gifty_custom_cc' ? 'Monthly TPO Placement Report · Selected CC' : deliveryMode === 'gifty_rakesh_cc' ? 'Monthly TPO Placement Report · Gifty + Rakesh CC' : 'Monthly TPO Placement Report · Gifty', category: 'placement' });
     return res.json({ success: true, queued: Boolean(delivery?.queued), to: MONTHLY_TPO_REPORT_RECIPIENT, cc, month, deliveryReference });
   } catch (error) {
     return res.status(502).json({ success: false, message: `The report could not be sent: ${String(error.message || error).slice(0, 300)}` });

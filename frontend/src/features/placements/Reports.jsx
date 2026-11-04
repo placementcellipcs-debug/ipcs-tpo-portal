@@ -181,6 +181,11 @@ export default function Reports() {
   const [portalPlacementPending, setPortalPlacementPending] = useState(0);
   const [sendingReport, setSendingReport] = useState('');
   const [sendReportMessage, setSendReportMessage] = useState('');
+  const [reportRecipients, setReportRecipients] = useState([]);
+  const [reportRecipientsLoading, setReportRecipientsLoading] = useState(false);
+  const [reportRecipientsError, setReportRecipientsError] = useState('');
+  const [selectedReportCcEmails, setSelectedReportCcEmails] = useState([]);
+  const [showReportCcPicker, setShowReportCcPicker] = useState(false);
   const [toast, setToast] = useState(null);
   const mainCourses = REPORT_MAIN_COURSES;
 
@@ -189,6 +194,25 @@ export default function Reports() {
   const [showActivityModal, setShowActivityModal] = useState(false);
   const [activityForm, setActivityForm] = useState({ tpoName: '', reportMonth: currentMonthStr, activityItems: [], mode: 'add' });
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const senderEmail = String(tpoData?.email || tpoData?.mailId || tpoData?.loginEmail || '').trim().toLowerCase();
+  useEffect(() => {
+    if (!canSendMonthlyReport) return undefined;
+    let active = true;
+    setReportRecipientsLoading(true);
+    setReportRecipientsError('');
+    axios.get(`${API_BASE}/api/tpo/reports/recipients`, { timeout: 30000 })
+      .then(response => {
+        if (!active) return;
+        if (!response.data?.success) throw new Error(response.data?.message || 'Could not load report recipients.');
+        setReportRecipients(Array.isArray(response.data.recipients) ? response.data.recipients : []);
+      })
+      .catch(error => {
+        if (active) setReportRecipientsError(error.response?.data?.message || error.message || 'Could not load report recipients.');
+      })
+      .finally(() => { if (active) setReportRecipientsLoading(false); });
+    return () => { active = false; };
+  }, [canSendMonthlyReport]);
 
   useEffect(() => {
     let active = true;
@@ -637,13 +661,16 @@ export default function Reports() {
     setSendingReport(deliveryMode);
     setSendReportMessage('');
     try {
-      const response = await axios.post(`${API_BASE}/api/tpo/reports/send`, { month: monthFilter, deliveryMode }, { timeout: 60000 });
+      const payload = { month: monthFilter, deliveryMode };
+      if (deliveryMode === 'gifty_custom_cc') payload.ccRecipients = selectedReportCcEmails;
+      const response = await axios.post(`${API_BASE}/api/tpo/reports/send`, payload, { timeout: 60000 });
       if (!response.data?.success) throw new Error(response.data?.message || 'The report could not be sent.');
       const cc = Array.isArray(response.data.cc) ? response.data.cc : [];
       const delivery = response.data.queued ? 'queued as a new email' : 'sent as a new email';
       const message = `Monthly report ${delivery} to ${response.data.to || 'gifty@ipcsglobal.com'}${cc.length ? ` · CC: ${cc.join(', ')}` : ''} (${displayMonthName}).`;
       setSendReportMessage(message);
       setToast({ type: 'success', title: 'Monthly report sent', message });
+      if (deliveryMode === 'gifty_custom_cc') setShowReportCcPicker(false);
     } catch (error) {
       const message = error.response?.data?.message || error.message || 'The report could not be sent.';
       setSendReportMessage(message);
@@ -701,10 +728,46 @@ export default function Reports() {
                 {sendingReport === 'gifty' ? <CircleNotch size={17} className="ph-spin" /> : <PaperPlaneTilt size={17} weight="fill" />}
                 {sendingReport === 'gifty' ? 'Sending…' : 'Send monthly report'}
               </button>
-              <button type="button" onClick={() => sendMonthlyReport('gifty_rakesh_cc')} disabled={reportLoading || Boolean(sendingReport) || !monthFilter} title="To Gifty · CC the sending account and Rakesh" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(96,165,250,.42)', background: 'linear-gradient(120deg, rgba(59,130,246,.2), rgba(139,92,246,.17))', color: '#bfdbfe', fontWeight: 800, cursor: reportLoading || sendingReport ? 'wait' : 'pointer', opacity: reportLoading || sendingReport ? .65 : 1 }}>
-                {sendingReport === 'gifty_rakesh_cc' ? <CircleNotch size={17} className="ph-spin" /> : <PaperPlaneTilt size={17} weight="fill" />}
-                {sendingReport === 'gifty_rakesh_cc' ? 'Sending…' : 'Send with Rakesh in CC'}
-              </button>
+              <div style={{ position: 'relative' }}>
+                <button type="button" onClick={() => setShowReportCcPicker(value => !value)} disabled={reportLoading || Boolean(sendingReport) || !monthFilter} aria-expanded={showReportCcPicker} title="Choose additional people to copy on this report" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(96,165,250,.42)', background: 'linear-gradient(120deg, rgba(59,130,246,.2), rgba(139,92,246,.17))', color: '#bfdbfe', fontWeight: 800, cursor: reportLoading || sendingReport ? 'wait' : 'pointer', opacity: reportLoading || sendingReport ? .65 : 1 }}>
+                  <UsersThree size={17} weight="fill" />
+                  {selectedReportCcEmails.length ? `Choose CC (${selectedReportCcEmails.length + 1})` : 'Choose CC recipients'}
+                  <span aria-hidden="true">▾</span>
+                </button>
+                {showReportCcPicker && <div role="dialog" aria-label="Choose monthly report CC recipients" style={{ position: 'absolute', zIndex: 50, right: 0, top: 'calc(100% + 10px)', width: 'min(440px, calc(100vw - 32px))', padding: '16px', borderRadius: '14px', border: '1px solid rgba(96,165,250,.35)', background: '#111827', boxShadow: '0 22px 60px rgba(0,0,0,.55)', color: '#e5edf7' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '13px' }}>
+                    <div>
+                      <strong style={{ display: 'block', fontSize: '1rem' }}>Send report with CC</strong>
+                      <span style={{ display: 'block', marginTop: '4px', color: '#94a3b8', fontSize: '.82rem' }}>The report goes to Gifty. Your account and Rakesh are always copied.</span>
+                    </div>
+                    <button type="button" aria-label="Close CC recipient list" onClick={() => setShowReportCcPicker(false)} style={{ border: 0, background: 'transparent', color: '#94a3b8', fontSize: '1.2rem', cursor: 'pointer' }}>×</button>
+                  </div>
+                  <div style={{ display: 'grid', gap: '7px', marginBottom: '12px' }}>
+                    <div style={{ padding: '9px 10px', borderRadius: '8px', background: 'rgba(16,185,129,.1)', border: '1px solid rgba(52,211,153,.2)', fontSize: '.82rem' }}><b>To</b> · Gifty · gifty@ipcsglobal.com</div>
+                    <div style={{ padding: '9px 10px', borderRadius: '8px', background: 'rgba(148,163,184,.08)', border: '1px solid rgba(148,163,184,.16)', fontSize: '.82rem' }}><b>CC · Always</b> · {tpoData?.name || tpoData?.userName || 'Your account'}{senderEmail ? ` · ${senderEmail}` : ''}</div>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '9px', padding: '9px 10px', borderRadius: '8px', background: 'rgba(148,163,184,.08)', border: '1px solid rgba(148,163,184,.16)', fontSize: '.82rem', cursor: 'not-allowed' }}>
+                      <input type="checkbox" checked disabled readOnly />
+                      <span><b>CC · Required</b> · Rakesh · rakesh@ipcsglobal.com</span>
+                    </label>
+                  </div>
+                  <div style={{ marginBottom: '7px', color: '#94a3b8', fontSize: '.75rem', fontWeight: 800, letterSpacing: '.06em', textTransform: 'uppercase' }}>Additional recipients</div>
+                  {reportRecipientsLoading ? <div style={{ padding: '16px 8px', color: '#94a3b8', fontSize: '.85rem' }}><CircleNotch size={15} className="ph-spin" /> Loading portal users…</div>
+                    : reportRecipientsError ? <div role="alert" style={{ padding: '10px', borderRadius: '8px', color: '#fecaca', background: 'rgba(127,29,29,.25)', fontSize: '.82rem' }}>{reportRecipientsError}</div>
+                      : <div style={{ maxHeight: '220px', overflowY: 'auto', border: '1px solid rgba(148,163,184,.18)', borderRadius: '9px' }}>
+                        {reportRecipients.filter(recipient => recipient.email !== senderEmail).length ? reportRecipients.filter(recipient => recipient.email !== senderEmail).map(recipient => <label key={recipient.email} style={{ display: 'flex', alignItems: 'flex-start', gap: '9px', padding: '9px 10px', borderBottom: '1px solid rgba(148,163,184,.1)', cursor: 'pointer' }}>
+                          <input type="checkbox" checked={selectedReportCcEmails.includes(recipient.email)} onChange={() => setSelectedReportCcEmails(current => current.includes(recipient.email) ? current.filter(email => email !== recipient.email) : [...current, recipient.email])} style={{ marginTop: '3px' }} />
+                          <span style={{ minWidth: 0 }}><b style={{ display: 'block', fontSize: '.84rem' }}>{recipient.name}</b><span style={{ color: '#94a3b8', fontSize: '.75rem' }}>{recipient.position} · {recipient.email}</span></span>
+                        </label>) : <div style={{ padding: '12px', color: '#94a3b8', fontSize: '.82rem' }}>No other portal users are available.</div>}
+                      </div>}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginTop: '13px' }}>
+                    <span style={{ color: '#94a3b8', fontSize: '.75rem' }}>{selectedReportCcEmails.length} additional selected</span>
+                    <button type="button" onClick={() => sendMonthlyReport('gifty_custom_cc')} disabled={reportLoading || Boolean(sendingReport) || !monthFilter || reportRecipientsLoading || Boolean(reportRecipientsError)} style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '10px 13px', borderRadius: '9px', border: '1px solid rgba(52,211,153,.4)', background: 'linear-gradient(120deg, rgba(16,185,129,.25), rgba(14,165,233,.19))', color: '#a7f3d0', fontWeight: 800, cursor: 'pointer', opacity: sendingReport ? .65 : 1 }}>
+                      {sendingReport === 'gifty_custom_cc' ? <CircleNotch size={16} className="ph-spin" /> : <PaperPlaneTilt size={16} weight="fill" />}
+                      {sendingReport === 'gifty_custom_cc' ? 'Sending…' : 'Send report'}
+                    </button>
+                  </div>
+                </div>}
+              </div>
             </>}
           </div>
         </div>
