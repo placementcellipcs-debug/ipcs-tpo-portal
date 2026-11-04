@@ -80,11 +80,15 @@ export default function Talentino() {
   const monthSessions = monthFilter === 'All Months' ? data.sessions : data.sessions.filter(session => getMonthKey(session.date) === monthFilter);
 
   const branchData = {};
+  const ensureBranchEntry = branch => {
+    const key = branch || 'Unknown Branch';
+    if (!branchData[key]) branchData[key] = { attendance: 0, sessions: 0 };
+    return branchData[key];
+  };
   monthRecords.forEach(r => {
-    const b = r.branch || 'Unknown Branch';
-    if (!branchData[b]) branchData[b] = 0;
-    branchData[b]++;
+    ensureBranchEntry(r.branch).attendance++;
   });
+  monthSessions.forEach(session => ensureBranchEntry(session.branch).sessions++);
   
   const branchList = Object.keys(branchData).sort();
   const officerStats = new Map();
@@ -120,15 +124,22 @@ export default function Talentino() {
   const ratingValues = monthRecords.map(record => Number(String(record.rating || '').match(/[\d.]+/)?.[0])).filter(value => Number.isFinite(value) && value > 0);
   const averageRating = ratingValues.length ? (ratingValues.reduce((sum, value) => sum + value, 0) / ratingValues.length).toFixed(1) : '—';
 
-  const activeRecords = selectedBranch ? monthRecords.filter(r => r.branch === selectedBranch) : [];
+  const branchMatches = value => String(value || '').trim().toLowerCase() === String(selectedBranch || '').trim().toLowerCase();
+  const activeRecords = selectedBranch ? monthRecords.filter(r => branchMatches(r.branch)) : [];
+  const activeSessions = selectedBranch ? monthSessions.filter(session => branchMatches(session.branch)) : [];
   
-  const uniqueDates = ['All Dates', ...[...new Set(monthRecords.map(record => (record.date || '').split(' ')[0].trim()).filter(Boolean))].sort().reverse()];
+  const uniqueDates = ['All Dates', ...[...new Set([...monthRecords, ...monthSessions].map(record => (record.date || '').split(' ')[0].trim()).filter(Boolean))].sort().reverse()];
 
   const filteredRecords = activeRecords.filter(r => {
     const matchDate = dateFilter === 'All Dates' || (r.date || '').includes(dateFilter);
     const matchSearch = (r.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
                         (r.notes || '').toLowerCase().includes(searchQuery.toLowerCase());
     return matchDate && matchSearch;
+  });
+  const filteredSessions = activeSessions.filter(session => {
+    const matchDate = dateFilter === 'All Dates' || String(session.date || '').includes(dateFilter);
+    const haystack = [session.title, session.description, session.tpo, session.location, session.status].join(' ').toLowerCase();
+    return matchDate && haystack.includes(searchQuery.trim().toLowerCase());
   });
 
   if (!selectedBranch) {
@@ -139,7 +150,7 @@ export default function Talentino() {
           <p style={{ color: 'var(--text-muted)', marginBottom: '1.5rem', textAlign: 'center' }}>Review sessions, participation, and ratings across your assigned branches.</p>
           {dataMeta && <DataSourceStatus
             source="Talentino_Attendance and Talentino_Schedule"
-            detail={`${dataMeta.visibleAttendanceRows} attendance record(s) and ${dataMeta.visibleScheduledSessions} session(s) match your access. Attendance sync: ${dataMeta.attendanceHealthy ? 'healthy' : 'not confirmed'}; schedule sync: ${dataMeta.scheduleHealthy ? 'healthy' : 'not confirmed'}.`}
+            detail={`${dataMeta.visibleAttendanceRows} attendance record(s) and ${dataMeta.visibleScheduledSessions} session(s) match your access. Attendance sync: ${dataMeta.attendanceHealthy ? 'healthy' : 'not confirmed'}; schedule sync: ${dataMeta.scheduleHealthy ? 'healthy' : 'not confirmed'}.${dataMeta.scheduleBackfillAdded ? ` Imported ${dataMeta.scheduleBackfillAdded} older Talentino event(s) into the schedule.` : ''}${dataMeta.scheduleSyncError ? ` Sync warning: ${dataMeta.scheduleSyncError}` : ''}`}
             health={dataMeta.attendanceHealthy && dataMeta.scheduleHealthy}
             lastSyncedAt={{ Attendance: dataMeta.attendanceLastSuccessfulSyncAt, Schedule: dataMeta.scheduleLastSuccessfulSyncAt }}
             lastAttemptAt={dataMeta.lastRefreshAttemptAt}
@@ -157,7 +168,7 @@ export default function Talentino() {
           ) : <>
             <section className="talentino-dashboard" aria-label="Talentino overview">
               <div className="talentino-dashboard-head"><div><span>SESSION INSIGHTS</span><h2>Talentino Dashboard</h2></div><label>Month <select className="sleek-input" value={monthFilter} onChange={event => setMonthFilter(event.target.value)}><option value="All Months">All Months</option>{months.map(month => <option key={month} value={month}>{monthLabel(month)}</option>)}</select></label></div>
-              <div className="talentino-metrics"><article><span>Sessions Conducted</span><strong>{[...officerStats.values()].reduce((total, item) => total + item.sessions, 0)}</strong></article><article><span>Placement Officers</span><strong>{officerStats.size}</strong></article><article><span>Average Rating</span><strong>{averageRating}<small>{averageRating === '—' ? '' : ' / 5'}</small></strong></article><article><span>Attendance Records</span><strong>{monthRecords.length}</strong></article></div>
+              <div className="talentino-metrics"><article><span>Talentino Sessions</span><strong>{monthSessions.length}</strong></article><article><span>Placement Officers</span><strong>{officerStats.size}</strong></article><article><span>Average Rating</span><strong>{averageRating}<small>{averageRating === '—' ? '' : ' / 5'}</small></strong></article><article><span>Attendance Records</span><strong>{monthRecords.length}</strong></article></div>
               <div className="talentino-officer-table"><div className="talentino-officer-row talentino-officer-header"><span>Placement Officer</span><span>Sessions</span><span>Average Rating</span><span>Branches</span></div>{[...officerStats.entries()].sort((a, b) => b[1].sessions - a[1].sessions).map(([name, stats]) => { const score = stats.ratings.length ? (stats.ratings.reduce((sum, item) => sum + item, 0) / stats.ratings.length).toFixed(1) : '—'; return <div className="talentino-officer-row" key={name}><strong>{name}</strong><span>{stats.sessions}</span><span>{score}{score === '—' ? '' : ' / 5'}</span><span>{[...stats.branches].join(', ') || '—'}</span></div>; })}{officerStats.size === 0 && <p className="talentino-empty">No session records are available for this month.</p>}</div>
             </section>
             <h2 className="talentino-branch-heading">Branch Activity</h2>
@@ -178,7 +189,7 @@ export default function Talentino() {
                     </h2>
                     <div style={{ background: 'rgba(255,255,255,0.2)', padding: '8px 16px', borderRadius: '30px', display: 'flex', alignItems: 'center', gap: '8px' }}>
                       <GraduationCap size={20} color="#ffffff" weight="bold" />
-                      <span style={{ color: '#ffffff', fontSize: '1.1rem', fontWeight: 'bold' }}>{branchData[branch]} Records</span>
+                      <span style={{ color: '#ffffff', fontSize: '.95rem', fontWeight: 'bold' }}>{branchData[branch].sessions} sessions · {branchData[branch].attendance} attendance</span>
                     </div>
                   </div>
                 );
@@ -210,7 +221,7 @@ export default function Talentino() {
         </p>
         {dataMeta && <DataSourceStatus
           source="Talentino_Attendance and Talentino_Schedule"
-          detail={`${dataMeta.visibleAttendanceRows} attendance record(s) and ${dataMeta.visibleScheduledSessions} session(s) match your access. Attendance sync: ${dataMeta.attendanceHealthy ? 'healthy' : 'not confirmed'}; schedule sync: ${dataMeta.scheduleHealthy ? 'healthy' : 'not confirmed'}.`}
+          detail={`${dataMeta.visibleAttendanceRows} attendance record(s) and ${dataMeta.visibleScheduledSessions} session(s) match your access. Attendance sync: ${dataMeta.attendanceHealthy ? 'healthy' : 'not confirmed'}; schedule sync: ${dataMeta.scheduleHealthy ? 'healthy' : 'not confirmed'}.${dataMeta.scheduleBackfillAdded ? ` Imported ${dataMeta.scheduleBackfillAdded} older Talentino event(s) into the schedule.` : ''}${dataMeta.scheduleSyncError ? ` Sync warning: ${dataMeta.scheduleSyncError}` : ''}`}
           health={dataMeta.attendanceHealthy && dataMeta.scheduleHealthy}
           lastSyncedAt={{ Attendance: dataMeta.attendanceLastSuccessfulSyncAt, Schedule: dataMeta.scheduleLastSuccessfulSyncAt }}
           lastAttemptAt={dataMeta.lastRefreshAttemptAt}
@@ -232,6 +243,24 @@ export default function Talentino() {
             {filteredRecords.length} records found
           </div>
         </div>
+
+        <section aria-label="Scheduled Talentino sessions" style={{ margin: '0 0 24px', padding: '18px', border: '1px solid var(--card-border)', borderRadius: '16px', background: 'var(--card-bg)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
+            <div><h2 style={{ margin: 0, color: 'var(--text-main)', fontSize: '1.05rem' }}>Scheduled sessions</h2><p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: '.82rem' }}>Events appear here as soon as they are registered, before attendance is entered.</p></div>
+            <strong style={{ color: 'var(--accent-primary)', fontSize: '.85rem' }}>{filteredSessions.length} session{filteredSessions.length === 1 ? '' : 's'}</strong>
+          </div>
+          {filteredSessions.length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
+            {filteredSessions.map((session, index) => <article key={session.sessionId || `${session.branch}-${session.date}-${session.time}-${index}`} style={{ padding: '15px', border: '1px solid var(--card-border)', borderLeft: '3px solid var(--accent-primary)', borderRadius: '12px', background: 'color-mix(in srgb, var(--bg-dark) 65%, transparent)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}><strong style={{ color: 'var(--text-main)', lineHeight: 1.4 }}>{session.title || 'Talentino Session'}</strong><span style={{ padding: '3px 8px', borderRadius: '999px', color: '#a7f3d0', background: 'rgba(16,185,129,.14)', fontSize: '.68rem', whiteSpace: 'nowrap' }}>{session.status || 'Scheduled'}</span></div>
+              <div style={{ display: 'grid', gap: '5px', marginTop: '11px', color: 'var(--text-muted)', fontSize: '.8rem' }}>
+                <span>{session.date ? formatPortalDate(session.date, session.date) : 'Date not set'}{session.time ? ` · ${session.time}` : ''}</span>
+                {session.location && <span>{session.location}</span>}
+                {session.tpo && <span>Coordinator: {session.tpo}</span>}
+                {session.description && <span style={{ marginTop: '3px', lineHeight: 1.45 }}>{session.description}</span>}
+              </div>
+            </article>)}
+          </div> : <p style={{ margin: 0, padding: '12px 4px', color: 'var(--text-muted)', textAlign: 'center', fontSize: '.86rem' }}>No scheduled Talentino sessions match this branch, month, and search.</p>}
+        </section>
 
         <div style={{ width: '100%', overflowX: 'auto' }}>
           

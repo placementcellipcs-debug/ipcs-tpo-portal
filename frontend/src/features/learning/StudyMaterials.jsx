@@ -60,6 +60,7 @@ export default function StudyMaterials() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState('');
   const [previewFrameFailed, setPreviewFrameFailed] = useState(false);
+  const [previewTakingLong, setPreviewTakingLong] = useState(false);
   
   const [formData, setFormData] = useState({
     id: '', course: '', module: '', title: '', fileType: 'pdf', link: '', status: 'Active'
@@ -83,6 +84,15 @@ export default function StudyMaterials() {
       window.removeEventListener('keydown', closeOnEscape);
     };
   }, [isModalOpen, selectedMaterial]);
+
+  useEffect(() => {
+    if (!selectedMaterial || !previewUrl || previewError || previewFrameFailed) {
+      setPreviewTakingLong(false);
+      return undefined;
+    }
+    const timer = window.setTimeout(() => setPreviewTakingLong(true), 12000);
+    return () => window.clearTimeout(timer);
+  }, [selectedMaterial, previewUrl, previewError, previewFrameFailed]);
 
   const fetchData = async () => {
     try {
@@ -216,6 +226,7 @@ export default function StudyMaterials() {
     setPreviewOpenUrl('');
     setPreviewError('');
     setPreviewFrameFailed(false);
+    setPreviewTakingLong(false);
     setPreviewLoading(true);
     try {
       const response = await axios.get(`${API_BASE}/api/lms/materials/${encodeURIComponent(material.id)}/view`);
@@ -235,6 +246,7 @@ export default function StudyMaterials() {
     setPreviewOpenUrl('');
     setPreviewError('');
     setPreviewFrameFailed(false);
+    setPreviewTakingLong(false);
   };
   const previewOpenLabel = String(selectedMaterial?.fileType || '').toLowerCase().includes('ppt') ? 'Open in PowerPoint' : 'Open file';
 
@@ -329,13 +341,14 @@ export default function StudyMaterials() {
       </div>
 
       {selectedMaterial && (
-        <div role="presentation" onContextMenu={event => event.preventDefault()} onClick={event => { if (event.target === event.currentTarget) closeMaterialPreview(); }} style={{ position: 'fixed', inset: 0, zIndex: 100000, display: 'grid', placeItems: 'center', padding: '16px', boxSizing: 'border-box', overflow: 'hidden', background: 'rgba(2,6,23,.78)', backdropFilter: 'blur(18px) saturate(145%)' }}>
-          <section role="dialog" aria-modal="true" aria-label={selectedMaterial.title} style={{ width: 'min(1200px, 100%)', height: 'min(740px, calc(100dvh - 48px))', maxHeight: 'calc(100dvh - 48px)', minHeight: '320px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '22px', border: '1px solid rgba(255,255,255,.18)', background: 'rgba(15,23,42,.96)', boxShadow: '0 30px 90px rgba(0,0,0,.55)', backdropFilter: 'blur(28px) saturate(155%)' }}>
+        <div role="presentation" onContextMenu={event => event.preventDefault()} onClick={event => { if (event.target === event.currentTarget) closeMaterialPreview(); }} style={{ position: 'fixed', inset: 0, zIndex: 100000, display: 'grid', placeItems: 'center', padding: 'clamp(8px, 2vw, 24px)', boxSizing: 'border-box', overflow: 'hidden', background: 'rgba(2,6,23,.78)', backdropFilter: 'blur(18px) saturate(145%)' }}>
+          <section role="dialog" aria-modal="true" aria-label={selectedMaterial.title} style={{ width: 'min(1440px, 100%)', height: 'min(900px, calc(100dvh - 32px))', maxHeight: 'calc(100dvh - 32px)', minHeight: '320px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden', borderRadius: '22px', border: '1px solid rgba(255,255,255,.18)', background: 'rgba(15,23,42,.96)', boxShadow: '0 30px 90px rgba(0,0,0,.55)', backdropFilter: 'blur(28px) saturate(155%)' }}>
             <header style={{ flex: '0 0 auto', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', padding: '14px 20px', borderBottom: '1px solid rgba(148,163,184,.18)' }}><div style={{ minWidth: 0 }}><span style={{ color: 'var(--accent-primary)', fontSize: '.72rem', fontWeight: 800 }}>{selectedMaterial.module || 'Study Material'}</span><h2 style={{ margin: '3px 0 0', fontSize: '1rem', overflowWrap: 'anywhere' }}>{selectedMaterial.title}</h2>{String(selectedMaterial.fileType || '').toLowerCase().includes('ppt') && <span style={{ display: 'block', marginTop: '4px', color: '#94a3b8', fontSize: '.72rem' }}>Use the slide arrows at the bottom of the preview to move through the presentation.</span>}</div><div style={{ display: 'flex', alignItems: 'center', gap: '10px', flex: '0 0 auto' }}>{previewOpenUrl && <a href={previewOpenUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '9px 12px', border: '1px solid rgba(56,189,248,.35)', borderRadius: '9px', color: '#bae6fd', background: 'rgba(14,165,233,.12)', textDecoration: 'none', fontSize: '.82rem', fontWeight: 750 }}><ArrowSquareOut size={16} /> {previewOpenLabel}</a>}<button type="button" aria-label="Close preview" onClick={closeMaterialPreview} style={{ flex: '0 0 auto', border: 0, borderRadius: '50%', width: '38px', height: '38px', color: '#cbd5e1', background: 'rgba(148,163,184,.14)', cursor: 'pointer' }}><X size={19} /></button></div></header>
-            <div style={{ flex: '1 1 auto', minHeight: 0, minWidth: 0, position: 'relative', overflow: 'auto', overscrollBehavior: 'contain', background: '#080d18' }} onContextMenu={event => event.preventDefault()}>
+            <div style={{ flex: '1 1 0', minHeight: 0, minWidth: 0, position: 'relative', overflow: 'hidden', overscrollBehavior: 'contain', background: '#080d18', touchAction: 'pan-x pan-y' }} onContextMenu={event => event.preventDefault()}>
               {previewLoading && <div style={{ position: 'absolute', inset: 0, zIndex: 1, display: 'grid', placeItems: 'center', color: 'var(--accent-primary)' }}><div style={{ textAlign: 'center' }}><CircleNotch size={38} className="ph-spin" /><p style={{ color: '#cbd5e1' }}>Preparing preview…</p></div></div>}
               {(previewError || previewFrameFailed) && <div role="alert" style={{ position: 'absolute', inset: 0, zIndex: 2, display: 'grid', placeItems: 'center', alignContent: 'center', gap: '12px', padding: '24px', textAlign: 'center', color: '#fca5a5', background: 'rgba(8,13,24,.96)' }}><span>{previewError || `This file could not be shown inside the portal. Open it in ${previewOpenLabel.replace(/^Open in /, '')} instead.`}</span>{previewOpenUrl && <a href={previewOpenUrl} target="_blank" rel="noopener noreferrer" style={{ display: 'inline-flex', alignItems: 'center', gap: '7px', padding: '10px 14px', borderRadius: '9px', color: '#07111f', background: '#7dd3fc', textDecoration: 'none', fontWeight: 800 }}><ArrowSquareOut size={17} /> {previewOpenLabel}</a>}</div>}
-              {previewUrl && !previewError && <iframe key={`${selectedMaterial.id}:${previewUrl}`} src={previewUrl} title={`${selectedMaterial.title} preview`} allowFullScreen referrerPolicy="strict-origin-when-cross-origin" allow="fullscreen; clipboard-read; clipboard-write" scrolling="auto" onError={() => setPreviewFrameFailed(true)} onContextMenu={event => event.preventDefault()} style={{ display: 'block', width: '100%', height: '100%', minHeight: 0, border: 0, overflow: 'auto' }} />}
+              {previewUrl && !previewError && <iframe key={`${selectedMaterial.id}:${previewUrl}`} src={previewUrl} title={`${selectedMaterial.title} preview`} allowFullScreen allow="fullscreen; autoplay; clipboard-read; clipboard-write" scrolling="yes" onError={() => setPreviewFrameFailed(true)} onContextMenu={event => event.preventDefault()} style={{ position: 'absolute', inset: 0, display: 'block', width: '100%', height: '100%', minHeight: 0, border: 0, overflow: 'auto', touchAction: 'pan-x pan-y' }} />}
+              {previewTakingLong && !previewError && !previewFrameFailed && <div role="status" style={{ position: 'absolute', zIndex: 3, right: '12px', bottom: '12px', maxWidth: 'min(460px, calc(100% - 24px))', padding: '10px 13px', border: '1px solid rgba(125,211,252,.35)', borderRadius: '10px', color: '#dbeafe', background: 'rgba(8,13,24,.92)', boxShadow: '0 8px 24px rgba(0,0,0,.3)', fontSize: '.8rem', lineHeight: 1.4, pointerEvents: 'none' }}>Microsoft is still loading this presentation. If it stays here, use “{previewOpenLabel}” above to open the same file directly.</div>}
             </div>
           </section>
         </div>

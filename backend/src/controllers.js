@@ -4907,6 +4907,15 @@ exports.getTalentino = async (req, res) => {
     cache = getCache();
   }
   if (!cache) return res.status(503).json({ success: false, message: 'Talentino data is still syncing. Please retry shortly.' });
+  let scheduleBackfill = null;
+  let scheduleBackfillError = '';
+  try {
+    scheduleBackfill = await ensureTalentinoScheduleBackfill();
+  } catch (error) {
+    scheduleBackfillError = String(error?.message || 'Talentino event schedule could not be synchronized.');
+    console.error('[TALENTINO] Event-to-schedule sync failed:', error);
+  }
+  cache = getCache() || cache;
   const attendanceRows = Array.isArray(cache.tAtt) ? cache.tAtt : [];
   const studentRows = Array.isArray(cache.students) ? cache.students : [];
   const scheduleRows = Array.isArray(cache.tSched) ? cache.tSched : [];
@@ -4922,6 +4931,10 @@ exports.getTalentino = async (req, res) => {
   });
 
   const resolveSession = createTalentinoSessionResolver(scheduleRows, getValByHeader, safeParseDate);
+  const assignedBranchCandidates = [
+    ...(Array.isArray(assignedBranchesArray) ? assignedBranchesArray : []),
+    ...String(actor.assignedBranches || '').split(/[\n,;]+/)
+  ].map(value => String(value || '').trim()).filter(value => value && !/^(?:all|all branches)$/i.test(value));
 
   const records = attendanceRows.filter(row => {
     const rowBranch = getValByHeader(row, ['branch']);
@@ -4939,18 +4952,30 @@ exports.getTalentino = async (req, res) => {
     const schedule = match.session;
     return { name: getValByHeader(row, ['name', 'student']), branch, date, rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes', 'remark']), tpo: getValByHeader(row, ['tpo', 'placementofficer', 'conductedby', 'createdby']) || getValByHeader(schedule, ['tpo', 'placementofficer', 'conductedby', 'createdby']), sessionId: getValByHeader(row, ['sessionid', 'eventid', 'event id']) || getValByHeader(schedule, ['sessionid', 'eventid', 'event id']), sessionMatchType: match.matchType };
   });
-  const upperRole = String(role || '').toUpperCase();
-  const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(upperRole) || upperRole.includes('REGIONAL TECHNICAL HEAD');
   const sessions = scheduleRows.map(row => {
     const branch = getValByHeader(row, ['branch', 'sittingbranch']);
     const course = getValByHeader(row, ['course', 'program', 'assignedcourse']);
     const date = getValByHeader(row, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']);
     const tpo = getValByHeader(row, ['tpo', 'placementofficer', 'conductedby', 'createdby']);
-    const sessionId = getValByHeader(row, ['sessionid', 'eventid', 'event id', 'id']);
-    return { branch, course, date, tpo, sessionId };
+    const sessionId = getValByHeader(row, ['sessionid', 'eventid', 'event id', 'eventreference', 'sessionkey']);
+    const title = getValByHeader(row, ['sessiontitle', 'title', 'topic', 'session']);
+    const time = getValByHeader(row, ['time', 'sessiontime', 'timeoftheevent', 'starttime']);
+    const location = getValByHeader(row, ['location', 'venue', 'eventhappeningin']);
+    const status = getValByHeader(row, ['status', 'sessionstatus']) || 'Scheduled';
+    const description = getValByHeader(row, ['description', 'descripation', 'notes', 'remark']);
+    return { branch, course, date, tpo, sessionId, title, time, location, status, description };
   }).filter(session => {
     if (!session.branch || !session.date) return false;
-    if (!session.course && isRth) return userHasBranch(actor, session.branch);
+    if (/cancel|deleted|rejected/.test(normalizePlacementText(session.status || ''))) return false;
+    const normalizedBranch = normalizePlacementText(session.branch);
+    const isAllBranchesSession = ['all', 'allbranches'].includes(normalizedBranch);
+    if (isAllBranchesSession) {
+      if (isPlacementTrackerAdmin(actor) || isCentralPlacementTeam(actor)) return true;
+      return assignedBranchCandidates.some(branch => session.course
+        ? hasAccess(branch, session.course, role, assignedBranchesArray, assignedCourse, actor.department)
+        : hasPlacementBranchAccess(branch, actor) || userHasBranch(actor, branch));
+    }
+    if (!session.course) return hasPlacementBranchAccess(session.branch, actor) || userHasBranch(actor, session.branch);
     return hasAccess(session.branch, session.course || 'Unknown', role, assignedBranchesArray, assignedCourse, actor.department);
   });
   const dates = new Set();
@@ -4968,7 +4993,10 @@ exports.getTalentino = async (req, res) => {
       attendanceLastSuccessfulSyncAt: cache.cacheSheetUpdatedAt?.tAtt || '',
       scheduleLastSuccessfulSyncAt: cache.cacheSheetUpdatedAt?.tSched || '',
       visibleAttendanceRows: records.length,
-      visibleScheduledSessions: sessions.length
+      visibleScheduledSessions: sessions.length,
+      scheduleBackfillAdded: scheduleBackfill?.added || 0,
+      scheduleBackfillUpdated: scheduleBackfill?.updated || 0,
+      scheduleSyncError: scheduleBackfillError
     }
   });
 };
@@ -5036,7 +5064,7 @@ exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
   });
 
   const matchedAttendances = new Map(sessions.map(row => [row, []]));
-  const scheduleSessionIdentity = row => normalizePlacementText(getValByHeader(row, ['sessionid', 'eventid', 'event id', 'id']));
+  const scheduleSessionIdentity = row => normalizePlacementText(getValByHeader(row, ['sessionid', 'eventid', 'event id', 'eventreference', 'sessionkey']));
   const attendanceSessionIdentity = row => normalizePlacementText(getValByHeader(row, ['sessionid', 'eventid', 'event id']));
   const getExactTalentinoValue = (row, aliases) => {
     const headers = row?._worksheet?.headerValues || [];
@@ -5239,6 +5267,205 @@ const ensureEventHeaders = async (sheet, titles) => {
   return [...(sheet.headerValues || [])];
 };
 
+const TALENTINO_SCHEDULE_FIELDS = [
+  { key: 'sessionId', header: 'Session ID', aliases: ['sessionid', 'eventid', 'eventreference', 'sessionkey'] },
+  { key: 'date', header: 'Date', aliases: ['date', 'sessiondate', 'dateoftheevent', 'timestamp'] },
+  { key: 'tpo', header: 'TPO', aliases: ['tpo', 'placementofficer', 'conductedby', 'createdby'] },
+  { key: 'branch', header: 'Branch', aliases: ['branch', 'sittingbranch'] },
+  { key: 'course', header: 'Course', aliases: ['course', 'program', 'assignedcourse'] },
+  { key: 'title', header: 'Session Title', aliases: ['sessiontitle', 'title', 'topic', 'session'] },
+  { key: 'type', header: 'Event Type', aliases: ['eventtype', 'eventcategory', 'type'] },
+  { key: 'description', header: 'Description', aliases: ['description', 'descripation', 'notes', 'remark'] },
+  { key: 'time', header: 'Time', aliases: ['time', 'sessiontime', 'timeoftheevent', 'starttime'] },
+  { key: 'location', header: 'Location', aliases: ['location', 'venue', 'eventhappeningin'] },
+  { key: 'status', header: 'Status', aliases: ['status', 'sessionstatus'] }
+];
+let talentinoBackfillPromise = null;
+let talentinoBackfillResult = null;
+let talentinoBackfillCompletedAt = 0;
+const TALENTINO_BACKFILL_TTL_MS = 5 * 60 * 1000;
+
+const ensureTalentinoScheduleSheet = async () => {
+  await loadDocInfo();
+  let sheet = doc.sheetsByTitle.Talentino_Schedule;
+  if (!sheet) {
+    sheet = await doc.addSheet({
+      title: 'Talentino_Schedule',
+      headerValues: TALENTINO_SCHEDULE_FIELDS.map(field => field.header)
+    });
+    return sheet;
+  }
+
+  try {
+    await sheet.loadHeaderRow();
+  } catch (error) {
+    if (Array.isArray(sheet._headerValues) && sheet._headerValues.length) throw error;
+    await sheet.setHeaderRow(TALENTINO_SCHEDULE_FIELDS.map(field => field.header));
+    await sheet.loadHeaderRow();
+  }
+
+  let headers = [...(sheet.headerValues || [])];
+  const missing = TALENTINO_SCHEDULE_FIELDS
+    .filter(field => !findEventHeader(headers, field.aliases))
+    .map(field => field.header);
+  if (missing.length) {
+    const requiredColumns = headers.length + missing.length;
+    if ((Number(sheet.columnCount) || 0) < requiredColumns) await sheet.resize({ columnCount: requiredColumns });
+    headers = [...headers, ...missing];
+    await sheet.setHeaderRow(headers);
+    await sheet.loadHeaderRow();
+  }
+  return sheet;
+};
+
+const talentinoScheduleRowData = (event, sheet) => {
+  const headers = sheet.headerValues || [];
+  const values = {
+    sessionId: String(event.eventId || event.eventKey || '').trim(),
+    date: event.date || '',
+    tpo: event.tpo || '',
+    branch: event.branch || '',
+    course: event.course || '',
+    title: event.title || 'Talentino Session',
+    type: event.type || 'Talentino',
+    description: event.description || '',
+    time: event.time || '',
+    location: event.location || '',
+    status: event.status || 'Scheduled'
+  };
+  const rowData = {};
+  TALENTINO_SCHEDULE_FIELDS.forEach(field => {
+    const header = findEventHeader(headers, field.aliases) || field.header;
+    rowData[header] = values[field.key];
+  });
+  return rowData;
+};
+
+const talentinoScheduleIdentity = event => [
+  normalizePlacementText(event.branch),
+  talentinoDateKey(event.date),
+  normalizePlacementText(event.time),
+  normalizePlacementText(event.title || event.type)
+].join('|');
+
+const findTalentinoScheduleMatch = (rows, event) => {
+  const eventId = String(event.eventId || event.eventKey || '').trim().toLowerCase();
+  if (eventId) {
+    const byId = rows.find(row => String(getValByHeader(row, ['sessionid', 'eventid', 'eventreference', 'sessionkey']) || '').trim().toLowerCase() === eventId);
+    if (byId) return byId;
+  }
+  const identity = talentinoScheduleIdentity(event);
+  return rows.find(row => {
+    const rowId = String(getValByHeader(row, ['sessionid', 'eventid', 'eventreference', 'sessionkey']) || '').trim().toLowerCase();
+    if (rowId && eventId && rowId !== eventId) return false;
+    return talentinoScheduleIdentity({
+      branch: getValByHeader(row, ['branch', 'sittingbranch']),
+      date: getValByHeader(row, ['date', 'sessiondate', 'dateoftheevent', 'timestamp']),
+      time: getValByHeader(row, ['time', 'sessiontime', 'timeoftheevent', 'starttime']),
+      title: getValByHeader(row, ['sessiontitle', 'title', 'topic', 'session'])
+    }) === identity;
+  }) || null;
+};
+
+const syncTalentinoEventsToSchedule = async (events, { refreshCacheRows = true } = {}) => {
+  const eventRows = (events || []).filter(row => String(getExactEventValue(row, ['event', 'eventtype', 'type']) || getValByHeader(row, ['eventtype', 'event', 'type'])).toLowerCase().includes('talentino'));
+  if (!eventRows.length) return { success: true, added: 0, updated: 0, matchedEvents: 0 };
+  const sheet = await ensureTalentinoScheduleSheet();
+  const scheduleRows = await sheet.getRows();
+  const additions = [];
+  const scheduledIds = new Set(scheduleRows
+    .map(row => String(getValByHeader(row, ['sessionid', 'eventid', 'eventreference', 'sessionkey']) || '').trim().toLowerCase())
+    .filter(Boolean));
+  let updated = 0;
+
+  for (const sourceRow of eventRows) {
+    const event = serializeEvent(sourceRow);
+    const existing = findTalentinoScheduleMatch(scheduleRows, event);
+    const rowData = talentinoScheduleRowData(event, sheet);
+    if (!existing) {
+      const eventId = String(event.eventId || event.eventKey || '').trim().toLowerCase();
+      if (eventId && scheduledIds.has(eventId)) continue;
+      additions.push(rowData);
+      if (eventId) scheduledIds.add(eventId);
+      continue;
+    }
+    const updateData = {};
+    Object.entries(rowData).forEach(([header, value]) => {
+      const current = getExactEventValue(existing, [header]);
+      if (String(current ?? '').trim() !== String(value ?? '').trim()) updateData[header] = value;
+    });
+    if (Object.keys(updateData).length) {
+      existing.assign(updateData);
+      await existing.save();
+      updated += 1;
+    }
+  }
+
+  if (additions.length) {
+    if (typeof sheet.addRows === 'function') await sheet.addRows(additions);
+    else for (const rowData of additions) await sheet.addRow(rowData);
+  }
+  const latestRows = refreshCacheRows ? await sheet.getRows() : null;
+  const cache = getCache();
+  if (cache && latestRows) {
+    cache.tSched = latestRows;
+    cache.cacheSheetHealth = { ...(cache.cacheSheetHealth || {}), tSched: true };
+    cache.cacheSheetUpdatedAt = { ...(cache.cacheSheetUpdatedAt || {}), tSched: new Date().toISOString() };
+  }
+  return { success: true, added: additions.length, updated, matchedEvents: eventRows.length };
+};
+
+const syncTalentinoEventToSchedule = async event => {
+  const sheet = await ensureTalentinoScheduleSheet();
+  const rows = await sheet.getRows();
+  const existing = findTalentinoScheduleMatch(rows, event);
+  const rowData = talentinoScheduleRowData(event, sheet);
+  let savedRow = existing;
+  let changed = false;
+  if (!existing) {
+    savedRow = await sheet.addRow(rowData);
+    changed = true;
+  } else {
+    const updateData = {};
+    Object.entries(rowData).forEach(([header, value]) => {
+      const current = getExactEventValue(existing, [header]);
+      if (String(current ?? '').trim() !== String(value ?? '').trim()) updateData[header] = value;
+    });
+    if (Object.keys(updateData).length) {
+      existing.assign(updateData);
+      await existing.save();
+      changed = true;
+    }
+  }
+  const cache = getCache();
+  if (cache) {
+    cache.tSched = await sheet.getRows();
+    cache.cacheSheetHealth = { ...(cache.cacheSheetHealth || {}), tSched: true };
+    cache.cacheSheetUpdatedAt = { ...(cache.cacheSheetUpdatedAt || {}), tSched: new Date().toISOString() };
+  }
+  return { success: true, changed, rowNumber: savedRow?.rowNumber || null };
+};
+
+const ensureTalentinoScheduleBackfill = async () => {
+  if (talentinoBackfillResult && Date.now() - talentinoBackfillCompletedAt < TALENTINO_BACKFILL_TTL_MS) return talentinoBackfillResult;
+  if (talentinoBackfillPromise) return talentinoBackfillPromise;
+  talentinoBackfillPromise = (async () => {
+    await loadDocInfo();
+    const eventSheet = doc.sheetsByTitle.Event;
+    if (!eventSheet) throw new Error('The Event sheet is unavailable for Talentino sync.');
+    const events = await eventSheet.getRows();
+    const result = await syncTalentinoEventsToSchedule(events);
+    talentinoBackfillResult = result;
+    talentinoBackfillCompletedAt = Date.now();
+    return result;
+  })();
+  try {
+    return await talentinoBackfillPromise;
+  } finally {
+    talentinoBackfillPromise = null;
+  }
+};
+
 const serializeEvent = row => ({
   eventKey: getValByHeader(row, ['eventid']) || `row-${row?.rowNumber || ''}`,
   eventId: getValByHeader(row, ['eventid']),
@@ -5247,7 +5474,7 @@ const serializeEvent = row => ({
   tpo: getValByHeader(row, ['tpo', 'placementofficer']),
   branch: getValByHeader(row, ['branch']),
   course: getValByHeader(row, ['course', 'eligiblecourse']),
-  type: getValByHeader(row, ['event', 'type']),
+  type: getExactEventValue(row, ['event', 'eventtype', 'type']) || getValByHeader(row, ['eventtype', 'event', 'type']),
   title: getValByHeader(row, ['title']),
   description: getValByHeader(row, ['descripation', 'description']),
   time: formatIndiaTime(getValByHeader(row, ['timeoftheevent', 'time'])),
@@ -5401,6 +5628,15 @@ exports.addEvent = async (req, res) => {
     // Add to sheet
     await ensureEventHeaders(eventSheet, Object.keys(rowData));
     const newRow = await eventSheet.addRow(rowData);
+    let scheduleSyncError = '';
+    if (evType.includes('talentino')) {
+      try {
+        await syncTalentinoEventToSchedule(serializeEvent(newRow));
+      } catch (syncError) {
+        scheduleSyncError = String(syncError?.message || 'The Talentino schedule sheet could not be updated.');
+        console.error(`[TALENTINO] Event ${eventId} was saved, but schedule sync failed:`, syncError);
+      }
+    }
 
     // 🚨 GUARANTEED EXECUTIVE EMAILS (Fallback to hardcoded if ID lookup fails)
     const giftyEmail = getUserEmailById('U003') || 'gifty@ipcsglobal.com';
@@ -5637,10 +5873,12 @@ exports.addEvent = async (req, res) => {
     return res.json({
       success: true,
       message: mailOptions
-        ? 'Event saved. Email notification is being attempted in the background.'
-        : 'Event saved.',
+        ? `Event saved. Email notification is being attempted in the background.${scheduleSyncError ? ` Talentino schedule sync needs attention: ${scheduleSyncError}` : ''}`
+        : `Event saved.${scheduleSyncError ? ` Talentino schedule sync needs attention: ${scheduleSyncError}` : ''}`,
       mailStatus: mailOptions ? 'PENDING' : 'NOT_REQUIRED',
-      eventId
+      eventId,
+      scheduleSynced: evType.includes('talentino') && !scheduleSyncError,
+      scheduleSyncError
     });
   } catch (error) { 
     console.error("Event add error:", error);
@@ -5720,6 +5958,16 @@ const updateEventStatus = async (req, res, nextStatus) => {
     eventRow.assign(updateData);
     await eventRow.save();
 
+    let scheduleSyncError = '';
+    if (String(event.type || '').toLowerCase().includes('talentino')) {
+      try {
+        await syncTalentinoEventToSchedule(serializeEvent(eventRow));
+      } catch (syncError) {
+        scheduleSyncError = String(syncError?.message || 'The Talentino schedule sheet could not be updated.');
+        console.error(`[TALENTINO] Event ${event.eventId || event.eventKey} status was saved, but schedule sync failed:`, syncError);
+      }
+    }
+
     let emailSent = false;
     let emailQueued = false;
     let emailError = '';
@@ -5767,13 +6015,15 @@ const updateEventStatus = async (req, res, nextStatus) => {
       emailSent,
       emailQueued,
       event: updatedEvent,
-      message: emailSent
+      scheduleSynced: String(event.type || '').toLowerCase().includes('talentino') && !scheduleSyncError,
+      scheduleSyncError,
+      message: `${emailSent
         ? `Event ${nextStatus.toLowerCase()} and notification email sent.`
         : emailQueued
           ? `Event ${nextStatus.toLowerCase()}; notification email queued for retry.`
           : emailReview
             ? `Event ${nextStatus.toLowerCase()}, but email delivery is uncertain. Check the sender's Sent folder and recipient before retrying.`
-            : `Event ${nextStatus.toLowerCase()}, but the notification email could not be sent: ${emailError}`
+            : `Event ${nextStatus.toLowerCase()}, but the notification email could not be sent: ${emailError}`}${scheduleSyncError ? ` Talentino schedule sync needs attention: ${scheduleSyncError}` : ''}`
     });
   } catch (error) {
     console.error(`Event ${nextStatus.toLowerCase()} error:`, error);
@@ -8128,6 +8378,34 @@ exports.updatePhoto = async (req, res) => {
 // ---------------------------------------------------------
 const isLearningAdmin = user => user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(String(user?.role || '').toUpperCase());
 const canReadMaterial = (user, course) => isLearningAdmin(user) || hasAccess('All', course, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department);
+const getStudyMaterialFields = row => ({
+  course: getValByHeader(row, ['course']) || '',
+  module: getValByHeader(row, ['moduletopic', 'module', 'topic']) || 'General',
+  title: getValByHeader(row, ['title']) || 'Study Material',
+  fileType: getValByHeader(row, ['filetype']) || 'PPTX',
+  link: getValByHeader(row, ['onedrivelink', 'link']) || ''
+});
+// The sheet's Material ID is a group label (for example, ACCDM_Modules), not
+// a unique row key. Use the same stable fingerprint as the student portal so
+// selecting one module always opens that module's own file link.
+const getStudyMaterialId = row => {
+  const fields = getStudyMaterialFields(row);
+  const identity = [fields.course, fields.module, fields.title, fields.fileType, fields.link]
+    .map((value, index) => index === 4 ? String(value || '').trim() : String(value || '').trim().toLowerCase())
+    .join('\u001f');
+  return `MAT-${createHash('sha256').update(identity).digest('hex').slice(0, 24)}`;
+};
+const findStudyMaterialRow = (rows, materialId) => {
+  const id = String(materialId || '').trim();
+  if (!id) return null;
+  const matchingRows = (rows || []).filter(row => getStudyMaterialId(row) === id);
+  if (matchingRows.length === 1) return matchingRows[0];
+  if (matchingRows.length > 1) return null;
+  // Keep older admin forms working when a legacy Material ID is actually
+  // unique. Group labels shared by several rows are intentionally rejected.
+  const legacyRows = (rows || []).filter(row => getValByHeader(row, ['materialid']).trim() === id);
+  return legacyRows.length === 1 ? legacyRows[0] : null;
+};
 const makeMaterialPreviewUrl = (rawLink, fileType = '') => {
   try {
     const source = new URL(String(rawLink || '').trim());
@@ -8170,15 +8448,15 @@ exports.getMaterials = (req, res) => {
     if (!user) return res.status(401).json({ success: false, message: 'Sign in again to view study materials.' });
     const showInactive = isLearningAdmin(user);
     let materials = (getCache().materials || []).map(row => {
-      const course = getValByHeader(row, ['course']) || '';
+      const { course, module, title, fileType } = getStudyMaterialFields(row);
       const status = getValByHeader(row, ['status']) || 'Active';
       if ((!showInactive && status.trim().toLowerCase() !== 'active') || !canReadMaterial(user, course)) return null;
       return { 
-        id: getValByHeader(row, ['materialid']) || '', 
+        id: getStudyMaterialId(row),
         course,
-        module: getValByHeader(row, ['moduletopic', 'module', 'topic']) || '', 
-        title: getValByHeader(row, ['title']) || '', 
-        fileType: getValByHeader(row, ['filetype']) || '', 
+        module,
+        title,
+        fileType,
         ...(showInactive ? { link: getValByHeader(row, ['onedrivelink', 'link']) || '' } : {}),
         status
       };
@@ -8191,7 +8469,7 @@ exports.getMaterialViewLink = (req, res) => {
   const user = req.portalUser;
   if (!user) return res.status(401).json({ success: false, message: 'Sign in again to view study materials.' });
   const materialId = String(req.params.materialId || '').trim();
-  const row = (getCache().materials || []).find(item => getValByHeader(item, ['materialid']).trim() === materialId);
+  const row = findStudyMaterialRow(getCache()?.materials || [], materialId);
   if (!row || String(getValByHeader(row, ['status']) || 'Active').trim().toLowerCase() !== 'active') {
     return res.status(404).json({ success: false, message: 'This study material is unavailable.' });
   }
@@ -8236,11 +8514,10 @@ exports.updateMaterial = async (req, res) => {
     const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('studymaterials'));
     if (!sheet) return res.status(404).json({ success: false, message: "Study Materials sheet not found" });
 
+    await sheet.loadHeaderRow();
+    const h = sheet.headerValues || [];
     const rows = await sheet.getRows();
-    const h = sheet.headerValues;
-    const idHeader = getFuzzyHeader(h, 'materialid');
-    
-    const row = rows.find(r => (r.get(idHeader) || '').toString().trim() === id.toString().trim());
+    const row = findStudyMaterialRow(rows, id);
 
     if (row) {
       row.assign({
@@ -8270,10 +8547,7 @@ exports.deleteMaterial = async (req, res) => {
     if (!sheet) return res.status(404).json({ success: false, message: "Study Materials sheet not found" });
 
     const rows = await sheet.getRows();
-    const h = sheet.headerValues;
-    const idHeader = getFuzzyHeader(h, 'materialid');
-    
-    const row = rows.find(r => (r.get(idHeader) || '').toString().trim() === id.toString().trim());
+    const row = findStudyMaterialRow(rows, id);
 
     if (row) {
       await row.delete();

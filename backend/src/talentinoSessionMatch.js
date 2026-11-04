@@ -4,7 +4,9 @@ const createTalentinoSessionResolver = (scheduleRows, getValue, parseDate) => {
   const byId = new Map();
   const byBranchDate = new Map();
   (Array.isArray(scheduleRows) ? scheduleRows : []).forEach(row => {
-    const sessionId = normalizePlacementText(getValue(row, ['sessionid', 'eventid', 'event id', 'id']));
+    // A generic `ID` column may identify the sheet row or another entity. Only
+    // match on an explicit Talentino session/event reference.
+    const sessionId = normalizePlacementText(getValue(row, ['sessionid', 'eventid', 'event id', 'eventreference', 'sessionkey']));
     if (sessionId) byId.set(sessionId, [...(byId.get(sessionId) || []), row]);
     const date = parseDate(getValue(row, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']));
     const branch = normalizePlacementText(getValue(row, ['branch', 'sittingbranch']));
