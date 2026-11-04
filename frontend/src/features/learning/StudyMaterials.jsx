@@ -360,7 +360,7 @@ export default function StudyMaterials() {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '15px', marginBottom: '20px' }}>
                 <div className="form-group"><label>File Type</label><select name="fileType" value={formData.fileType} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }}><option value="pdf">PDF</option><option value="pptx">PowerPoint (PPTX)</option><option value="docx">Word (DOCX)</option><option value="mp4">Video (MP4)</option><option value="link">External Link</option></select></div>
-                <div className="form-group"><label>SharePoint / OneDrive Link</label><input type="url" name="link" placeholder="https://..." value={formData.link} onChange={handleInputChange} required /></div>
+                <div className="form-group"><label>SharePoint / OneDrive Link</label><input type="url" name="link" placeholder="https://..." value={formData.link} onChange={handleInputChange} required /><small style={{ display: 'block', marginTop: '7px', color: 'var(--text-muted)', lineHeight: 1.45 }}>For PowerPoint previews, use its Microsoft-generated Embed link or a link the viewer can access. Check the file’s sharing permissions before saving.</small></div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', borderTop: '1px solid #1e293b', paddingTop: '1.5rem' }}>
                 <button type="button" className="btn-secondary" onClick={() => setIsModalOpen(false)}>Cancel</button>

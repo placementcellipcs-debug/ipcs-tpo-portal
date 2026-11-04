@@ -8141,6 +8141,13 @@ const makeMaterialPreviewUrl = (rawLink, fileType = '') => {
       source.search = '?rm=minimal';
       return source.toString();
     }
+    const isOfficeEmbedLink = (host === 'onedrive.live.com' && /^\/embed\/?$/i.test(source.pathname))
+      || host.endsWith('.sharepoint.com') && (
+        source.searchParams.get('action')?.toLowerCase() === 'embedview'
+        || /\/embed(?:\.aspx)?\/?$/i.test(source.pathname)
+      )
+      || host === 'view.officeapps.live.com' && /^\/op\/embed\.aspx$/i.test(source.pathname);
+    if (isOfficeEmbedLink) return source.toString();
     if (host === '1drv.ms' || host.endsWith('onedrive.live.com') || host.endsWith('.sharepoint.com')) {
       // A SharePoint/OneDrive share link can resolve to a raw PPTX response in
       // an iframe. Use Microsoft's Office embed endpoint for PowerPoint files.
