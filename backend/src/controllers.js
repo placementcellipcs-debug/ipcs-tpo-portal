@@ -4936,20 +4936,25 @@ exports.getTalentino = async (req, res) => {
     ...String(actor.assignedBranches || '').split(/[\n,;]+/)
   ].map(value => String(value || '').trim()).filter(value => value && !/^(?:all|all branches)$/i.test(value));
 
-  const records = attendanceRows.filter(row => {
-    const rowBranch = getValByHeader(row, ['branch']);
+  const records = attendanceRows.map(row => {
+    const match = resolveSession(row);
+    const schedule = match.session;
     const studentName = getValByHeader(row, ['name', 'student']) || '';
     const studentRoll = normalizeKey(getValByHeader(row, ['roll', 'rollno', 'rollnumber', 'ipcsrollnumber']));
     const studentData = (studentRoll && studentsByRoll.get(studentRoll)) || studentsByName.get(normalizeKey(studentName));
-    const sCourse = getValByHeader(row, ['course', 'program']) || (studentData ? getValByHeader(studentData, ['course']) : 'Unknown');
-    return isPlacementTrackerAdmin(actor) || isPlacementTrackerTpo(actor)
+    // Older attendance rows may omit Branch. Recover it from the linked
+    // session first, then the matched student directory record, before
+    // applying branch access rules.
+    const rowBranch = getValByHeader(row, ['branch', 'sittingbranch'])
+      || getValByHeader(schedule, ['branch', 'sittingbranch'])
+      || getValByHeader(studentData, ['branch', 'sittingbranch']);
+    const sCourse = getValByHeader(row, ['course', 'program']) || getValByHeader(schedule, ['course', 'program', 'assignedcourse']) || (studentData ? getValByHeader(studentData, ['course']) : 'Unknown');
+    const allowed = isPlacementTrackerAdmin(actor) || isPlacementTrackerTpo(actor)
       ? hasPlacementBranchAccess(rowBranch, actor)
       : hasAccess(rowBranch, sCourse, role, assignedBranchesArray, assignedCourse, actor.department);
-  }).map(row => {
+    return allowed ? { row, match, schedule, branch: rowBranch } : null;
+  }).filter(Boolean).map(({ row, match, schedule, branch }) => {
     const date = getValByHeader(row, ['timestamp', 'date', 'time', 'present check-ins date']);
-    const branch = getValByHeader(row, ['branch']);
-    const match = resolveSession(row);
-    const schedule = match.session;
     return { name: getValByHeader(row, ['name', 'student']), branch, date, rating: getValByHeader(row, ['rating']), notes: getValByHeader(row, ['notes', 'remark']), tpo: getValByHeader(row, ['tpo', 'placementofficer', 'conductedby', 'createdby']) || getValByHeader(schedule, ['tpo', 'placementofficer', 'conductedby', 'createdby']), sessionId: getValByHeader(row, ['sessionid', 'eventid', 'event id']) || getValByHeader(schedule, ['sessionid', 'eventid', 'event id']), sessionMatchType: match.matchType };
   });
   const sessions = scheduleRows.map(row => {

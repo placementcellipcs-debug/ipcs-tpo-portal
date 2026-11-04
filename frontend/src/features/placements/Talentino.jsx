@@ -80,8 +80,10 @@ export default function Talentino() {
   const monthSessions = monthFilter === 'All Months' ? data.sessions : data.sessions.filter(session => getMonthKey(session.date) === monthFilter);
 
   const branchData = {};
+  const branchKey = value => String(value || '').toLowerCase().replace(/branch/g, '').replace(/[^a-z0-9]/g, '').trim();
   const ensureBranchEntry = branch => {
-    const key = branch || 'Unknown Branch';
+    const cleanBranch = String(branch || '').trim() || 'Unknown Branch';
+    const key = Object.keys(branchData).find(existing => branchKey(existing) === branchKey(cleanBranch)) || cleanBranch;
     if (!branchData[key]) branchData[key] = { attendance: 0, sessions: 0 };
     return branchData[key];
   };
@@ -124,7 +126,7 @@ export default function Talentino() {
   const ratingValues = monthRecords.map(record => Number(String(record.rating || '').match(/[\d.]+/)?.[0])).filter(value => Number.isFinite(value) && value > 0);
   const averageRating = ratingValues.length ? (ratingValues.reduce((sum, value) => sum + value, 0) / ratingValues.length).toFixed(1) : '—';
 
-  const branchMatches = value => String(value || '').trim().toLowerCase() === String(selectedBranch || '').trim().toLowerCase();
+  const branchMatches = value => branchKey(value) === branchKey(selectedBranch);
   const activeRecords = selectedBranch ? monthRecords.filter(r => branchMatches(r.branch)) : [];
   const activeSessions = selectedBranch ? monthSessions.filter(session => branchMatches(session.branch)) : [];
   
@@ -314,7 +316,9 @@ export default function Talentino() {
           }) : (
             <div style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)', background: 'var(--card-bg)', borderRadius: '12px', border: '1px solid var(--card-border)' }}>
               <Star size={32} style={{ opacity: 0.5, marginBottom: '10px' }} /><br/>
-              No records match your search criteria.
+              {activeRecords.length === 0 && activeSessions.length > 0
+                ? 'The scheduled sessions are listed above. Student records appear here after attendance is entered in Talentino_Attendance for this branch.'
+                : 'No records match your search or date filter. Clear the filters to see all attendance records.'}
             </div>
           )}
         </div>

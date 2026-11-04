@@ -1,4 +1,5 @@
 const { normalizePlacementText } = require('./placementRecords');
+const normalizeTalentinoBranch = value => normalizePlacementText(value).replace(/branch/g, '');
 
 const createTalentinoSessionResolver = (scheduleRows, getValue, parseDate) => {
   const byId = new Map();
@@ -9,7 +10,7 @@ const createTalentinoSessionResolver = (scheduleRows, getValue, parseDate) => {
     const sessionId = normalizePlacementText(getValue(row, ['sessionid', 'eventid', 'event id', 'eventreference', 'sessionkey']));
     if (sessionId) byId.set(sessionId, [...(byId.get(sessionId) || []), row]);
     const date = parseDate(getValue(row, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']));
-    const branch = normalizePlacementText(getValue(row, ['branch', 'sittingbranch']));
+    const branch = normalizeTalentinoBranch(getValue(row, ['branch', 'sittingbranch']));
     if (!date || !branch) return;
     const key = `${branch}|${date.toDateString()}`;
     byBranchDate.set(key, [...(byBranchDate.get(key) || []), row]);
@@ -21,7 +22,7 @@ const createTalentinoSessionResolver = (scheduleRows, getValue, parseDate) => {
     if (idMatches.length === 1) return { session: idMatches[0], matchType: 'session-id' };
 
     const date = parseDate(getValue(attendance, ['timestamp', 'date', 'time', 'present check-ins date']));
-    const branch = normalizePlacementText(getValue(attendance, ['branch', 'sittingbranch']));
+    const branch = normalizeTalentinoBranch(getValue(attendance, ['branch', 'sittingbranch']));
     const matches = date && branch ? byBranchDate.get(`${branch}|${date.toDateString()}`) || [] : [];
     if (matches.length === 1) return { session: matches[0], matchType: 'legacy-branch-date' };
     if (matches.length > 1 || idMatches.length > 1) return { session: null, matchType: 'ambiguous' };
