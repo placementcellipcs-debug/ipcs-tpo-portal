@@ -11,7 +11,7 @@ import AssetCategoryFields from './AssetCategoryFields';
 import { Link, useSearchParams } from 'react-router-dom';
 
 const emptyAsset = branch => ({
-  name: '', category: '', subcategory: '', branch: branch || '', location: '',
+  name: '', category: '', categoryId: '', subcategory: '', subcategoryId: '', assetType: '', assetTypeId: '', branch: branch || '', location: '',
   condition: 'NEW', brand: '', model: '', purchaseDate: '', purchaseCost: '',
   vendor: '', invoice: '', warrantyEnd: '', trackingMode: 'INDIVIDUAL', quantity: '1'
 });
@@ -27,7 +27,7 @@ export default function AddAsset() {
   const [formLoadError, setFormLoadError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState(null);
-  const [dbData, setDbData] = useState({ branches: [], categories: [], subcategories: [], locations: [], vendors: [] });
+  const [dbData, setDbData] = useState({ branches: [], categories: [], subcategories: [], assetTypes: [], locations: [], vendors: [] });
   const [asset, setAsset] = useState(() => emptyAsset(tpoData.sittingBranch));
   const [customFields, setCustomFields] = useState([]);
   const [showSpecifications, setShowSpecifications] = useState(false);
@@ -35,7 +35,7 @@ export default function AddAsset() {
   const [assetPhotoPreview, setAssetPhotoPreview] = useState('');
   const previewRef = useRef('');
   const [customLocation, setCustomLocation] = useState('');
-  const [stock, setStock] = useState({ name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', quantity: '0', minQuantity: '5' });
+  const [stock, setStock] = useState({ name: '', category: '', categoryId: '', subcategory: '', subcategoryId: '', assetType: '', assetTypeId: '', branch: tpoData.sittingBranch || '', quantity: '0', minQuantity: '5' });
 
   useEffect(() => {
     const nextType = searchParams.get('type') === 'consumable' ? 'CONSUMABLE' : 'ASSET';
@@ -52,6 +52,7 @@ export default function AddAsset() {
         branches: Array.isArray(response.data.branches) ? response.data.branches : [],
         categories: Array.isArray(response.data.categories) ? response.data.categories : [],
         subcategories: Array.isArray(response.data.subcategories) ? response.data.subcategories : [],
+        assetTypes: Array.isArray(response.data.assetTypes) ? response.data.assetTypes : [],
         locations: Array.isArray(response.data.locations) ? response.data.locations : [],
         vendors: Array.isArray(response.data.vendors) ? response.data.vendors : []
       });
@@ -102,7 +103,7 @@ export default function AddAsset() {
         const response = await axios.post(`${API_BASE}/api/v1/assets/inventory/add`, { item: { ...stock, quantity, minQuantity: minimumQuantity }, userName: tpoData.name || '' }, { timeout: 30000 });
         if (!response.data?.success) throw new Error(response.data?.message || 'The stock record was not saved.');
         setNotification({ type: 'success', text: response.data.message || 'Consumable stock registered.' });
-        setStock({ name: '', category: '', subcategory: '', branch: tpoData.sittingBranch || '', quantity: '0', minQuantity: '5' });
+        setStock({ name: '', category: '', categoryId: '', subcategory: '', subcategoryId: '', assetType: '', assetTypeId: '', branch: tpoData.sittingBranch || '', quantity: '0', minQuantity: '5' });
       } catch (error) {
         setNotification({ type: 'error', text: error.response?.data?.message || error.message || 'Failed to register stock.' });
       } finally {
@@ -178,9 +179,10 @@ export default function AddAsset() {
             {recordType === 'CONSUMABLE' ? <>
               <section className="asset-register-card">
                 <div className="asset-card-heading"><div><span>01 · STOCK DETAILS</span><h2>Describe the stock</h2><p>One row represents one stock type in one branch.</p></div><Link to="/assets/categories">Manage categories ↗</Link></div>
-                <AssetCategoryFields type="CONSUMABLE" category={stock.category} subcategory={stock.subcategory} subcategoryRequired categories={dbData.categories} subcategories={dbData.subcategories} dataReady={!loading}
-                  onCategoryChange={value => setStock(current => ({ ...current, category: value, subcategory: '' }))}
-                  onSubcategoryChange={value => setStock(current => ({ ...current, subcategory: value }))} />
+                <AssetCategoryFields type="CONSUMABLE" category={stock.category} subcategory={stock.subcategory} assetType={stock.assetType} subcategoryRequired categories={dbData.categories} subcategories={dbData.subcategories} assetTypes={dbData.assetTypes} dataReady={!loading}
+                  onCategoryChange={(value, record) => setStock(current => ({ ...current, category: value, categoryId: record?.categoryid || record?.category_id || '', subcategory: '', subcategoryId: '', assetType: '', assetTypeId: '' }))}
+                  onSubcategoryChange={(value, record) => setStock(current => ({ ...current, subcategory: value, subcategoryId: record?.subcategoryid || record?.subcategory_id || '' }))}
+                  onAssetTypeChange={(value, record) => setStock(current => ({ ...current, assetType: value, assetTypeId: record?.assettypeid || record?.asset_type_id || '' }))} />
                 <div className="asset-register-grid asset-register-grid-main">
                   <label><span className="asset-register-label">Stock item name *</span><input value={stock.name} onChange={event => setStock(current => ({ ...current, name: event.target.value }))} placeholder="e.g. A4 paper ream" required /></label>
                   <label><span className="asset-register-label">Branch *</span><select value={stock.branch} onChange={event => setStock(current => ({ ...current, branch: event.target.value }))} required><option value="">Select branch</option>{dbData.branches.map(branch => <option key={branch} value={branch}>{branch}</option>)}</select></label>
@@ -205,9 +207,10 @@ export default function AddAsset() {
 
             <section className="asset-register-card">
               <div className="asset-card-heading"><div><span>02 · ITEM DETAILS</span><h2>What are you registering?</h2></div><Link to="/assets/categories">Manage categories ↗</Link></div>
-              <AssetCategoryFields type="ASSET" category={asset.category} subcategory={asset.subcategory} subcategoryRequired categories={dbData.categories} subcategories={dbData.subcategories} dataReady={!loading}
-                onCategoryChange={value => setAsset(current => ({ ...current, category: value, subcategory: '' }))}
-                onSubcategoryChange={value => { setAsset(current => ({ ...current, subcategory: value })); setCustomFields([]); }} />
+              <AssetCategoryFields type="ASSET" category={asset.category} subcategory={asset.subcategory} assetType={asset.assetType} subcategoryRequired categories={dbData.categories} subcategories={dbData.subcategories} assetTypes={dbData.assetTypes} dataReady={!loading}
+                onCategoryChange={(value, record) => setAsset(current => ({ ...current, category: value, categoryId: record?.categoryid || record?.category_id || '', subcategory: '', subcategoryId: '', assetType: '', assetTypeId: '' }))}
+                onSubcategoryChange={(value, record) => { setAsset(current => ({ ...current, subcategory: value, subcategoryId: record?.subcategoryid || record?.subcategory_id || '' })); setCustomFields([]); }}
+                onAssetTypeChange={(value, record) => setAsset(current => ({ ...current, assetType: value, assetTypeId: record?.assettypeid || record?.asset_type_id || '' }))} />
               <div className="asset-register-grid asset-register-grid-main">
                 <label><span className="asset-register-label">Asset name *</span><input value={asset.name} onChange={event => setField('name', event.target.value)} placeholder="e.g. Training room keyboard" required /></label>
                 {isQuantity && <label><span className="asset-register-label">Number of units *</span><input type="number" min="1" step="1" inputMode="numeric" value={asset.quantity} onChange={event => setField('quantity', event.target.value)} required /><small>Count the identical units in this group.</small></label>}
@@ -241,7 +244,7 @@ export default function AddAsset() {
               <div className="asset-register-photo"><div><ImageIcon size={20} /><span><b>Condition photo</b><small>Optional · attach a photo of the item or group.</small></span></div><label>{assetPhoto ? <CheckCircle size={17} /> : <UploadSimple size={17} />}{assetPhoto ? 'Change photo' : 'Add photo'}<input type="file" accept="image/*" capture="environment" onChange={event => setPhoto(event.target.files?.[0] || null)} /></label>{assetPhotoPreview && <img src={assetPhotoPreview} alt="Asset condition preview" />}</div>
             </details>
 
-            <footer className="asset-register-submit"><span>Depreciation and accounting settings are managed separately from this quick registration.</span><button type="submit" disabled={isSubmitting}>{isSubmitting ? <><CircleNotch size={19} className="ph-spin" /> Saving record…</> : <><CheckCircle size={19} /> {isQuantity ? 'Save quantity group' : 'Register item'}</>}</button></footer>
+            <footer className="asset-register-submit"><span>One registration flow for tracked equipment and quantity based stock.</span><button type="submit" disabled={isSubmitting}>{isSubmitting ? <><CircleNotch size={19} className="ph-spin" /> Saving record…</> : <><CheckCircle size={19} /> {isQuantity ? 'Save quantity group' : 'Register item'}</>}</button></footer>
             </>}
           </form>}
     </main>

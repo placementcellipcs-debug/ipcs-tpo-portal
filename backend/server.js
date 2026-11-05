@@ -648,6 +648,7 @@ app.post('/api/v1/assets/maintenance/resolve', assetControllers.resolveMaintenan
 // 🚨 SYSTEM CONFIGURATION ROUTES (CATEGORIES, LOCATIONS, VENDORS)
 app.post('/api/v1/assets/config/category', requireSession('asset-admin'), assetControllers.addCategory);
 app.post('/api/v1/assets/config/subcategory', requireSession('asset-admin'), assetControllers.addSubcategory);
+app.post('/api/v1/assets/config/asset-type', requireSession('asset-admin'), assetControllers.addAssetType);
 app.post('/api/v1/assets/config/location', requireSession('asset-admin'), assetControllers.addLocation);
 app.post('/api/v1/assets/config/vendor', requireSession('asset-admin'), assetControllers.addVendor);
 

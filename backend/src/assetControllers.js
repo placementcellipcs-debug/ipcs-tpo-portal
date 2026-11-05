@@ -1,7 +1,8 @@
-const { assetDoc, getAssetCache, getAssetCacheUpdatedAt, refreshAssetCache } = require('./assetConfig');
+const { assetDoc, getAssetCache, getAssetCacheUpdatedAt, isAssetCacheReady, refreshAssetCache } = require('./assetConfig');
 const { getCache, uploadToDrive, sendIPCSMail, logPortalAuditEvent } = require('./config');
 const { randomBytes } = require('crypto');
 const { formatIndiaTimestamp } = require('./utils/dateTime');
+const assetTaxonomy = require('./assetTaxonomy');
 
 // Helper to safely map sheet headers regardless of spaces or cases
 const getH = (headers, target) => {
@@ -30,14 +31,36 @@ async function ensureAssetHeaders(sheet, requiredHeaders) {
 }
 const normalize = value => String(value || '').trim().toLowerCase().replace(/\s*branch\s*/g, ' ').replace(/[^a-z0-9]/g, '');
 const normalizeHeader = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+const stableCategoryCode = (name, existingRows, headers) => {
+  const codeHeader = getH(headers, 'Category_Code');
+  const idHeader = getH(headers, 'Category_ID');
+  const used = new Set(existingRows.flatMap(row => [row.get(codeHeader), row.get(idHeader)]).map(value => normalizeHeader(value)).filter(Boolean));
+  const base = String(name || '').trim().split(/[^A-Za-z0-9]+/).filter(Boolean).map(word => word[0]).join('').toUpperCase().slice(0, 6) || 'CAT';
+  let candidate = base;
+  for (let suffix = 2; used.has(normalizeHeader(candidate)); suffix += 1) candidate = `${base}${suffix}`;
+  return candidate;
+};
+const nextHierarchyId = (rows, headers, idField, prefix, parentField, parentId) => {
+  const idHeader = getH(headers, idField);
+  const parentHeader = parentField ? getH(headers, parentField) : null;
+  const regex = new RegExp(`^${String(prefix)}-(?:SC|T)(\\d+)$`, 'i');
+  let max = 0;
+  rows.forEach(row => {
+    if (parentHeader && normalize(row.get(parentHeader)) !== normalize(parentId)) return;
+    const match = String(row.get(idHeader) || '').trim().match(regex);
+    if (match) max = Math.max(max, Number(match[1]));
+  });
+  const marker = idField === 'Subcategory_ID' ? 'SC' : 'T';
+  return `${prefix}-${marker}${String(max + 1).padStart(2, '0')}`;
+};
 const findAssetSheet = kind => {
   const wanted = normalizeHeader(kind);
   const sheets = assetDoc.sheetsByIndex || [];
   const base = sheet => normalizeHeader(sheet.title).replace(/^\d+/, '');
-  const accepted = wanted === 'categories' ? ['categories', 'assetcategories']
-    : wanted === 'subcategories' ? ['subcategories', 'assetsubcategories'] : [wanted, `asset${wanted}`];
-  return sheets.find(sheet => accepted.includes(normalizeHeader(sheet.title)))
-    || sheets.find(sheet => accepted.includes(base(sheet)))
+  const accepted = wanted === 'categories' ? ['assetcategorymasterv3']
+    : wanted === 'subcategories' ? ['assetsubcategorymasterv3']
+      : wanted === 'assettypes' ? ['assettypemasterv3'] : [wanted, `asset${wanted}`];
+  return accepted.map(candidate => sheets.find(sheet => normalizeHeader(sheet.title) === candidate || base(sheet) === candidate)).find(Boolean)
     || null;
 };
 const rowValue = (row, field) => {
@@ -54,25 +77,36 @@ const sheetByKey = key => {
   const sheets = assetDoc.sheetsByIndex || [];
   const normalizeTitle = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const aliases = {
-    assets: ['assets', 'assetregister'], assignments: ['assetassignments', 'assignments', 'assetassignment'],
-    history: ['assethistory', 'history', 'assetregisterhistory'], disposals: ['assetdisposals', 'disposals', 'assetdisposal'],
-    assetapprovals: ['assetapprovals'], transfers: ['assettransfers', 'transfers'],
-    inventory: ['assetinventory', 'inventory'], inventorytransaction: ['assetinventorytransactions', 'inventorytransactions', 'inventorytransaction'],
-    assetactivitylog: ['assetactivitylog'], assetqrregistry: ['assetqrregistry'], assetcustomdata: ['assetcustomdata'],
-    documents: ['assetdocuments', 'documents', 'documentregister'], maintenance: ['assetmaintenance', 'maintenance'],
-    categories: ['assetcategories', 'categories'], subcategories: ['assetsubcategories', 'subcategories']
+    assets: ['assetregisterv3'], assignments: ['assetassignmentsv3'],
+    history: ['assethistoryv3'], disposals: ['assetdisposalsv3'],
+    assetapprovals: ['assetapprovalsv3'], transfers: ['assettransfersv3'],
+    inventory: ['assetinventoryv3'], inventorytransaction: ['assetinventorytransactionsv3'],
+    assetactivitylog: ['assetactivitylogv3'], assetqrregistry: ['assetqrregistryv3'], assetcustomdata: ['assetcustomdatav3'],
+    documents: ['assetdocumentsv3'], maintenance: ['assetmaintenancev3'],
+    locations: ['assetlocationsv3'], vendors: ['assetvendorsv3'],
+    categories: ['assetcategorymasterv3'],
+    subcategories: ['assetsubcategorymasterv3'],
+    assetcategorymaster: ['assetcategorymasterv3'],
+    assetsubcategorymaster: ['assetsubcategorymasterv3'],
+    assettypemaster: ['assettypemasterv3'],
+    assettypes: ['assettypemasterv3']
   };
   const accepted = aliases[key] || [key];
   const normalizedBase = sheet => normalizeTitle(sheet.title).replace(/^\d+/, '');
-  return sheets.find(sheet => normalizeTitle(sheet.title) === key)
-    || sheets.find(sheet => accepted.includes(normalizeTitle(sheet.title)))
-    || sheets.find(sheet => accepted.includes(normalizedBase(sheet)))
-    || sheets.find(sheet => normalizedBase(sheet).startsWith('asset') && accepted.includes(normalizedBase(sheet)))
-    || null;
+  return accepted.map(candidate => sheets.find(sheet => normalizeTitle(sheet.title) === candidate || normalizedBase(sheet) === candidate)).find(Boolean) || null;
 };
 const cacheAppendedRow = (key, row) => {
   const cache = getAssetCache();
   if (row && Array.isArray(cache?.[key])) cache[key].push(row);
+};
+const respondWhileAssetDataLoads = res => {
+  if (isAssetCacheReady()) return false;
+  res.status(503).json({
+    success: false,
+    code: 'ASSET_DATA_LOADING',
+    message: 'Asset data is still syncing from the workbook. Please retry in a few seconds.'
+  });
+  return true;
 };
 
 async function appendAssetActivity(req, event) {
@@ -319,6 +353,7 @@ function getVisibleAssetActivity(req, cache) {
 // =========================================================
 exports.getAssetDashboardStats = async (req, res) => {
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const cache = getAssetCache();
     const assets = (cache.assets || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'Branch')));
     const allowedAssetIds = new Set(assets.map(row => String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase()));
@@ -456,6 +491,7 @@ exports.getAssetDashboardStats = async (req, res) => {
 
 exports.sendAssetSummaryEmail = async (req, res) => {
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const recipient = String(req.portalUser?.email || '').trim().toLowerCase();
     if (!recipient) return res.status(400).json({ success: false, message: 'Your portal account does not have an email address.' });
     const cache = getAssetCache();
@@ -489,6 +525,7 @@ exports.sendAssetSummaryEmail = async (req, res) => {
 
 exports.getAssetActivity = (req, res) => {
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const cache = getAssetCache();
     const assetsById = new Map((cache.assets || []).map(row => [String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase(), row]));
     const requestedAssetId = String(req.query.assetId || '').trim().toLowerCase();
@@ -509,6 +546,7 @@ exports.getAssetActivity = (req, res) => {
 
 exports.getAssetNotifications = (req, res) => {
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const cache = getAssetCache();
     const userEmail = String(req.portalUser?.email || '').trim().toLowerCase();
     const isAdmin = isAssetAdmin(req);
@@ -532,6 +570,7 @@ exports.getAssetNotifications = (req, res) => {
 // =========================================================
 exports.getRegistrationData = async (req, res) => {
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const cache = getAssetCache();
     const gCache = getCache();
     // Prefer the Asset Management workbook's own branch list. Use the portal's
@@ -553,8 +592,7 @@ exports.getRegistrationData = async (req, res) => {
     // Map Asset DB Sheets, accepting either a flat Categories table with one
     // category/subcategory pair per row or separate Categories/Subcategories tabs.
     const mapSheet = (rows) => rows.map(r => {
-      if (typeof r.toObject !== 'function') return {};
-      const obj = r.toObject();
+      const obj = typeof r?.toObject === 'function' ? r.toObject() : (r || {});
       const cleanObj = {};
       Object.keys(obj).forEach(k => { 
         cleanObj[k.toLowerCase().replace(/[^a-z0-9]/g, '')] = obj[k]; 
@@ -562,8 +600,9 @@ exports.getRegistrationData = async (req, res) => {
       return cleanObj;
     });
     const locations = mapSheet(cache.locations || []);
-    const rawCategories = mapSheet(cache.categories || []);
-    const rawSubcategories = mapSheet(cache.subcategories || []);
+    const rawCategories = mapSheet(cache.assetcategorymaster?.length ? cache.assetcategorymaster : assetTaxonomy.categoryRows);
+    const rawSubcategories = mapSheet(cache.assetsubcategorymaster?.length ? cache.assetsubcategorymaster : assetTaxonomy.subcategoryRows);
+    const rawAssetTypes = mapSheet(cache.assettypemaster?.length ? cache.assettypemaster : assetTaxonomy.assetTypeRows);
     const active = row => {
       const status = String(row.status || '').trim().toLowerCase();
       return !status || ['active', 'enabled', 'current'].includes(status);
@@ -579,7 +618,7 @@ exports.getRegistrationData = async (req, res) => {
       // Existing category tabs predate the Type field. Treat their entries as
       // durable assets so they remain usable in the unified registration flow.
       const rawType = cleanName(typeValue).toUpperCase();
-      const type = !rawType ? 'ASSET' : rawType.includes('CONSUM') || rawType.includes('STOCK') ? 'CONSUMABLE' : 'ASSET';
+      const type = rawType.includes('GENERAL') ? 'GENERAL' : !rawType ? 'ASSET' : rawType.includes('CONSUM') || rawType.includes('STOCK') ? 'CONSUMABLE' : 'ASSET';
       const key = categoryKey(name, type);
       const idKey = normalize(idValue);
       let category = (idKey && categoryById.get(idKey)) || categoryByNameAndType.get(key);
@@ -624,7 +663,25 @@ exports.getRegistrationData = async (req, res) => {
       const key = `${normalize(canonicalParentId || categoryNameValue)}|${normalize(name)}`;
       if (subcategoryKeys.has(key)) return;
       subcategoryKeys.add(key);
-      subcategories.push({ categoryid: canonicalParentId, categoryname: categoryNameValue, name, subcategoryid: cleanName(row.subcategoryid), status: cleanName(row.status) || 'ACTIVE' });
+      subcategories.push({ categoryid: canonicalParentId, categoryname: categoryNameValue, name, subcategoryid: cleanName(row.subcategoryid), type: cleanName(row.type).toUpperCase() || category?.type || 'ASSET', status: cleanName(row.status) || 'ACTIVE' });
+    });
+
+    const assetTypeKeys = new Set();
+    const assetTypes = rawAssetTypes.filter(active).map(row => ({
+      assettypeid: cleanName(row.assettypeid || row.typeid),
+      categoryid: cleanName(row.categoryid),
+      categoryname: cleanName(row.categoryname),
+      subcategoryid: cleanName(row.subcategoryid),
+      subcategoryname: cleanName(row.subcategoryname),
+      name: cleanName(row.assettypename || row.assettype || row.name),
+      type: cleanName(row.type).toUpperCase() || 'ASSET',
+      status: cleanName(row.status) || 'ACTIVE'
+    })).filter(row => {
+      if (!row.name) return false;
+      const key = `${normalize(row.subcategoryid || row.subcategoryname)}|${normalize(row.name)}`;
+      if (assetTypeKeys.has(key)) return false;
+      assetTypeKeys.add(key);
+      return true;
     });
 
     res.json({ 
@@ -632,6 +689,7 @@ exports.getRegistrationData = async (req, res) => {
       branches, 
       categories: categories.sort((a, b) => a.categoryname.localeCompare(b.categoryname)),
       subcategories: subcategories.sort((a, b) => a.name.localeCompare(b.name)),
+      assetTypes: assetTypes.sort((a, b) => a.name.localeCompare(b.name)),
       locations,
       vendors: mapSheet(cache.vendors || []) 
     });
@@ -650,7 +708,7 @@ exports.addAsset = async (req, res) => {
     const { userName, userEmail } = req.body || {};
     const asset = parseJsonField(req.body?.asset, {});
     const customFields = parseJsonField(req.body?.customFields, []);
-    if (!asset?.name || !asset?.category || !asset?.branch) return res.status(400).json({ success: false, message: 'Asset name, category, and branch are required.' });
+    if (!asset?.name || !asset?.category || !asset?.subcategory || !asset?.assetType || !asset?.branch) return res.status(400).json({ success: false, message: 'Item name, category, subcategory, asset type, and branch are required.' });
     if (!canAccessAssetBranch(req, asset.branch)) return res.status(403).json({ success: false, message: 'You cannot register an asset for that branch.' });
 
     const trackingMode = String(asset.trackingMode || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY' ? 'QUANTITY' : 'INDIVIDUAL';
@@ -667,10 +725,9 @@ exports.addAsset = async (req, res) => {
     if (!assetSheet) return res.status(404).json({ success: false, message: "Asset sheet missing in database." });
     if (req.file && !documentsSheet) return res.status(503).json({ success: false, message: 'Asset photo history is unavailable. No asset was registered.' });
     const assetHeaders = await ensureAssetHeaders(assetSheet, [
-      'Asset_ID', 'Asset_Name', 'Category', 'Subcategory', 'Branch', 'Location',
+      'Asset_ID', 'Record_Type', 'Asset_Name', 'Category', 'Category_ID', 'Subcategory', 'Subcategory_ID', 'Asset_Type', 'Asset_Type_ID', 'Branch', 'Location',
       'Status', 'Condition', 'Brand', 'Model', 'Purchase_Date', 'Purchase_Cost',
-      'Vendor', 'Invoice_Number', 'Warranty_End', 'Depreciation_Method',
-      'Useful_Life_Years', 'Salvage_Value', 'Created_By', 'Timestamp', 'Tracking_Mode', 'Quantity'
+      'Vendor', 'Invoice_Number', 'Warranty_End', 'Created_By', 'Timestamp', 'Tracking_Mode', 'Quantity', 'Serial_Number'
     ]);
 
     // Generate Unique IDs
@@ -681,27 +738,58 @@ exports.addAsset = async (req, res) => {
     assetId = `IPCS-AST-${new Date().getFullYear()}-${randomBytes(6).toString('hex').toUpperCase()}`;
     const photoUrl = req.file ? await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || '') : '';
 
+    const taxonomyRows = (rows, fallback) => (rows?.length ? rows : fallback).map(row => row?.toObject?.() || row || {});
+    const categoryRows = taxonomyRows(getAssetCache()?.assetcategorymaster, assetTaxonomy.categoryRows);
+    const subcategoryRows = taxonomyRows(getAssetCache()?.assetsubcategorymaster, assetTaxonomy.subcategoryRows);
+    const assetTypeRows = taxonomyRows(getAssetCache()?.assettypemaster, assetTaxonomy.assetTypeRows);
+    const taxonomyValue = (row, field) => {
+      const values = row?.toObject?.() || row || {};
+      const key = Object.keys(values).find(name => normalizeHeader(name) === normalizeHeader(field));
+      return key ? values[key] : '';
+    };
+    const selectedCategory = categoryRows.find(row => asset.categoryId
+      ? normalize(taxonomyValue(row, 'Category_ID')) === normalize(asset.categoryId)
+      : normalize(taxonomyValue(row, 'Category_Name')) === normalize(asset.category));
+    const selectedCategoryId = taxonomyValue(selectedCategory, 'Category_ID');
+    const selectedSubcategory = subcategoryRows.find(row => (asset.subcategoryId
+      ? normalize(taxonomyValue(row, 'Subcategory_ID')) === normalize(asset.subcategoryId)
+      : normalize(taxonomyValue(row, 'Subcategory_Name')) === normalize(asset.subcategory))
+      && normalize(taxonomyValue(row, 'Category_ID')) === normalize(selectedCategoryId));
+    const selectedSubcategoryId = taxonomyValue(selectedSubcategory, 'Subcategory_ID');
+    const selectedAssetType = assetTypeRows.find(row => (asset.assetTypeId
+      ? normalize(taxonomyValue(row, 'Asset_Type_ID')) === normalize(asset.assetTypeId)
+      : normalize(taxonomyValue(row, 'Asset_Type_Name')) === normalize(asset.assetType))
+      && normalize(taxonomyValue(row, 'Subcategory_ID')) === normalize(selectedSubcategoryId));
+    if (!selectedCategory || !selectedSubcategory || !selectedAssetType) {
+      return res.status(400).json({ success: false, message: 'Select a valid category, subcategory, and asset type from the classification library.' });
+    }
+    const selectedTypeClass = String(taxonomyValue(selectedAssetType, 'Type') || taxonomyValue(selectedSubcategory, 'Type') || taxonomyValue(selectedCategory, 'Type') || 'ASSET').trim().toUpperCase();
+    if (selectedTypeClass === 'CONSUMABLE') return res.status(400).json({ success: false, message: 'This item type is classified as consumable stock. Register it from the unified registration page using Consumable stock.' });
+
     // 1. Write to Main Assets Sheet
     const aH = assetHeaders;
     await assetSheet.addRow({
       [getH(aH, 'Asset_ID')]: assetId,
+      [getH(aH, 'Record_Type')]: 'ASSET',
       [getH(aH, 'Asset_Name')]: asset.name,
       [getH(aH, 'Category')]: asset.category,
+      [getH(aH, 'Category_ID')]: selectedCategoryId,
       [getH(aH, 'Subcategory')]: asset.subcategory,
+      [getH(aH, 'Subcategory_ID')]: selectedSubcategoryId,
+      [getH(aH, 'Asset_Type')]: asset.assetType,
+      [getH(aH, 'Asset_Type_ID')]: taxonomyValue(selectedAssetType, 'Asset_Type_ID'),
       [getH(aH, 'Branch')]: asset.branch,
       [getH(aH, 'Location')]: asset.location,
       [getH(aH, 'Status')]: 'AVAILABLE',
       [getH(aH, 'Condition')]: asset.condition,
       [getH(aH, 'Brand')]: asset.brand || '',
       [getH(aH, 'Model')]: asset.model || '',
+      [getH(aH, 'Serial_Number')]: asset.serialNumber || '',
       [getH(aH, 'Purchase_Date')]: asset.purchaseDate || '',
       [getH(aH, 'Purchase_Cost')]: asset.purchaseCost || '',
       [getH(aH, 'Vendor')]: asset.vendor || '',
       [getH(aH, 'Invoice_Number')]: asset.invoice || '',
       [getH(aH, 'Warranty_End')]: asset.warrantyEnd || '',
-      [getH(aH, 'Depreciation_Method')]: asset.depreciationMethod || 'NONE',
-      [getH(aH, 'Useful_Life_Years')]: asset.usefulLifeYears || '',
-      [getH(aH, 'Salvage_Value')]: asset.salvageValue || '',
       [getH(aH, 'Created_By')]: userName,
       [getH(aH, 'Timestamp')]: timestamp,
       [getH(aH, 'Tracking_Mode')]: trackingMode,
@@ -773,6 +861,7 @@ exports.addAsset = async (req, res) => {
 // =========================================================
 exports.getAssets = async (req, res) => {
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const cache = getAssetCache();
     const rawAssets = (cache.assets || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'Branch')));
 
@@ -799,6 +888,7 @@ exports.getAssets = async (req, res) => {
         name: getVal('assetname'),
         category: getVal('category'),
         subcategory: getVal('subcategory'),
+        assetType: getVal('assettype'),
         trackingMode: String(getVal('trackingmode') || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY' ? 'QUANTITY' : 'INDIVIDUAL',
         quantity: String(getVal('trackingmode') || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY' ? Math.max(1, parseInt(getVal('quantity'), 10) || 1) : 1,
         branch: getVal('branch'),
@@ -810,16 +900,10 @@ exports.getAssets = async (req, res) => {
         brand: getVal('brand'),
         model: getVal('model'),
         purchaseDate: getVal('purchasedate'),
-        depreciationMethod: getVal('depreciationmethod') || 'NONE',
-        usefulLifeYears: getVal('usefullifeyears'),
-        salvageValue: isAssetAdmin(req) ? getVal('salvagevalue') : '',
         purchaseCost: isAssetAdmin(req) ? getVal('purchasecost') : '',
         vendor: getVal('vendor'),
         invoice: getVal('invoicenumber'),
         warrantyEnd: getVal('warrantyend'),
-        depreciationMethod: getVal('depreciationmethod') || 'NONE',
-        usefulLifeYears: getVal('usefullifeyears'),
-        salvageValue: isAssetAdmin(req) ? getVal('salvagevalue') : '',
         createdBy: getVal('createdby'),
         timestamp: getVal('timestamp'),
         photoUrl: photos.length ? rowValue(photos[photos.length - 1], 'Drive_URL') : ''
@@ -837,6 +921,7 @@ exports.getAssets = async (req, res) => {
 // =========================================================
 exports.getAssetDetails = async (req, res) => {
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const { assetId } = req.params;
     const cache = getAssetCache();
     const cleanId = assetId.toString().trim().toLowerCase();
@@ -910,6 +995,7 @@ exports.getAssetDetails = async (req, res) => {
       assetId: readAssetValue('assetid'),
       name: readAssetValue('assetname') || readAssetValue('name') || readAssetValue('itemname'),
       category: readAssetValue('category'), subcategory: readAssetValue('subcategory'),
+      assetType: readAssetValue('assettype'),
       branch: readAssetValue('branch'), location: readAssetValue('location'),
       status: readAssetValue('status') || 'AVAILABLE', condition: readAssetValue('condition') || 'GOOD',
       brand: readAssetValue('brand'), model: readAssetValue('model'),
@@ -918,8 +1004,6 @@ exports.getAssetDetails = async (req, res) => {
       trackingMode: String(readAssetValue('trackingmode') || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY' ? 'QUANTITY' : 'INDIVIDUAL',
       quantity: String(readAssetValue('trackingmode') || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY' ? Math.max(1, parseInt(readAssetValue('quantity'), 10) || 1) : 1,
       purchaseCost: isAssetAdmin(req) ? readAssetValue('purchasecost') : '', warrantyEnd: readAssetValue('warrantyend'),
-      depreciationMethod: readAssetValue('depreciationmethod') || 'NONE', usefulLifeYears: readAssetValue('usefullifeyears'),
-      salvageValue: isAssetAdmin(req) ? readAssetValue('salvagevalue') : '',
       createdBy: readAssetValue('createdby'), registeredAt: readAssetValue('timestamp')
     };
     const vendorKey = String(asset.vendor || '').trim().toLowerCase();
@@ -1140,6 +1224,7 @@ exports.returnAsset = async (req, res) => {
 // =========================================================
 exports.getInventory = async (req, res) => {
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const cache = getAssetCache();
     const inventory = (cache.inventory || []).map(r => {
       const rd = r.toObject(); 
@@ -1150,8 +1235,12 @@ exports.getInventory = async (req, res) => {
       return { 
         itemId: getV('itemid'), 
         name: getV('itemname'), 
+        categoryId: getV('categoryid'),
         category: getV('category'),
+        subcategoryId: getV('subcategoryid'),
         subcategory: getV('subcategory'),
+        assetTypeId: getV('assettypeid'),
+        assetType: getV('assettype'),
         branch: getV('branch'), 
         quantity: parseInt(getV('quantity') || 0), 
         minQuantity: parseInt(getV('minimumquantity') || 0), 
@@ -1179,19 +1268,55 @@ exports.addInventory = async (req, res) => {
     
     if (!invSheet) return res.status(404).json({ success: false, message: "Inventory sheet missing." });
 
-    const itemId = `INV-${Date.now().toString().slice(-6)}`;
-    const timestamp = formatIndiaTimestamp();
+    if (!item?.subcategory || !item?.assetType) return res.status(400).json({ success: false, message: 'Choose a subcategory and item type.' });
 
-    const iH = await ensureAssetHeaders(invSheet, ['Item_ID', 'Item_Name', 'Category', 'Subcategory', 'Branch', 'Quantity', 'Minimum_Quantity', 'Status', 'Updated_At']);
+    const cache = getAssetCache() || {};
+    const categoryRows = cache.assetcategorymaster?.length ? cache.assetcategorymaster : assetTaxonomy.categoryRows;
+    const subcategoryRows = cache.assetsubcategorymaster?.length ? cache.assetsubcategorymaster : assetTaxonomy.subcategoryRows;
+    const assetTypeRows = cache.assettypemaster?.length ? cache.assettypemaster : assetTaxonomy.assetTypeRows;
+    const plain = row => row?.toObject?.() || row || {};
+    const value = (row, field) => {
+      const values = plain(row);
+      const key = Object.keys(values).find(header => normalizeHeader(header) === normalizeHeader(field));
+      return key ? values[key] : '';
+    };
+    const selectedCategory = categoryRows.find(row => item.categoryId
+      ? normalize(value(row, 'Category_ID')) === normalize(item.categoryId)
+      : normalize(value(row, 'Category_Name')) === normalize(item.category));
+    const selectedCategoryId = value(selectedCategory, 'Category_ID');
+    const selectedSubcategory = subcategoryRows.find(row => (item.subcategoryId
+      ? normalize(value(row, 'Subcategory_ID')) === normalize(item.subcategoryId)
+      : normalize(value(row, 'Subcategory_Name')) === normalize(item.subcategory))
+      && normalize(value(row, 'Category_ID')) === normalize(selectedCategoryId));
+    const selectedSubcategoryId = value(selectedSubcategory, 'Subcategory_ID');
+    const selectedAssetType = assetTypeRows.find(row => (item.assetTypeId
+      ? normalize(value(row, 'Asset_Type_ID')) === normalize(item.assetTypeId)
+      : normalize(value(row, 'Asset_Type_Name')) === normalize(item.assetType))
+      && normalize(value(row, 'Subcategory_ID')) === normalize(selectedSubcategoryId));
+    if (!selectedCategory || !selectedSubcategory || !selectedAssetType) {
+      return res.status(400).json({ success: false, message: 'Select a valid category, subcategory, and item type from the classification library.' });
+    }
+    const selectedTypeClass = String(value(selectedAssetType, 'Type') || value(selectedSubcategory, 'Type') || value(selectedCategory, 'Type') || 'ASSET').trim().toUpperCase();
+    if (selectedTypeClass !== 'CONSUMABLE') return res.status(400).json({ success: false, message: 'This item type is a trackable asset. Register it using the asset option.' });
+
+    const itemId = `INV-${new Date().getFullYear()}-${randomBytes(5).toString('hex').toUpperCase()}`;
+    const timestamp = formatIndiaTimestamp();
+    const iH = await ensureAssetHeaders(invSheet, ['Item_ID', 'Record_Type', 'Item_Name', 'Category', 'Category_ID', 'Subcategory', 'Subcategory_ID', 'Asset_Type', 'Asset_Type_ID', 'Branch', 'Quantity', 'Minimum_Quantity', 'Status', 'Created_By', 'Updated_At']);
     await invSheet.addRow({
-      [getH(iH, 'Item_ID')]: itemId, 
-      [getH(iH, 'Item_Name')]: item.name, 
-      [getH(iH, 'Category')]: item.category, 
+      [getH(iH, 'Record_Type')]: 'CONSUMABLE',
+      [getH(iH, 'Item_ID')]: itemId,
+      [getH(iH, 'Item_Name')]: item.name,
+      [getH(iH, 'Category')]: item.category,
+      [getH(iH, 'Category_ID')]: selectedCategoryId,
       [getH(iH, 'Subcategory')]: item.subcategory || '',
+      [getH(iH, 'Subcategory_ID')]: selectedSubcategoryId,
+      [getH(iH, 'Asset_Type')]: item.assetType,
+      [getH(iH, 'Asset_Type_ID')]: value(selectedAssetType, 'Asset_Type_ID'),
       [getH(iH, 'Branch')]: item.branch,
       [getH(iH, 'Quantity')]: quantity,
       [getH(iH, 'Minimum_Quantity')]: minimumQuantity,
       [getH(iH, 'Status')]: quantity === 0 ? 'OUT OF STOCK' : quantity <= minimumQuantity ? 'LOW STOCK' : 'IN STOCK',
+      [getH(iH, 'Created_By')]: userName || req.portalUser?.name || req.portalUser?.email || '',
       [getH(iH, 'Updated_At')]: timestamp
     });
 
@@ -1199,18 +1324,18 @@ exports.addInventory = async (req, res) => {
     if (txSheet) {
       const tH = await ensureAssetHeaders(txSheet, ['Transaction_ID', 'Item_ID', 'Type', 'Quantity', 'Previous', 'New', 'Performed_By', 'Date']);
       await txSheet.addRow({ 
-        [getH(tH, 'Transaction_ID')]: `TX-${Date.now()}`, 
-        [getH(tH, 'Item_ID')]: itemId, 
-        [getH(tH, 'Type')]: 'INITIAL_STOCK', 
-        [getH(tH, 'Quantity')]: item.quantity, 
-        [getH(tH, 'Previous')]: 0, 
-        [getH(tH, 'New')]: item.quantity, 
-        [getH(tH, 'Performed_By')]: userName, 
-        [getH(tH, 'Date')]: timestamp 
+        [getH(tH, 'Transaction_ID')]: `TX-${Date.now()}`,
+        [getH(tH, 'Item_ID')]: itemId,
+        [getH(tH, 'Type')]: 'INITIAL_STOCK',
+        [getH(tH, 'Quantity')]: quantity,
+        [getH(tH, 'Previous')]: 0,
+        [getH(tH, 'New')]: item.quantity,
+        [getH(tH, 'Performed_By')]: userName,
+        [getH(tH, 'Date')]: timestamp
       });
     }
 
-    await appendAssetActivity(req, { action: 'INVENTORY_CREATED', entityType: 'Inventory', entityId: itemId, branch: item.branch, after: { name: item.name, quantity, minimumQuantity } });
+    await appendAssetActivity(req, { action: 'INVENTORY_CREATED', entityType: 'Inventory', entityId: itemId, branch: item.branch, after: { name: item.name, category: item.category, subcategory: item.subcategory, assetType: item.assetType, quantity, minimumQuantity } });
     
     refreshAssetCache(); 
     res.json({ success: true, message: "Item added to inventory!" });
@@ -1287,6 +1412,7 @@ exports.updateStock = async (req, res) => {
 // =========================================================
 exports.getTransfers = async (req, res) => {
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const cache = getAssetCache();
     const transfers = (cache.transfers || []).map(r => {
       const rd = r.toObject(); 
@@ -1320,10 +1446,10 @@ exports.requestTransfer = async (req, res) => {
   try {
     const { assetId, toBranch, remarks, userName } = req.body || {};
     if (!assetId || !toBranch) return res.status(400).json({ success: false, message: 'Asset and destination branch are required.' });
-    const trfSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('transfers'));
+    const trfSheet = sheetByKey('transfers');
     if (!trfSheet) return res.status(503).json({ success: false, message: 'Transfer register is unavailable.' });
     const tH = trfSheet.headerValues;
-    const assetSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'));
+    const assetSheet = sheetByKey('assets');
     if (!assetSheet) return res.status(503).json({ success: false, message: 'Asset register is unavailable.' });
     const rows = await assetSheet.getRows();
     const assetRow = rows.find(r => { 
@@ -1385,7 +1511,7 @@ exports.approveTransfer = async (req, res) => {
     if (!isAssetApprover(req)) return res.status(403).json({ success: false, message: 'Only Rakesh can approve asset transfers.' });
     const { transferId, userName } = req.body || {};
     if (!transferId) return res.status(400).json({ success: false, message: 'Transfer ID is required.' });
-    const trfSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('transfers'));
+    const trfSheet = sheetByKey('transfers');
     if (!trfSheet) return res.status(503).json({ success: false, message: 'Transfer register is unavailable.' });
     const rows = await trfSheet.getRows();
     const tH = trfSheet.headerValues;
@@ -1407,7 +1533,7 @@ exports.approveTransfer = async (req, res) => {
     };
     const assetId = String(readTransfer('assetid') || '').trim();
     const fromBranch = String(readTransfer('frombranch') || '').trim();
-    const assetSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'));
+    const assetSheet = sheetByKey('assets');
     if (!assetSheet) return res.status(503).json({ success: false, message: 'Asset register is unavailable.' });
     const aRows = await assetSheet.getRows();
     const assetRow = aRows.find(row => {
@@ -1429,7 +1555,7 @@ exports.approveTransfer = async (req, res) => {
     if (approvedAtHeader) approvalUpdate[approvedAtHeader] = timestamp;
     trfRow.assign(approvalUpdate);
     await trfRow.save();
-    const historySheet = assetDoc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('history'));
+    const historySheet = sheetByKey('history');
     if (historySheet) {
       const h = historySheet.headerValues;
       await historySheet.addRow({
@@ -1517,8 +1643,8 @@ exports.receiveTransfer = async (req, res) => {
   try {
     const { transferId, userName, condition, remarks } = req.body || {};
     if (!transferId) return res.status(400).json({ success: false, message: 'Transfer ID is required.' });
-    const trfSheet = assetDoc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('transfers'));
-    const assetSheet = assetDoc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'));
+    const trfSheet = sheetByKey('transfers');
+    const assetSheet = sheetByKey('assets');
     if (!trfSheet || !assetSheet) return res.status(503).json({ success: false, message: 'Transfer or asset register is unavailable.' });
     const tH = trfSheet.headerValues;
     const transferRow = (await trfSheet.getRows()).find(row => String(row.get(getH(tH, 'Transfer_ID')) || '').trim().toLowerCase() === String(transferId).trim().toLowerCase());
@@ -1555,7 +1681,7 @@ exports.receiveTransfer = async (req, res) => {
     if (completedAtHeader) receiptUpdate[completedAtHeader] = timestamp;
     transferRow.assign(receiptUpdate);
     await transferRow.save();
-    const historySheet = assetDoc.sheetsByIndex.find(sheet => sheet.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('history'));
+    const historySheet = sheetByKey('history');
     if (historySheet) {
       const h = historySheet.headerValues;
       await historySheet.addRow({
@@ -1576,6 +1702,7 @@ exports.receiveTransfer = async (req, res) => {
 // =========================================================
 exports.getMaintenance = async (req, res) => {
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const cache = getAssetCache();
     const scopedAssetIds = new Set((cache.assets || []).filter(row => canAccessAssetBranch(req, rowValue(row, 'Branch'))).map(row => String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase()));
     const maintenance = (cache.maintenance || []).map(r => {
@@ -1605,8 +1732,8 @@ exports.reportMaintenance = async (req, res) => {
   try {
     const { assetId, issue, userName } = req.body || {};
     if (!assetId || !String(issue || '').trim()) return res.status(400).json({ success: false, message: 'Asset and issue description are required.' });
-    const mSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('maintenance'));
-    const assetSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'));
+    const mSheet = sheetByKey('maintenance');
+    const assetSheet = sheetByKey('assets');
     if (!mSheet || !assetSheet) return res.status(503).json({ success: false, message: 'Asset or maintenance register is unavailable.' });
     const assetRows = await assetSheet.getRows();
     const aH = assetSheet.headerValues;
@@ -1651,8 +1778,8 @@ exports.resolveMaintenance = async (req, res) => {
     if (!maintenanceId || !assetId || !String(remarks || '').trim() || !Number.isFinite(Number(cost)) || Number(cost) < 0) {
       return res.status(400).json({ success: false, message: 'Ticket, asset, non-negative repair cost, and corrective action are required.' });
     }
-    const mSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('maintenance'));
-    const assetSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'));
+    const mSheet = sheetByKey('maintenance');
+    const assetSheet = sheetByKey('assets');
     if (!mSheet || !assetSheet) return res.status(503).json({ success: false, message: 'Asset or maintenance register is unavailable.' });
     const mH = mSheet.headerValues;
     const rows = await mSheet.getRows();
@@ -1699,37 +1826,22 @@ exports.addCategory = async (req, res) => {
     const requestedType = String(req.body?.type || 'ASSET').trim().toUpperCase();
     if (!categoryName) return res.status(400).json({ success: false, message: 'Category name is required.' });
     if (!['ASSET', 'CONSUMABLE'].includes(requestedType)) return res.status(400).json({ success: false, message: 'Category type must be ASSET or CONSUMABLE.' });
-    const sheet = findAssetSheet('categories');
-    if (!sheet) return res.status(404).json({ success: false, message: "Categories sheet missing." });
-
-    // The category tables in older workbooks may not have a type column. Add
-    // one so new asset and consumable groups remain distinct in later reads.
-    const h = await ensureAssetHeaders(sheet, ['Type']);
+    const sheet = sheetByKey('assetcategorymaster');
+    if (!sheet) return res.status(503).json({ success: false, message: 'The new asset category library is not available yet.' });
+    const h = await ensureAssetHeaders(sheet, assetTaxonomy.headers.categories);
     const existingRows = await sheet.getRows();
-    const nameHeader = getOptionalH(h, 'Category_Name') || getOptionalH(h, 'Name');
-    if (!nameHeader) return res.status(400).json({ success: false, message: 'The Categories sheet needs a Category_Name column.' });
-    const typeHeader = getOptionalH(h, 'Type') || getOptionalH(h, 'Category_Type');
-    const duplicate = existingRows.some(row => normalize(row.get(nameHeader)) === normalize(categoryName)
-      && (!typeHeader || normalize(row.get(typeHeader) || 'ASSET') === requestedType.toLowerCase()));
+    const nameHeader = getH(h, 'Category_Name');
+    const duplicate = existingRows.some(row => normalize(row.get(nameHeader)) === normalize(categoryName));
     if (duplicate) return res.status(409).json({ success: false, message: 'That category already exists.' });
-    const catId = `CAT-${randomBytes(5).toString('hex').toUpperCase()}`;
-    const categoryRow = {};
-    const setColumn = (field, value) => { const header = getOptionalH(h, field); if (header) categoryRow[header] = value; };
-    setColumn('Category_ID', catId);
-    setColumn('Category_Code', categoryName.substring(0, 3).toUpperCase());
-    setColumn('Category_Name', categoryName);
-    if (!nameHeader || normalizeHeader(nameHeader) !== 'categoryname') categoryRow[nameHeader] = categoryName;
-    setColumn('Type', requestedType);
-    setColumn('Category_Type', requestedType);
-    setColumn('Status', 'ACTIVE');
-    // In the flat category/subcategory layout, keep the new category row
-    // structurally valid and leave its subcategory fields blank.
-    setColumn('Subcategory_ID', '');
-    setColumn('Subcategory_Name', '');
+    const catId = stableCategoryCode(categoryName, existingRows, h);
+    const categoryRow = { Category_ID: catId, Category_Code: catId, Category_Name: categoryName, Type: requestedType, Status: 'ACTIVE' };
     await sheet.addRow(categoryRow);
-
+    const normalized = { categoryid: catId, categorycode: categoryRow.Category_Code, categoryname: categoryName, type: requestedType, status: 'ACTIVE' };
+    const cache = getAssetCache();
+    if (Array.isArray(cache?.assetcategorymaster)) cache.assetcategorymaster.push(normalized);
+    if (cache) cache.categories = cache.assetcategorymaster || cache.categories;
     void refreshAssetCache();
-    res.json({ success: true, message: `Category '${categoryName}' added successfully!`, category: { categoryid: catId, categoryname: categoryName, type: requestedType } });
+    res.json({ success: true, message: `Category '${categoryName}' added successfully!`, category: normalized });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
@@ -1737,68 +1849,115 @@ exports.addSubcategory = async (req, res) => {
   try {
     const categoryId = String(req.body?.categoryId || '').trim();
     const subcategoryName = String(req.body?.subcategoryName || '').trim();
+    const requestedType = String(req.body?.type || 'ASSET').trim().toUpperCase();
     if (!categoryId || !subcategoryName) return res.status(400).json({ success: false, message: 'Parent category and subcategory name are required.' });
-    const categoriesSheet = findAssetSheet('categories');
-    const separateSubcategoriesSheet = findAssetSheet('subcategories');
-    const sheet = separateSubcategoriesSheet || categoriesSheet;
-    if (!sheet || !categoriesSheet) return res.status(404).json({ success: false, message: 'Categories sheet missing.' });
-
-    const categoryHeaders = await ensureAssetHeaders(categoriesSheet, ['Type']);
-    if (sheet !== categoriesSheet) await sheet.loadHeaderRow();
-    const h = sheet === categoriesSheet ? categoryHeaders : (sheet.headerValues || []);
-    const categories = categoriesSheet ? await categoriesSheet.getRows() : [];
-    const categoryIdHeader = getOptionalH(categoryHeaders, 'Category_ID');
-    const categoryNameHeader = getOptionalH(categoryHeaders, 'Category_Name') || getOptionalH(categoryHeaders, 'Name');
-    const categoryTypeHeader = getOptionalH(categoryHeaders, 'Type') || getOptionalH(categoryHeaders, 'Category_Type');
-    const parentCategory = categories.find(row => categoryIdHeader && normalize(row.get(categoryIdHeader)) === normalize(categoryId));
+    if (!['ASSET', 'CONSUMABLE'].includes(requestedType)) return res.status(400).json({ success: false, message: 'Subcategory type must be ASSET or CONSUMABLE.' });
+    const categoriesSheet = sheetByKey('assetcategorymaster');
+    const sheet = sheetByKey('assetsubcategorymaster');
+    if (!sheet || !categoriesSheet) return res.status(503).json({ success: false, message: 'The new asset classification library is not available yet.' });
+    const categoryHeaders = await ensureAssetHeaders(categoriesSheet, assetTaxonomy.headers.categories);
+    const h = await ensureAssetHeaders(sheet, assetTaxonomy.headers.subcategories);
+    const categories = await categoriesSheet.getRows();
+    const categoryIdHeader = getH(categoryHeaders, 'Category_ID');
+    const categoryNameHeader = getH(categoryHeaders, 'Category_Name');
+    const categoryTypeHeader = getH(categoryHeaders, 'Type');
+    const parentCategory = categories.find(row => normalize(row.get(categoryIdHeader)) === normalize(categoryId));
     if (!parentCategory) return res.status(404).json({ success: false, message: 'The selected parent category could not be found.' });
-    const parentCategoryName = (categoryNameHeader && parentCategory.get(categoryNameHeader)) || '';
-    const parentCategoryType = (categoryTypeHeader && parentCategory.get(categoryTypeHeader)) || '';
+    const parentCategoryName = parentCategory.get(categoryNameHeader) || '';
+    const parentCategoryType = String(parentCategory.get(categoryTypeHeader) || '').trim().toUpperCase();
+    if (parentCategoryType !== 'GENERAL' && parentCategoryType && parentCategoryType !== requestedType) {
+      return res.status(400).json({ success: false, message: `Subcategories in this category must be classified as ${parentCategoryType.toLowerCase()}.` });
+    }
+    const subcategoryType = parentCategoryType === 'GENERAL' ? requestedType : parentCategoryType;
     const existingRows = await sheet.getRows();
-    const parentIdHeader = getOptionalH(h, 'Category_ID') || getOptionalH(h, 'Parent_Category_ID');
-    const parentNameHeader = getOptionalH(h, 'Category_Name') || getOptionalH(h, 'Parent_Category') || getOptionalH(h, 'Category');
-    const parentHeader = parentIdHeader || parentNameHeader;
-    const subcategoryIdHeader = getOptionalH(h, 'Subcategory_ID');
-    const subcategoryHeader = getOptionalH(h, 'Subcategory_Name') || getOptionalH(h, 'Name') || getOptionalH(h, 'Subcategory');
-    if (!subcategoryHeader || (!parentHeader && sheet !== categoriesSheet)) return res.status(400).json({ success: false, message: 'The subcategory sheet needs parent category and subcategory name columns.' });
-    const flatCategoryNameHeader = getOptionalH(h, 'Category_Name');
-    const flatParentHeader = parentIdHeader || flatCategoryNameHeader || parentNameHeader;
-    const lookupParentHeader = parentIdHeader ? (categoryIdHeader ? parentIdHeader : parentNameHeader) : (flatParentHeader || parentHeader);
-    const lookupParentValue = parentIdHeader && categoryIdHeader ? categoryId : parentCategoryName;
-    const duplicate = existingRows.some(row => normalize(row.get(lookupParentHeader)) === normalize(lookupParentValue)
+    const parentIdHeader = getH(h, 'Category_ID');
+    const parentNameHeader = getH(h, 'Category_Name');
+    const subcategoryIdHeader = getH(h, 'Subcategory_ID');
+    const subcategoryHeader = getH(h, 'Subcategory_Name');
+    const duplicate = existingRows.some(row => normalize(row.get(parentIdHeader)) === normalize(categoryId)
       && normalize(row.get(subcategoryHeader)) === normalize(subcategoryName));
     if (duplicate) return res.status(409).json({ success: false, message: 'That subcategory already exists in this category.' });
-    const subId = `SUB-${randomBytes(5).toString('hex').toUpperCase()}`;
-    const subcategoryRow = {};
-    const setColumn = (field, value) => { const header = getOptionalH(h, field); if (header) subcategoryRow[header] = value; };
-    if (parentIdHeader && categoryIdHeader) subcategoryRow[parentIdHeader] = categoryId;
-    else if (parentNameHeader) subcategoryRow[parentNameHeader] = parentCategoryName;
-    if (flatCategoryNameHeader && flatCategoryNameHeader !== parentIdHeader) subcategoryRow[flatCategoryNameHeader] = parentCategoryName;
-    if (subcategoryIdHeader) subcategoryRow[subcategoryIdHeader] = subId;
-    subcategoryRow[subcategoryHeader] = subcategoryName;
-    setColumn('Type', parentCategoryType);
-    setColumn('Code', subcategoryName.substring(0, 3).toUpperCase());
-    setColumn('Status', 'ACTIVE');
+    const subId = nextHierarchyId(existingRows, h, 'Subcategory_ID', categoryId, 'Category_ID', categoryId);
+    const subcategoryRow = { Subcategory_ID: subId, Category_ID: categoryId, Category_Name: parentCategoryName, Subcategory_Name: subcategoryName, Type: subcategoryType, Status: 'ACTIVE' };
     await sheet.addRow(subcategoryRow);
-
+    const normalized = { subcategoryid: subId, categoryid: categoryId, categoryname: parentCategoryName, name: subcategoryName, type: subcategoryType, status: 'ACTIVE' };
+    const cache = getAssetCache();
+    if (Array.isArray(cache?.assetsubcategorymaster)) cache.assetsubcategorymaster.push(normalized);
+    if (cache) cache.subcategories = cache.assetsubcategorymaster || cache.subcategories;
     void refreshAssetCache();
-    res.json({ success: true, message: `Subcategory '${subcategoryName}' added successfully!`, subcategory: { subcategoryid: subId, categoryid: categoryId, categoryname: parentCategoryName, name: subcategoryName } });
+    res.json({ success: true, message: `Subcategory '${subcategoryName}' added successfully!`, subcategory: normalized });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+};
+
+exports.addAssetType = async (req, res) => {
+  try {
+    const categoryId = String(req.body?.categoryId || '').trim();
+    const subcategoryId = String(req.body?.subcategoryId || '').trim();
+    const assetTypeName = String(req.body?.assetTypeName || '').trim();
+    const requestedType = String(req.body?.type || 'ASSET').trim().toUpperCase();
+    if (!categoryId || !subcategoryId || !assetTypeName) return res.status(400).json({ success: false, message: 'Choose a category and subcategory, then enter the item type.' });
+    if (!['ASSET', 'CONSUMABLE'].includes(requestedType)) return res.status(400).json({ success: false, message: 'Item type classification must be ASSET or CONSUMABLE.' });
+    const categoriesSheet = sheetByKey('assetcategorymaster');
+    const subcategoriesSheet = sheetByKey('assetsubcategorymaster');
+    const sheet = sheetByKey('assettypemaster');
+    if (!categoriesSheet || !subcategoriesSheet || !sheet) return res.status(503).json({ success: false, message: 'The new asset classification library is not available yet.' });
+    const categoryHeaders = await ensureAssetHeaders(categoriesSheet, assetTaxonomy.headers.categories);
+    const subcategoryHeaders = await ensureAssetHeaders(subcategoriesSheet, assetTaxonomy.headers.subcategories);
+    const typeHeaders = await ensureAssetHeaders(sheet, assetTaxonomy.headers.assetTypes);
+    const [categories, subcategories, existingRows] = await Promise.all([categoriesSheet.getRows(), subcategoriesSheet.getRows(), sheet.getRows()]);
+    const category = categories.find(row => normalize(row.get(getH(categoryHeaders, 'Category_ID'))) === normalize(categoryId));
+    const subcategory = subcategories.find(row => normalize(row.get(getH(subcategoryHeaders, 'Subcategory_ID'))) === normalize(subcategoryId)
+      && normalize(row.get(getH(subcategoryHeaders, 'Category_ID'))) === normalize(categoryId));
+    if (!category || !subcategory) return res.status(404).json({ success: false, message: 'The selected category path is no longer valid. Refresh and try again.' });
+    const subcategoryType = String(subcategory.get(getH(subcategoryHeaders, 'Type')) || category.get(getH(categoryHeaders, 'Type')) || 'ASSET').trim().toUpperCase();
+    const categoryType = String(category.get(getH(categoryHeaders, 'Type')) || '').trim().toUpperCase();
+    const effectiveType = subcategoryType === 'GENERAL' || subcategoryType === 'CONSUMABLE' || subcategoryType === 'ASSET'
+      ? subcategoryType : categoryType === 'GENERAL' ? requestedType : categoryType;
+    if (effectiveType !== requestedType) return res.status(400).json({ success: false, message: `This subcategory is classified as ${effectiveType.toLowerCase()}. Its item types must use the same classification.` });
+    const duplicate = existingRows.some(row => normalize(row.get(getH(typeHeaders, 'Subcategory_ID'))) === normalize(subcategoryId)
+      && normalize(row.get(getH(typeHeaders, 'Asset_Type_Name'))) === normalize(assetTypeName));
+    if (duplicate) return res.status(409).json({ success: false, message: 'That item type already exists under this subcategory.' });
+    const assetTypeId = nextHierarchyId(existingRows, typeHeaders, 'Asset_Type_ID', subcategoryId, 'Subcategory_ID', subcategoryId);
+    const categoryName = category.get(getH(categoryHeaders, 'Category_Name')) || '';
+    const subcategoryName = subcategory.get(getH(subcategoryHeaders, 'Subcategory_Name')) || '';
+    await sheet.addRow({ Asset_Type_ID: assetTypeId, Category_ID: categoryId, Category_Name: categoryName, Subcategory_ID: subcategoryId, Subcategory_Name: subcategoryName, Asset_Type_Name: assetTypeName, Type: effectiveType, Status: 'ACTIVE' });
+    const normalized = { assettypeid: assetTypeId, categoryid: categoryId, categoryname: categoryName, subcategoryid: subcategoryId, subcategoryname: subcategoryName, name: assetTypeName, type: effectiveType, status: 'ACTIVE' };
+    const cache = getAssetCache();
+    if (Array.isArray(cache?.assettypemaster)) cache.assettypemaster.push(normalized);
+    if (cache) cache.assetTypes = cache.assettypemaster || cache.assetTypes;
+    void refreshAssetCache();
+    return res.json({ success: true, message: `Item type '${assetTypeName}' added successfully!`, assetType: normalized });
+  } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 };
 
 exports.addLocation = async (req, res) => {
   try {
-    const { branchName, room, area } = req.body;
-    const sheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('locations'));
+    const branchName = String(req.body?.branchName || '').trim();
+    const room = String(req.body?.room || '').trim();
+    const area = String(req.body?.area || '').trim();
+    if (!branchName || !room || !area) {
+      return res.status(400).json({ success: false, message: 'Branch, room, and area are required.' });
+    }
+    if (!canAccessAssetBranch(req, branchName)) {
+      return res.status(403).json({ success: false, message: 'You cannot add a location for that branch.' });
+    }
+    const sheet = sheetByKey('locations');
     if (!sheet) return res.status(404).json({ success: false, message: "Locations sheet missing." });
 
     const h = sheet.headerValues;
-    const locId = `LOC-${Math.floor(1000 + Math.random() * 9000)}`;
     const locationName = `${room} (${area})`;
+    const existing = (getAssetCache()?.locations || []).some(row =>
+      normalize(rowValue(row, 'Branch') || rowValue(row, 'Branch_ID')) === normalize(branchName)
+      && normalize(rowValue(row, 'Location_Name')) === normalize(locationName)
+      && String(rowValue(row, 'Status') || '').trim().toUpperCase() !== 'INACTIVE'
+    );
+    if (existing) return res.status(409).json({ success: false, message: 'That room and area already exist for this branch.' });
+    const locId = `LOC-${randomUUID().slice(0, 8).toUpperCase()}`;
 
     await sheet.addRow({
       [getH(h, 'Location_ID')]: locId,
       [getH(h, 'Branch_ID')]: branchName, // Mapping name directly for simplicity in dropdowns
+      [getH(h, 'Branch')]: branchName,
       [getH(h, 'Building')]: 'Main',
       [getH(h, 'Floor')]: '1',
       [getH(h, 'Room')]: room,
@@ -1816,7 +1975,7 @@ exports.addLocation = async (req, res) => {
 exports.addVendor = async (req, res) => {
   try {
     const { vendorName, contactPerson, phone, email } = req.body;
-    const sheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('vendors'));
+    const sheet = sheetByKey('vendors');
     if (!sheet) return res.status(404).json({ success: false, message: "Vendors sheet missing." });
 
     const h = sheet.headerValues;
@@ -1847,7 +2006,7 @@ exports.uploadAssetDocument = async (req, res) => {
     const { assetId, documentType } = req.body || {};
     if (!req.file) return res.status(400).json({ success: false, message: "No file provided." });
 
-    const asset = (await assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('assets'))?.getRows()) || [];
+    const asset = (await sheetByKey('assets')?.getRows()) || [];
     const assetRow = asset.find(row => String(row.get(getH(row._worksheet.headerValues, 'Asset_ID')) || '').trim().toLowerCase() === String(assetId || '').trim().toLowerCase());
     if (!assetRow) return res.status(404).json({ success: false, message: 'Asset not found.' });
     if (!canAccessAssetBranch(req, assetRow.get(getH(assetRow._worksheet.headerValues, 'Branch')) || '')) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
@@ -1855,7 +2014,7 @@ exports.uploadAssetDocument = async (req, res) => {
     // Upload to Google Drive using existing helper
     const fileUrl = await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || '');
     
-    const docSheet = assetDoc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('documents'));
+    const docSheet = sheetByKey('documents');
     if (!docSheet) return res.status(404).json({ success: false, message: "Documents sheet missing." });
 
     const h = docSheet.headerValues;
@@ -1934,6 +2093,7 @@ exports.disposeAsset = async (req, res) => {
 
 exports.getAssetApprovals = async (req, res) => {
   if (!isAssetApprover(req)) return res.status(403).json({ success: false, message: 'This approval desk is available only to Rakesh.' });
+  if (respondWhileAssetDataLoads(res)) return;
   try {
     const cache = getAssetCache() || {};
     const assetsById = new Map((cache.assets || []).map(row => [String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase(), row]));

@@ -128,7 +128,7 @@ export default function AssetList() {
 
   const matchesSearch = item => {
     const query = clean(search);
-    return !query || [item.assetId, item.name, item.brand, item.model, item.category, item.subcategory, item.branch, item.location, item.vendor].some(value => clean(value).includes(query));
+    return !query || [item.assetId, item.name, item.brand, item.model, item.category, item.subcategory, item.assetType, item.branch, item.location, item.vendor].some(value => clean(value).includes(query));
   };
   const spaceAssets = branchAssets.filter(asset => (asset.location?.trim() || 'Unassigned space') === selectedSpace && matchesSearch(asset));
   const registryAssets = assets.filter(asset => {
