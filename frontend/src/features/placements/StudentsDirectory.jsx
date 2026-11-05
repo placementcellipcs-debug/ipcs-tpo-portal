@@ -261,6 +261,7 @@ export default function StudentsDirectory() {
     }
     const placingNow = /^placed$/i.test(String(localPlacementState || '').trim())
       && !/^placed$/i.test(String(selectedStudent?.placementStatus || '').trim());
+    const placementStatusChanged = normalizeStatus(localPlacementState) !== normalizeStatus(selectedStudent?.placementStatus || '');
     if (placingNow && selectedInternationalChoice === undefined) {
       setInternationalPromptOpen(true);
       return;
@@ -270,7 +271,7 @@ export default function StudentsDirectory() {
       const response = await axios.post(`${API_BASE}/api/tpo/students/update-student`, {
         rowNumber: selectedStudent.rowIdx,
         vacOpen: localVacState, 
-        placementStatus: localPlacementState,
+        ...(placementStatusChanged ? { placementStatus: localPlacementState } : {}),
         ...(placingNow || selectedInternationalChoice !== undefined ? { isInternationalPlacement: selectedInternationalChoice } : {}),
         studyAccess: localStudyAccess, 
         examAccess: localExamAccess,

@@ -1405,7 +1405,7 @@ exports.getStudents = async (req, res) => {
         status: getValByHeader(row, ['coursestatus', 'status(currently']) || 'N/A', 
         resume: getValByHeader(row, ['resume', 'cv']) || '', 
         certificate: getValByHeader(row, ['certificate']) || '',
-        vacOpen: getValByHeader(row, ['vacancyopen', 'vaccancyopen']) || 'Yes', 
+        vacOpen: getValByHeader(row, ['vacancyopen', 'vaccancyopen', 'vacancyaccess', 'placementportalaccess']) || 'No', 
         studyAccess: getValByHeader(row, ['studymaterialaccess']) || 'No', 
         examAccess: getValByHeader(row, ['technialexam', 'technicalexam']) || 'No', 
         placementStatus: pStatus,
@@ -1450,14 +1450,36 @@ exports.updateStudent = async (req, res) => {
   if (!isPlacementEditor && !isAcademicEditor) return res.status(403).json({ success: false, message: 'Your role cannot update this student record.' });
   if (studyAccess !== undefined && !['yes', 'no'].includes(String(studyAccess).toLowerCase())) return res.status(400).json({ success: false, message: 'Study access must be Yes or No.' });
   if (examAccess !== undefined && !['yes', 'no'].includes(String(examAccess).toLowerCase())) return res.status(400).json({ success: false, message: 'Technical exam access must be Yes or No.' });
+  if (vacOpen !== undefined && !['yes', 'no'].includes(String(vacOpen).toLowerCase())) return res.status(400).json({ success: false, message: 'Vacancy access must be Yes or No.' });
   try {
     const stuSheet = doc.sheetsByTitle["Data"];
     if (!stuSheet) return res.status(503).json({ success: false, message: 'Student register is unavailable.' });
     const rows = await stuSheet.getRows({ offset: rowIndex - 2, limit: 1 });
     if (rows.length > 0) {
+      let confirmedVacancyAccess = '';
       const previousPlacementStatus = getValByHeader(rows[0], ['placementstatus', 'placementstat']);
-      if (normalizePlacementText(placementStatus) === 'placed'
-        && normalizePlacementText(previousPlacementStatus) !== 'placed' && !internationalPlacement) {
+      let alreadyPlacedInLog = false;
+      const isRequestedAsPlaced = normalizePlacementText(placementStatus) === 'placed';
+      if (isPlacementEditor && isRequestedAsPlaced
+        && normalizePlacementText(previousPlacementStatus) !== 'placed') {
+        const studentRoll = normalizePlacementText(getValByHeader(rows[0], ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+        const studentName = normalizePlacementText(getValByHeader(rows[0], ['name', 'studentname']));
+        const studentBranchKey = normalizePlacementText(getValByHeader(rows[0], ['branch', 'branchname', 'sittingbranch'])).replace(/branch/g, '');
+        const unusableRolls = new Set(['noroll', 'norollnumber', 'na', 'none', 'null', 'unknown', 'notavailable', '0']);
+        const usableStudentRoll = studentRoll && !unusableRolls.has(studentRoll) ? studentRoll : '';
+        const existingLogs = await readLiveTpoLogRows();
+        alreadyPlacedInLog = existingLogs.some(log => {
+          if (isTpoActionLog(log, getValByHeader) || normalizePlacementText(getValByHeader(log, ['status'])) !== 'placed') return false;
+          const logRoll = normalizePlacementText(getValByHeader(log, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+          if (usableStudentRoll && logRoll) return usableStudentRoll === logRoll;
+          const logName = normalizePlacementText(getValByHeader(log, ['studentname', 'name']));
+          const logBranch = normalizePlacementText(getValByHeader(log, ['branch', 'branchname', 'sittingbranch'])).replace(/branch/g, '');
+          return Boolean(studentName && studentName === logName && studentBranchKey && studentBranchKey === logBranch);
+        });
+      }
+      const isNewPlacement = isPlacementEditor && isRequestedAsPlaced
+        && normalizePlacementText(previousPlacementStatus) !== 'placed' && !alreadyPlacedInLog;
+      if (isNewPlacement && !internationalPlacement) {
         return res.status(422).json({ success: false, message: 'Choose whether this placement is International or within India before marking the student Placed.' });
       }
       const studentBranch = getValByHeader(rows[0], ['branch']) || '';
@@ -1487,7 +1509,10 @@ exports.updateStudent = async (req, res) => {
         return rows[0]._rawData[idx] ? rows[0]._rawData[idx].toString().trim() : '';
       };
 
-      const vH = getRealHeader(['vacancyopen', 'vaccancyopen']); 
+      const vH = getRealHeader(['vacancyopen', 'vaccancyopen', 'vacancyaccess', 'placementportalaccess']); 
+      if (isPlacementEditor && vacOpen !== undefined && !vH) {
+        return res.status(503).json({ success: false, message: 'The student register has no Vacancy Open access column. The access change was not saved.' });
+      }
       let oldVacOpen = vH ? getOldVal(vH).toLowerCase() : '';
       if(isPlacementEditor && vH && vacOpen !== undefined) updateObj[vH] = vacOpen;
       
@@ -1511,6 +1536,13 @@ exports.updateStudent = async (req, res) => {
       if (Object.keys(updateObj).length === 0) return res.status(400).json({ success: false, message: 'No permitted student fields were provided.' });
       rows[0].assign(updateObj); 
       await rows[0].save(); 
+      if (isPlacementEditor && vacOpen !== undefined) {
+        const confirmedRows = await stuSheet.getRows({ offset: rowIndex - 2, limit: 1 });
+        confirmedVacancyAccess = String(getValByHeader(confirmedRows[0], ['vacancyopen', 'vaccancyopen', 'vacancyaccess', 'placementportalaccess']) || '').trim();
+        if (confirmedVacancyAccess.toLowerCase() !== String(vacOpen).trim().toLowerCase()) {
+          return res.status(502).json({ success: false, message: 'The vacancy access update could not be confirmed in the student register. Please reload before trying again.' });
+        }
+      }
       const cachedStudent = (getCache()?.students || []).find(row => Number(row.rowNumber) === Number(rows[0].rowNumber));
       if (cachedStudent && Array.isArray(cachedStudent._rawData)) {
         Object.entries(updateObj).forEach(([headerName, value]) => {
@@ -1523,7 +1555,7 @@ exports.updateStudent = async (req, res) => {
       // TPO_Log and Placed_Students are placement-event records. A directory
       // status such as Pending or Not Responding belongs in Data only; sending
       // it through the placement sync would overwrite a real placement row.
-      if (isPlacementEditor && normalizePlacementText(placementStatus) === 'placed') {
+      if (isNewPlacement) {
         placedSheetWarning = await syncPositivePlacement({
           name: getValByHeader(rows[0], ['name', 'studentname']),
           phone: getValByHeader(rows[0], ['phone', 'contact', 'mobilenumber']),
@@ -1581,7 +1613,7 @@ exports.updateStudent = async (req, res) => {
       }
 
       refreshCache(); 
-      res.json({ success: true, message: "Student record updated!", warning: placedSheetWarning });
+      res.json({ success: true, message: "Student record updated!", warning: placedSheetWarning, ...(vacOpen !== undefined ? { vacancyAccess: confirmedVacancyAccess } : {}) });
     } else { res.status(404).json({ success: false, message: "Row not found." }); }
   } catch (error) { res.status(500).json({ success: false, message: error.message }); }
 };
