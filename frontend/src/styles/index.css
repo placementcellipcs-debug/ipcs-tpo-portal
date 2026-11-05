@@ -42,6 +42,53 @@ button:focus-visible, a:focus-visible, [role="button"]:focus-visible { outline: 
 /* Keep the route transition from creating a containing block for fixed dialogs. */
 @keyframes route-content-enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
 
+/* Shared, low-cost motion and polished native dropdown treatment across portal views. */
+:root {
+  --motion-fast: 150ms;
+  --motion-base: 220ms;
+  --motion-enter: 280ms;
+  --motion-ease: cubic-bezier(.2, .7, .25, 1);
+}
+
+button:not(:disabled), a, [role="button"] { transition-duration: var(--motion-base); transition-timing-function: var(--motion-ease); }
+button:not(:disabled):active, [role="button"]:active { transform: scale(.985); }
+button:not(:disabled) > svg, a > svg, [role="button"] > svg { transition: transform var(--motion-fast) var(--motion-ease); }
+button:not(:disabled):hover > svg, a:hover > svg, [role="button"]:hover > svg { transform: translateY(-1px) scale(1.06); }
+button:not(:disabled):focus-visible > svg, a:focus-visible > svg, [role="button"]:focus-visible > svg { filter: drop-shadow(0 0 5px var(--accent-glow)); }
+
+/* Keep native selects accessible while giving their closed state a shared finish.
+   The browser still owns the option menu and keyboard/touch interaction. */
+:root select:not([multiple]):not(.tracker-course-filter select):not(.tracker-status-select):not(.attendance-day-select select):not(.attendance-period-control select) {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 15px;
+  padding-right: max(2rem, 2.2em);
+  border-radius: 11px;
+  transition: border-color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-fast) var(--motion-ease), background-color var(--motion-fast) var(--motion-ease);
+}
+:root select:not([multiple]):not(.tracker-course-filter select):not(.tracker-status-select):not(.attendance-day-select select):not(.attendance-period-control select):hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent-primary) 46%, var(--input-border, var(--card-border)));
+}
+:root select:not([multiple]):not(.tracker-course-filter select):not(.tracker-status-select):not(.attendance-day-select select):not(.attendance-period-control select):focus-visible {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-glow);
+}
+:root select option, :root select optgroup { color: var(--text-main); background-color: var(--card-bg); }
+body[data-theme="light"] { color-scheme: light; }
+body:not([data-theme="light"]) { color-scheme: dark; }
+.icon-btn:hover > svg, .asset-portal-nav-link:hover > svg, .trainer-portal-shell button:hover > svg { transform: scale(1.08); }
+:where(.app-layout, .main-content, .asset-portal, .trainer-portal-shell, [class*="-card"], [class*="-panel"]) {
+  transition: background-color var(--motion-base) ease, border-color var(--motion-base) ease, color var(--motion-base) ease;
+}
+@keyframes portal-log-enter { from { opacity: 0; } to { opacity: 1; } }
+.asset-history-list article:nth-child(-n+8), .asset-activity-card:nth-child(-n+8), .tracker-timeline li:nth-child(-n+8) {
+  animation: portal-log-enter var(--motion-enter) var(--motion-ease) both;
+}
+
 /* Shared, viewport-safe liquid-glass treatment for portal dialogs. */
 .modal-card {
   max-height: min(90dvh, 900px) !important;

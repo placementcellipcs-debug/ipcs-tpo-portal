@@ -1,0 +1,1 @@
+import{n as e}from"./index-Ei_SaQU1.js";import t from"./AcademicWorkspace-DaKREpQw.js";var n=e();function r(){return(0,n.jsx)(t,{module:`diary`})}export{r as default};
