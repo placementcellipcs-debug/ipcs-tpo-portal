@@ -9,8 +9,8 @@ const createTalentinoSessionResolver = (scheduleRows, getValue, parseDate) => {
     // match on an explicit Talentino session/event reference.
     const sessionId = normalizePlacementText(getValue(row, ['sessionid', 'eventid', 'event id', 'eventreference', 'sessionkey']));
     if (sessionId) byId.set(sessionId, [...(byId.get(sessionId) || []), row]);
-    const date = parseDate(getValue(row, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']));
-    const branch = normalizeTalentinoBranch(getValue(row, ['branch', 'sittingbranch']));
+    const date = parseDate(getValue(row, ['dateoftalentino', 'date', 'dateoftheevent', 'sessiondate', 'timestamp']));
+    const branch = normalizeTalentinoBranch(getValue(row, ['conductedin', 'branch', 'sittingbranch']));
     if (!date || !branch) return;
     const key = `${branch}|${date.toDateString()}`;
     byBranchDate.set(key, [...(byBranchDate.get(key) || []), row]);

@@ -84,7 +84,44 @@ body:not([data-theme="light"]) { color-scheme: dark; }
 :where(.app-layout, .main-content, .asset-portal, .trainer-portal-shell, [class*="-card"], [class*="-panel"]) {
   transition: background-color var(--motion-base) ease, border-color var(--motion-base) ease, color var(--motion-base) ease;
 }
-@keyframes portal-log-enter { from { opacity: 0; } to { opacity: 1; } }
+/* Page changes, section cards and activity rows get a short, restrained entrance.
+   Only content panels move; shell wrappers and fixed dialogs stay in place. */
+@keyframes portal-panel-arrive { from { opacity: 0; transform: translateY(11px) scale(.992); } to { opacity: 1; transform: none; } }
+@keyframes portal-log-enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
+.asset-portal-content > *, .trainer-portal-content > * { animation: portal-panel-arrive 440ms var(--motion-ease) both; }
+.page-container > *, .db-wrapper > *, .public-story > * { animation: portal-panel-arrive 440ms var(--motion-ease) both; }
+.page-container > :nth-child(2), .asset-portal-content > :nth-child(2), .trainer-portal-content > :nth-child(2) { animation-delay: 45ms; }
+.page-container > :nth-child(3), .asset-portal-content > :nth-child(3), .trainer-portal-content > :nth-child(3) { animation-delay: 90ms; }
+.page-container > :nth-child(4), .asset-portal-content > :nth-child(4), .trainer-portal-content > :nth-child(4) { animation-delay: 135ms; }
+.page-container > :nth-child(5), .asset-portal-content > :nth-child(5), .trainer-portal-content > :nth-child(5) { animation-delay: 180ms; }
+.asset-register-hero, .asset-register-form > .asset-register-card, .asset-register-form > .asset-optional-card, .asset-register-form > .asset-register-submit { animation: portal-panel-arrive 460ms var(--motion-ease) both; }
+.asset-register-form > :nth-child(2) { animation-delay: 55ms; }
+.asset-register-form > :nth-child(3) { animation-delay: 105ms; }
+.asset-register-form > :nth-child(4) { animation-delay: 155ms; }
+.page-container :is(.bento-grid, .jt-drive-list, .pdt-drive-list, .student-apps-list, .talentino-branch-grid) > :nth-child(-n+8),
+.asset-portal-content :is(.asset-history-list, .asset-categories-summary, .asset-category-grid, .asset-inventory-list) > :nth-child(-n+8),
+.trainer-portal-content :is(.academic-dashboard-roster, .academic-session-list, .academic-branch-grid) > :nth-child(-n+8) {
+  animation: portal-log-enter 390ms var(--motion-ease) both;
+}
+.page-container :is(.bento-grid, .jt-drive-list, .pdt-drive-list, .student-apps-list, .talentino-branch-grid) > :nth-child(2),
+.asset-portal-content :is(.asset-history-list, .asset-categories-summary, .asset-category-grid, .asset-inventory-list) > :nth-child(2),
+.trainer-portal-content :is(.academic-dashboard-roster, .academic-session-list, .academic-branch-grid) > :nth-child(2) { animation-delay: 45ms; }
+.page-container :is(.bento-grid, .jt-drive-list, .pdt-drive-list, .student-apps-list, .talentino-branch-grid) > :nth-child(3),
+.asset-portal-content :is(.asset-history-list, .asset-categories-summary, .asset-category-grid, .asset-inventory-list) > :nth-child(3),
+.trainer-portal-content :is(.academic-dashboard-roster, .academic-session-list, .academic-branch-grid) > :nth-child(3) { animation-delay: 90ms; }
+.page-container :is(.bento-grid, .jt-drive-list, .pdt-drive-list, .student-apps-list, .talentino-branch-grid) > :nth-child(4),
+.asset-portal-content :is(.asset-history-list, .asset-categories-summary, .asset-category-grid, .asset-inventory-list) > :nth-child(4),
+.trainer-portal-content :is(.academic-dashboard-roster, .academic-session-list, .academic-branch-grid) > :nth-child(4) { animation-delay: 135ms; }
+.page-container :is(.bento-grid, .jt-drive-list, .pdt-drive-list, .student-apps-list, .talentino-branch-grid) > :nth-child(5),
+.asset-portal-content :is(.asset-history-list, .asset-categories-summary, .asset-category-grid, .asset-inventory-list) > :nth-child(5),
+.trainer-portal-content :is(.academic-dashboard-roster, .academic-session-list, .academic-branch-grid) > :nth-child(5) { animation-delay: 180ms; }
+.asset-register-hero :is(svg, .asset-register-hero-icon), .asset-card-heading > svg, .asset-portal-content > main > header svg, .trainer-portal-content > * > header svg { animation: portal-icon-arrive 540ms cubic-bezier(.2,.7,.25,1) both; }
+@keyframes portal-icon-arrive { from { opacity: 0; transform: rotate(-10deg) scale(.78); } to { opacity: 1; transform: none; } }
+.asset-register-card:hover, .asset-portal-content :is(.asset-category-card, .asset-inventory-card, .asset-item-card):hover,
+.trainer-portal-content :is(.academic-schedule-card, .academic-dashboard-roster article):hover {
+  border-color: color-mix(in srgb, var(--accent-primary, #55d9ca) 35%, var(--card-border, #26344a));
+}
+.asset-classification-add:hover > svg { transform: rotate(90deg) scale(1.08); }
 .asset-history-list article:nth-child(-n+8), .asset-activity-card:nth-child(-n+8), .tracker-timeline li:nth-child(-n+8) {
   animation: portal-log-enter var(--motion-enter) var(--motion-ease) both;
 }

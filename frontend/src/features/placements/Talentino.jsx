@@ -140,7 +140,7 @@ export default function Talentino() {
   });
   const filteredSessions = activeSessions.filter(session => {
     const matchDate = dateFilter === 'All Dates' || String(session.date || '').includes(dateFilter);
-    const haystack = [session.title, session.description, session.tpo, session.location, session.status].join(' ').toLowerCase();
+    const haystack = [session.tpo, session.branch, session.date].join(' ').toLowerCase();
     return matchDate && haystack.includes(searchQuery.trim().toLowerCase());
   });
 
@@ -252,13 +252,11 @@ export default function Talentino() {
             <strong style={{ color: 'var(--accent-primary)', fontSize: '.85rem' }}>{filteredSessions.length} session{filteredSessions.length === 1 ? '' : 's'}</strong>
           </div>
           {filteredSessions.length ? <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '12px' }}>
-            {filteredSessions.map((session, index) => <article key={session.sessionId || `${session.branch}-${session.date}-${session.time}-${index}`} style={{ padding: '15px', border: '1px solid var(--card-border)', borderLeft: '3px solid var(--accent-primary)', borderRadius: '12px', background: 'color-mix(in srgb, var(--bg-dark) 65%, transparent)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', alignItems: 'flex-start' }}><strong style={{ color: 'var(--text-main)', lineHeight: 1.4 }}>{session.title || 'Talentino Session'}</strong><span style={{ padding: '3px 8px', borderRadius: '999px', color: '#a7f3d0', background: 'rgba(16,185,129,.14)', fontSize: '.68rem', whiteSpace: 'nowrap' }}>{session.status || 'Scheduled'}</span></div>
-              <div style={{ display: 'grid', gap: '5px', marginTop: '11px', color: 'var(--text-muted)', fontSize: '.8rem' }}>
-                <span>{session.date ? formatPortalDate(session.date, session.date) : 'Date not set'}{session.time ? ` · ${session.time}` : ''}</span>
-                {session.location && <span>{session.location}</span>}
-                {session.tpo && <span>Coordinator: {session.tpo}</span>}
-                {session.description && <span style={{ marginTop: '3px', lineHeight: 1.45 }}>{session.description}</span>}
+            {filteredSessions.map((session, index) => <article key={session.sessionId || `${session.branch}-${session.date}-${session.tpo}-${index}`} style={{ padding: '15px', border: '1px solid var(--card-border)', borderLeft: '3px solid var(--accent-primary)', borderRadius: '12px', background: 'color-mix(in srgb, var(--bg-dark) 65%, transparent)' }}>
+              <strong style={{ color: 'var(--text-main)', lineHeight: 1.4 }}>{session.date ? formatPortalDate(session.date, session.date) : 'Date not set'}</strong>
+              <div style={{ display: 'grid', gap: '7px', marginTop: '11px', color: 'var(--text-muted)', fontSize: '.8rem' }}>
+                <span><b>Conducted by:</b> {session.tpo || 'Not recorded'}</span>
+                <span><b>Conducted in:</b> {session.branch || 'Not recorded'}</span>
               </div>
             </article>)}
           </div> : <p style={{ margin: 0, padding: '12px 4px', color: 'var(--text-muted)', textAlign: 'center', fontSize: '.86rem' }}>No scheduled Talentino sessions match this branch, month, and search.</p>}

@@ -4994,7 +4994,7 @@ exports.getTalentino = async (req, res) => {
     // session first, then the matched student directory record, before
     // applying branch access rules.
     const rowBranch = getTalentinoValue(row, ['branch', 'sittingbranch'])
-      || getTalentinoValue(schedule, ['branch', 'sittingbranch'])
+      || getTalentinoValue(schedule, ['conductedin', 'branch', 'sittingbranch'])
       || getValByHeader(studentData, ['branch', 'sittingbranch']);
     const sCourse = getTalentinoValue(row, ['course', 'program']) || getTalentinoValue(schedule, ['course', 'program', 'assignedcourse']) || (studentData ? getValByHeader(studentData, ['course']) : 'Unknown');
     const allowed = isPlacementTrackerAdmin(actor) || isPlacementTrackerTpo(actor)
@@ -5006,9 +5006,9 @@ exports.getTalentino = async (req, res) => {
     return { name: getTalentinoValue(row, ['name', 'student']), branch, date, rating: getTalentinoValue(row, ['rating']), notes: getTalentinoValue(row, ['notes', 'remark']), tpo: getTalentinoValue(row, ['tpo', 'placementofficer', 'conductedby', 'createdby']) || getTalentinoValue(schedule, ['tpo', 'placementofficer', 'conductedby', 'createdby']), sessionId: getTalentinoValue(row, ['sessionid', 'eventid', 'event id']) || getTalentinoValue(schedule, ['sessionid', 'eventid', 'event id']), sessionMatchType: match.matchType };
   });
   const sessions = scheduleRows.map(row => {
-    const branch = getValByHeader(row, ['branch', 'sittingbranch']);
+    const branch = getValByHeader(row, ['conductedin', 'branch', 'sittingbranch']);
     const course = getValByHeader(row, ['course', 'program', 'assignedcourse']);
-    const date = getValByHeader(row, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']);
+    const date = getValByHeader(row, ['dateoftalentino', 'date', 'dateoftheevent', 'sessiondate', 'timestamp']);
     const tpo = getValByHeader(row, ['tpo', 'placementofficer', 'conductedby', 'createdby']);
     const sessionId = getValByHeader(row, ['sessionid', 'eventid', 'event id', 'eventreference', 'sessionkey']);
     const title = getValByHeader(row, ['sessiontitle', 'title', 'topic', 'session']);
@@ -5108,8 +5108,8 @@ exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
   const resolveSession = createTalentinoSessionResolver(scheduleRows, getTalentinoValue, safeParseDate);
   const schedulesByBranchDate = new Map();
   const sessions = scheduleRows.filter(row => {
-    const branch = getValByHeader(row, ['branch', 'sittingbranch']);
-    const date = talentinoDateKey(getFirstNonEmptyValByHeader(row, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']));
+    const branch = getValByHeader(row, ['conductedin', 'branch', 'sittingbranch']);
+    const date = talentinoDateKey(getFirstNonEmptyValByHeader(row, ['dateoftalentino', 'date', 'dateoftheevent', 'sessiondate', 'timestamp']));
     const status = normalizePlacementText(getValByHeader(row, ['status', 'sessionstatus']));
     if (!branch || !reportDateWindow.has(date) || /cancel|deleted|rejected/.test(status)) return false;
     const key = `${talentinoBranchKey(branch)}|${date}`;
@@ -5149,8 +5149,8 @@ exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
     if (resolved.session) return resolved.session === schedule;
     if (attendanceId || scheduleId) return Boolean(attendanceId && scheduleId && attendanceId === scheduleId);
 
-    const branch = getValByHeader(schedule, ['branch', 'sittingbranch']);
-    const date = talentinoDateKey(getFirstNonEmptyValByHeader(schedule, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']));
+    const branch = getValByHeader(schedule, ['conductedin', 'branch', 'sittingbranch']);
+    const date = talentinoDateKey(getFirstNonEmptyValByHeader(schedule, ['dateoftalentino', 'date', 'dateoftheevent', 'sessiondate', 'timestamp']));
     const candidates = schedulesByBranchDate.get(`${talentinoBranchKey(branch)}|${date}`) || [];
     if (candidates.length === 1) return candidates[0] === schedule;
     const attendanceCourse = normalizePlacementText(getTalentinoValue(attendance, ['course', 'program']));
@@ -5173,7 +5173,7 @@ exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
     const date = talentinoDateKey(getTalentinoValue(row, ['timestamp', 'date', 'time', 'present check-ins date']));
     if (!reportDateWindow.has(date)) return;
     sessions.forEach(session => {
-      if (talentinoBranchKey(getValByHeader(session, ['branch', 'sittingbranch'])) !== talentinoBranchKey(getTalentinoValue(row, ['branch', 'sittingbranch']))) return;
+      if (talentinoBranchKey(getValByHeader(session, ['conductedin', 'branch', 'sittingbranch'])) !== talentinoBranchKey(getTalentinoValue(row, ['branch', 'sittingbranch']))) return;
       if (attendanceBelongsTo(row, session)) matchedAttendances.get(session).push(row);
     });
   });
@@ -5185,9 +5185,9 @@ exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
     const explicitlyCompleted = !/(^|\b)(not|pending|cancelled|canceled|scheduled|rejected)\b/.test(status)
       && /\b(completed|complete|finished|conducted|done|held)\b/.test(status);
     if (!attendees.length && !explicitlyCompleted) return;
-    const branch = getValByHeader(session, ['branch', 'sittingbranch']).trim();
+    const branch = getValByHeader(session, ['conductedin', 'branch', 'sittingbranch']).trim();
     const branchKey = talentinoBranchKey(branch);
-    const reportDate = talentinoDateKey(getFirstNonEmptyValByHeader(session, ['date', 'dateoftheevent', 'sessiondate', 'timestamp']));
+    const reportDate = talentinoDateKey(getFirstNonEmptyValByHeader(session, ['dateoftalentino', 'date', 'dateoftheevent', 'sessiondate', 'timestamp']));
     const digestKey = `${branchKey}|${reportDate}`;
     if (!branchDigests.has(digestKey)) branchDigests.set(digestKey, { branch, reportDate, branchKey, sessions: [] });
     branchDigests.get(digestKey).sessions.push({ schedule: session, attendees });
@@ -5323,17 +5323,9 @@ const ensureEventHeaders = async (sheet, titles) => {
 };
 
 const TALENTINO_SCHEDULE_FIELDS = [
-  { key: 'sessionId', header: 'Session ID', aliases: ['sessionid', 'eventid', 'eventreference', 'sessionkey'] },
-  { key: 'date', header: 'Date', aliases: ['date', 'sessiondate', 'dateoftheevent', 'timestamp'] },
-  { key: 'tpo', header: 'TPO', aliases: ['tpo', 'placementofficer', 'conductedby', 'createdby'] },
-  { key: 'branch', header: 'Branch', aliases: ['branch', 'sittingbranch'] },
-  { key: 'course', header: 'Course', aliases: ['course', 'program', 'assignedcourse'] },
-  { key: 'title', header: 'Session Title', aliases: ['sessiontitle', 'title', 'topic', 'session'] },
-  { key: 'type', header: 'Event Type', aliases: ['eventtype', 'eventcategory', 'type'] },
-  { key: 'description', header: 'Description', aliases: ['description', 'descripation', 'notes', 'remark'] },
-  { key: 'time', header: 'Time', aliases: ['time', 'sessiontime', 'timeoftheevent', 'starttime'] },
-  { key: 'location', header: 'Location', aliases: ['location', 'venue', 'eventhappeningin'] },
-  { key: 'status', header: 'Status', aliases: ['status', 'sessionstatus'] }
+  { key: 'date', header: 'Date of Talentino', aliases: ['dateoftalentino', 'date', 'sessiondate', 'dateoftheevent', 'timestamp'] },
+  { key: 'tpo', header: 'Conducted By', aliases: ['conductedby', 'tpo', 'placementofficer', 'createdby'] },
+  { key: 'branch', header: 'Conducted in', aliases: ['conductedin', 'branch', 'sittingbranch'] }
 ];
 let talentinoBackfillPromise = null;
 let talentinoBackfillResult = null;
@@ -5360,6 +5352,21 @@ const ensureTalentinoScheduleSheet = async () => {
   }
 
   let headers = [...(sheet.headerValues || [])];
+  // Keep legacy metadata columns intact, but use the requested labels for
+  // the three fields this schedule sync writes. Rename in place to preserve history.
+  let renamedScheduleHeaders = false;
+  TALENTINO_SCHEDULE_FIELDS.forEach(field => {
+    const matchedHeader = findEventHeader(headers, field.aliases);
+    if (matchedHeader && matchedHeader !== field.header) {
+      headers[headers.indexOf(matchedHeader)] = field.header;
+      renamedScheduleHeaders = true;
+    }
+  });
+  if (renamedScheduleHeaders) {
+    await sheet.setHeaderRow(headers);
+    await sheet.loadHeaderRow();
+    headers = [...(sheet.headerValues || headers)];
+  }
   const missing = TALENTINO_SCHEDULE_FIELDS
     .filter(field => !findEventHeader(headers, field.aliases))
     .map(field => field.header);
@@ -5376,17 +5383,9 @@ const ensureTalentinoScheduleSheet = async () => {
 const talentinoScheduleRowData = (event, sheet) => {
   const headers = sheet.headerValues || [];
   const values = {
-    sessionId: String(event.eventId || event.eventKey || '').trim(),
     date: event.date || '',
     tpo: event.tpo || '',
-    branch: event.branch || '',
-    course: event.course || '',
-    title: event.title || 'Talentino Session',
-    type: event.type || 'Talentino',
-    description: event.description || '',
-    time: event.time || '',
-    location: event.location || '',
-    status: event.status || 'Scheduled'
+    branch: event.branch || ''
   };
   const rowData = {};
   TALENTINO_SCHEDULE_FIELDS.forEach(field => {
@@ -5399,8 +5398,7 @@ const talentinoScheduleRowData = (event, sheet) => {
 const talentinoScheduleIdentity = event => [
   normalizePlacementText(event.branch),
   talentinoDateKey(event.date),
-  normalizePlacementText(event.time),
-  normalizePlacementText(event.title || event.type)
+  normalizePlacementText(event.tpo)
 ].join('|');
 
 const findTalentinoScheduleMatch = (rows, event) => {
@@ -5414,10 +5412,9 @@ const findTalentinoScheduleMatch = (rows, event) => {
     const rowId = String(getValByHeader(row, ['sessionid', 'eventid', 'eventreference', 'sessionkey']) || '').trim().toLowerCase();
     if (rowId && eventId && rowId !== eventId) return false;
     return talentinoScheduleIdentity({
-      branch: getValByHeader(row, ['branch', 'sittingbranch']),
-      date: getValByHeader(row, ['date', 'sessiondate', 'dateoftheevent', 'timestamp']),
-      time: getValByHeader(row, ['time', 'sessiontime', 'timeoftheevent', 'starttime']),
-      title: getValByHeader(row, ['sessiontitle', 'title', 'topic', 'session'])
+      branch: getValByHeader(row, ['conductedin', 'branch', 'sittingbranch']),
+      date: getValByHeader(row, ['dateoftalentino', 'date', 'sessiondate', 'dateoftheevent', 'timestamp']),
+      tpo: getValByHeader(row, ['conductedby', 'tpo', 'placementofficer', 'createdby'])
     }) === identity;
   }) || null;
 };

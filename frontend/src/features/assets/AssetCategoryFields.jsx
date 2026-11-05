@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
-import { Plus, Tag, X } from '@phosphor-icons/react';
+import { CaretDown, Check, MagnifyingGlass, Plus, Tag, X } from '@phosphor-icons/react';
 import { API_BASE } from '../../services/apiConfig';
 
 const clean = value => String(value || '').trim();
@@ -16,6 +16,90 @@ const itemTypeName = item => item?.name || item?.assettypename || item?.asset_ty
 const itemTypeId = item => item?.assettypeid || item?.asset_type_id || '';
 const typeValue = item => clean(item?.type || item?.categorytype || item?.category_type).toUpperCase();
 const isConsumable = item => typeValue(item).includes('CONSUM') || typeValue(item).includes('STOCK');
+
+function PremiumCombobox({ label, value, options, placeholder, disabled = false, required = false, onSelect }) {
+  const rootRef = useRef(null);
+  const inputRef = useRef(null);
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
+  const selected = options.find(option => option.label === value);
+  const displayValue = open ? query : (selected?.label || value || '');
+  const matches = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    return options.filter(option => !term || option.label.toLowerCase().includes(term)).slice(0, 80);
+  }, [options, query]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const closeOutside = event => { if (!rootRef.current?.contains(event.target)) setOpen(false); };
+    const closeOnEscape = event => { if (event.key === 'Escape') { setOpen(false); setQuery(''); } };
+    document.addEventListener('pointerdown', closeOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    inputRef.current?.setCustomValidity(required && !selected ? `Choose a ${label.toLowerCase()} from the list.` : '');
+  }, [required, selected, label]);
+
+  const openOptions = () => {
+    if (disabled) return;
+    setQuery('');
+    setActiveIndex(0);
+    setOpen(true);
+  };
+  const choose = option => {
+    onSelect(option);
+    setOpen(false);
+    setQuery('');
+  };
+  const onKeyDown = event => {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (!open) openOptions();
+      else setActiveIndex(index => Math.min(index + 1, Math.max(0, matches.length - 1)));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!open) openOptions();
+      else setActiveIndex(index => Math.max(0, index - 1));
+    } else if (event.key === 'Enter' && open) {
+      event.preventDefault();
+      if (matches[activeIndex]) choose(matches[activeIndex]);
+    } else if (event.key === 'Escape' && open) {
+      event.preventDefault();
+      setOpen(false);
+      setQuery('');
+    }
+  };
+
+  return <div className={`asset-combobox${open ? ' is-open' : ''}${disabled ? ' is-disabled' : ''}`} ref={rootRef}>
+    <div className="asset-combobox-control">
+      <input ref={inputRef} className="asset-combobox-input" type="text" role="combobox" aria-label={label}
+        aria-expanded={open} aria-haspopup="listbox" aria-autocomplete="list" aria-required={required}
+        autoComplete="off" required={required} disabled={disabled} value={displayValue}
+        placeholder={placeholder} onFocus={openOptions} onClick={() => open ? null : openOptions()}
+        onChange={event => { setQuery(event.target.value); setActiveIndex(0); setOpen(true); }} onKeyDown={onKeyDown} />
+      {open && <button type="button" className="asset-combobox-clear" aria-label="Clear search" onClick={() => { setQuery(''); setActiveIndex(0); inputRef.current?.focus(); }}><X size={15} /></button>}
+      <CaretDown className="asset-combobox-chevron" size={16} weight="bold" aria-hidden="true" />
+    </div>
+    {open && <div className="asset-combobox-menu" role="listbox" aria-label={`${label} options`}>
+      <div className="asset-combobox-menu-head"><MagnifyingGlass size={15} /><span>{query ? `${matches.length} matching` : `${options.length} available`}</span><small>Type to filter</small></div>
+      <div className="asset-combobox-options">
+        {matches.length ? matches.map((option, index) => <button type="button" role="option" aria-selected={option.label === value}
+          className={`asset-combobox-option${index === activeIndex ? ' is-active' : ''}`} key={option.key || option.label}
+          onMouseEnter={() => setActiveIndex(index)} onClick={() => choose(option)}>
+          <span className="asset-combobox-option-mark">{option.label === value ? <Check size={15} weight="bold" /> : <i />}</span>
+          <span className="asset-combobox-option-copy"><b>{option.label}</b>{option.meta && <small>{option.meta}</small>}</span>
+        </button>) : <div className="asset-combobox-empty">No matches. Try another search.</div>}
+        {options.filter(option => !query.trim() || option.label.toLowerCase().includes(query.trim().toLowerCase())).length > 80 && <div className="asset-combobox-more">Search to narrow the list · showing first 80 results</div>}
+      </div>
+    </div>}
+  </div>;
+}
 
 export default function AssetCategoryFields({
   type = 'ASSET', category, subcategory, assetType, subcategoryRequired = false,
@@ -157,35 +241,26 @@ export default function AssetCategoryFields({
     <div className="asset-classification-grid">
       <div>
         <label className="data-label">{type === 'CONSUMABLE' ? 'Stock category *' : 'Main category *'}</label>
-        <select className="premium-select" style={{ width: '100%' }} value={category || ''} onChange={event => {
-          const selected = visibleCategories.find(item => categoryName(item) === event.target.value);
-          onCategoryChange(event.target.value, selected); onSubcategoryChange('', null); onAssetTypeChange('', null);
-        }} required disabled={loading}>
-          <option value="">{loading ? 'Loading categories…' : 'Select main category'}</option>
-          {visibleCategories.map((item, index) => <option key={categoryId(item) || `${categoryName(item)}-${index}`} value={categoryName(item)}>{categoryName(item)}</option>)}
-        </select>
+        <PremiumCombobox label={type === 'CONSUMABLE' ? 'Stock category' : 'Main category'} value={category || ''}
+          placeholder={loading ? 'Loading categories…' : 'Select main category'} disabled={loading} required
+          options={visibleCategories.map((item, index) => ({ key: categoryId(item) || `${categoryName(item)}-${index}`, label: categoryName(item), meta: categoryId(item) ? `Category · ${categoryId(item)}` : 'Main category', item }))}
+          onSelect={option => { onCategoryChange(option.label, option.item); onSubcategoryChange('', null); onAssetTypeChange('', null); }} />
         <button type="button" className="asset-classification-add" onClick={() => openModal('category')}><Plus size={14} weight="bold" /> Add category</button>
       </div>
       <div>
         <label className="data-label">Subcategory *</label>
-        <select className="premium-select" style={{ width: '100%' }} value={subcategory || ''} onChange={event => {
-          const selected = visibleSubcategories.find(item => subcategoryName(item) === event.target.value);
-          onSubcategoryChange(event.target.value, selected); onAssetTypeChange('', null);
-        }} disabled={!selectedCategory} required={subcategoryRequired}>
-          <option value="">{selectedCategory ? 'Select subcategory' : 'Choose a main category first'}</option>
-          {visibleSubcategories.map((item, index) => <option key={subcategoryId(item) || `${subcategoryName(item)}-${index}`} value={subcategoryName(item)}>{subcategoryName(item)}</option>)}
-        </select>
+        <PremiumCombobox label="Subcategory" value={subcategory || ''}
+          placeholder={selectedCategory ? 'Select subcategory' : 'Choose a main category first'} disabled={!selectedCategory} required={subcategoryRequired}
+          options={visibleSubcategories.map((item, index) => ({ key: subcategoryId(item) || `${subcategoryName(item)}-${index}`, label: subcategoryName(item), meta: subcategoryId(item) ? `Subcategory · ${subcategoryId(item)}` : 'Subcategory', item }))}
+          onSelect={option => { onSubcategoryChange(option.label, option.item); onAssetTypeChange('', null); }} />
         <button type="button" className="asset-classification-add" onClick={() => openModal('subcategory')} disabled={!selectedCategory}><Plus size={14} weight="bold" /> Add subcategory</button>
       </div>
       <div>
         <label className="data-label">Item / asset type *</label>
-        <select className="premium-select" style={{ width: '100%' }} value={assetType || ''} onChange={event => {
-          const selected = visibleAssetTypes.find(item => itemTypeName(item) === event.target.value);
-          onAssetTypeChange(event.target.value, selected);
-        }} disabled={!selectedSubcategory} required>
-          <option value="">{selectedSubcategory ? 'Choose the item type' : 'Choose a subcategory first'}</option>
-          {visibleAssetTypes.map((item, index) => <option key={itemTypeId(item) || `${itemTypeName(item)}-${index}`} value={itemTypeName(item)}>{itemTypeName(item)}</option>)}
-        </select>
+        <PremiumCombobox label="Item or asset type" value={assetType || ''}
+          placeholder={selectedSubcategory ? 'Choose the item type' : 'Choose a subcategory first'} disabled={!selectedSubcategory} required
+          options={visibleAssetTypes.map((item, index) => ({ key: itemTypeId(item) || `${itemTypeName(item)}-${index}`, label: itemTypeName(item), meta: itemTypeId(item) ? `Item type · ${itemTypeId(item)}` : 'Item / asset type', item }))}
+          onSelect={option => onAssetTypeChange(option.label, option.item)} />
         <button type="button" className="asset-classification-add" onClick={() => openModal('assetType')} disabled={!selectedSubcategory}><Plus size={14} weight="bold" /> Add item type</button>
       </div>
     </div>
@@ -210,6 +285,8 @@ export default function AssetCategoryFields({
     </div>, document.body)}
     <style>{`
       .asset-classification-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-bottom:20px}
+      .asset-combobox{position:relative;z-index:1;width:100%;}.asset-combobox.is-open{z-index:80}.asset-combobox-control{position:relative;display:flex;align-items:center;min-height:46px;border:1px solid rgba(133,166,197,.22);border-radius:12px;background:linear-gradient(135deg,rgba(13,24,41,.98),rgba(17,25,46,.97));box-shadow:inset 0 1px rgba(255,255,255,.035),0 5px 14px rgba(1,7,18,.12);transition:border-color .2s ease,box-shadow .2s ease,background .2s ease,transform .2s ease}.asset-combobox-control:hover{border-color:rgba(83,218,198,.55);background:linear-gradient(135deg,rgba(15,32,49,.99),rgba(21,29,53,.98));}.asset-combobox.is-open .asset-combobox-control,.asset-combobox-control:focus-within{border-color:#52d8c3;box-shadow:0 0 0 3px rgba(82,216,195,.12),0 9px 22px rgba(2,9,23,.24)}.asset-combobox.is-disabled .asset-combobox-control{opacity:.55;cursor:not-allowed}.asset-combobox-input{width:100%;min-width:0;min-height:44px;padding:0 42px 0 14px;border:0!important;border-radius:inherit!important;outline:0!important;background:transparent!important;box-shadow:none!important;color:#eff8ff!important;font:inherit!important;font-size:.82rem!important;font-weight:700!important;letter-spacing:.005em}.asset-combobox-input::placeholder{color:#91a5bb!important;font-weight:550}.asset-combobox-clear,.asset-combobox-chevron{position:absolute;right:34px;display:grid;place-items:center;width:23px;height:23px;border:0;border-radius:7px;color:#9db1c6;background:transparent}.asset-combobox-clear{cursor:pointer}.asset-combobox-clear:hover{color:#e3f9f5;background:rgba(255,255,255,.08)}.asset-combobox-chevron{right:10px;pointer-events:none;transition:transform .2s ease,color .2s ease;color:#73ddcc}.asset-combobox.is-open .asset-combobox-chevron{transform:rotate(180deg);color:#b5fff1}.asset-combobox-menu{position:absolute;top:calc(100% + 8px);left:0;right:0;z-index:100;overflow:hidden;border:1px solid rgba(103,220,202,.32);border-radius:15px;background:linear-gradient(150deg,#132136,#101829 70%,#11172b);box-shadow:0 22px 56px rgba(0,0,0,.48),0 0 0 1px rgba(255,255,255,.035);animation:asset-menu-arrive .2s cubic-bezier(.2,.7,.25,1) both;transform-origin:top center}.asset-combobox-menu-head{min-height:37px;display:flex;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid rgba(150,180,207,.12);color:#6cdbca;font-size:.63rem;font-weight:800;letter-spacing:.045em}.asset-combobox-menu-head small{margin-left:auto;color:#7188a1;font-size:.59rem;font-weight:600;letter-spacing:0}.asset-combobox-options{max-height:255px;overflow-y:auto;padding:6px;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:#42667b #111b2c}.asset-combobox-option{width:100%;display:flex;align-items:center;gap:10px;padding:9px 10px;border:1px solid transparent;border-radius:10px;color:#dbe8f5;background:transparent;text-align:left;cursor:pointer}.asset-combobox-option:hover,.asset-combobox-option.is-active{border-color:rgba(90,220,199,.2);background:linear-gradient(105deg,rgba(37,155,144,.19),rgba(83,104,185,.12));}.asset-combobox-option-mark{width:24px;height:24px;flex:0 0 24px;display:grid;place-items:center;border:1px solid rgba(127,157,186,.19);border-radius:8px;color:#6ee4cc;background:rgba(59,214,187,.07)}.asset-combobox-option-mark i{width:6px;height:6px;border-radius:50%;background:#72879e}.asset-combobox-option-copy{display:grid;min-width:0;gap:3px}.asset-combobox-option-copy b{overflow:hidden;color:#eaf2fc;font-size:.75rem;text-overflow:ellipsis;white-space:nowrap}.asset-combobox-option-copy small{color:#8299b2;font-size:.59rem}.asset-combobox-empty,.asset-combobox-more{padding:14px 10px;color:#93a8be;font-size:.69rem;text-align:center}.asset-combobox-more{padding:8px;border-top:1px solid rgba(148,163,184,.12);color:#6f879d;font-size:.6rem}
+      @keyframes asset-menu-arrive{from{opacity:0;transform:translateY(-5px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
       .asset-classification-add{display:inline-flex;align-items:center;gap:5px;margin-top:8px;padding:5px 0;border:0;background:transparent;color:#73d9cf;font:inherit;font-size:.72rem;font-weight:750;cursor:pointer}
       .asset-classification-add:hover{color:#a7f3e8}.asset-classification-add:disabled{opacity:.45;cursor:not-allowed}
       .asset-classification-notice{margin:-5px 0 16px;padding:9px 12px;border:1px solid rgba(45,212,191,.22);border-radius:10px;background:rgba(45,212,191,.07);color:#a7f3e8;font-size:.75rem}.asset-classification-notice.error{border-color:rgba(248,113,113,.25);background:rgba(248,113,113,.07);color:#fecaca}

@@ -745,19 +745,21 @@ export default function PublicSiteSections({ page = 'all' }) {
         <section className="public-corporate-video-section" id="corporate-training-videos">
           <div className="public-story-shell">
             <SectionHeading eyebrow="Watch &amp; learn" title="Corporate training in action." description="Preview and play IPCS Global corporate training videos here." align="center" />
-            <div className="public-corporate-video-grid">{corporateTrainingVideos.map((video, index) => <article className={`public-corporate-video-card corporate-video-${index + 1}`} key={video.key}>
-              <div className="public-corporate-video-frame">{activeCorporateVideoKey === video.key
-                ? <iframe src={`https://ipcsglobalsolutions-my.sharepoint.com/personal/ipcsdesigners_ipcsglobal_com/_layouts/15/embed.aspx?autoplay=true&muted=true&UniqueId=${video.id}&embed=%7B%22af%22%3Atrue%2C%22ust%22%3Atrue%7D&referrer=StreamWebApp&referrerScenario=EmbedDialog.Create`} title={video.title} loading="eager" allow="autoplay; encrypted-media; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
-                : <button type="button" className="public-corporate-video-launch" onClick={() => setActiveCorporateVideoKey(video.key)} aria-label={`Play video: ${video.title}`}><PlayCircle size={46} weight="fill" /><span>Play video</span></button>}</div>
-              <h3>{video.title}</h3>
-              <span>VIDEO {String(index + 1).padStart(2, '0')}</span>
-            </article>)}</div>
+            <div className="public-corporate-video-grid">{corporateTrainingVideos.map((video, index) => {
+              const embedUrl = `https://ipcsglobalsolutions-my.sharepoint.com/personal/ipcsdesigners_ipcsglobal_com/_layouts/15/embed.aspx?UniqueId=${video.id}&embed=%7B%22ust%22%3Atrue%2C%22hv%22%3A%22CopyEmbedCode%22%7D&referrer=StreamWebApp&referrerScenario=EmbedDialog.Create`;
+              return <article className={`public-corporate-video-card corporate-video-${index + 1}`} key={video.key}>
+                <div className="public-corporate-video-frame">{activeCorporateVideoKey === video.key
+                  ? <iframe src={embedUrl} title={`Corporate training video ${index + 1}`} loading="lazy" allow="autoplay; encrypted-media; picture-in-picture; web-share" allowFullScreen referrerPolicy="strict-origin-when-cross-origin" />
+                  : <button type="button" className="public-corporate-video-launch" onClick={() => setActiveCorporateVideoKey(video.key)} aria-label={`Play corporate training video ${index + 1}`}><PlayCircle size={46} weight="fill" /><span>Play video</span></button>}</div>
+                <a className="public-corporate-video-open" href={embedUrl} target="_blank" rel="noreferrer">Open video <ArrowRight size={14} /></a>
+              </article>;
+            })}</div>
           </div>
         </section>
 
         <section className="public-corporate-photo-section" id="corporate-training-photos">
           <div className="public-story-shell">
-            <SectionHeading eyebrow="Event gallery" title="Training moments from the field." description="A moving photo reel from IPCS Global’s Bhutan Police and Military BMS training programmes." align="center" />
+            <SectionHeading eyebrow="Event gallery" title="Training moments from the field." align="center" />
             <div className="public-corporate-photo-reel" role="region" aria-label="Bhutan Police and Military BMS training event photos">
               {corporateTrainingPhotoRows.map((photos, rowIndex) => <div className="public-corporate-photo-marquee" role="group" aria-label={rowIndex === 0 ? 'Photo row moving left' : 'Photo row moving right'} key={`photo-row-${rowIndex}`}>
                 <div className={`public-corporate-photo-track${rowIndex === 1 ? ' is-right' : ''}`}>
