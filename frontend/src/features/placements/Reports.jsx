@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus, PaperPlaneTilt, Trash, MagnifyingGlass } from '@phosphor-icons/react';
@@ -177,6 +177,7 @@ export default function Reports() {
   const [reportLoading, setReportLoading] = useState(true);
   const [reportError, setReportError] = useState('');
   const [reportReloadKey, setReportReloadKey] = useState(0);
+  const reportSourceRefreshRequested = useRef(false);
   const [dataMeta, setDataMeta] = useState(null);
   const [portalPlacementPending, setPortalPlacementPending] = useState(0);
   const [sendingReport, setSendingReport] = useState('');
@@ -221,10 +222,12 @@ export default function Reports() {
 
   useEffect(() => {
     let active = true;
+    const refreshSource = reportSourceRefreshRequested.current;
+    reportSourceRefreshRequested.current = false;
     setReportLoading(true);
     setReportError('');
 
-    axios.post(`${API_BASE}/api/tpo/reports`, {}, { timeout: 45000 })
+    axios.post(`${API_BASE}/api/tpo/reports`, { refreshSource }, { timeout: 45000 })
       .then(response => {
         if (!active) return;
         if (!response.data?.success) throw new Error(response.data?.message || 'Could not load report data.');
@@ -253,7 +256,9 @@ export default function Reports() {
           setReportError(error.response?.data?.message || error.message || 'Could not load report data.');
         }
       })
-      .finally(() => { if (active) setReportLoading(false); });
+      .finally(() => {
+        if (active) setReportLoading(false);
+      });
 
     const auxiliaryRequests = [
       isSuperAdmin ? axios.get(`${API_BASE}/api/admin/users`, { params: { month: monthFilter } }) : Promise.resolve(null),
@@ -839,7 +844,10 @@ export default function Reports() {
           health={targetLogHealthy}
           lastSyncedAt={targetLogLastSyncedAt}
           lastAttemptAt={dataMeta.lastRefreshAttemptAt}
-          onRefresh={() => setReportReloadKey(value => value + 1)}
+          onRefresh={() => {
+            reportSourceRefreshRequested.current = true;
+            setReportReloadKey(value => value + 1);
+          }}
           refreshing={reportLoading}
         />}
 

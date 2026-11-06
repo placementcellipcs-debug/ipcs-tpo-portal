@@ -61,6 +61,8 @@ let assetCache = null;
 let assetCacheUpdatedAt = null;
 let isFetching = false;
 let refreshRequested = false;
+let operationalSheetsReady = false;
+const pendingMigrationNotices = new Set();
 
 const getAssetCache = () => assetCache;
 const getAssetCacheUpdatedAt = () => assetCacheUpdatedAt;
@@ -100,37 +102,44 @@ async function fetchAssetBatchWithRetry(sheetsApi, spreadsheetId, ranges, retrie
 }
 
 async function ensureOperationalSheets() {
-  const normalizeTitle = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const normalizedBase = value => normalizeTitle(value).replace(/^\d+/, '');
-  for (const definition of managedOperationalSheets) {
-    const acceptedTitles = [definition.title, ...(definition.aliases || [])].map(normalizeTitle);
-    const existing = assetDoc.sheetsByIndex.find(sheet => {
-      const title = normalizeTitle(sheet.title);
-      const base = normalizedBase(sheet.title);
-      // Only exact aliases are safe here. Suffix matching made
-      // Asset_Activity_History look like the per-item Asset_History sheet.
-      return acceptedTitles.some(candidate => title === candidate || base === candidate);
-    });
-    if (existing) {
-      await ensureManagedSheetHeaders(existing, definition.headers);
-      if (definition.seed) await seedTaxonomySheet(existing, definition);
-      continue;
-    }
-    try {
-      const created = await assetDoc.addSheet({
-        title: definition.title,
-        headerValues: definition.headers,
-        gridProperties: { rowCount: 1000, columnCount: Math.max(26, definition.headers.length) }
+  if (!operationalSheetsReady) {
+    let setupHadErrors = false;
+    const normalizeTitle = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const normalizedBase = value => normalizeTitle(value).replace(/^\d+/, '');
+    for (const definition of managedOperationalSheets) {
+      const acceptedTitles = [definition.title, ...(definition.aliases || [])].map(normalizeTitle);
+      const existing = assetDoc.sheetsByIndex.find(sheet => {
+        const title = normalizeTitle(sheet.title);
+        const base = normalizedBase(sheet.title);
+        // Only exact aliases are safe here. Suffix matching made
+        // Asset_Activity_History look like the per-item Asset_History sheet.
+        return acceptedTitles.some(candidate => title === candidate || base === candidate);
       });
-      if (definition.headers.length > (Number(created.columnCount) || 0)) await created.resize({ columnCount: definition.headers.length });
-      if (definition.seed) await seedTaxonomySheet(created, definition);
-      console.log(`[ASSET SHEETS] Created operational tab ${definition.title}.`);
-      logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset operational tab created', resource: definition.title, result: 'Success', details: { columns: definition.headers.length, rowsSeeded: definition.seed?.length || 0 } });
-    } catch (error) {
-      console.error(`[ASSET SHEETS] Could not create ${definition.title}: ${error.message}`);
-      logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset operational tab creation failed', resource: definition.title, result: 'Error', details: { error: String(error.message || error).slice(0, 400) } });
+      if (existing) {
+        await ensureManagedSheetHeaders(existing, definition.headers);
+        if (definition.seed) await seedTaxonomySheet(existing, definition);
+        continue;
+      }
+      try {
+        const created = await assetDoc.addSheet({
+          title: definition.title,
+          headerValues: definition.headers,
+          gridProperties: { rowCount: 1000, columnCount: Math.max(26, definition.headers.length) }
+        });
+        if (definition.headers.length > (Number(created.columnCount) || 0)) await created.resize({ columnCount: definition.headers.length });
+        if (definition.seed) await seedTaxonomySheet(created, definition);
+        console.log(`[ASSET SHEETS] Created operational tab ${definition.title}.`);
+        logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset operational tab created', resource: definition.title, result: 'Success', details: { columns: definition.headers.length, rowsSeeded: definition.seed?.length || 0 } });
+      } catch (error) {
+        setupHadErrors = true;
+        console.error(`[ASSET SHEETS] Could not create ${definition.title}: ${error.message}`);
+        logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset operational tab creation failed', resource: definition.title, result: 'Error', details: { error: String(error.message || error).slice(0, 400) } });
+      }
     }
+    operationalSheetsReady = !setupHadErrors;
   }
+  // Keep checking migration sources so a legacy tab added later is still
+  // discovered, while avoiding a full schema/header audit on every cache poll.
   await migrateLegacyAssetRows();
 }
 
@@ -175,9 +184,13 @@ async function migrateLegacyAssetRows() {
     // A missing tab is not a completed migration. Some workbooks add or rename
     // legacy tabs after the first service start; retry once they are present.
     if (!source || source === target) {
-      console.info(`[ASSET MIGRATION] ${sourceName} is not available yet; ${key} remains pending.`);
+      if (!pendingMigrationNotices.has(key)) {
+        pendingMigrationNotices.add(key);
+        console.info(`[ASSET MIGRATION] ${sourceName} is not available yet; ${key} remains pending.`);
+      }
       return;
     }
+    pendingMigrationNotices.delete(key);
     let rowsCopied = 0;
     let rowsSkipped = 0;
     await source.loadHeaderRow();

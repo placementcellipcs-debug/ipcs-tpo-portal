@@ -4046,19 +4046,18 @@ exports.getReports = async (req, res) => {
   const isCentralTeamReportUser = isCentralPlacementTeam(reportUser);
   const isAdminReportUser = reportUser.accessType === 'superadmin' || reportRole.includes('ADMIN') || ['GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(reportRole);
 
+  if (req.body?.refreshSource === true) await refreshCache();
   if (!getCache()) await refreshCache();
   if (!getCache()) return res.status(503).json({ success: false, message: 'Report data is still syncing. Please refresh shortly.' });
   let students = [], applications = [], issues = [], talentino = [], tpoLogs = [], placementReportLogs = [];
   const cache = getCache();
-  let sourceTpoLogs = [];
-  let tpoLogSourceReadAt = '';
-  try {
-    sourceTpoLogs = await readLiveTpoLogRows();
-    tpoLogSourceReadAt = new Date().toISOString();
-  } catch (error) {
-    console.error('Could not read the live TPO_Log for reports:', error.message);
-    return res.status(503).json({ success: false, message: `Report placement records could not be verified from TPO_Log: ${error.message}` });
-  }
+  // Reports use the shared two-minute cache instead of issuing separate full
+  // TPO_Log and TPO_Stats reads for each page load. Manual source refreshes are
+  // explicit, and cache health/timestamps below show when source data was last
+  // confirmed by Google Sheets.
+  const sourceTpoLogs = Array.isArray(cache.tpoLogs) ? cache.tpoLogs : [];
+  const tpoLogSourceReadAt = cache.cacheSheetUpdatedAt?.tpoLogs || '';
+  const tpoLogSourceHealthy = cache.cacheSheetHealth?.tpoLogs === true;
   
   const placedStudentRolls = new Set();
   const placedStudentNameBranches = new Set();
@@ -4205,16 +4204,8 @@ exports.getReports = async (req, res) => {
   });
   // 🚨 EXPORT TPO STATS FOR FRONTEND
   let tpoStatsList = [];
-  let tpoStatsSourceHealthy = false;
-  let reportTpoStatsRows = cache.tpoStats || [];
-  try {
-    // Targets are month-specific and small; read their source tab live so a
-    // newly assigned target is visible even if the general portal cache lags.
-    reportTpoStatsRows = await readLiveTpoStatsRows();
-    tpoStatsSourceHealthy = true;
-  } catch (error) {
-    console.warn('Live TPO_Stats read failed; using the last cached target rows:', error.message);
-  }
+  const reportTpoStatsRows = Array.isArray(cache.tpoStats) ? cache.tpoStats : [];
+  const tpoStatsSourceHealthy = cache.cacheSheetHealth?.tpoStats === true;
   const reportUserIdentities = new Set([
     reportUser.name, reportUser.email, reportUser.username, reportUser.loginId, reportUser.employeeId, reportUser.empId
   ].map(normalizePlacementText).filter(Boolean));
@@ -4263,7 +4254,7 @@ exports.getReports = async (req, res) => {
     dataMeta: {
       lastRefreshAttemptAt: cache.cacheUpdatedAt || '',
       tpoLogSourceReadAt,
-      tpoLogSourceHealthy: true,
+      tpoLogSourceHealthy,
       tpoLogSourceRowCount: sourceTpoLogs.length,
       tpoStatsSourceHealthy,
       sheetLastSuccessfulSyncAt: cache.cacheSheetUpdatedAt || {},
