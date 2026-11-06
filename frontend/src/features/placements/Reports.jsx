@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus, PaperPlaneTilt, Trash, MagnifyingGlass } from '@phosphor-icons/react';
+import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus, PaperPlaneTilt, Trash, MagnifyingGlass, CalendarBlank, CaretDown, CaretLeft, CaretRight, X } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import DataSourceStatus from '../../components/DataSourceStatus';
 import { PortalToast } from '../../components/PortalFeedback';
@@ -166,6 +166,9 @@ export default function Reports() {
   const today = new Date();
   const currentMonthStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   const [monthFilter, setMonthFilter] = useState(currentMonthStr);
+  const [showMonthPicker, setShowMonthPicker] = useState(false);
+  const [monthPickerYear, setMonthPickerYear] = useState(today.getFullYear());
+  const monthPickerRef = useRef(null);
   const [reportTpoFilter, setReportTpoFilter] = useState('all');
 
   const [students, setStudents] = useState([]);
@@ -204,6 +207,28 @@ export default function Reports() {
   const normalizedRecipientSearch = reportRecipientSearch.trim().toLowerCase();
   const filteredReportRecipients = selectableReportRecipients.filter(recipient => !normalizedRecipientSearch || [recipient.name, recipient.position, recipient.branch, recipient.email]
     .some(value => String(value || '').toLowerCase().includes(normalizedRecipientSearch)));
+  const monthLabel = (() => {
+    const [year, month] = String(monthFilter || '').split('-').map(Number);
+    return year && month ? new Date(year, month - 1, 1).toLocaleDateString('en', { month: 'long', year: 'numeric' }) : 'Choose month';
+  })();
+  const monthNames = Array.from({ length: 12 }, (_, index) => new Date(2026, index, 1).toLocaleDateString('en', { month: 'short' }));
+
+  useEffect(() => {
+    if (!showMonthPicker) return undefined;
+    const dismissOnOutsidePointer = event => {
+      if (!monthPickerRef.current?.contains(event.target)) setShowMonthPicker(false);
+    };
+    const dismissOnEscape = event => {
+      if (event.key === 'Escape') setShowMonthPicker(false);
+    };
+    document.addEventListener('pointerdown', dismissOnOutsidePointer);
+    document.addEventListener('keydown', dismissOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', dismissOnOutsidePointer);
+      document.removeEventListener('keydown', dismissOnEscape);
+    };
+  }, [showMonthPicker]);
+
   useEffect(() => {
     if (!canSendMonthlyReport) return undefined;
     let active = true;
@@ -262,24 +287,29 @@ export default function Reports() {
         if (active) setReportLoading(false);
       });
 
+    return () => { active = false; };
+  }, [isSuperAdmin, reportReloadKey]);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return undefined;
+    let active = true;
     const auxiliaryRequests = [
-      isSuperAdmin ? axios.get(`${API_BASE}/api/admin/users`, { params: { month: monthFilter } }) : Promise.resolve(null),
-      isSuperAdmin ? axios.get(`${API_BASE}/api/admin/branches`) : Promise.resolve(null)
+      axios.get(`${API_BASE}/api/admin/users`, { params: { month: monthFilter } }),
+      axios.get(`${API_BASE}/api/admin/branches`)
     ];
     Promise.allSettled(auxiliaryRequests).then(([usersResult, branchesResult]) => {
       if (!active) return;
-      if (isSuperAdmin && usersResult.status === 'fulfilled' && usersResult.value?.data?.success) {
+      if (usersResult.status === 'fulfilled' && usersResult.value?.data?.success) {
         const tpos = (usersResult.value.data.users || []).filter(user => /tpo|placement officer/i.test(user.role || ''));
         if (tpos.length) setTpoList(tpos);
       }
-      if (isSuperAdmin && branchesResult.status === 'fulfilled' && branchesResult.value?.data?.success) {
+      if (branchesResult.status === 'fulfilled' && branchesResult.value?.data?.success) {
         const branches = (branchesResult.value.data.branches || []).map(branch => branch.branch).filter(Boolean).sort((a, b) => a.localeCompare(b));
         if (branches.length) setAllBranchesList(current => uniqueBranches([...current, ...branches]));
       }
     });
-
     return () => { active = false; };
-  }, [isSuperAdmin, myName, reportReloadKey, monthFilter]);
+  }, [isSuperAdmin, monthFilter]);
 
   const getCourse = course => reportMainCourse(course) || 'Information technology (IT)';
   const matchesTpoStatsOwner = (stat, tpo) => {
@@ -716,8 +746,42 @@ export default function Reports() {
     .report-cc-branch { color: #cbd5e1; font-size: .76rem; line-height: 1.35; }
     .report-cc-email { color: #7dd3fc; font-size: .75rem; line-height: 1.35; }
     .report-cc-empty { padding: 16px 12px; color: #94a3b8; font-size: .83rem; }
+    .report-month-control { position: relative; }
+    .report-month-trigger { display: inline-flex; align-items: center; gap: 11px; min-width: 224px; padding: 8px 13px 8px 9px; border: 1px solid rgba(45,212,191,.42); border-radius: 12px; color: #f1f5f9; background: linear-gradient(145deg, rgba(15,23,42,.98), rgba(10,16,29,.98)); box-shadow: inset 0 1px 0 rgba(255,255,255,.045), 0 8px 24px rgba(2,6,23,.25); cursor: pointer; text-align: left; transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease; }
+    .report-month-trigger:hover, .report-month-trigger[aria-expanded="true"] { border-color: rgba(45,212,191,.8); box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 0 0 3px rgba(20,184,166,.1), 0 12px 30px rgba(2,6,23,.34); }
+    .report-month-trigger:active { transform: translateY(1px); }
+    .report-month-icon { width: 40px; height: 40px; display: grid; place-items: center; flex: 0 0 auto; border: 1px solid rgba(45,212,191,.18); border-radius: 10px; color: #5eead4; background: linear-gradient(145deg, rgba(20,184,166,.2), rgba(14,116,144,.1)); }
+    .report-month-copy { display: grid; gap: 2px; flex: 1; }
+    .report-month-eyebrow { color: #64748b; font-size: .61rem; font-weight: 850; letter-spacing: .13em; line-height: 1; }
+    .report-month-value { color: #ccfbf1; font-size: 1rem; font-weight: 800; letter-spacing: -.015em; white-space: nowrap; }
+    .report-month-chevron { color: #64748b; transition: transform .18s ease; }
+    .report-month-trigger[aria-expanded="true"] .report-month-chevron { transform: rotate(180deg); color: #5eead4; }
+    .report-month-popover { position: absolute; z-index: 150; top: calc(100% + 11px); right: 0; width: min(340px, calc(100vw - 32px)); box-sizing: border-box; padding: 17px; border: 1px solid rgba(45,212,191,.2); border-radius: 17px; color: #e2e8f0; background: radial-gradient(ellipse at 5% 0%, rgba(13,148,136,.13), transparent 48%), linear-gradient(145deg, #111a2a, #0b1220 74%); box-shadow: 0 24px 70px rgba(0,0,0,.58), inset 0 1px 0 rgba(255,255,255,.045); animation: report-month-pop .16s ease-out; transform-origin: top right; }
+    .report-month-popover-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .report-month-popover-title { display: flex; align-items: center; gap: 8px; color: #99f6e4; font-size: .67rem; font-weight: 850; letter-spacing: .12em; }
+    .report-month-close { width: 30px; height: 30px; display: grid; place-items: center; border: 1px solid rgba(148,163,184,.13); border-radius: 8px; color: #94a3b8; background: rgba(15,23,42,.58); cursor: pointer; }
+    .report-month-close:hover { color: #e2e8f0; border-color: rgba(148,163,184,.32); background: rgba(30,41,59,.75); }
+    .report-month-year { display: grid; grid-template-columns: 40px 1fr 40px; align-items: center; gap: 9px; margin-bottom: 13px; padding: 8px 9px; border: 1px solid rgba(148,163,184,.1); border-radius: 12px; background: rgba(2,6,23,.25); }
+    .report-month-year-button { width: 38px; height: 38px; display: grid; place-items: center; border: 1px solid rgba(148,163,184,.12); border-radius: 10px; color: #cbd5e1; background: #121d2e; cursor: pointer; transition: .16s ease; }
+    .report-month-year-button:hover { color: #5eead4; border-color: rgba(45,212,191,.35); background: rgba(13,148,136,.12); }
+    .report-month-year-label { display: grid; justify-items: center; gap: 1px; }
+    .report-month-year-label small { color: #64748b; font-size: .58rem; font-weight: 850; letter-spacing: .16em; }
+    .report-month-year-label strong { color: #f8fafc; font-size: 1.42rem; line-height: 1.1; letter-spacing: -.04em; }
+    .report-month-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }
+    .report-month-cell { position: relative; min-height: 48px; border: 1px solid rgba(148,163,184,.1); border-radius: 10px; color: #aebed1; background: rgba(15,23,42,.72); font: inherit; font-size: .82rem; font-weight: 750; cursor: pointer; transition: border-color .16s ease, color .16s ease, background .16s ease, transform .16s ease; }
+    .report-month-cell:hover { transform: translateY(-1px); border-color: rgba(45,212,191,.42); color: #f0fdfa; background: rgba(13,148,136,.13); }
+    .report-month-cell.current:not(.selected) { border-color: rgba(45,212,191,.35); color: #5eead4; }
+    .report-month-cell.current:not(.selected)::after { position: absolute; right: 6px; top: 6px; width: 4px; height: 4px; border-radius: 50%; background: #2dd4bf; content: ''; }
+    .report-month-cell.selected { border-color: rgba(45,212,191,.85); color: #ecfdf5; background: linear-gradient(145deg, rgba(13,148,136,.7), rgba(15,118,110,.5)); box-shadow: 0 5px 16px rgba(13,148,136,.18), inset 0 1px 0 rgba(255,255,255,.12); }
+    .report-month-footer { display: flex; justify-content: space-between; align-items: center; gap: 9px; margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(148,163,184,.1); }
+    .report-month-selected-label { overflow: hidden; color: #64748b; font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
+    .report-month-today { display: inline-flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid rgba(45,212,191,.25); border-radius: 9px; color: #99f6e4; background: rgba(13,148,136,.1); font-size: .72rem; font-weight: 800; cursor: pointer; white-space: nowrap; transition: .16s ease; }
+    .report-month-today:hover { border-color: rgba(45,212,191,.58); background: rgba(13,148,136,.2); }
+    @keyframes report-month-pop { from { opacity: 0; transform: translateY(-5px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
     @media (max-width: 600px) {
       .report-cc-picker { right: 0 !important; padding: 12px !important; }
+      .report-month-trigger { min-width: 195px; }
+      .report-month-popover { right: auto; left: 0; }
       .report-cc-heading { display: none; }
       .report-cc-row { grid-template-columns: 22px minmax(0, 1fr); gap: 8px; }
       .report-cc-identity { grid-column: 2; }
@@ -757,7 +821,42 @@ export default function Reports() {
             <p style={{ color: 'var(--text-muted)', margin: 0, fontSize: '1.1rem' }}>Comprehensive tracking, matrices, and placement data.</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-            <input type="month" className="sleek-input" style={{ background: '#0f1523', border: '1px solid var(--accent-primary)', color: 'var(--accent-primary)', fontWeight: 'bold', fontSize: '1.15rem', padding: '12px 20px' }} value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} />
+            <div ref={monthPickerRef} className="report-month-control">
+              <button type="button" className="report-month-trigger" aria-label={`Choose report month, currently ${monthLabel}`} aria-haspopup="dialog" aria-expanded={showMonthPicker} onClick={() => {
+                if (!showMonthPicker) {
+                  const selectedYear = Number(String(monthFilter).slice(0, 4));
+                  setMonthPickerYear(Number.isInteger(selectedYear) && selectedYear > 0 ? selectedYear : today.getFullYear());
+                }
+                setShowMonthPicker(value => !value);
+              }}>
+                <span className="report-month-icon"><CalendarBlank size={20} weight="duotone" /></span>
+                <span className="report-month-copy"><span className="report-month-eyebrow">REPORT MONTH</span><span className="report-month-value">{monthLabel}</span></span>
+                <CaretDown className="report-month-chevron" size={16} weight="bold" />
+              </button>
+              {showMonthPicker && <div className="report-month-popover" role="dialog" aria-label="Choose report month">
+                <div className="report-month-popover-top">
+                  <span className="report-month-popover-title"><CalendarBlank size={15} weight="fill" /> SELECT REPORT MONTH</span>
+                  <button type="button" className="report-month-close" aria-label="Close month picker" onClick={() => setShowMonthPicker(false)}><X size={15} weight="bold" /></button>
+                </div>
+                <div className="report-month-year">
+                  <button type="button" className="report-month-year-button" aria-label="Previous year" onClick={() => setMonthPickerYear(year => year - 1)}><CaretLeft size={17} weight="bold" /></button>
+                  <div className="report-month-year-label"><small>YEAR</small><strong>{monthPickerYear}</strong></div>
+                  <button type="button" className="report-month-year-button" aria-label="Next year" onClick={() => setMonthPickerYear(year => year + 1)}><CaretRight size={17} weight="bold" /></button>
+                </div>
+                <div className="report-month-grid">
+                  {monthNames.map((name, index) => {
+                    const value = `${monthPickerYear}-${String(index + 1).padStart(2, '0')}`;
+                    const selected = monthFilter === value;
+                    const current = currentMonthStr === value;
+                    return <button key={value} type="button" className={`report-month-cell${selected ? ' selected' : ''}${current ? ' current' : ''}`} aria-pressed={selected} aria-label={`${name} ${monthPickerYear}`} onClick={() => { setMonthFilter(value); setShowMonthPicker(false); }}>{name}</button>;
+                  })}
+                </div>
+                <div className="report-month-footer">
+                  <span className="report-month-selected-label">Selected · {monthLabel}</span>
+                  <button type="button" className="report-month-today" onClick={() => { setMonthFilter(currentMonthStr); setMonthPickerYear(today.getFullYear()); setShowMonthPicker(false); }}><CalendarBlank size={14} weight="fill" /> This month</button>
+                </div>
+              </div>}
+            </div>
             {isSuperAdmin && <select aria-label="Filter reports by TPO" className="sleek-input" style={{ background: '#0f1523', border: '1px solid var(--card-border)', color: 'var(--text-main)', fontWeight: 700, padding: '12px 16px', minWidth: '210px' }} value={reportTpoFilter} onChange={event => setReportTpoFilter(event.target.value)}>
               <option value="all">All TPOs</option>
               {tpoList.map((tpo, index) => <option key={`${reportTpoKey(tpo)}-${index}`} value={reportTpoKey(tpo)}>{tpo.userName || tpo.name || tpo.email}</option>)}
