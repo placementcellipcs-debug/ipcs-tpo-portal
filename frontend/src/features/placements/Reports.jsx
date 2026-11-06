@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import { CircleNotch, Target, ChartLineUp, Buildings, ShieldCheck, Briefcase, UsersThree, Plus, PaperPlaneTilt, Trash, MagnifyingGlass } from '@phosphor-icons/react';
@@ -185,6 +186,7 @@ export default function Reports() {
   const [reportRecipients, setReportRecipients] = useState([]);
   const [reportRecipientsLoading, setReportRecipientsLoading] = useState(false);
   const [reportRecipientsError, setReportRecipientsError] = useState('');
+  const [reportRecipientsReloadKey, setReportRecipientsReloadKey] = useState(0);
   const [selectedReportCcEmails, setSelectedReportCcEmails] = useState([]);
   const [showReportCcPicker, setShowReportCcPicker] = useState(false);
   const [reportRecipientSearch, setReportRecipientSearch] = useState('');
@@ -218,7 +220,7 @@ export default function Reports() {
       })
       .finally(() => { if (active) setReportRecipientsLoading(false); });
     return () => { active = false; };
-  }, [canSendMonthlyReport]);
+  }, [canSendMonthlyReport, reportRecipientsReloadKey]);
 
   useEffect(() => {
     let active = true;
@@ -765,13 +767,15 @@ export default function Reports() {
                 {sendingReport === 'gifty' ? <CircleNotch size={17} className="ph-spin" /> : <PaperPlaneTilt size={17} weight="fill" />}
                 {sendingReport === 'gifty' ? 'Sending…' : 'Send monthly report'}
               </button>
-              <div style={{ position: 'relative' }}>
+              <div>
                 <button type="button" onClick={() => setShowReportCcPicker(value => !value)} disabled={reportLoading || Boolean(sendingReport) || !monthFilter} aria-expanded={showReportCcPicker} title="Choose additional people to copy on this report" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(96,165,250,.42)', background: 'linear-gradient(120deg, rgba(59,130,246,.2), rgba(139,92,246,.17))', color: '#bfdbfe', fontWeight: 800, cursor: reportLoading || sendingReport ? 'wait' : 'pointer', opacity: reportLoading || sendingReport ? .65 : 1 }}>
                   <UsersThree size={17} weight="fill" />
                   {selectedReportCcEmails.length ? `Choose CC (${selectedReportCcEmails.length + 1})` : 'Choose CC recipients'}
                   <span aria-hidden="true">▾</span>
                 </button>
-                {showReportCcPicker && <div role="dialog" aria-label="Choose monthly report CC recipients" className="report-cc-picker" style={{ position: 'absolute', zIndex: 50, right: 0, top: 'calc(100% + 10px)', width: 'min(680px, calc(100vw - 32px))', boxSizing: 'border-box', padding: '16px', borderRadius: '14px', border: '1px solid rgba(96,165,250,.35)', background: '#111827', boxShadow: '0 22px 60px rgba(0,0,0,.55)', color: '#e5edf7' }}>
+                {showReportCcPicker && createPortal(
+                  <div role="presentation" onClick={event => { if (event.target === event.currentTarget) setShowReportCcPicker(false); }} style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', overflowY: 'auto', boxSizing: 'border-box', padding: 'min(8vh, 64px) 16px 24px', background: 'rgba(2,6,23,.72)' }}>
+                  <div role="dialog" aria-modal="true" aria-label="Choose monthly report CC recipients" className="report-cc-picker" style={{ position: 'relative', width: 'min(680px, 100%)', maxHeight: 'min(82vh, 760px)', overflowY: 'auto', boxSizing: 'border-box', padding: '16px', borderRadius: '14px', border: '1px solid rgba(96,165,250,.35)', background: '#111827', boxShadow: '0 22px 60px rgba(0,0,0,.55)', color: '#e5edf7' }} onClick={event => event.stopPropagation()}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '13px' }}>
                     <div>
                       <strong style={{ display: 'block', fontSize: '1rem' }}>Send report with CC</strong>
@@ -792,7 +796,7 @@ export default function Reports() {
                     <span style={{ color: '#64748b', fontSize: '.75rem' }}>{filteredReportRecipients.length} of {selectableReportRecipients.length} people</span>
                   </div>
                   {reportRecipientsLoading ? <div style={{ padding: '16px 8px', color: '#94a3b8', fontSize: '.85rem' }}><CircleNotch size={15} className="ph-spin" /> Loading portal users…</div>
-                    : reportRecipientsError ? <div role="alert" style={{ padding: '10px', borderRadius: '8px', color: '#fecaca', background: 'rgba(127,29,29,.25)', fontSize: '.82rem' }}>{reportRecipientsError}</div>
+                    : reportRecipientsError ? <div role="alert" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px', padding: '10px', borderRadius: '8px', color: '#fecaca', background: 'rgba(127,29,29,.25)', fontSize: '.82rem' }}><span>{reportRecipientsError}</span><button type="button" onClick={() => setReportRecipientsReloadKey(value => value + 1)} style={{ flexShrink: 0, padding: '6px 10px', border: '1px solid rgba(248,113,113,.45)', borderRadius: '7px', background: 'transparent', color: '#fecaca', cursor: 'pointer' }}>Retry</button></div>
                       : <>
                         <div className="report-cc-search" role="search">
                           <MagnifyingGlass size={17} color="#94a3b8" />
@@ -823,7 +827,9 @@ export default function Reports() {
                       {sendingReport === 'gifty_custom_cc' ? 'Sending…' : 'Send report'}
                     </button>
                   </div>
-                </div>}
+                </div>
+                </div>, document.body
+                )}
               </div>
             </>}
           </div>
