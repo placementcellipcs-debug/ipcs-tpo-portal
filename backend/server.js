@@ -516,6 +516,7 @@ app.post('/api/tpo/issues/update', controllers.updateIssue);
 app.post('/api/tpo/reports', controllers.getReports);
 app.get('/api/tpo/reports/recipients', controllers.getMonthlyReportRecipients);
 app.post('/api/tpo/reports/send', controllers.sendMonthlyTpoReport);
+app.post('/api/tpo/reports/send-branch', controllers.sendMonthlyBranchReport);
 app.post('/api/tpo/placed-students', controllers.getPlacedStudents);
 app.post('/api/tpo/placed-students/classification-suggestion', controllers.getPlacementClassificationSuggestion);
 app.post('/api/tpo/placed-students/delete', requireSession('portal'), controllers.deletePlacedStudent);

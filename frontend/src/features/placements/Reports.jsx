@@ -705,8 +705,20 @@ export default function Reports() {
     try {
       const payload = { month: monthFilter, deliveryMode };
       if (deliveryMode === 'gifty_custom_cc') payload.ccRecipients = selectedReportCcEmails;
-      const response = await axios.post(`${API_BASE}/api/tpo/reports/send`, payload, { timeout: 60000 });
+      const endpoint = deliveryMode === 'branch' ? '/api/tpo/reports/send-branch' : '/api/tpo/reports/send';
+      const response = await axios.post(`${API_BASE}${endpoint}`, payload, { timeout: 60000 });
       if (!response.data?.success) throw new Error(response.data?.message || 'The report could not be sent.');
+      if (deliveryMode === 'branch') {
+        const branchReports = Array.isArray(response.data.branchReports) ? response.data.branchReports : [];
+        const branchNames = branchReports.map(report => report.branch).filter(Boolean);
+        const cc = Array.isArray(response.data.cc) ? response.data.cc : [];
+        const queuedCount = branchReports.filter(report => report.queued).length;
+        const delivery = queuedCount === branchReports.length ? 'queued' : queuedCount ? 'sent or queued' : 'sent';
+        const message = `Branch report ${delivery} for ${branchNames.join(', ') || 'assigned branches'} (${displayMonthName})${cc.length ? ` · CC: ${cc.join(', ')}` : ''}.`;
+        setSendReportMessage(message);
+        setToast({ type: 'success', title: 'Branch report processed', message });
+        return;
+      }
       const cc = Array.isArray(response.data.cc) ? response.data.cc : [];
       const delivery = response.data.queued ? 'queued as a new email' : 'sent as a new email';
       const message = `Monthly report ${delivery} to ${response.data.to || 'gifty@ipcsglobal.com'}${cc.length ? ` · CC: ${cc.join(', ')}` : ''} (${displayMonthName}).`;
@@ -716,7 +728,7 @@ export default function Reports() {
     } catch (error) {
       const message = error.response?.data?.message || error.message || 'The report could not be sent.';
       setSendReportMessage(message);
-      setToast({ type: 'error', title: 'Monthly report could not be sent', message });
+      setToast({ type: 'error', title: deliveryMode === 'branch' ? 'Branch report could not be sent' : 'Monthly report could not be sent', message });
     } finally {
       setSendingReport('');
     }
@@ -866,6 +878,10 @@ export default function Reports() {
                 {sendingReport === 'gifty' ? <CircleNotch size={17} className="ph-spin" /> : <PaperPlaneTilt size={17} weight="fill" />}
                 {sendingReport === 'gifty' ? 'Sending…' : 'Send monthly report'}
               </button>
+              <button type="button" onClick={() => sendMonthlyReport('branch')} disabled={Boolean(sendingReport) || !monthFilter} title="Send one branch-only report to each specifically assigned branch. Gifty and Rakesh are copied." style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(96,165,250,.42)', background: 'linear-gradient(120deg, rgba(59,130,246,.2), rgba(139,92,246,.17))', color: '#dbeafe', fontWeight: 800, cursor: sendingReport ? 'wait' : 'pointer', opacity: sendingReport ? .65 : 1 }}>
+                {sendingReport === 'branch' ? <CircleNotch size={17} className="ph-spin" /> : <Buildings size={17} weight="fill" />}
+                {sendingReport === 'branch' ? 'Sending branch report…' : 'Send branch report'}
+              </button>
               <div>
                 <button type="button" onClick={() => setShowReportCcPicker(value => !value)} disabled={reportLoading || Boolean(sendingReport) || !monthFilter} aria-expanded={showReportCcPicker} title="Choose additional people to copy on this report" style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '10px', border: '1px solid rgba(96,165,250,.42)', background: 'linear-gradient(120deg, rgba(59,130,246,.2), rgba(139,92,246,.17))', color: '#bfdbfe', fontWeight: 800, cursor: reportLoading || sendingReport ? 'wait' : 'pointer', opacity: reportLoading || sendingReport ? .65 : 1 }}>
                   <UsersThree size={17} weight="fill" />
@@ -938,7 +954,7 @@ export default function Reports() {
           <span style={{ color: '#fcd79a', fontWeight: 750 }}>{selectedReportTpo ? `Eligible pending · assigned branches for ${selectedReportTpo.userName || selectedReportTpo.name}` : 'Portal-wide placement pending'} · only students marked Pending / Placement Needed at 90%+ course completion</span>
           <strong style={{ color: '#fff', fontSize: '1.35rem' }}>{(selectedReportTpo ? pendTotals.Total : portalPlacementPending).toLocaleString('en-IN')}</strong>
         </div>
-        {sendReportMessage && <div role="status" style={{ marginBottom: '18px', padding: '12px 15px', borderRadius: '10px', border: `1px solid ${sendReportMessage.includes('could not') || sendReportMessage.includes('failed') ? 'rgba(248,113,113,.4)' : 'rgba(52,211,153,.35)'}`, color: sendReportMessage.includes('could not') || sendReportMessage.includes('failed') ? '#fecaca' : '#a7f3d0', background: sendReportMessage.includes('could not') || sendReportMessage.includes('failed') ? 'rgba(127,29,29,.18)' : 'rgba(6,78,59,.18)' }}>{sendReportMessage}</div>}
+        {sendReportMessage && <div role="status" style={{ marginBottom: '18px', padding: '12px 15px', borderRadius: '10px', border: `1px solid ${/could not|failed/i.test(sendReportMessage) ? 'rgba(248,113,113,.4)' : 'rgba(52,211,153,.35)'}`, color: /could not|failed/i.test(sendReportMessage) ? '#fecaca' : '#a7f3d0', background: /could not|failed/i.test(sendReportMessage) ? 'rgba(127,29,29,.18)' : 'rgba(6,78,59,.18)' }}>{sendReportMessage}</div>}
 
         {reportLoading && <div role="status" style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '18px', color: 'var(--text-muted)' }}><CircleNotch className="ph-spin" size={20} />Loading report data…</div>}
         {reportError && <div role="alert" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '18px', padding: '13px 16px', border: '1px solid rgba(248,113,113,.35)', borderRadius: '10px', color: '#fecaca', background: 'rgba(127,29,29,.2)' }}><span>Report data could not be loaded: {reportError}</span><button type="button" onClick={() => setReportReloadKey(value => value + 1)} style={{ padding: '7px 12px', borderRadius: '8px', border: '1px solid rgba(248,113,113,.5)', background: 'transparent', color: '#fecaca', cursor: 'pointer' }}>Retry</button></div>}

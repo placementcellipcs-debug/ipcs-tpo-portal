@@ -10404,6 +10404,284 @@ exports.sendMonthlyTpoReport = async (req, res) => {
   }
 };
 
+exports.sendMonthlyBranchReport = async (req, res) => {
+  const user = req.portalUser || {};
+  if (!isPlacementTrackerTpo(user)) {
+    return res.status(403).json({ success: false, message: 'Only TPOs can send monthly branch reports.' });
+  }
+
+  const month = String(req.body?.month || '').trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    return res.status(400).json({ success: false, message: 'Choose a valid report month.' });
+  }
+
+  const senderEmail = String(user.email || '').trim().toLowerCase();
+  if (!isValidReportEmail(senderEmail)) {
+    return res.status(422).json({ success: false, message: 'Your portal account needs a valid email address to be copied on the branch report.' });
+  }
+
+  const branchKey = value => normalizePlacementText(value).replace(/branch$/, '');
+  const isGlobalBranch = value => ['all', 'allbranches', 'global', 'globalscope'].includes(normalizePlacementText(value));
+  const rawAssignedBranches = [
+    ...(Array.isArray(user.assignedBranchesArray) ? user.assignedBranchesArray : []),
+    ...String(user.assignedBranches || '').split(/[\n,;]+/),
+    user.sittingBranch
+  ].map(value => String(value || '').trim()).filter(Boolean);
+  const assignedBranchNames = [...new Map(rawAssignedBranches
+    .filter(value => !isGlobalBranch(value))
+    .map(value => [branchKey(value), value.replace(/\s+branch$/i, '').trim()])
+    .filter(([key, name]) => key && name)).values()];
+  if (!assignedBranchNames.length) {
+    return res.status(422).json({ success: false, message: 'Assign this TPO one or more specific branches before sending branch reports. An all-branches account cannot send a branch-only report.' });
+  }
+
+  let cache = getCache();
+  if (!cache) { await refreshCache(); cache = getCache(); }
+  if (!cache) return res.status(503).json({ success: false, message: 'Branch report data is still syncing. Please retry shortly.' });
+  if (!Array.isArray(cache.tpoLogs) || cache.cacheSheetHealth?.tpoLogs !== true) {
+    return res.status(503).json({ success: false, message: 'Placement records have not synced successfully yet. Refresh the portal cache before sending this report.' });
+  }
+
+  const branchDirectory = (cache.branches || []).map(row => ({
+    name: getValByHeader(row, ['branch', 'branchname']) || row?._rawData?.[2] || '',
+    email: String(getValByHeader(row, ['email', 'branchemail', 'mailid']) || '').trim().toLowerCase()
+  })).filter(branch => String(branch.name).trim());
+  const assignedBranches = assignedBranchNames.map(assignedName => {
+    const key = branchKey(assignedName);
+    const record = branchDirectory.find(branch => branchKey(branch.name) === key);
+    if (!record) return { name: assignedName, key, email: '', error: 'not listed in the Branch directory' };
+    const email = record.email || getBranchManagerEmail(record.name).trim().toLowerCase();
+    return { name: String(record.name).trim(), key, email, error: isValidReportEmail(email) ? '' : 'has no valid branch email or branch-manager email' };
+  });
+  const unavailableBranches = assignedBranches.filter(branch => branch.error);
+  if (unavailableBranches.length) {
+    return res.status(422).json({
+      success: false,
+      message: `Set a valid branch email for ${unavailableBranches.map(branch => `${branch.name} (${branch.error})`).join(', ')} before sending. Branch emails can be updated in Branch Management.`
+    });
+  }
+
+  const isMonthDate = value => {
+    const date = safeParseDate(value);
+    return Boolean(date && `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}` === month);
+  };
+  const isSameBranch = (value, branch) => branchKey(value) === branch.key;
+  const placementRows = (cache.tpoLogs || []).filter(row =>
+    !isTpoActionLog(row, getValByHeader)
+    && normalizePlacementText(getValByHeader(row, ['status'])) === 'placed'
+    && isMonthDate(getFirstNonEmptyValByHeader(row, ['dateplaced', 'timestamp', 'date']))
+  );
+  const students = Array.isArray(cache.students) ? cache.students : [];
+  const allPlacedRollsByBranch = new Set();
+  const allPlacedNamesByBranch = new Set();
+  (cache.tpoLogs || []).forEach(row => {
+    if (isTpoActionLog(row, getValByHeader) || normalizePlacementText(getValByHeader(row, ['status'])) !== 'placed') return;
+    const key = branchKey(getValByHeader(row, ['branch', 'sittingbranch']));
+    const roll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+    const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+    if (roll && key) allPlacedRollsByBranch.add(`${key}|${roll}`);
+    else if (name && key) allPlacedNamesByBranch.add(`${key}|${name}`);
+  });
+  const studentRowsByRoll = new Map();
+  students.forEach(row => {
+    const roll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+    const key = branchKey(getValByHeader(row, ['branch', 'sittingbranch']));
+    if (roll && key && !studentRowsByRoll.has(`${key}|${roll}`)) studentRowsByRoll.set(`${key}|${roll}`, row);
+  });
+
+  const courseBucket = row => {
+    const course = monthlyReportMainCourse(getValByHeader(row, ['course', 'program']));
+    if (course === 'Industrial Automation') return 'Automation';
+    if (course === 'Digital Marketing') return 'DM';
+    if (course === 'Information technology (IT)') return 'IT';
+    if (course === 'BMS AND CCTV') return 'BMS';
+    if (course === 'Embedded and IoT') return 'Embedded';
+    return 'Others';
+  };
+  const courseBuckets = ['Automation', 'DM', 'IT', 'BMS', 'Embedded', 'Others'];
+  const escape = monthlyReportEscape;
+  const emailTable = (headers, rows, emptyText = 'No records for this month.') => `
+    <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 22px;border-collapse:collapse;font-size:12px;color:#263a4a">
+      <thead><tr>${headers.map(header => `<th style="padding:11px 10px;background:#14364b;border:1px solid #294d63;text-align:left;color:#ffffff;font-size:10px;letter-spacing:.45px;text-transform:uppercase">${escape(header)}</th>`).join('')}</tr></thead>
+      <tbody>${rows.length ? rows.map((row, rowIndex) => `<tr>${row.map(value => `<td style="padding:10px;border:1px solid #d9e5ea;vertical-align:top;background:${rowIndex % 2 ? '#f4f8fa' : '#ffffff'}">${value}</td>`).join('')}</tr>`).join('') : `<tr><td colspan="${headers.length}" style="padding:14px;border:1px solid #d9e5ea;color:#697b89;background:#fbfdff">${escape(emptyText)}</td></tr>`}</tbody>
+    </table>`;
+  const sectionHeader = (eyebrow, title, color) => `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:27px 0 12px;border-collapse:collapse"><tr><td style="border-left:4px solid ${color};padding:4px 0 4px 12px"><div style="font-size:9px;letter-spacing:1.4px;text-transform:uppercase;color:${color};font-weight:bold">${escape(eyebrow)}</div><div style="font-size:18px;line-height:1.35;color:#15364a;font-weight:bold">${escape(title)}</div></td></tr></table>`;
+  const monthName = new Date(`${month}-01T12:00:00`).toLocaleString('en-IN', { month: 'long', year: 'numeric', timeZone: 'Asia/Kolkata' });
+  const applicationRows = Array.isArray(cache.applications) ? cache.applications : [];
+  const vacancyRows = Array.isArray(cache.vacancies) ? cache.vacancies : [];
+  const preparedReports = assignedBranches.map(branch => {
+    const branchPlacements = placementRows.filter(row => isSameBranch(getValByHeader(row, ['branch', 'sittingbranch']), branch));
+    const joinedCount = branchPlacements.filter(row => placementOutcome(getValByHeader(row, ['status']), effectivePlacementJoiningStatus(row)).joined).length;
+    const notJoinedCount = branchPlacements.filter(row => placementOutcome(getValByHeader(row, ['status']), effectivePlacementJoiningStatus(row)).notJoined).length;
+    const placedRows = branchPlacements.map((row, index) => {
+      const roll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+      const student = (roll && studentRowsByRoll.get(`${branch.key}|${roll}`)) || (() => {
+        const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+        return name ? students.find(candidate =>
+          isSameBranch(getValByHeader(candidate, ['branch', 'sittingbranch']), branch)
+          && normalizePlacementText(getValByHeader(candidate, ['studentname', 'name'])) === name
+        ) : null;
+      })();
+      const packageValue = getFirstNonEmptyValByHeader(row, ['package', 'salary', 'ctc', 'salarypackage', 'packageoffered']);
+      const packageInfo = monthlyReportPackage(packageValue);
+      const packageLabel = Number.isFinite(packageInfo.lpa) ? `${packageInfo.lpa.toFixed(2).replace(/\.00$/, '')} LPA` : packageValue || '—';
+      const course = getValByHeader(row, ['course', 'program']) || getValByHeader(student, ['course', 'program']);
+      const joining = effectivePlacementJoiningStatus(row) || 'Not recorded';
+      const remark = getValByHeader(row, ['remarks', 'remark', 'notes']) || joining;
+      return [
+        String(index + 1),
+        escape(getValByHeader(row, ['studentname', 'name']) || getValByHeader(student, ['studentname', 'name']) || '—'),
+        escape(course || '—'),
+        escape(getValByHeader(row, ['companyname', 'company']) || '—'),
+        escape(getValByHeader(row, ['position', 'role']) || '—'),
+        escape(packageLabel),
+        escape(remark)
+      ];
+    });
+
+    const branchPending = students.filter(row => {
+      if (!isSameBranch(getValByHeader(row, ['branch', 'sittingbranch']), branch)) return false;
+      const roll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+      const name = normalizePlacementText(getValByHeader(row, ['studentname', 'name']));
+      const placed = (roll && allPlacedRollsByBranch.has(`${branch.key}|${roll}`))
+        || (name && allPlacedNamesByBranch.has(`${branch.key}|${name}`));
+      const status = placed ? 'Placed' : getValByHeader(row, ['placementstatus', 'placementstat']);
+      return isPlacementEligiblePending(status, getValByHeader(row, ['coursepercentage']));
+    });
+    const pendingCounts = Object.fromEntries(courseBuckets.map(bucket => [bucket, new Set()]));
+    const pendingRows = branchPending.map((row, index) => {
+      const roll = normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+      const name = getValByHeader(row, ['studentname', 'name']) || '—';
+      const identity = roll || normalizePlacementText(name) || `row-${index}`;
+      pendingCounts[courseBucket(row)].add(identity);
+      return [escape(name), escape(getValByHeader(row, ['course', 'program']) || '—'), escape(getValByHeader(row, ['coursepercentage']) || '—')];
+    });
+    const pendingSummaryRows = [[
+      ...courseBuckets.map(bucket => String(pendingCounts[bucket].size)),
+      String(new Set(branchPending.map(row => normalizePlacementText(getValByHeader(row, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']) || getValByHeader(row, ['studentname', 'name']))).filter(Boolean)).size)
+    ]];
+
+    const branchVacancies = vacancyRows.filter(row => {
+      if (!isMonthDate(getFirstNonEmptyValByHeader(row, ['timestamp', 'dateposted', 'posteddate', 'dateofposting', 'createdat', 'dateadded', 'date']))) return false;
+      const listedBranch = getValByHeader(row, ['branch', 'sittingbranch', 'branchname']);
+      if (listedBranch) return isSameBranch(listedBranch, branch);
+      return assignedBranches.length === 1 && placementOwnerMatchesUser(getPlacementTpoOwner(row), user);
+    });
+    const newsletters = branchVacancies.map((row, index) => {
+      const jobId = getFirstNonEmptyValByHeader(row, ['newsletterid', 'jobid', 'id']);
+      const jobKey = normalizePlacementText(jobId);
+      const matchingApplicants = new Map();
+      if (jobKey) applicationRows.forEach(application => {
+        const applicationJobId = normalizePlacementText(getFirstNonEmptyValByHeader(application, ['newsletterid', 'jobid', 'job id', 'id']));
+        if (!applicationJobId || applicationJobId !== jobKey) return;
+        const applicantBranch = getValByHeader(application, ['branch', 'sittingbranch']);
+        const roll = normalizePlacementText(getValByHeader(application, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+        const applicantName = getValByHeader(application, ['studentname', 'name', 'candidate']);
+        const applicantNameKey = normalizePlacementText(applicantName);
+        const student = (roll && studentRowsByRoll.get(`${branch.key}|${roll}`)) || (!roll && applicantNameKey
+          ? students.find(candidate => isSameBranch(getValByHeader(candidate, ['branch', 'sittingbranch']), branch)
+            && normalizePlacementText(getValByHeader(candidate, ['studentname', 'name'])) === applicantNameKey)
+          : null);
+        const resolvedBranch = applicantBranch || getValByHeader(student, ['branch', 'sittingbranch']);
+        if (!isSameBranch(resolvedBranch, branch)) return;
+        const name = applicantName || getValByHeader(student, ['studentname', 'name']);
+        if (name) matchingApplicants.set(normalizePlacementText(name), name);
+      });
+      const applicants = [...matchingApplicants.values()];
+      const applicantList = applicants.length
+        ? `<ol style="margin:0;padding-left:18px">${applicants.map(name => `<li style="padding:1px 0">${escape(name)}</li>`).join('')}</ol>`
+        : '<span style="color:#697b89">No applicants</span>';
+      return [
+        escape(jobId || `— ${index + 1}`),
+        escape(getValByHeader(row, ['companyname', 'company']) || '—'),
+        escape(getValByHeader(row, ['designation', 'position', 'role']) || '—'),
+        applicantList
+      ];
+    });
+
+    const metric = (value, label, color, background) => `<td style="width:33.33%;padding:14px 12px;background:${background};border:1px solid #d9e7e9;border-radius:10px;vertical-align:top"><div style="font-size:25px;font-weight:bold;line-height:1.15;color:${color}">${escape(value)}</div><div style="margin-top:5px;font-size:10px;line-height:1.4;color:#5b7180">${escape(label)}</div></td>`;
+    const pendingHeader = [...courseBuckets, 'Total pending'];
+    const html = `
+      <div style="margin:0;padding:26px 12px;background:#edf3f6;font-family:Arial,Helvetica,sans-serif;color:#263a4a;line-height:1.6">
+        <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;max-width:850px;margin:0 auto;border-collapse:separate;border-spacing:0;background:#ffffff;border:1px solid #dbe5ea;border-radius:16px;overflow:hidden;box-shadow:0 12px 35px rgba(23,53,71,.12)">
+          <tr><td style="padding:30px 32px;background:#103449;border-bottom:5px solid #26b7a7;color:#ffffff">
+            <div style="font-size:10px;letter-spacing:2px;color:#8de4d8;font-weight:bold">IPCS GLOBAL &nbsp;·&nbsp; BRANCH PLACEMENT REPORT</div>
+            <h1 style="margin:10px 0 3px;font-size:27px;line-height:1.25;color:#ffffff">${escape(branch.name)} Branch</h1>
+            <p style="margin:0;color:#d2e1e9;font-size:14px">Monthly report · ${escape(monthName)}</p>
+          </td></tr>
+          <tr><td style="padding:27px 32px 32px">
+            <p style="margin:0 0 7px;color:#173b4c;font-size:14px"><b>Dear ${escape(branch.name)} Team,</b></p>
+            <p style="margin:0 0 17px;color:#536b79;font-size:13px">Please find your branch-only placement update for <b>${escape(monthName)}</b>. This email contains records attributed to ${escape(branch.name)} only.</p>
+            <table role="presentation" cellpadding="0" cellspacing="8" style="width:100%;margin:0 0 9px;border-collapse:separate"><tr>
+              ${metric(branchPlacements.length, 'Total placements', '#087c70', '#eaf8f4')}
+              ${metric(joinedCount, 'Joining confirmed', '#218143', '#eff9f0')}
+              ${metric(notJoinedCount, 'Not joined', '#b44444', '#fff2f0')}
+            </tr></table>
+            ${sectionHeader('Placement register', 'Placed student details', '#087f8c')}
+            ${emailTable(['Sl. No.', 'Name', 'Department', 'Placed at', 'Role', 'Package (LPA)', 'Remarks'], placedRows)}
+            ${sectionHeader('Placement pipeline', 'Students awaiting placement', '#b56b36')}
+            <p style="margin:0 0 10px;color:#617482;font-size:11px">Pending totals include students marked Pending / Placement Needed with at least 90% course completion. Previously placed students are excluded.</p>
+            ${emailTable([...pendingHeader], pendingSummaryRows, 'No eligible pending students in this branch.')}
+            ${emailTable(['Student name', 'Course', 'Course completion'], pendingRows, 'No eligible pending students in this branch.')}
+            ${sectionHeader('Newsletter activity', 'Openings and resume shares', '#7656a8')}
+            ${emailTable(['Newsletter ID', 'Company name', 'Designation', 'Resume shared students'], newsletters, 'No branch-attributed openings were posted this month.')}
+            <p style="margin:24px 0 0;padding-top:16px;border-top:1px solid #e0e8ed;color:#536b79;font-size:12px">With appreciation for your continued work supporting student outcomes.<br><b style="color:#173b4c">${escape(user.name || 'IPCS Global Placement Team')}</b><br><span style="color:#81919b">IPCS Global · Placement & Career Services</span></p>
+          </td></tr>
+        </table>
+      </div>`;
+    const joined = branchPlacements.length ? joinedCount : 0;
+    const notJoined = branchPlacements.length ? notJoinedCount : 0;
+    return {
+      branch,
+      html,
+      text: `${branch.name} Branch monthly placement report for ${monthName}. ${branchPlacements.length} placements recorded, ${joined} joining confirmed, ${notJoined} not joined, and ${branchPending.length} eligible pending students.`,
+      placementCount: branchPlacements.length,
+      pendingCount: branchPending.length,
+      newsletterCount: newsletters.length
+    };
+  });
+
+  const deliveries = [];
+  const failures = [];
+  for (const report of preparedReports) {
+    const cc = [...new Set([MONTHLY_TPO_REPORT_RECIPIENT, MONTHLY_REPORT_RAKESH_CC, senderEmail].filter(email => email && email !== report.branch.email))];
+    const deliveryReference = `BR-${month.replace('-', '')}-${branchKey(report.branch.name).slice(0, 18).toUpperCase()}-${Date.now().toString(36).toUpperCase()}-${randomBytes(3).toString('hex').toUpperCase()}`;
+    const subject = `${report.branch.name} Branch Report - ${monthName} [${deliveryReference}]`;
+    try {
+      const delivery = await sendMailAndLog({
+        from: process.env.EMAIL_USER ? `"IPCS Global Placement Team" <${process.env.EMAIL_USER}>` : undefined,
+        to: report.branch.email,
+        cc,
+        subject,
+        text: report.text,
+        html: report.html
+      }, { name: report.branch.name, email: report.branch.email, type: 'Monthly Branch Placement Report', category: 'placement' });
+      deliveries.push({ branch: report.branch.name, to: report.branch.email, cc, queued: Boolean(delivery?.queued), placementCount: report.placementCount, pendingCount: report.pendingCount, newsletterCount: report.newsletterCount });
+    } catch (error) {
+      failures.push({ branch: report.branch.name, to: report.branch.email, message: String(error.message || error).slice(0, 240) });
+    }
+  }
+
+  if (failures.length) {
+    const sentBranches = deliveries.map(delivery => delivery.branch);
+    const failedBranches = failures.map(failure => failure.branch);
+    return res.status(502).json({
+      success: false,
+      partial: deliveries.length > 0,
+      deliveries,
+      failures,
+      message: `${deliveries.length ? `Sent for ${sentBranches.join(', ')}. ` : ''}Could not send for ${failedBranches.join(', ')}. ${failures.map(failure => `${failure.branch}: ${failure.message}`).join(' · ')}`
+    });
+  }
+
+  return res.json({
+    success: true,
+    month,
+    branchReports: deliveries,
+    cc: [...new Set(deliveries.flatMap(delivery => delivery.cc))]
+  });
+};
+
 // =========================================================
 // 🚨 ADD NEW CLIENT / HIRING PARTNER
 // =========================================================
