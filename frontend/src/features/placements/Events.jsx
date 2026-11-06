@@ -39,7 +39,7 @@ export default function Events() {
   const [loading, setLoading] = useState(true);
   
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(new Date()); 
+  const [selectedDate, setSelectedDate] = useState(null);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [viewEventModal, setViewEventModal] = useState(null); 
@@ -225,12 +225,14 @@ export default function Events() {
     const d = new Date(currentDate);
     d.setMonth(d.getMonth() + 1);
     setCurrentDate(d);
+    setSelectedDate(null);
   };
 
   const prevPeriod = () => {
     const d = new Date(currentDate);
     d.setMonth(d.getMonth() - 1);
     setCurrentDate(d);
+    setSelectedDate(null);
   };
 
   const isVisibleEvent = (e) => {
@@ -253,41 +255,58 @@ export default function Events() {
     const month = currentDate.getMonth();
     const firstDay = new Date(year, month, 1).getDay();
     const daysInMonth = new Date(year, month + 1, 0).getDate();
-    
+
+    const eventsByDay = new Map();
+    events.forEach(event => {
+      if (!isVisibleEvent(event)) return;
+      const eventDate = parseDate(event.date);
+      if (!eventDate || eventDate.getFullYear() !== year || eventDate.getMonth() !== month) return;
+      const dayEvents = eventsByDay.get(eventDate.getDate()) || [];
+      dayEvents.push(event);
+      eventsByDay.set(eventDate.getDate(), dayEvents);
+    });
+
     const grid = [];
-    
-    for (let i = 0; i < firstDay; i++) {
-      grid.push(<div key={`empty-${i}`} className="neo-cell empty"></div>);
-    }
-    
-    for (let day = 1; day <= daysInMonth; day++) {
+    const cellCount = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+    for (let index = 0; index < cellCount; index += 1) {
+      const day = index - firstDay + 1;
+      if (day < 1 || day > daysInMonth) {
+        grid.push(<div key={`empty-${index}`} className="neo-cell empty" aria-hidden="true"></div>);
+        continue;
+      }
+
       const cellDate = new Date(year, month, day);
       const isToday = day === new Date().getDate() && month === new Date().getMonth() && year === new Date().getFullYear();
       const isSelected = selectedDate && cellDate.toDateString() === selectedDate.toDateString();
-      
-      const dayEvents = events.filter(e => {
-        if (!isVisibleEvent(e)) return false; 
-        const pd = parseDate(e.date);
-        return pd && pd.getFullYear() === cellDate.getFullYear() && pd.getMonth() === cellDate.getMonth() && pd.getDate() === cellDate.getDate();
-      });
+      const dayEvents = eventsByDay.get(day) || [];
 
       grid.push(
-        <div key={day} className={`neo-cell ${isSelected ? 'selected' : ''}`} onClick={() => setSelectedDate(cellDate)}>
-          <div className={`neo-date-num ${isToday && !isSelected ? 'today' : ''}`}>{day}</div>
+        <div key={day} className={`neo-cell ${isSelected ? 'selected' : ''} ${isToday ? 'is-today' : ''}`}>
+          <button
+            type="button"
+            className={`neo-date-num ${isToday && !isSelected ? 'today' : ''}`}
+            onClick={() => setSelectedDate(cellDate)}
+            aria-label={`${cellDate.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}${dayEvents.length ? `, ${dayEvents.length} ${dayEvents.length === 1 ? 'event' : 'events'}` : ''}`}
+            aria-pressed={Boolean(isSelected)}
+          >
+            <span>{day}</span>
+            {dayEvents.length > 0 && <span className="neo-date-count">{dayEvents.length}</span>}
+          </button>
           <div className="neo-events">
             {dayEvents.slice(0, 3).map((e, i) => (
-              <div 
+              <button
+                type="button"
                 key={i} 
                 className="neo-event-indicator hover-lift" 
-                style={{ cursor: 'pointer' }}
-                onClick={(ev) => { ev.stopPropagation(); setViewEventModal(e); }}
+                onClick={() => setViewEventModal(e)}
+                aria-label={`View ${e.title}`}
               >
-                <span className="neo-event-bar" style={{ background: String(e.status || '').toLowerCase() === 'cancelled' ? '#ef4444' : String(e.status || '').toLowerCase() === 'rescheduled' ? '#f59e0b' : isSelected ? 'rgba(255,255,255,0.8)' : getEventColor(e.type) }}></span>
-                <span className="neo-event-title" style={{ color: isSelected ? '#fff' : '#cbd5e1', textDecoration: String(e.status || '').toLowerCase() === 'cancelled' ? 'line-through' : 'none' }}>{e.title}</span>
-              </div>
+                <span className="neo-event-bar" style={{ background: String(e.status || '').toLowerCase() === 'cancelled' ? '#ef4444' : String(e.status || '').toLowerCase() === 'rescheduled' ? '#f59e0b' : getEventColor(e.type) }}></span>
+                <span className="neo-event-title" style={{ textDecoration: String(e.status || '').toLowerCase() === 'cancelled' ? 'line-through' : 'none' }}>{e.title}</span>
+              </button>
             ))}
             {dayEvents.length > 3 && (
-              <div className="neo-event-more" style={{ color: isSelected ? 'rgba(255,255,255,0.7)' : '#64748b' }}>
+              <div className="neo-event-more">
                 +{dayEvents.length - 3} more
               </div>
             )}
@@ -303,6 +322,32 @@ export default function Events() {
     const pd = parseDate(e.date);
     return pd && pd.toDateString() === selectedDate.toDateString();
   }) : [];
+
+  const monthNames = Array.from({ length: 12 }, (_, index) => new Date(2020, index, 1).toLocaleString(undefined, { month: 'long' }));
+  const monthEventCount = events.filter(event => {
+    if (!isVisibleEvent(event)) return false;
+    const eventDate = parseDate(event.date);
+    return eventDate && eventDate.getFullYear() === currentDate.getFullYear() && eventDate.getMonth() === currentDate.getMonth();
+  }).length;
+  const yearOptions = Array.from(new Set([
+    ...Array.from({ length: 9 }, (_, index) => new Date().getFullYear() - 3 + index),
+    ...events.map(event => parseDate(event.date)?.getFullYear()).filter(Number.isFinite),
+    currentDate.getFullYear()
+  ])).sort((a, b) => a - b);
+
+  const changeCalendarMonth = month => {
+    setCurrentDate(new Date(currentDate.getFullYear(), Number(month), 1));
+    setSelectedDate(null);
+  };
+  const changeCalendarYear = year => {
+    setCurrentDate(new Date(Number(year), currentDate.getMonth(), 1));
+    setSelectedDate(null);
+  };
+  const goToToday = () => {
+    const today = new Date();
+    setCurrentDate(today);
+    setSelectedDate(today);
+  };
 
   return (
     <Layout>
@@ -330,18 +375,34 @@ export default function Events() {
           {/* LEFT: CALENDAR GRID */}
           <div className="neo-calendar-section">
             <div className="neo-toolbar">
-              <div className="neo-month-display">
-                {currentDate.toLocaleString('default', { month: 'long' })} <CaretDown size={14} weight="bold" style={{ marginLeft:'8px', marginRight:'20px', color: '#64748b' }}/> 
-                {currentDate.getFullYear()} <CaretDown size={14} weight="bold" style={{ marginLeft:'8px', color: '#64748b' }}/>
+              <div className="neo-month-controls" aria-label="Calendar month and year">
+                <label className="neo-select-wrap">
+                  <span className="neo-sr-only">Month</span>
+                  <select aria-label="Month" value={currentDate.getMonth()} onChange={event => changeCalendarMonth(event.target.value)}>
+                    {monthNames.map((month, index) => <option key={month} value={index}>{month}</option>)}
+                  </select>
+                  <CaretDown size={15} weight="bold" aria-hidden="true" />
+                </label>
+                <label className="neo-select-wrap neo-year-select">
+                  <span className="neo-sr-only">Year</span>
+                  <select aria-label="Year" value={currentDate.getFullYear()} onChange={event => changeCalendarYear(event.target.value)}>
+                    {yearOptions.map(year => <option key={year} value={year}>{year}</option>)}
+                  </select>
+                  <CaretDown size={15} weight="bold" aria-hidden="true" />
+                </label>
               </div>
-              <div className="neo-nav-arrows">
-                <button onClick={prevPeriod}><CaretLeft size={16} weight="bold"/></button>
-                <button onClick={nextPeriod}><CaretRight size={16} weight="bold"/></button>
+              <div className="neo-toolbar-actions">
+                <span className="neo-month-summary"><span aria-hidden="true" />{monthEventCount} {monthEventCount === 1 ? 'event' : 'events'}</span>
+                <button type="button" className="neo-today-button" onClick={goToToday}>Today</button>
+                <div className="neo-nav-arrows">
+                  <button type="button" aria-label="Previous month" onClick={prevPeriod}><CaretLeft size={17} weight="bold"/></button>
+                  <button type="button" aria-label="Next month" onClick={nextPeriod}><CaretRight size={17} weight="bold"/></button>
+                </div>
               </div>
             </div>
 
             <div className="neo-days-header">
-              {['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map(day => (
+              {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
                 <div key={day}>{day}</div>
               ))}
             </div>
@@ -933,6 +994,173 @@ export default function Events() {
           .neo-date-num { font-size: 0.9rem; margin-bottom: 4px; }
           .neo-event-title { display: none; } 
           .neo-event-bar { height: 6px; width: 6px; border-radius: 50%; }
+        }
+
+        /* Premium calendar surface and controls */
+        .neo-layout {
+          grid-template-columns: minmax(0, 1fr) auto;
+          gap: 22px;
+          margin-top: 18px;
+          padding: clamp(16px, 2.5vw, 30px);
+          background: radial-gradient(ellipse at 14% 0%, rgba(56, 189, 248, .08), transparent 38%), #0b1121;
+          border-color: rgba(148, 163, 184, .16);
+          box-shadow: 0 24px 70px rgba(0, 0, 0, .22), inset 0 1px rgba(255, 255, 255, .035);
+        }
+        .neo-toolbar {
+          gap: 16px;
+          margin-bottom: 24px;
+          padding-bottom: 20px;
+          border-bottom: 1px solid rgba(148, 163, 184, .13);
+        }
+        .neo-month-controls, .neo-toolbar-actions, .neo-nav-arrows { display: flex; align-items: center; }
+        .neo-month-controls { gap: 8px; min-width: 0; }
+        .neo-select-wrap {
+          position: relative;
+          display: inline-flex;
+          align-items: center;
+          min-width: 145px;
+          color: #f8fafc;
+          background: rgba(15, 23, 42, .78);
+          border: 1px solid rgba(148, 163, 184, .2);
+          border-radius: 12px;
+          transition: border-color .18s ease, box-shadow .18s ease, background .18s ease;
+        }
+        .neo-select-wrap:hover, .neo-select-wrap:focus-within {
+          border-color: rgba(56, 189, 248, .6);
+          background: rgba(15, 23, 42, .98);
+          box-shadow: 0 0 0 3px rgba(56, 189, 248, .1);
+        }
+        .neo-select-wrap select {
+          appearance: none;
+          width: 100%;
+          min-width: 0;
+          padding: 11px 38px 11px 14px;
+          color: inherit;
+          font: inherit;
+          font-size: 1.08rem;
+          font-weight: 650;
+          background: transparent;
+          border: 0;
+          outline: 0;
+          cursor: pointer;
+        }
+        .neo-select-wrap select option { color: #e2e8f0; background: #0f172a; }
+        .neo-select-wrap > svg { position: absolute; right: 13px; color: #7c8da8; pointer-events: none; }
+        .neo-year-select { min-width: 106px; }
+        .neo-year-select select { font-weight: 550; }
+        .neo-toolbar-actions { gap: 10px; }
+        .neo-month-summary {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          margin-right: 4px;
+          padding: 8px 12px;
+          border: 1px solid rgba(148, 163, 184, .14);
+          border-radius: 999px;
+          color: #aab8cc;
+          background: rgba(15, 23, 42, .55);
+          font-size: .78rem;
+          font-weight: 600;
+          white-space: nowrap;
+        }
+        .neo-month-summary > span { width: 7px; height: 7px; border-radius: 50%; background: #38bdf8; box-shadow: 0 0 12px rgba(56, 189, 248, .7); }
+        .neo-today-button {
+          padding: 9px 14px;
+          color: #d8f5ff;
+          font-size: .82rem;
+          font-weight: 650;
+          background: rgba(14, 116, 144, .16);
+          border: 1px solid rgba(56, 189, 248, .28);
+          border-radius: 11px;
+          cursor: pointer;
+          transition: .18s ease;
+        }
+        .neo-today-button:hover { color: #fff; background: rgba(14, 116, 144, .3); border-color: rgba(56, 189, 248, .65); }
+        .neo-nav-arrows { gap: 7px; }
+        .neo-nav-arrows button { width: 38px; height: 38px; border-radius: 12px; background: rgba(30, 41, 59, .78); }
+        .neo-nav-arrows button:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(0, 0, 0, .2); }
+        .neo-days-header { gap: 10px; margin-bottom: 9px; }
+        .neo-days-header div {
+          padding: 0 10px 5px;
+          color: #7d8da5;
+          font-size: .72rem;
+          font-weight: 700;
+          letter-spacing: .09em;
+          text-transform: uppercase;
+        }
+        .neo-grid { gap: 10px; }
+        .neo-cell {
+          min-height: 124px;
+          padding: 11px;
+          gap: 6px;
+          background: linear-gradient(155deg, rgba(30, 41, 59, .92), rgba(20, 31, 49, .92));
+          border: 1px solid rgba(148, 163, 184, .1);
+          border-radius: 15px;
+          box-shadow: inset 0 1px rgba(255, 255, 255, .018);
+        }
+        .neo-cell.empty { min-height: 124px; background: rgba(15, 23, 42, .18); border-color: transparent; box-shadow: none; }
+        .neo-cell:not(.empty):hover { background: linear-gradient(155deg, rgba(40, 54, 77, .98), rgba(25, 39, 61, .98)); border-color: rgba(148, 163, 184, .25); }
+        .neo-cell.is-today { border-color: rgba(56, 189, 248, .3); }
+        .neo-cell.selected { background: linear-gradient(145deg, rgba(14, 116, 144, .3), rgba(30, 41, 59, .98)); border-color: rgba(56, 189, 248, .72); box-shadow: 0 12px 28px rgba(2, 132, 199, .16), inset 0 1px rgba(255, 255, 255, .06); transform: none; }
+        .neo-date-num {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          width: 100%;
+          margin: 0 0 2px;
+          padding: 0;
+          color: #dbe7f5;
+          font: inherit;
+          font-size: .93rem;
+          font-weight: 650;
+          line-height: 1;
+          background: transparent;
+          border: 0;
+          cursor: pointer;
+          text-align: left;
+        }
+        .neo-date-num > span:first-child { display: inline-grid; width: 28px; height: 28px; place-items: center; border-radius: 9px; }
+        .neo-date-num:hover > span:first-child { color: #fff; background: rgba(148, 163, 184, .14); }
+        .neo-date-num.today > span:first-child { color: #08121f; background: #67e8f9; box-shadow: 0 4px 13px rgba(34, 211, 238, .22); }
+        .neo-cell.selected .neo-date-num { color: #fff; }
+        .neo-cell.selected .neo-date-num.today > span:first-child { color: #08121f; }
+        .neo-date-count { display: inline-grid; min-width: 20px; height: 20px; padding: 0 5px; place-items: center; color: #b9eaff; background: rgba(14, 116, 144, .28); border: 1px solid rgba(56, 189, 248, .18); border-radius: 999px; font-size: .68rem; }
+        .neo-events { gap: 5px; }
+        .neo-event-indicator {
+          padding: 4px 6px;
+          color: #cbd5e1;
+          background: rgba(8, 15, 28, .4);
+          border: 1px solid rgba(148, 163, 184, .09);
+          border-radius: 7px;
+          text-align: left;
+          transition: background .16s ease, border-color .16s ease, transform .16s ease;
+        }
+        .neo-event-indicator:hover { background: rgba(8, 15, 28, .75); border-color: rgba(148, 163, 184, .22); transform: translateY(-1px); }
+        .neo-event-bar { height: 14px; width: 3px; }
+        .neo-event-title { font-size: .69rem; font-weight: 550; }
+        .neo-event-more { padding-left: 5px; color: #93a4ba; font-size: .67rem; font-weight: 650; }
+        .neo-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+        @media (max-width: 1150px) {
+          .neo-layout { grid-template-columns: minmax(0, 1fr); }
+          .neo-agenda-section { width: 100%; }
+        }
+        @media (max-width: 700px) {
+          .neo-toolbar { align-items: flex-start; flex-direction: column; gap: 14px; }
+          .neo-toolbar-actions { width: 100%; justify-content: space-between; }
+          .neo-month-summary { margin-right: auto; }
+          .neo-days-header, .neo-grid { gap: 5px; }
+          .neo-days-header div { padding: 0 2px 5px; text-align: center; font-size: .62rem; letter-spacing: .04em; }
+          .neo-cell, .neo-cell.empty { min-height: 82px; padding: 6px 5px; border-radius: 10px; }
+          .neo-date-num { font-size: .8rem; }
+          .neo-date-num > span:first-child { width: 24px; height: 24px; border-radius: 7px; }
+          .neo-date-count { min-width: 17px; height: 17px; padding: 0 3px; font-size: .6rem; }
+          .neo-events { align-items: center; gap: 3px; }
+          .neo-event-indicator { width: auto; padding: 3px; border: 0; background: transparent; }
+          .neo-event-indicator:hover { background: rgba(8, 15, 28, .5); }
+          .neo-event-title, .neo-event-more { display: none; }
+          .neo-event-bar { height: 7px; width: 7px; border-radius: 50%; }
+          .neo-select-wrap { min-width: 130px; }
+          .neo-year-select { min-width: 94px; }
         }
       `}</style>
     </Layout>

@@ -111,7 +111,7 @@ export default function PlacedStudents() {
   const assignedBranchesArray = Array.isArray(tpoData?.assignedBranchesArray)
     ? tpoData.assignedBranchesArray.map(branch => String(branch).trim().toLowerCase()).filter(Boolean)
     : String(tpoData?.assignedBranchesArray || '').split(/[\n,;]+/).map(branch => branch.trim().replace(/^\d+\.\s*/, '').toLowerCase()).filter(Boolean);
-  const hasAssignedBranch = branch => isAdmin || isPlacementTeam || assignedBranchesArray.includes('all') || assignedBranchesArray.some(assigned => {
+  const hasAssignedBranch = branch => isAdmin || isPlacementTeam || assignedBranchesArray.some(assigned => ['all', 'allbranch', 'allbranches'].includes(assigned.replace(/\s+/g, ''))) || assignedBranchesArray.some(assigned => {
     const rowBranch = String(branch || '').trim().toLowerCase();
     return rowBranch && (rowBranch === assigned || rowBranch.includes(assigned) || assigned.includes(rowBranch));
   });

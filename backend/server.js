@@ -491,6 +491,7 @@ app.use('/api/tpo/clients', (req, res, next) => {
 // TPO & PLACEMENT ROUTES
 // ---------------------------------------------------------
 app.post('/api/tpo/dashboard-stats', controllers.getDashboardStats);
+app.get('/api/tpo/notifications', requireSession('portal'), controllers.getNotifications);
 app.post('/api/tpo/students', controllers.getStudents);
 app.post('/api/tpo/students/update-student', controllers.updateStudent);
 app.post('/api/tpo/applications', controllers.getApplications);

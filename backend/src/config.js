@@ -943,7 +943,8 @@ function checkBranchMatch(branch, tpoBranchesArray) {
   const branches = normalizeAssignmentList(tpoBranchesArray);
   if (!branch || !branches.length) return false;
   let cleanSB = branch.toString().toLowerCase().trim();
-  if (branches.includes("all") || cleanSB === "all") return true;
+  const isAllBranches = value => ['all', 'allbranch', 'allbranches', 'global', 'globalscope'].includes(String(value || '').toLowerCase().replace(/\s+/g, ''));
+  if (branches.some(isAllBranches) || isAllBranches(cleanSB)) return true;
   return branches.some(b => cleanSB === b || cleanSB.includes(b) || b.includes(cleanSB));
 }
 
@@ -968,10 +969,12 @@ function hasAccess(rowBranch, rowCourse, role, assignedBranchesArray, assignedCo
   if (isTechnicalLead && !isRth && !isTth) return true;
 
   // RTH/TTH and trainers must be assigned both dimensions. An empty course
-  // assignment must never silently widen access to every course.
+  // assignment must never widen access; an explicit "All Courses" assignment
+  // remains valid within the user's assigned branches.
   if (isRth || isTth || isTrainer) {
     const courses = normalizeAssignmentList(assignedCourse);
-    if (!courses.length || courses.includes('all') || courses.includes('all courses')) return false;
+    if (!courses.length) return false;
+    if (courses.some(course => ['all', 'all courses', 'all programs'].includes(course))) return true;
     return courses.some(course => getStandardCourse(course) === stdRowCourse);
   }
 

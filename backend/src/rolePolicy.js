@@ -16,6 +16,12 @@ const isAcademicTrainer = user => {
   return role.includes('TRAINER') && (!department || department === 'ACADEMIC');
 };
 
+const isRegionalOrTerritoryTechnicalHead = user => {
+  const role = getRole(user);
+  return hasRoleToken(role, 'RTH') || role.includes('REGIONAL TECHNICAL HEAD')
+    || hasRoleToken(role, 'TTH') || role.includes('TERRITORY TECHNICAL HEAD');
+};
+
 const getPolicyDenial = (user, { policy = 'portal', method = '', path = '', baseUrl = '' } = {}) => {
   const role = getRole(user);
   const admin = isPortalAdmin(user);
@@ -35,11 +41,11 @@ const getPolicyDenial = (user, { policy = 'portal', method = '', path = '', base
   if (policy === 'academic' && !isAcademicTrainer(user)) return deny('Training & Academics is available only to trainer accounts.');
   if (policy === 'clients' && (hasRoleToken(role, 'RTH') || role.includes('REGIONAL TECHNICAL HEAD') || /TECH(?:NICAL)?\s+LEAD/.test(role) || hasRoleToken(role, 'TL') || role.includes('TRAINER') || hasRoleToken(role, 'TTH'))) return deny('Clients & Partners is not available for this role.');
   if (policy === 'learning' && !admin && !isTechnicalScoped(user)) return deny('Study materials are not available for this role.');
-  if (policy === 'learning-write' && !admin) return deny('Administrator access is required to manage study materials.');
+  if (policy === 'learning-write' && !admin && !isRegionalOrTerritoryTechnicalHead(user)) return deny('Regional or Territory Technical Head access is required to manage assigned study materials.');
   if (policy === 'exam-manager' && !admin && !(hasRoleToken(role, 'RTH') || role.includes('REGIONAL TECHNICAL HEAD'))) return deny('Regional Technical Head or administrator access is required to manage technical questions.');
   if (policy === 'exams' && !admin && isTl && !(method === 'GET' && path === '/results' && baseUrl === '/api/exams')) return deny('Technical Leads can view technical exam results only.');
   if (policy === 'exams' && !admin && !isTechnicalScoped(user) && !role.includes('TPO') && !role.includes('PLACEMENT OFFICER')) return deny('Exam access is not available for this role.');
   return null;
 };
 
-module.exports = { getRole, hasRoleToken, isPortalAdmin, isBranchManager, isTechnicalScoped, getPolicyDenial };
+module.exports = { getRole, hasRoleToken, isPortalAdmin, isBranchManager, isTechnicalScoped, isRegionalOrTerritoryTechnicalHead, getPolicyDenial };

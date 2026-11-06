@@ -34,10 +34,19 @@ export default function StudyMaterials() {
   
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(upperRole);
-  const canManage = isSuperAdmin;
-  const rawCourse = tpoData?.assignedCourse || 'All';
+  const isRth = /(^|[^A-Z0-9])RTH([^A-Z0-9]|$)/.test(upperRole) || upperRole.includes('REGIONAL TECHNICAL HEAD');
+  const isTth = /(^|[^A-Z0-9])TTH([^A-Z0-9]|$)/.test(upperRole) || upperRole.includes('TERRITORY TECHNICAL HEAD');
+  const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(upperRole) || /(^|[^A-Z0-9])TL([^A-Z0-9]|$)/.test(upperRole);
+  const hasAssignedCourse = Boolean(String(tpoData?.assignedCourse || '').trim());
+  const rawCourse = tpoData?.assignedCourse || ((isSuperAdmin || isTechnicalLead) ? 'All' : '');
   const courseValues = (Array.isArray(rawCourse) ? rawCourse : String(rawCourse).split(/[\n,;]+/)).map(course => String(course).trim()).filter(Boolean);
-  const assignedCoursesArray = courseValues.some(course => /^all( courses)?$/i.test(course)) ? ['All'] : [...new Set(courseValues.map(getStandardCourse))];
+  const assignedCoursesArray = (isSuperAdmin || courseValues.some(course => /^all( courses)?$/i.test(course))) ? ['All'] : [...new Set(courseValues.map(getStandardCourse))];
+  const branchValues = [
+    ...(Array.isArray(tpoData?.assignedBranchesArray) ? tpoData.assignedBranchesArray : String(tpoData?.assignedBranchesArray || '').split(/[\n,;]+/)),
+    tpoData?.sittingBranch
+  ].map(branch => String(branch || '').trim()).filter(Boolean);
+  const canManage = isSuperAdmin || ((isRth || isTth) && hasAssignedCourse && branchValues.length > 0);
+  const missingTechnicalScope = (isRth || isTth) && (!hasAssignedCourse || branchValues.length === 0);
 
   const [courseDict, setCourseDict] = useState(DEFAULT_COURSES);
   const [materials, setMaterials] = useState([]);
@@ -253,6 +262,7 @@ export default function StudyMaterials() {
   return (
     <Layout>
       <div className="page-container" style={{ padding: 0 }}>
+        {!loading && !loadError && missingTechnicalScope && <div role="alert" style={{ marginBottom: '18px', padding: '14px 16px', borderRadius: '12px', border: '1px solid rgba(245,158,11,.4)', color: '#fde68a', background: 'rgba(120,53,15,.18)' }}>Study materials need an assigned branch and course for this account. Ask an administrator to complete those assignments in User Management.</div>}
         {loading && <div style={{ minHeight: '40vh', display: 'grid', placeItems: 'center', color: 'var(--accent-primary)' }}><div style={{ textAlign: 'center' }}><CircleNotch size={42} className="ph-spin" /><p style={{ color: 'var(--text-muted)' }}>Loading assigned study materials…</p></div></div>}
         {!loading && loadError && <div role="alert" style={{ padding: '22px', borderRadius: '14px', border: '1px solid rgba(239,68,68,.45)', background: 'rgba(127,29,29,.16)', color: '#fca5a5' }}><strong>{accessDenied ? 'Access Denied' : 'Study Materials Unavailable'}</strong><p style={{ margin: '8px 0 0' }}>{loadError}</p></div>}
         {!loading && !loadError && viewLevel === 'main_courses' && (

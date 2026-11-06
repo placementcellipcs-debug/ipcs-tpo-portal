@@ -11,22 +11,11 @@ import {
 } from '@phosphor-icons/react';
 import { API_BASE } from '../services/apiConfig';
 import { applyAppearance, readAppearance } from '../services/appearance';
-import { formatPortalDateTime, parsePortalDateTime } from '../utils/dateFormat';
+import { formatPortalDateTime } from '../utils/dateFormat';
 import { isAcademicTrainerAccount, isPortalAdminAccount } from '../utils/roleAccess';
 import AssetPortalShell from '../features/assets/AssetPortalShell';
 import MediaPortalShell from '../features/media/MediaPortalShell';
 import TrainerPortalShell from '../features/learning/TrainerPortalShell';
-
-const getStandardCourse = (c) => {
-  if (!c) return 'Others';
-  const lower = c.toLowerCase().trim();
-  if (lower.includes('bms') || lower.includes('cctv')) return 'BMS AND CCTV';
-  if (lower.includes('automation') || lower.includes('plc') || lower.includes('scada')) return 'Industrial Automation';
-  if (lower.includes('embed') || lower.includes('iot')) return 'Embedded and IoT';
-  if (lower.includes('digital') || lower.includes('dm') || lower.includes('marketing')) return 'Digital Marketing';
-  if (lower.includes('it') || lower.includes('python') || lower.includes('software') || lower.includes('data')) return 'Information technology (IT)';
-  return 'Others';
-};
 
 export default function Layout({ children }) {
   const navigate = useNavigate();
@@ -55,8 +44,8 @@ export default function Layout({ children }) {
       return;
     }
 
-    // 🚨 UPDATED: 6 Hours of Inactivity
-    const INACTIVITY_TIMEOUT = 6 * 60 * 60 * 1000; 
+    // Keep a signed-in workday session alive through a longer inactive period.
+    const INACTIVITY_TIMEOUT = 12 * 60 * 60 * 1000;
     let lastActivity = Date.now();
     const handleUserInteraction = () => { lastActivity = Date.now(); };
     const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
@@ -67,7 +56,7 @@ export default function Layout({ children }) {
         clearInterval(inactivityInterval);
         activityEvents.forEach((evt) => window.removeEventListener(evt, handleUserInteraction));
         localStorage.removeItem('tpoData');
-        alert("Session Expired: You have been logged out due to 6 hours of inactivity.");
+        alert("Session Expired: You have been logged out due to 12 hours of inactivity.");
         window.location.href = '/';
       }
     }, 10000);
@@ -101,76 +90,31 @@ export default function Layout({ children }) {
     if (!tpoData) return;
     applyAppearance(readAppearance());
     
-    const userRole = (tpoData?.role || '').toUpperCase();
-    const isSuperAdmin = isPortalAdminAccount(tpoData);
-    const isCourseSpecific = userRole.includes('RTH') || userRole.includes('TTH') || userRole.includes('TRAINER') || userRole.includes('TECHNICAL LEAD');
-    const myCourse = getStandardCourse(tpoData?.assignedCourse);
-
-    try {
-      const logsStr = localStorage.getItem('dash_logs');
-      if (logsStr) {
-      const logs = JSON.parse(logsStr);
-        const sorted = logs.sort((a,b) => (parsePortalDateTime(b.TimeStamp || b.Timestamp || b['Time Stamp'])?.getTime() || 0) - (parsePortalDateTime(a.TimeStamp || a.Timestamp || a['Time Stamp'])?.getTime() || 0)).slice(0, 20);
-        
-        const mappedNotifs = sorted.map(log => {
-          const getVal = (s) => {
-             const key = Object.keys(log).find(k => k.toLowerCase().replace(/\s/g, '').includes(s.toLowerCase().replace(/\s/g, '')));
-             return key ? log[key] : '';
+    let active = true;
+    const loadNotifications = () => axios.get(`${API_BASE}/api/tpo/notifications`, { timeout: 15000 })
+      .then(response => {
+        if (!active) return;
+        const rows = Array.isArray(response.data?.notifications) ? response.data.notifications : [];
+        setNotifications(rows.map((notification, index) => {
+          const palette = notification.type === 'placement'
+            ? { icon: <Trophy size={18} weight="bold" />, color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' }
+            : notification.type === 'interview'
+              ? { icon: <CalendarStar size={18} weight="bold" />, color: '#a855f7', bg: 'rgba(168, 85, 247, 0.1)' }
+              : notification.type === 'alert'
+                ? { icon: <WarningCircle size={18} weight="bold" />, color: '#ef4444', bg: 'rgba(239, 68, 68, 0.1)' }
+                : { icon: <ListChecks size={18} weight="bold" />, color: 'var(--accent-primary)', bg: 'rgba(56, 189, 248, 0.1)' };
+          return {
+            ...notification,
+            ...palette,
+            key: notification.id || `notice-${index}`,
+            time: formatPortalDateTime(notification.time, 'Recently')
           };
-          const name = getVal('name') || getVal('student') || 'Student';
-          const company = getVal('company');
-          const status = (getVal('status') || '').toLowerCase();
-          const courseRaw = getVal('course');
-          const branchRaw = getVal('branch');
-          const targetRole = getVal('target role') || getVal('recipient role') || getVal('assigned role');
-          const targetUser = getVal('recipient email') || getVal('assigned email') || getVal('target email') || getVal('assigned user');
-          
-          let title = "Application Updated";
-          let desc = `${name}'s status updated to ${getVal('status') || 'Applied'} at ${company}.`;
-          let icon = <ListChecks size={18} weight="bold" />;
-          let color = "var(--accent-primary)"; let bg = "rgba(56, 189, 248, 0.1)";
-
-          if (status.includes('placed') || status.includes('offer')) {
-             title = "Placement Confirmed! 🎉"; desc = `${name} has been successfully placed at ${company}!`;
-             icon = <Trophy size={18} weight="bold" />; color = "#10b981"; bg = "rgba(16, 185, 129, 0.1)";
-          } else if (status.includes('interview')) {
-             title = "Interview Scheduled"; desc = `An interview is scheduled for ${name} at ${company}.`;
-             icon = <CalendarStar size={18} weight="bold" />; color = "#a855f7"; bg = "rgba(168, 85, 247, 0.1)";
-          } else if (status.includes('reject') || status.includes('not attend') || status.includes('hold')) {
-             title = "Action Alert"; desc = `Status changed to '${getVal('status')}' for ${name}.`;
-             icon = <WarningCircle size={18} weight="bold" />; color = "#ef4444"; bg = "rgba(239, 68, 68, 0.1)";
-          }
-          return { title, desc, icon, color, bg, time: getVal('timestamp') || 'Recently', courseRaw, branchRaw, targetRole, targetUser };
-        });
-
-        const finalNotifs = mappedNotifs.filter(n => {
-          const roleAliases = [userRole];
-          if (userRole.includes('RTH') || userRole.includes('REGIONAL TECHNICAL HEAD')) roleAliases.push('RTH', 'REGIONAL TECHNICAL HEAD');
-          if (userRole.includes('TRAINER')) roleAliases.push('TRAINER');
-          if (userRole.includes('TECHNICAL LEAD') || userRole.includes('TTH')) roleAliases.push('TECHNICAL LEAD', 'TTH');
-          const roleMatches = value => String(value || '').toUpperCase().split(/[,;|]+/).some(role => roleAliases.some(alias => alias.includes(role.trim()) || role.trim().includes(alias)) || role.trim() === 'ALL');
-          const norm = value => String(value || '').trim().toLowerCase().replace(/\s+/g, ' ');
-          if (n.targetRole && !roleMatches(n.targetRole)) return false;
-          if (n.targetUser) {
-            const target = norm(n.targetUser);
-            if (![tpoData?.email, tpoData?.name, tpoData?.loginId, tpoData?.empId].some(value => norm(value) === target)) return false;
-          }
-          // Activity records without a named role or user recipient are not notifications.
-          if (!n.targetRole && !n.targetUser) return false;
-          if (isSuperAdmin) return true;
-          const allowedBranches = [
-            ...(Array.isArray(tpoData?.assignedBranchesArray) ? tpoData.assignedBranchesArray : String(tpoData?.assignedBranchesArray || '').split(/[,;]+/)),
-            tpoData?.sittingBranch
-          ].map(norm).filter(Boolean);
-          if (n.branchRaw && !allowedBranches.some(branch => ['all', 'all branches'].includes(branch)) && !allowedBranches.some(branch => norm(n.branchRaw) === branch)) return false;
-          if (isCourseSpecific && n.courseRaw && getStandardCourse(n.courseRaw) !== myCourse) return false;
-          // Untargeted events need an explicit branch or course scope. This avoids broadcasting private activity to every role.
-          return true;
-        }).slice(0, 5); 
-
-        queueMicrotask(() => setNotifications(finalNotifs));
-      }
-    } catch { console.error('Error parsing notifications'); }
+        }));
+      })
+      .catch(error => console.warn('Could not load activity notifications:', error.response?.data?.message || error.message));
+    loadNotifications();
+    const notificationRefresh = window.setInterval(loadNotifications, 60_000);
+    return () => { active = false; window.clearInterval(notificationRefresh); };
   }, [tpoData]);
 
   if (!tpoData) return <div style={{ minHeight: '100vh', background: '#020617' }}>{children}</div>;
@@ -283,8 +227,8 @@ export default function Layout({ children }) {
                     {notifications.length === 0 ? (
                       <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>No recent activity.</div>
                     ) : (
-                      notifications.map((notif, idx) => (
-                        <div key={idx} style={{ padding: '15px', display: 'flex', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                      notifications.map(notif => (
+                        <div key={notif.key} style={{ padding: '15px', display: 'flex', gap: '12px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
                           <div style={{ background: notif.bg, color: notif.color, width: '35px', height: '35px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{notif.icon}</div>
                           <div>
                             <div style={{ fontSize: '0.9rem', color: '#fff', fontWeight: 'bold', marginBottom: '3px' }}>{notif.title}</div>

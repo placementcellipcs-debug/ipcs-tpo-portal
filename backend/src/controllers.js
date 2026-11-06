@@ -1,6 +1,7 @@
 const { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } = require('crypto');
 const { hashPassword, verifyPassword, isPasswordHash, validatePassword } = require('./passwords');
 const { SESSION_TOKEN_TTL_MS, getAccountVersion, createPortalSessionToken, readPortalSessionToken } = require('./sessionTokens');
+const { hasRoleToken, isRegionalOrTerritoryTechnicalHead } = require('./rolePolicy');
 
 function parseUserAgent(ua = '') {
   let browser = 'Unknown Browser';
@@ -908,7 +909,7 @@ exports.login = async (req, res) => {
           target: getValByHeader(row, ['target', 'targetofthemonth'])
         };
         role = getValByHeader(row, ['role', 'portalrole']) || 'TPO';
-        course = foundUser.assignedcourses || 'All Courses';
+        course = foundUser.assignedcourses || (isRegionalOrTerritoryTechnicalHead({ role }) ? '' : 'All Courses');
         department = foundUser.department;
         userName = getValByHeader(row, ['tponame', 'name']) || 'TPO User';
         break;
@@ -938,7 +939,7 @@ exports.login = async (req, res) => {
             target: getValByHeader(row, ['target', 'targetofthemonth'])
           };
           role = getValByHeader(row, ['role']) || 'RTH';
-          course = foundUser.assignedcourses || 'All';
+          course = foundUser.assignedcourses || (isRegionalOrTerritoryTechnicalHead({ role }) ? '' : 'All');
           department = foundUser.department;
           userName = getValByHeader(row, ['username', 'name']) || 'User';
           break;
@@ -1150,15 +1151,7 @@ exports.getDashboardStats = async (req, res) => {
     cache = getCache();
   }
   if (!cache) return res.status(503).json({ success: false, message: 'Dashboard data is still syncing. Please retry shortly.' });
-  let placementRows;
-  try {
-    // The process-local cache can differ between backend replicas. Read the
-    // placement source directly so dashboard counts cannot lag or disappear.
-    placementRows = await readLiveTpoLogRows();
-  } catch (error) {
-    console.error('Could not verify dashboard placement counts from TPO_Log:', error.message);
-    return res.status(503).json({ success: false, message: `Dashboard placement counts could not be verified from TPO_Log: ${error.message}` });
-  }
+  const placementRows = Array.isArray(cache.tpoLogs) ? cache.tpoLogs : [];
   let pendingApps = 0, activeVacs = 0;
   const clientRows = cache.clients || [];
   const totalCompanies = clientRows.reduce((count, row) => {
@@ -1243,8 +1236,52 @@ exports.getDashboardStats = async (req, res) => {
       activeVacancies: activeVacs,
       totalCompanies
     }, 
-    events: eventsList.reverse() 
+    events: eventsList.reverse(),
+    dataMeta: {
+      placementSourceSheet: 'TPO_Log',
+      placementSourceHealthy: cache.cacheSheetHealth?.tpoLogs === true,
+      lastSuccessfulPlacementSyncAt: cache.cacheSheetUpdatedAt?.tpoLogs || ''
+    }
   });
+};
+
+exports.getNotifications = (req, res) => {
+  const user = req.portalUser || {};
+  const rows = (getCache()?.tpoLogs || []).map((row, index) => {
+    const status = getValByHeader(row, ['status']).trim();
+    const name = getValByHeader(row, ['studentname', 'name']).trim();
+    const company = getValByHeader(row, ['companyname', 'company']).trim();
+    const branch = getValByHeader(row, ['branch', 'sittingbranch']);
+    const course = getValByHeader(row, ['course', 'program']);
+    const owner = getPlacementTpoOwner(row);
+    if (!status || (!name && !company) || isTpoActionLog(row, getValByHeader)) return null;
+
+    const allowed = isPlacementTrackerAdmin(user)
+      || (isPlacementTrackerTpo(user)
+        ? placementOwnerMatchesUser(owner, user) || (!owner && hasPlacementBranchAccess(branch, user))
+        : hasPlacementAccess(branch, course, user));
+    if (!allowed) return null;
+
+    const timestamp = getFirstNonEmptyValByHeader(row, ['timestamp', 'dateplaced', 'date', 'time']);
+    const statusKey = status.toLowerCase();
+    const type = statusKey.includes('placed') || statusKey.includes('offer')
+      ? 'placement'
+      : statusKey.includes('interview') ? 'interview'
+        : statusKey.includes('reject') || statusKey.includes('hold') ? 'alert' : 'update';
+    return {
+      id: row.rowNumber || `placement-${index}`,
+      sortOrder: Number(row.rowNumber) || index,
+      type,
+      title: type === 'placement' ? 'Placement confirmed' : type === 'interview' ? 'Interview update' : type === 'alert' ? 'Placement action needed' : 'Application updated',
+      desc: `${name || 'A student'}'s status changed to ${status}${company ? ` at ${company}` : ''}.`,
+      time: timestamp || 'Recently'
+    };
+  }).filter(Boolean)
+    .sort((a, b) => b.sortOrder - a.sortOrder)
+    .slice(0, 20)
+    .map(({ sortOrder, ...notification }) => notification);
+
+  res.json({ success: true, notifications: rows });
 };
 
 exports.getStudents = async (req, res) => {
@@ -1257,15 +1294,7 @@ exports.getStudents = async (req, res) => {
   }
   if (!cache) return res.status(503).json({ success: false, message: 'Student data is still syncing. Please retry shortly.' });
   let students = []; let stats = { total: 0, pending: 0, notResponding: 0, noNeed: 0, branchCounts: {}, courseCounts: {} };
-  let placementLogRows;
-  try {
-    // Use the source sheet for student placement status as well as the
-    // placement register, so different server instances agree immediately.
-    placementLogRows = await readLiveTpoLogRows();
-  } catch (error) {
-    console.error('Could not verify student placement statuses from TPO_Log:', error.message);
-    return res.status(503).json({ success: false, message: `Student placement statuses could not be verified from TPO_Log: ${error.message}` });
-  }
+  const placementLogRows = Array.isArray(cache.tpoLogs) ? cache.tpoLogs : [];
   const canonicalTpoLogs = placementLogRows.filter(row => !/^(yes|true|1)$/i.test(getValByHeader(row, ['tpoactionlog'])));
   const placedRolls = new Set();
   const placedNameBranches = new Set();
@@ -1426,8 +1455,10 @@ exports.getStudents = async (req, res) => {
       placementStatusSourceSheet: 'TPO_Log',
       placementStatusSourceRowCount: placementLogRows.length,
       sourceHealthy: cache.cacheSheetHealth?.students === true,
+      placementStatusSourceHealthy: cache.cacheSheetHealth?.tpoLogs === true,
       lastRefreshAttemptAt: cache?.cacheUpdatedAt || '',
-      lastSuccessfulSyncAt: cache.cacheSheetUpdatedAt?.students || ''
+      lastSuccessfulSyncAt: cache.cacheSheetUpdatedAt?.students || '',
+      lastSuccessfulPlacementStatusSyncAt: cache.cacheSheetUpdatedAt?.tpoLogs || ''
     }
   });
 };
@@ -4332,16 +4363,13 @@ exports.getPlacementClassificationSuggestion = async (req, res) => {
 exports.getPlacedStudents = async (req, res) => {
   const user = req.portalUser || {};
   let cache = getCache();
-  let sourceRows;
-  try {
-    // Read the authoritative sheet on every list request. Each backend instance
-    // has its own cache, so a cached snapshot can omit a recent manual save.
-    sourceRows = await readLiveTpoLogRows();
-  } catch (error) {
-    console.error('Could not read the live TPO_Log for the placed-students list:', error.message);
-    return res.status(503).json({ success: false, message: `Placed-student records could not be verified from TPO_Log: ${error.message}` });
+  if (!cache) {
+    await refreshCache();
+    cache = getCache();
   }
-  const sourceReadAt = new Date().toISOString();
+  if (!cache) return res.status(503).json({ success: false, message: 'Placement records are still syncing. Please retry shortly.' });
+  const sourceRows = Array.isArray(cache.tpoLogs) ? cache.tpoLogs : [];
+  const sourceReadAt = cache.cacheSheetUpdatedAt?.tpoLogs || cache.cacheUpdatedAt || '';
   const records = [];
   const resolvePlacementLocation = createPlacementLocationResolver(getValByHeader, cache || {});
 
@@ -4371,7 +4399,7 @@ exports.getPlacedStudents = async (req, res) => {
     dataMeta: {
       sourceSheet: 'TPO_Log',
       sourceStatusColumn: 'Status (column N)',
-      sourceHealthy: true,
+      sourceHealthy: cache.cacheSheetHealth?.tpoLogs === true,
       sourceRowCount: sourceRows.length,
       sourceReadAt,
       lastRefreshAttemptAt: cache?.cacheUpdatedAt || '',
@@ -5623,14 +5651,29 @@ const buildEventStatusEmail = (event, status, details) => {
 exports.getEvents = (req, res) => {
   const user = req.portalUser;
   const role = String(user?.role || '').toUpperCase();
+  const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(role) || hasRoleToken(role, 'TL');
+  const isTerritoryManager = role.includes('TERRITORY MANAGER') || hasRoleToken(role, 'TM');
+  const scopedDriveViewer = isRegionalOrTerritoryTechnicalHead(user) || isTechnicalLead || isTerritoryManager;
   const canSeePlacementDrives = canManageEveryDrive(user)
     || role.includes('ADMIN')
     || role === 'BM'
     || role.includes('BRANCH MANAGER')
     || role.includes('TPO')
-    || role.includes('PLACEMENT OFFICER');
+    || role.includes('PLACEMENT OFFICER')
+    || isRegionalOrTerritoryTechnicalHead(user)
+    || /TECH(?:NICAL)?\s+LEAD/.test(role)
+    || hasRoleToken(role, 'TL')
+    || hasRoleToken(role, 'TM')
+    || role.includes('TERRITORY MANAGER');
   const allEvents = (getCache()?.events || []).map(serializeEvent);
-  res.json({ success: true, events: allEvents.filter(e => e.date && e.title && (canSeePlacementDrives || !String(e.type || '').toLowerCase().includes('placement drive'))) });
+  const events = allEvents.filter(event => {
+    if (!event.date || !event.title) return false;
+    if (!String(event.type || '').toLowerCase().includes('placement drive')) return true;
+    if (!canSeePlacementDrives) return false;
+    if (!scopedDriveViewer) return true;
+    return hasAccess(event.branch || 'All', event.course, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department);
+  });
+  res.json({ success: true, events });
 };
 
 // =========================================================
@@ -8452,6 +8495,7 @@ exports.updatePhoto = async (req, res) => {
 // 🚨 L M S  -  S T U D Y   M A T E R I A L S
 // ---------------------------------------------------------
 const isLearningAdmin = user => user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(String(user?.role || '').toUpperCase());
+const canManageStudyMaterials = user => isLearningAdmin(user) || isRegionalOrTerritoryTechnicalHead(user);
 const canReadMaterial = (user, course) => isLearningAdmin(user) || hasAccess('All', course, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department);
 const getStudyMaterialFields = row => ({
   course: getValByHeader(row, ['course']) || '',
@@ -8560,6 +8604,9 @@ exports.getMaterialViewLink = (req, res) => {
 exports.addMaterial = async (req, res) => {
   try {
     const { id, course, module, title, fileType, link, status } = req.body;
+    const user = req.portalUser;
+    if (!canManageStudyMaterials(user)) return res.status(403).json({ success: false, message: 'Only administrators and assigned RTH/TTH accounts can manage study materials.' });
+    if (!canReadMaterial(user, course)) return res.status(403).json({ success: false, message: 'This course is outside your assignment.' });
     
     const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('studymaterials'));
     if (!sheet) return res.status(404).json({ success: false, message: "Study Materials sheet not found" });
@@ -8585,6 +8632,8 @@ exports.addMaterial = async (req, res) => {
 exports.updateMaterial = async (req, res) => {
   try {
     const { id, course, module, title, fileType, link, status } = req.body;
+    const user = req.portalUser;
+    if (!canManageStudyMaterials(user)) return res.status(403).json({ success: false, message: 'Only administrators and assigned RTH/TTH accounts can manage study materials.' });
     
     const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('studymaterials'));
     if (!sheet) return res.status(404).json({ success: false, message: "Study Materials sheet not found" });
@@ -8595,6 +8644,10 @@ exports.updateMaterial = async (req, res) => {
     const row = findStudyMaterialRow(rows, id);
 
     if (row) {
+      const storedCourse = getValByHeader(row, ['course']);
+      if (!canReadMaterial(user, storedCourse) || !canReadMaterial(user, course)) {
+        return res.status(403).json({ success: false, message: 'This course is outside your assignment.' });
+      }
       row.assign({
         [getFuzzyHeader(h, 'course')]: course,
         [getFuzzyHeader(h, 'moduletopic')]: module,
@@ -8617,6 +8670,8 @@ exports.updateMaterial = async (req, res) => {
 exports.deleteMaterial = async (req, res) => {
   try {
     const { id } = req.body;
+    const user = req.portalUser;
+    if (!canManageStudyMaterials(user)) return res.status(403).json({ success: false, message: 'Only administrators and assigned RTH/TTH accounts can manage study materials.' });
     
     const sheet = doc.sheetsByIndex.find(s => s.title.toLowerCase().replace(/[^a-z0-9]/g, '').includes('studymaterials'));
     if (!sheet) return res.status(404).json({ success: false, message: "Study Materials sheet not found" });
@@ -8625,6 +8680,9 @@ exports.deleteMaterial = async (req, res) => {
     const row = findStudyMaterialRow(rows, id);
 
     if (row) {
+      if (!canReadMaterial(user, getValByHeader(row, ['course']))) {
+        return res.status(403).json({ success: false, message: 'This course is outside your assignment.' });
+      }
       await row.delete();
       refreshCache();
       res.json({ success: true, message: "Deleted successfully" });
@@ -9524,6 +9582,17 @@ exports.verifySession = (req, res) => {
   const user = exports.getSessionUser(email, sessionToken);
   if (!user) {
     const cache = getCache();
+    const authSourcesHealthy = Boolean(cache?.authCacheReady && cache.authSheetsHealthy?.contacts && cache.authSheetsHealthy?.users);
+    if (!authSourcesHealthy) {
+      req.auditReason = 'Session verification was postponed because one or more account sheets are temporarily unavailable.';
+      req.auditDetails = {
+        authCacheReady: Boolean(cache?.authCacheReady),
+        accountRecordAvailable: Boolean(getCurrentAccountRow(cleanEmail, cache)),
+        authSheetsHealthy: cache?.authSheetsHealthy || {}
+      };
+      req.auditResult = 'Unavailable';
+      return res.status(503).json({ valid: null, reason: 'AUTH_SOURCE_UNAVAILABLE', message: 'Session check is temporarily unavailable. Your sign-in is being kept active while account data syncs.' });
+    }
     req.auditReason = cache?.authCacheReady
       ? 'Session could not be matched to an active account; it may be expired, revoked, or disabled.'
       : 'Session could not be revalidated because the account cache was not ready.';

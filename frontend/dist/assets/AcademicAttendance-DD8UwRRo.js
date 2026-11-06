@@ -1,1 +1,0 @@
-import{n as e}from"./index-BuQh9_gk.js";import t from"./AcademicWorkspace-CXIeEZyZ.js";var n=e();function r(){return(0,n.jsx)(t,{module:`attendance`})}export{r as default};
