@@ -8,6 +8,7 @@ import './AssetCategories.css';
 
 const clean = value => String(value || '').trim();
 const norm = value => clean(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+const localId = (...parts) => `LOCAL-${parts.map(norm).filter(Boolean).join('-').slice(0, 64)}`;
 const categoryName = item => item.categoryname || item.category_name || item.name || item.category || '';
 const categoryId = item => item.categoryid || item.category_id || '';
 const childName = item => item.name || item.subcategoryname || item.subcategory_name || item.subcategory || '';
@@ -16,6 +17,13 @@ const childParentId = item => item.categoryid || item.category_id || item.parent
 const childParentName = item => item.categoryname || item.category_name || item.parentcategory || item.category || '';
 const itemTypeName = item => item.name || item.assettypename || item.asset_type_name || item.assettype || '';
 const itemTypeId = item => item.assettypeid || item.asset_type_id || '';
+const classificationErrorMessage = error => {
+  const message = error.response?.data?.message || error.message || '';
+  if (error.response?.status === 429 || /quota exceeded|rate limit/i.test(message)) {
+    return 'Google Sheets is temporarily busy. Wait a minute, refresh the classification library, then try again.';
+  }
+  return message || 'Could not save this classification.';
+};
 const typeOf = item => clean(item.type || item.categorytype || item.category_type).toUpperCase();
 const isConsumable = item => typeOf(item).includes('CONSUM') || typeOf(item).includes('STOCK');
 
@@ -114,7 +122,7 @@ export default function AssetCategories() {
         if (uniqueCategories.some(item => norm(categoryName(item)) === norm(name))) throw new Error('That main category already exists.');
         response = await axios.post(`${API_BASE}/api/v1/assets/config/category`, { categoryName: name, type: draft.type }, { timeout: 30000 });
         if (!response.data?.success) throw new Error(response.data?.message || 'Category was not saved.');
-        const created = response.data.category || { categoryid: `LOCAL-${Date.now()}`, categoryname: name, type: draft.type };
+        const created = response.data.category || { categoryid: localId(name), categoryname: name, type: draft.type };
         setData(current => ({ ...current, categories: [...current.categories, created] }));
       } else if (modal === 'subcategory') {
         const parent = uniqueCategories.find(item => norm(categoryId(item)) === norm(draft.categoryId));
@@ -123,7 +131,7 @@ export default function AssetCategories() {
         if (siblings.some(item => norm(childName(item)) === norm(name))) throw new Error('That subcategory already exists under this category.');
         response = await axios.post(`${API_BASE}/api/v1/assets/config/subcategory`, { categoryId: categoryId(parent), subcategoryName: name, type: draft.type }, { timeout: 30000 });
         if (!response.data?.success) throw new Error(response.data?.message || 'Subcategory was not saved.');
-        const created = response.data.subcategory || { categoryid: categoryId(parent), categoryname: categoryName(parent), subcategoryid: `LOCAL-${Date.now()}`, name, type: draft.type };
+        const created = response.data.subcategory || { categoryid: categoryId(parent), categoryname: categoryName(parent), subcategoryid: localId(categoryId(parent), name), name, type: draft.type };
         setData(current => ({ ...current, subcategories: [...current.subcategories, created] }));
       } else {
         const subcategory = data.subcategories.find(item => norm(childId(item)) === norm(draft.subcategoryId));
@@ -132,12 +140,12 @@ export default function AssetCategories() {
         if (data.assetTypes.some(item => norm(item.subcategoryid || item.subcategory_id) === norm(draft.subcategoryId) && norm(itemTypeName(item)) === norm(name))) throw new Error('That item type already exists under this subcategory.');
         response = await axios.post(`${API_BASE}/api/v1/assets/config/asset-type`, { categoryId: categoryId(parent), subcategoryId: childId(subcategory), assetTypeName: name, type: draft.type }, { timeout: 30000 });
         if (!response.data?.success) throw new Error(response.data?.message || 'Item type was not saved.');
-        const created = response.data.assetType || { assettypeid: `LOCAL-${Date.now()}`, categoryid: categoryId(parent), categoryname: categoryName(parent), subcategoryid: childId(subcategory), subcategoryname: childName(subcategory), name, type: draft.type };
+        const created = response.data.assetType || { assettypeid: localId(childId(subcategory), name), categoryid: categoryId(parent), categoryname: categoryName(parent), subcategoryid: childId(subcategory), subcategoryname: childName(subcategory), name, type: draft.type };
         setData(current => ({ ...current, assetTypes: [...current.assetTypes, created] }));
       }
       setModal(''); setNotice({ type: 'success', text: `“${name}” was saved in the classification library.` });
       window.setTimeout(() => setNotice(null), 5000);
-    } catch (error) { setNotice({ type: 'error', text: error.response?.data?.message || error.message || 'Could not save this classification.' }); }
+    } catch (error) { setNotice({ type: 'error', text: classificationErrorMessage(error) }); }
     finally { setSaving(false); }
   };
 

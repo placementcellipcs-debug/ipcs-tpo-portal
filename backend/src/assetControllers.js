@@ -14,8 +14,11 @@ const getOptionalH = (headers, target) => {
   return headers.find(h => (h || '').toLowerCase().replace(/[^a-z0-9]/g, '') === cleanTarget) || null;
 };
 async function ensureAssetHeaders(sheet, requiredHeaders) {
-  await sheet.loadHeaderRow();
   let headers = [...(sheet.headerValues || [])];
+  if (!headers.length) {
+    await sheet.loadHeaderRow();
+    headers = [...(sheet.headerValues || [])];
+  }
   const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const missing = requiredHeaders.filter(header => !headers.some(existing => normalized(existing) === normalized(header)));
   if (missing.length) {
@@ -712,6 +715,7 @@ exports.addAsset = async (req, res) => {
   let locationName = '';
   let locationCreated = false;
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const { userName, userEmail } = req.body || {};
     const asset = parseJsonField(req.body?.asset, {});
     const customFields = parseJsonField(req.body?.customFields, []);
@@ -1312,6 +1316,7 @@ exports.getInventory = async (req, res) => {
 
 exports.addInventory = async (req, res) => {
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const { item, userName } = req.body || {};
     const quantity = Number(item?.quantity);
     const minimumQuantity = Number(item?.minQuantity);
@@ -1878,6 +1883,7 @@ exports.resolveMaintenance = async (req, res) => {
 
 exports.addCategory = async (req, res) => {
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const categoryName = String(req.body?.categoryName || '').trim();
     const requestedType = String(req.body?.type || 'ASSET').trim().toUpperCase();
     if (!categoryName) return res.status(400).json({ success: false, message: 'Category name is required.' });
@@ -1885,24 +1891,24 @@ exports.addCategory = async (req, res) => {
     const sheet = sheetByKey('assetcategorymaster');
     if (!sheet) return res.status(503).json({ success: false, message: 'The new asset category library is not available yet.' });
     const h = await ensureAssetHeaders(sheet, assetTaxonomy.headers.categories);
-    const existingRows = await sheet.getRows();
+    const existingRows = getAssetCache()?.assetcategorymaster || [];
     const nameHeader = getH(h, 'Category_Name');
     const duplicate = existingRows.some(row => normalize(row.get(nameHeader)) === normalize(categoryName));
     if (duplicate) return res.status(409).json({ success: false, message: 'That category already exists.' });
     const catId = stableCategoryCode(categoryName, existingRows, h);
     const categoryRow = { Category_ID: catId, Category_Code: catId, Category_Name: categoryName, Type: requestedType, Status: 'ACTIVE' };
-    await sheet.addRow(categoryRow);
+    const savedRow = await sheet.addRow(categoryRow);
     const normalized = { categoryid: catId, categorycode: categoryRow.Category_Code, categoryname: categoryName, type: requestedType, status: 'ACTIVE' };
     const cache = getAssetCache();
-    if (Array.isArray(cache?.assetcategorymaster)) cache.assetcategorymaster.push(normalized);
+    cacheAppendedRow('assetcategorymaster', savedRow);
     if (cache) cache.categories = cache.assetcategorymaster || cache.categories;
-    void refreshAssetCache();
     res.json({ success: true, message: `Category '${categoryName}' added successfully!`, category: normalized });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 exports.addSubcategory = async (req, res) => {
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const categoryId = String(req.body?.categoryId || '').trim();
     const subcategoryName = String(req.body?.subcategoryName || '').trim();
     const requestedType = String(req.body?.type || 'ASSET').trim().toUpperCase();
@@ -1913,7 +1919,7 @@ exports.addSubcategory = async (req, res) => {
     if (!sheet || !categoriesSheet) return res.status(503).json({ success: false, message: 'The new asset classification library is not available yet.' });
     const categoryHeaders = await ensureAssetHeaders(categoriesSheet, assetTaxonomy.headers.categories);
     const h = await ensureAssetHeaders(sheet, assetTaxonomy.headers.subcategories);
-    const categories = await categoriesSheet.getRows();
+    const categories = getAssetCache()?.assetcategorymaster || [];
     const categoryIdHeader = getH(categoryHeaders, 'Category_ID');
     const categoryNameHeader = getH(categoryHeaders, 'Category_Name');
     const categoryTypeHeader = getH(categoryHeaders, 'Type');
@@ -1925,7 +1931,7 @@ exports.addSubcategory = async (req, res) => {
       return res.status(400).json({ success: false, message: `Subcategories in this category must be classified as ${parentCategoryType.toLowerCase()}.` });
     }
     const subcategoryType = parentCategoryType === 'GENERAL' ? requestedType : parentCategoryType;
-    const existingRows = await sheet.getRows();
+    const existingRows = getAssetCache()?.assetsubcategorymaster || [];
     const parentIdHeader = getH(h, 'Category_ID');
     const parentNameHeader = getH(h, 'Category_Name');
     const subcategoryIdHeader = getH(h, 'Subcategory_ID');
@@ -1935,18 +1941,18 @@ exports.addSubcategory = async (req, res) => {
     if (duplicate) return res.status(409).json({ success: false, message: 'That subcategory already exists in this category.' });
     const subId = nextHierarchyId(existingRows, h, 'Subcategory_ID', categoryId, 'Category_ID', categoryId);
     const subcategoryRow = { Subcategory_ID: subId, Category_ID: categoryId, Category_Name: parentCategoryName, Subcategory_Name: subcategoryName, Type: subcategoryType, Status: 'ACTIVE' };
-    await sheet.addRow(subcategoryRow);
+    const savedRow = await sheet.addRow(subcategoryRow);
     const normalized = { subcategoryid: subId, categoryid: categoryId, categoryname: parentCategoryName, name: subcategoryName, type: subcategoryType, status: 'ACTIVE' };
     const cache = getAssetCache();
-    if (Array.isArray(cache?.assetsubcategorymaster)) cache.assetsubcategorymaster.push(normalized);
+    cacheAppendedRow('assetsubcategorymaster', savedRow);
     if (cache) cache.subcategories = cache.assetsubcategorymaster || cache.subcategories;
-    void refreshAssetCache();
     res.json({ success: true, message: `Subcategory '${subcategoryName}' added successfully!`, subcategory: normalized });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
 exports.addAssetType = async (req, res) => {
   try {
+    if (respondWhileAssetDataLoads(res)) return;
     const categoryId = String(req.body?.categoryId || '').trim();
     const subcategoryId = String(req.body?.subcategoryId || '').trim();
     const assetTypeName = String(req.body?.assetTypeName || '').trim();
@@ -1960,7 +1966,10 @@ exports.addAssetType = async (req, res) => {
     const categoryHeaders = await ensureAssetHeaders(categoriesSheet, assetTaxonomy.headers.categories);
     const subcategoryHeaders = await ensureAssetHeaders(subcategoriesSheet, assetTaxonomy.headers.subcategories);
     const typeHeaders = await ensureAssetHeaders(sheet, assetTaxonomy.headers.assetTypes);
-    const [categories, subcategories, existingRows] = await Promise.all([categoriesSheet.getRows(), subcategoriesSheet.getRows(), sheet.getRows()]);
+    const cache = getAssetCache();
+    const categories = cache?.assetcategorymaster || [];
+    const subcategories = cache?.assetsubcategorymaster || [];
+    const existingRows = cache?.assettypemaster || [];
     const category = categories.find(row => normalize(row.get(getH(categoryHeaders, 'Category_ID'))) === normalize(categoryId));
     const subcategory = subcategories.find(row => normalize(row.get(getH(subcategoryHeaders, 'Subcategory_ID'))) === normalize(subcategoryId)
       && normalize(row.get(getH(subcategoryHeaders, 'Category_ID'))) === normalize(categoryId));
@@ -1976,12 +1985,10 @@ exports.addAssetType = async (req, res) => {
     const assetTypeId = nextHierarchyId(existingRows, typeHeaders, 'Asset_Type_ID', subcategoryId, 'Subcategory_ID', subcategoryId);
     const categoryName = category.get(getH(categoryHeaders, 'Category_Name')) || '';
     const subcategoryName = subcategory.get(getH(subcategoryHeaders, 'Subcategory_Name')) || '';
-    await sheet.addRow({ Asset_Type_ID: assetTypeId, Category_ID: categoryId, Category_Name: categoryName, Subcategory_ID: subcategoryId, Subcategory_Name: subcategoryName, Asset_Type_Name: assetTypeName, Type: effectiveType, Status: 'ACTIVE' });
+    const savedRow = await sheet.addRow({ Asset_Type_ID: assetTypeId, Category_ID: categoryId, Category_Name: categoryName, Subcategory_ID: subcategoryId, Subcategory_Name: subcategoryName, Asset_Type_Name: assetTypeName, Type: effectiveType, Status: 'ACTIVE' });
     const normalized = { assettypeid: assetTypeId, categoryid: categoryId, categoryname: categoryName, subcategoryid: subcategoryId, subcategoryname: subcategoryName, name: assetTypeName, type: effectiveType, status: 'ACTIVE' };
-    const cache = getAssetCache();
-    if (Array.isArray(cache?.assettypemaster)) cache.assettypemaster.push(normalized);
+    cacheAppendedRow('assettypemaster', savedRow);
     if (cache) cache.assetTypes = cache.assettypemaster || cache.assetTypes;
-    void refreshAssetCache();
     return res.json({ success: true, message: `Item type '${assetTypeName}' added successfully!`, assetType: normalized });
   } catch (err) { return res.status(500).json({ success: false, message: err.message }); }
 };

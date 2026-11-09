@@ -10,7 +10,7 @@ async function seed() {
   if (process.env.NODE_ENV === 'production') throw new Error('Demo seeding is disabled in production.');
   if (String(process.env.ASSET_DEMO_SEED || '').toLowerCase() !== 'true') throw new Error('Set ASSET_DEMO_SEED=true to authorize the one-time demo seed.');
   const testSpreadsheetId = String(process.env.ASSET_TEST_SPREADSHEET_ID || '').trim();
-  const productionSpreadsheetId = String(process.env.ASSET_SPREADSHEET_ID || '17tEo324Xyfc3ku98hmsnKZDry4OgCt_hnUlK8hGtVXA').trim();
+  const productionSpreadsheetId = String(process.env.ASSET_SPREADSHEET_ID || '1rSinOxDvXjYlkJJUeqdLngP_iUGCa1I0vduOf8DtJFE').trim();
   if (!testSpreadsheetId) throw new Error('Set ASSET_TEST_SPREADSHEET_ID to a separate test workbook.');
   if (testSpreadsheetId === productionSpreadsheetId) throw new Error('The demo workbook ID matches the configured live asset workbook. Refusing to write.');
 

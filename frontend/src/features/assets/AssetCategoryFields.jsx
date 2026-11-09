@@ -6,6 +6,7 @@ import { API_BASE } from '../../services/apiConfig';
 
 const clean = value => String(value || '').trim();
 const normalize = value => clean(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+const localId = (...parts) => `LOCAL-${parts.map(normalize).filter(Boolean).join('-').slice(0, 64)}`;
 const categoryName = item => item?.categoryname || item?.category_name || item?.name || item?.category || '';
 const categoryId = item => item?.categoryid || item?.category_id || '';
 const subcategoryName = item => item?.name || item?.subcategoryname || item?.subcategory_name || item?.subcategory || '';
@@ -16,6 +17,13 @@ const itemTypeName = item => item?.name || item?.assettypename || item?.asset_ty
 const itemTypeId = item => item?.assettypeid || item?.asset_type_id || '';
 const typeValue = item => clean(item?.type || item?.categorytype || item?.category_type).toUpperCase();
 const isConsumable = item => typeValue(item).includes('CONSUM') || typeValue(item).includes('STOCK');
+const classificationErrorMessage = error => {
+  const message = error.response?.data?.message || error.message || '';
+  if (error.response?.status === 429 || /quota exceeded|rate limit/i.test(message)) {
+    return 'Google Sheets is temporarily busy. Wait a minute, refresh the classification library, then try again.';
+  }
+  return message || 'Could not save this classification.';
+};
 
 function PremiumCombobox({ label, value, options, placeholder, disabled = false, required = false, onSelect }) {
   const rootRef = useRef(null);
@@ -197,7 +205,7 @@ export default function AssetCategoryFields({
         if (visibleCategories.some(item => normalize(categoryName(item)) === normalize(name))) throw new Error('That category already exists.');
         const response = await axios.post(`${API_BASE}/api/v1/assets/config/category`, { categoryName: name, type }, { timeout: 30000 });
         if (!response.data?.success) throw new Error(response.data?.message || 'Category was not saved.');
-        const created = response.data.category || { categoryid: `LOCAL-${Date.now()}`, categoryname: name, type };
+        const created = response.data.category || { categoryid: localId(name), categoryname: name, type };
         setCategories(current => [...current, created]);
         onCategoryChange(name, created);
         onSubcategoryChange('', null);
@@ -210,7 +218,7 @@ export default function AssetCategoryFields({
           categoryId: categoryId(parent), subcategoryName: name, type
         }, { timeout: 30000 });
         if (!response.data?.success) throw new Error(response.data?.message || 'Subcategory was not saved.');
-        const created = response.data.subcategory || { categoryid: categoryId(parent), categoryname: categoryName(parent), subcategoryid: `LOCAL-${Date.now()}`, name, type };
+        const created = response.data.subcategory || { categoryid: categoryId(parent), categoryname: categoryName(parent), subcategoryid: localId(categoryId(parent), name), name, type };
         setSubcategories(current => [...current, created]);
         onCategoryChange(categoryName(parent), parent);
         onSubcategoryChange(name, created);
@@ -225,7 +233,7 @@ export default function AssetCategoryFields({
           categoryId: categoryId(parent), subcategoryId: subcategoryId(subcategoryParent), assetTypeName: name, type
         }, { timeout: 30000 });
         if (!response.data?.success) throw new Error(response.data?.message || 'Asset type was not saved.');
-        const created = response.data.assetType || { assettypeid: `LOCAL-${Date.now()}`, categoryid: categoryId(parent), categoryname: categoryName(parent), subcategoryid: subcategoryId(subcategoryParent), subcategoryname: subcategoryName(subcategoryParent), name, type };
+        const created = response.data.assetType || { assettypeid: localId(subcategoryId(subcategoryParent), name), categoryid: categoryId(parent), categoryname: categoryName(parent), subcategoryid: subcategoryId(subcategoryParent), subcategoryname: subcategoryName(subcategoryParent), name, type };
         setAssetTypes(current => [...current, created]);
         onAssetTypeChange(name, created);
       }
@@ -233,7 +241,7 @@ export default function AssetCategoryFields({
       setNotice({ kind: 'success', text: `${name} was saved to the classification library.` });
       window.setTimeout(() => setNotice(null), 4000);
     } catch (error) {
-      setNotice({ kind: 'error', text: error.response?.data?.message || error.message || 'Could not save this classification.' });
+      setNotice({ kind: 'error', text: classificationErrorMessage(error) });
     } finally { setSaving(false); }
   };
 

@@ -12,22 +12,24 @@ const serviceAccountAuth = new JWT({
   scopes: ['https://www.googleapis.com/auth/spreadsheets'],
 });
 
-const assetDoc = new GoogleSpreadsheet(process.env.ASSET_SPREADSHEET_ID || '17tEo324Xyfc3ku98hmsnKZDry4OgCt_hnUlK8hGtVXA', serviceAccountAuth);
+const legacyAssetSpreadsheetId = process.env.ASSET_LEGACY_SPREADSHEET_ID || '17tEo324Xyfc3ku98hmsnKZDry4OgCt_hnUlK8hGtVXA';
+const assetDoc = new GoogleSpreadsheet(process.env.ASSET_SPREADSHEET_ID || '1rSinOxDvXjYlkJJUeqdLngP_iUGCa1I0vduOf8DtJFE', serviceAccountAuth);
+const legacyAssetDoc = new GoogleSpreadsheet(legacyAssetSpreadsheetId, serviceAccountAuth);
 
 const assetRegisterHeaders = [
   'Asset_ID', 'Record_Type', 'Asset_Name', 'Category_ID', 'Category', 'Subcategory_ID', 'Subcategory', 'Asset_Type_ID', 'Asset_Type',
   'Branch', 'Location', 'Tracking_Mode', 'Quantity', 'Minimum_Quantity', 'Status', 'Condition', 'Brand', 'Model',
   'Serial_Number', 'Purchase_Date', 'Purchase_Cost', 'Vendor', 'Invoice_Number', 'Warranty_End',
   'Created_By', 'Timestamp', 'Updated_By', 'Updated_At', 'Legacy_Source', 'Legacy_Row_Number',
-  'Legacy_Category', 'Legacy_Subcategory', 'Legacy_Item_Type', 'Legacy_Data_JSON'
+  'Legacy_Category', 'Legacy_Subcategory', 'Legacy_Item_Type'
 ];
 const inventoryHeaders = [
   'Item_ID', 'Record_Type', 'Item_Name', 'Category_ID', 'Category', 'Subcategory_ID', 'Subcategory', 'Asset_Type_ID', 'Asset_Type',
   'Branch', 'Quantity', 'Minimum_Quantity', 'Status', 'Created_By', 'Updated_At', 'Legacy_Source', 'Legacy_Row_Number',
-  'Legacy_Category', 'Legacy_Subcategory', 'Legacy_Item_Type', 'Legacy_Data_JSON'
+  'Legacy_Category', 'Legacy_Subcategory', 'Legacy_Item_Type'
 ];
 
-const legacyColumns = ['Legacy_Source', 'Legacy_Row_Number', 'Legacy_Data_JSON'];
+const legacyColumns = ['Legacy_Source', 'Legacy_Row_Number'];
 
 const managedOperationalSheets = [
   { title: 'Asset_Register_V3', headers: assetRegisterHeaders },
@@ -58,19 +60,24 @@ const managedOperationalSheets = [
 ];
 
 let assetCache = null;
+let assetCacheReady = false;
 let assetCacheUpdatedAt = null;
 let isFetching = false;
 let refreshRequested = false;
 let operationalSheetsReady = false;
+let assetMetadataLoaded = false;
+let legacyMigrationChecked = false;
+let legacyMetadataLoaded = false;
+let assetRefreshRetryTimer = null;
+let consecutiveAssetRefreshFailures = 0;
 const pendingMigrationNotices = new Set();
 
 const getAssetCache = () => assetCache;
 const getAssetCacheUpdatedAt = () => assetCacheUpdatedAt;
-const isAssetCacheReady = () => assetCache !== null;
+const isAssetCacheReady = () => assetCacheReady;
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function ensureManagedSheetHeaders(sheet, requiredHeaders) {
-  await sheet.loadHeaderRow();
   const current = [...(sheet.headerValues || [])];
   const normalize = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
   const missing = requiredHeaders.filter(header => !current.some(existing => normalize(existing) === normalize(header)));
@@ -82,8 +89,8 @@ async function ensureManagedSheetHeaders(sheet, requiredHeaders) {
   return next;
 }
 
-async function fetchAssetBatchWithRetry(sheetsApi, spreadsheetId, ranges, retries = 3) {
-  const backoffs = [10000, 30000, 60000];
+async function fetchAssetBatchWithRetry(sheetsApi, spreadsheetId, ranges, retries = 1) {
+  const backoffs = [30000];
   for (let attempt = 0; attempt < retries; attempt += 1) {
     try {
       return await sheetsApi.spreadsheets.values.batchGet({
@@ -101,6 +108,26 @@ async function fetchAssetBatchWithRetry(sheetsApi, spreadsheetId, ranges, retrie
   return [];
 }
 
+async function prepareBlankStarterTab(sheetsApi) {
+  if (assetDoc.sheetsByIndex.length !== 1 || normalizedHeader(assetDoc.sheetsByIndex[0].title) !== 'sheet1') return;
+  const starter = assetDoc.sheetsByIndex[0];
+  const response = await sheetsApi.spreadsheets.values.get({
+    spreadsheetId: assetDoc.spreadsheetId,
+    range: `'${String(starter.title).replace(/'/g, "''")}'!A1:BH`,
+    valueRenderOption: 'FORMATTED_VALUE'
+  });
+  const hasContent = (response.data?.values || []).some(row => row.some(value => String(value ?? '').trim()));
+  if (hasContent) {
+    console.warn('[ASSET SHEETS] Preserving the non-empty starter tab; it was not imported into the asset register.');
+    return;
+  }
+  await starter.updateProperties({ title: 'Asset_Register_V3' });
+  starter._headerValues = [];
+  await starter.setHeaderRow(assetRegisterHeaders);
+  starter._headerValues = assetRegisterHeaders;
+  console.log('[ASSET SHEETS] Rebuilt the blank starter tab as Asset_Register_V3.');
+}
+
 async function ensureOperationalSheets() {
   if (!operationalSheetsReady) {
     let setupHadErrors = false;
@@ -116,8 +143,6 @@ async function ensureOperationalSheets() {
         return acceptedTitles.some(candidate => title === candidate || base === candidate);
       });
       if (existing) {
-        await ensureManagedSheetHeaders(existing, definition.headers);
-        if (definition.seed) await seedTaxonomySheet(existing, definition);
         continue;
       }
       try {
@@ -127,7 +152,6 @@ async function ensureOperationalSheets() {
           gridProperties: { rowCount: 1000, columnCount: Math.max(26, definition.headers.length) }
         });
         if (definition.headers.length > (Number(created.columnCount) || 0)) await created.resize({ columnCount: definition.headers.length });
-        if (definition.seed) await seedTaxonomySheet(created, definition);
         console.log(`[ASSET SHEETS] Created operational tab ${definition.title}.`);
         logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset operational tab created', resource: definition.title, result: 'Success', details: { columns: definition.headers.length, rowsSeeded: definition.seed?.length || 0 } });
       } catch (error) {
@@ -138,9 +162,6 @@ async function ensureOperationalSheets() {
     }
     operationalSheetsReady = !setupHadErrors;
   }
-  // Keep checking migration sources so a legacy tab added later is still
-  // discovered, while avoiding a full schema/header audit on every cache poll.
-  await migrateLegacyAssetRows();
 }
 
 function normalizedHeader(value) { return String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, ''); }
@@ -155,32 +176,211 @@ function plainRowValue(row, candidates) {
   return '';
 }
 
-async function migrateLegacyAssetRows() {
+async function migrateLegacyAssetRows(sheetsApi) {
+  if (legacyMigrationChecked || legacyAssetSpreadsheetId === assetDoc.spreadsheetId) return true;
   const logSheet = assetDoc.sheetsByIndex.find(sheet => normalizedHeader(sheet.title) === 'assetmigrationlog');
   const registerSheet = assetDoc.sheetsByIndex.find(sheet => normalizedHeader(sheet.title) === 'assetregisterv3');
   const inventorySheet = assetDoc.sheetsByIndex.find(sheet => normalizedHeader(sheet.title) === 'assetinventoryv3');
-  if (!logSheet || !registerSheet || !inventorySheet) return;
+  if (!logSheet || !registerSheet || !inventorySheet || !getAssetCache()) return false;
+
+  try {
+    if (!legacyMetadataLoaded) {
+      await legacyAssetDoc.loadInfo();
+      legacyMetadataLoaded = true;
+    }
+  } catch (error) {
+    console.error(`[ASSET MIGRATION] Could not open the legacy asset workbook: ${error.message}`);
+    return false;
+  }
+
+  const operationalMigrations = [
+    { key: 'ASSIGNMENTS_TO_V3', source: ['Assignments', 'Asset Assignment', 'Asset Assignments'], target: 'Asset_Assignments_V3', cacheKey: 'assignments', id: 'Assignment_ID' },
+    { key: 'HISTORY_TO_V3', source: ['History', 'Asset History', 'Asset Register History'], target: 'Asset_History_V3', cacheKey: 'history', id: 'History_ID' },
+    { key: 'DISPOSALS_TO_V3', source: ['Disposals', 'Asset Disposal', 'Asset Disposals'], target: 'Asset_Disposals_V3', cacheKey: 'disposals', id: 'Disposal_ID' },
+    { key: 'CUSTOM_DATA_TO_V3', source: ['AssetCustomData', 'Asset Custom Data'], target: 'Asset_Custom_Data_V3', cacheKey: 'assetcustomdata', id: 'Field_ID' },
+    { key: 'TRANSFERS_TO_V3', source: ['Transfers', 'Asset Transfers'], target: 'Asset_Transfers_V3', cacheKey: 'transfers', id: 'Transfer_ID' },
+    { key: 'TRANSFER_ITEMS_TO_V3', source: ['TransferItems', 'Transfer Items'], target: 'Asset_Transfer_Items_V3', cacheKey: 'transferitems', id: 'Transfer_ID' },
+    { key: 'MAINTENANCE_TO_V3', source: ['Maintenance', 'Asset Maintenance'], target: 'Asset_Maintenance_V3', cacheKey: 'maintenance', id: 'Maintenance_ID' },
+    { key: 'INVENTORY_TRANSACTIONS_TO_V3', source: ['InventoryTransactions', 'Inventory Transactions', 'Asset Inventory Transactions'], target: 'Asset_Inventory_Transactions_V3', cacheKey: 'inventorytransactions', id: 'Transaction_ID' },
+    { key: 'VENDORS_TO_V3', source: ['Vendors', 'Asset Vendors'], target: 'Asset_Vendors_V3', cacheKey: 'vendors', id: 'Vendor_ID' },
+    { key: 'DOCUMENTS_TO_V3', source: ['Documents', 'Asset Documents', 'Document Register'], target: 'Asset_Documents_V3', cacheKey: 'documents', id: 'Document_ID' },
+    { key: 'LOCATIONS_TO_V3', source: ['Locations', 'Asset Locations'], target: 'Asset_Locations_V3', cacheKey: 'locations', id: 'Location_ID' },
+    { key: 'AUDITS_TO_V3', source: ['Audits', 'Asset Audits'], target: 'Asset_Audits_V3', cacheKey: 'audits', id: 'Audit_ID' },
+    { key: 'AUDIT_ITEMS_TO_V3', source: ['AuditItems', 'Audit Items', 'Asset Audit Items'], target: 'Asset_Audit_Items_V3', cacheKey: 'audititems', id: 'Audit_Item_ID' },
+    { key: 'APPROVALS_TO_V3', source: ['Asset_Approvals', 'Approvals'], target: 'Asset_Approvals_V3', cacheKey: 'assetapprovals', id: 'Approval_ID' },
+    { key: 'NOTIFICATIONS_TO_V3', source: ['Asset_Notification_Log', 'Asset Notification Log'], target: 'Asset_Notification_Log_V3', cacheKey: 'assetnotificationlog', id: 'Notification_ID' },
+    { key: 'QR_REGISTRY_TO_V3', source: ['Asset_QR_Registry', 'Asset QR Registry'], target: 'Asset_QR_Registry_V3', cacheKey: 'assetqrregistry', id: 'QR_ID' },
+    { key: 'ACTIVITY_TO_V3', source: ['Asset_Activity_Log', 'Asset Activity Log'], target: 'Asset_Activity_Log_V3', cacheKey: 'assetactivitylog', id: 'Event_ID' },
+    { key: 'ACTIVITY_HISTORY_TO_V3', source: ['Asset_Activity_History', 'Activity History'], target: 'Asset_Activity_Log_V3', cacheKey: 'assetactivitylog', id: 'Event_ID' }
+  ];
+  const expectedSourceNames = new Set([
+    'assets', 'assetregister', 'assetregisterv3', 'inventory', 'assetinventory', 'assetinventoryv3',
+    'assetcategorymaster', 'assetcategorymasterv3', 'assetcategories', 'categories',
+    'assetsubcategorymaster', 'assetsubcategorymasterv3', 'assetsubcategories', 'subcategories',
+    'assettypemaster', 'assettypemasterv3', 'assettypes', 'itemtypes',
+    ...operationalMigrations.flatMap(item => [...item.source, item.target].map(normalizedHeader))
+  ]);
+  const sourceSheets = legacyAssetDoc.sheetsByIndex.filter(sheet => expectedSourceNames.has(normalizedHeader(sheet.title).replace(/^\d+/, '')));
+  if (!sourceSheets.length) {
+    console.error('[ASSET MIGRATION] The legacy workbook has no recognized asset tabs; migration cannot be confirmed.');
+    return false;
+  }
+  let sourceRowsByTitle;
+  try {
+    const ranges = sourceSheets.map(sheet => `'${String(sheet.title).replace(/'/g, "''")}'!A:BH`);
+    const response = await sheetsApi.spreadsheets.values.batchGet({
+      spreadsheetId: legacyAssetSpreadsheetId,
+      ranges,
+      valueRenderOption: 'FORMATTED_VALUE'
+    });
+    sourceRowsByTitle = new Map(sourceSheets.map((sheet, index) => [
+      normalizedHeader(sheet.title).replace(/^\d+/, ''),
+      rowsFromValues(sheet, response.data?.valueRanges?.[index]?.values || [])
+    ]));
+  } catch (error) {
+    console.error(`[ASSET MIGRATION] Could not read legacy asset tabs in one batch: ${error.message}`);
+    return false;
+  }
 
   const logHeaders = ['Migration_Key', 'Source_Sheet', 'Target_Sheet', 'Rows_Copied', 'Rows_Skipped', 'Completed_At', 'Status', 'Details'];
   const migrationHeaders = [...(logSheet.headerValues || [])];
   const missingLogHeaders = logHeaders.filter(header => !migrationHeaders.some(existing => normalizedHeader(existing) === normalizedHeader(header)));
   if (missingLogHeaders.length) {
-    const currentRows = await logSheet.getRows();
-    if (currentRows.length) {
-      console.error('[ASSET MIGRATION] Migration log headers are incompatible; legacy rows were preserved without migration.');
-      return;
-    }
     const headers = [...migrationHeaders, ...missingLogHeaders];
     if (headers.length > (Number(logSheet.columnCount) || 0)) await logSheet.resize({ columnCount: headers.length });
     await logSheet.setHeaderRow(headers);
     logSheet._headerValues = headers;
   }
-  const existingMigrations = await logSheet.getRows();
+  const existingMigrations = getAssetCache()?.migrationlog || [];
   const completed = new Set(existingMigrations.filter(row => String(row.get('Status') || '').toUpperCase() === 'COMPLETED').map(row => String(row.get('Migration_Key') || '')));
+  let migrationHadErrors = false;
+  const writeMigrationLog = async ({ key, sourceName, targetName, copied, skipped = 0 }) => {
+    const saved = await logSheet.addRow({
+      Migration_Key: key,
+      Source_Sheet: sourceName,
+      Target_Sheet: targetName,
+      Rows_Copied: copied,
+      Rows_Skipped: skipped,
+      Completed_At: new Date().toISOString(),
+      Status: 'COMPLETED',
+      Details: 'Only recognized asset fields were copied. The legacy workbook remains unchanged.'
+    });
+    if (Array.isArray(getAssetCache()?.migrationlog)) getAssetCache().migrationlog.push(saved);
+    completed.add(key);
+  };
 
-  const migrateOne = async ({ key, sourceName, target, headers, recordType, idCandidates, nameCandidates, categoryCandidates, subcategoryCandidates, assetTypeCandidates, branchCandidates }) => {
+  const migrateTaxonomy = async ({ key, sourceAliases, targetTitle, targetCacheKey, kind }) => {
     if (completed.has(key)) return;
-    const source = assetDoc.sheetsByIndex.find(sheet => normalizedHeader(sheet.title) === normalizedHeader(sourceName));
+    const sources = sourceAliases.map(normalizedHeader)
+      .map(alias => legacyAssetDoc.sheetsByIndex.find(sheet => normalizedHeader(sheet.title).replace(/^\d+/, '') === alias))
+      .filter(sheet => sheet && (sourceRowsByTitle.get(normalizedHeader(sheet.title).replace(/^\d+/, '')) || []).length);
+    const target = assetDoc.sheetsByIndex.find(sheet => normalizedHeader(sheet.title) === normalizedHeader(targetTitle));
+    if (!sources.length || !target) return;
+
+    const targetHeaders = [...(target.headerValues || [])];
+    const existingRows = getAssetCache()?.[targetCacheKey] || [];
+    const rowsToAppend = [];
+    let skipped = 0;
+    const categoryRows = getAssetCache()?.assetcategorymaster || [];
+    const subcategoryRows = getAssetCache()?.assetsubcategorymaster || [];
+    const findCategory = (id, name) => categoryRows.find(row => id && normalizedHeader(plainRowValue(row, ['Category_ID'])) === normalizedHeader(id))
+      || categoryRows.find(row => name && normalizedHeader(plainRowValue(row, ['Category_Name'])) === normalizedHeader(name));
+    const findSubcategory = (id, name, categoryId) => subcategoryRows.find(row => id && normalizedHeader(plainRowValue(row, ['Subcategory_ID'])) === normalizedHeader(id))
+      || subcategoryRows.find(row => name && normalizedHeader(plainRowValue(row, ['Subcategory_Name'])) === normalizedHeader(name)
+        && (!categoryId || normalizedHeader(plainRowValue(row, ['Category_ID'])) === normalizedHeader(categoryId)));
+    const existingIds = new Set(existingRows.map(row => normalizedHeader(plainRowValue(row, kind === 'categories' ? ['Category_ID'] : kind === 'subcategories' ? ['Subcategory_ID'] : ['Asset_Type_ID']))).filter(Boolean));
+    const seenLabels = new Set(existingRows.map(row => {
+      if (kind === 'categories') return normalizedHeader(plainRowValue(row, ['Category_Name']));
+      if (kind === 'subcategories') return `${normalizedHeader(plainRowValue(row, ['Category_ID']))}:${normalizedHeader(plainRowValue(row, ['Subcategory_Name']))}`;
+      return `${normalizedHeader(plainRowValue(row, ['Subcategory_ID']))}:${normalizedHeader(plainRowValue(row, ['Asset_Type_Name']))}`;
+    }).filter(Boolean));
+
+    for (const source of sources) for (const row of sourceRowsByTitle.get(normalizedHeader(source.title).replace(/^\d+/, '')) || []) {
+      const status = String(plainRowValue(row, ['Status']) || 'ACTIVE').trim();
+      const rowObject = row.toObject?.() || {};
+      if (!Object.values(rowObject).some(value => String(value ?? '').trim())) { skipped += 1; continue; }
+      if (/^(deleted|archived|inactive|disabled)$/i.test(status)) { skipped += 1; continue; }
+
+      let mapped = {};
+      if (kind === 'categories') {
+        const name = String(plainRowValue(row, ['Category_Name', 'Category', 'Main_Category', 'Name']) || '').trim();
+        if (!name) { skipped += 1; continue; }
+        if (seenLabels.has(normalizedHeader(name))) { skipped += 1; continue; }
+        const rawId = String(plainRowValue(row, ['Category_ID', 'Category_Code', 'CategoryID', 'ID']) || '').trim();
+        const existing = existingRows.find(item => (rawId && normalizedHeader(plainRowValue(item, ['Category_ID'])) === normalizedHeader(rawId))
+          || normalizedHeader(plainRowValue(item, ['Category_Name'])) === normalizedHeader(name));
+        if (existing) { skipped += 1; continue; }
+        const id = rawId || `LEGACY-CAT-${normalizedHeader(name).slice(0, 18)}`;
+        if (existingIds.has(normalizedHeader(id))) { skipped += 1; continue; }
+        mapped = { Category_ID: id, Category_Code: String(plainRowValue(row, ['Category_Code']) || id), Category_Name: name, Type: String(plainRowValue(row, ['Type', 'Category_Type']) || 'ASSET').toUpperCase(), Status: status };
+        seenLabels.add(normalizedHeader(name));
+      } else if (kind === 'subcategories') {
+        const name = String(plainRowValue(row, ['Subcategory_Name', 'Subcategory', 'Name']) || '').trim();
+        const parentId = String(plainRowValue(row, ['Category_ID', 'CategoryID']) || '').trim();
+        const parentName = String(plainRowValue(row, ['Category_Name', 'Category', 'Main_Category']) || '').trim();
+        const parent = findCategory(parentId, parentName);
+        if (!name || !parent) { skipped += 1; continue; }
+        const parentKey = normalizedHeader(plainRowValue(parent, ['Category_ID']));
+        if (seenLabels.has(`${parentKey}:${normalizedHeader(name)}`)) { skipped += 1; continue; }
+        const id = String(plainRowValue(row, ['Subcategory_ID', 'Subcategory_Code', 'SubcategoryID', 'ID']) || `LEGACY-SUB-${normalizedHeader(`${plainRowValue(parent, ['Category_ID'])}-${name}`).slice(0, 18)}`).trim();
+        const existing = existingRows.find(item => (id && normalizedHeader(plainRowValue(item, ['Subcategory_ID'])) === normalizedHeader(id))
+          || (normalizedHeader(plainRowValue(item, ['Subcategory_Name'])) === normalizedHeader(name)
+            && normalizedHeader(plainRowValue(item, ['Category_ID'])) === normalizedHeader(plainRowValue(parent, ['Category_ID']))));
+        if (existing || existingIds.has(normalizedHeader(id))) { skipped += 1; continue; }
+        mapped = { Subcategory_ID: id, Category_ID: plainRowValue(parent, ['Category_ID']), Category_Name: plainRowValue(parent, ['Category_Name']), Subcategory_Name: name, Type: String(plainRowValue(row, ['Type', 'Category_Type']) || plainRowValue(parent, ['Type']) || 'ASSET').toUpperCase(), Status: status };
+        seenLabels.add(`${parentKey}:${normalizedHeader(name)}`);
+      } else {
+        const name = String(plainRowValue(row, ['Asset_Type_Name', 'Asset_Type', 'Item_Type', 'Type_Name', 'Name']) || '').trim();
+        const categoryId = String(plainRowValue(row, ['Category_ID', 'CategoryID']) || '').trim();
+        const categoryName = String(plainRowValue(row, ['Category_Name', 'Category', 'Main_Category']) || '').trim();
+        const subcategoryId = String(plainRowValue(row, ['Subcategory_ID', 'SubcategoryID']) || '').trim();
+        const subcategoryName = String(plainRowValue(row, ['Subcategory_Name', 'Subcategory']) || '').trim();
+        const parentCategory = findCategory(categoryId, categoryName);
+        const parentSubcategory = findSubcategory(subcategoryId, subcategoryName, plainRowValue(parentCategory, ['Category_ID']));
+        if (!name || !parentCategory || !parentSubcategory) { skipped += 1; continue; }
+        const parentKey = normalizedHeader(plainRowValue(parentSubcategory, ['Subcategory_ID']));
+        if (seenLabels.has(`${parentKey}:${normalizedHeader(name)}`)) { skipped += 1; continue; }
+        const id = String(plainRowValue(row, ['Asset_Type_ID', 'Asset_Type_Code', 'Item_Type_ID', 'ID']) || `LEGACY-TYPE-${normalizedHeader(`${plainRowValue(parentSubcategory, ['Subcategory_ID'])}-${name}`).slice(0, 16)}`).trim();
+        const existing = existingRows.find(item => (id && normalizedHeader(plainRowValue(item, ['Asset_Type_ID'])) === normalizedHeader(id))
+          || (normalizedHeader(plainRowValue(item, ['Asset_Type_Name'])) === normalizedHeader(name)
+            && normalizedHeader(plainRowValue(item, ['Subcategory_ID'])) === normalizedHeader(plainRowValue(parentSubcategory, ['Subcategory_ID']))));
+        if (existing || existingIds.has(normalizedHeader(id))) { skipped += 1; continue; }
+        mapped = { Asset_Type_ID: id, Category_ID: plainRowValue(parentCategory, ['Category_ID']), Category_Name: plainRowValue(parentCategory, ['Category_Name']), Subcategory_ID: plainRowValue(parentSubcategory, ['Subcategory_ID']), Subcategory_Name: plainRowValue(parentSubcategory, ['Subcategory_Name']), Asset_Type_Name: name, Type: String(plainRowValue(row, ['Record_Type', 'Classification_Type']) || plainRowValue(parentSubcategory, ['Type']) || 'ASSET').toUpperCase(), Status: status };
+        seenLabels.add(`${parentKey}:${normalizedHeader(name)}`);
+      }
+      const completeRow = Object.fromEntries(targetHeaders.map(header => [header, mapped[header] ?? '']));
+      rowsToAppend.push(completeRow);
+      const idHeader = kind === 'categories' ? 'Category_ID' : kind === 'subcategories' ? 'Subcategory_ID' : 'Asset_Type_ID';
+      existingIds.add(normalizedHeader(completeRow[idHeader]));
+      if (kind === 'categories') seenLabels.add(normalizedHeader(completeRow.Category_Name));
+      else if (kind === 'subcategories') seenLabels.add(`${normalizedHeader(completeRow.Category_ID)}:${normalizedHeader(completeRow.Subcategory_Name)}`);
+      else seenLabels.add(`${normalizedHeader(completeRow.Subcategory_ID)}:${normalizedHeader(completeRow.Asset_Type_Name)}`);
+    }
+
+    if (rowsToAppend.length) {
+      await target.addRows(rowsToAppend);
+      const cachedRows = rowsFromValues(target, [targetHeaders, ...rowsToAppend.map(row => targetHeaders.map(header => row[header] ?? ''))]);
+      getAssetCache()[targetCacheKey].push(...cachedRows);
+      if (kind === 'categories') getAssetCache().categories = getAssetCache().assetcategorymaster;
+      if (kind === 'subcategories') getAssetCache().subcategories = getAssetCache().assetsubcategorymaster;
+      if (kind === 'assetTypes') getAssetCache().assetTypes = getAssetCache().assettypemaster;
+    }
+    await writeMigrationLog({ key, sourceName: sources.map(source => source.title).join(', '), targetName: target.title, copied: rowsToAppend.length, skipped });
+    console.log(`[ASSET MIGRATION] ${key} completed: ${rowsToAppend.length} copied, ${skipped} skipped.`);
+  };
+
+  try {
+    await migrateTaxonomy({ key: 'TAXONOMY_CATEGORIES_TO_V3', sourceAliases: ['Asset_Category_Master_V3', 'Asset_Category_Master', 'Asset_Categories', 'Categories'], targetTitle: 'Asset_Category_Master_V3', targetCacheKey: 'assetcategorymaster', kind: 'categories' });
+    await migrateTaxonomy({ key: 'TAXONOMY_SUBCATEGORIES_TO_V3', sourceAliases: ['Asset_Subcategory_Master_V3', 'Asset_Subcategory_Master', 'Asset_Subcategories', 'Subcategories'], targetTitle: 'Asset_Subcategory_Master_V3', targetCacheKey: 'assetsubcategorymaster', kind: 'subcategories' });
+    await migrateTaxonomy({ key: 'TAXONOMY_TYPES_TO_V3', sourceAliases: ['Asset_Type_Master_V3', 'Asset_Type_Master', 'Asset_Types', 'Item_Types'], targetTitle: 'Asset_Type_Master_V3', targetCacheKey: 'assettypemaster', kind: 'assetTypes' });
+  } catch (error) {
+    migrationHadErrors = true;
+    console.error(`[ASSET MIGRATION] Legacy classification migration failed: ${error.message}`);
+  }
+
+  const migrateOne = async ({ key, sourceName, target, targetCacheKey, headers, recordType, idCandidates, nameCandidates, categoryCandidates, subcategoryCandidates, assetTypeCandidates, branchCandidates }) => {
+    if (completed.has(key)) return;
+    const source = legacyAssetDoc.sheetsByIndex.find(sheet => normalizedHeader(sheet.title).replace(/^\d+/, '') === normalizedHeader(sourceName));
     // A missing tab is not a completed migration. Some workbooks add or rename
     // legacy tabs after the first service start; retry once they are present.
     if (!source || source === target) {
@@ -193,9 +393,7 @@ async function migrateLegacyAssetRows() {
     pendingMigrationNotices.delete(key);
     let rowsCopied = 0;
     let rowsSkipped = 0;
-    await source.loadHeaderRow();
-    const sourceRows = await source.getRows();
-    await target.loadHeaderRow();
+    const sourceRows = sourceRowsByTitle.get(normalizedHeader(source.title).replace(/^\d+/, '')) || [];
     const targetHeaders = [...(target.headerValues || [])];
     const needed = headers.filter(header => !targetHeaders.some(existing => normalizedHeader(existing) === normalizedHeader(header)));
     if (needed.length) {
@@ -204,7 +402,7 @@ async function migrateLegacyAssetRows() {
       await target.setHeaderRow(nextHeaders);
       target._headerValues = nextHeaders;
     }
-    const targetRows = await target.getRows();
+    const targetRows = getAssetCache()?.[targetCacheKey] || [];
     const targetIds = new Set(targetRows.map(row => String(plainRowValue(row, idCandidates) || '').trim().toLowerCase()).filter(Boolean));
     const mappedRows = [];
     const targetHeaderList = target.headerValues || headers;
@@ -219,6 +417,7 @@ async function migrateLegacyAssetRows() {
       const mapped = {};
       for (const header of targetHeaderList) {
         const normalized = normalizedHeader(header);
+        if (legacyColumns.some(column => normalizedHeader(column) === normalized)) continue;
         const match = Object.keys(rowObject).find(sourceHeader => normalizedHeader(sourceHeader) === normalized);
         if (match) mapped[header] = rowObject[match];
       }
@@ -259,48 +458,55 @@ async function migrateLegacyAssetRows() {
         { id: 'LAB', words: ['laboratory', 'measurement instrument', 'lab instrument'] },
         { id: 'GEN', words: ['general asset', 'consumable', 'stationery', 'miscellaneous'] }
       ];
-      let canonicalCategory = assetTaxonomy.categoryRows.find(item => normalizedHeader(item.categoryname) === normalizedHeader(legacyCategory));
+      const taxonomyCacheRows = key => (getAssetCache()?.[key] || []).map(row => {
+        const values = row?.toObject?.() || row || {};
+        return Object.fromEntries(Object.entries(values).map(([header, value]) => [normalizedHeader(header), value]));
+      });
+      const categoryLibrary = taxonomyCacheRows('assetcategorymaster').map(row => ({ categoryid: row.categoryid, categoryname: row.categoryname, type: row.type }));
+      const subcategoryLibrary = taxonomyCacheRows('assetsubcategorymaster').map(row => ({ subcategoryid: row.subcategoryid, categoryid: row.categoryid, subcategoryname: row.subcategoryname, type: row.type }));
+      const assetTypeLibrary = taxonomyCacheRows('assettypemaster').map(row => ({ assettypeid: row.assettypeid, categoryid: row.categoryid, subcategoryid: row.subcategoryid, assettypename: row.assettypename, type: row.type }));
+      let canonicalCategory = categoryLibrary.find(item => normalizedHeader(item.categoryname) === normalizedHeader(legacyCategory));
       if (!canonicalCategory) {
         const legacyCategoryText = normalizedHeader(`${legacyCategory} ${legacySubcategory}`);
         const aliasMatch = categoryAliases.find(({ words }) => words.some(word => legacyCategoryText.includes(normalizedHeader(word))));
-        if (aliasMatch) canonicalCategory = assetTaxonomy.categoryRows.find(item => item.categoryid === aliasMatch.id);
+        if (aliasMatch) canonicalCategory = categoryLibrary.find(item => normalizedHeader(item.categoryid) === normalizedHeader(aliasMatch.id));
       }
-      let canonicalSubcategory = assetTaxonomy.subcategoryRows.find(item => normalizedHeader(item.subcategoryname) === normalizedHeader(legacySubcategory)
+      let canonicalSubcategory = subcategoryLibrary.find(item => normalizedHeader(item.subcategoryname) === normalizedHeader(legacySubcategory)
         && (!canonicalCategory || normalizedHeader(item.categoryid) === normalizedHeader(canonicalCategory.categoryid)));
-      let canonicalAssetType = assetTaxonomy.assetTypeRows.find(item => normalizedHeader(item.assettypename) === normalizedHeader(legacyAssetType)
+      let canonicalAssetType = assetTypeLibrary.find(item => normalizedHeader(item.assettypename) === normalizedHeader(legacyAssetType)
         && (!canonicalSubcategory || normalizedHeader(item.subcategoryid) === normalizedHeader(canonicalSubcategory.subcategoryid)));
 
       // Legacy registers often used the product name itself as the category.
       // Match recognizable item types against the approved tree before using
-      // the explicit general fallback, while keeping every original field in
-      // Legacy_Data_JSON and the dedicated Legacy_* columns.
+      // the explicit general fallback, while preserving original taxonomy
+      // labels in the dedicated Legacy_* columns.
       if (!canonicalAssetType) {
-        const exactType = assetTaxonomy.assetTypeRows.find(item =>
+        const exactType = assetTypeLibrary.find(item =>
           normalizedHeader(item.assettypename) === normalizedHeader(legacyAssetType || rowName));
         const searchable = normalizedHeader(legacyItemText);
-        const nameType = exactType || assetTaxonomy.assetTypeRows
+        const nameType = exactType || assetTypeLibrary
           .filter(item => normalizedHeader(item.assettypename).length >= 3 && searchable.includes(normalizedHeader(item.assettypename)))
           .sort((a, b) => normalizedHeader(b.assettypename).length - normalizedHeader(a.assettypename).length)[0];
         if (nameType) {
           canonicalAssetType = nameType;
-          canonicalSubcategory = assetTaxonomy.subcategoryRows.find(item => normalizedHeader(item.subcategoryid) === normalizedHeader(nameType.subcategoryid));
-          canonicalCategory = assetTaxonomy.categoryRows.find(item => normalizedHeader(item.categoryid) === normalizedHeader(nameType.categoryid));
+          canonicalSubcategory = subcategoryLibrary.find(item => normalizedHeader(item.subcategoryid) === normalizedHeader(nameType.subcategoryid));
+          canonicalCategory = categoryLibrary.find(item => normalizedHeader(item.categoryid) === normalizedHeader(nameType.categoryid));
         }
       }
 
       if (recordType === 'CONSUMABLE') {
-        canonicalCategory = assetTaxonomy.categoryRows.find(item => item.categoryid === 'GEN');
-        canonicalSubcategory = assetTaxonomy.subcategoryRows.find(item => item.subcategoryid === 'GEN-SC02');
+        canonicalCategory = categoryLibrary.find(item => item.categoryid === 'GEN');
+        canonicalSubcategory = subcategoryLibrary.find(item => item.subcategoryid === 'GEN-SC02');
         const consumableText = normalizedHeader(`${legacyAssetType} ${rowName} ${legacySubcategory}`);
-        canonicalAssetType = assetTaxonomy.assetTypeRows
+        canonicalAssetType = assetTypeLibrary
           .filter(item => item.subcategoryid === 'GEN-SC02' && item.assettypename !== 'Consumable lab material')
           .sort((a, b) => normalizedHeader(b.assettypename).length - normalizedHeader(a.assettypename).length)
           .find(item => normalizedHeader(item.assettypename).length >= 3 && consumableText.includes(normalizedHeader(item.assettypename)))
-          || assetTaxonomy.assetTypeRows.find(item => item.assettypename === 'Consumable supply' && item.subcategoryid === 'GEN-SC02');
+          || assetTypeLibrary.find(item => item.assettypename === 'Consumable supply' && item.subcategoryid === 'GEN-SC02');
       } else if (!canonicalCategory || !canonicalSubcategory || !canonicalAssetType) {
-        canonicalCategory = assetTaxonomy.categoryRows.find(item => item.categoryid === 'GEN');
-        canonicalSubcategory = assetTaxonomy.subcategoryRows.find(item => item.subcategoryid === 'GEN-SC04');
-        canonicalAssetType = assetTaxonomy.assetTypeRows.find(item => item.assettypename === 'Other managed item' && item.subcategoryid === 'GEN-SC04');
+        canonicalCategory = categoryLibrary.find(item => item.categoryid === 'GEN');
+        canonicalSubcategory = subcategoryLibrary.find(item => item.subcategoryid === 'GEN-SC04');
+        canonicalAssetType = assetTypeLibrary.find(item => item.assettypename === 'Other managed item' && item.subcategoryid === 'GEN-SC04');
       }
 
       if (categoryHeader) mapped[categoryHeader] = canonicalCategory?.categoryname || 'General Assets, Consumables & Miscellaneous';
@@ -312,25 +518,32 @@ async function migrateLegacyAssetRows() {
       const legacyCategoryHeader = mappedHeader(['Legacy_Category']);
       const legacySubcategoryHeader = mappedHeader(['Legacy_Subcategory']);
       const legacyItemTypeHeader = mappedHeader(['Legacy_Item_Type']);
-      const legacyJsonHeader = mappedHeader(['Legacy_Data_JSON']);
       if (legacyCategoryHeader) mapped[legacyCategoryHeader] = legacyCategory;
       if (legacySubcategoryHeader) mapped[legacySubcategoryHeader] = legacySubcategory;
       if (legacyItemTypeHeader) mapped[legacyItemTypeHeader] = legacyAssetType;
-      if (legacyJsonHeader) mapped[legacyJsonHeader] = JSON.stringify(rowObject);
       mappedRows.push(mapped);
       targetIds.add(id.toLowerCase());
     }
     for (let offset = 0; offset < mappedRows.length; offset += 300) await target.addRows(mappedRows.slice(offset, offset + 300));
+    if (mappedRows.length) {
+      const cache = getAssetCache();
+      const cachedRows = rowsFromValues(target, [targetHeaderList, ...mappedRows.map(row => targetHeaderList.map(header => row[header] ?? ''))]);
+      if (Array.isArray(cache?.[targetCacheKey])) cache[targetCacheKey].push(...cachedRows);
+    }
     rowsCopied = mappedRows.length;
-    await logSheet.addRow({ Migration_Key: key, Source_Sheet: sourceName, Target_Sheet: target.title, Rows_Copied: rowsCopied, Rows_Skipped: rowsSkipped, Completed_At: new Date().toISOString(), Status: 'COMPLETED', Details: 'Rows copied to the new register. Original source tab remains unchanged as an archive.' });
+    const migrationLogRow = await logSheet.addRow({ Migration_Key: key, Source_Sheet: sourceName, Target_Sheet: target.title, Rows_Copied: rowsCopied, Rows_Skipped: rowsSkipped, Completed_At: new Date().toISOString(), Status: 'COMPLETED', Details: 'Only recognized asset data was copied. The legacy workbook remains unchanged.' });
+    if (Array.isArray(getAssetCache()?.migrationlog)) getAssetCache().migrationlog.push(migrationLogRow);
+    completed.add(key);
     console.log(`[ASSET MIGRATION] ${key} completed: ${rowsCopied} copied, ${rowsSkipped} skipped.`);
   };
 
   try {
-    await migrateOne({ key: 'ASSETS_TO_REGISTER_V3', sourceName: 'Assets', target: registerSheet, headers: assetRegisterHeaders, recordType: 'ASSET', idCandidates: ['Asset_ID', 'Asset Code', 'Asset Tag'], nameCandidates: ['Asset_Name', 'Name', 'Item_Name', 'Product Name'], categoryCandidates: ['Category', 'Category_Name'], subcategoryCandidates: ['Subcategory', 'Subcategory_Name'], assetTypeCandidates: ['Asset_Type', 'Item Type'], branchCandidates: ['Branch', 'Branch_Name'] });
-    await migrateOne({ key: 'ASSET_REGISTER_TO_V3', sourceName: 'Asset_Register', target: registerSheet, headers: assetRegisterHeaders, recordType: 'ASSET', idCandidates: ['Asset_ID', 'Asset Code', 'Asset Tag'], nameCandidates: ['Asset_Name', 'Name', 'Item_Name', 'Product Name'], categoryCandidates: ['Category', 'Category_Name'], subcategoryCandidates: ['Subcategory', 'Subcategory_Name'], assetTypeCandidates: ['Asset_Type', 'Item Type'], branchCandidates: ['Branch', 'Branch_Name'] });
-    await migrateOne({ key: 'INVENTORY_TO_V3', sourceName: 'Inventory', target: inventorySheet, headers: inventoryHeaders, recordType: 'CONSUMABLE', idCandidates: ['Item_ID', 'Inventory_ID', 'Item Code'], nameCandidates: ['Item_Name', 'Name', 'Asset_Name', 'Product Name'], categoryCandidates: ['Category', 'Category_Name'], subcategoryCandidates: ['Subcategory', 'Subcategory_Name'], assetTypeCandidates: ['Asset_Type', 'Item Type'], branchCandidates: ['Branch', 'Branch_Name'] });
-    await migrateOne({ key: 'ASSET_INVENTORY_TO_V3', sourceName: 'Asset_Inventory', target: inventorySheet, headers: inventoryHeaders, recordType: 'CONSUMABLE', idCandidates: ['Item_ID', 'Inventory_ID', 'Item Code'], nameCandidates: ['Item_Name', 'Name', 'Asset_Name', 'Product Name'], categoryCandidates: ['Category', 'Category_Name'], subcategoryCandidates: ['Subcategory', 'Subcategory_Name'], assetTypeCandidates: ['Asset_Type', 'Item Type'], branchCandidates: ['Branch', 'Branch_Name'] });
+    await migrateOne({ key: 'ASSETS_TO_REGISTER_V3', sourceName: 'Assets', target: registerSheet, targetCacheKey: 'assets', headers: assetRegisterHeaders, recordType: 'ASSET', idCandidates: ['Asset_ID', 'Asset Code', 'Asset Tag'], nameCandidates: ['Asset_Name', 'Name', 'Item_Name', 'Product Name'], categoryCandidates: ['Category', 'Category_Name'], subcategoryCandidates: ['Subcategory', 'Subcategory_Name'], assetTypeCandidates: ['Asset_Type', 'Item Type'], branchCandidates: ['Branch', 'Branch_Name'] });
+    await migrateOne({ key: 'ASSET_REGISTER_TO_V3', sourceName: 'Asset_Register', target: registerSheet, targetCacheKey: 'assets', headers: assetRegisterHeaders, recordType: 'ASSET', idCandidates: ['Asset_ID', 'Asset Code', 'Asset Tag'], nameCandidates: ['Asset_Name', 'Name', 'Item_Name', 'Product Name'], categoryCandidates: ['Category', 'Category_Name'], subcategoryCandidates: ['Subcategory', 'Subcategory_Name'], assetTypeCandidates: ['Asset_Type', 'Item Type'], branchCandidates: ['Branch', 'Branch_Name'] });
+    await migrateOne({ key: 'ASSET_REGISTER_V3_TO_NEW', sourceName: 'Asset_Register_V3', target: registerSheet, targetCacheKey: 'assets', headers: assetRegisterHeaders, recordType: 'ASSET', idCandidates: ['Asset_ID', 'Asset Code', 'Asset Tag'], nameCandidates: ['Asset_Name', 'Name', 'Item_Name', 'Product Name'], categoryCandidates: ['Category', 'Category_Name'], subcategoryCandidates: ['Subcategory', 'Subcategory_Name'], assetTypeCandidates: ['Asset_Type', 'Item Type'], branchCandidates: ['Branch', 'Branch_Name'] });
+    await migrateOne({ key: 'INVENTORY_TO_V3', sourceName: 'Inventory', target: inventorySheet, targetCacheKey: 'inventory', headers: inventoryHeaders, recordType: 'CONSUMABLE', idCandidates: ['Item_ID', 'Inventory_ID', 'Item Code'], nameCandidates: ['Item_Name', 'Name', 'Asset_Name', 'Product Name'], categoryCandidates: ['Category', 'Category_Name'], subcategoryCandidates: ['Subcategory', 'Subcategory_Name'], assetTypeCandidates: ['Asset_Type', 'Item Type'], branchCandidates: ['Branch', 'Branch_Name'] });
+    await migrateOne({ key: 'ASSET_INVENTORY_TO_V3', sourceName: 'Asset_Inventory', target: inventorySheet, targetCacheKey: 'inventory', headers: inventoryHeaders, recordType: 'CONSUMABLE', idCandidates: ['Item_ID', 'Inventory_ID', 'Item Code'], nameCandidates: ['Item_Name', 'Name', 'Asset_Name', 'Product Name'], categoryCandidates: ['Category', 'Category_Name'], subcategoryCandidates: ['Subcategory', 'Subcategory_Name'], assetTypeCandidates: ['Asset_Type', 'Item Type'], branchCandidates: ['Branch', 'Branch_Name'] });
+    await migrateOne({ key: 'ASSET_INVENTORY_V3_TO_NEW', sourceName: 'Asset_Inventory_V3', target: inventorySheet, targetCacheKey: 'inventory', headers: inventoryHeaders, recordType: 'CONSUMABLE', idCandidates: ['Item_ID', 'Inventory_ID', 'Item Code'], nameCandidates: ['Item_Name', 'Name', 'Asset_Name', 'Product Name'], categoryCandidates: ['Category', 'Category_Name'], subcategoryCandidates: ['Subcategory', 'Subcategory_Name'], assetTypeCandidates: ['Asset_Type', 'Item Type'], branchCandidates: ['Branch', 'Branch_Name'] });
 
     const operationalMigrations = [
       { key: 'ASSIGNMENTS_TO_V3', source: ['Assignments', 'Asset Assignment', 'Asset Assignments'], target: 'Asset_Assignments_V3', id: 'Assignment_ID' },
@@ -355,13 +568,11 @@ async function migrateLegacyAssetRows() {
     for (const migration of operationalMigrations) {
       if (completed.has(migration.key)) continue;
       const target = assetDoc.sheetsByIndex.find(sheet => normalizedHeader(sheet.title) === normalizedHeader(migration.target));
-      const acceptedSources = migration.source.map(normalizedHeader);
-      const source = assetDoc.sheetsByIndex.find(sheet => acceptedSources.includes(normalizedHeader(sheet.title).replace(/^\d+/, '')));
-      if (!source || !target || source === target) continue;
+      const acceptedSources = [...migration.source, migration.target].map(normalizedHeader);
+      const source = legacyAssetDoc.sheetsByIndex.find(sheet => acceptedSources.includes(normalizedHeader(sheet.title).replace(/^\d+/, '')));
+      if (!source || !target) continue;
       try {
-        await source.loadHeaderRow();
-        await target.loadHeaderRow();
-        const sourceRows = await source.getRows();
+        const sourceRows = sourceRowsByTitle.get(normalizedHeader(source.title).replace(/^\d+/, '')) || [];
         const targetHeaders = [...(target.headerValues || [])];
         const missing = [...targetHeaders, ...legacyColumns].filter((header, index, all) => all.findIndex(item => normalizedHeader(item) === normalizedHeader(header)) === index)
           .filter(header => !targetHeaders.some(existing => normalizedHeader(existing) === normalizedHeader(header)));
@@ -371,7 +582,17 @@ async function migrateLegacyAssetRows() {
           await target.setHeaderRow(nextHeaders);
           target._headerValues = nextHeaders;
         }
-        const existingTargetRows = await target.getRows();
+        const targetCacheKeys = {
+          assetassignmentsv3: 'assignments', assethistoryv3: 'history', assetdisposalsv3: 'disposals',
+          assetcustomdatav3: 'assetcustomdata', assettransfersv3: 'transfers', assettransferitemsv3: 'transferitems',
+          assetmaintenancev3: 'maintenance', assetinventorytransactionsv3: 'inventorytransactions',
+          assetvendorsv3: 'vendors', assetdocumentsv3: 'documents', assetlocationsv3: 'locations',
+          assetauditsv3: 'audits', assetaudititemsv3: 'audititems', assetapprovalsv3: 'assetapprovals',
+          assetnotificationlogv3: 'assetnotificationlog', assetqrregistryv3: 'assetqrregistry',
+          assetactivitylogv3: 'assetactivitylog'
+        };
+        const targetCacheKey = targetCacheKeys[normalizedHeader(target.title)];
+        const existingTargetRows = getAssetCache()?.[targetCacheKey] || [];
         const migratedOrigins = new Set(existingTargetRows.map(row => `${normalizedHeader(plainRowValue(row, ['Legacy_Source']))}:${String(plainRowValue(row, ['Legacy_Row_Number']) || '')}`).filter(key => !key.endsWith(':')));
         const targetHeaderList = target.headerValues || [];
         const sourceRowsToAppend = [];
@@ -392,44 +613,42 @@ async function migrateLegacyAssetRows() {
           if (idHeader && !String(mapped[idHeader] || '').trim()) mapped[idHeader] = `MIG-${normalizedHeader(source.title).slice(0, 10)}-${String(rowNumber || sourceRowsToAppend.length + 2).padStart(6, '0')}`;
           const sourceHeader = targetHeaderList.find(header => normalizedHeader(header) === 'legacysource');
           const rowNumberHeader = targetHeaderList.find(header => normalizedHeader(header) === 'legacyrownumber');
-          const jsonHeader = targetHeaderList.find(header => normalizedHeader(header) === 'legacydatajson');
           if (sourceHeader) mapped[sourceHeader] = source.title;
           if (rowNumberHeader) mapped[rowNumberHeader] = rowNumber;
-          if (jsonHeader) mapped[jsonHeader] = JSON.stringify(rowObject);
           sourceRowsToAppend.push(mapped);
           migratedOrigins.add(originKey);
         }
         for (let offset = 0; offset < sourceRowsToAppend.length; offset += 300) await target.addRows(sourceRowsToAppend.slice(offset, offset + 300));
-        await logSheet.addRow({ Migration_Key: migration.key, Source_Sheet: source.title, Target_Sheet: target.title, Rows_Copied: sourceRowsToAppend.length, Rows_Skipped: skipped, Completed_At: new Date().toISOString(), Status: 'COMPLETED', Details: 'Asset operation rows copied to the clean V3 tab; original source tab remains unchanged as an archive.' });
+        if (sourceRowsToAppend.length && targetCacheKey && Array.isArray(getAssetCache()?.[targetCacheKey])) {
+          const cachedRows = rowsFromValues(target, [targetHeaderList, ...sourceRowsToAppend.map(row => targetHeaderList.map(header => row[header] ?? ''))]);
+          getAssetCache()[targetCacheKey].push(...cachedRows);
+        }
+        const migrationLogRow = await logSheet.addRow({ Migration_Key: migration.key, Source_Sheet: source.title, Target_Sheet: target.title, Rows_Copied: sourceRowsToAppend.length, Rows_Skipped: skipped, Completed_At: new Date().toISOString(), Status: 'COMPLETED', Details: 'Only recognized asset data was copied. The legacy workbook remains unchanged.' });
+        if (Array.isArray(getAssetCache()?.migrationlog)) getAssetCache().migrationlog.push(migrationLogRow);
         completed.add(migration.key);
         console.log(`[ASSET MIGRATION] ${migration.key} completed: ${sourceRowsToAppend.length} copied, ${skipped} skipped.`);
       } catch (error) {
+        migrationHadErrors = true;
         console.error(`[ASSET MIGRATION] ${migration.key} failed; source rows remain unchanged. ${error.message}`);
       }
     }
+    legacyMigrationChecked = !migrationHadErrors;
+    return legacyMigrationChecked;
   } catch (error) {
+    migrationHadErrors = true;
     console.error(`[ASSET MIGRATION] Legacy data copy failed; source rows remain untouched. ${error.message}`);
     logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset sheet migration failed', resource: 'Asset management v3', result: 'Error', details: { error: String(error.message || error).slice(0, 500) } });
+    return false;
   }
 }
 
 async function seedTaxonomySheet(sheet, definition) {
   if (!Array.isArray(definition.seed) || !definition.seed.length) return;
-  let headers = await ensureManagedSheetHeaders(sheet, definition.headers);
+  const headers = await ensureManagedSheetHeaders(sheet, definition.headers);
   const normalize = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-  const hasAllHeaders = definition.headers.every(header => headers.some(existing => normalize(existing) === normalize(header)));
-  if (!hasAllHeaders) {
-    const existingRows = await sheet.getRows();
-    if (existingRows.length) {
-      console.error(`[ASSET SHEETS] ${definition.title} has data with an incompatible header. Preserving it without seeding.`);
-      return;
-    }
-    if ((Number(sheet.columnCount) || 0) < definition.headers.length) await sheet.resize({ columnCount: definition.headers.length });
-    await sheet.setHeaderRow(definition.headers);
-    sheet._headerValues = definition.headers;
-    headers = definition.headers;
-  }
-  const existingRows = await sheet.getRows();
+  const cache = getAssetCache();
+  const cacheKey = { categories: 'assetcategorymaster', subcategories: 'assetsubcategorymaster', assetTypes: 'assettypemaster' }[definition.key];
+  const existingRows = Array.isArray(cache?.[cacheKey]) ? cache[cacheKey] : [];
   const keyMap = {
     categories: ['categoryid', 'categorycode', 'categoryname', 'type', 'status'],
     subcategories: ['subcategoryid', 'categoryid', 'categoryname', 'subcategoryname', 'type', 'status'],
@@ -445,6 +664,11 @@ async function seedTaxonomySheet(sheet, definition) {
   })));
   if (rows.length) {
     await sheet.addRows(rows);
+    const cachedRows = rowsFromValues(sheet, [headers, ...rows.map(row => headers.map(header => row[header] ?? ''))]);
+    if (Array.isArray(cache?.[cacheKey])) cache[cacheKey].push(...cachedRows);
+    if (definition.key === 'categories' && cache) cache.categories = cache.assetcategorymaster;
+    if (definition.key === 'subcategories' && cache) cache.subcategories = cache.assetsubcategorymaster;
+    if (definition.key === 'assetTypes' && cache) cache.assetTypes = cache.assettypemaster;
     console.log(`[ASSET SHEETS] Added ${rows.length} missing canonical rows in ${definition.title}.`);
   }
 }
@@ -476,14 +700,25 @@ async function refreshAssetCache() {
     logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset cache refresh coalesced', resource: 'Asset Google Sheets cache', result: 'Skipped', details: { reason: 'A refresh is already in progress.' } });
     return;
   }
+  if (assetRefreshRetryTimer) {
+    clearTimeout(assetRefreshRetryTimer);
+    assetRefreshRetryTimer = null;
+  }
   isFetching = true;
+  let refreshSucceeded = false;
   const requestId = randomUUID();
   const startedAt = Date.now();
   logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Asset cache refresh started', resource: 'Asset Google Sheets cache', result: 'Started' });
   try {
-    await assetDoc.loadInfo();
-    await ensureOperationalSheets();
+    if (!assetMetadataLoaded) {
+      await assetDoc.loadInfo();
+      assetMetadataLoaded = true;
+      console.log(`[ASSET SHEETS] Connected to workbook ending ${String(assetDoc.spreadsheetId).slice(-6)}.`);
+    }
     const sheetsApi = google.sheets({ version: 'v4', auth: serviceAccountAuth });
+    await prepareBlankStarterTab(sheetsApi);
+    await ensureOperationalSheets();
+    if (!operationalSheetsReady) throw new Error('One or more required asset tabs could not be initialized.');
     
     const getSheetFuzzy = (keyword) => {
       const cleanKeyword = keyword.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -518,7 +753,7 @@ async function refreshAssetCache() {
       'branches', 'users', 'employees', 'categories', 'subcategories', 'assetcategorymaster', 'assetsubcategorymaster', 'assettypemaster',
       'locations', 'assets', 'assetcustomdata', 'assignments', 'transfers', 
       'transferitems', 'maintenance', 'inventory', 'inventorytransactions', 
-      'vendors', 'documents', 'history', 'audits', 'audititems', 'disposals',
+      'vendors', 'documents', 'history', 'audits', 'audititems', 'disposals', 'migrationlog',
       'assetapprovals', 'assetnotificationlog', 'assetqrregistry', 'assetactivitylog'
     ];
 
@@ -546,25 +781,51 @@ async function refreshAssetCache() {
     fetchedData.assetTypes = fetchedData.assettypemaster || [];
 
     assetCache = fetchedData;
+    for (const definition of managedOperationalSheets) {
+      const sheet = assetDoc.sheetsByIndex.find(item => normalizedHeader(item.title) === normalizedHeader(definition.title));
+      if (sheet) await ensureManagedSheetHeaders(sheet, definition.headers);
+    }
+    for (const definition of managedOperationalSheets.filter(item => item.seed)) {
+      const sheet = assetDoc.sheetsByIndex.find(item => normalizedHeader(item.title) === normalizedHeader(definition.title));
+      if (sheet) await seedTaxonomySheet(sheet, definition);
+    }
+    const migrationReady = await migrateLegacyAssetRows(sheetsApi);
+    if (!migrationReady) throw new Error('Legacy asset migration is incomplete. Confirm the old workbook ID and grant the service account access to both workbooks.');
     assetCacheUpdatedAt = new Date().toISOString();
+    assetCacheReady = true;
+    consecutiveAssetRefreshFailures = 0;
+    refreshSucceeded = true;
     console.log("📦 Asset Management Cache successfully synced with Google Sheets!");
     logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Asset cache refresh completed', resource: 'Asset Google Sheets cache', result: 'Success', durationMs: Date.now() - startedAt, details: { sheetsRead: existingSheets.length } });
   } catch (err) { 
     console.error("❌ Asset Management Cache sync failed:", err.message); 
     logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Asset cache refresh failed', resource: 'Asset Google Sheets cache', result: 'Error', durationMs: Date.now() - startedAt, details: { error: String(err.message || err).slice(0, 500) } });
-    setTimeout(refreshAssetCache, err.response?.status === 429 ? 60000 : 15000);
+    consecutiveAssetRefreshFailures += 1;
+    const wait = err.response?.status === 429
+      ? Math.min(600000, 180000 * consecutiveAssetRefreshFailures)
+      : Math.min(300000, 60000 * consecutiveAssetRefreshFailures);
+    assetRefreshRetryTimer = setTimeout(() => {
+      assetRefreshRetryTimer = null;
+      refreshAssetCache();
+    }, wait);
   } finally {
     isFetching = false;
     if (refreshRequested) {
       refreshRequested = false;
-      setTimeout(refreshAssetCache, 0);
+      if (refreshSucceeded && !assetRefreshRetryTimer) {
+        assetRefreshRetryTimer = setTimeout(() => {
+          assetRefreshRetryTimer = null;
+          refreshAssetCache();
+        }, 30000);
+      }
     }
   }
 }
 
 // Start after the placement cache's initial load has begun.
-setTimeout(refreshAssetCache, 5000);
-// 🚨 Run every 6 minutes instead of 5 to further reduce overlap
-setInterval(refreshAssetCache, 360000); 
+setTimeout(refreshAssetCache, 15000);
+// Writes through the portal update the in-memory cache immediately; the poll
+// only needs to pick up edits made directly in Google Sheets.
+setInterval(refreshAssetCache, 600000);
 
 module.exports = { assetDoc, getAssetCache, getAssetCacheUpdatedAt, isAssetCacheReady, refreshAssetCache };

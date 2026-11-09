@@ -596,7 +596,7 @@ async function fetchCacheBatch(sheetsApi, spreadsheetId, ranges) {
 function scheduleCacheRetry() {
   if (scheduledCacheRetryTimer) return;
   consecutiveCacheRefreshFailures += 1;
-  const waitMs = consecutiveCacheRefreshFailures === 1 ? 60000 : 120000;
+  const waitMs = Math.min(600000, 60000 * (2 ** Math.min(consecutiveCacheRefreshFailures - 1, 4)));
   console.warn(`⚠️ Cache refresh will retry in ${Math.round(waitMs / 1000)} seconds.`);
   scheduledCacheRetryTimer = setTimeout(() => {
     scheduledCacheRetryTimer = null;
@@ -918,9 +918,9 @@ async function waitForCacheReady() {
 
 if (process.env.SKIP_INITIAL_SHEET_CACHE_REFRESH !== 'true') {
   refreshCache();
-  // Pick up manual Google Sheets edits within two minutes. Writes made through
+  // Pick up manual Google Sheets edits within five minutes. Writes made through
   // the portal request an immediate refresh rather than waiting for this poll.
-  setInterval(refreshCache, 120000);
+  setInterval(refreshCache, 300000);
 }
 
 const getStandardCourse = (c) => {
