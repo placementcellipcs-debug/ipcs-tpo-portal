@@ -599,7 +599,12 @@ exports.getRegistrationData = async (req, res) => {
       });
       return cleanObj;
     });
-    const locations = mapSheet(cache.locations || []);
+    const locations = mapSheet(cache.locations || []).map(location => ({
+      ...location,
+      locationname: location.locationname || location.name || location.location || (location.room
+        ? `${location.room}${location.area ? ` (${location.area})` : ''}`
+        : '')
+    })).filter(location => String(location.status || '').trim().toUpperCase() !== 'INACTIVE' && location.locationname);
     const rawCategories = mapSheet(cache.assetcategorymaster?.length ? cache.assetcategorymaster : assetTaxonomy.categoryRows);
     const rawSubcategories = mapSheet(cache.assetsubcategorymaster?.length ? cache.assetsubcategorymaster : assetTaxonomy.subcategoryRows);
     const rawAssetTypes = mapSheet(cache.assettypemaster?.length ? cache.assettypemaster : assetTaxonomy.assetTypeRows);
@@ -704,12 +709,22 @@ exports.getRegistrationData = async (req, res) => {
 exports.addAsset = async (req, res) => {
   let assetId = '';
   let assetRecordSaved = false;
+  let locationName = '';
+  let locationCreated = false;
   try {
     const { userName, userEmail } = req.body || {};
     const asset = parseJsonField(req.body?.asset, {});
     const customFields = parseJsonField(req.body?.customFields, []);
     if (!asset?.name || !asset?.category || !asset?.subcategory || !asset?.assetType || !asset?.branch) return res.status(400).json({ success: false, message: 'Item name, category, subcategory, asset type, and branch are required.' });
+    if (!String(asset.location || '').trim()) return res.status(400).json({ success: false, message: 'Choose or enter the physical location.' });
     if (!canAccessAssetBranch(req, asset.branch)) return res.status(403).json({ success: false, message: 'You cannot register an asset for that branch.' });
+    if (asset.createLocation === true) {
+      const allowedLocationAreas = new Set(['LAB', 'OFFICE', 'STORAGE', 'OTHER']);
+      if (!String(asset.locationRoom || '').trim() || !allowedLocationAreas.has(String(asset.locationArea || '').trim().toUpperCase())) {
+        return res.status(400).json({ success: false, message: 'Enter a room name and choose a valid location type.' });
+      }
+    }
+    locationName = String(asset.location).trim();
 
     const trackingMode = String(asset.trackingMode || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY' ? 'QUANTITY' : 'INDIVIDUAL';
     const quantity = trackingMode === 'QUANTITY' ? Number(asset.quantity) : 1;
@@ -765,6 +780,42 @@ exports.addAsset = async (req, res) => {
     }
     const selectedTypeClass = String(taxonomyValue(selectedAssetType, 'Type') || taxonomyValue(selectedSubcategory, 'Type') || taxonomyValue(selectedCategory, 'Type') || 'ASSET').trim().toUpperCase();
     if (selectedTypeClass === 'CONSUMABLE') return res.status(400).json({ success: false, message: 'This item type is classified as consumable stock. Register it from the unified registration page using Consumable stock.' });
+
+    if (asset.createLocation === true) {
+      const locationSheet = sheetByKey('locations');
+      if (!locationSheet) return res.status(503).json({ success: false, message: 'The branch location register is unavailable. No asset was registered.' });
+      const locationHeaders = await ensureAssetHeaders(locationSheet, ['Location_ID', 'Branch_ID', 'Branch', 'Building', 'Floor', 'Room', 'Area', 'Location_Name', 'Status', 'Created_At']);
+      const room = String(asset.locationRoom).trim();
+      const area = String(asset.locationArea).trim();
+      const requestedLocationName = `${room} (${area})`;
+      const matchingLocation = (getAssetCache()?.locations || []).find(row => {
+        const rowBranch = rowValue(row, 'Branch') || rowValue(row, 'Branch_ID');
+        const rowName = rowValue(row, 'Location_Name') || `${rowValue(row, 'Room')}${rowValue(row, 'Area') ? ` (${rowValue(row, 'Area')})` : ''}`;
+        return normalize(rowBranch) === normalize(asset.branch)
+          && normalize(rowName) === normalize(requestedLocationName)
+          && String(rowValue(row, 'Status') || '').trim().toUpperCase() !== 'INACTIVE';
+      });
+      if (matchingLocation) {
+        locationName = String(rowValue(matchingLocation, 'Location_Name') || requestedLocationName).trim();
+      } else {
+        const savedLocation = await locationSheet.addRow({
+          [getH(locationHeaders, 'Location_ID')]: `LOC-${randomBytes(6).toString('hex').toUpperCase()}`,
+          [getH(locationHeaders, 'Branch_ID')]: asset.branch,
+          [getH(locationHeaders, 'Branch')]: asset.branch,
+          [getH(locationHeaders, 'Building')]: 'Main',
+          [getH(locationHeaders, 'Floor')]: '1',
+          [getH(locationHeaders, 'Room')]: room,
+          [getH(locationHeaders, 'Area')]: area,
+          [getH(locationHeaders, 'Location_Name')]: requestedLocationName,
+          [getH(locationHeaders, 'Status')]: 'ACTIVE',
+          [getH(locationHeaders, 'Created_At')]: formatIndiaTimestamp()
+        });
+        cacheAppendedRow('locations', savedLocation);
+        locationCreated = true;
+        locationName = requestedLocationName;
+      }
+      asset.location = locationName;
+    }
 
     // 1. Write to Main Assets Sheet
     const aH = assetHeaders;
@@ -842,6 +893,8 @@ exports.addAsset = async (req, res) => {
       success: true,
       assetId,
       photoUrl,
+      locationName,
+      locationCreated,
       warning: followUpFailed ? 'The asset was registered, but its QR label or activity entry needs a follow-up.' : '',
       message: "Asset successfully registered!"
     });
@@ -850,7 +903,10 @@ exports.addAsset = async (req, res) => {
     console.error(err);
     if (assetRecordSaved) {
       refreshAssetCache();
-      return res.status(201).json({ success: true, assetId, warning: `Asset ${assetId} was saved, but a follow-up record could not be completed. ${err.message}` });
+      return res.status(201).json({ success: true, assetId, locationName, locationCreated, warning: `Asset ${assetId} was saved, but a follow-up record could not be completed. ${err.message}` });
+    }
+    if (locationCreated) {
+      return res.status(500).json({ success: false, locationName, locationCreated: true, message: `The new location was saved, but the asset was not. ${err.message}` });
     }
     res.status(500).json({ success: false, message: err.message });
   }

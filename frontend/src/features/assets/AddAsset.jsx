@@ -35,6 +35,7 @@ export default function AddAsset() {
   const [assetPhotoPreview, setAssetPhotoPreview] = useState('');
   const previewRef = useRef('');
   const [customLocation, setCustomLocation] = useState('');
+  const [customLocationArea, setCustomLocationArea] = useState('Lab');
   const [stock, setStock] = useState({ name: '', category: '', categoryId: '', subcategory: '', subcategoryId: '', assetType: '', assetTypeId: '', branch: tpoData.sittingBranch || '', quantity: '0', minQuantity: '5' });
 
   useEffect(() => {
@@ -117,9 +118,14 @@ export default function AddAsset() {
       setNotification({ type: 'error', text: 'Enter a whole-number quantity of at least 1.' });
       return;
     }
-    const finalLocation = asset.location === '__other__' ? text(customLocation) : text(asset.location);
+    const locationRoom = asset.location === '__other__' ? text(customLocation) : '';
+    const finalLocation = asset.location === '__other__' ? `${locationRoom} (${customLocationArea})` : text(asset.location);
     if (!finalLocation) {
       setNotification({ type: 'error', text: 'Choose or enter the physical location.' });
+      return;
+    }
+    if (asset.location === '__other__' && !locationRoom) {
+      setNotification({ type: 'error', text: 'Enter the new room or space name.' });
       return;
     }
 
@@ -127,7 +133,14 @@ export default function AddAsset() {
     setNotification(null);
     try {
       const formData = new FormData();
-      formData.append('asset', JSON.stringify({ ...asset, location: finalLocation, quantity: asset.trackingMode === 'INDIVIDUAL' ? 1 : quantity }));
+      formData.append('asset', JSON.stringify({
+        ...asset,
+        location: finalLocation,
+        createLocation: asset.location === '__other__',
+        locationRoom,
+        locationArea: customLocationArea,
+        quantity: asset.trackingMode === 'INDIVIDUAL' ? 1 : quantity
+      }));
       formData.append('customFields', JSON.stringify(asset.trackingMode === 'INDIVIDUAL' ? customFields.filter(field => text(field.name) && text(field.value)) : []));
       formData.append('userName', tpoData.name || '');
       formData.append('userEmail', tpoData.email || '');
@@ -136,15 +149,35 @@ export default function AddAsset() {
       if (!response.data?.success) throw new Error(response.data?.message || 'The server did not confirm that the asset was saved.');
       setNotification({
         type: response.data.warning ? 'warning' : 'success',
-        text: response.data.warning || `${asset.trackingMode === 'QUANTITY' ? `${quantity} units recorded` : 'Item registered'} · ${response.data.assetId}`
+        text: response.data.warning || `${asset.trackingMode === 'QUANTITY' ? `${quantity} units recorded` : 'Item registered'} · ${response.data.assetId}${response.data.locationCreated ? ` · ${finalLocation} added to this branch’s location list` : ''}`
       });
+      if (response.data.locationName) {
+        setDbData(current => ({
+          ...current,
+          locations: current.locations.some(item => text(item.locationname || item.name || item.location) === response.data.locationName
+            && text(item.branch || item.branchname).toLowerCase() === text(asset.branch).toLowerCase())
+            ? current.locations
+            : [...current.locations, { branch: asset.branch, locationname: response.data.locationName, status: 'ACTIVE' }]
+        }));
+      }
       setAsset(emptyAsset(tpoData.sittingBranch));
       setCustomLocation('');
+      setCustomLocationArea('Lab');
       setCustomFields([]);
       setShowSpecifications(false);
       setPhoto(null);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (error) {
+      const savedLocation = error.response?.data?.locationName;
+      if (savedLocation) {
+        setDbData(current => ({
+          ...current,
+          locations: current.locations.some(item => text(item.locationname || item.name || item.location) === savedLocation
+            && text(item.branch || item.branchname).toLowerCase() === text(asset.branch).toLowerCase())
+            ? current.locations
+            : [...current.locations, { branch: asset.branch, locationname: savedLocation, status: 'ACTIVE' }]
+        }));
+      }
       setNotification({ type: 'error', text: error.response?.data?.message || error.message || 'Failed to register asset.' });
     } finally {
       setIsSubmitting(false);
@@ -228,7 +261,7 @@ export default function AddAsset() {
               <div className="asset-card-heading"><div><span>03 · BRANCH & LOCATION</span><h2>Where are they kept?</h2></div><MapPinLine size={24} /></div>
               <div className="asset-register-grid asset-register-grid-place">
                 <label><span className="asset-register-label">Branch *</span><select value={asset.branch} onChange={event => { setField('branch', event.target.value); setField('location', ''); setCustomLocation(''); }} required><option value="">Select branch</option>{dbData.branches.map(branch => <option key={branch} value={branch}>{branch}</option>)}</select></label>
-                <label><span className="asset-register-label">Physical location *</span><select value={asset.location} onChange={event => { setField('location', event.target.value); setCustomLocation(''); }} required><option value="">Select a room or area</option>{locationOptions.map(location => <option value={location} key={location}>{location}</option>)}<option value="__other__">Other location</option></select>{asset.location === '__other__' && <input className="asset-other-location" value={customLocation} onChange={event => setCustomLocation(event.target.value)} placeholder="Type room or area" required />}</label>
+                <label><span className="asset-register-label">Physical location *</span><select value={asset.location} onChange={event => { setField('location', event.target.value); setCustomLocation(''); }} required><option value="">Select a room or area</option>{locationOptions.map(location => <option value={location} key={location}>{location}</option>)}<option value="__other__">Add a new room or space</option></select>{asset.location === '__other__' && <><input className="asset-other-location" value={customLocation} onChange={event => setCustomLocation(event.target.value)} placeholder="New room or space name" aria-label="New room or space name" required /><select className="asset-other-location" value={customLocationArea} onChange={event => setCustomLocationArea(event.target.value)} aria-label="New location type"><option value="Lab">Student lab</option><option value="Office">Staff office</option><option value="Storage">Storage / store room</option><option value="Other">Other space</option></select><small>This location will be saved to this branch’s suggestions when you register the item.</small></>}</label>
                 <label><span className="asset-register-label">Condition</span><select value={asset.condition} onChange={event => setField('condition', event.target.value)}><option value="NEW">New</option><option value="EXCELLENT">Excellent</option><option value="GOOD">Good</option><option value="FAIR">Fair</option></select></label>
               </div>
             </section>
