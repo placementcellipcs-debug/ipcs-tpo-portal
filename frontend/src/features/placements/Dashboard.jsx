@@ -52,6 +52,16 @@ export default function Dashboard() {
   const [dashboardReloadKey, setDashboardReloadKey] = useState(0);
   const [greetingTime, setGreetingTime] = useState(() => new Date());
   const [avatarFailed, setAvatarFailed] = useState(false);
+  const [, setProfileRefreshKey] = useState(0);
+
+  useEffect(() => {
+    const refreshProfile = () => {
+      setAvatarFailed(false);
+      setProfileRefreshKey(value => value + 1);
+    };
+    window.addEventListener('ipcs:profile-updated', refreshProfile);
+    return () => window.removeEventListener('ipcs:profile-updated', refreshProfile);
+  }, []);
 
   // Charting Data
   const [trendData, setTrendData] = useState(Array(12).fill({ m: '', Applications: 0, Placed: 0 }));

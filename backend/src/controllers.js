@@ -240,6 +240,7 @@ const safeParseDate = (dateStr) => {
 };
 
 // 🚨 UPSERT HELPER FOR TPO_STATS
+const tpoStatsWriteLocks = new Map();
 const syncTpoStats = async (userName, updates, reportMonth) => {
   if (!userName) throw new Error("TPO Name is missing");
   
@@ -251,33 +252,41 @@ const syncTpoStats = async (userName, updates, reportMonth) => {
   const normalizedReportMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(String(reportMonth || ''))
     ? String(reportMonth)
     : new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
-  await ensurePlacementHeaders(sheet, ['Report Month', ...Object.keys(updates)]);
-  
-  const rows = await sheet.getRows();
-  
-  let targetRow = rows.find(r => {
-     const un = (r.get('USER') || '').toLowerCase().trim();
-     const storedMonth = String(r.get('Report Month') || '').trim();
-     if (un !== userName.toLowerCase().trim()) return false;
-     if (storedMonth) return storedMonth === normalizedReportMonth;
-     const ts = r.get('TimeStamp') || '';
-     const rowDate = safeParseDate(ts);
-     const rowMonthStr = rowDate ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(rowDate).slice(0, 7) : '';
-     return rowMonthStr === normalizedReportMonth;
-  });
+  const ownerKey = normalizePlacementText(userName);
+  const lockKey = `${ownerKey}|${normalizedReportMonth}`;
+  const previousWrite = tpoStatsWriteLocks.get(lockKey) || Promise.resolve();
+  let releaseWrite;
+  const currentWrite = new Promise(resolve => { releaseWrite = resolve; });
+  tpoStatsWriteLocks.set(lockKey, currentWrite);
+  await previousWrite.catch(() => {});
 
-  const normalizedUpdates = { 'Report Month': normalizedReportMonth, ...updates };
-  if (targetRow) {
-     targetRow.assign(normalizedUpdates);
-     await targetRow.save();
-  } else {
-     targetRow = await sheet.addRow({
-       'TimeStamp': formatIndiaTimestamp(),
-       'USER': userName,
-       ...normalizedUpdates
-     });
+  try {
+    await ensurePlacementHeaders(sheet, ['Report Month', ...Object.keys(updates)]);
+    const normalizedUpdates = { 'Report Month': normalizedReportMonth, ...updates };
+    const cachedRows = getCache()?.tpoStats;
+    const targetRow = Array.isArray(cachedRows)
+      ? cachedRows.filter(row => normalizePlacementText(getValByHeader(row, ['user', 'tponame', 'placementofficer'])) === ownerKey
+        && getTargetStatsMonth(row) === normalizedReportMonth).sort((left, right) => Number(left.rowNumber || 0) - Number(right.rowNumber || 0)).at(-1)
+      : null;
+
+    if (targetRow) {
+      // The cache already identifies this month’s row. Write only the changed
+      // cells instead of downloading the entire TPO_Stats sheet on every save.
+      await updateCachedSheetRow(sheet, targetRow, normalizedUpdates);
+      return targetRow;
+    }
+
+    const createdRow = await sheet.addRow({
+      'TimeStamp': formatIndiaTimestamp(),
+      'USER': userName,
+      ...normalizedUpdates
+    });
+    addRowToCache('tpoStats', createdRow);
+    return createdRow;
+  } finally {
+    releaseWrite();
+    if (tpoStatsWriteLocks.get(lockKey) === currentWrite) tpoStatsWriteLocks.delete(lockKey);
   }
-  return targetRow;
 };
 
 // =========================================================
@@ -1934,6 +1943,20 @@ const updateCachedRowData = (field, rowNumber, updates) => {
     const index = headers.findIndex(header => normalizePlacementHeader(header) === normalizePlacementHeader(key));
     if (index >= 0) row._rawData[index] = String(value ?? '');
   });
+};
+
+const addCachedAccountRow = (sheetName, sheet, row, values) => {
+  const cache = getCache();
+  const field = sheetName === 'Contact' ? 'contacts' : 'users';
+  const rowNumber = Number(row?.rowNumber);
+  const headers = sheet?.headerValues || [];
+  if (!cache || !Number.isInteger(rowNumber) || rowNumber < 2 || !headers.length) return;
+  const cachedRow = {
+    _worksheet: sheet,
+    _rawData: headers.map(header => String(values?.[header] ?? '')),
+    rowNumber
+  };
+  cache[field] = [...(cache[field] || []).filter(item => Number(item?.rowNumber) !== rowNumber), cachedRow];
 };
 
 const parsePlacementHistory = value => {
@@ -4137,14 +4160,6 @@ const readLiveTpoLogRows = async () => {
   await loadDocInfo();
   const sheet = doc.sheetsByTitle['TPO_Log'];
   if (!sheet) throw new Error('The TPO_Log source sheet is unavailable.');
-  return sheet.getRows();
-};
-
-const readLiveTpoStatsRows = async () => {
-  await loadDocInfo();
-  const sheet = doc.sheetsByTitle['TPO_Stats'];
-  if (!sheet) throw new Error('The TPO_Stats target sheet is unavailable.');
-  await sheet.loadHeaderRow();
   return sheet.getRows();
 };
 
@@ -8211,9 +8226,10 @@ exports.submitMou = async (req, res) => {
 exports.getAdminUsers = async (req, res) => {
   try {
     const cache = getCache();
-    let targetStatsRows = cache?.tpoStats || [];
-    try { targetStatsRows = await readLiveTpoStatsRows(); }
-    catch (error) { console.warn('Live TPO_Stats read failed while loading user targets; using cache:', error.message); }
+    // Target rows are refreshed with the shared workbook cache and updated in
+    // place by syncTpoStats. Reading the whole sheet for every user-list load
+    // was exhausting the Sheets per-user read quota.
+    const targetStatsRows = Array.isArray(cache?.tpoStats) ? cache.tpoStats : [];
     let allUsers = [];
     const requestedTargetMonth = String(req.query?.month || '').trim();
     const targetMonth = /^\d{4}-(0[1-9]|1[0-2])$/.test(requestedTargetMonth)
@@ -8259,8 +8275,12 @@ exports.getAdminUsers = async (req, res) => {
             course: 'All Courses', 
             access: 'View & Edit',
             profilePhoto: getValByHeader(row, ['profilephoto', 'profilephotourl', 'profileimageurl', 'photo']) || '',
-            // 🚨 READ THE NEW FIELDS
             empId: getValByHeader(row, ['empid', 'employeeid']) || '',
+            linkedIn: getValByHeader(row, ['linkedin', 'linkedinurl', 'linkedinprofile']) || '',
+            birthday: getValByHeader(row, ['birthday', 'dob', 'dateofbirth']) || '',
+            position: getValByHeader(row, ['position', 'designation']) || '',
+            description: getValByHeader(row, ['description', 'descripation', 'bio', 'profiledescription', 'profilebio']) || '',
+            status: getValByHeader(row, ['status', 'tpostatus']) || 'Active',
             ...monthlyTargetFor([name, email, getValByHeader(row, ['loginid', 'username']), getValByHeader(row, ['empid', 'employeeid'])], getValByHeader(row, ['targetofthemonth', 'target']), getValByHeader(row, ['role']) || 'TPO')
           });
         }
@@ -8312,6 +8332,20 @@ const targetAssignmentMailRunsInFlight = new Set();
 const isValidMonthlyTarget = value => /^\d+$/.test(String(value ?? '').trim())
   && Number.isSafeInteger(Number(value))
   && Number(value) >= 0;
+const validateAdminTpoProfile = body => {
+  const limits = [
+    ['LinkedIn', body?.linkedIn, 500],
+    ['Birthday', body?.birthday, 32],
+    ['Position', body?.position, 160],
+    ['Description', body?.description, 5000]
+  ];
+  const oversized = limits.find(([, value, max]) => value !== undefined && String(value ?? '').length > max);
+  if (oversized) return `${oversized[0]} must be ${oversized[2]} characters or fewer.`;
+  if (body?.status !== undefined && !['active', 'inactive'].includes(String(body.status).trim().toLowerCase())) {
+    return 'Choose Active or Inactive for the TPO account status.';
+  }
+  return '';
+};
 
 const getTargetStatsMonth = row => {
   const explicitMonth = String(getValByHeader(row, ['reportmonth']) || '').trim();
@@ -8337,7 +8371,16 @@ const sendTpoTargetAssignmentMailIfComplete = async (reportMonth, actorEmail) =>
     await loadDocInfo();
     const contactSheet = doc.sheetsByTitle.Contact;
     if (!contactSheet) return { status: 'failed', message: 'The Contact sheet is unavailable; the target summary was not sent.' };
-    const [contacts, statsRows] = await Promise.all([contactSheet.getRows(), readLiveTpoStatsRows()]);
+    let cache = getCache();
+    if (!Array.isArray(cache?.contacts) || !Array.isArray(cache?.tpoStats)) {
+      await refreshCache();
+      cache = getCache();
+    }
+    const contacts = Array.isArray(cache?.contacts) ? cache.contacts : [];
+    const statsRows = Array.isArray(cache?.tpoStats) ? cache.tpoStats : [];
+    if (!contacts.length || !Array.isArray(cache?.tpoStats)) {
+      return { status: 'failed', message: 'The TPO and monthly target cache is not ready; the target email was not sent.' };
+    }
     const activeRows = contacts.filter(row => String(getValByHeader(row, ['status', 'tpostatus']) || '').trim().toLowerCase() === 'active');
     if (!activeRows.length) return { status: 'waiting', message: 'No active TPOs were found in the Contact sheet, so the target email was not sent.' };
 
@@ -8474,9 +8517,13 @@ const sendTpoTargetAssignmentMailIfComplete = async (reportMonth, actorEmail) =>
 
 exports.addAdminUser = async (req, res) => {
   try {
-    const { userName, contact, email, sittingBranch, assignedBranches, role, course, access, empId, target, targetMonth } = req.body;
+    const { userName, contact, email, sittingBranch, assignedBranches, role, course, access, empId, target, targetMonth, linkedIn, birthday, position, description } = req.body;
     const password = typeof req.body.newPassword === 'string' ? req.body.newPassword : req.body.password;
     const cleanEmail = String(email || '').trim().toLowerCase();
+    if (role === 'TPO') {
+      const profileError = validateAdminTpoProfile(req.body);
+      if (profileError) return res.status(400).json({ success: false, message: profileError });
+    }
     if (!String(userName || '').trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return res.status(400).json({ success: false, message: 'Enter the employee name and a valid login email.' });
     }
@@ -8525,7 +8572,11 @@ exports.addAdminUser = async (req, res) => {
       const hSit = getSafeH(['sittingbranch']); if(hSit) newRow[hSit] = sittingBranch;
       const hAss = getSafeH(['assignedbranches']); if(hAss) newRow[hAss] = assignedBranches;
       const hPass = getSafeH(['password']); if(hPass) newRow[hPass] = hashedPassword;
-      const hStatus = getSafeH(['status']); if(hStatus) newRow[hStatus] = 'Active';
+      const hStatus = getSafeH(['status', 'tpostatus']); if(hStatus) newRow[hStatus] = /^inactive$/i.test(String(req.body.status || '')) ? 'InActive' : 'Active';
+      const hLinkedIn = getSafeH(['linkedin', 'linkedinurl', 'linkedinprofile']); if(hLinkedIn && linkedIn !== undefined) newRow[hLinkedIn] = String(linkedIn || '').trim();
+      const hBirthday = getSafeH(['birthday', 'dob', 'dateofbirth']); if(hBirthday && birthday !== undefined) newRow[hBirthday] = String(birthday || '').trim();
+      const hPosition = getSafeH(['position', 'designation']); if(hPosition && position !== undefined) newRow[hPosition] = String(position || '').trim();
+      const hDescription = getSafeH(['description', 'descripation', 'bio', 'profiledescription', 'profilebio']); if(hDescription && description !== undefined) newRow[hDescription] = String(description || '').trim();
     } else {
       const hName = getSafeH(['name', 'username']); if(hName) newRow[hName] = userName;
       const hPhone = getSafeH(['contactnumber', 'phone']); if(hPhone) newRow[hPhone] = contact;
@@ -8551,7 +8602,7 @@ exports.addAdminUser = async (req, res) => {
       await syncTpoStats(userName, { 'Monthly Target': String(target).trim() }, targetMonth);
     }
 
-    await refreshCache();
+    addCachedAccountRow(sheetName, s, createdRow, newRow);
     const targetMail = sheetName === 'Contact' && String(target ?? '').trim()
       ? await sendTpoTargetAssignmentMailIfComplete(targetMonth, req.portalUser?.email)
       : null;
@@ -8563,13 +8614,17 @@ exports.addAdminUser = async (req, res) => {
 
 exports.updateAdminUser = async (req, res) => {
   try {
-    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, role, course, access, empId, target, targetMonth } = req.body;
+    const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, role, course, access, empId, target, targetMonth, linkedIn, birthday, position, description } = req.body;
     const passwordToSet = typeof req.body.newPassword === 'string' ? req.body.newPassword : (typeof req.body.password === 'string' ? req.body.password : '');
     const cleanEmail = String(email || '').trim().toLowerCase();
     const cleanSheet = String(sheet || '');
     const numericRowNumber = Number(rowNumber);
     if (!['Contact', 'User'].includes(cleanSheet) || !Number.isInteger(numericRowNumber) || numericRowNumber < 2) {
       return res.status(400).json({ success: false, message: 'Choose a valid employee account to update.' });
+    }
+    if (cleanSheet === 'Contact') {
+      const profileError = validateAdminTpoProfile(req.body);
+      if (profileError) return res.status(400).json({ success: false, message: profileError });
     }
     if (!String(userName || '').trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
       return res.status(400).json({ success: false, message: 'Enter the employee name and a valid login email.' });
@@ -8596,9 +8651,10 @@ exports.updateAdminUser = async (req, res) => {
     await loadDocInfo();
     const s = doc.sheetsByTitle[cleanSheet];
     if (!s) return res.status(503).json({ success: false, message: `The ${cleanSheet} account sheet is unavailable.` });
-    const rows = await s.getRows({ offset: numericRowNumber - 2, limit: 1 });
+    const accountRows = cleanSheet === 'Contact' ? (cache?.contacts || []) : (cache?.users || []);
+    const accountRow = accountRows.find(row => Number(row?.rowNumber) === numericRowNumber);
     
-    if (rows.length > 0) {
+    if (accountRow) {
       const h = s.headerValues || [];
 
       // Bulletproof Header Finder
@@ -8624,6 +8680,12 @@ exports.updateAdminUser = async (req, res) => {
         const hEmail = getSafeH(['mailid', 'email']); if(hEmail) updateObj[hEmail] = email;
         const hSit = getSafeH(['sittingbranch']); if(hSit) updateObj[hSit] = sittingBranch;
         const hAss = getSafeH(['assignedbranches']); if(hAss) updateObj[hAss] = assignedBranches;
+        const hLinkedIn = getSafeH(['linkedin', 'linkedinurl', 'linkedinprofile']); if(hLinkedIn && linkedIn !== undefined) updateObj[hLinkedIn] = String(linkedIn || '').trim();
+        const hBirthday = getSafeH(['birthday', 'dob', 'dateofbirth']); if(hBirthday && birthday !== undefined) updateObj[hBirthday] = String(birthday || '').trim();
+        const hPosition = getSafeH(['position', 'designation']); if(hPosition && position !== undefined) updateObj[hPosition] = String(position || '').trim();
+        const hDescription = getSafeH(['description', 'descripation', 'bio', 'profiledescription', 'profilebio']); if(hDescription && description !== undefined) updateObj[hDescription] = String(description || '').trim();
+        const hStatus = getSafeH(['status', 'tpostatus']);
+        if (hStatus && req.body.status !== undefined) updateObj[hStatus] = /^inactive$/i.test(String(req.body.status || '')) ? 'InActive' : 'Active';
       } else { 
         const hName = getSafeH(['name', 'username']); if(hName) updateObj[hName] = userName;
         const hPhone = getSafeH(['contactnumber', 'phone']); if(hPhone) updateObj[hPhone] = contact;
@@ -8646,22 +8708,20 @@ exports.updateAdminUser = async (req, res) => {
         updateObj[passwordHeader] = await hashPassword(passwordToSet);
       }
 
-      const previousEmail = getValByHeader(rows[0], ['email', 'mailid', 'mail']).toLowerCase();
-      rows[0].assign(updateObj); 
-      await rows[0].save(); 
+      const previousEmail = getValByHeader(accountRow, ['email', 'mailid', 'mail']).toLowerCase();
+      await updateCachedSheetRow(s, accountRow, updateObj);
       invalidateStaffAccountSessions(previousEmail);
-      invalidateStaffAccountSessions(cleanEmail, rows[0]);
+      invalidateStaffAccountSessions(cleanEmail, accountRow);
 
       if (String(target ?? '').trim() && userName) {
         await syncTpoStats(userName, { 'Monthly Target': String(target).trim() }, targetMonth);
       }
 
-      await refreshCache();
       const targetMail = cleanSheet === 'Contact' && String(target ?? '').trim()
         ? await sendTpoTargetAssignmentMailIfComplete(targetMonth, req.portalUser?.email)
         : null;
       res.json({ success: true, message: "User updated", targetMail });
-    } else { 
+    } else {
       res.status(404).json({ success: false, message: "User row not found" }); 
     }
   } catch (err) { 
@@ -8688,33 +8748,26 @@ exports.updateAdminUserPhoto = async (req, res) => {
     await loadDocInfo();
     const worksheet = doc.sheetsByTitle[sheetName];
     if (!worksheet) return res.status(503).json({ success: false, message: `The ${sheetName} account sheet is unavailable.` });
-    const rows = await worksheet.getRows({ offset: rowNumber - 2, limit: 1 });
-    const targetRow = rows[0];
-    if (!targetRow || Number(targetRow.rowNumber) !== rowNumber) {
+    const accountRows = sheetName === 'Contact' ? (getCache()?.contacts || []) : (getCache()?.users || []);
+    const targetRow = accountRows.find(row => Number(row?.rowNumber) === rowNumber);
+    if (!targetRow) {
       return res.status(404).json({ success: false, message: 'The selected user account could not be found.' });
     }
 
     let headers = worksheet.headerValues || [];
-    const photoHeader = headers.find(header => ['profilephotourl', 'profilephoto', 'profileimageurl', 'photo'].includes(normalizePlacementHeader(header)))
-      || headers.find(header => normalizePlacementHeader(header).includes('profile') && normalizePlacementHeader(header).includes('photo'));
+    const photoHeader = findPlacementHeader(headers, ['profilephotourl', 'profilephoto', 'profileimageurl', 'photo']);
     let targetPhotoHeader = photoHeader;
     if (!targetPhotoHeader && !remove) {
-      await worksheet.loadHeaderRow();
+      await ensurePlacementHeaders(worksheet, ['Profile Photo']);
       headers = worksheet.headerValues || [];
-      targetPhotoHeader = headers.find(header => ['profilephotourl', 'profilephoto', 'profileimageurl', 'photo'].includes(normalizePlacementHeader(header)))
-        || 'Profile_Photo_URL';
-      if (!headers.some(header => normalizePlacementHeader(header) === normalizePlacementHeader(targetPhotoHeader))) {
-        await worksheet.setHeaderRow([...headers, targetPhotoHeader]);
-        await worksheet.loadHeaderRow();
-      }
+      targetPhotoHeader = findPlacementHeader(headers, ['profilephotourl', 'profilephoto', 'profileimageurl', 'photo']) || 'Profile Photo';
     }
     if (!targetPhotoHeader) return res.json({ success: true, photoUrl: '', message: 'This account has no saved profile photo.' });
 
     const photoUrl = remove ? '' : await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS);
-    targetRow.assign({ [targetPhotoHeader]: photoUrl });
-    await targetRow.save();
-    void refreshCache();
-    return res.json({ success: true, photoUrl, message: remove ? 'Profile photo removed.' : 'Profile photo updated.' });
+    await updateCachedSheetRow(worksheet, targetRow, { [targetPhotoHeader]: photoUrl });
+    const photoUpdatedAt = Date.now();
+    return res.json({ success: true, photoUrl, photoUpdatedAt, message: remove ? 'Profile photo removed.' : 'Profile photo updated.' });
   } catch (error) {
     return res.status(500).json({ success: false, message: error.message || 'The profile photo could not be updated.' });
   }
@@ -9904,7 +9957,16 @@ exports.verifySession = (req, res) => {
   }
   req.auditActor = user;
   req.auditResult = 'Success';
-  return res.json({ valid: true, expiresIn: SESSION_TOKEN_TTL_MS });
+  const accountRow = getCurrentAccountRow(cleanEmail);
+  return res.json({
+    valid: true,
+    expiresIn: SESSION_TOKEN_TTL_MS,
+    profile: accountRow ? {
+      photo: getValByHeader(accountRow, ['profilephoto', 'profilephotourl', 'profileimageurl', 'photo']),
+      position: getValByHeader(accountRow, ['position', 'designation']),
+      description: getValByHeader(accountRow, ['description', 'descripation', 'bio', 'profiledescription', 'profilebio'])
+    } : undefined
+  });
 };
 
 exports.getSessionUser = (email, sessionToken) => {

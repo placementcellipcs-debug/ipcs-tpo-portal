@@ -21,7 +21,7 @@ export default function Layout({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   
-  const [tpoData] = useState(() => {
+  const [tpoData, setTpoData] = useState(() => {
     try {
       const data = localStorage.getItem('tpoData');
       return data ? JSON.parse(data) : null;
@@ -37,6 +37,8 @@ export default function Layout({ children }) {
     try { return JSON.parse(localStorage.getItem('ipcs-admin-nav-sections-v2') || '{}'); }
     catch { return {}; }
   });
+
+  useEffect(() => { setImgError(false); }, [tpoData?.photo]);
 
   useEffect(() => {
     if (!tpoData) {
@@ -68,6 +70,20 @@ export default function Layout({ children }) {
           email: tpoData.email,
           sessionToken: tpoData.sessionToken
         });
+        if (res.data?.valid === true && res.data.profile) {
+          const next = {
+            ...tpoData,
+            photo: res.data.profile.photo ?? tpoData.photo ?? '',
+            profilePhoto: res.data.profile.photo ?? tpoData.profilePhoto ?? '',
+            position: res.data.profile.position ?? tpoData.position ?? '',
+            description: res.data.profile.description ?? tpoData.description ?? ''
+          };
+          if (next.photo !== tpoData.photo || next.position !== tpoData.position || next.description !== tpoData.description) {
+            setTpoData(next);
+            try { localStorage.setItem('tpoData', JSON.stringify(next)); } catch { /* Keep the current in-memory profile. */ }
+            window.dispatchEvent(new Event('ipcs:profile-updated'));
+          }
+        }
         if (res.data && res.data.valid === false) {
           clearInterval(sessionHeartbeat);
           clearInterval(inactivityInterval);

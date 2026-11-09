@@ -13,6 +13,17 @@ import { PortalConfirmDialog, PortalToast } from '../../components/PortalFeedbac
 const TILE_COLORS = ['#10b981', '#3b82f6', 'var(--accent-primary)', '#f59e0b', '#ec4899', '#0ea5e9', '#ef4444', '#f43f5e'];
 const currentIndiaMonth = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
 const isTpoRole = role => /\b(tpo|placement officer)\b/i.test(String(role || ''));
+const birthdayInputValue = value => {
+  const clean = String(value || '').trim();
+  const dayFirst = clean.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (dayFirst) return `${dayFirst[3]}-${dayFirst[2].padStart(2, '0')}-${dayFirst[1].padStart(2, '0')}`;
+  const iso = clean.match(/^(\d{4}-\d{2}-\d{2})/);
+  return iso ? iso[1] : '';
+};
+const birthdaySheetValue = value => {
+  const iso = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return iso ? `${iso[3]}/${iso[2]}/${iso[1]}` : String(value || '').trim();
+};
 
 const ALL_BRANCHES = [
   "Trivandrum", "Attingal", "Kollam", "Calicut", "Kannur", "Perinthalmanna", 
@@ -51,7 +62,8 @@ export default function UserManagement() {
     sheet: 'User', rowNumber: null, userName: '', email: '', contact: '', newPassword: '',
     role: 'Regional Technical Head', course: '', sittingBranch: '', 
     assignedBranches: [], access: 'View Only',
-    empId: '', target: '', targetMonth: currentIndiaMonth(), profilePhoto: ''
+    empId: '', target: '', targetMonth: currentIndiaMonth(), profilePhoto: '',
+    linkedIn: '', birthday: '', position: '', description: '', status: 'Active'
   };
   const [formData, setFormData] = useState(initialFormState);
 
@@ -149,7 +161,12 @@ export default function UserManagement() {
       empId: user.empId || '', 
       target: user.target || '',
       targetMonth: user.targetMonth || targetDisplayMonth || currentIndiaMonth(),
-      profilePhoto: user.profilePhoto || ''
+      profilePhoto: user.profilePhoto || '',
+      linkedIn: user.linkedIn || '',
+      birthday: birthdayInputValue(user.birthday),
+      position: user.position || '',
+      description: user.description || '',
+      status: /^inactive$/i.test(String(user.status || '')) ? 'Inactive' : 'Active'
     });
     setPhotoFile(null);
     setIsEditMode(true);
@@ -164,7 +181,8 @@ export default function UserManagement() {
 
     const payload = {
       ...formData,
-      assignedBranches: formData.assignedBranches.join(', ')
+      assignedBranches: formData.assignedBranches.join(', '),
+      birthday: birthdaySheetValue(formData.birthday)
     };
 
     try {
@@ -517,7 +535,7 @@ export default function UserManagement() {
               {isGifty && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px', padding: '15px', background: 'rgba(168, 85, 247, 0.05)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '12px' }}>
                   <div className="form-group">
-                    <label style={{ color: '#a855f7', fontWeight: 'bold' }}>Employee ID (Gifty Access)</label>
+                    <label style={{ color: '#a855f7', fontWeight: 'bold' }}>Employee ID</label>
                     <input type="text" name="empId" value={formData.empId} onChange={handleInputChange} className="sleek-input" placeholder="e.g. IPCS-EMP-1024" />
                   </div>
                   {String(formData.role || '').toLowerCase().includes('tpo') || String(formData.role || '').toLowerCase().includes('placement officer') ? <div className="form-group" style={{ gridColumn: '1 / -1' }}>
@@ -529,6 +547,38 @@ export default function UserManagement() {
                     <small style={{ display: 'block', color: 'var(--text-muted)', marginTop: '6px' }}>This changes the selected month only. To clear a target, enter 0.</small>
                   </div> : null}
                 </div>
+              )}
+
+              {isGifty && (isEditMode ? formData.sheet === 'Contact' : isTpoRole(formData.role)) && (
+                <section style={{ marginBottom: 18, padding: 15, borderRadius: 12, border: '1px solid rgba(56,189,248,.25)', background: 'rgba(14,165,233,.045)' }}>
+                  <h3 style={{ margin: '0 0 14px', color: '#7dd3fc', fontSize: '0.95rem' }}>TPO profile details</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 15 }}>
+                    <div className="form-group">
+                      <label>LinkedIn</label>
+                      <input type="text" name="linkedIn" value={formData.linkedIn} onChange={handleInputChange} className="sleek-input" placeholder="linkedin.com/in/..." />
+                    </div>
+                    <div className="form-group">
+                      <label>Birthday</label>
+                      <input type="date" name="birthday" value={formData.birthday} onChange={handleInputChange} className="sleek-input" />
+                    </div>
+                    <div className="form-group">
+                      <label>Position</label>
+                      <input type="text" name="position" value={formData.position} onChange={handleInputChange} className="sleek-input" placeholder="Corporate Relations Officer" />
+                    </div>
+                    <div className="form-group">
+                      <label>Account status</label>
+                      <select name="status" value={formData.status} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }}>
+                        <option value="Active">Active</option>
+                        <option value="Inactive">Inactive</option>
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                      <label>Description · shown in the public Placement Team section</label>
+                      <textarea name="description" value={formData.description} onChange={handleInputChange} className="sleek-input" rows={5} maxLength={5000} placeholder="Add a short professional profile..." style={{ resize: 'vertical', minHeight: 110 }} />
+                      <small style={{ display: 'block', color: 'var(--text-muted)', marginTop: 5 }}>{formData.description.length}/5000 characters</small>
+                    </div>
+                  </div>
+                </section>
               )}
 
               {(
