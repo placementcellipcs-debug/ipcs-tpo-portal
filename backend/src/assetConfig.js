@@ -78,7 +78,10 @@ const isAssetCacheReady = () => assetCacheReady;
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 async function ensureManagedSheetHeaders(sheet, requiredHeaders) {
-  const current = [...(sheet.headerValues || [])];
+  // headerValues throws in google-spreadsheet when a blank sheet has not yet
+  // had its first row loaded. A blank managed tab is valid during first-time
+  // provisioning; treat it as headerless so the required schema can be set.
+  const current = Array.isArray(sheet?._headerValues) ? [...sheet._headerValues] : [];
   const normalize = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
   const missing = requiredHeaders.filter(header => !current.some(existing => normalize(existing) === normalize(header)));
   if (!missing.length) return current;
@@ -675,10 +678,12 @@ async function seedTaxonomySheet(sheet, definition) {
 
 function rowsFromValues(sheet, values) {
   const headers = (values?.[0] || []).map(value => String(value ?? '').trim());
+  // Set this even when Sheets returns an empty values array. Otherwise a
+  // newly-created blank tab leaves headerValues unset and schema setup throws.
+  if (sheet) sheet._headerValues = headers;
   if (!headers.some(Boolean)) return [];
   // Keep google-spreadsheet consumers on this worksheet aligned with the
   // headers from the same batch response; getRows() would add one request per tab.
-  sheet._headerValues = headers;
   return values.slice(1).map((rawData, index) => ({
     _rawData: rawData,
     rowNumber: index + 2,

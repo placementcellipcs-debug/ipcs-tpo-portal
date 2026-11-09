@@ -156,6 +156,7 @@ let cacheRefreshPromise = null;
 let cacheRefreshRequested = false;
 let scheduledCacheRetryTimer = null;
 let consecutiveCacheRefreshFailures = 0;
+let consecutiveDocInfoFailures = 0;
 let docInfoLoading = null;
 let docInfoCachedUntil = 0;
 const docInfoCacheMs = Math.max(15000, Number(process.env.SHEETS_METADATA_CACHE_MS) || 300000);
@@ -169,10 +170,22 @@ const placedStudentsHeaders = [
 ];
 
 async function ensurePlacedStudentsSheet() {
-  let sheet = doc.sheetsByTitle['Placed_Students'];
+  const spreadsheet = getPreferredDocumentForSheet('Placed_Students');
+  if (!spreadsheet) throw new Error('No placements workbook is configured for Placed_Students.');
+  let sheet = spreadsheet.sheetsByTitle['Placed_Students'];
   if (!sheet) {
-    sheet = await doc.addSheet({ title: 'Placed_Students', headerValues: placedStudentsHeaders });
-    return sheet;
+    try {
+      sheet = await spreadsheet.addSheet({ title: 'Placed_Students', headerValues: placedStudentsHeaders });
+      return sheet;
+    } catch (error) {
+      // Render deploys can overlap briefly. Another instance may create this
+      // required tab after our loadInfo() but before this addSheet() call.
+      if (!/already exists/i.test(String(error.message || error))) throw error;
+      await spreadsheet.loadInfo();
+      sheet = spreadsheet.sheetsByTitle['Placed_Students'];
+      if (!sheet) throw error;
+      console.info('[SHEETS] Reusing Placed_Students created by another running instance.');
+    }
   }
 
   if (!Array.isArray(sheet._headerValues) || !sheet._headerValues.length) await sheet.loadHeaderRow();
@@ -497,11 +510,21 @@ async function loadDocInfo() {
       failures.forEach(result => console.warn('Could not load one configured spreadsheet:', result.reason?.message || result.reason));
       // Keep retrying a failed workbook soon, while the successful workbooks
       // stay loaded and are not fetched again.
-      docInfoCachedUntil = Date.now() + (failures.length ? Math.min(docInfoCacheMs, 15000) : docInfoCacheMs);
+      if (failures.length) {
+        consecutiveDocInfoFailures += 1;
+        const retryDelay = Math.min(600000, 60000 * (2 ** Math.min(consecutiveDocInfoFailures - 1, 4)));
+        docInfoCachedUntil = Date.now() + retryDelay;
+      } else {
+        consecutiveDocInfoFailures = 0;
+        docInfoCachedUntil = Date.now() + docInfoCacheMs;
+      }
     }).catch(error => {
       // Avoid retrying all workbook metadata requests on every API call while
       // Google Sheets is rate limiting this service account.
-      docInfoCachedUntil = Date.now() + Math.min(docInfoCacheMs, 15000);
+      if (docInfoCachedUntil <= Date.now()) {
+        consecutiveDocInfoFailures += 1;
+        docInfoCachedUntil = Date.now() + Math.min(600000, 60000 * (2 ** Math.min(consecutiveDocInfoFailures - 1, 4)));
+      }
       throw error;
     });
   }
