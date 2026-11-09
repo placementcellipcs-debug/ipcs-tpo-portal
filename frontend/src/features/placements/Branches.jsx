@@ -7,6 +7,7 @@ import Layout from '../../layouts/Layout';
 
 import { API_BASE } from '../../services/apiConfig';
 import { isPortalAdminAccount } from '../../utils/roleAccess';
+import { inAppConfirm } from '../../components/InAppDialogs';
 
 export default function Branches() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -80,7 +81,7 @@ export default function Branches() {
   };
 
   const handleDelete = async (branchName) => {
-    if (!window.confirm(`Are you sure you want to delete ${branchName}? This may affect students assigned to it.`)) return;
+    if (!(await inAppConfirm(`Are you sure you want to delete ${branchName}? This may affect students assigned to it.`))) return;
     try {
       const res = await axios.post(`${API_BASE}/api/admin/branches/delete`, { branch: branchName });
       if (res.data.success) {

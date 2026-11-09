@@ -6,6 +6,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
+import { inAppConfirm } from '../../components/InAppDialogs';
 import { formatPortalDateTime } from '../../utils/dateFormat';
 
 export default function Aptitude() {
@@ -104,7 +105,7 @@ export default function Aptitude() {
   };
 
   const handleDeleteQuestion = async (id) => {
-    if(!window.confirm("Are you sure you want to permanently delete this aptitude question?")) return;
+    if (!(await inAppConfirm("Are you sure you want to permanently delete this aptitude question?"))) return;
     try {
       const res = await axios.post(`${API_BASE}/api/aptitude/questions/delete`, { id });
       if (res.data.success) setQuestions(questions.filter(q => q.id !== id));

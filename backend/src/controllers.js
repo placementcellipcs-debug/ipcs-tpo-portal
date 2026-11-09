@@ -467,7 +467,7 @@ const wasResumeDeliveryHandled = (jobId, cache) => {
   const key = getResumeDeliveryReference(jobId);
   if (!key) return false;
   const local = resumeDeliveryMemory.get(key);
-  if (local?.status === 'sent' || local?.status === 'review') return true;
+  if (local?.status === 'sent' || local?.status === 'review' || local?.status === 'sending') return true;
   if (local?.status === 'queued') {
     if (Date.now() - local.at < 24 * 60 * 60 * 1000) return true;
     resumeDeliveryMemory.delete(key);
@@ -531,6 +531,7 @@ const claimCompanyOpeningDailyReport = async reportDate => {
 
   // Verify the persisted reservation and choose the earliest row if two
   // server instances tried to claim the same report at nearly the same time.
+  await new Promise(resolve => setTimeout(resolve, 800));
   const verifiedRows = (await sheet.getRows()).filter(matchesReport)
     .sort((left, right) => Number(left.rowNumber || 0) - Number(right.rowNumber || 0));
   if (!verifiedRows.length || Number(verifiedRows[0].rowNumber) !== Number(reservation.rowNumber)) {
@@ -565,13 +566,14 @@ const sendCompanyOpeningDailyReport = async ({ reportDate, openingRows, cache })
     .map(email => String(email || '').trim())
     .filter(Boolean)
     .map(email => [email.toLowerCase(), email])).values()];
-  const reportRecipients = [giftyEmail, ...ccEmails];
+  const deduplicatedCcEmails = ccEmails.filter(email => email.toLowerCase() !== giftyEmail);
+  const reportRecipients = [giftyEmail, ...deduplicatedCcEmails];
   const subject = `[IPCS COMPANY OPENING REPORT] ${reportDate}`;
   const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   })[character]);
-  const cellStyle = 'border:1px solid #d7dce5;padding:9px;text-align:left;vertical-align:top';
-  const headerStyle = `${cellStyle};background:#edf2f8;font-weight:700`;
+  const cellStyle = 'border-bottom:1px solid #e5eaf1;padding:11px 12px;text-align:left;vertical-align:top;font-size:13px;color:#344256';
+  const headerStyle = 'padding:10px 12px;text-align:left;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#dbeafe;background:#1e3551';
   const countByStatus = status => openingRows.filter(row => row.deliveryStatus === status).length;
   const sentCount = countByStatus('Sent');
   const queuedCount = countByStatus('Queued');
@@ -581,25 +583,18 @@ const sendCompanyOpeningDailyReport = async ({ reportDate, openingRows, cache })
       <td style="${cellStyle}">${escape(row.company || 'Unknown company')}</td>
       <td style="${cellStyle}">${escape(row.position || 'Unknown position')}</td>
       <td style="${cellStyle}">${escape(row.lastDate || '—')}</td>
-      <td style="${cellStyle};text-align:center">${Number(row.applicantCount) || 0}</td>
+      <td style="${cellStyle};text-align:center;font-weight:700">${Number(row.applicantCount) || 0}</td>
       <td style="${cellStyle}">${escape(row.tpoName || 'Not assigned')}</td>
-      <td style="${cellStyle}">${escape(row.deliveryStatus || 'Not sent')}</td>
+      <td style="${cellStyle};font-weight:700;color:${row.deliveryStatus === 'Sent' ? '#087c70' : ['Failed', 'Review'].includes(row.deliveryStatus) ? '#b45309' : '#4965b5'}">${escape(row.deliveryStatus || 'Not sent')}</td>
     </tr>`).join('') : `<tr><td colspan="6" style="${cellStyle};text-align:center">No openings had a deadline yesterday.</td></tr>`;
-  const html = `<div style="font-family:Arial,sans-serif;color:#172033;max-width:1000px;margin:0 auto">
-    <h2>Company resume delivery report</h2>
-    <p>Openings with an application deadline of <strong>${escape(reportDate)}</strong>.</p>
-    <p><strong>${openingRows.length}</strong> opening(s) · <strong>${sentCount}</strong> sent · <strong>${queuedCount}</strong> queued · <strong>${failedCount}</strong> failed or under review.</p>
-    <table style="border-collapse:collapse;width:100%;font-size:13px">
-      <thead><tr>${['Company', 'Position', 'Last date', 'Applied', 'Opening owner (TPO)', 'Company email status'].map(label => `<th style="${headerStyle}">${label}</th>`).join('')}</tr></thead>
-      <tbody>${rowsHtml}</tbody>
-    </table>
-  </div>`;
+  const summaryCard = (label, value, color) => `<td width="25%" style="padding:7px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f8fc;border:1px solid #e1e8f0;border-radius:12px"><tr><td style="padding:14px"><div style="font-size:24px;font-weight:800;color:${color}">${value}</div><div style="margin-top:4px;font-size:11px;color:#64748b">${label}</div></td></tr></table></td>`;
+  const html = `<div style="margin:0;padding:28px 10px;background:#eef2f7;font-family:Arial,Helvetica,sans-serif;color:#172033;line-height:1.5"><table role="presentation" align="center" cellpadding="0" cellspacing="0" style="width:100%;max-width:1000px;margin:0 auto;background:#fff;border:1px solid #dce4ee;border-radius:18px;overflow:hidden"><tr><td style="padding:28px 30px 25px;background:#101d30;border-bottom:4px solid #20b9a7"><div style="font-size:11px;letter-spacing:2px;color:#7de2d4;font-weight:700">IPCS GLOBAL · PLACEMENT OPERATIONS</div><h1 style="margin:8px 0 3px;font-size:25px;line-height:1.25;color:#fff">Company opening report</h1><div style="font-size:14px;color:#ced8e5">Resume delivery activity · Deadline ${escape(reportDate)}</div></td></tr><tr><td style="padding:18px 22px 6px"><p style="margin:0 8px 8px;font-size:13px;color:#536278">Openings with an application deadline on ${escape(reportDate)} and the delivery status of their applicant resumes.</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${summaryCard('Openings reviewed', openingRows.length, '#15263d')}${summaryCard('Resume emails sent', sentCount, '#087c70')}${summaryCard('Queued for delivery', queuedCount, '#4965b5')}${summaryCard('Failed or under review', failedCount, '#b45309')}</tr></table></td></tr><tr><td style="padding:24px 28px 0"><h2 style="margin:0 0 5px;font-size:16px;color:#15263d">Opening details</h2><p style="margin:0 0 13px;font-size:12px;color:#64748b">Applicants, opening owner, and company email outcome for each eligible opening.</p><table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;border:1px solid #dce4ee;border-radius:10px;overflow:hidden"><thead><tr>${['Company', 'Position', 'Apply by', 'Applicants', 'Opening owner', 'Resume email'].map(label => `<th style="${headerStyle}">${label}</th>`).join('')}</tr></thead><tbody>${rowsHtml}</tbody></table></td></tr><tr><td style="padding:22px 28px 27px"><div style="padding:14px 16px;border-radius:12px;background:#f5f8fc;color:#64748b;font-size:11px;line-height:1.6">This automated report summarizes the previous India Standard Time day. Queued deliveries are still being processed; failed and uncertain outcomes should be reviewed in the portal mail log.</div><p style="margin:16px 0 0;color:#64748b;font-size:12px">IPCS Global · Placement Team</p></td></tr></table></div>`;
 
   try {
     const delivery = await sendIPCSMail({
       from: `"IPCS Global Placement Team" <${process.env.EMAIL_USER}>`,
       to: giftyEmail,
-      cc: ccEmails.join(','),
+      cc: deduplicatedCcEmails.join(','),
       subject,
       text: `Company resume delivery report for openings whose deadline was ${reportDate}. ${openingRows.length} opening(s), ${sentCount} sent, ${queuedCount} queued, ${failedCount} failed or under review.`,
       html
@@ -795,6 +790,12 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
         <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
         <p>Greetings from the Placement Team.</p>
         <p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the second time</b> without prior intimation or a valid reason.</p>
+        <p>Please consider this email as an <b>official warning</b>. Attending interviews scheduled through the Placement Team is an important responsibility of every student registered for placement assistance.</p>
+        <p>You are hereby instructed to ensure your attendance for all future interviews and recruitment processes scheduled for you.</p>
+        <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 15px 18px; margin: 20px 0; border-radius: 4px;">
+          <p style="margin: 0; color: #92400e; font-weight: bold;">Please note that if you fail to attend a scheduled interview for the third time, your placement assistance will be put on hold, and you may not be considered for further placement opportunities until further review by the Placement Team.</p>
+        </div>
+        <p>We strongly advise you to take this matter seriously and maintain proper communication with the Placement Team in case of any genuine difficulty or unavoidable circumstance.</p>
         <p>We expect your full cooperation and commitment towards the placement process.</p>
       `);
     } else if (noAttendCount >= 3) {
@@ -803,10 +804,14 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
       html = buildBrandedEmail('Placement Assistance Put on Hold', '#ef4444', `
         <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
         <p>Greetings from the Placement Team.</p>
-        <p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the third time.</b></p>
+        <p>This is to formally inform you that you have <b>failed to attend the interview scheduled for you for the third time</b>.</p>
+        <p>Despite the previous warning regarding non-attendance, you have again failed to participate in the scheduled interview without prior intimation to the Placement Team.</p>
         <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;">
-          <p style="margin: 0; color: #991b1b; font-weight: bold; font-size: 15px;">Your placement assistance is hereby put on hold with immediate effect.</p>
+          <p style="margin: 0; color: #991b1b; font-weight: bold; font-size: 15px;">This is considered a serious violation of the placement process. Therefore, your placement assistance is hereby put on hold with immediate effect.</p>
         </div>
+        <p>You will not be considered for further interview opportunities or placement drives until your case is reviewed by the Placement Team and further instructions are communicated to you.</p>
+        <p>We expect students to take the placement opportunities provided to them seriously and maintain proper communication with the Placement Team regarding any genuine or unavoidable circumstances.</p>
+        <p>If you have a valid reason for your repeated non-attendance, you may submit a written explanation to the Placement Team for review.</p>
         <p><b>Please treat this matter as serious and final.</b></p>
       `);
     }
@@ -819,6 +824,12 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
         <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
         <p>Greetings from the Placement Team.</p>
         <p>This is to formally inform you that you have <b>rejected a job offer for the second time</b> after being selected through the IPCS Global placement process.</p>
+        <p>As per the <b>IPCS Placement Policy</b>, students are expected to seriously consider and accept suitable employment opportunities provided through the Placement Team. Repeated rejection of offers after selection affects the placement process and the opportunities provided to other students.</p>
+        <p>Please consider this email as an <b>official warning</b>.</p>
+        <div style="background-color: #fffbeb; border-left: 4px solid #f59e0b; padding: 15px 18px; margin: 20px 0; border-radius: 4px;">
+          <p style="margin: 0; color: #92400e; font-weight: bold;">You are hereby advised that if you reject a job offer for the third time, your placement assistance will be put on hold, as per the IPCS Placement Policy. In such a situation, you may not be considered for further placement opportunities until further review by the Placement Team.</p>
+        </div>
+        <p>We strongly advise you to carefully evaluate the opportunities shared with you before participating in the recruitment process and to communicate with the Placement Team in advance if you have any genuine concerns regarding an offer.</p>
         <p>Please take this warning seriously and ensure strict adherence to the IPCS Placement Policy going forward.</p>
       `);
     } else if (rejectCount >= 3) {
@@ -828,9 +839,14 @@ const checkAndSendStudentMails = async (studentData, newStatus, interviewDetails
         <p style="font-size: 16px; margin-top: 0;">Dear <b>${studentData.name}</b>,</p>
         <p>Greetings from the Placement Team.</p>
         <p>This is to formally inform you that you have <b>rejected a job offer for the third time</b> after being selected through the IPCS Global placement process.</p>
+        <p>You were previously informed about the consequences of repeated offer rejections. However, despite the warnings, you have again declined the opportunity provided to you.</p>
         <div style="background-color: #fef2f2; border-left: 4px solid #ef4444; padding: 15px; margin: 20px 0; border-radius: 4px;">
-          <p style="margin: 0; color: #991b1b; font-weight: bold; font-size: 15px;">Accordingly, your placement assistance is hereby put on hold with immediate effect.</p>
+          <p style="margin: 0; color: #991b1b; font-weight: bold; font-size: 15px;">As per the IPCS Placement Policy, repeated rejection of job offers after selection may result in the withdrawal of placement assistance. Accordingly, your placement assistance is hereby put on hold with immediate effect.</p>
         </div>
+        <p>During this period, you will not be considered for further placement opportunities or interview processes through IPCS Global unless your case is reviewed and the Placement Team communicates otherwise.</p>
+        <p>If you have any genuine or unavoidable reason for rejecting the offer, you may submit a written explanation to the Placement Team for review.</p>
+        <p>Please treat this communication as an <b>official warning and confirmation of the placement assistance hold</b>.</p>
+        <p>We expect you to take future career opportunities and the placement process seriously.</p>
       `);
     }
   }
@@ -1463,6 +1479,70 @@ exports.getStudents = async (req, res) => {
   });
 };
 
+exports.lookupTpoStudent = async (req, res) => {
+  const user = req.portalUser || {};
+  if (!isPlacementTrackerAdmin(user) && !isPlacementTrackerTpo(user)) {
+    return res.status(403).json({ success: false, message: 'Student lookup is available to placement officers only.' });
+  }
+
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const phone = String(req.body?.phone || '').trim();
+  const phoneDigits = phone.replace(/\D/g, '');
+  if (Boolean(email) === Boolean(phone)) {
+    return res.status(400).json({ success: false, message: 'Enter either a student email or phone number.' });
+  }
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(422).json({ success: false, message: 'Enter a valid student email address.' });
+  }
+  if (phone && phoneDigits.length < 10) {
+    return res.status(422).json({ success: false, message: 'Enter at least 10 digits to look up a phone number.' });
+  }
+
+  try {
+    let cache = getCache();
+    if (!cache) {
+      await refreshCache();
+      cache = getCache();
+    }
+    if (!cache || cache.cacheSheetHealth?.students !== true) {
+      return res.status(503).json({ success: false, message: 'The student register is syncing. You can enter the details manually or retry the lookup shortly.' });
+    }
+
+    const cleanValue = value => {
+      const text = String(value || '').trim();
+      return /^(?:n\/?a|none|null|unknown|undefined)$/i.test(text) ? '' : text;
+    };
+    const matchesPhone = value => {
+      const candidateDigits = String(value || '').replace(/\D/g, '');
+      return candidateDigits && (candidateDigits === phoneDigits || (
+        candidateDigits.length >= 10 && phoneDigits.length >= 10 &&
+        candidateDigits.slice(-10) === phoneDigits.slice(-10)
+      ));
+    };
+    const matches = (cache.students || []).filter(row => {
+      const rowEmail = String(getValByHeader(row, ['mailid', 'email', 'studentemail']) || '').trim().toLowerCase();
+      const rowPhone = getValByHeader(row, ['phone', 'contact', 'mobilenumber']);
+      const matchesIdentifier = email ? rowEmail === email : matchesPhone(rowPhone);
+      if (!matchesIdentifier) return false;
+      const branch = getValByHeader(row, ['branch', 'sittingbranch']);
+      const course = getValByHeader(row, ['course', 'program']);
+      return hasPlacementAccess(branch, course, user);
+    }).map(row => ({
+      name: cleanValue(getValByHeader(row, ['name', 'studentname'])),
+      email: cleanValue(getValByHeader(row, ['mailid', 'email', 'studentemail'])),
+      phone: cleanValue(getValByHeader(row, ['phone', 'contact', 'mobilenumber'])),
+      roll: cleanValue(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'])),
+      course: cleanValue(getValByHeader(row, ['course', 'program'])),
+      branch: cleanValue(getValByHeader(row, ['branch', 'sittingbranch']))
+    }));
+
+    return res.json({ success: true, matches: matches.slice(0, 10), totalMatches: matches.length });
+  } catch (error) {
+    console.error('TPO student lookup failed:', error.message);
+    return res.status(503).json({ success: false, message: 'The student register could not be checked. You can enter the details manually.' });
+  }
+};
+
 exports.updateStudent = async (req, res) => {
   const { rowNumber, vacOpen, placementStatus, studyAccess, examAccess, courseStatus, coursePercentage } = req.body || {};
   const internationalPlacement = req.body?.isInternationalPlacement === undefined
@@ -1483,9 +1563,15 @@ exports.updateStudent = async (req, res) => {
   if (examAccess !== undefined && !['yes', 'no'].includes(String(examAccess).toLowerCase())) return res.status(400).json({ success: false, message: 'Technical exam access must be Yes or No.' });
   if (vacOpen !== undefined && !['yes', 'no'].includes(String(vacOpen).toLowerCase())) return res.status(400).json({ success: false, message: 'Vacancy access must be Yes or No.' });
   try {
+    const cache = getCache();
+    const cacheAgeMs = Date.now() - Date.parse(cache?.cacheUpdatedAt || '');
+    if (cache?.cacheSheetHealth?.students !== true || !Number.isFinite(cacheAgeMs) || cacheAgeMs > 5 * 60 * 1000) {
+      return res.status(503).json({ success: false, message: 'The student register is refreshing. Please reload the student list and try again in a moment.' });
+    }
     const stuSheet = doc.sheetsByTitle["Data"];
     if (!stuSheet) return res.status(503).json({ success: false, message: 'Student register is unavailable.' });
-    const rows = await stuSheet.getRows({ offset: rowIndex - 2, limit: 1 });
+    const cachedStudent = (cache.students || []).find(row => Number(row.rowNumber) === rowIndex);
+    const rows = cachedStudent ? [cachedStudent] : [];
     if (rows.length > 0) {
       let confirmedVacancyAccess = '';
       const previousPlacementStatus = getValByHeader(rows[0], ['placementstatus', 'placementstat']);
@@ -1498,7 +1584,10 @@ exports.updateStudent = async (req, res) => {
         const studentBranchKey = normalizePlacementText(getValByHeader(rows[0], ['branch', 'branchname', 'sittingbranch'])).replace(/branch/g, '');
         const unusableRolls = new Set(['noroll', 'norollnumber', 'na', 'none', 'null', 'unknown', 'notavailable', '0']);
         const usableStudentRoll = studentRoll && !unusableRolls.has(studentRoll) ? studentRoll : '';
-        const existingLogs = await readLiveTpoLogRows();
+        if (cache.cacheSheetHealth?.tpoLogs !== true) {
+          return res.status(503).json({ success: false, message: 'Placement history is refreshing. Please try marking this student as placed again in a moment.' });
+        }
+        const existingLogs = cache.tpoLogs || [];
         alreadyPlacedInLog = existingLogs.some(log => {
           if (isTpoActionLog(log, getValByHeader) || normalizePlacementText(getValByHeader(log, ['status'])) !== 'placed') return false;
           const logRoll = normalizePlacementText(getValByHeader(log, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
@@ -1565,23 +1654,13 @@ exports.updateStudent = async (req, res) => {
       }
 
       if (Object.keys(updateObj).length === 0) return res.status(400).json({ success: false, message: 'No permitted student fields were provided.' });
-      rows[0].assign(updateObj); 
-      await rows[0].save(); 
+      await updateCachedSheetRow(stuSheet, rows[0], updateObj);
       if (isPlacementEditor && vacOpen !== undefined) {
-        const confirmedRows = await stuSheet.getRows({ offset: rowIndex - 2, limit: 1 });
-        confirmedVacancyAccess = String(getValByHeader(confirmedRows[0], ['vacancyopen', 'vaccancyopen', 'vacancyaccess', 'placementportalaccess']) || '').trim();
+        confirmedVacancyAccess = String(getValByHeader(rows[0], ['vacancyopen', 'vaccancyopen', 'vacancyaccess', 'placementportalaccess']) || '').trim();
         if (confirmedVacancyAccess.toLowerCase() !== String(vacOpen).trim().toLowerCase()) {
           return res.status(502).json({ success: false, message: 'The vacancy access update could not be confirmed in the student register. Please reload before trying again.' });
         }
       }
-      const cachedStudent = (getCache()?.students || []).find(row => Number(row.rowNumber) === Number(rows[0].rowNumber));
-      if (cachedStudent && Array.isArray(cachedStudent._rawData)) {
-        Object.entries(updateObj).forEach(([headerName, value]) => {
-          const index = stuSheet.headerValues.findIndex(header => normalizePlacementHeader(header) === normalizePlacementHeader(headerName));
-          if (index >= 0) cachedStudent._rawData[index] = String(value ?? '');
-        });
-      }
-
       let placedSheetWarning = '';
       // TPO_Log and Placed_Students are placement-event records. A directory
       // status such as Pending or Not Responding belongs in Data only; sending
@@ -1643,10 +1722,22 @@ exports.updateStudent = async (req, res) => {
          }
       }
 
-      refreshCache(); 
+      // Ordinary access and profile edits already update the live cache row
+      // above. Avoid a full multi-sheet Google read after every UI save; only
+      // force a refresh when the placement event also wrote dependent records.
+      if (isNewPlacement) void refreshCache();
       res.json({ success: true, message: "Student record updated!", warning: placedSheetWarning, ...(vacOpen !== undefined ? { vacancyAccess: confirmedVacancyAccess } : {}) });
     } else { res.status(404).json({ success: false, message: "Row not found." }); }
-  } catch (error) { res.status(500).json({ success: false, message: error.message }); }
+  } catch (error) {
+    const isSheetsQuotaError = String(error?.code || '') === '429'
+      || Number(error?.response?.status) === 429
+      || /quota exceeded|too many requests/i.test(String(error?.message || ''));
+    if (isSheetsQuotaError) {
+      console.error('[STUDENT UPDATE] Google Sheets quota was reached while saving a student record:', error.message);
+      return res.status(503).json({ success: false, message: 'Google Sheets is temporarily busy. Wait a minute, reload the student list, and try again. The change was not confirmed.' });
+    }
+    return res.status(500).json({ success: false, message: error.message });
+  }
 };
 
 const normalizePlacementHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -5244,13 +5335,18 @@ exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
     branchDigests.get(digestKey).sessions.push({ schedule: session, attendees });
   });
 
-  if (!branchDigests.size) return { reportDate: targetDate, checkedDates: [...reportDateWindow], sent: 0, queued: 0, skipped: 0, message: 'No completed Talentino sessions with attendance were found.' };
+  if (!branchDigests.size) {
+    const result = { reportDate: targetDate, checkedDates: [...reportDateWindow], sent: 0, queued: 0, skipped: 0, message: 'No completed Talentino sessions with attendance were found.' };
+    console.log('[TALENTINO DAILY REPORT] No eligible completed sessions with attendance were found:', JSON.stringify(result));
+    return result;
+  }
 
   await loadDocInfo();
   let ledger = doc.sheetsByTitle[TALENTINO_DAILY_REPORT_LOG];
   if (!ledger) ledger = await doc.addSheet({ title: TALENTINO_DAILY_REPORT_LOG, headerValues: TALENTINO_DAILY_REPORT_HEADERS });
   await ensurePlacementHeaders(ledger, TALENTINO_DAILY_REPORT_HEADERS);
   const ledgerRows = await ledger.getRows();
+  console.log(`[TALENTINO DAILY REPORT] Checking ${targetDate} (recent backfill dates: ${[...reportDateWindow].join(', ')}); ${sessions.length} scheduled session(s) and ${attendanceRows.length} attendance row(s) are available.`);
   let sent = 0;
   let queued = 0;
   let skipped = 0;
@@ -5308,6 +5404,22 @@ exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
     if (ledgerRow) { ledgerRow.assign(rowData); await ledgerRow.save(); }
     else { ledgerRow = await ledger.addRow(rowData); ledgerRows.push(ledgerRow); }
 
+    // Avoid duplicate branch reports when multiple workers reach the same
+    // branch/date at once. Let concurrent appends become visible before
+    // selecting one claimant; Sheets does not provide compare-and-swap.
+    if (!previous) {
+      await new Promise(resolve => setTimeout(resolve, 800));
+      const sameDeliveryRows = (await ledger.getRows())
+        .filter(row => getValByHeader(row, ['deliverykey']) === deliveryKey)
+        .sort((left, right) => Number(left.rowNumber || 0) - Number(right.rowNumber || 0));
+      if (!sameDeliveryRows.length || Number(sameDeliveryRows[0].rowNumber) !== Number(ledgerRow.rowNumber)) {
+        ledgerRow.assign({ Status: 'Duplicate skipped', 'Generated At': formatIndiaTimestamp(), 'Last Error': 'Another backend instance claimed this branch/date report.' });
+        await ledgerRow.save().catch(error => console.warn(`[TALENTINO DAILY REPORT] Could not mark a duplicate claim for ${digest.branch}:`, error.message));
+        skipped++;
+        continue;
+      }
+    }
+
     try {
       const delivery = await sendMailAndLog({
         from: process.env.EMAIL_USER ? `"IPCS Global Talentino" <${process.env.EMAIL_USER}>` : undefined,
@@ -5330,7 +5442,9 @@ exports.sendPreviousDayTalentinoReports = async ({ reportDate } = {}) => {
     }
   }
 
-  return { reportDate: targetDate, checkedDates: [...reportDateWindow], sent, queued, skipped, branches: branchDigests.size };
+  const result = { reportDate: targetDate, checkedDates: [...reportDateWindow], sent, queued, skipped, branches: branchDigests.size };
+  console.log('[TALENTINO DAILY REPORT] Run summary:', JSON.stringify(result));
+  return result;
 };
 
 const MAIN_PLACEMENT_COURSES = [
@@ -6276,6 +6390,8 @@ const runDailyCronTasks = async ({ resumeOnly = false, companyReportOnly = false
       continue;
     }
 
+    resumeDeliveryMemory.set(getResumeDeliveryReference(jobId), { status: 'sending', at: Date.now() });
+
     const tpoEmail = getTpoEmailByName(tpoName);
 
     let tableRows = ''; let attachments = [];
@@ -6360,6 +6476,7 @@ const runDailyCronTasks = async ({ resumeOnly = false, companyReportOnly = false
         resumeDeliveryMemory.set(getResumeDeliveryReference(jobId), { status: 'review', at: Date.now() });
       } else {
         reportRow.deliveryStatus = 'Failed';
+        resumeDeliveryMemory.delete(getResumeDeliveryReference(jobId));
       }
       resumeSummary.failed.push({ jobId, company: companyName || 'Unknown company', reason });
       console.error(`❌ Resume email failed for ${jobId} (${companyName}):`, error.message);

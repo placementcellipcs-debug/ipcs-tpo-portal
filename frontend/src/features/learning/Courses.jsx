@@ -6,6 +6,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
+import { inAppConfirm } from '../../components/InAppDialogs';
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', 'var(--accent-primary)', '#0ea5e9'];
 
@@ -88,7 +89,7 @@ export default function Courses() {
   };
 
   const handleDeleteCourse = async (subCourse) => {
-    if(!window.confirm(`Are you sure you want to permanently delete the program: ${subCourse}?`)) return;
+    if (!(await inAppConfirm(`Are you sure you want to permanently delete the program: ${subCourse}?`))) return;
     
     try {
       const res = await axios.post(`${API_BASE}/api/admin/courses/delete`, { subCourse });

@@ -677,10 +677,13 @@ const createMailReportService = ({
 
   const createReportHtml = (period, bounds, summary, dashboardRows, senderCount) => {
     const senders = dashboardRows.slice(4, 4 + senderCount);
-    const senderRows = senders.map(row => `<tr><td>${escapeHtml(row[0])}</td><td>${escapeHtml(row[2])}</td><td>${escapeHtml(row[3])}</td><td>${escapeHtml(row[4])}</td><td>${escapeHtml(row[5] === '' ? 'Unavailable' : row[5])}</td><td>${escapeHtml(row[7])}</td></tr>`).join('');
-    const providers = summary.providerCounts.map(item => `<tr><td>${escapeHtml(item.senderEmail)}</td><td>${escapeHtml(item.provider)}</td><td>${item.messages}</td><td>${item.recipients}</td><td>${item.quotaBlocks}</td></tr>`).join('');
-    const categories = summary.categoryCounts.map(item => `<tr><td>${escapeHtml(item.category)}</td><td>${item.messages}</td><td>${item.recipients}</td></tr>`).join('');
-    const mailTypes = summary.mailTypes.map(item => `<tr><td>${escapeHtml(item.type)}</td><td>${item.sent}</td><td>${item.queued}</td><td>${item.failed}</td><td>${item.review}</td></tr>`).join('');
+    const rowStyle = 'border-bottom:1px solid #e5eaf1;padding:10px 12px;text-align:left;font-size:13px;color:#344256;vertical-align:top';
+    const headerStyle = 'padding:10px 12px;text-align:left;font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:#dbeafe;background:#1e3551';
+    const table = (headers, rows, emptyText) => `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:collapse;border:1px solid #dce4ee;border-radius:10px;overflow:hidden"><thead><tr>${headers.map(label => `<th style="${headerStyle}">${escapeHtml(label)}</th>`).join('')}</tr></thead><tbody>${rows || `<tr><td colspan="${headers.length}" style="${rowStyle};color:#64748b">${escapeHtml(emptyText)}</td></tr>`}</tbody></table>`;
+    const senderRows = senders.map(row => `<tr>${[row[0], row[2], row[3], row[4], row[5] === '' ? 'Unavailable' : row[5], row[7]].map(value => `<td style="${rowStyle}">${escapeHtml(value)}</td>`).join('')}</tr>`).join('');
+    const providers = summary.providerCounts.map(item => `<tr>${[item.senderEmail, item.provider, item.messages, item.recipients, item.quotaBlocks].map(value => `<td style="${rowStyle}">${escapeHtml(value)}</td>`).join('')}</tr>`).join('');
+    const categories = summary.categoryCounts.map(item => `<tr>${[item.category, item.messages, item.recipients].map(value => `<td style="${rowStyle}">${escapeHtml(value)}</td>`).join('')}</tr>`).join('');
+    const mailTypes = summary.mailTypes.map(item => `<tr>${[item.type, item.sent, item.queued, item.failed, item.review].map(value => `<td style="${rowStyle}">${escapeHtml(value)}</td>`).join('')}</tr>`).join('');
     const metricTable = [
       ['Delivered messages', summary.messageCount],
       ['Delivered recipients', summary.recipientCount],
@@ -695,16 +698,16 @@ const createMailReportService = ({
       ['Queue currently sending', summary.queueCurrently.sending || 0],
       ['Queue currently failed', summary.queueCurrently.failed || 0],
       ['Queue currently under review', summary.queueCurrently.review || 0]
-    ].map(([label, value]) => `<tr><td>${escapeHtml(label)}</td><td>${value}</td></tr>`).join('');
-    const tableStyle = 'border-collapse:collapse;width:100%;font-family:Arial,sans-serif;font-size:14px;color:#172033;margin:14px 0 24px';
-    const cellStyle = 'border:1px solid #d7dce5;padding:8px;text-align:left';
-    const headerStyle = `${cellStyle};background:#edf2f8`;
-    return `<div style="font-family:Arial,sans-serif;color:#172033"><h2>IPCS mail report — ${escapeHtml(period)} (${escapeHtml(bounds.label)})</h2><p>The primary account uses Apps Script first. If it explicitly reports quota exhaustion, the system switches directly to the shared fallback account. Other definitive primary failures may try Gmail SMTP IPv4/IPv6 first. Ambiguous outcomes are marked for review to avoid duplicate sends.</p><h3>Sender quota snapshot</h3><table style="${tableStyle}"><thead><tr>${['Sender', 'Recipients today', 'This month', 'This year', 'Live Apps Script remaining', 'Tracked remaining (24h)'].map(label => `<th style="${headerStyle}">${label}</th>`).join('')}</tr></thead><tbody>${senderRows || '<tr><td colspan="6">No sender data yet</td></tr>'}</tbody></table><h3>Report-period and queue counts</h3><table style="${tableStyle}"><thead><tr><th style="${headerStyle}">Metric</th><th style="${headerStyle}">Count</th></tr></thead><tbody>${metricTable}</tbody></table><h3>Mail category breakdown</h3><table style="${tableStyle}"><thead><tr>${['Category', 'Messages', 'Recipients'].map(label => `<th style="${headerStyle}">${label}</th>`).join('')}</tr></thead><tbody>${categories || '<tr><td colspan="3">No category data for this period</td></tr>'}</tbody></table><h3>Mail log counts by mail type</h3><table style="${tableStyle}"><thead><tr>${['Mail type', 'Sent', 'Queued', 'Failed', 'Review'].map(label => `<th style="${headerStyle}">${label}</th>`).join('')}</tr></thead><tbody>${mailTypes || '<tr><td colspan="5">No mail log events for this period</td></tr>'}</tbody></table><h3>Delivery providers</h3><table style="${tableStyle}"><thead><tr>${['Sender', 'Provider / quota observation', 'Messages', 'Recipients', 'Quota blocks'].map(label => `<th style="${headerStyle}">${label}</th>`).join('')}</tr></thead><tbody>${providers || '<tr><td colspan="5">No delivered email records for this period</td></tr>'}</tbody></table><p>Live quota is read from Apps Script. Gmail SMTP does not expose an exact remaining-quota API; the tracked remaining count is a portal estimate based on the configured rolling 24-hour cap. Mail log outcomes and queue states are separate lifecycle counts and may describe the same message at different stages. Totals cover records retained in the mail sheets.</p></div>`;
+    ].map(([label, value]) => `<tr><td style="${rowStyle}">${escapeHtml(label)}</td><td style="${rowStyle};font-weight:700">${escapeHtml(value)}</td></tr>`).join('');
+    const card = (label, value, color) => `<td width="25%" style="padding:8px"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f8fc;border:1px solid #e1e8f0;border-radius:12px"><tr><td style="padding:15px 14px"><div style="font-size:25px;font-weight:800;color:${color}">${escapeHtml(value)}</div><div style="margin-top:5px;font-size:11px;line-height:1.4;color:#64748b">${escapeHtml(label)}</div></td></tr></table></td>`;
+    const section = (title, description, content) => `<tr><td style="padding:24px 28px 0"><h2 style="margin:0 0 5px;font-size:16px;color:#15263d">${title}</h2><p style="margin:0 0 13px;font-size:12px;line-height:1.55;color:#64748b">${description}</p>${content}</td></tr>`;
+    return `<div style="margin:0;padding:28px 10px;background:#eef2f7;font-family:Arial,Helvetica,sans-serif;color:#172033;line-height:1.5"><table role="presentation" align="center" cellpadding="0" cellspacing="0" style="width:100%;max-width:1000px;margin:0 auto;background:#fff;border:1px solid #dce4ee;border-radius:18px;overflow:hidden"><tr><td style="padding:28px 30px 25px;background:#101d30;border-bottom:4px solid #20b9a7"><div style="font-size:11px;letter-spacing:2px;color:#7de2d4;font-weight:700">IPCS GLOBAL · OPERATIONS</div><h1 style="margin:8px 0 3px;font-size:25px;line-height:1.25;color:#fff">Mail delivery report</h1><div style="font-size:14px;color:#ced8e5">${escapeHtml(period[0].toUpperCase() + period.slice(1))} · ${escapeHtml(bounds.label)}</div></td></tr><tr><td style="padding:18px 22px 6px"><p style="margin:0 8px 8px;font-size:13px;color:#536278">A concise view of delivery activity, sender capacity, queue outcomes, and mail categories for this report period.</p><table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>${card('Delivered messages', summary.messageCount, '#087c70')}${card('Delivered recipients', summary.recipientCount, '#4965b5')}${card('Successful mail log events', summary.mailCounts.sent || 0, '#157347')}${card('Needs attention', (summary.mailCounts.failed || 0) + (summary.mailCounts.review || 0), '#b45309')}</tr></table></td></tr>${section('Sender capacity', 'Daily, monthly, and annual usage by configured sender. Live Apps Script quota may be unavailable for some providers.', table(['Sender', 'Recipients today', 'This month', 'This year', 'Live Apps Script remaining', 'Tracked remaining (24h)'], senderRows, 'No sender usage data is available.'))}${section('Activity and queue status', 'Mail log outcomes and queue state are separate views and can refer to the same message at different lifecycle stages.', table(['Metric', 'Count'], metricTable, 'No mail activity was recorded.'))}${section('Mail categories', 'Messages and recipients grouped by the portal’s delivery category.', table(['Category', 'Messages', 'Recipients'], categories, 'No category activity was recorded.'))}${section('Mail types', 'Delivery status grouped by message type.', table(['Mail type', 'Sent', 'Queued', 'Failed', 'Review'], mailTypes, 'No mail type activity was recorded.'))}${section('Delivery providers', 'Provider-level counts and quota blocks observed during the period.', table(['Sender', 'Provider / quota observation', 'Messages', 'Recipients', 'Quota blocks'], providers, 'No delivered messages were recorded.'))}<tr><td style="padding:24px 30px 27px"><div style="padding:15px 17px;border-radius:12px;background:#f5f8fc;color:#64748b;font-size:11px;line-height:1.6">Live quota is read from Apps Script. Gmail SMTP does not expose an exact remaining-quota API, so tracked remaining is an estimate based on the configured rolling 24-hour cap. Totals cover records retained in the mail sheets. Ambiguous delivery outcomes are marked for review to reduce accidental duplicate sends.</div><p style="margin:17px 0 0;color:#64748b;font-size:12px">IPCS Global · Automated mail operations</p></td></tr></table></div>`;
   };
 
   const sendScheduledReportOnce = async period => {
-    const recipient = String(process.env.MAIL_REPORT_RECIPIENTS || 'giftyipcsglobal@gmail.com').trim();
-    const recipients = recipient.split(/[;,]+/).map(value => value.trim()).filter(Boolean);
+    const configuredRecipients = String(process.env.MAIL_REPORT_RECIPIENTS || '').split(/[;,]+/).map(value => value.trim()).filter(Boolean)
+      .filter(value => value.toLowerCase() !== 'giftyipcsglobal@gmail.com');
+    const recipients = [...new Set(['gifty@ipcsglobal.com', ...configuredRecipients])];
     if (String(process.env.MAIL_REPORTS_ENABLED || 'true').toLowerCase() === 'false' || !recipients.length) {
       console.log(`[MAIL REPORT] ${period} report email skipped; report delivery is disabled or has no recipient.`);
       return { skipped: true };
@@ -737,6 +740,18 @@ const createMailReportService = ({
       Subject: subject,
       Status: 'Sending'
     });
+    await new Promise(resolve => setTimeout(resolve, 800));
+    const activeReservations = (await mailSheet.getRows()).filter(row =>
+      String(row.get('Subject') || '').trim() === subject
+      && String(row.get('Mail Type') || '').trim().toLowerCase() === reportType.toLowerCase()
+      && /^(success|queued:|review|sending)/i.test(String(row.get('Status') || '').trim())
+    ).sort((left, right) => Number(left.rowNumber || 0) - Number(right.rowNumber || 0));
+    if (!activeReservations.length || Number(activeReservations[0].rowNumber) !== Number(reservation.rowNumber)) {
+      reservation.assign({ Status: 'Duplicate skipped' });
+      await reservation.save().catch(error => console.warn('[MAIL REPORT] Could not mark the duplicate reservation:', error.message));
+      console.warn(`[MAIL REPORT] ${period} report ${bounds.key} was claimed by another backend instance; skipping this send.`);
+      return { skipped: true, duplicate: true, period, key: bounds.key };
+    }
     const logOutcome = async status => {
       try {
         reservation.assign({ TimeStamp: formatIndiaDateTime(new Date()), Status: status });

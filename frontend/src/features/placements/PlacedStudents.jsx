@@ -11,11 +11,16 @@ import DateInput from '../../components/DateInput';
 import DataSourceStatus from '../../components/DataSourceStatus';
 import { formatPortalDate, getTodayPortalDateInput, parsePortalDateTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
+import { inAppConfirm, inAppPrompt } from '../../components/InAppDialogs';
 import StatusBadge from '../../components/StatusBadge';
 import InternationalPlacementPrompt from '../../components/InternationalPlacementPrompt';
 import { normalizePlacementText } from '../../utils/placementRecords';
+import StudentLookupStatus, { useStudentLookup } from './StudentLookup';
 
 const TILE_COLORS = ['#3b82f6', 'var(--accent-primary)', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#0ea5e9', '#f43f5e'];
+const MANUAL_PLACEMENT_STUDENT_FIELDS = {
+  name: 'name', roll: 'roll', email: 'email', phone: 'phone', course: 'course', branch: 'branch'
+};
 
 const readTpoData = () => {
   try { return JSON.parse(localStorage.getItem('tpoData') || 'null'); }
@@ -32,6 +37,10 @@ const getStandardCourse = (c) => {
   if (lower.includes('information technology') || /(^|[^a-z])it([^a-z]|$)/.test(lower) || lower.includes('python') || lower.includes('software') || lower.includes('data science') || lower.includes('data analytics') || lower.includes('artificial intelligence') || lower.includes('cyber security') || lower.includes('web development') || lower.includes('java') || lower.includes('php')) return 'Information technology (IT)';
   return 'Others';
 };
+const normalizePlacementLookupStudent = student => ({
+  ...student,
+  course: student.course ? getStandardCourse(student.course) : ''
+});
 
 const parseDate = dStr => parsePortalDateTime(dStr);
 
@@ -139,6 +148,12 @@ export default function PlacedStudents() {
     name: '', phone: '', email: '', roll: '', course: 'Industrial Automation', branch: '', 
     company: '', position: '', placementLocation: '', status: 'Placed', remarks: '',
     datePlaced: getTodayPortalDateInput(), packageLpa: '', joiningStatus: 'Joined', offerLetterFile: null
+  });
+  const studentLookup = useStudentLookup({
+    enabled: isAddModalOpen,
+    setForm: setAddForm,
+    fields: MANUAL_PLACEMENT_STUDENT_FIELDS,
+    transformStudent: normalizePlacementLookupStudent
   });
 
   useEffect(() => {
@@ -418,9 +433,9 @@ export default function PlacedStudents() {
 
   const deletePlacement = async app => {
     if (!app?.rowNumber) return alert('This placement does not have a TPO_Log row reference. Refresh the list and try again.');
-    const reason = isTpo ? window.prompt(`Why should ${app.name || 'this placement'} be deleted? Gifty will review this reason.`) : '';
+    const reason = isTpo ? await inAppPrompt(`Why should ${app.name || 'this placement'} be deleted? Gifty will review this reason.`) : '';
     if (isTpo && (reason === null || reason.trim().length < 5)) return;
-    const confirmed = window.confirm(isTpo
+    const confirmed = await inAppConfirm(isTpo
       ? `Send a deletion request for ${app.name || 'this student'}'s placement at ${app.company || 'this company'} to Gifty? The placement will stay visible until she approves.`
       : `Delete ${app.name || 'this student'}'s placement at ${app.company || 'this company'}? This removes the placement from TPO_Log and its matching Opening_Applied row, then refreshes Placed_Students. This cannot be undone.`);
     if (!confirmed) return;
@@ -795,8 +810,8 @@ export default function PlacedStudents() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px', marginBottom: '20px' }}>
               <div><label className="data-label">Student Name *</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.name} onChange={e=>setAddForm({...addForm, name: e.target.value})} /></div>
               <div><label className="data-label">Roll Number *</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.roll} onChange={e=>setAddForm({...addForm, roll: e.target.value})} /></div>
-              <div><label className="data-label">Contact No.</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.phone} onChange={e=>setAddForm({...addForm, phone: e.target.value})} /></div>
-              <div><label className="data-label">Mail ID</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.email} onChange={e=>setAddForm({...addForm, email: e.target.value})} /></div>
+              <div><label className="data-label">Contact No.</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.phone} onChange={e=>studentLookup.onPhoneChange(e.target.value)} /></div>
+              <div><label className="data-label">Mail ID</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.email} onChange={e=>studentLookup.onEmailChange(e.target.value)} /></div>
               <div>
                 <label className="data-label">Course</label>
                 <select className="sleek-select" style={{ width: '100%' }} value={addForm.course} onChange={e=>setAddForm({...addForm, course: e.target.value})}>
@@ -809,6 +824,7 @@ export default function PlacedStudents() {
               </div>
               <div><label className="data-label">Branch</label><input type="text" className="sleek-input" style={{ width: '100%' }} value={addForm.branch} onChange={e=>setAddForm({...addForm, branch: e.target.value})} /></div>
             </div>
+            <StudentLookupStatus lookup={studentLookup.lookup} onSelect={studentLookup.selectStudent} />
 
             <h3 style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', textTransform: 'uppercase', marginBottom: '10px' }}>Placement Details</h3>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>

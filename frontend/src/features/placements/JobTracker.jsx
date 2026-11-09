@@ -13,6 +13,7 @@ import InternationalPlacementPrompt from '../../components/InternationalPlacemen
 import { API_BASE } from '../../services/apiConfig';
 import { getStatusTone } from '../../utils/statusTone';
 import { formatPortalDate, formatPortalDateTime, formatPortalTime, parsePortalDateTime } from '../../utils/dateFormat';
+import StudentLookupStatus, { useStudentLookup } from './StudentLookup';
 
 const STATUS_OPTIONS = [
   'Applied', 'Pending', 'Shortlisted', 'Interview Scheduled', 'Interview Attended',
@@ -24,6 +25,10 @@ const DIVISIONS = [
   { id: 'application', label: 'Job Applications' },
   { id: 'manual', label: 'Manual Add' }
 ];
+const DIRECT_INTERVIEW_STUDENT_FIELDS = {
+  name: 'candidateName', roll: 'candidateRoll', email: 'candidateEmail', phone: 'candidatePhone',
+  course: 'candidateCourse', branch: 'candidateBranch'
+};
 const FILTERS = ['All records', 'Needs follow-up', 'Interviews', 'Offers & placements', 'Incomplete details'];
 const dateValue = value => {
   if (!value) return 0;
@@ -114,6 +119,11 @@ export default function JobTracker() {
   const [directForm, setDirectForm] = useState({ candidateName: '', candidateEmail: '', candidatePhone: '', candidateRoll: '', candidateBranch: '', candidateCourse: '', candidateResume: '', company: '', position: '', interviewDate: '', interviewTime: '', interviewVenue: '', remarks: '' });
   const [directOpen, setDirectOpen] = useState(false);
   const [directSaving, setDirectSaving] = useState(false);
+  const directStudentLookup = useStudentLookup({
+    enabled: directOpen,
+    setForm: setDirectForm,
+    fields: DIRECT_INTERVIEW_STUDENT_FIELDS
+  });
   const [interviewTarget, setInterviewTarget] = useState(null);
   const [emailTarget, setEmailTarget] = useState(null);
   const [emailForm, setEmailForm] = useState({ subject: '', message: '' });
@@ -349,7 +359,22 @@ export default function JobTracker() {
 
       {directOpen && <motion.div className="tracker-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={event => { if (event.currentTarget === event.target && !directSaving) setDirectOpen(false); }}><motion.form className="tracker-modal tracker-direct-modal" onSubmit={submitDirectInterview} initial={{ opacity: 0, y: 16, scale: .985 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12, scale: .985 }}>
         <header><div><span>MANUAL ADD</span><h2>Add a manual interview record</h2><p>This creates a manually entered interview referral. It appears only in the Manual Add section and is saved with a Manual Add source label.</p></div><button type="button" onClick={() => !directSaving && setDirectOpen(false)} aria-label="Close"><X size={19} /></button></header>
-        <div className="tracker-modal-grid"><label>Candidate name<input required value={directForm.candidateName} onChange={event => setDirectForm({ ...directForm, candidateName: event.target.value })} placeholder="Full name" /></label><label>Candidate email <small>Used for interview invitation</small><input required type="email" value={directForm.candidateEmail} onChange={event => setDirectForm({ ...directForm, candidateEmail: event.target.value })} placeholder="candidate@example.com" /></label><label>Phone <small>Optional</small><input type="tel" value={directForm.candidatePhone} onChange={event => setDirectForm({ ...directForm, candidatePhone: event.target.value })} placeholder="Contact number" /></label><label>Roll number <small>Optional</small><input value={directForm.candidateRoll} onChange={event => setDirectForm({ ...directForm, candidateRoll: event.target.value })} placeholder="If available" /></label><label>Branch <small>Defaults to your assigned branch</small><input value={directForm.candidateBranch} onChange={event => setDirectForm({ ...directForm, candidateBranch: event.target.value })} placeholder="Branch" /></label><label>Course <small>Optional</small><input value={directForm.candidateCourse} onChange={event => setDirectForm({ ...directForm, candidateCourse: event.target.value })} placeholder="Course" /></label><label className="wide-field">Resume link <small>Optional</small><input type="url" value={directForm.candidateResume} onChange={event => setDirectForm({ ...directForm, candidateResume: event.target.value })} placeholder="https://..." /></label><label>Company<input required value={directForm.company} onChange={event => setDirectForm({ ...directForm, company: event.target.value })} placeholder="Company name" /></label><label>Position<input required value={directForm.position} onChange={event => setDirectForm({ ...directForm, position: event.target.value })} placeholder="Job title" /></label><label>Interview date<DateInput required className="tracker-date-input" value={directForm.interviewDate} onChange={event => setDirectForm({ ...directForm, interviewDate: event.target.value })} /></label><label>Interview time<input required type="time" step="1" value={directForm.interviewTime} onChange={event => setDirectForm({ ...directForm, interviewTime: event.target.value })} /></label><label className="wide-field">Venue or online meeting link<input required value={directForm.interviewVenue} onChange={event => setDirectForm({ ...directForm, interviewVenue: event.target.value })} placeholder="Branch address or meeting link" /></label><label className="wide-field">Remarks<textarea rows={3} value={directForm.remarks} onChange={event => setDirectForm({ ...directForm, remarks: event.target.value })} placeholder="Optional context for the placement team" /></label></div>
+        <div className="tracker-modal-grid">
+          <label>Candidate name<input required value={directForm.candidateName} onChange={event => setDirectForm({ ...directForm, candidateName: event.target.value })} placeholder="Full name" /></label>
+          <label>Candidate email <small>Used for interview invitation</small><input required type="email" value={directForm.candidateEmail} onChange={event => directStudentLookup.onEmailChange(event.target.value)} placeholder="candidate@example.com" /></label>
+          <label>Phone <small>Optional</small><input type="tel" value={directForm.candidatePhone} onChange={event => directStudentLookup.onPhoneChange(event.target.value)} placeholder="Contact number" /></label>
+          <label>Roll number <small>Optional</small><input value={directForm.candidateRoll} onChange={event => setDirectForm({ ...directForm, candidateRoll: event.target.value })} placeholder="If available" /></label>
+          <label>Branch <small>Defaults to your assigned branch</small><input value={directForm.candidateBranch} onChange={event => setDirectForm({ ...directForm, candidateBranch: event.target.value })} placeholder="Branch" /></label>
+          <label>Course <small>Optional</small><input value={directForm.candidateCourse} onChange={event => setDirectForm({ ...directForm, candidateCourse: event.target.value })} placeholder="Course" /></label>
+          <label className="wide-field">Resume link <small>Optional</small><input type="url" value={directForm.candidateResume} onChange={event => setDirectForm({ ...directForm, candidateResume: event.target.value })} placeholder="https://..." /></label>
+          <label>Company<input required value={directForm.company} onChange={event => setDirectForm({ ...directForm, company: event.target.value })} placeholder="Company name" /></label>
+          <label>Position<input required value={directForm.position} onChange={event => setDirectForm({ ...directForm, position: event.target.value })} placeholder="Job title" /></label>
+          <label>Interview date<DateInput required className="tracker-date-input" value={directForm.interviewDate} onChange={event => setDirectForm({ ...directForm, interviewDate: event.target.value })} /></label>
+          <label>Interview time<input required type="time" step="1" value={directForm.interviewTime} onChange={event => setDirectForm({ ...directForm, interviewTime: event.target.value })} /></label>
+          <label className="wide-field">Venue or online meeting link<input required value={directForm.interviewVenue} onChange={event => setDirectForm({ ...directForm, interviewVenue: event.target.value })} placeholder="Branch address or meeting link" /></label>
+          <label className="wide-field">Remarks<textarea rows={3} value={directForm.remarks} onChange={event => setDirectForm({ ...directForm, remarks: event.target.value })} placeholder="Optional context for the placement team" /></label>
+        </div>
+        <StudentLookupStatus lookup={directStudentLookup.lookup} onSelect={directStudentLookup.selectStudent} />
         <div className="tracker-modal-footer"><button type="button" className="tracker-secondary-button" disabled={directSaving} onClick={() => setDirectOpen(false)}>Cancel</button><button type="submit" className="tracker-primary-action" disabled={directSaving || !directForm.candidateName.trim()}>{directSaving ? <CircleNotch className="ph-spin" size={17} /> : <PaperPlaneTilt size={17} />} Add manual record &amp; send invitation</button></div>
       </motion.form></motion.div>}
 

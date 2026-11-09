@@ -3,6 +3,7 @@ import axios from 'axios';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, ArrowsLeftRight, Barcode, Buildings, Camera, CheckCircle, CircleNotch, ClockCounterClockwise, Cube, Image as ImageIcon, MagnifyingGlass, MapPinLine, QrCode, UserCheck, Wrench, X } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import { inAppConfirm } from '../../components/InAppDialogs';
 import { API_BASE } from '../../services/apiConfig';
 import { formatPortalDate, formatPortalDateTime } from '../../utils/dateFormat';
 import './AssetManagement.css';
@@ -237,7 +238,7 @@ export default function AssetList() {
 
   const submitDisposal = async event => {
     event.preventDefault();
-    if (!disposeItem || !window.confirm(`Send ${disposeItem.assetId} to Rakesh for retirement approval? The item will stay active until the request is approved.`)) return;
+    if (!disposeItem || !(await inAppConfirm(`Send ${disposeItem.assetId} to Rakesh for retirement approval? The item will stay active until the request is approved.`))) return;
     setBusy(true);
     try {
       const response = await axios.post(`${API_BASE}/api/v1/assets/dispose`, {

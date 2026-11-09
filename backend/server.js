@@ -493,6 +493,7 @@ app.use('/api/tpo/clients', (req, res, next) => {
 app.post('/api/tpo/dashboard-stats', controllers.getDashboardStats);
 app.get('/api/tpo/notifications', requireSession('portal'), controllers.getNotifications);
 app.post('/api/tpo/students', controllers.getStudents);
+app.post('/api/tpo/students/lookup', controllers.lookupTpoStudent);
 app.post('/api/tpo/students/update-student', controllers.updateStudent);
 app.post('/api/tpo/applications', controllers.getApplications);
 app.post('/api/tpo/applications/update', upload.single('offerLetterFile'), controllers.updateApplication);
@@ -737,7 +738,7 @@ if (runsBackgroundJobs) {
   console.log(`[BACKGROUND JOBS] Disabled for PORTAL_SERVICE_ROLE=${portalServiceRole}; this instance serves portal requests only.`);
 }
 
-const reportRecipients = String(process.env.MAIL_REPORT_RECIPIENTS ?? 'giftyipcsglobal@gmail.com').trim();
+const reportRecipients = String(process.env.MAIL_REPORT_RECIPIENTS || 'gifty@ipcsglobal.com').trim();
 const mailReportsEnabled = String(process.env.MAIL_REPORTS_ENABLED ?? 'true').toLowerCase() !== 'false';
 if (runsBackgroundJobs && mailReportsEnabled && reportRecipients) {
   const scheduleMailReport = (envKey, fallbackCron, period) => {
@@ -772,9 +773,17 @@ const httpServer = app.listen(PORT, () => {
   logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Portal backend started', resource: 'Portal backend', result: 'Success', details: { serviceRole: portalServiceRole, backendInstanceId, processId: process.pid, environment: process.env.NODE_ENV || 'development' } });
   if (runsBackgroundJobs) {
     startEmailWorker();
-    // Recover only yesterday's resume deliveries after deploys/restarts that
-    // missed the scheduled run; the resume-only mode does not send the company report.
-    setTimeout(() => {
+    // A restart must never send company resumes at its boot time (which can be
+    // overnight on Render). Defer the safety catch-up to the next morning slot.
+    const now = new Date();
+    const indiaDate = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit'
+    }).format(now);
+    let catchUpAt = new Date(`${indiaDate}T08:15:00+05:30`);
+    if (catchUpAt <= now) catchUpAt = new Date(catchUpAt.getTime() + 24 * 60 * 60 * 1000);
+    const catchUpDelayMs = catchUpAt.getTime() - now.getTime();
+    console.log(`[RESUME DELIVERY] Startup catch-up deferred until ${catchUpAt.toISOString()} (08:15 Asia/Kolkata).`);
+    const startupCatchUpTimer = setTimeout(() => {
       const requestId = randomUUID();
       logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Resume delivery startup catch-up started', resource: 'Resume delivery', result: 'Started' });
       controllers.runDailyCron({ resumeOnly: true })
@@ -786,7 +795,8 @@ const httpServer = app.listen(PORT, () => {
           console.error('[RESUME DELIVERY] Startup catch-up could not run:', error.message);
           logPortalAuditEvent({ requestId, actorType: 'Bot', source: 'Automation', action: 'Resume delivery startup catch-up failed', resource: 'Resume delivery', result: 'Error', details: { error: String(error.message || error).slice(0, 500) } });
         });
-    }, 60_000);
+    }, catchUpDelayMs);
+    if (typeof startupCatchUpTimer.unref === 'function') startupCatchUpTimer.unref();
   }
 });
 

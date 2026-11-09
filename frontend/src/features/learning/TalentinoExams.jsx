@@ -6,6 +6,7 @@ import {
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
+import { inAppConfirm } from '../../components/InAppDialogs';
 import { formatPortalDateTime } from '../../utils/dateFormat';
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', 'var(--accent-primary)'];
@@ -176,7 +177,7 @@ export default function TechnicalExams() {
   };
 
   const handleDeleteQuestion = async (id) => {
-    if(!window.confirm("Are you sure you want to delete this question?")) return;
+    if (!(await inAppConfirm("Are you sure you want to delete this question?"))) return;
     try {
       const res = await axios.post(`${API_BASE}/api/exams/questions/delete`, { id });
       if (res.data.success) {

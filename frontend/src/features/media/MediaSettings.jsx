@@ -4,6 +4,7 @@ import { CircleNotch, ArrowsClockwise, ImageSquare, VideoCamera } from '@phospho
 import Layout from '../../layouts/Layout';
 import MediaTopNav from './MediaTopNav';
 import { API_BASE } from '../../services/apiConfig';
+import { inAppConfirm } from '../../components/InAppDialogs';
 
 export default function MediaSettings() {
   const [settings, setSettings] = useState({});
@@ -31,7 +32,7 @@ export default function MediaSettings() {
   }, []);
 
   const handleSyncExisting = async () => {
-    if (!window.confirm("This will scan the placement sheet and generate tasks for existing placed students. Proceed?")) return;
+    if (!(await inAppConfirm("This will scan the placement sheet and generate tasks for existing placed students. Proceed?"))) return;
     setSyncing(true);
     try {
       const res = await axios.post(`${API_BASE}/api/design/sync-existing`);

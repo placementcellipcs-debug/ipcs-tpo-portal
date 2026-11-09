@@ -6,6 +6,7 @@ import {
   FolderOpen, BookBookmark, PencilSimple, Trash, ArrowSquareOut
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import { inAppConfirm } from '../../components/InAppDialogs';
 import { API_BASE } from '../../services/apiConfig';
 
 const TILE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ec4899', 'var(--accent-primary)'];
@@ -210,7 +211,7 @@ export default function StudyMaterials() {
   };
 
   const handleDeleteMaterial = async (id) => {
-    if (!window.confirm("Are you sure you want to permanently delete this study material?")) return;
+    if (!(await inAppConfirm("Are you sure you want to permanently delete this study material?"))) return;
     setMaterials(prev => prev.filter(m => m.id !== id));
     try {
       await axios.post(`${API_BASE}/api/lms/materials/delete`, { id });

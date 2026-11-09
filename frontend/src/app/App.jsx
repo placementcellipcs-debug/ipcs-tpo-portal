@@ -2,6 +2,7 @@ import { Component, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
 import { isAcademicTrainerAccount, isPortalAdminAccount } from '../utils/roleAccess';
 import PortalAuditCapture from '../services/PortalAuditCapture';
+import InAppDialogs from '../components/InAppDialogs';
 
 const lazyRoute = importer => lazy(async () => {
   try {
@@ -338,10 +339,13 @@ function RoutedContent() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <PortalAuditCapture />
-      <RoutedContent />
-    </BrowserRouter>
+    <>
+      <BrowserRouter>
+        <PortalAuditCapture />
+        <RoutedContent />
+      </BrowserRouter>
+      <InAppDialogs />
+    </>
   );
 }
 

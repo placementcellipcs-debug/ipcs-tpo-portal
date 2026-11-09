@@ -5,6 +5,7 @@ import {
   ClipboardText, Database, WarningCircle, Wrench
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import { inAppConfirm } from '../../components/InAppDialogs';
 import { API_BASE } from '../../services/apiConfig';
 import { formatPortalDateTime } from '../../utils/dateFormat';
 import './PlacementReconciliation.css';
@@ -74,7 +75,7 @@ export default function PlacementReconciliation() {
   useEffect(() => { if (isAuthorized) void load(); }, [isAuthorized, load]);
 
   const runAdminAction = async (path, prompt) => {
-    if (actionLoading || (prompt && !window.confirm(prompt))) return;
+    if (actionLoading || (prompt && !(await inAppConfirm(prompt)))) return;
     setActionLoading(true);
     setActionMessage('');
     setError('');

@@ -4,6 +4,7 @@ import { CircleNotch, ArrowsLeftRight, CheckCircle, WarningCircle, Truck } from 
 import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
 import { formatPortalDateTime } from '../../utils/dateFormat';
+import { inAppConfirm } from '../../components/InAppDialogs';
 
 export default function AssetTransfers() {
   const tpoDataStr = localStorage.getItem('tpoData');
@@ -51,7 +52,7 @@ export default function AssetTransfers() {
   }, []);
 
   const handleApprove = async (transfer) => {
-    if (!window.confirm(`Are you sure you want to approve the transfer of Asset ${transfer.assetId} to ${transfer.toBranch}?`)) return;
+    if (!(await inAppConfirm(`Are you sure you want to approve the transfer of Asset ${transfer.assetId} to ${transfer.toBranch}?`))) return;
     
     setApprovingId(transfer.transferId);
     try {

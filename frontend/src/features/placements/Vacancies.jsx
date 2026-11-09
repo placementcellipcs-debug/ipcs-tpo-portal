@@ -6,6 +6,7 @@ import {
   MapPinLine, Clock, Prohibit, EnvelopeSimple, Phone, GraduationCap, Money, X, Eye, Plus, WarningCircle, Buildings, PencilSimple, Trash
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
+import { inAppConfirm, inAppPrompt } from '../../components/InAppDialogs';
 import DateInput from '../../components/DateInput';
 import { formatPortalDate, formatPortalDateTime, parsePortalDateTime } from '../../utils/dateFormat';
 import { API_BASE } from '../../services/apiConfig';
@@ -350,11 +351,11 @@ function VacanciesContent() {
 
   const deleteVacancy = async vacancy => {
     const companyLabel = vacancy?.company || 'this company';
-    const reason = isTpo ? window.prompt(`Why should the ${vacancy?.position || 'opening'} at ${companyLabel} be deleted? Gifty will review this reason.`) : '';
+    const reason = isTpo ? await inAppPrompt(`Why should the ${vacancy?.position || 'opening'} at ${companyLabel} be deleted? Gifty will review this reason.`) : '';
     if (isTpo && (reason === null || reason.trim().length < 5)) return;
-    if (!window.confirm(isTpo
+    if (!(await inAppConfirm(isTpo
       ? `Send a deletion request for this opening to Gifty? It will stay active until she approves.`
-      : `Delete the ${vacancy?.position || 'opening'} at ${companyLabel}? This removes the vacancy row from the NewsLetter sheet.`)) return;
+      : `Delete the ${vacancy?.position || 'opening'} at ${companyLabel}? This removes the vacancy row from the NewsLetter sheet.`))) return;
     try {
       const response = await axios.delete(`${API_BASE}/api/tpo/vacancies/${encodeURIComponent(vacancy.id)}`, { data: { reason: isTpo ? reason.trim() : '' } });
       if (!response.data?.success) throw new Error(response.data?.message || 'The vacancy could not be deleted.');
