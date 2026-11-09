@@ -189,7 +189,16 @@ export default function UserManagement() {
         }
         setIsModalOpen(false);
         setLoading(true);
-        setToast({ type: photoWarning ? 'info' : 'success', title: isEditMode ? 'User updated' : 'User created', message: `${formData.userName} was ${isEditMode ? 'updated' : 'added'} successfully.${photoWarning}` });
+        const targetMail = res.data.targetMail;
+        const mailNeedsAttention = ['failed', 'review'].includes(targetMail?.status);
+        const mailSent = targetMail?.status === 'sent';
+        const mailQueued = targetMail?.status === 'queued';
+        const targetMessage = targetMail?.message ? ` ${targetMail.message}` : '';
+        setToast({
+          type: photoWarning || mailNeedsAttention || targetMail ? 'info' : 'success',
+          title: mailNeedsAttention ? 'Target saved; email needs attention' : mailSent ? 'Targets saved; team email sent' : mailQueued ? 'Targets saved; email queued' : isEditMode ? 'User updated' : 'User created',
+          message: `${formData.userName} was ${isEditMode ? 'updated' : 'added'} successfully.${photoWarning}${targetMessage}`
+        });
         fetchUsers(formData.targetMonth || currentIndiaMonth());
       }
     } catch (err) {

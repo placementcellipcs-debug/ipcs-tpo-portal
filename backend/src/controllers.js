@@ -38,6 +38,7 @@ const { calculateDashboardPlacementCounts } = require('./dashboardStats');
 const { isPlacementEligiblePending, placementOutcome } = require('./placementMetrics');
 const { createPlacementLocationResolver, normalizeInternationalPlacementFlag } = require('./internationalPlacements');
 const { buildPlacementReconciliation } = require('./placementReconciliation');
+const { buildTpoTargetAssignmentMail } = require('./tpoTargetAssignmentMail');
 const { PLACEMENT_AUDIT_SHEET, PLACEMENT_AUDIT_HEADERS, createPlacementAuditEvent } = require('./placementAudit');
 const { createTalentinoSessionResolver } = require('./talentinoSessionMatch');
 const { formatIndiaTimestamp, formatIndiaDate, formatIndiaTime } = require('./utils/dateTime');
@@ -6845,18 +6846,21 @@ exports.getPublicPlacementTeam = async (_req, res) => {
       return {
         name,
         role,
+        status: getValByHeader(row, ['status', 'tpostatus']).trim().toLowerCase(),
         branches: getValByHeader(row, ['assignedbranches', 'assignedbranch', 'sittingbranch', 'branch']).trim(),
+        region: getValByHeader(row, ['region']).trim(),
         photo: getValByHeader(row, ['profilephotourl', 'profilephoto', 'profileimage', 'photo', 'imageurl']).trim(),
         phone: getValByHeader(row, ['contactnumber', 'phonenumber', 'phone', 'contact']).trim(),
         email: getValByHeader(row, ['mailid', 'email', 'workemail']).trim(),
-        linkedin: getValByHeader(row, ['linkedin', 'linkedinurl', 'linkedinprofile']).trim()
+        linkedin: getValByHeader(row, ['linkedin', 'linkedinurl', 'linkedinprofile']).trim(),
+        bio: getValByHeader(row, ['description', 'descripation', 'bio', 'profiledescription', 'profilebio']).trim()
       };
     }).filter(member => {
       const key = normalizePlacementText(member.name).replace(/^(mrs|miss|mr|ms|dr)/, '');
-      if (!key || seen.has(key) || !/(tpo|placement|career guidance|corporate relations?(?:hip)?|client relations?(?:hip)?)/i.test(member.role)) return false;
+      if (member.status !== 'active' || !key || seen.has(key)) return false;
       seen.add(key);
       return true;
-    });
+    }).map(({ status, ...member }) => member);
 
     res.json({ success: true, team });
   } catch (err) {
@@ -8304,6 +8308,170 @@ const invalidateStaffAccountSessions = (email, row = null) => {
   invalidatedAccountVersions.set(identity, row ? getAccountVersion(accountAuthState(row)) : null);
 };
 
+const targetAssignmentMailRunsInFlight = new Set();
+const isValidMonthlyTarget = value => /^\d+$/.test(String(value ?? '').trim())
+  && Number.isSafeInteger(Number(value))
+  && Number(value) >= 0;
+
+const getTargetStatsMonth = row => {
+  const explicitMonth = String(getValByHeader(row, ['reportmonth']) || '').trim();
+  if (/^\d{4}-(0[1-9]|1[0-2])$/.test(explicitMonth)) return explicitMonth;
+  const explicitDate = safeParseDate(explicitMonth);
+  const timestampDate = explicitDate || safeParseDate(getFirstNonEmptyValByHeader(row, ['timestamp', 'date']));
+  return timestampDate
+    ? new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(timestampDate).slice(0, 7)
+    : '';
+};
+
+const sendTpoTargetAssignmentMailIfComplete = async (reportMonth, actorEmail) => {
+  if (String(actorEmail || '').trim().toLowerCase() !== 'gifty@ipcsglobal.com') return null;
+  const month = String(reportMonth || '').trim();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return { status: 'failed', message: 'Choose a valid target month before sending the team summary.' };
+  const runKey = `tpo-targets:${month}`;
+  if (targetAssignmentMailRunsInFlight.has(runKey)) {
+    return { status: 'in_progress', message: 'The target summary for this month is already being prepared.' };
+  }
+  targetAssignmentMailRunsInFlight.add(runKey);
+
+  try {
+    await loadDocInfo();
+    const contactSheet = doc.sheetsByTitle.Contact;
+    if (!contactSheet) return { status: 'failed', message: 'The Contact sheet is unavailable; the target summary was not sent.' };
+    const [contacts, statsRows] = await Promise.all([contactSheet.getRows(), readLiveTpoStatsRows()]);
+    const activeRows = contacts.filter(row => String(getValByHeader(row, ['status', 'tpostatus']) || '').trim().toLowerCase() === 'active');
+    if (!activeRows.length) return { status: 'waiting', message: 'No active TPOs were found in the Contact sheet, so the target email was not sent.' };
+
+    const tpos = activeRows.map(row => ({
+      name: String(getValByHeader(row, ['tponame', 'name', 'placementofficer']) || '').trim(),
+      email: String(getValByHeader(row, ['mailid', 'email', 'workemail']) || '').trim(),
+      region: String(getValByHeader(row, ['region']) || '').trim(),
+      identity: normalizePlacementText(getValByHeader(row, ['tponame', 'name', 'placementofficer']))
+    }));
+    const incompleteContacts = tpos.filter(tpo => !tpo.name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(tpo.email));
+    if (incompleteContacts.length) {
+      const names = incompleteContacts.map(tpo => tpo.name || 'Unnamed active TPO').join(', ');
+      return { status: 'waiting', message: `Fix the name or email for these active Contact sheet rows before sending: ${names}.` };
+    }
+    const nameCounts = new Map();
+    tpos.forEach(tpo => nameCounts.set(tpo.identity, (nameCounts.get(tpo.identity) || 0) + 1));
+    const duplicateNames = tpos.filter(tpo => nameCounts.get(tpo.identity) > 1).map(tpo => tpo.name);
+    if (duplicateNames.length) {
+      return { status: 'waiting', message: `Duplicate active TPO names in the Contact sheet make target matching ambiguous. Resolve these names first: ${[...new Set(duplicateNames)].join(', ')}.` };
+    }
+    const emailCounts = new Map();
+    tpos.forEach(tpo => emailCounts.set(tpo.email.toLowerCase(), (emailCounts.get(tpo.email.toLowerCase()) || 0) + 1));
+    const duplicateEmails = [...emailCounts.entries()].filter(([, count]) => count > 1).map(([email]) => email);
+    if (duplicateEmails.length) {
+      return { status: 'waiting', message: `Duplicate active TPO email address(es) in the Contact sheet must be resolved first: ${duplicateEmails.join(', ')}.` };
+    }
+
+    const targetsByName = new Map();
+    statsRows.filter(row => getTargetStatsMonth(row) === month).forEach(row => {
+      const identity = normalizePlacementText(getValByHeader(row, ['user', 'tponame', 'placementofficer']));
+      const target = String(getValByHeader(row, ['monthlytarget', 'targetofthemonth', 'target']) ?? '').trim();
+      if (identity && target !== '') targetsByName.set(identity, target);
+    });
+
+    const unassigned = tpos.filter(tpo => {
+      const target = targetsByName.get(tpo.identity);
+      return target === undefined || !isValidMonthlyTarget(target);
+    });
+    if (unassigned.length) {
+      const names = unassigned.map(tpo => tpo.name).join(', ');
+      return {
+        status: 'waiting',
+        message: `Saved. The team email will go out after every active TPO has a whole-number target for ${month}: ${names}.`,
+        remaining: unassigned.length
+      };
+    }
+
+    const monthDate = new Date(`${month}-01T12:00:00+05:30`);
+    const monthLabel = new Intl.DateTimeFormat('en-IN', { timeZone: 'Asia/Kolkata', month: 'long', year: 'numeric' }).format(monthDate);
+    const mail = buildTpoTargetAssignmentMail({
+      monthLabel,
+      tpos: tpos.map(tpo => ({ ...tpo, target: Number(targetsByName.get(tpo.identity)) }))
+    });
+    if (!mail.to.length) {
+      return { status: 'waiting', message: 'No active TPO recipient addresses are available for the target email.' };
+    }
+
+    const subject = mail.subject;
+    const mailType = 'TPO Monthly Target Assignment';
+    const mailSheet = doc.sheetsByTitle.Mail;
+    if (!mailSheet) return { status: 'failed', message: 'The Mail history sheet is unavailable; the target summary was not sent.' };
+    await ensurePlacementHeaders(mailSheet, ['TimeStamp', 'Reciver Name', 'Reciver Mail', 'Mail Type', 'Subject', 'Status']);
+    const isHandledStatus = status => /^(success|sent|queued|review|sending)/i.test(String(status || '').trim());
+    const previousRows = (await mailSheet.getRows()).filter(row =>
+      String(getValByHeader(row, ['mailtype', 'type']) || '').trim().toLowerCase() === mailType.toLowerCase()
+      && String(getValByHeader(row, ['subject']) || '').trim() === subject
+      && isHandledStatus(getValByHeader(row, ['status']))
+    );
+    if (previousRows.length) {
+      const previousStatus = String(getValByHeader(previousRows[previousRows.length - 1], ['status']) || '').trim();
+      const alreadySent = /^(success|sent|queued)/i.test(previousStatus);
+      return {
+        status: alreadySent ? 'already_sent' : 'in_progress',
+        message: alreadySent ? `The ${monthLabel} target email was already sent or queued.` : `The ${monthLabel} target email is already being sent or needs delivery review.`
+      };
+    }
+
+    const reservation = await mailSheet.addRow({
+      TimeStamp: formatIndiaTimestamp(),
+      'Reciver Name': 'Active TPO Team',
+      'Reciver Mail': [...mail.to, ...mail.cc].join(','),
+      'Mail Type': mailType,
+      Subject: subject,
+      Status: 'Sending'
+    });
+    await new Promise(resolve => setTimeout(resolve, 800));
+    const reservations = (await mailSheet.getRows()).filter(row =>
+      String(getValByHeader(row, ['mailtype', 'type']) || '').trim().toLowerCase() === mailType.toLowerCase()
+      && String(getValByHeader(row, ['subject']) || '').trim() === subject
+      && isHandledStatus(getValByHeader(row, ['status']))
+    ).sort((left, right) => Number(left.rowNumber || 0) - Number(right.rowNumber || 0));
+    if (!reservations.length || Number(reservations[0].rowNumber) !== Number(reservation.rowNumber)) {
+      reservation.assign({ Status: 'Duplicate skipped' });
+      await reservation.save().catch(error => console.warn('[TPO TARGET EMAIL] Could not save duplicate reservation status:', error.message));
+      return { status: 'already_sent', message: `The ${monthLabel} target email is already reserved by another request.` };
+    }
+
+    try {
+      const delivery = await sendIPCSMail({
+        from: { name: 'IPCS Global Placement Team' },
+        to: mail.to.join(','),
+        cc: mail.cc.join(','),
+        subject: mail.subject,
+        text: mail.text,
+        html: mail.html
+      }, {
+        category: 'placement',
+        logDetails: { name: 'Active TPO Team', email: [...mail.to, ...mail.cc].join(','), type: mailType }
+      });
+      const status = delivery?.queued ? `Queued: ${delivery.queueId || 'pending delivery'}` : 'Success';
+      reservation.assign({ TimeStamp: formatIndiaTimestamp(), Status: status });
+      await reservation.save().catch(error => console.error('[TPO TARGET EMAIL] Delivery accepted but the Mail sheet status could not be updated:', error.message));
+      return {
+        status: delivery?.queued ? 'queued' : 'sent',
+        message: delivery?.queued ? `The ${monthLabel} target email was queued for delivery.` : `The ${monthLabel} target email was sent to all active TPOs.`,
+        totalTarget: mail.totalTarget,
+        tpoCount: mail.tpoCount
+      };
+    } catch (error) {
+      const needsReview = isMailDeliveryUncertain(error);
+      const status = `${needsReview ? 'Review' : 'Failed'}: ${String(error.message || error).slice(0, 500)}`;
+      await reservation.assign({ TimeStamp: formatIndiaTimestamp(), Status: status });
+      await reservation.save().catch(saveError => console.error('[TPO TARGET EMAIL] Could not save the failed delivery status:', saveError.message));
+      console.error(`[TPO TARGET EMAIL] ${monthLabel} target mail ${needsReview ? 'needs review' : 'failed'}:`, error.message);
+      return { status: needsReview ? 'review' : 'failed', message: needsReview ? `Delivery outcome is uncertain. Check the Mail log before retrying. ${error.message}` : `Targets were saved, but the email could not be sent. Save a TPO target again to retry. ${error.message}` };
+    }
+  } catch (error) {
+    console.error('[TPO TARGET EMAIL] Could not prepare the monthly target summary:', error.message);
+    return { status: 'failed', message: `Targets were saved, but the team email could not be prepared: ${error.message}` };
+  } finally {
+    targetAssignmentMailRunsInFlight.delete(runKey);
+  }
+};
+
 exports.addAdminUser = async (req, res) => {
   try {
     const { userName, contact, email, sittingBranch, assignedBranches, role, course, access, empId, target, targetMonth } = req.body;
@@ -8315,6 +8483,9 @@ exports.addAdminUser = async (req, res) => {
     if (String(target ?? '').trim() && (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(targetMonth || '').trim())
       || !isPlacementTrackerTpo({ role }))) {
       return res.status(400).json({ success: false, message: 'Monthly targets require a TPO account and a selected target month.' });
+    }
+    if (String(target ?? '').trim() && !isValidMonthlyTarget(target)) {
+      return res.status(400).json({ success: false, message: 'A monthly placement target must be a whole number of zero or more.' });
     }
     const passwordError = validatePassword(password);
     if (passwordError) return res.status(400).json({ success: false, message: passwordError });
@@ -8354,6 +8525,7 @@ exports.addAdminUser = async (req, res) => {
       const hSit = getSafeH(['sittingbranch']); if(hSit) newRow[hSit] = sittingBranch;
       const hAss = getSafeH(['assignedbranches']); if(hAss) newRow[hAss] = assignedBranches;
       const hPass = getSafeH(['password']); if(hPass) newRow[hPass] = hashedPassword;
+      const hStatus = getSafeH(['status']); if(hStatus) newRow[hStatus] = 'Active';
     } else {
       const hName = getSafeH(['name', 'username']); if(hName) newRow[hName] = userName;
       const hPhone = getSafeH(['contactnumber', 'phone']); if(hPhone) newRow[hPhone] = contact;
@@ -8380,7 +8552,10 @@ exports.addAdminUser = async (req, res) => {
     }
 
     await refreshCache();
-    res.json({ success: true, message: "User added", user: { sheet: sheetName, rowNumber: createdRow?.rowNumber || null } });
+    const targetMail = sheetName === 'Contact' && String(target ?? '').trim()
+      ? await sendTpoTargetAssignmentMailIfComplete(targetMonth, req.portalUser?.email)
+      : null;
+    res.json({ success: true, message: "User added", user: { sheet: sheetName, rowNumber: createdRow?.rowNumber || null }, targetMail });
   } catch (err) { 
     res.status(500).json({ success: false, message: err.message }); 
   }
@@ -8402,6 +8577,9 @@ exports.updateAdminUser = async (req, res) => {
     if (String(target ?? '').trim() && (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(targetMonth || '').trim())
       || !isPlacementTrackerTpo({ role }))) {
       return res.status(400).json({ success: false, message: 'Monthly targets require a TPO account and a selected target month.' });
+    }
+    if (String(target ?? '').trim() && !isValidMonthlyTarget(target)) {
+      return res.status(400).json({ success: false, message: 'A monthly placement target must be a whole number of zero or more.' });
     }
     if (passwordToSet) {
       const passwordError = validatePassword(passwordToSet);
@@ -8479,7 +8657,10 @@ exports.updateAdminUser = async (req, res) => {
       }
 
       await refreshCache();
-      res.json({ success: true, message: "User updated" });
+      const targetMail = cleanSheet === 'Contact' && String(target ?? '').trim()
+        ? await sendTpoTargetAssignmentMailIfComplete(targetMonth, req.portalUser?.email)
+        : null;
+      res.json({ success: true, message: "User updated", targetMail });
     } else { 
       res.status(404).json({ success: false, message: "User row not found" }); 
     }

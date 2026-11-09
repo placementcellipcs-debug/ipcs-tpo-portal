@@ -498,16 +498,7 @@ export default function PublicSiteSections({ page = 'all' }) {
   const mediaBasePath = partnerMediaPage ? '/partners/media' : '/placements/media';
   const partnersLoading = ['partners', 'partners-all', 'hiring', 'placement', 'all'].includes(page) && !partnersLoaded;
   const postersLoading = ['placement', 'placement-gallery', 'all'].includes(page) && !postersLoaded;
-  const hasGiftyProfile = placementOfficers.some(member => normalizeTeamName(member.name) === normalizeTeamName(placementTeamLead.name));
-  const placementTeamSource = hasGiftyProfile ? placementOfficers : [
-    {
-      name: placementTeamLead.name,
-      role: placementTeamLead.role,
-      branches: 'Kerala, Karnataka, Tamil Nadu',
-      linkedin: 'https://www.linkedin.com/in/gifty-kp/'
-    },
-    ...placementOfficers
-  ];
+  const placementTeamSource = placementOfficers;
   const placementTeam = placementTeamSource.map(member => {
     const profile = placementTeamProfiles.find(candidate => candidate.aliases.some(alias => normalizeTeamName(alias) === normalizeTeamName(member.name)));
     const isGifty = normalizeTeamName(member.name) === normalizeTeamName(placementTeamLead.name);
@@ -516,7 +507,7 @@ export default function PublicSiteSections({ page = 'all' }) {
       ...member,
       name: member.name,
       role: member.role || profile?.role || 'Placement Officer',
-      bio: profile?.bio || member.bio || `Supporting student placements and employer partnerships${member.branches ? ` across ${member.branches}` : ''} at IPCS Global.`,
+      bio: member.bio || profile?.bio || `Supporting student placements and employer partnerships${member.branches ? ` across ${member.branches}` : ''} at IPCS Global.`,
       image: member.photo ? '' : (profile?.image || ''),
       linkedin: member.linkedin || (isGifty ? 'https://www.linkedin.com/in/gifty-kp/' : '')
     };
@@ -859,9 +850,9 @@ export default function PublicSiteSections({ page = 'all' }) {
             <div className="public-team-grid" aria-label="Loading placement team">{[1, 2, 3].map(item => <div className="public-team-skeleton" key={item} />)}</div>
           </> : <>
             {placementTeamLeadProfile && <TeamProfileCard person={placementTeamLeadProfile} featured />}
-            <div className="public-team-grid">
+            {placementTeamMembers.length > 0 ? <div className="public-team-grid">
               {placementTeamMembers.map((person, index) => <TeamProfileCard person={person} index={index} key={person.name} />)}
-            </div>
+            </div> : !placementTeam.length && !placementTeamError && <div className="public-team-status" role="status">Active placement team profiles will appear here.</div>}
           </>}
         </div>
       </section>
