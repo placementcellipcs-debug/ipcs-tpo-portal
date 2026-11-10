@@ -48,6 +48,7 @@ export default function UserManagement() {
   const [error, setError] = useState('');
   const [isBranchDropdownOpen, setIsBranchDropdownOpen] = useState(false);
   const [targetDisplayMonth, setTargetDisplayMonth] = useState(currentIndiaMonth());
+  const [targetTouched, setTargetTouched] = useState(false);
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState('');
   const [photoSaving, setPhotoSaving] = useState(false);
@@ -123,6 +124,7 @@ export default function UserManagement() {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
+    if (name === 'target' || name === 'targetMonth') setTargetTouched(true);
     setFormData(current => ({ ...current, [name]: value, ...(name === 'targetMonth' ? { target: '' } : {}) }));
   };
 
@@ -139,6 +141,7 @@ export default function UserManagement() {
 
   const openAddModal = () => {
     setFormData(initialFormState);
+    setTargetTouched(false);
     setPhotoFile(null);
     setIsEditMode(false);
     setError('');
@@ -146,6 +149,7 @@ export default function UserManagement() {
   };
 
   const openEditModal = (user) => {
+    setTargetTouched(false);
     setFormData({
       sheet: user.sheet,
       rowNumber: user.rowNumber,
@@ -182,7 +186,8 @@ export default function UserManagement() {
     const payload = {
       ...formData,
       assignedBranches: formData.assignedBranches.join(', '),
-      birthday: birthdaySheetValue(formData.birthday)
+      birthday: birthdaySheetValue(formData.birthday),
+      targetChanged: isEditMode ? targetTouched : String(formData.target ?? '').trim() !== ''
     };
 
     try {

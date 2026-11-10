@@ -8357,6 +8357,17 @@ const getTargetStatsMonth = row => {
     : '';
 };
 
+const getCachedTpoMonthlyTarget = (identities, month) => {
+  const identityKeys = new Set((identities || []).map(normalizePlacementText).filter(Boolean));
+  if (!identityKeys.size) return '';
+  const matches = (getCache()?.tpoStats || []).filter(row =>
+    identityKeys.has(normalizePlacementText(getValByHeader(row, ['user', 'tponame', 'placementofficer'])))
+    && getTargetStatsMonth(row) === month
+  ).sort((left, right) => Number(left.rowNumber || 0) - Number(right.rowNumber || 0));
+  const rowsWithTarget = matches.filter(row => String(getValByHeader(row, ['monthlytarget', 'targetofthemonth', 'target']) ?? '').trim() !== '');
+  return String(getValByHeader((rowsWithTarget[rowsWithTarget.length - 1] || matches[matches.length - 1]), ['monthlytarget', 'targetofthemonth', 'target']) ?? '').trim();
+};
+
 const sendTpoTargetAssignmentMailIfComplete = async (reportMonth, actorEmail) => {
   if (String(actorEmail || '').trim().toLowerCase() !== 'gifty@ipcsglobal.com') return null;
   const month = String(reportMonth || '').trim();
@@ -8541,9 +8552,13 @@ exports.addAdminUser = async (req, res) => {
       return res.status(409).json({ success: false, message: 'An account already uses this email address.' });
     }
 
-    await loadDocInfo();
     const sheetName = role === 'TPO' ? "Contact" : "User";
-    const s = doc.sheetsByTitle[sheetName]; 
+    const cachedRows = sheetName === 'Contact' ? (cache?.contacts || []) : (cache?.users || []);
+    let s = cachedRows[0]?._worksheet || doc.sheetsByTitle[sheetName];
+    if (!s) {
+      await loadDocInfo();
+      s = doc.sheetsByTitle[sheetName];
+    }
     if (!s) return res.status(503).json({ success: false, message: `The ${sheetName} account sheet is unavailable.` });
     const h = s.headerValues || [];
     const hashedPassword = await hashPassword(password);
@@ -8648,13 +8663,36 @@ exports.updateAdminUser = async (req, res) => {
     });
     if (duplicateEmail) return res.status(409).json({ success: false, message: 'Another account already uses this email address.' });
 
-    await loadDocInfo();
-    const s = doc.sheetsByTitle[cleanSheet];
-    if (!s) return res.status(503).json({ success: false, message: `The ${cleanSheet} account sheet is unavailable.` });
     const accountRows = cleanSheet === 'Contact' ? (cache?.contacts || []) : (cache?.users || []);
     const accountRow = accountRows.find(row => Number(row?.rowNumber) === numericRowNumber);
+    if (!accountRow) return res.status(404).json({ success: false, message: "User row not found" });
+    let s = accountRow._worksheet;
+    if (!s) {
+      await loadDocInfo();
+      s = doc.sheetsByTitle[cleanSheet];
+    }
+    if (!s) return res.status(503).json({ success: false, message: `The ${cleanSheet} account sheet is unavailable.` });
     
     if (accountRow) {
+      const requestedTarget = String(target ?? '').trim();
+      const selectedTargetMonth = String(targetMonth || '').trim();
+      const currentTarget = getCachedTpoMonthlyTarget([
+        getValByHeader(accountRow, ['tponame', 'name']),
+        getValByHeader(accountRow, ['email', 'mailid']),
+        getValByHeader(accountRow, ['loginid', 'username']),
+        getValByHeader(accountRow, ['empid', 'employeeid']),
+        userName, cleanEmail, empId
+      ], selectedTargetMonth) || (selectedTargetMonth === new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7)
+        ? String(getValByHeader(accountRow, ['targetofthemonth', 'target']) || '').trim()
+        : '');
+      const targetWasExplicitlyTouched = req.body.targetChanged === true
+        || (req.body.targetChanged === undefined && requestedTarget !== currentTarget);
+      const targetValueActuallyChanged = requestedTarget !== currentTarget;
+      const shouldSaveTarget = cleanSheet === 'Contact'
+        && isPlacementTrackerTpo({ role })
+        && requestedTarget !== ''
+        && targetWasExplicitlyTouched
+        && targetValueActuallyChanged;
       const h = s.headerValues || [];
 
       // Bulletproof Header Finder
@@ -8713,11 +8751,11 @@ exports.updateAdminUser = async (req, res) => {
       invalidateStaffAccountSessions(previousEmail);
       invalidateStaffAccountSessions(cleanEmail, accountRow);
 
-      if (String(target ?? '').trim() && userName) {
+      if (shouldSaveTarget && userName) {
         await syncTpoStats(userName, { 'Monthly Target': String(target).trim() }, targetMonth);
       }
 
-      const targetMail = cleanSheet === 'Contact' && String(target ?? '').trim()
+      const targetMail = shouldSaveTarget
         ? await sendTpoTargetAssignmentMailIfComplete(targetMonth, req.portalUser?.email)
         : null;
       res.json({ success: true, message: "User updated", targetMail });
@@ -8745,14 +8783,17 @@ exports.updateAdminUserPhoto = async (req, res) => {
       return res.status(415).json({ success: false, message: 'Upload a JPG, PNG, or WebP image.' });
     }
 
-    await loadDocInfo();
-    const worksheet = doc.sheetsByTitle[sheetName];
-    if (!worksheet) return res.status(503).json({ success: false, message: `The ${sheetName} account sheet is unavailable.` });
     const accountRows = sheetName === 'Contact' ? (getCache()?.contacts || []) : (getCache()?.users || []);
     const targetRow = accountRows.find(row => Number(row?.rowNumber) === rowNumber);
     if (!targetRow) {
       return res.status(404).json({ success: false, message: 'The selected user account could not be found.' });
     }
+    let worksheet = targetRow._worksheet;
+    if (!worksheet) {
+      await loadDocInfo();
+      worksheet = doc.sheetsByTitle[sheetName];
+    }
+    if (!worksheet) return res.status(503).json({ success: false, message: `The ${sheetName} account sheet is unavailable.` });
 
     let headers = worksheet.headerValues || [];
     const photoHeader = findPlacementHeader(headers, ['profilephotourl', 'profilephoto', 'profileimageurl', 'photo']);
