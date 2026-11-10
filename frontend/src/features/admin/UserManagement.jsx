@@ -198,17 +198,26 @@ export default function UserManagement() {
       const res = await axios.post(endpoint, payload);
       if (res.data.success) {
         let photoWarning = '';
-        if (!isEditMode && photoFile && res.data.user?.sheet && res.data.user?.rowNumber) {
-          const photoPayload = new FormData();
-          photoPayload.append('photo', photoFile);
-          photoPayload.append('sheet', res.data.user.sheet);
-          photoPayload.append('rowNumber', String(res.data.user.rowNumber));
+        let photoSaved = false;
+        const photoTarget = isEditMode
+          ? { sheet: formData.sheet, rowNumber: formData.rowNumber }
+          : res.data.user;
+        if (photoFile && photoTarget?.sheet && photoTarget?.rowNumber) {
           try {
-            const photoResponse = await axios.post(`${API_BASE}/api/admin/users/profile-photo`, photoPayload);
-            if (!photoResponse.data?.success) throw new Error(photoResponse.data?.message || 'Photo could not be saved.');
+            const photoResponse = await uploadAdminProfilePhoto(photoTarget.sheet, photoTarget.rowNumber, photoFile);
+            photoSaved = Boolean(photoResponse.data?.photoUrl);
           } catch (photoError) {
-            photoWarning = ` The account was created, but its photo could not be saved: ${photoError.response?.data?.message || photoError.message}`;
+            const reason = photoError.response?.data?.message || photoError.message || 'Please try again.';
+            photoWarning = isEditMode
+              ? `The other profile details were saved, but the photo was not saved: ${reason}`
+              : `The account was created, but its photo was not saved: ${reason}`;
           }
+        }
+        if (isEditMode && photoWarning) {
+          setError(photoWarning);
+          setToast({ type: 'error', title: 'Details saved; photo not saved', message: photoWarning });
+          fetchUsers(formData.targetMonth || currentIndiaMonth());
+          return;
         }
         setIsModalOpen(false);
         setLoading(true);
@@ -220,7 +229,7 @@ export default function UserManagement() {
         setToast({
           type: photoWarning || mailNeedsAttention || targetMail ? 'info' : 'success',
           title: mailNeedsAttention ? 'Target saved; email needs attention' : mailSent ? 'Targets saved; team email sent' : mailQueued ? 'Targets saved; email queued' : isEditMode ? 'User updated' : 'User created',
-          message: `${formData.userName} was ${isEditMode ? 'updated' : 'added'} successfully.${photoWarning}${targetMessage}`
+          message: `${formData.userName} was ${isEditMode ? 'updated' : 'added'} successfully.${photoSaved ? ' Profile photo uploaded to Drive and saved.' : ''}${photoWarning}${targetMessage}`
         });
         fetchUsers(formData.targetMonth || currentIndiaMonth());
       }
@@ -234,6 +243,16 @@ export default function UserManagement() {
   };
 
   const handleDeleteUser = (sheet, rowNumber, userName) => setDeleteTarget({ sheet, rowNumber, userName });
+
+  const uploadAdminProfilePhoto = async (sheet, rowNumber, file) => {
+    const payload = new FormData();
+    payload.append('photo', file);
+    payload.append('sheet', sheet);
+    payload.append('rowNumber', String(rowNumber));
+    const response = await axios.post(`${API_BASE}/api/admin/users/profile-photo`, payload);
+    if (!response.data?.success) throw new Error(response.data?.message || 'The profile photo could not be updated.');
+    return response;
+  };
 
   const confirmDeleteUser = async () => {
     if (!deleteTarget) return;
@@ -260,11 +279,7 @@ export default function UserManagement() {
       if (remove) {
         response = await axios.post(`${API_BASE}/api/admin/users/profile-photo`, { sheet: formData.sheet, rowNumber: formData.rowNumber, remove: true });
       } else {
-        const payload = new FormData();
-        payload.append('photo', photoFile);
-        payload.append('sheet', formData.sheet);
-        payload.append('rowNumber', String(formData.rowNumber));
-        response = await axios.post(`${API_BASE}/api/admin/users/profile-photo`, payload);
+        response = await uploadAdminProfilePhoto(formData.sheet, formData.rowNumber, photoFile);
       }
       if (!response.data?.success) throw new Error(response.data?.message || 'The profile photo could not be updated.');
       const profilePhoto = remove ? '' : response.data.photoUrl || '';
@@ -593,7 +608,7 @@ export default function UserManagement() {
                   </div>
                   <div style={{ flex: 1, minWidth: 210 }}>
                     <strong style={{ display: 'flex', alignItems: 'center', gap: 7, color: '#e2e8f0', marginBottom: 4 }}><Camera size={17} color="#7dd3fc" /> Profile photo</strong>
-                    <small style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>{isEditMode ? 'Choose a new image, then save it to this user’s profile.' : 'Choose an image to save with this new user account.'} JPG, PNG, or WebP.</small>
+                    <small style={{ color: 'var(--text-muted)', lineHeight: 1.5 }}>{isEditMode ? 'Choose an image, then click Save Changes or Save Photo to upload it.' : 'Choose an image; it will upload after the new account is created.'} JPG, PNG, or WebP.</small>
                   </div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                     <label style={{ display: 'inline-flex', alignItems: 'center', gap: 7, padding: '9px 11px', border: '1px solid #315171', borderRadius: 9, background: '#14243a', color: '#bae6fd', fontWeight: 750, cursor: 'pointer' }}>

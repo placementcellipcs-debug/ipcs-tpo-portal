@@ -8805,7 +8805,8 @@ exports.updateAdminUserPhoto = async (req, res) => {
     }
     if (!targetPhotoHeader) return res.json({ success: true, photoUrl: '', message: 'This account has no saved profile photo.' });
 
-    const photoUrl = remove ? '' : await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS);
+    const photoUrl = remove ? '' : String(await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS) || '').trim();
+    if (!remove && !photoUrl) throw new Error('Google Drive did not return a photo link, so the profile was not updated.');
     await updateCachedSheetRow(worksheet, targetRow, { [targetPhotoHeader]: photoUrl });
     const photoUpdatedAt = Date.now();
     return res.json({ success: true, photoUrl, photoUpdatedAt, message: remove ? 'Profile photo removed.' : 'Profile photo updated.' });
