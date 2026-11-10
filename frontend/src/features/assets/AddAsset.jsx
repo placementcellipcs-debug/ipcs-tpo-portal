@@ -235,7 +235,7 @@ export default function AddAsset() {
                   <span className="asset-choice-icon"><Package size={22} weight="duotone" /></span><span><b>Track a quantity group</b><small>Use for identical items managed together, such as 20 chairs or 12 keyboards.</small></span><i>{isQuantity ? 'Selected' : 'One record + count'}</i>
                 </button>
               </div>
-              <div className={`asset-count-explainer ${isQuantity ? 'active' : ''}`}><b>{isQuantity ? 'One group record' : 'One record for each physical item'}</b><span>{isQuantity ? 'The asset register will show one group ID and its unit count. Quantity groups cannot be assigned or QR-tagged as individual pieces.' : 'Each item receives its own asset ID and can be assigned, returned, serviced, and labeled separately.'}</span></div>
+              <div className={`asset-count-explainer ${isQuantity ? 'active' : ''}`}><b>{isQuantity ? 'One group record with one QR label' : 'One record for each physical item'}</b><span>{isQuantity ? 'The asset register will show one group ID and its unit count. The QR code opens this group record; use individual records when every physical unit needs a separate history.' : 'Each item receives its own asset ID and can be assigned, returned, serviced, and labeled separately.'}</span></div>
             </section>
 
             <section className="asset-register-card">

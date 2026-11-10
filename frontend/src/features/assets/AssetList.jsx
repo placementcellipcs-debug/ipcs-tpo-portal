@@ -6,6 +6,7 @@ import Layout from '../../layouts/Layout';
 import { inAppConfirm } from '../../components/InAppDialogs';
 import { API_BASE } from '../../services/apiConfig';
 import { formatPortalDate, formatPortalDateTime } from '../../utils/dateFormat';
+import AssetQrLabelModal from './AssetQrLabelModal';
 import './AssetManagement.css';
 
 const readUser = () => {
@@ -277,7 +278,7 @@ export default function AssetList() {
           <div><span>Available units</span><strong>{assets.filter(item => item.status === 'AVAILABLE').reduce((sum, item) => sum + unitCount(item), 0)}</strong></div>
         </section>
 
-        <details className="asset-howto"><summary>How asset tracking works</summary><div><span><b>1 · Choose tracking style</b> Track one piece at a time when it needs its own ID, assignment, or QR label; use a quantity group for identical stock.</span><span><b>2 · Register</b> Give the record a category, branch, and location. Purchase details and photos can be added when available.</span><span><b>3 · Assign individual equipment</b> Record the employee, condition, and handover. Quantity groups stay together and cannot be assigned as an individual item.</span><span><b>4 · Follow the record</b> View history, condition, vendor, and warranty details; transfer, maintain, or retire it through the normal asset tools.</span></div></details>
+        <details className="asset-howto"><summary>How asset tracking works</summary><div><span><b>1 · Choose tracking style</b> Track one piece at a time when it needs its own ID, assignment, or history; use a quantity group for identical stock.</span><span><b>2 · Register</b> Give the record a category, branch, and location. Purchase details and photos can be added when available.</span><span><b>3 · Label the record</b> Every individual item and quantity group can have a QR label. A group label opens the shared group record.</span><span><b>4 · Follow the record</b> View history, condition, vendor, and warranty details; transfer, maintain, or retire it through the normal asset tools.</span></div></details>
 
         <div className="asset-workspace-layout">
         <section className="asset-module-content" aria-label={assetView === 'branches' ? 'Branch spaces and items' : assetView === 'assignments' ? 'Asset assignments' : assetView === 'retired' ? 'Retired assets' : 'Item register'}>
@@ -352,7 +353,7 @@ export default function AssetList() {
                   <div className="asset-item-info"><div className="asset-item-code">{item.assetId}</div><h3>{item.name}</h3><p>{[item.brand, item.model].filter(Boolean).join(' · ') || item.subcategory || item.category}</p>{isQuantityGroup(item) && <span className="asset-unit-count">{unitCount(item)} identical units in this group</span>}<div className="asset-condition"><span>Condition</span><b>{item.condition || 'GOOD'}</b></div></div>
                   <div className="asset-item-actions">
                     <button type="button" className="asset-icon-button" title="Item history and photos" onClick={() => openDetails(item)}><ImageIcon size={17} /></button>
-                    {!isQuantityGroup(item) && <button type="button" className="asset-icon-button" title="Print asset QR" onClick={() => void prepareQrLabel(item)}><QrCode size={17} /></button>}
+                    <button type="button" className="asset-icon-button" title="Create, print, or download asset QR" onClick={() => void prepareQrLabel(item)}><QrCode size={17} /></button>
                     {canManage && !isQuantityGroup(item) && item.status === 'AVAILABLE' && <button type="button" className="asset-small-action" onClick={() => openAssignment(item)}><UserCheck size={16} /> Assign</button>}
                     {canManage && !isQuantityGroup(item) && item.status === 'ASSIGNED' && <><button type="button" className="asset-small-action" onClick={() => openAssignment(item)}><ArrowsLeftRight size={16} /> Reassign</button><button type="button" className="asset-small-action return-action" onClick={() => openReturn(item)}><ArrowLeft size={16} /> Return</button></>}
                     {item.status === 'UNDER_MAINTENANCE' && <span className="asset-maintenance-tag"><Wrench size={14} /> Service</span>}
@@ -439,7 +440,7 @@ export default function AssetList() {
 
         {disposeItem && <Modal title="Request asset retirement" subtitle={`${disposeItem.name} · ${disposeItem.assetId}`} onClose={() => setDisposeItem(null)}><form className="asset-form" onSubmit={submitDisposal}><div className="asset-permanent-note">This request goes to Rakesh for review. The item stays active unless approved.</div><label>Reason for retirement<input value={disposalForm.reason} onChange={event => setDisposalForm({ ...disposalForm, reason: event.target.value })} placeholder="End of useful life, damaged beyond repair…" required /></label><label>Proposed disposal method<select value={disposalForm.method} onChange={event => setDisposalForm({ ...disposalForm, method: event.target.value })}><option>Recycling</option><option>Sale</option><option>Donation</option><option>Secure destruction</option><option>Other</option></select></label><label>Estimated recovery value<input type="number" min="0" step="0.01" value={disposalForm.value} onChange={event => setDisposalForm({ ...disposalForm, value: event.target.value })} placeholder="0" /></label><label>Request notes<textarea rows="3" value={disposalForm.remarks} onChange={event => setDisposalForm({ ...disposalForm, remarks: event.target.value })} placeholder="Add a reference number or supporting details" /></label><button className="asset-dispose-button form-submit" type="submit" disabled={busy}>{busy ? <CircleNotch size={18} className="ph-spin" /> : 'Send request to Rakesh'}</button></form></Modal>}
 
-        {qrItem && <Modal title="Asset label" subtitle={qrItem.assetId} onClose={() => setQrItem(null)}><div className="asset-qr-card"><h3>{qrItem.name}</h3><img src={`https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=${encodeURIComponent(`${window.location.origin}/assets/item/${encodeURIComponent(qrItem.assetId)}`)}`} alt={`QR code for ${qrItem.assetId}`} /><p>{qrItem.branch} · {qrItem.location || 'Unassigned space'}</p><button type="button" className="asset-action-primary" onClick={() => window.print()}>Print label</button></div></Modal>}
+        {qrItem && <AssetQrLabelModal asset={qrItem} onClose={() => setQrItem(null)} />}
       </main>
     </Layout>
   );

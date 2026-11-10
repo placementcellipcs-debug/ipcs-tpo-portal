@@ -624,6 +624,7 @@ app.post('/api/v1/assets/add', requireSession('asset-operations'), upload.single
 app.get('/api/v1/assets', assetControllers.getAssets);
 app.get('/api/v1/assets/:assetId/details', assetControllers.getAssetDetails);
 app.post('/api/v1/assets/:assetId/qr-label', assetControllers.registerAssetQrLabel);
+app.get('/api/v1/assets/:assetId/qr-image', assetControllers.downloadAssetQrImage);
 app.post('/api/v1/assets/assign', requireSession('asset-operations'), upload.fields([{ name: 'photo', maxCount: 1 }, { name: 'returnPhoto', maxCount: 1 }]), assetControllers.assignAsset);
 app.post('/api/v1/assets/return', requireSession('asset-operations'), upload.single('photo'), assetControllers.returnAsset);
 app.get('/api/v1/assets/dashboard', assetControllers.getAssetDashboardStats);

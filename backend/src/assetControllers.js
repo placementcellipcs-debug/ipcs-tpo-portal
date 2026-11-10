@@ -1,6 +1,7 @@
 const { assetDoc, getAssetCache, getAssetCacheUpdatedAt, isAssetCacheReady, refreshAssetCache } = require('./assetConfig');
 const { getCache, uploadToDrive, sendIPCSMail, logPortalAuditEvent } = require('./config');
 const { randomBytes } = require('crypto');
+const axios = require('axios');
 const { formatIndiaTimestamp } = require('./utils/dateTime');
 const assetTaxonomy = require('./assetTaxonomy');
 
@@ -217,6 +218,51 @@ async function appendAssetQrLabel(event) {
   }
 }
 
+function pngChunk(type, data) {
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length, 0);
+  const name = Buffer.from(type, 'ascii');
+  const crcInput = Buffer.concat([name, data]);
+  let crc = 0xffffffff;
+  for (const byte of crcInput) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) crc = (crc >>> 1) ^ ((crc & 1) ? 0xedb88320 : 0);
+  }
+  const crcBuffer = Buffer.alloc(4);
+  crcBuffer.writeUInt32BE((crc ^ 0xffffffff) >>> 0, 0);
+  return Buffer.concat([length, name, data, crcBuffer]);
+}
+
+function setPngPhysicalSize(png, sizeCm) {
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  if (!png.subarray(0, 8).equals(signature)) throw new Error('The QR image provider returned an invalid PNG.');
+  const pixelsPerMeter = Math.round(100000 / Number(sizeCm));
+  const physicalData = Buffer.alloc(9);
+  physicalData.writeUInt32BE(pixelsPerMeter, 0);
+  physicalData.writeUInt32BE(pixelsPerMeter, 4);
+  physicalData.writeUInt8(1, 8);
+  const chunks = [signature];
+  let offset = 8;
+  let inserted = false;
+  while (offset + 12 <= png.length) {
+    const length = png.readUInt32BE(offset);
+    const end = offset + 12 + length;
+    if (end > png.length) throw new Error('The QR image provider returned a truncated PNG.');
+    const type = png.toString('ascii', offset + 4, offset + 8);
+    if (type === 'pHYs') {
+      if (!inserted) chunks.push(pngChunk('pHYs', physicalData));
+      inserted = true;
+    } else chunks.push(png.subarray(offset, end));
+    if (type === 'IHDR' && !inserted) {
+      chunks.push(pngChunk('pHYs', physicalData));
+      inserted = true;
+    }
+    offset = end;
+  }
+  if (offset !== png.length) throw new Error('The QR image provider returned a malformed PNG.');
+  return Buffer.concat(chunks);
+}
+
 exports.registerAssetQrLabel = async (req, res) => {
   try {
     const assetId = String(req.params.assetId || '').trim();
@@ -224,7 +270,6 @@ exports.registerAssetQrLabel = async (req, res) => {
     if (!asset) return res.status(404).json({ success: false, message: 'That asset could not be found.' });
     const branch = rowValue(asset, 'Branch') || '';
     if (!canAccessAssetBranch(req, branch)) return res.status(403).json({ success: false, message: 'That asset is outside your branch access.' });
-    if (isQuantityTracked(asset)) return res.status(409).json({ success: false, message: 'Quantity groups do not receive individual QR labels. Register each serial-tracked item separately to label it.' });
     const saved = await appendAssetQrLabel({ assetId, createdBy: req.portalUser?.name || req.portalUser?.email || '' });
     if (!saved) return res.status(503).json({ success: false, message: 'The QR registry could not be updated, so the label was not prepared.' });
     await appendAssetActivity(req, { action: 'QR_LABEL_CREATED', entityType: 'Asset', entityId: assetId, branch, after: { qrVersion: 'PORTAL_LINK_V1' } });
@@ -232,6 +277,60 @@ exports.registerAssetQrLabel = async (req, res) => {
     return res.json({ success: true, message: 'The item label is ready.' });
   } catch (error) {
     return res.status(500).json({ success: false, message: `Could not create the QR label: ${error.message}` });
+  }
+};
+
+exports.downloadAssetQrImage = async (req, res) => {
+  try {
+    const assetId = String(req.params.assetId || '').trim();
+    const asset = (getAssetCache()?.assets || []).find(row => String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase() === assetId.toLowerCase());
+    if (!asset) return res.status(404).json({ success: false, message: 'That asset could not be found.' });
+    if (!canAccessAssetBranch(req, rowValue(asset, 'Branch') || '')) return res.status(403).json({ success: false, message: 'That asset is outside your branch access.' });
+
+    const sizeCm = String(req.query.sizeCm || '2.5').trim();
+    if (!['2.5', '5', '7', '12', '25'].includes(sizeCm)) {
+      return res.status(400).json({ success: false, message: 'Choose one of the available QR label sizes.' });
+    }
+    const format = String(req.query.format || 'svg').trim().toLowerCase();
+    if (!['svg', 'png'].includes(format)) return res.status(400).json({ success: false, message: 'Choose SVG or PNG for the QR image.' });
+
+    const originValue = String(req.query.origin || '').trim();
+    const requestSource = String(req.get('origin') || req.get('referer') || '').trim();
+    let portalOrigin;
+    let requestOrigin;
+    try {
+      portalOrigin = new URL(originValue).origin;
+      requestOrigin = new URL(requestSource).origin;
+    } catch {
+      return res.status(400).json({ success: false, message: 'Open the QR download from the asset portal.' });
+    }
+    if (portalOrigin !== requestOrigin) return res.status(403).json({ success: false, message: 'The QR download origin did not match the asset portal.' });
+
+    const targetUrl = new URL(`/assets/item/${encodeURIComponent(assetId)}`, portalOrigin).toString();
+    const qrResponse = await axios.get('https://api.qrserver.com/v1/create-qr-code/', {
+      params: { data: targetUrl, size: '1000x1000', format, ecc: 'Q', margin: 4, 'charset-source': 'UTF-8' },
+      responseType: 'arraybuffer',
+      timeout: 20000
+    });
+    let image = Buffer.from(qrResponse.data);
+    if (format === 'svg') {
+      let svg = image.toString('utf8');
+      if (!/<svg\b/i.test(svg)) throw new Error('The QR image provider returned an invalid SVG.');
+      svg = svg.replace(/<svg\b([^>]*)>/i, (_tag, attributes) => {
+        const cleanAttributes = attributes.replace(/\s(?:width|height)=(['"])[\s\S]*?\1/gi, '');
+        return `<svg${cleanAttributes} width="${sizeCm}cm" height="${sizeCm}cm">`;
+      });
+      image = Buffer.from(svg, 'utf8');
+    } else image = setPngPhysicalSize(image, sizeCm);
+
+    const safeAssetId = assetId.replace(/[^a-z0-9_-]/gi, '_');
+    res.set('Content-Type', format === 'svg' ? 'image/svg+xml; charset=utf-8' : 'image/png');
+    res.set('Content-Disposition', `attachment; filename="${safeAssetId}-QR-${sizeCm}cm.${format}"`);
+    res.set('Cache-Control', 'private, no-store');
+    return res.status(200).send(image);
+  } catch (error) {
+    console.error('[ASSET QR] Could not prepare QR image:', error.message);
+    return res.status(502).json({ success: false, message: `Could not download the QR image: ${error.message}` });
   }
 };
 
@@ -885,7 +984,7 @@ exports.addAsset = async (req, res) => {
     }
 
     const followUpResults = await Promise.allSettled([
-      trackingMode === 'INDIVIDUAL' ? appendAssetQrLabel({ assetId, createdBy: userName }) : Promise.resolve(),
+      appendAssetQrLabel({ assetId, createdBy: userName }),
       appendAssetActivity(req, { action: 'ASSET_REGISTERED', entityType: trackingMode === 'QUANTITY' ? 'Asset quantity group' : 'Asset', entityId: assetId, branch: asset.branch, after: { name: asset.name, category: asset.category, status: 'AVAILABLE', trackingMode, quantity } })
     ]);
 
@@ -1051,20 +1150,34 @@ exports.getAssetDetails = async (req, res) => {
         date: getVal('disposeddate'), remarks: getVal('remarks')
       };
     }).reverse();
+    const maintenance = (cache.maintenance || []).filter(row => String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase() === cleanId).map(row => ({
+      maintenanceId: rowValue(row, 'Maintenance_ID'), issue: rowValue(row, 'Issue'), reportedBy: rowValue(row, 'Reported_By'),
+      status: rowValue(row, 'Status'), date: rowValue(row, 'Reported_Date'), previousStatus: rowValue(row, 'Previous_Status'),
+      cost: rowValue(row, 'Cost'), remarks: rowValue(row, 'Remarks'), completedDate: rowValue(row, 'Completed_Date')
+    })).reverse();
+    const transfers = (cache.transfers || []).filter(row => String(rowValue(row, 'Asset_ID') || '').trim().toLowerCase() === cleanId).map(row => ({
+      transferId: rowValue(row, 'Transfer_ID'), fromBranch: rowValue(row, 'From_Branch'), toBranch: rowValue(row, 'To_Branch'),
+      requestedBy: rowValue(row, 'Requested_By'), requestedAt: rowValue(row, 'Requested_At'), status: rowValue(row, 'Status'),
+      approvedBy: rowValue(row, 'Approved_By'), approvedAt: rowValue(row, 'Approved_At'), receivedBy: rowValue(row, 'Received_By'),
+      receivedAt: rowValue(row, 'Received_At'), remarks: rowValue(row, 'Remarks'), rejectionReason: rowValue(row, 'Rejection_Reason')
+    })).reverse();
     const asset = {
       assetId: readAssetValue('assetid'),
       name: readAssetValue('assetname') || readAssetValue('name') || readAssetValue('itemname'),
+      recordType: readAssetValue('recordtype'),
       category: readAssetValue('category'), subcategory: readAssetValue('subcategory'),
       assetType: readAssetValue('assettype'),
       branch: readAssetValue('branch'), location: readAssetValue('location'),
       status: readAssetValue('status') || 'AVAILABLE', condition: readAssetValue('condition') || 'GOOD',
       brand: readAssetValue('brand'), model: readAssetValue('model'),
+      serialNumber: readAssetValue('serialnumber'), minimumQuantity: readAssetValue('minimumquantity'),
       photoUrl: documents.find(document => /PHOTO|CONDITION/i.test(String(document.type || '')))?.url || '',
       vendor: readAssetValue('vendor'), invoice: readAssetValue('invoicenumber'), purchaseDate: readAssetValue('purchasedate'),
       trackingMode: String(readAssetValue('trackingmode') || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY' ? 'QUANTITY' : 'INDIVIDUAL',
       quantity: String(readAssetValue('trackingmode') || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY' ? Math.max(1, parseInt(readAssetValue('quantity'), 10) || 1) : 1,
       purchaseCost: isAssetAdmin(req) ? readAssetValue('purchasecost') : '', warrantyEnd: readAssetValue('warrantyend'),
-      createdBy: readAssetValue('createdby'), registeredAt: readAssetValue('timestamp')
+      createdBy: readAssetValue('createdby'), registeredAt: readAssetValue('timestamp'),
+      updatedBy: readAssetValue('updatedby'), updatedAt: readAssetValue('updatedat'), legacySource: readAssetValue('legacysource')
     };
     const vendorKey = String(asset.vendor || '').trim().toLowerCase();
     const vendorDetails = (cache.vendors || []).map(row => row.toObject()).map(values => {
@@ -1078,7 +1191,7 @@ exports.getAssetDetails = async (req, res) => {
       };
     }).find(vendor => vendorKey && [vendor.id, vendor.name].some(value => String(value || '').trim().toLowerCase() === vendorKey));
 
-    res.json({ success: true, asset: { ...asset, vendorDetails: vendorDetails || null }, customSpecs, assignments, history, documents, disposals });
+    res.json({ success: true, asset: { ...asset, vendorDetails: vendorDetails || null }, customSpecs, assignments, history, documents, disposals, maintenance, transfers });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
