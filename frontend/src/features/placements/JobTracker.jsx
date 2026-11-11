@@ -75,7 +75,8 @@ const groupRecords = records => {
     const position = String(record.position || '').trim();
     const openingIdentity = jobId || position || 'opening';
     const originType = record.originType || (record.sourceType === 'drive' ? 'drive' : 'application');
-    const key = [originType, company.toLowerCase(), openingIdentity.toLowerCase()].join('|');
+    const owner = String(record.tpoName || '').trim().toLowerCase();
+    const key = [originType, company.toLowerCase(), openingIdentity.toLowerCase(), owner].join('|');
     if (!groups.has(key)) groups.set(key, {
       key, sourceType: record.sourceType, originType, company, jobId, position,
       driveDate: record.driveDate || '', driveLocation: record.driveLocation || '', records: []
