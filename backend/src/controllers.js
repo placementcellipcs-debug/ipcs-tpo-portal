@@ -42,6 +42,19 @@ const { buildTpoTargetAssignmentMail } = require('./tpoTargetAssignmentMail');
 const { PLACEMENT_AUDIT_SHEET, PLACEMENT_AUDIT_HEADERS, createPlacementAuditEvent } = require('./placementAudit');
 const { createTalentinoSessionResolver } = require('./talentinoSessionMatch');
 const { formatIndiaTimestamp, formatIndiaDate, formatIndiaTime } = require('./utils/dateTime');
+const mysqlPlacementTracker = require('./mysqlPlacementTracker');
+const mysqlVacancyManagement = require('./mysqlVacancyManagement');
+const mysqlTpoAuth = require('./mysqlTpoAuthService');
+const mysqlAdminUsers = require('./mysqlAdminUsersService');
+const mysqlSupportIssues = require('./mysqlSupportIssueService');
+const mysqlEvents = require('./mysqlEventsService');
+
+const useMysqlTpoUserManagement = () => String(process.env.MYSQL_TPO_USER_MANAGEMENT_ENABLED || '').trim().toLowerCase() === 'true';
+const useMysqlTpoAuth = () => String(process.env.MYSQL_TPO_AUTH_ENABLED || '').trim().toLowerCase() === 'true' || useMysqlTpoUserManagement();
+const useMysqlPlacementTracker = () => String(process.env.MYSQL_PLACEMENT_TRACKER_ENABLED || '').trim().toLowerCase() === 'true';
+const useMysqlVacancyManagement = () => String(process.env.MYSQL_VACANCY_MANAGEMENT_ENABLED || '').trim().toLowerCase() === 'true';
+const useMysqlSupportIssues = () => String(process.env.MYSQL_SUPPORT_ISSUES_ENABLED || '').trim().toLowerCase() === 'true';
+const useMysqlTpoEvents = () => String(process.env.MYSQL_TPO_EVENTS_ENABLED || '').trim().toLowerCase() === 'true';
 
 const TPO_DELETE_REQUEST_SHEET = 'TPO_Delete_Requests';
 const TPO_DELETE_REQUEST_HEADERS = [
@@ -152,6 +165,56 @@ const accountAuthState = (row, passwordOverride) => ({
 const isAccountEnabled = row => !['INACTIVE', 'DISABLED', 'LEFT', 'TERMINATED', 'SUSPENDED', 'REVOKED'].includes(
   getValByHeader(row, ['status']).toUpperCase()
 );
+
+const findAccountForLogin = async (cache, identity, password) => {
+  for (const row of cache?.contacts || []) {
+    const sheetMail = getValByHeader(row, ['mailid', 'email']).toLowerCase();
+    const sheetPass = getValByHeader(row, ['password']);
+    if (sheetMail !== identity || !identity || !password || !isAccountEnabled(row) || !await verifyPassword(password, sheetPass)) continue;
+    const account = {
+      email: getValByHeader(row, ['mailid', 'email']) || identity,
+      sittingbranch: getValByHeader(row, ['sittingbranch']),
+      assignedbranches: getValByHeader(row, ['assignedbranches']),
+      assignedcourses: getValByHeader(row, ['assignedcourses', 'assignedcourse', 'course']),
+      department: getValByHeader(row, ['department']),
+      access: getValByHeader(row, ['access', 'accesstype']),
+      profilephoto: getValByHeader(row, ['profilephoto', 'profilephotourl', 'photo']),
+      contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno']),
+      empId: getValByHeader(row, ['empid', 'employeeid']),
+      target: getValByHeader(row, ['target', 'targetofthemonth']),
+    };
+    const role = getValByHeader(row, ['role', 'portalrole']) || 'TPO';
+    return { accountRow: row, storedPassword: sheetPass, foundUser: account, role,
+      course: account.assignedcourses || (isRegionalOrTerritoryTechnicalHead({ role }) ? '' : 'All Courses'),
+      department: account.department, userName: getValByHeader(row, ['tponame', 'name']) || 'TPO User' };
+  }
+
+  for (const row of cache?.users || []) {
+    const sheetUsername = getValByHeader(row, ['username', 'name']).toLowerCase();
+    const sheetMail = getValByHeader(row, ['mailid', 'email']).toLowerCase();
+    const sheetLoginId = getValByHeader(row, ['loginid']).toLowerCase();
+    const sheetPass = getValByHeader(row, ['password']);
+    if (![sheetUsername, sheetMail, sheetLoginId].includes(identity) || !identity || !password
+      || !isAccountEnabled(row) || !await verifyPassword(password, sheetPass)) continue;
+    const account = {
+      email: getValByHeader(row, ['mailid', 'email']) || identity,
+      sittingbranch: getValByHeader(row, ['sittingbranch']),
+      assignedbranches: getValByHeader(row, ['assignedbranches']),
+      assignedcourses: getValByHeader(row, ['assignedcourses', 'assignedcourse', 'course']),
+      department: getValByHeader(row, ['department']),
+      access: getValByHeader(row, ['access', 'accesstype']),
+      profilephoto: getValByHeader(row, ['profilephoto', 'profilephotourl', 'photo']),
+      contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno']),
+      empId: getValByHeader(row, ['empid', 'employeeid']),
+      target: getValByHeader(row, ['target', 'targetofthemonth']),
+    };
+    const role = getValByHeader(row, ['role']) || 'RTH';
+    return { accountRow: row, storedPassword: sheetPass, foundUser: account, role,
+      course: account.assignedcourses || (isRegionalOrTerritoryTechnicalHead({ role }) ? '' : 'All'),
+      department: account.department, userName: getValByHeader(row, ['username', 'name']) || 'User' };
+  }
+  return null;
+};
 
 const getCurrentAccountRow = (email, cache = getCache()) => {
   const identity = String(email || '').trim().toLowerCase();
@@ -656,6 +719,19 @@ const sendMailAndLog = async (mailOptions, logDetails) => {
   }
 };
 
+const sendEventMail = async (mailOptions, logDetails) => {
+  if (!useMysqlTpoEvents()) return sendMailAndLog(mailOptions, logDetails);
+  if (String(process.env.MYSQL_ENABLED || '').trim().toLowerCase() !== 'true'
+    || String(process.env.MYSQL_EMAIL_ENABLED || '').trim().toLowerCase() !== 'true') {
+    throw new Error('MySQL event notifications require MYSQL_ENABLED=true and MYSQL_EMAIL_ENABLED=true; no Sheets mail fallback was attempted.');
+  }
+  return sendIPCSMail(mailOptions, {
+    category: logDetails?.category || 'placement',
+    queueContext: logDetails?.queueContext,
+    logDetails,
+  });
+};
+
 // ---------------------------------------------------------
 // 🚨 MASTER STUDENT EMAIL ENGINE (NOW WITH .ICS INVITES)
 // ---------------------------------------------------------
@@ -891,7 +967,24 @@ exports.login = async (req, res) => {
   const cleanInput = (email || '').toString().trim().toLowerCase().slice(0, 254);
   req.auditAttempt = cleanInput ? { kind: 'login', identifier: cleanInput } : null;
   try {
-    const cache = getCache();
+    if (useMysqlTpoAuth()) {
+      const account = await mysqlTpoAuth.authenticate(cleanInput, password);
+      if (!account || !mysqlTpoAuth.isAccountEnabled(account.row)) {
+        req.auditReason = 'The submitted login ID did not match an enabled MySQL staff account and password.';
+        req.auditResult = 'Rejected';
+        return res.status(401).json({ success: false, message: 'Invalid Login ID or Password.' });
+      }
+
+      const sessionUser = { ...account.sessionUser, loginId: cleanInput };
+      const accountVersion = getAccountVersion(account.authState);
+      const sessionToken = createPortalSessionToken(sessionUser, accountVersion);
+      await mysqlTpoAuth.recordSuccessfulLogin(account, { requestId: req.portalAuditRequestId });
+      req.auditActor = sessionUser;
+      req.auditResult = 'Success';
+      return res.json({ success: true, tpo: { ...sessionUser, sessionToken } });
+    }
+
+    let cache = getCache();
     
     if (!cache?.authCacheReady || !Array.isArray(cache.contacts) || !Array.isArray(cache.users)) {
        req.auditReason = 'Login was not checked because the account cache was not ready.';
@@ -907,71 +1000,14 @@ exports.login = async (req, res) => {
     }
 
     const cleanPass = password === undefined || password === null ? '' : String(password);
-    let foundUser = null; 
-    let accountRow = null;
-    let storedPassword = '';
-    let role = 'TPO'; 
-    let course = 'All'; 
-    let userName = '';
-    let department = '';
-
-    for (let row of cache.contacts) {
-      const sheetMail = getValByHeader(row, ['mailid', 'email']).toLowerCase();
-      const sheetPass = getValByHeader(row, ['password']);
-      
-      if (sheetMail === cleanInput && cleanInput !== '' && cleanPass !== '' && isAccountEnabled(row) && await verifyPassword(cleanPass, sheetPass)) {
-        accountRow = row;
-        storedPassword = sheetPass;
-        foundUser = {
-          email: getValByHeader(row, ['mailid', 'email']) || cleanInput,
-          sittingbranch: getValByHeader(row, ['sittingbranch']),
-          assignedbranches: getValByHeader(row, ['assignedbranches']),
-          assignedcourses: getValByHeader(row, ['assignedcourses', 'assignedcourse', 'course']),
-          department: getValByHeader(row, ['department']),
-          access: getValByHeader(row, ['access', 'accesstype']),
-          profilephoto: getValByHeader(row, ['profilephoto', 'profilephotourl', 'photo']),
-          contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno']),
-          empId: getValByHeader(row, ['empid', 'employeeid']),
-          target: getValByHeader(row, ['target', 'targetofthemonth'])
-        };
-        role = getValByHeader(row, ['role', 'portalrole']) || 'TPO';
-        course = foundUser.assignedcourses || (isRegionalOrTerritoryTechnicalHead({ role }) ? '' : 'All Courses');
-        department = foundUser.department;
-        userName = getValByHeader(row, ['tponame', 'name']) || 'TPO User';
-        break;
-      }
-    }
-
-    if (!foundUser) {
-      for (let row of cache.users) {
-        const sheetUsername = getValByHeader(row, ['username', 'name']).toLowerCase();
-        const sheetMail = getValByHeader(row, ['mailid', 'email']).toLowerCase();
-        const sheetLoginId = getValByHeader(row, ['loginid']).toLowerCase();
-        const sheetPass = getValByHeader(row, ['password']);
-        
-        if ((sheetUsername === cleanInput || sheetMail === cleanInput || sheetLoginId === cleanInput) && cleanInput !== '' && cleanPass !== '' && isAccountEnabled(row) && await verifyPassword(cleanPass, sheetPass)) {
-          accountRow = row;
-          storedPassword = sheetPass;
-          foundUser = {
-            email: getValByHeader(row, ['mailid', 'email']) || cleanInput,
-            sittingbranch: getValByHeader(row, ['sittingbranch']),
-            assignedbranches: getValByHeader(row, ['assignedbranches']),
-          assignedcourses: getValByHeader(row, ['assignedcourses', 'assignedcourse', 'course']),
-          department: getValByHeader(row, ['department']),
-            access: getValByHeader(row, ['access', 'accesstype']),
-            profilephoto: getValByHeader(row, ['profilephoto', 'profilephotourl', 'photo']),
-            contactnumber: getValByHeader(row, ['contactnumber', 'contact', 'phoneno']),
-            empId: getValByHeader(row, ['empid', 'employeeid']),
-            target: getValByHeader(row, ['target', 'targetofthemonth'])
-          };
-          role = getValByHeader(row, ['role']) || 'RTH';
-          course = foundUser.assignedcourses || (isRegionalOrTerritoryTechnicalHead({ role }) ? '' : 'All');
-          department = foundUser.department;
-          userName = getValByHeader(row, ['username', 'name']) || 'User';
-          break;
-        }
-      }
-    }
+    let matchedAccount = await findAccountForLogin(cache, cleanInput, cleanPass);
+    let foundUser = matchedAccount?.foundUser || null;
+    let accountRow = matchedAccount?.accountRow || null;
+    let storedPassword = matchedAccount?.storedPassword || '';
+    let role = matchedAccount?.role || 'TPO';
+    let course = matchedAccount?.course || 'All';
+    let userName = matchedAccount?.userName || '';
+    let department = matchedAccount?.department || '';
 
     if (!foundUser) {
       if (!cache.authSheetsHealthy?.contacts || !cache.authSheetsHealthy?.users) {
@@ -1005,6 +1041,53 @@ exports.login = async (req, res) => {
       storedPassword = migration.password || storedPassword;
     }
 
+    let sessionKey = String(foundUser.email || cleanInput).trim().toLowerCase();
+    let accountVersion = getAccountVersion(accountAuthState(accountRow, storedPassword));
+    if (invalidatedAccountVersions.has(sessionKey)) {
+      const invalidatedVersion = invalidatedAccountVersions.get(sessionKey);
+      if (!invalidatedVersion || invalidatedVersion !== accountVersion) {
+        // An account update and a scheduled cache refresh can overlap. Re-read
+        // the source before rejecting this person indefinitely on a stale
+        // in-memory version. Authenticate against the refreshed row again.
+        let refreshed = false;
+        try { refreshed = await refreshCache(); } catch (refreshError) {
+          console.warn('[TPO AUTH] Account cache refresh after an account-version mismatch failed:', refreshError.message);
+        }
+        cache = getCache();
+        if (!refreshed || !cache?.authCacheReady || !cache.authSheetsHealthy?.contacts || !cache.authSheetsHealthy?.users) {
+          req.auditReason = 'Account version differed from the saved invalidation state, but the account sheets could not be refreshed.';
+          req.auditResult = 'Unavailable';
+          req.auditDetails = { accountVersionRefreshPending: true, authCacheReady: Boolean(cache?.authCacheReady), authSheetsHealthy: cache?.authSheetsHealthy || {} };
+          return res.status(503).json({ success: false, message: 'Your account is syncing. Please wait a moment, then try signing in again.' });
+        }
+
+        matchedAccount = await findAccountForLogin(cache, cleanInput, cleanPass);
+        if (!matchedAccount) {
+          req.auditReason = 'The refreshed account record did not match the submitted login ID and password.';
+          req.auditResult = 'Rejected';
+          return res.status(401).json({ success: false, message: 'Invalid Login ID or Password.' });
+        }
+        ({ accountRow, storedPassword, foundUser, role, course, department, userName } = matchedAccount);
+        if (!isPasswordHash(storedPassword)) {
+          const migration = await migrateLegacyPassword(accountRow, storedPassword, cleanPass);
+          if (migration.changed || migration.cacheStale) {
+            req.auditReason = 'The refreshed legacy password changed while it was being secured.';
+            req.auditResult = migration.changed ? 'Rejected' : 'Unavailable';
+            return res.status(migration.changed ? 401 : 503).json({
+              success: false,
+              message: migration.changed ? 'This account password changed. Sign in with the latest password.' : 'Your account is being secured. Please retry in a moment.',
+            });
+          }
+          storedPassword = migration.password || storedPassword;
+        }
+        sessionKey = String(foundUser.email || cleanInput).trim().toLowerCase();
+        accountVersion = getAccountVersion(accountAuthState(accountRow, storedPassword));
+        // Refreshing and re-verifying the live credentials makes this the new
+        // valid version. Existing sessions remain revoked by their old token.
+        invalidatedAccountVersions.set(sessionKey, accountVersion);
+      }
+    }
+
     const parseAssignments = value => String(value || '').split(/[\n,;]+/).map(item => item.trim().replace(/^\d+\.\s*/, '').toLowerCase()).filter(item => item && !/^(?:[-–—]|n\/a|none)$/i.test(item));
     let assignedArray = parseAssignments(foundUser.assignedbranches);
     if (!assignedArray.length) assignedArray = parseAssignments(foundUser.sittingbranch);
@@ -1024,7 +1107,6 @@ exports.login = async (req, res) => {
       assignedArray = ['all'];
     }
 
-    const sessionKey = String(foundUser.email || cleanInput).trim().toLowerCase();
     const sessionUser = {
       name: userName,
       email: sessionKey,
@@ -1040,16 +1122,6 @@ exports.login = async (req, res) => {
       empId: foundUser.empId || '',
       target: foundUser.target || '0'
     };
-    const accountVersion = getAccountVersion(accountAuthState(accountRow, storedPassword));
-    if (invalidatedAccountVersions.has(sessionKey)) {
-      const invalidatedVersion = invalidatedAccountVersions.get(sessionKey);
-      if (!invalidatedVersion || invalidatedVersion !== accountVersion) {
-        req.auditReason = 'Account details changed and the session version is being refreshed.';
-        req.auditResult = 'Unavailable';
-        req.auditDetails = { accountVersionRefreshPending: true, authCacheReady: Boolean(getCache()?.authCacheReady) };
-        return res.status(503).json({ success: false, message: 'This account was just updated. Please retry after account details finish syncing.' });
-      }
-    }
     const sessionToken = createPortalSessionToken(sessionUser, accountVersion);
     req.auditActor = sessionUser;
 
@@ -1085,6 +1157,10 @@ exports.login = async (req, res) => {
   } catch (error) { 
     req.auditReason = 'Login processing raised an unhandled server error.';
     req.auditResult = 'Error';
+    if (useMysqlTpoAuth()) {
+      console.error('[TPO AUTH] MySQL sign-in failed:', error.message);
+      return res.status(503).json({ success: false, message: 'Account sign-in is temporarily unavailable. Please retry shortly.' });
+    }
     res.status(500).json({ success: false, message: error.message }); 
   }
 };
@@ -2403,6 +2479,19 @@ const syncOpeningAppliedPlacementFields = async (logRow, internationalPlacement,
 };
 
 exports.getApplications = async (req, res) => {
+  if (useMysqlPlacementTracker()) {
+    try {
+      const applications = await mysqlPlacementTracker.listApplications({
+        user: req.portalUser,
+        isAdmin: isPlacementTrackerAdmin(req.portalUser || {}),
+        isTpo: isPlacementTrackerTpo(req.portalUser || {}),
+      });
+      return res.json({ success: true, applications, lastSyncedAt: new Date().toISOString(), source: 'mysql' });
+    } catch (error) {
+      console.error('MySQL job tracker read failed:', error.message);
+      return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'Job tracker could not be loaded from the database.' });
+    }
+  }
   if (!getCache()) await refreshCache();
   if (!getCache()) return res.status(503).json({ success: false, message: 'Placement data is still syncing. Please refresh shortly.' });
   let appsList = []; 
@@ -2501,6 +2590,27 @@ exports.getApplications = async (req, res) => {
 };
 
 exports.updateApplication = async (req, res) => {
+  if (useMysqlPlacementTracker()) {
+    try {
+      let offerLetter = req.body.offerLetter || '';
+      if (req.file) offerLetter = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS);
+      const result = await mysqlPlacementTracker.updateApplication({
+        user: req.portalUser,
+        isAdmin: isPlacementTrackerAdmin(req.portalUser || {}),
+        isTpo: isPlacementTrackerTpo(req.portalUser || {}),
+        body: { ...req.body, offerLetter },
+      });
+      return res.json({
+        success: true,
+        message: 'Application update saved to MySQL.',
+          warning: 'Student status emails, placement outcome sync, and external placement projections are not migrated yet.',
+        ...result,
+      });
+    } catch (error) {
+      console.error('MySQL job tracker update failed:', error.message);
+      return res.status(error.status || 500).json({ success: false, message: error.status ? error.message : 'The application update could not be saved to the database.' });
+    }
+  }
   const rowNumber = parseInt(req.body.rowNumber);
   const { status, remarks, datePlaced, packageLpa, joiningStatus, currentUserEmail, interviewDate, interviewTime, interviewVenue } = req.body;
   
@@ -3315,14 +3425,47 @@ exports.addDirectInterview = async (req, res) => {
 
 exports.emailStudent = async (req, res) => {
   const user = req.portalUser;
-  const { roll, rowNumber, sourceType, subject, message } = req.body || {};
+  const { roll, rowNumber, recordId, sourceType, subject, message } = req.body || {};
   if (!isPlacementOfficer(user)) return res.status(403).json({ success: false, message: 'Only a placement officer can send a student email from this workspace.' });
   const requestedRow = Number(rowNumber);
   const hasRecordRow = Number.isInteger(requestedRow) && requestedRow >= 2;
-  if ((!String(roll || '').trim() && !hasRecordRow) || !String(subject || '').trim() || !String(message || '').trim()) {
+  if ((!String(roll || '').trim() && !hasRecordRow && !recordId) || !String(subject || '').trim() || !String(message || '').trim()) {
     return res.status(400).json({ success: false, message: 'Choose a placement record and enter an email subject and message.' });
   }
   try {
+    if (useMysqlPlacementTracker() && recordId) {
+      const applications = await mysqlPlacementTracker.listApplications({
+        user,
+        isAdmin: isPlacementTrackerAdmin(user || {}),
+        isTpo: isPlacementTrackerTpo(user || {}),
+      });
+      const record = applications.find(application => String(application.recordId || '') === String(recordId));
+      if (!record) return res.status(404).json({ success: false, message: 'The application was not found or is outside your placement scope.' });
+      const email = String(record.email || '').trim();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        return res.status(422).json({ success: false, message: 'A valid candidate email address is not available on this record.' });
+      }
+      const name = String(record.name || 'Student').trim();
+      const safeMessage = escapePlacementMailHtml(message).replace(/\r?\n/g, '<br>');
+      const html = `<div style="margin:0 auto;max-width:640px;border:1px solid #e2e8f0;border-radius:16px;overflow:hidden;font-family:Arial,Helvetica,sans-serif;color:#334155;background:#fff"><div style="padding:22px 28px;background:#0f172a;border-bottom:4px solid #7c3aed"><div style="font-size:12px;letter-spacing:.16em;color:#93c5fd;font-weight:700">IPCS GLOBAL • PLACEMENT CELL</div><h1 style="margin:10px 0 0;color:#fff;font-size:21px">Placement update</h1></div><div style="padding:26px 28px;font-size:15px;line-height:1.7"><p>Dear ${escapePlacementMailHtml(name)},</p><p>${safeMessage}</p><div style="margin-top:24px;padding-top:16px;border-top:1px solid #e2e8f0;color:#475569">Regards,<br><strong style="color:#0f172a">${escapePlacementMailHtml(user?.name || 'Placement Officer')}</strong><br>IPCS Global Placement Cell</div></div></div>`;
+      const delivery = await sendIPCSMail({
+        from: { name: 'IPCS Placement Cell' },
+        to: email,
+        subject: String(subject).trim(),
+        text: String(message).trim(),
+        html,
+      }, {
+        category: 'placement',
+        relatedEntityType: 'placement_application',
+        relatedEntityId: String(recordId),
+        logDetails: { name, email, type: 'TPO Student Email' },
+      });
+      return res.json({
+        success: true,
+        queued: Boolean(delivery?.queued),
+        message: delivery?.queued ? `Email to ${name} was queued for delivery.` : `Email sent to ${name}.`,
+      });
+    }
     await loadDocInfo();
     let cache = getCache();
     if (!cache?.students) cache = await refreshCache();
@@ -3403,6 +3546,13 @@ const readCurrentVacancyRows = async () => {
 
 exports.getVacancies = async (req, res) => {
   try {
+    if (useMysqlVacancyManagement()) {
+      const user = req.portalUser;
+      const rows = await mysqlVacancyManagement.listVacancies(user);
+      const vacancies = rows.filter(vacancy => isPlacementTrackerTpo(user)
+        || hasAccess('All', vacancy.course, user?.role, user?.assignedBranchesArray, user?.assignedCourse, user?.department));
+      return res.json({ success: true, vacancies: vacancies.reverse(), warning: '' });
+    }
     const cache = getCache();
     let vacancyRows = Array.isArray(cache?.vacancies) ? cache.vacancies : null;
     let vacancyReadWarning = '';
@@ -3514,6 +3664,9 @@ const getVacancyPlacementOfficers = async () => {
 
 exports.getVacancyFormOptions = async (_req, res) => {
   try {
+    if (useMysqlVacancyManagement()) {
+      return res.json({ success: true, placementOfficers: await mysqlVacancyManagement.listPlacementOfficers() });
+    }
     return res.json({ success: true, placementOfficers: await getVacancyPlacementOfficers() });
   } catch (error) {
     console.error('Could not load placement officers for vacancy form:', error.message);
@@ -3682,6 +3835,17 @@ exports.addVacancy = async (req, res) => {
     const experience = input.experience === 'Other' ? String(input.experienceOther || '').trim() : String(input.experience).trim();
     if (!experience) return res.status(400).json({ success: false, message: 'Enter the custom experience requirement.' });
 
+    if (useMysqlVacancyManagement()) {
+      const logoUrl = await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS);
+      const vacancy = await mysqlVacancyManagement.createVacancy({ actor: req.portalUser, input, logoUrl });
+      return res.status(201).json({
+        success: true,
+        vacancy,
+        clientSync: { added: true, duplicate: false, warning: '' },
+        message: `Vacancy ${vacancy.id} added to MySQL. Company details were saved to the database.`,
+      });
+    }
+
     const placementOfficers = await getVacancyPlacementOfficers();
     const signedInOfficer = String(req.portalUser?.name || '').trim();
     const selectedOfficer = placementOfficers.find(name => normalizeVacancyOfficerName(name) === normalizeVacancyOfficerName(signedInOfficer));
@@ -3793,7 +3957,7 @@ exports.addVacancy = async (req, res) => {
     });
   } catch (error) {
     console.error('Vacancy creation failed:', error.message);
-    return res.status(500).json({ success: false, message: error.message || 'The vacancy could not be saved.' });
+    return res.status(error.status || 500).json({ success: false, message: error.message || 'The vacancy could not be saved.' });
   }
 };
 
@@ -3943,6 +4107,17 @@ exports.updateVacancy = async (req, res) => {
       return res.status(req.file.size > 10 * 1024 * 1024 ? 413 : 400).json({ success: false, message: 'The company logo must be an image no larger than 10 MB.' });
     }
 
+    if (useMysqlVacancyManagement()) {
+      const logoUrl = req.file ? await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS) : '';
+      const result = await mysqlVacancyManagement.updateVacancy({ actor: req.portalUser, jobCode: jobId, input, logoUrl });
+      return res.json({
+        success: true,
+        vacancy: result.vacancy,
+        changedCells: result.changedCells,
+        message: result.changedCells ? 'Vacancy updated and the changes were saved to MySQL.' : 'No vacancy details changed.',
+      });
+    }
+
     await loadDocInfo();
     const sheet = getNewsletterSheet();
     if (!sheet) return res.status(503).json({ success: false, message: 'The NewsLetter sheet is unavailable.' });
@@ -4023,7 +4198,7 @@ exports.updateVacancy = async (req, res) => {
     });
   } catch (error) {
     console.error('Vacancy update failed:', error.message);
-    return res.status(500).json({ success: false, message: error.message || 'The vacancy could not be updated.' });
+    return res.status(error.status || 500).json({ success: false, message: error.message || 'The vacancy could not be updated.' });
   }
 };
 
@@ -4031,6 +4206,12 @@ exports.deleteVacancy = async (req, res) => {
   try {
     const jobId = String(req.params.jobId || '').trim();
     if (!jobId) return res.status(400).json({ success: false, message: 'A vacancy Job ID is required.' });
+    if (useMysqlVacancyManagement()) {
+      const reason = String(req.body?.reason || '').trim();
+      if (reason.length < 5) return res.status(400).json({ success: false, message: 'Add a short reason for this deletion request (at least 5 characters).' });
+      const request = await mysqlVacancyManagement.requestVacancyDelete({ actor: req.portalUser, jobCode: jobId, reason });
+      return res.status(202).json({ success: true, requestSubmitted: true, requestId: request.requestId, message: 'Deletion request sent to Gifty for approval. The vacancy stays available until approved.' });
+    }
     await loadDocInfo();
     const sheet = getNewsletterSheet();
     if (!sheet) return res.status(503).json({ success: false, message: 'The NewsLetter sheet is unavailable.' });
@@ -4107,11 +4288,37 @@ exports.deleteVacancy = async (req, res) => {
     return res.json({ success: true, message: approvalExecution ? 'Approved vacancy deletion completed.' : 'Vacancy deleted from the NewsLetter sheet.' });
   } catch (error) {
     console.error('Vacancy deletion failed:', error.message);
-    return res.status(500).json({ success: false, message: error.message || 'The vacancy could not be deleted.' });
+    return res.status(error.status || 500).json({ success: false, message: error.message || 'The vacancy could not be deleted.' });
   }
 };
 
 exports.getIssues = async (req, res) => {
+  if (useMysqlSupportIssues()) {
+    try {
+      const user = req.portalUser || {};
+      if (!user.email) return res.status(401).json({ success: false, message: 'Sign in again to continue.' });
+      const rows = await mysqlSupportIssues.listIssues();
+      const issuesList = rows.filter(row => {
+        const branch = row.branch_name || '';
+        const course = row.course_name || 'Unknown';
+        return isPlacementTrackerAdmin(user) || isPlacementTrackerTpo(user)
+          ? hasPlacementBranchAccess(branch, user)
+          : hasAccess(branch, course, user.role, user.assignedBranchesArray, user.assignedCourse, user.department);
+      }).map(row => ({
+        rowNumber: row.id,
+        sourceRowNumber: row.source_row_number,
+        name: row.student_name || 'Student',
+        branch: row.branch_name || '',
+        details: row.details || '',
+        status: row.status || 'Pending',
+        remarks: row.remarks || '',
+      }));
+      return res.json({ success: true, issues: issuesList, dataMeta: { source: 'MySQL', sourceSheet: 'MySQL support_issues', sourceHealthy: true, lastSuccessfulSyncAt: new Date().toISOString() } });
+    } catch (err) {
+      console.error('Get MySQL issues error:', err.message);
+      return res.status(503).json({ success: false, message: 'Issue data is temporarily unavailable. Please retry shortly.' });
+    }
+  }
   try {
     let cache = getCache();
     if (!cache) {
@@ -4164,6 +4371,32 @@ exports.getIssues = async (req, res) => {
 
 exports.updateIssue = async (req, res) => {
   const { rowNumber, status, remarks } = req.body;
+  if (useMysqlSupportIssues()) {
+    try {
+      const user = req.portalUser || {};
+      if (!user.email) return res.status(401).json({ success: false, message: 'Sign in again to continue.' });
+      const nextStatus = String(status || '').trim();
+      const nextRemarks = String(remarks || '').trim().slice(0, 2000);
+      if (!rowNumber || !['Pending', 'Resolved'].includes(nextStatus)) {
+        return res.status(400).json({ success: false, message: 'Choose an issue and a valid status.' });
+      }
+      const issue = await mysqlSupportIssues.findIssue(rowNumber);
+      if (!issue) return res.status(404).json({ success: false, message: 'Issue not found.' });
+      const hasIssueAccess = isPlacementTrackerAdmin(user) || isPlacementTrackerTpo(user)
+        ? hasPlacementBranchAccess(issue.branch_name, user)
+        : hasAccess(issue.branch_name, issue.course_name || 'Unknown', user.role,
+          user.assignedBranchesArray, user.assignedCourse, user.department);
+      if (!hasIssueAccess) return res.status(403).json({ success: false, message: 'This issue is outside your branch or course assignment.' });
+      await mysqlSupportIssues.updateIssue({
+        id: issue.id, status: nextStatus, remarks: nextRemarks, actorEmail: user.email,
+        requestId: req.portalAuditRequestId,
+      });
+      return res.json({ success: true, message: 'Issue updated!' });
+    } catch (error) {
+      console.error('Update MySQL issue error:', error.message);
+      return res.status(error.status || 503).json({ success: false, message: error.status ? error.message : 'Issue could not be updated. Please retry shortly.' });
+    }
+  }
   try {
     const issueSheet = doc.sheetsByTitle["Issues"];
     if (!issueSheet) return res.status(503).json({ success: false, message: 'Issues register is unavailable.' });
@@ -4493,6 +4726,28 @@ exports.getPlacementClassificationSuggestion = async (req, res) => {
 
 exports.getPlacedStudents = async (req, res) => {
   const user = req.portalUser || {};
+  if (useMysqlPlacementTracker()) {
+    try {
+      const records = await mysqlPlacementTracker.listPlacedStudents({
+        user,
+        isAdmin: isPlacementTrackerAdmin(user),
+        isTpo: isPlacementTrackerTpo(user),
+      });
+      return res.json({
+        success: true,
+        records,
+        dataMeta: {
+          source: 'MySQL',
+          sourceStatus: 'placement_tracker_records.status',
+          recordCount: records.length,
+          sourceHealthy: true,
+        },
+      });
+    } catch (error) {
+      console.error('MySQL placed-student list failed:', error.message);
+      return res.status(error.status || 500).json({ success: false, message: error.message || 'Placement records could not be loaded from MySQL.' });
+    }
+  }
   let cache = getCache();
   if (!cache) {
     await refreshCache();
@@ -4549,6 +4804,36 @@ exports.deletePlacedStudent = async (req, res) => {
   const rowNumber = Number.parseInt(req.body?.rowNumber, 10);
   if (!Number.isInteger(rowNumber) || rowNumber < 2) {
     return res.status(400).json({ success: false, message: 'A valid TPO_Log row is required.' });
+  }
+
+  if (useMysqlPlacementTracker()) {
+    try {
+      const result = await mysqlPlacementTracker.deletePlacedStudent({
+        user,
+        isAdmin: isPlacementTrackerAdmin(user),
+        isTpo: isPlacementTrackerTpo(user),
+        rowNumber,
+        expected: req.body?.expected || {},
+        reason: req.body?.reason || '',
+        approvalRequestId: approvalExecution ? String(req.deleteApprovalExecution.requestId || '') : '',
+      });
+      if (result.request) {
+        return res.status(202).json({
+          success: true,
+          requestSubmitted: true,
+          requestId: result.request.requestId,
+          message: 'Deletion request sent to Gifty for approval. The placement remains visible until approval.',
+        });
+      }
+      return res.json({
+        success: true,
+        message: 'Placed-student record archived. Its application history remains available.',
+        deleted: result.deleted,
+      });
+    } catch (error) {
+      console.error('MySQL placed-student deletion failed:', error.message);
+      return res.status(error.status || 500).json({ success: false, message: error.message || 'The placement could not be archived.' });
+    }
   }
 
   let auditRecord = null;
@@ -4801,6 +5086,13 @@ exports.getTpoDeleteRequests = async (req, res) => {
     return res.status(403).json({ success: false, message: 'Deletion requests are available only to TPOs and Gifty.' });
   }
   try {
+    if (useMysqlVacancyManagement() || useMysqlPlacementTracker()) {
+      const result = await mysqlVacancyManagement.listDeleteRequests(user, {
+        includeVacancies: useMysqlVacancyManagement(),
+        includePlacements: useMysqlPlacementTracker(),
+      });
+      return res.json({ success: true, canReview: result.canReview, requests: result.requests });
+    }
     const sheet = await ensureTpoDeleteRequestSheet();
     const rows = await sheet.getRows();
     const requests = rows
@@ -4827,6 +5119,25 @@ exports.reviewTpoDeleteRequest = async (req, res) => {
   }
   if (tpoDeleteApprovalLocks.has(requestId)) {
     return res.status(409).json({ success: false, message: 'This request is already being reviewed. Refresh the list in a moment.' });
+  }
+
+  if (useMysqlVacancyManagement() || useMysqlPlacementTracker()) {
+    try {
+      const result = await mysqlVacancyManagement.reviewDeleteRequest({
+        actor: reviewer,
+        requestCode: requestId,
+        decision,
+        notes: decisionNotes,
+        enabledRecordTypes: [
+          ...(useMysqlVacancyManagement() ? ['Vacancy'] : []),
+          ...(useMysqlPlacementTracker() ? ['Placed student'] : []),
+        ],
+      });
+      return res.json({ success: true, status: result.status, message: result.message });
+    } catch (error) {
+      console.error('MySQL opening deletion review failed:', error.message);
+      return res.status(error.status || 409).json({ success: false, message: error.message || 'The opening deletion request could not be reviewed.' });
+    }
   }
 
   try {
@@ -5723,7 +6034,29 @@ const ensureTalentinoScheduleBackfill = async () => {
   }
 };
 
-const serializeEvent = row => ({
+const serializeEvent = row => {
+  if (row?.fields && row?.eventId) return {
+    eventKey: row.eventKey || row.eventId,
+    eventId: row.eventId,
+    rowNumber: row.rowNumber || null,
+    date: row.date,
+    tpo: row.tpo,
+    branch: row.branch,
+    course: row.course,
+    type: row.type,
+    title: row.title,
+    description: row.description,
+    time: row.time,
+    location: row.location,
+    poster: row.poster || row.posterLink || '',
+    status: row.status || 'Scheduled',
+    mailStatus: row.mailStatus || 'PENDING',
+    mailError: row.mailError || '',
+    statusUpdatedAt: row.statusUpdatedAt || '',
+    statusUpdatedBy: row.statusUpdatedBy || '',
+    statusReason: row.statusReason || '',
+  };
+  return ({
   eventKey: getValByHeader(row, ['eventid']) || `row-${row?.rowNumber || ''}`,
   eventId: getValByHeader(row, ['eventid']),
   rowNumber: row?.rowNumber || null,
@@ -5743,7 +6076,8 @@ const serializeEvent = row => ({
   statusUpdatedAt: getExactEventValue(row, ['statusupdatedat']),
   statusUpdatedBy: getExactEventValue(row, ['statusupdatedby']),
   statusReason: getExactEventValue(row, ['statusreason'])
-});
+  });
+};
 
 const eventNotificationRecipients = event => {
   const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
@@ -5776,6 +6110,28 @@ const eventNotificationRecipients = event => {
   return { to: toList.join(','), cc: ccList.join(','), bcc: bccList.join(',') };
 };
 
+const eventNotificationRecipientsMysql = async event => {
+  const contacts = await mysqlEvents.eventRecipients({ branch: event.branch, tpoName: event.tpo });
+  const eventType = String(event.type || '').toLowerCase();
+  const giftyEmail = 'gifty@ipcsglobal.com';
+  const valid = values => [...new Set(values.map(value => String(value || '').trim()).filter(value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)))];
+  let to; let cc; let bcc;
+  if (eventType.includes('talentino')) {
+    to = [contacts.branchManager || contacts.assignedTpo[0]];
+    cc = [giftyEmail, contacts.namedTpoEmail];
+    bcc = [];
+  } else {
+    to = [giftyEmail];
+    cc = ['ajith@ipcsglobal.com', 'rakesh@ipcsglobal.com'];
+    bcc = [...contacts.branchManagers, ...contacts.tpos];
+  }
+  const toList = valid(to);
+  const toKeys = new Set(toList.map(value => value.toLowerCase()));
+  const ccList = valid(cc).filter(value => !toKeys.has(value.toLowerCase()));
+  const ccKeys = new Set([...toKeys, ...ccList.map(value => value.toLowerCase())]);
+  return { to: toList.join(','), cc: ccList.join(','), bcc: valid(bcc).filter(value => !ccKeys.has(value.toLowerCase())).join(',') };
+};
+
 const escapeEventHtml = value => String(value || '').replace(/[&<>"']/g, character => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
 }[character]));
@@ -5802,7 +6158,7 @@ const buildEventStatusEmail = (event, status, details) => {
   };
 };
 
-exports.getEvents = (req, res) => {
+exports.getEvents = async (req, res) => {
   const user = req.portalUser;
   const role = String(user?.role || '').toUpperCase();
   const isTechnicalLead = /TECH(?:NICAL)?\s+LEAD/.test(role) || hasRoleToken(role, 'TL');
@@ -5819,7 +6175,15 @@ exports.getEvents = (req, res) => {
     || hasRoleToken(role, 'TL')
     || hasRoleToken(role, 'TM')
     || role.includes('TERRITORY MANAGER');
-  const allEvents = (getCache()?.events || []).map(serializeEvent);
+  let allEvents;
+  try {
+    allEvents = useMysqlTpoEvents()
+      ? (await mysqlEvents.listEvents()).map(serializeEvent)
+      : (getCache()?.events || []).map(serializeEvent);
+  } catch (error) {
+    console.error('[EVENT] Could not load events from MySQL:', error);
+    return res.status(503).json({ success: false, message: 'Events are temporarily unavailable from the database.' });
+  }
   const events = allEvents.filter(event => {
     if (!event.date || !event.title) return false;
     if (!String(event.type || '').toLowerCase().includes('placement drive')) return true;
@@ -5849,12 +6213,20 @@ exports.addEvent = async (req, res) => {
     : branchText || (String(type || '').toLowerCase().includes('placement drive') ? 'All Branches' : '');
   const date = formatIndiaDate(rawDate);
   const time = formatIndiaTime(rawTime);
+  const mysqlEventMode = useMysqlTpoEvents();
+  const evType = (type || '').toLowerCase();
+  if (mysqlEventMode && evType.includes('talentino')) {
+    return res.status(409).json({ success: false, message: 'Talentino schedule and attendance have not yet been migrated to MySQL. This session was not saved.' });
+  }
+  if (mysqlEventMode && (String(process.env.MYSQL_ENABLED || '').trim().toLowerCase() !== 'true'
+    || String(process.env.MYSQL_EMAIL_ENABLED || '').trim().toLowerCase() !== 'true')) {
+    return res.status(503).json({ success: false, message: 'MySQL events require the shared database and MySQL email queue to be enabled. No Sheets fallback was used.' });
+  }
   try {
-    const eventSheet = doc.sheetsByTitle["Event"];
+    const eventSheet = mysqlEventMode ? null : doc.sheetsByTitle["Event"];
+    if (!mysqlEventMode && !eventSheet) return res.status(503).json({ success: false, message: 'The Event sheet is unavailable.' });
     let posterLink = '';
     if (req.file) posterLink = await uploadToDrive(req.file, FOLDER_OFFER_LETTERS); 
-    
-    const evType = (type || '').toLowerCase();
     const senderEmail = process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com';
     const formattedDesc = String(description || 'N/A').replace(/(?:\r\n|\r|\n)/g, '<br/>');
 
@@ -5897,9 +6269,13 @@ exports.addEvent = async (req, res) => {
       'Status': 'Scheduled'
     };
 
-    // Add to sheet
-    await ensureEventHeaders(eventSheet, Object.keys(rowData));
-    const newRow = await eventSheet.addRow(rowData);
+    // Persist to the selected backend; the MySQL path does not read or write Sheets.
+    const newRow = mysqlEventMode
+      ? await mysqlEvents.createEvent({ fields: rowData, actorEmail: authenticatedUser.email, requestId: req.requestId })
+      : await (async () => {
+        await ensureEventHeaders(eventSheet, Object.keys(rowData));
+        return eventSheet.addRow(rowData);
+      })();
     let scheduleSyncError = '';
     if (evType.includes('talentino')) {
       try {
@@ -5911,9 +6287,9 @@ exports.addEvent = async (req, res) => {
     }
 
     // 🚨 GUARANTEED EXECUTIVE EMAILS (Fallback to hardcoded if ID lookup fails)
-    const giftyEmail = getUserEmailById('U003') || 'gifty@ipcsglobal.com';
-    const ajithEmail = getUserEmailById('U001') || 'ajith@ipcsglobal.com';
-    const rakeshEmail = getUserEmailById('U002') || 'rakesh@ipcsglobal.com';
+    const giftyEmail = mysqlEventMode ? 'gifty@ipcsglobal.com' : getUserEmailById('U003') || 'gifty@ipcsglobal.com';
+    const ajithEmail = mysqlEventMode ? 'ajith@ipcsglobal.com' : getUserEmailById('U001') || 'ajith@ipcsglobal.com';
+    const rakeshEmail = mysqlEventMode ? 'rakesh@ipcsglobal.com' : getUserEmailById('U002') || 'rakesh@ipcsglobal.com';
 
     const logo1 = "https://lh3.googleusercontent.com/d/1VqmH9-l2lBHErJPW1tCjtCu-SrTEMPtN";
     const logo2 = "https://lh3.googleusercontent.com/d/1bHpUfH_578DmfityB9cOgFNYhbBGdG9J";
@@ -5922,8 +6298,9 @@ exports.addEvent = async (req, res) => {
     let mailOptions = null;
 
     if (evType.includes('placement drive')) {
-      const allTpos = getAllTpoEmails();
-      const allBMs = getAllBranchManagerEmails();
+      const mysqlRecipients = mysqlEventMode ? await mysqlEvents.eventRecipients() : null;
+      const allTpos = mysqlEventMode ? mysqlRecipients.tpos : getAllTpoEmails();
+      const allBMs = mysqlEventMode ? mysqlRecipients.branchManagers : getAllBranchManagerEmails();
       
       const toEmail = giftyEmail || senderEmail;
       const ccList = [ajithEmail, rakeshEmail].filter(Boolean).join(',');
@@ -6090,9 +6467,11 @@ exports.addEvent = async (req, res) => {
       };
     }
 
-    const eventCache = getCache();
-    if (eventCache) eventCache.events = [...(eventCache.events || []).filter(row => String(getValByHeader(row, ['eventid'])) !== String(eventId)), newRow];
-    void refreshCache().catch(error => console.error('Event cache refresh failed:', error));
+    if (!mysqlEventMode) {
+      const eventCache = getCache();
+      if (eventCache) eventCache.events = [...(eventCache.events || []).filter(row => String(getValByHeader(row, ['eventid'])) !== String(eventId)), newRow];
+      void refreshCache().catch(error => console.error('Event cache refresh failed:', error));
+    }
 
     if (mailOptions) {
       // Keep email provider timeouts out of the event-save request. The event is
@@ -6101,7 +6480,7 @@ exports.addEvent = async (req, res) => {
         let deliveryError = null;
         let mailResult = null;
         try {
-          mailResult = await sendMailAndLog(mailOptions, {
+          mailResult = await sendEventMail(mailOptions, {
             name: branch,
             email: mailOptions.to,
             type: 'Event Notification',
@@ -6113,29 +6492,34 @@ exports.addEvent = async (req, res) => {
           deliveryError = mailErr;
         }
 
-        const normalizeHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-        const headerFor = name => newRow._worksheet.headerValues.find(header => normalizeHeader(header) === normalizeHeader(name));
-        const updateData = {};
-        const mailStatusH = headerFor('mailstatus');
-        const mailSentAtH = headerFor('mailsentat');
-        const mailErrorH = headerFor('mailerror');
-
-        if (mailStatusH) updateData[mailStatusH] = deliveryError ? 'FAILED' : mailResult?.queued ? 'QUEUED' : 'SENT';
-        if (mailSentAtH && !deliveryError && !mailResult?.queued) updateData[mailSentAtH] = formatIndiaTimestamp();
-        if (mailErrorH) updateData[mailErrorH] = deliveryError ? deliveryError.message : '';
-
-        if (Object.keys(updateData).length) {
+        if (mysqlEventMode) {
           try {
-            newRow.assign(updateData);
-            await newRow.save();
+            const deliveredStatus = deliveryError ? 'FAILED' : mailResult?.queued ? 'QUEUED' : 'SENT';
+            await mysqlEvents.setMailStatus({ eventKey: eventId, status: deliveredStatus,
+              error: deliveryError?.message || '', sentAt: deliveredStatus === 'SENT' ? formatIndiaTimestamp() : '' });
           } catch (statusErr) {
-            console.error('Could not update event mail status:', statusErr);
+            console.error('Could not update MySQL event mail status:', statusErr);
           }
-        }
-
-        const latestCache = getCache();
-        if (latestCache) {
-          latestCache.events = [...(latestCache.events || []).filter(row => String(getValByHeader(row, ['eventid'])) !== String(eventId)), newRow];
+        } else {
+          const normalizeHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+          const headerFor = name => newRow._worksheet.headerValues.find(header => normalizeHeader(header) === normalizeHeader(name));
+          const updateData = {};
+          const mailStatusH = headerFor('mailstatus');
+          const mailSentAtH = headerFor('mailsentat');
+          const mailErrorH = headerFor('mailerror');
+          if (mailStatusH) updateData[mailStatusH] = deliveryError ? 'FAILED' : mailResult?.queued ? 'QUEUED' : 'SENT';
+          if (mailSentAtH && !deliveryError && !mailResult?.queued) updateData[mailSentAtH] = formatIndiaTimestamp();
+          if (mailErrorH) updateData[mailErrorH] = deliveryError ? deliveryError.message : '';
+          if (Object.keys(updateData).length) {
+            try {
+              newRow.assign(updateData);
+              await newRow.save();
+            } catch (statusErr) {
+              console.error('Could not update event mail status:', statusErr);
+            }
+          }
+          const latestCache = getCache();
+          if (latestCache) latestCache.events = [...(latestCache.events || []).filter(row => String(getValByHeader(row, ['eventid'])) !== String(eventId)), newRow];
         }
 
         if (deliveryError) console.error(`Event ${eventId} was saved, but notification delivery failed:`, deliveryError);
@@ -6177,6 +6561,70 @@ const updateEventStatus = async (req, res, nextStatus) => {
   const nextEventTime = nextStatus === 'Rescheduled' ? formatIndiaTime(requestedTime) : '';
 
   try {
+    if (useMysqlTpoEvents()) {
+      if (String(process.env.MYSQL_ENABLED || '').trim().toLowerCase() !== 'true'
+        || String(process.env.MYSQL_EMAIL_ENABLED || '').trim().toLowerCase() !== 'true') {
+        return res.status(503).json({ success: false, message: 'MySQL event updates require the shared database and MySQL email queue. No Sheets fallback was used.' });
+      }
+      const matchingEvents = (await mysqlEvents.listEvents()).filter(event =>
+        String(event.eventId || '').toLowerCase() === eventKey.toLowerCase()
+        || String(event.eventKey || '').toLowerCase() === eventKey.toLowerCase()
+        || (eventKey.match(/^row-(\d+)$/i) && Number(event.rowNumber) === Number(eventKey.match(/^row-(\d+)$/i)[1])));
+      if (!matchingEvents.length) return res.status(404).json({ success: false, message: 'This event could not be found. Refresh the calendar and try again.' });
+      if (matchingEvents.length > 1) return res.status(409).json({ success: false, message: 'This event reference matches multiple records and needs staff review.' });
+      const existingEvent = matchingEvents[0];
+      if (String(existingEvent.type || '').toLowerCase().includes('talentino')) {
+        return res.status(409).json({ success: false, message: 'Talentino schedule and attendance have not yet been migrated to MySQL. This event was not changed.' });
+      }
+      const user = req.portalUser || {};
+      const eventOwner = existingEvent.createdBy || existingEvent.tpo;
+      if (isPlacementTrackerTpo(user) && !placementOwnerMatchesUser(eventOwner, user)) {
+        return res.status(403).json({ success: false, message: 'You can cancel or reschedule only events created by your account.' });
+      }
+      const recipients = await eventNotificationRecipientsMysql(existingEvent);
+      if (!recipients.to) return res.status(400).json({ success: false, message: `No valid email recipient is configured for this ${existingEvent.type || 'event'}. The event was not changed.` });
+      const updated = await mysqlEvents.updateEventStatus({ eventKey, status: nextStatus, reason,
+        date: requestedDate, time: requestedTime, actor: user, requestId: req.requestId });
+      let emailSent = false;
+      let emailQueued = false;
+      let emailError = '';
+      let emailReview = false;
+      try {
+        const mailContent = buildEventStatusEmail(updated.event, nextStatus, { reason, previousDate: updated.previousDate, previousTime: updated.previousTime });
+        const mailResult = await sendEventMail({
+          from: `"IPCS Global Placement Cell" <${process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com'}>`,
+          to: recipients.to,
+          cc: recipients.cc,
+          bcc: recipients.bcc,
+          subject: mailContent.subject,
+          html: mailContent.html,
+        }, {
+          name: existingEvent.branch || existingEvent.title,
+          email: [recipients.to, recipients.cc, recipients.bcc].filter(Boolean).join(','),
+          type: `${nextStatus} Event Notification`, category: 'placement',
+          queueContext: { eventId: existingEvent.eventId || existingEvent.eventKey, statusPrefix: `${nextStatus.toUpperCase()} NOTICE` },
+        });
+        emailQueued = Boolean(mailResult?.queued);
+        emailSent = !emailQueued;
+      } catch (mailError) {
+        emailError = String(mailError?.message || 'The email service did not accept the notification.');
+        emailReview = isMailDeliveryUncertain(mailError);
+        console.error(`[EVENT] ${nextStatus} notification failed for ${existingEvent.eventId}:`, mailError);
+      }
+      const mailStatus = `${nextStatus.toUpperCase()} NOTICE ${emailQueued ? 'QUEUED' : emailSent ? 'SENT' : emailReview ? 'REVIEW' : 'FAILED'}`;
+      await mysqlEvents.setMailStatus({ eventKey, status: mailStatus, error: emailError });
+      return res.json({
+        success: true, emailSent, emailQueued, event: { ...updated.event, mailStatus, mailError: emailError },
+        scheduleSynced: false, scheduleSyncError: '',
+        message: emailSent
+          ? `Event ${nextStatus.toLowerCase()} and notification email sent.`
+          : emailQueued
+            ? `Event ${nextStatus.toLowerCase()}; notification email queued for retry.`
+            : emailReview
+              ? `Event ${nextStatus.toLowerCase()}, but email delivery is uncertain. Check the sender's Sent folder and recipient before retrying.`
+              : `Event ${nextStatus.toLowerCase()}, but the notification email could not be sent: ${emailError}`,
+      });
+    }
     await loadDocInfo();
     const eventSheet = doc.sheetsByTitle.Event;
     if (!eventSheet) return res.status(503).json({ success: false, message: 'The Event sheet is unavailable.' });
@@ -6870,6 +7318,10 @@ exports.getPublicPartners = async (req, res) => {
 
 exports.getPublicPlacementTeam = async (_req, res) => {
   try {
+    if (useMysqlTpoUserManagement()) {
+      const team = await mysqlAdminUsers.listPublicPlacementTeam();
+      return res.json({ success: true, team });
+    }
     let rows = getCache()?.contacts;
     if (!Array.isArray(rows) || rows.length === 0) {
       await loadDocInfo();
@@ -8249,6 +8701,10 @@ exports.submitMou = async (req, res) => {
 // =========================================================
 exports.getAdminUsers = async (req, res) => {
   try {
+    if (useMysqlTpoUserManagement()) {
+      const users = await mysqlAdminUsers.listUsers({ month: req.query?.month });
+      return res.json({ success: true, users });
+    }
     const cache = getCache();
     // Target rows are refreshed with the shared workbook cache and updated in
     // place by syncTpoStats. Reading the whole sheet for every user-list load
@@ -8355,7 +8811,8 @@ const invalidateStaffAccountSessions = (email, row = null) => {
 const targetAssignmentMailRunsInFlight = new Set();
 const isValidMonthlyTarget = value => /^\d+$/.test(String(value ?? '').trim())
   && Number.isSafeInteger(Number(value))
-  && Number(value) >= 0;
+  && Number(value) >= 0
+  && Number(value) <= 4294967295;
 const validateAdminTpoProfile = body => {
   const limits = [
     ['LinkedIn', body?.linkedIn, 500],
@@ -8550,8 +9007,102 @@ const sendTpoTargetAssignmentMailIfComplete = async (reportMonth, actorEmail) =>
   }
 };
 
+const sendMysqlTargetAssignmentMail = async targetMail => {
+  if (targetMail?.status !== 'pending_mysql_mail') return targetMail;
+  const { tpos = [], ...summary } = targetMail;
+  if (String(process.env.MYSQL_EMAIL_ENABLED || '').trim().toLowerCase() !== 'true') {
+    return {
+      ...summary,
+      message: `${targetMail.message} Email delivery is implemented but remains disabled until the local MySQL mail checks are complete.`,
+    };
+  }
+  const month = String(targetMail.month || '').trim();
+  // Target rows are already saved before this call. The month is supplied by
+  // the request context in the public handlers below.
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    return { status: 'failed', message: 'Targets were saved, but the selected month could not be prepared for the team email.' };
+  }
+  const monthDate = new Date(`${month}-01T12:00:00+05:30`);
+  const monthLabel = new Intl.DateTimeFormat('en-IN', {
+    timeZone: 'Asia/Kolkata', month: 'long', year: 'numeric',
+  }).format(monthDate);
+  const mail = buildTpoTargetAssignmentMail({ monthLabel, tpos });
+  if (!mail.to.length) return { status: 'waiting', message: 'No active TPO email addresses are available for the target summary.' };
+  const snapshot = tpos.map(tpo => ({
+    id: String(tpo.userId || ''),
+    email: String(tpo.email || '').trim().toLowerCase(),
+    target: Number(tpo.target),
+  })).sort((left, right) => left.id.localeCompare(right.id));
+  const idempotencyKey = `tpo-targets:${month}:${createHash('sha256').update(JSON.stringify(snapshot)).digest('hex')}`;
+  try {
+    const delivery = await sendIPCSMail({
+      from: { name: 'IPCS Global Placement Team' },
+      to: mail.to.join(','),
+      cc: mail.cc.join(','),
+      subject: mail.subject,
+      text: mail.text,
+      html: mail.html,
+    }, {
+      category: 'placement',
+      idempotencyKey,
+      relatedEntityType: 'placement_target_summary',
+      relatedEntityId: month,
+      logDetails: { name: 'Active TPO Team', email: [...mail.to, ...mail.cc].join(','), type: 'TPO Monthly Target Assignment' },
+    });
+    const status = delivery?.queued ? 'queued' : delivery?.deduplicated ? 'already_sent' : 'sent';
+    return {
+      ...summary,
+      status,
+      message: status === 'queued'
+        ? `The ${monthLabel} target email was queued for delivery.`
+        : status === 'already_sent'
+          ? `The ${monthLabel} target email was already delivered or queued.`
+          : `The ${monthLabel} target email was sent to all active TPOs.`,
+      totalTarget: mail.totalTarget,
+      tpoCount: mail.tpoCount,
+    };
+  } catch (error) {
+    const needsReview = isMailDeliveryUncertain(error);
+    return {
+      ...summary,
+      status: needsReview ? 'review' : 'failed',
+      message: needsReview
+        ? `Targets were saved, but email delivery is uncertain. Check the MySQL mail log before retrying. ${error.message}`
+        : `Targets were saved, but the team email could not be sent. ${error.message}`,
+    };
+  }
+};
+
 exports.addAdminUser = async (req, res) => {
   try {
+    if (useMysqlTpoUserManagement()) {
+      const { userName, email, target, role } = req.body;
+      const cleanEmail = String(email || '').trim().toLowerCase();
+      const password = typeof req.body.newPassword === 'string' ? req.body.newPassword : req.body.password;
+      if (!String(userName || '').trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        return res.status(400).json({ success: false, message: 'Enter the employee name and a valid login email.' });
+      }
+      if (isPlacementTrackerTpo({ role })) {
+        const profileError = validateAdminTpoProfile(req.body);
+        if (profileError) return res.status(400).json({ success: false, message: profileError });
+      }
+      if (String(target ?? '').trim() && (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(req.body.targetMonth || '').trim())
+        || !isPlacementTrackerTpo({ role }))) {
+        return res.status(400).json({ success: false, message: 'Monthly targets require a TPO account and a selected target month.' });
+      }
+      if (String(target ?? '').trim() && !isValidMonthlyTarget(target)) {
+        return res.status(400).json({ success: false, message: 'A monthly placement target must be a whole number of zero or more.' });
+      }
+      const passwordError = validatePassword(password);
+      if (passwordError) return res.status(400).json({ success: false, message: passwordError });
+      if (req.portalUser?.accessType !== 'superadmin') {
+        return res.status(403).json({ success: false, message: 'Only a Super Admin can manage staff accounts.' });
+      }
+      const passwordHash = await hashPassword(password);
+      const result = await mysqlAdminUsers.saveUser(req.body, { actor: { ...req.portalUser, requestId: req.portalAuditRequestId }, passwordHash });
+      const targetMail = await sendMysqlTargetAssignmentMail({ ...result.targetMail, month: req.body.targetMonth });
+      return res.json({ success: true, message: 'User added', user: result.user, targetMail });
+    }
     const { userName, contact, email, sittingBranch, assignedBranches, role, course, access, empId, target, targetMonth, linkedIn, birthday, position, description } = req.body;
     const password = typeof req.body.newPassword === 'string' ? req.body.newPassword : req.body.password;
     const cleanEmail = String(email || '').trim().toLowerCase();
@@ -8647,12 +9198,57 @@ exports.addAdminUser = async (req, res) => {
       : null;
     res.json({ success: true, message: "User added", user: { sheet: sheetName, rowNumber: createdRow?.rowNumber || null }, targetMail });
   } catch (err) { 
-    res.status(500).json({ success: false, message: err.message }); 
+    res.status(err.status || 500).json({ success: false, message: err.message });
   }
 };
 
 exports.updateAdminUser = async (req, res) => {
   try {
+    if (useMysqlTpoUserManagement()) {
+      const { userName, email, target, role, userId } = req.body;
+      const cleanEmail = String(email || '').trim().toLowerCase();
+      const cleanUserId = String(userId || '').trim();
+      const passwordToSet = typeof req.body.newPassword === 'string' ? req.body.newPassword : (typeof req.body.password === 'string' ? req.body.password : '');
+      if (!cleanUserId) return res.status(400).json({ success: false, message: 'Select a MySQL staff account to update.' });
+      if (!String(userName || '').trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        return res.status(400).json({ success: false, message: 'Enter the employee name and a valid login email.' });
+      }
+      if (isPlacementTrackerTpo({ role })) {
+        const profileError = validateAdminTpoProfile(req.body);
+        if (profileError) return res.status(400).json({ success: false, message: profileError });
+      }
+      if (String(target ?? '').trim() && (!/^\d{4}-(0[1-9]|1[0-2])$/.test(String(req.body.targetMonth || '').trim())
+        || !isPlacementTrackerTpo({ role }))) {
+        return res.status(400).json({ success: false, message: 'Monthly targets require a TPO account and a selected target month.' });
+      }
+      if (String(target ?? '').trim() && !isValidMonthlyTarget(target)) {
+        return res.status(400).json({ success: false, message: 'A monthly placement target must be a whole number of zero or more.' });
+      }
+      if (passwordToSet) {
+        const passwordError = validatePassword(passwordToSet);
+        if (passwordError) return res.status(400).json({ success: false, message: passwordError });
+      }
+      if (req.portalUser?.accessType !== 'superadmin') {
+        return res.status(403).json({ success: false, message: 'Only a Super Admin can manage staff accounts.' });
+      }
+      const targetMonth = String(req.body.targetMonth || '').trim() || mysqlAdminUsers.indiaMonth();
+      const existing = await mysqlAdminUsers.getUser(cleanUserId, { month: targetMonth });
+      if (!existing) return res.status(404).json({ success: false, message: 'The selected staff account could not be found.' });
+      const targetText = String(target ?? '').trim();
+      const targetTouched = req.body.targetChanged === true
+        || (req.body.targetChanged === undefined && targetText !== String(existing.target ?? '').trim());
+      const targetChanged = isPlacementTrackerTpo({ role }) && targetText !== '' && targetTouched
+        && targetText !== String(existing.target ?? '').trim();
+      const passwordHash = passwordToSet ? await hashPassword(passwordToSet) : null;
+      const result = await mysqlAdminUsers.saveUser(req.body, {
+        userId: cleanUserId,
+        actor: { ...req.portalUser, requestId: req.portalAuditRequestId },
+        passwordHash,
+        targetChanged,
+      });
+      const targetMail = await sendMysqlTargetAssignmentMail({ ...result.targetMail, month: targetMonth });
+      return res.json({ success: true, message: 'User updated', user: result.user, targetMail });
+    }
     const { sheet, rowNumber, userName, contact, email, sittingBranch, assignedBranches, role, course, access, empId, target, targetMonth, linkedIn, birthday, position, description } = req.body;
     const passwordToSet = typeof req.body.newPassword === 'string' ? req.body.newPassword : (typeof req.body.password === 'string' ? req.body.password : '');
     const cleanEmail = String(email || '').trim().toLowerCase();
@@ -8787,7 +9383,7 @@ exports.updateAdminUser = async (req, res) => {
       res.status(404).json({ success: false, message: "User row not found" }); 
     }
   } catch (err) { 
-    res.status(500).json({ success: false, message: err.message }); 
+    res.status(err.status || 500).json({ success: false, message: err.message });
   }
 };
 
@@ -8795,6 +9391,19 @@ exports.updateAdminUserPhoto = async (req, res) => {
   try {
     if (req.portalUser?.accessType !== 'superadmin') {
       return res.status(403).json({ success: false, message: 'Only a Super Admin can manage another user’s profile photo.' });
+    }
+    if (useMysqlTpoUserManagement()) {
+      const userId = String(req.body?.userId || '').trim();
+      const remove = String(req.body?.remove || '').toLowerCase() === 'true';
+      if (!userId) return res.status(400).json({ success: false, message: 'Choose a staff account before changing its profile photo.' });
+      if (!remove && !req.file) return res.status(400).json({ success: false, message: 'Choose an image file to upload.' });
+      if (req.file && !['image/jpeg', 'image/png', 'image/webp'].includes(String(req.file.mimetype || '').toLowerCase())) {
+        return res.status(415).json({ success: false, message: 'Upload a JPG, PNG, or WebP image.' });
+      }
+      const photoUrl = remove ? '' : String(await uploadToDrive(req.file, FOLDER_CLIENT_LOGOS) || '').trim();
+      if (!remove && !photoUrl) throw new Error('Google Drive did not return a photo link, so the profile was not updated.');
+      const user = await mysqlAdminUsers.updateProfilePhoto(userId, photoUrl, { actor: { ...req.portalUser, requestId: req.portalAuditRequestId } });
+      return res.json({ success: true, photoUrl, photoUpdatedAt: Date.now(), user, message: remove ? 'Profile photo removed.' : 'Profile photo updated.' });
     }
     const sheetName = String(req.body?.sheet || '').trim();
     const rowNumber = Number(req.body?.rowNumber);
@@ -8835,12 +9444,21 @@ exports.updateAdminUserPhoto = async (req, res) => {
     const photoUpdatedAt = Date.now();
     return res.json({ success: true, photoUrl, photoUpdatedAt, message: remove ? 'Profile photo removed.' : 'Profile photo updated.' });
   } catch (error) {
-    return res.status(500).json({ success: false, message: error.message || 'The profile photo could not be updated.' });
+    return res.status(error.status || 500).json({ success: false, message: error.message || 'The profile photo could not be updated.' });
   }
 };
 
 exports.deleteAdminUser = async (req, res) => {
   try {
+    if (useMysqlTpoUserManagement()) {
+      const userId = String(req.body?.userId || '').trim();
+      if (!userId) return res.status(400).json({ success: false, message: 'Choose a staff account to deactivate.' });
+      if (req.portalUser?.accessType !== 'superadmin') {
+        return res.status(403).json({ success: false, message: 'Only a Super Admin can manage staff accounts.' });
+      }
+      const user = await mysqlAdminUsers.deactivateUser(userId, { actor: { ...req.portalUser, requestId: req.portalAuditRequestId } });
+      return res.json({ success: true, message: 'User deactivated', user });
+    }
     const { sheet, rowNumber } = req.body;
     const cleanSheet = String(sheet || '');
     const numericRowNumber = Number(rowNumber);
@@ -8865,7 +9483,7 @@ exports.deleteAdminUser = async (req, res) => {
       res.status(404).json({ success: false, message: "User not found" }); 
     }
   } catch (err) { 
-    res.status(500).json({ success: false, message: err.message }); 
+    res.status(err.status || 500).json({ success: false, message: err.message });
   }
 };
 
@@ -9987,7 +10605,7 @@ exports.getSecurityLogs = (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-exports.verifySession = (req, res) => {
+exports.verifySession = async (req, res) => {
   const { email, sessionToken } = req.body;
   const cleanEmail = String(email || '').trim().toLowerCase().slice(0, 254);
   req.auditAttempt = cleanEmail ? { kind: 'session-verification', identifier: cleanEmail } : null;
@@ -9995,6 +10613,37 @@ exports.verifySession = (req, res) => {
     req.auditReason = 'Session verification request was missing its account ID or token.';
     req.auditResult = 'Rejected';
     return res.json({ valid: false, reason: 'MISSING_PAYLOAD' });
+  }
+
+  if (useMysqlTpoAuth()) {
+    let checkedSession;
+    try {
+      checkedSession = await getMysqlSessionAccount(cleanEmail, sessionToken);
+    } catch (error) {
+      req.auditReason = 'Session verification could not reach the MySQL account store.';
+      req.auditDetails = { mysqlAuthEnabled: true };
+      req.auditResult = 'Unavailable';
+      console.error('[TPO AUTH] MySQL session verification failed:', error.message);
+      return res.status(503).json({ valid: null, reason: 'AUTH_SOURCE_UNAVAILABLE', message: 'Session check is temporarily unavailable. Please retry shortly.' });
+    }
+    if (!checkedSession) {
+      req.auditReason = 'Session could not be matched to an active MySQL staff account; it may be expired, revoked, or disabled.';
+      req.auditDetails = { mysqlAuthEnabled: true, accountRecordAvailable: false };
+      req.auditResult = 'Rejected';
+      return res.json({ valid: false, reason: 'SESSION_EXPIRED', message: 'Your session expired. Please sign in again.' });
+    }
+    req.auditActor = checkedSession.user;
+    req.auditResult = 'Success';
+    const row = checkedSession.account.row;
+    return res.json({
+      valid: true,
+      expiresIn: SESSION_TOKEN_TTL_MS,
+      profile: {
+        photo: row.profile_photo_url || '',
+        position: row.position_title || '',
+        description: row.description || '',
+      },
+    });
   }
 
   const user = exports.getSessionUser(email, sessionToken);
@@ -10048,6 +10697,24 @@ exports.getSessionUser = (email, sessionToken) => {
     : currentVersion;
   if (!expectedVersion || expectedVersion !== currentVersion) return null;
   return readPortalSessionToken(cleanEmail, sessionToken, expectedVersion);
+};
+
+async function getMysqlSessionAccount(email, sessionToken) {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (!cleanEmail || !sessionToken) return null;
+  const account = await mysqlTpoAuth.findAccountByEmail(cleanEmail);
+  if (!account || !mysqlTpoAuth.isAccountEnabled(account.row)) return null;
+  const currentVersion = getAccountVersion(account.authState);
+  const signedUser = readPortalSessionToken(cleanEmail, sessionToken, currentVersion);
+  if (!signedUser) return null;
+  const user = { ...account.sessionUser, loginId: signedUser.loginId || account.sessionUser.loginId };
+  return { account, user };
+}
+
+exports.getSessionUserAsync = async (email, sessionToken) => {
+  if (!useMysqlTpoAuth()) return exports.getSessionUser(email, sessionToken);
+  const checkedSession = await getMysqlSessionAccount(email, sessionToken);
+  return checkedSession?.user || null;
 };
 
 // =========================================================

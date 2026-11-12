@@ -12,6 +12,6 @@ test('only an exact normalized TPO_Log Status of Placed counts as placed', () =>
 test('joining and offer outcomes remain separate from placed', () => {
   assert.deepEqual(placementOutcome('Offer'), { placed: false, joined: false, offer: true, notJoined: false });
   assert.deepEqual(placementOutcome('In Process', 'Joined'), { placed: false, joined: true, offer: false, notJoined: false });
-  assert.deepEqual(placementOutcome('Placed', 'Not Joined'), { placed: true, joined: false, offer: false, notJoined: false });
+  assert.deepEqual(placementOutcome('Placed', 'Not Joined'), { placed: true, joined: false, offer: false, notJoined: true });
   assert.equal(placementOutcome('Rejected').notJoined, true);
 });

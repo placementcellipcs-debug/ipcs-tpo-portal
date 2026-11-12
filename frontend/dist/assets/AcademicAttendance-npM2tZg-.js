@@ -1,1 +1,0 @@
-import{t as e}from"./jsx-runtime-D65ibrDb.js";import t from"./AcademicWorkspace-D51ZfbEU.js";var n=e();function r(){return(0,n.jsx)(t,{module:`attendance`})}export{r as default};

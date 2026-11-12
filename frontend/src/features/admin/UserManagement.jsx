@@ -38,6 +38,7 @@ export default function UserManagement() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [showInactive, setShowInactive] = useState(false);
   
   const [selectedRole, setSelectedRole] = useState(null); 
   const [viewType, setViewType] = useState('list');
@@ -60,7 +61,7 @@ export default function UserManagement() {
   const isGifty = String(tpoData?.email || '').toLowerCase().includes('gifty');
   
   const initialFormState = {
-    sheet: 'User', rowNumber: null, userName: '', email: '', contact: '', newPassword: '',
+    userId: null, sheet: 'User', rowNumber: null, userName: '', email: '', contact: '', newPassword: '',
     role: 'Regional Technical Head', course: '', sittingBranch: '', 
     assignedBranches: [], access: 'View Only',
     empId: '', target: '', targetMonth: currentIndiaMonth(), profilePhoto: '',
@@ -108,19 +109,21 @@ export default function UserManagement() {
 
   useEffect(() => {
     const isTpoAccount = /tpo|placement officer/i.test(String(formData.role || ''));
-    if (!isModalOpen || !isEditMode || !isTpoAccount || !formData.rowNumber || !formData.targetMonth) return undefined;
+    if (!isModalOpen || !isEditMode || !isTpoAccount || (!formData.userId && !formData.rowNumber) || !formData.targetMonth) return undefined;
     let active = true;
     axios.get(`${API_BASE}/api/admin/users`, { params: { month: formData.targetMonth } })
       .then(response => {
         if (!active || !response.data?.success) return;
-        const match = (response.data.users || []).find(user => user.sheet === formData.sheet && Number(user.rowNumber) === Number(formData.rowNumber));
+        const match = (response.data.users || []).find(user => formData.userId
+          ? user.userId === formData.userId
+          : user.sheet === formData.sheet && Number(user.rowNumber) === Number(formData.rowNumber));
         setFormData(current => current.targetMonth === formData.targetMonth && current.target === ''
           ? { ...current, target: match?.target ?? '' }
           : current);
       })
       .catch(() => {});
     return () => { active = false; };
-  }, [isModalOpen, isEditMode, formData.sheet, formData.rowNumber, formData.role, formData.targetMonth]);
+  }, [isModalOpen, isEditMode, formData.userId, formData.sheet, formData.rowNumber, formData.role, formData.targetMonth]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -151,6 +154,7 @@ export default function UserManagement() {
   const openEditModal = (user) => {
     setTargetTouched(false);
     setFormData({
+      userId: user.userId || null,
       sheet: user.sheet,
       rowNumber: user.rowNumber,
       userName: user.userName,
@@ -200,11 +204,11 @@ export default function UserManagement() {
         let photoWarning = '';
         let photoSaved = false;
         const photoTarget = isEditMode
-          ? { sheet: formData.sheet, rowNumber: formData.rowNumber }
+          ? { userId: formData.userId, sheet: formData.sheet, rowNumber: formData.rowNumber }
           : res.data.user;
-        if (photoFile && photoTarget?.sheet && photoTarget?.rowNumber) {
+        if (photoFile && (photoTarget?.userId || (photoTarget?.sheet && photoTarget?.rowNumber))) {
           try {
-            const photoResponse = await uploadAdminProfilePhoto(photoTarget.sheet, photoTarget.rowNumber, photoFile);
+            const photoResponse = await uploadAdminProfilePhoto(photoTarget, photoFile);
             photoSaved = Boolean(photoResponse.data?.photoUrl);
           } catch (photoError) {
             const reason = photoError.response?.data?.message || photoError.message || 'Please try again.';
@@ -242,13 +246,14 @@ export default function UserManagement() {
     }
   };
 
-  const handleDeleteUser = (sheet, rowNumber, userName) => setDeleteTarget({ sheet, rowNumber, userName });
+  const handleDeleteUser = user => setDeleteTarget({ userId: user.userId, sheet: user.sheet, rowNumber: user.rowNumber, userName: user.userName });
 
-  const uploadAdminProfilePhoto = async (sheet, rowNumber, file) => {
+  const uploadAdminProfilePhoto = async (account, file) => {
     const payload = new FormData();
     payload.append('photo', file);
-    payload.append('sheet', sheet);
-    payload.append('rowNumber', String(rowNumber));
+    if (account.userId) payload.append('userId', account.userId);
+    if (account.sheet) payload.append('sheet', account.sheet);
+    if (account.rowNumber) payload.append('rowNumber', String(account.rowNumber));
     const response = await axios.post(`${API_BASE}/api/admin/users/profile-photo`, payload);
     if (!response.data?.success) throw new Error(response.data?.message || 'The profile photo could not be updated.');
     return response;
@@ -258,10 +263,14 @@ export default function UserManagement() {
     if (!deleteTarget) return;
     setDeleteWorking(true);
     try {
-      const res = await axios.post(`${API_BASE}/api/admin/users/delete`, { sheet: deleteTarget.sheet, rowNumber: deleteTarget.rowNumber });
+      const res = await axios.post(`${API_BASE}/api/admin/users/delete`, { userId: deleteTarget.userId, sheet: deleteTarget.sheet, rowNumber: deleteTarget.rowNumber });
       if (res.data.success) {
-        setUsers(users.filter(u => u.rowNumber !== deleteTarget.rowNumber || u.sheet !== deleteTarget.sheet));
-        setToast({ type: 'success', title: 'User removed', message: `${deleteTarget.userName || 'The user'} was removed.` });
+        if (deleteTarget.userId) {
+          setUsers(current => current.map(user => user.userId === deleteTarget.userId ? { ...user, status: 'Inactive' } : user));
+        } else {
+          setUsers(current => current.filter(user => user.rowNumber !== deleteTarget.rowNumber || user.sheet !== deleteTarget.sheet));
+        }
+        setToast({ type: 'success', title: 'User deactivated', message: `${deleteTarget.userName || 'The user'} can no longer sign in.` });
         setDeleteTarget(null);
       } else throw new Error(res.data?.message || 'The user could not be removed.');
     } catch (deleteError) {
@@ -272,20 +281,22 @@ export default function UserManagement() {
   };
 
   const saveProfilePhoto = async (remove = false) => {
-    if (!formData.sheet || !formData.rowNumber || (!remove && !photoFile)) return;
+    if ((!formData.userId && (!formData.sheet || !formData.rowNumber)) || (!remove && !photoFile)) return;
     setPhotoSaving(true);
     try {
       let response;
       if (remove) {
-        response = await axios.post(`${API_BASE}/api/admin/users/profile-photo`, { sheet: formData.sheet, rowNumber: formData.rowNumber, remove: true });
+        response = await axios.post(`${API_BASE}/api/admin/users/profile-photo`, { userId: formData.userId, sheet: formData.sheet, rowNumber: formData.rowNumber, remove: true });
       } else {
-        response = await uploadAdminProfilePhoto(formData.sheet, formData.rowNumber, photoFile);
+        response = await uploadAdminProfilePhoto(formData, photoFile);
       }
       if (!response.data?.success) throw new Error(response.data?.message || 'The profile photo could not be updated.');
       const profilePhoto = remove ? '' : response.data.photoUrl || '';
       setFormData(current => ({ ...current, profilePhoto }));
       setPhotoFile(null);
-      setUsers(current => current.map(user => user.sheet === formData.sheet && Number(user.rowNumber) === Number(formData.rowNumber) ? { ...user, profilePhoto } : user));
+      setUsers(current => current.map(user => formData.userId
+        ? user.userId === formData.userId ? { ...user, profilePhoto } : user
+        : user.sheet === formData.sheet && Number(user.rowNumber) === Number(formData.rowNumber) ? { ...user, profilePhoto } : user));
       setToast({ type: 'success', title: remove ? 'Profile photo removed' : 'Profile photo updated', message: `${formData.userName}'s profile photo was ${remove ? 'removed' : 'saved'}.` });
     } catch (photoError) {
       setToast({ type: 'error', title: 'Profile photo could not be saved', message: photoError.response?.data?.message || photoError.message || 'Please try again.' });
@@ -321,7 +332,8 @@ export default function UserManagement() {
   });
   const roleList = Object.keys(roleData).sort();
 
-  const activeUsers = selectedRole ? validUsers.filter(u => (u.role || 'Unassigned') === selectedRole) : [];
+  const visibleUsers = showInactive ? validUsers : validUsers.filter(user => !/^inactive$/i.test(String(user.status || '')));
+  const activeUsers = selectedRole ? visibleUsers.filter(u => (u.role || 'Unassigned') === selectedRole) : [];
   const filteredUsers = activeUsers.filter(u => 
     String(u.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
     String(u.email || '').toLowerCase().includes(searchQuery.toLowerCase())
@@ -400,6 +412,9 @@ export default function UserManagement() {
                   onChange={(e) => setSearchQuery(e.target.value)} 
                 />
               </div>
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--text-muted)', fontSize: '0.85rem', cursor: 'pointer' }}>
+                <input type="checkbox" checked={showInactive} onChange={event => setShowInactive(event.target.checked)} style={{ width: 'auto' }} /> Show inactive
+              </label>
               <div className="view-toggles">
                 <button className={`view-btn ${viewType === 'grid' ? 'active' : ''}`} onClick={() => setViewType('grid')}><SquaresFour weight="fill" /></button>
                 <button className={`view-btn ${viewType === 'list' ? 'active' : ''}`} onClick={() => setViewType('list')}><List weight="bold" /></button>
@@ -443,7 +458,7 @@ export default function UserManagement() {
                         <button className="btn-secondary" style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }} onClick={() => openEditModal(user)}>
                           <PencilSimple weight="bold"/> Edit
                         </button>
-                        <button className="btn-secondary" style={{ padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }} onClick={() => handleDeleteUser(user.sheet, user.rowNumber, user.userName)}>
+                        <button className="btn-secondary" style={{ padding: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderColor: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }} onClick={() => handleDeleteUser(user)}>
                           <Trash weight="bold"/> Remove
                         </button>
                       </div>
@@ -512,7 +527,7 @@ export default function UserManagement() {
                                 <PencilSimple size={18} weight="bold" />
                               </button>
                               <button 
-                                onClick={() => handleDeleteUser(user.sheet, user.rowNumber, user.userName)}
+                                onClick={() => handleDeleteUser(user)}
                                 style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid #ef4444', padding: '8px', borderRadius: '8px', cursor: 'pointer', transition: '0.2s' }}
                                 title="Delete User"
                               >
@@ -599,6 +614,16 @@ export default function UserManagement() {
                     </div>
                   </div>
                 </section>
+              )}
+
+              {isGifty && !isTpoRole(formData.role) && (
+                <div className="form-group" style={{ maxWidth: 300, marginBottom: 18 }}>
+                  <label>Account status</label>
+                  <select name="status" value={formData.status} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }}>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                </div>
               )}
 
               {(
@@ -736,7 +761,7 @@ export default function UserManagement() {
           </div>
         </div>, document.body
       )}
-      <PortalConfirmDialog open={Boolean(deleteTarget)} title="Remove system user?" message={`${deleteTarget?.userName || 'This account'} will lose portal access after this row is removed from the account sheet.`} confirmLabel="Remove user" tone="danger" busy={deleteWorking} onCancel={() => setDeleteTarget(null)} onConfirm={confirmDeleteUser} />
+      <PortalConfirmDialog open={Boolean(deleteTarget)} title="Deactivate system user?" message={`${deleteTarget?.userName || 'This account'} will lose portal access. Its historical records will remain available.`} confirmLabel="Deactivate user" tone="danger" busy={deleteWorking} onCancel={() => setDeleteTarget(null)} onConfirm={confirmDeleteUser} />
       <PortalToast toast={toast} onDismiss={() => setToast(null)} />
     </Layout>
   );

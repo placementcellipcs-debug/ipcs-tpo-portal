@@ -54,7 +54,7 @@ const getDrivePdf = url => {
 const makeRecords = (applications, drives) => [
   ...applications.map(app => {
     const manual = /manual|direct|referral/i.test(String(app.origin || '')) || /^(manual-add|direct-referral)$/i.test(String(app.jobId || ''));
-    return { ...app, sourceType: 'application', originType: manual ? 'manual' : 'application', recordKey: `application-${app.rowNumber}`, status: app.status || 'Applied', appliedAt: app.date || '', company: app.company || 'Company not recorded' };
+    return { ...app, sourceType: 'application', originType: manual ? 'manual' : 'application', recordKey: app.recordId || `application-${app.rowNumber}`, status: app.status || 'Applied', appliedAt: app.date || '', company: app.company || 'Company not recorded' };
   }),
   ...drives.filter(row => row.name === 'NO_APPLICANTS' || (Number.isInteger(Number(row.rowNumber)) && Number(row.rowNumber) >= 2)).map(row => {
     const isEmptyDrive = row.name === 'NO_APPLICANTS';
@@ -212,7 +212,7 @@ export default function JobTracker() {
 
   const setEdit = (record, field, value) => setEdits(current => ({ ...current, [record.recordKey]: { ...current[record.recordKey], [field]: value } }));
   const updateLocalRecord = (record, changes) => {
-    if (record.sourceType === 'application') setApplications(current => current.map(item => item.rowNumber === record.rowNumber ? { ...item, ...changes } : item));
+    if (record.sourceType === 'application') setApplications(current => current.map(item => (record.recordId ? item.recordId === record.recordId : item.rowNumber === record.rowNumber) ? { ...item, ...changes } : item));
     else setDrives(current => current.map(item => item.rowNumber === record.rowNumber ? { ...item, studentStatus: changes.status ?? item.studentStatus, remarks: changes.remarks ?? item.remarks, interviewDate: changes.interviewDate ?? item.interviewDate, interviewTime: changes.interviewTime ?? item.interviewTime, interviewVenue: changes.interviewVenue ?? item.interviewVenue, isInternationalPlacement: changes.isInternationalPlacement ?? item.isInternationalPlacement, statusHistory: changes.statusHistory ?? item.statusHistory } : item));
   };
 
@@ -234,7 +234,7 @@ export default function JobTracker() {
     try {
       const url = record.sourceType === 'application' ? '/api/tpo/applications/update' : '/api/tpo/drives/update';
       const payload = record.sourceType === 'application'
-        ? { rowNumber: record.rowNumber, status, remarks, fullApp: record, currentUserEmail: account?.email || '', isInternationalPlacement: internationalChoice, interviewDate: extra.interviewDate ?? record.interviewDate ?? '', interviewTime: extra.interviewTime ?? record.interviewTime ?? '', interviewVenue: extra.interviewVenue ?? record.interviewVenue ?? '' }
+        ? { recordId: record.recordId, rowNumber: record.rowNumber, status, remarks, fullApp: record, currentUserEmail: account?.email || '', isInternationalPlacement: internationalChoice, interviewDate: extra.interviewDate ?? record.interviewDate ?? '', interviewTime: extra.interviewTime ?? record.interviewTime ?? '', interviewVenue: extra.interviewVenue ?? record.interviewVenue ?? '' }
         : { rowNumber: record.rowNumber, driveId: record.driveId, roll: record.roll, name: record.name, regDate: record.regDate, studentStatus: status, remarks, isInternationalPlacement: internationalChoice, interviewDate: extra.interviewDate ?? record.interviewDate ?? '', interviewTime: extra.interviewTime ?? record.interviewTime ?? '', interviewVenue: extra.interviewVenue ?? record.interviewVenue ?? '' };
       const response = await axios.post(`${API_BASE}${url}`, payload);
       if (!response.data?.success) throw new Error(response.data?.message || 'The update could not be saved.');
@@ -281,7 +281,7 @@ export default function JobTracker() {
     if (!emailTarget) return;
     setEmailSaving(true);
     try {
-      const response = await axios.post(`${API_BASE}/api/tpo/applications/email-student`, { rowNumber: emailTarget.rowNumber, sourceType: emailTarget.sourceType, roll: emailTarget.roll, subject: emailForm.subject, message: emailForm.message });
+      const response = await axios.post(`${API_BASE}/api/tpo/applications/email-student`, { recordId: emailTarget.recordId, rowNumber: emailTarget.rowNumber, sourceType: emailTarget.sourceType, roll: emailTarget.roll, subject: emailForm.subject, message: emailForm.message });
       if (!response.data?.success) throw new Error(response.data?.message || 'Email could not be sent.');
       setEmailTarget(null); setNotice({ tone: response.data.queued ? 'warning' : 'success', text: response.data.message || 'Email sent.' });
     } catch (error) {

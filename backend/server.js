@@ -28,13 +28,15 @@ const {
 const { isAssetCacheReady } = require('./src/assetConfig');
 
 const app = express();
+const useMysqlTpoUserManagement = () => String(process.env.MYSQL_TPO_USER_MANAGEMENT_ENABLED || '').trim().toLowerCase() === 'true';
+const useMysqlTpoAuth = () => String(process.env.MYSQL_TPO_AUTH_ENABLED || '').trim().toLowerCase() === 'true' || useMysqlTpoUserManagement();
 const backendInstanceId = String(process.env.RENDER_INSTANCE_ID || process.env.HOSTNAME || `pid-${process.pid}`).slice(0, 120);
 const getAuditIdentity = req => {
   const headerEmail = String(req.get('x-ipcs-email') || '').trim().toLowerCase();
   const headerToken = String(req.get('x-ipcs-session-token') || '');
   const verifySessionBody = String(req.originalUrl || '').split('?')[0] === '/api/auth/verify-session';
   let user = req.portalUser || req.auditActor || null;
-  if (!user && headerEmail && headerToken) {
+  if (!user && headerEmail && headerToken && !useMysqlTpoAuth()) {
     try { user = controllers.getSessionUser(headerEmail, headerToken); } catch { user = null; }
   }
   if (user?.email) return { actor: user, actorType: 'Human', identityBasis: 'Active portal session' };
@@ -280,7 +282,9 @@ const createIpRateLimiter = ({ windowMs, max, message }) => {
 };
 const publicInquiryRateLimit = createIpRateLimiter({ windowMs: 15 * 60 * 1000, max: 5, message: 'Too many inquiry submissions. Please wait and try again.' });
 const mouSubmitRateLimit = createIpRateLimiter({ windowMs: 60 * 60 * 1000, max: 10, message: 'Too many signing attempts. Please wait and try again.' });
-const loginAddressRateLimit = createIpRateLimiter({ windowMs: LOGIN_WINDOW_MS, max: 30, message: 'Too many sign-in attempts from this network. Wait and try again.' });
+// Many staff share the same office public IP. Keep brute-force protection per
+// login ID below, and set a higher aggregate ceiling for the whole network.
+const loginAddressRateLimit = createIpRateLimiter({ windowMs: LOGIN_WINDOW_MS, max: 300, message: 'Too many sign-in attempts from this network. Wait and try again.' });
 const interactionRateLimit = createIpRateLimiter({ windowMs: 60 * 1000, max: 120, message: 'Too many activity log batches. Please wait a moment.' });
 const publicInteractionRateLimit = createIpRateLimiter({ windowMs: 60 * 1000, max: 30, message: 'Too many activity log batches. Please wait a moment.' });
 const automationAuditRateLimit = createIpRateLimiter({ windowMs: 60 * 1000, max: 120, message: 'Too many automation audit batches. Please wait a moment.' });
@@ -302,6 +306,33 @@ app.use('/api', async (req, res, next) => {
   // while the larger staff data cache is warming up after a server restart.
   const requestPath = req.originalUrl.split('?')[0];
   if (requestPath.startsWith('/api/public/') || requestPath === '/api/audit/interactions' || requestPath === '/api/audit/automation-events') return next();
+
+  const mysqlTrackerPath = requestPath === '/api/tpo/applications'
+    || requestPath === '/api/tpo/applications/update'
+    || requestPath === '/api/tpo/applications/email-student'
+    || requestPath === '/api/tpo/placed-students'
+    || requestPath === '/api/tpo/placed-students/delete';
+  if (mysqlTrackerPath
+    && String(process.env.MYSQL_PLACEMENT_TRACKER_ENABLED || '').trim().toLowerCase() === 'true') return next();
+
+  const mysqlDeleteApprovalPath = requestPath === '/api/tpo/delete-requests'
+    || /^\/api\/tpo\/delete-requests\/[^/]+\/review$/.test(requestPath);
+  if (mysqlDeleteApprovalPath
+    && (String(process.env.MYSQL_VACANCY_MANAGEMENT_ENABLED || '').trim().toLowerCase() === 'true'
+      || String(process.env.MYSQL_PLACEMENT_TRACKER_ENABLED || '').trim().toLowerCase() === 'true')) return next();
+
+  const mysqlVacancyPath = requestPath.startsWith('/api/tpo/vacancies');
+  if (mysqlVacancyPath
+    && String(process.env.MYSQL_VACANCY_MANAGEMENT_ENABLED || '').trim().toLowerCase() === 'true') return next();
+
+  const mysqlSupportIssuePath = requestPath === '/api/tpo/issues' || requestPath === '/api/tpo/issues/update';
+  const mysqlTpoSessionEnabled = ['MYSQL_TPO_AUTH_ENABLED', 'MYSQL_TPO_USER_MANAGEMENT_ENABLED']
+    .some(name => String(process.env[name] || '').trim().toLowerCase() === 'true');
+  if (mysqlSupportIssuePath
+    && String(process.env.MYSQL_SUPPORT_ISSUES_ENABLED || '').trim().toLowerCase() === 'true'
+    && mysqlTpoSessionEnabled) return next();
+
+  if (/^\/api\/admin\/users(?:\/|$)/.test(requestPath) && useMysqlTpoUserManagement()) return next();
 
   // Asset Management has a separate spreadsheet and cache. Do not make its
   // forms, inventory, or profile-related actions wait for the much larger
@@ -340,8 +371,21 @@ app.use('/api', async (req, res, next) => {
   next();
 });
 
-const requireSession = (policy = 'portal') => (req, res, next) => {
-  const user = controllers.getSessionUser(req.get('x-ipcs-email'), req.get('x-ipcs-session-token'));
+const requireSession = (policy = 'portal') => async (req, res, next) => {
+  let user;
+  try {
+    user = await controllers.getSessionUserAsync(req.get('x-ipcs-email'), req.get('x-ipcs-session-token'));
+  } catch (error) {
+    req.auditReason = useMysqlTpoAuth()
+      ? 'The MySQL account store could not be reached to validate this session.'
+      : 'The account source could not be reached to validate this session.';
+    req.auditResult = 'Unavailable';
+    if (useMysqlTpoAuth()) {
+      console.error('[TPO AUTH] MySQL request session check failed:', error.message);
+      return res.status(503).json({ success: false, message: 'Session validation is temporarily unavailable. Please retry shortly.' });
+    }
+    return next(error);
+  }
   if (!user) return res.status(401).json({ success: false, message: 'Sign in again to continue.' });
   const denial = getPolicyDenial(user, { policy, method: req.method, path: req.path, baseUrl: req.baseUrl });
   if (denial) return res.status(denial.status).json({ success: false, message: denial.message });
@@ -378,9 +422,16 @@ const cleanAuditRoute = value => String(value || '').split('?')[0]
   .replace(/\/(?:\d{4,}|[A-Za-z0-9_-]{28,})(?=\/|$)/g, '/:id')
   .slice(0, 300);
 
-app.post('/api/audit/interactions', (req, res, next) => {
-  const user = controllers.getSessionUser(req.get('x-ipcs-email'), req.get('x-ipcs-session-token'));
+app.post('/api/audit/interactions', async (req, res, next) => {
+  let user = null;
+  try {
+    user = await controllers.getSessionUserAsync(req.get('x-ipcs-email'), req.get('x-ipcs-session-token'));
+  } catch (error) {
+    if (!useMysqlTpoAuth()) return next(error);
+    req.auditDetails = { ...(req.auditDetails || {}), sessionRevalidationUnavailable: true };
+  }
   req.auditInteractionActor = user || {};
+  if (user) req.auditActor = user;
   return (user ? interactionRateLimit : publicInteractionRateLimit)(req, res, next);
 }, (req, res) => {
   const identity = req.auditInteractionActor?.email
@@ -452,8 +503,14 @@ app.post('/api/audit/automation-events', automationAuditRateLimit, (req, res) =>
 
 // Designer accounts have a restricted workspace. Enforce it at the API layer as
 // well as in navigation so hidden modules cannot be reached through direct requests.
-app.use('/api', (req, res, next) => {
-  const user = controllers.getSessionUser(req.get('x-ipcs-email'), req.get('x-ipcs-session-token'));
+app.use('/api', async (req, res, next) => {
+  if (!req.get('x-ipcs-email') || !req.get('x-ipcs-session-token')) return next();
+  let user;
+  try {
+    user = await controllers.getSessionUserAsync(req.get('x-ipcs-email'), req.get('x-ipcs-session-token'));
+  } catch (error) {
+    return next(error);
+  }
   if (!user) return next(); // Preserve public endpoints and their existing auth behavior.
   const role = getRole(user);
   const isDesigner = ['DESIGN', 'MEDIA', 'CREATIVE'].some(part => role.includes(part));
@@ -740,7 +797,8 @@ if (runsBackgroundJobs) {
 }
 
 const reportRecipients = String(process.env.MAIL_REPORT_RECIPIENTS || 'gifty@ipcsglobal.com').trim();
-const mailReportsEnabled = String(process.env.MAIL_REPORTS_ENABLED ?? 'true').toLowerCase() !== 'false';
+const mailReportsEnabled = String(process.env.MAIL_REPORTS_ENABLED ?? 'true').toLowerCase() !== 'false'
+  && String(process.env.MYSQL_EMAIL_ENABLED || '').trim().toLowerCase() !== 'true';
 if (runsBackgroundJobs && mailReportsEnabled && reportRecipients) {
   const scheduleMailReport = (envKey, fallbackCron, period) => {
     const expression = String(process.env[envKey] || fallbackCron).trim();
@@ -765,7 +823,9 @@ if (runsBackgroundJobs && mailReportsEnabled && reportRecipients) {
   scheduleMailReport('MAIL_REPORT_MONTHLY_CRON', '30 8 1 * *', 'monthly');
   scheduleMailReport('MAIL_REPORT_YEARLY_CRON', '0 9 1 1 *', 'yearly');
 } else {
-  console.log('[MAIL REPORT] Scheduled report emails are disabled or no recipient is configured.');
+  console.log(String(process.env.MYSQL_EMAIL_ENABLED || '').trim().toLowerCase() === 'true'
+    ? '[MAIL REPORT] Scheduled reports are paused because the MySQL report builder is not migrated yet.'
+    : '[MAIL REPORT] Scheduled report emails are disabled or no recipient is configured.');
 }
 
 const PORT = process.env.PORT || 5000;

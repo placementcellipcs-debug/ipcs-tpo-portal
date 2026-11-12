@@ -2,6 +2,9 @@ const { doc: academicDoc, getCache, hasAccess, loadDocInfo, google, serviceAccou
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { formatIndiaTimestamp } = require('./utils/dateTime');
 const { createHash } = require('crypto');
+const mysqlAcademicLeave = require('./mysqlAcademicLeaveService');
+
+const usesMysqlAcademicLeave = () => String(process.env.MYSQL_STUDENT_LEAVE_ENABLED || '').trim().toLowerCase() === 'true';
 
 let loadPromise;
 let cachedData;
@@ -221,8 +224,10 @@ async function readAllAcademicData(force = false, options = {}) {
   if (currentPromise) return currentPromise;
   const promise = (async () => {
     await loadAcademicDoc();
-    const keys = ['training', 'batches', 'topics', 'sessions', ...(includeAttendance ? ['attendance'] : []), 'topicProgress', 'diary', 'leaveRequests'];
-    const leaveSheet = findSheet('leaveRequests');
+    const keys = ['training', 'batches', 'topics', 'sessions', ...(includeAttendance ? ['attendance'] : []), 'topicProgress', 'diary'];
+    const mysqlLeaveEnabled = usesMysqlAcademicLeave();
+    const leaveSheet = mysqlLeaveEnabled ? null : findSheet('leaveRequests');
+    if (!mysqlLeaveEnabled) keys.push('leaveRequests');
     const rowEntries = await Promise.all(keys.map(async key => [key, await readRows(key === 'leaveRequests' ? leaveSheet : findSheet(key))]));
     const rowsByKey = Object.fromEntries(rowEntries);
     const trainingRows = rowsByKey.training || [];
@@ -276,13 +281,15 @@ async function readAllAcademicData(force = false, options = {}) {
     const topicProgress = mapRecords(progressRows, ['trainingId', 'studentId', 'topicId', 'topic', 'completed', 'comprehension', 'remarks']);
     const diary = mapRecords(diaryRows, ['diaryId', 'studentId', 'trainingId', 'date', 'eventType', 'title', 'description', 'createdBy'])
       .map(record => ({ ...record, studentName: studentMap.get(String(record.studentId).trim().toLowerCase())?.studentName || '' }));
-    const leaveRequests = mapRecords(leaveRows, ['leaveId', 'studentId', 'studentName', 'mainCourse', 'branch', 'fromDate', 'toDate', 'reason', 'leaveStatus', 'requestedAt', 'approvedBy', 'decisionDate', 'approvalNotes'])
-      .map(record => {
-        const student = studentMap.get(String(record.studentId).trim().toLowerCase()) || {};
-        return { ...record, leaveId: record.leaveId || `ROW-${record.rowNumber}`, studentName: record.studentName || student.studentName || '', mainCourse: record.mainCourse || student.mainCourse || '', branch: record.branch || student.branch || '' };
-      });
+    const leaveRequests = mysqlLeaveEnabled
+      ? await mysqlAcademicLeave.listLeaveRequests()
+      : mapRecords(leaveRows, ['leaveId', 'studentId', 'studentName', 'mainCourse', 'branch', 'fromDate', 'toDate', 'reason', 'leaveStatus', 'requestedAt', 'approvedBy', 'decisionDate', 'approvalNotes'])
+        .map(record => {
+          const student = studentMap.get(String(record.studentId).trim().toLowerCase()) || {};
+          return { ...record, leaveId: record.leaveId || `ROW-${record.rowNumber}`, studentName: record.studentName || student.studentName || '', mainCourse: record.mainCourse || student.mainCourse || '', branch: record.branch || student.branch || '' };
+        });
 
-    const result = { training, batches, topics, sessions, attendance, topicProgress, diary, leaveRequests, leaveRequestsAvailable: Boolean(leaveSheet), students };
+    const result = { training, batches, topics, sessions, attendance, topicProgress, diary, leaveRequests, leaveRequestsAvailable: mysqlLeaveEnabled || Boolean(leaveSheet), students };
     if (includeAttendance) {
       cachedData = result;
       cachedAt = Date.now();
@@ -903,6 +910,17 @@ exports.reviewLeaveRequest = async (req, res) => {
     const leaveId = cleanText(body.leaveId);
     const decision = cleanText(body.status);
     if (!leaveId || !['Approved', 'Rejected'].includes(decision)) return res.status(400).json({ success: false, message: 'Choose a leave request and approve or reject it.' });
+    if (usesMysqlAcademicLeave()) {
+      const request = (await mysqlAcademicLeave.listLeaveRequests()).find(record => cleanText(record.leaveId).toLowerCase() === leaveId.toLowerCase());
+      if (!request) return res.status(404).json({ success: false, message: 'Leave request not found.' });
+      if (!canAccessAcademicRecord(req.portalUser, request)) return res.status(403).json({ success: false, message: 'This leave request is outside your branch or course assignment.' });
+      const reviewed = await mysqlAcademicLeave.reviewLeaveRequest({
+        leaveId, status: decision, notes: body.notes,
+        actor: req.portalUser, requestId: req.requestId,
+      });
+      invalidateAcademicCache();
+      return res.json({ success: true, message: `Leave request ${decision.toLowerCase()}.`, leaveRequest: reviewed });
+    }
     const sheet = requireSheet('leaveRequests', res);
     if (!sheet) return;
     await ensureLeaveReviewHeaders(sheet);

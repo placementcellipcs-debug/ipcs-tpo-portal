@@ -3,6 +3,8 @@ const nodemailer = require('nodemailer');
 const { createCipheriv, createDecipheriv, createHash, randomBytes } = require('crypto');
 const { Readable } = require('stream');
 const { createMailReportService } = require('./mailReportService');
+const mysqlPool = require('./mysqlPool');
+const mysqlEmailStore = require('./mysqlEmailStore');
 
 const SENDER_CONFIG = {
   placement: {
@@ -78,6 +80,14 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
   const unpersistedUsage = [];
   const appsScriptQuotaSnapshotTtlMs = 30 * 60 * 1000;
 
+  const useMysqlEmailPersistence = () => {
+    const enabled = String(process.env.MYSQL_EMAIL_ENABLED || '').trim().toLowerCase() === 'true';
+    if (enabled && !mysqlPool.isEnabled()) {
+      throw new Error('MYSQL_EMAIL_ENABLED requires MYSQL_ENABLED=true and a working shared MySQL connection.');
+    }
+    return enabled;
+  };
+
   const normalizeHeader = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
   const isValidAddress = address => {
     const atIndex = address.indexOf('@');
@@ -101,7 +111,9 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
   };
   const cleanRecipients = value => splitAddresses(value).join(',');
   const queueEncryptionKey = () => {
-    const seed = process.env.MAIL_QUEUE_ENCRYPTION_KEY || process.env.AUTH_SESSION_SECRET || process.env.GOOGLE_PRIVATE_KEY;
+    const seed = process.env.MAIL_QUEUE_ENCRYPTION_KEY || (useMysqlEmailPersistence()
+      ? ''
+      : process.env.AUTH_SESSION_SECRET || process.env.GOOGLE_PRIVATE_KEY);
     if (!seed) throw new Error('Configure MAIL_QUEUE_ENCRYPTION_KEY to encrypt queued email content.');
     return createHash('sha256').update('IPCS:EMAIL:QUEUE:V1\0').update(String(seed)).digest();
   };
@@ -338,6 +350,26 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
   };
 
   const recordProviderAttempt = async ({ deliveryId, category, sender, provider, outcome, recipientCount, emailCategory, remainingRecipients = '', subject, error = '', messageId = '' }) => {
+    if (useMysqlEmailPersistence()) {
+      try {
+        await mysqlEmailStore.recordAttempt({
+          outboxId: deliveryId,
+          senderKey: sender.category,
+          senderEmail: sender.email,
+          emailCategory,
+          provider,
+          result: outcome,
+          recipientCount,
+          remainingQuota: remainingRecipients,
+          subject: String(subject || '').slice(0, 500),
+          providerMessageId: messageId,
+          errorMessage: error?.message || error,
+        });
+      } catch (logError) {
+        console.error(`[MAIL ATTEMPT] Could not record ${provider} ${outcome} for ${sender.email}:`, logError.message);
+      }
+      return;
+    }
     try {
       const sheet = await getAttemptSheet();
       await sheet.addRow({
@@ -376,7 +408,11 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     const sender = getSender(senderKey);
     const now = Date.now();
     let snapshot = usageSnapshots.get(senderKey);
-    if (!snapshot || snapshot.expiresAt <= now) {
+    if (useMysqlEmailPersistence()) {
+      const mysqlUsedRecipients = await mysqlEmailStore.rollingRecipientCount(senderKey);
+      snapshot = { sheetUsedRecipients: mysqlUsedRecipients, expiresAt: now + usageSnapshotTtlMs };
+      usageSnapshots.set(senderKey, snapshot);
+    } else if (!snapshot || snapshot.expiresAt <= now) {
       const sheet = await getUsageSheet();
       const rows = await sheet.getRows();
       const cutoff = now - quotaWindowMs;
@@ -422,6 +458,23 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     try {
       const current = await getUsageSnapshot(sender.category);
       const trackedRemaining = Math.max(0, current.trackedRemaining - recipientCount);
+      if (useMysqlEmailPersistence()) {
+        await mysqlEmailStore.recordUsage({
+          senderKey: sender.category,
+          emailCategory,
+          senderEmail: sender.email,
+          provider,
+          recipientCount,
+          trackedRemaining,
+          appsScriptRemaining,
+        });
+        const snapshot = usageSnapshots.get(sender.category);
+        if (snapshot) {
+          snapshot.sheetUsedRecipients += recipientCount;
+          snapshot.expiresAt = Date.now() + usageSnapshotTtlMs;
+        }
+        return;
+      }
       const sheet = await getUsageSheet();
       await sheet.addRow({
         ID: randomBytes(12).toString('hex'),
@@ -448,6 +501,24 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
 
   const recordQuotaObservation = async (sender, provider, appScriptRemaining = '', emailCategory = sender.emailCategory) => {
     const current = await getUsageSnapshot(sender.category);
+    if (useMysqlEmailPersistence()) {
+      await mysqlEmailStore.recordUsage({
+        senderKey: sender.category,
+        emailCategory,
+        senderEmail: sender.email,
+        provider: `quota-exhausted:${provider}`,
+        recipientCount: 0,
+        trackedRemaining: current.trackedRemaining,
+        appsScriptRemaining,
+      });
+      if (provider === 'apps-script' && appScriptRemaining !== '' && Number.isFinite(Number(appScriptRemaining))) {
+        appsScriptQuotaSnapshots.set(sender.category, {
+          remainingRecipients: Math.max(0, Number(appScriptRemaining)),
+          expiresAt: Date.now() + appsScriptQuotaSnapshotTtlMs
+        });
+      }
+      return;
+    }
     const sheet = await getUsageSheet();
     if (provider === 'apps-script' && appScriptRemaining !== '' && Number.isFinite(Number(appScriptRemaining))) {
       appsScriptQuotaSnapshots.set(sender.category, {
@@ -768,6 +839,23 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
 
   const appendMailLog = async (details, status, subject) => {
     if (!details) return;
+    if (useMysqlEmailPersistence()) {
+      try {
+        await mysqlEmailStore.appendMailLog({
+          name: details.name,
+          email: details.email,
+          type: details.type,
+          status,
+          subject,
+          senderKey: details.senderKey || null,
+          provider: details.provider || null,
+          outboxId: details.outboxId || null,
+        });
+      } catch (error) {
+        console.error('[MAIL] Could not record email status:', error.message);
+      }
+      return;
+    }
     try {
       const sheet = doc.sheetsByTitle.Mail;
       if (!sheet) return;
@@ -785,6 +873,9 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
   };
 
   const updateEventMailStatus = async (context, status, errorMessage = '') => {
+    // MySQL mode never touches a legacy event sheet. Its event-specific status
+    // columns will be replaced by normalized MySQL relationships during cutover.
+    if (useMysqlEmailPersistence()) return;
     if (!context?.eventId && !context?.sheetName) return;
     try {
       await loadDocInfo();
@@ -842,6 +933,180 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     return new Date(Date.now() + delaySeconds * 1000).toISOString();
   };
 
+  const sendMysqlMail = async (mailOptions, sendDetails = {}) => {
+    const requestedCategory = String(sendDetails.category || 'placement').trim().toLowerCase();
+    const category = categoryAliases[requestedCategory] || requestedCategory;
+    const sender = getSender(category);
+    const mail = {
+      ...mailOptions,
+      to: cleanRecipients(mailOptions.to),
+      cc: cleanRecipients(mailOptions.cc),
+      bcc: cleanRecipients(mailOptions.bcc),
+      replyTo: cleanRecipients(mailOptions.replyTo),
+      fromName: formatSenderName(mailOptions.from)
+    };
+    const proposedId = require('crypto').randomUUID();
+    const requestedIdempotencyKey = String(sendDetails.idempotencyKey || '').trim();
+    if (requestedIdempotencyKey.length > 190) throw new Error('Email idempotency keys must be 190 characters or fewer.');
+    const idempotencyKey = requestedIdempotencyKey || `email:${proposedId}`;
+    const logDetails = {
+      name: sendDetails.logDetails?.name || '',
+      email: sendDetails.logDetails?.email || '',
+      type: sendDetails.logDetails?.type || '',
+      outboxId: proposedId,
+    };
+    const queueContext = sendDetails.queueContext || {};
+    const queuedPayload = {
+      mail: toPersistableMail(mail),
+      deliveryId: proposedId,
+      logDetails,
+      queueContext,
+    };
+    const outbox = await mysqlEmailStore.createOrReuseOutbox({
+      idempotencyKey,
+      senderKey: category,
+      emailCategory: sender.emailCategory,
+      encryptedPayload: encryptPayload(JSON.stringify(queuedPayload)),
+      context: { logDetails, queueContext },
+      relatedEntityType: sendDetails.relatedEntityType || null,
+      relatedEntityId: sendDetails.relatedEntityId || null,
+    });
+    const id = outbox.id;
+
+    if (!outbox.created && !outbox.retryingFailed) {
+      if (outbox.status === 'sent') {
+        return { queued: false, deduplicated: true, provider: 'mysql-outbox-sent', queueId: outbox.id };
+      }
+      if (outbox.status === 'pending' || outbox.status === 'sending') {
+        return { queued: true, deduplicated: true, provider: 'mysql-outbox', queueId: outbox.id };
+      }
+      const duplicateError = Object.assign(
+        new Error(outbox.status === 'review'
+          ? 'This email has an uncertain delivery result and needs a manual check before it can be sent again.'
+          : `This email is already marked ${outbox.status}.`),
+        { code: outbox.status === 'review' ? 'DELIVERY_UNCERTAIN' : 'EMAIL_ALREADY_PROCESSED', retryable: false },
+      );
+      throw duplicateError;
+    }
+
+    if (outbox.retryingFailed && id !== proposedId) {
+      queuedPayload.deliveryId = id;
+      queuedPayload.logDetails.outboxId = id;
+      await mysqlEmailStore.replaceEncryptedPayload(id, encryptPayload(JSON.stringify(queuedPayload)));
+    }
+
+    let result;
+    try {
+      result = await sendNow(category, mail, id);
+    } catch (error) {
+      const deliveryUncertain = isAmbiguousDelivery(error) || /delivery outcome is uncertain/i.test(String(error.message || error));
+      const retryable = !deliveryUncertain && isRetryable(error);
+      const nextStatus = deliveryUncertain ? 'review' : retryable ? 'pending' : 'failed';
+      const attempts = 1;
+      await mysqlEmailStore.updateOutbox(id, {
+        status: nextStatus,
+        attempts,
+        availableAt: retryable ? new Date(retryAt(error, attempts)) : undefined,
+        lastError: String(error.message || error).slice(0, 1000),
+      });
+      if (retryable) {
+        logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Email delivery handed to MySQL queue', resource: 'EmailQueue', result: 'Queued', details: { deliveryId: id, category } });
+        return { queued: true, queueId: id, provider: 'mysql-outbox' };
+      }
+      await appendMailLog({ ...logDetails, senderKey: category, outboxId: id }, `${deliveryUncertain ? 'Review' : 'Failed'}: ${String(error.message || error).slice(0, 500)}`, mail.subject);
+      throw error;
+    }
+
+    try {
+      await mysqlEmailStore.updateOutbox(id, { status: 'sent', lastError: null, sentAt: new Date() });
+    } catch (saveError) {
+      // The provider accepted the message. Leave the row in `sending` so the
+      // stale-worker safeguard moves it to manual review instead of resending.
+      console.error(`[MYSQL MAIL QUEUE] Email ${id} was delivered, but its outbox status could not be saved:`, saveError.message);
+      logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Email delivered but MySQL outbox update failed', resource: 'EmailQueue', result: 'Review required', details: { deliveryId: id, error: String(saveError.message || saveError).slice(0, 300) } });
+      throw new Error('The email provider accepted this message, but its saved delivery status could not be confirmed. Check the email log before retrying.');
+    }
+    await appendMailLog({ ...logDetails, senderKey: result.senderKey || category, provider: result.provider, outboxId: id }, 'Success', mail.subject);
+    logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Email delivered directly', resource: 'MailDelivery', result: 'Success', details: { deliveryId: id, provider: result.provider || '' } });
+    return { queued: false, ...result, queueId: id };
+  };
+
+  const processMysqlQueue = async () => {
+    if (workerRunning) return;
+    workerRunning = true;
+    try {
+      const rows = await mysqlEmailStore.claimDueOutbox(20);
+      for (const row of rows) {
+        let payload;
+        let context = {};
+        let details = { outboxId: row.id };
+        const category = String(row.sender_key || '').trim().toLowerCase();
+        try {
+          payload = decryptPayload(JSON.parse(String(row.encrypted_payload || '{}')));
+          context = payload.queueContext || {};
+          details = { ...(payload.logDetails || {}), outboxId: row.id };
+        } catch (error) {
+          await mysqlEmailStore.updateOutbox(row.id, { status: 'failed', lastError: `Queued email content could not be decrypted: ${String(error.message || error).slice(0, 700)}` });
+          await appendMailLog(details, 'Failed: queued email content could not be decrypted', 'Queued email');
+          continue;
+        }
+
+        const mail = payload.mail || payload;
+        const deliveryId = String(payload.deliveryId || row.id);
+        const createdAt = row.created_at ? new Date(row.created_at).getTime() : NaN;
+        if (isPasswordResetMail(category, mail.subject) && Number.isFinite(createdAt) && Date.now() - createdAt > 30 * 60 * 1000) {
+          await mysqlEmailStore.updateOutbox(row.id, { status: 'failed', lastError: 'Password reset email expired before delivery. Send a new reset link.' });
+          await appendMailLog(details, 'Failed: password reset email expired', mail.subject);
+          continue;
+        }
+
+        const attempts = Number(row.attempts || 0);
+        const quotaBlocked = isQuotaError({ message: row.last_error });
+        if (attempts > maxAttempts && !quotaBlocked) {
+          await mysqlEmailStore.updateOutbox(row.id, { status: 'failed', lastError: 'Maximum email delivery attempts reached.' });
+          await appendMailLog(details, 'Failed: maximum delivery attempts reached', mail.subject);
+          continue;
+        }
+
+        logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Queued email attempt started', resource: 'EmailQueue', result: 'Started', details: { deliveryId, category, attempt: attempts } });
+        let delivery;
+        try {
+          const sender = getSender(category);
+          delivery = await sendNow(category, fromPersistableMail(mail, sender), deliveryId);
+        } catch (error) {
+          const deliveryUncertain = isAmbiguousDelivery(error) || /delivery outcome is uncertain/i.test(String(error.message || error));
+          const retryable = !deliveryUncertain && (isQuotaError(error) || (isRetryable(error) && attempts < maxAttempts));
+          const status = deliveryUncertain ? 'review' : retryable ? 'pending' : 'failed';
+          await mysqlEmailStore.updateOutbox(row.id, {
+            status,
+            availableAt: retryable ? new Date(retryAt(error, attempts)) : undefined,
+            lastError: String(error.message || error).slice(0, 1000),
+          });
+          logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Queued email attempt failed', resource: 'EmailQueue', result: deliveryUncertain ? 'Review' : retryable ? 'Retry scheduled' : 'Failed', details: { deliveryId, category, attempt: attempts, error: String(error.message || error).slice(0, 300) } });
+          if (!retryable) {
+            await appendMailLog(details, `${deliveryUncertain ? 'Review' : 'Failed'}: ${String(error.message || error).slice(0, 500)}`, mail.subject);
+          }
+          continue;
+        }
+
+        try {
+          await mysqlEmailStore.updateOutbox(row.id, { status: 'sent', lastError: null, sentAt: new Date() });
+        } catch (saveError) {
+          console.error(`[MYSQL MAIL QUEUE] Email ${row.id} was delivered, but its outbox status could not be saved:`, saveError.message);
+          logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Email delivered but MySQL outbox update failed', resource: 'EmailQueue', result: 'Review required', details: { deliveryId, category, error: String(saveError.message || saveError).slice(0, 300) } });
+          continue;
+        }
+        await appendMailLog({ ...details, senderKey: delivery.senderKey || category, provider: delivery.provider, outboxId: row.id }, 'Success (queued delivery)', mail.subject);
+        logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Queued email delivered', resource: 'EmailQueue', result: 'Success', details: { deliveryId, category, provider: delivery.provider || '', attempt: attempts } });
+      }
+    } catch (error) {
+      console.error('[MYSQL MAIL QUEUE] Worker cycle failed:', error.message);
+      logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'MySQL email queue worker cycle failed', resource: 'EmailQueue', result: 'Error', details: { error: String(error.message || error).slice(0, 300) } });
+    } finally {
+      workerRunning = false;
+    }
+  };
+
   const queueFailedMail = async (category, mail, sendDetails, deliveryError) => {
     const id = randomBytes(16).toString('hex');
     const queuedPayload = {
@@ -885,6 +1150,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
   };
 
   const sendMail = async (mailOptions, sendDetails = {}) => {
+    if (useMysqlEmailPersistence()) return sendMysqlMail(mailOptions, sendDetails);
     const requestedCategory = String(sendDetails.category || 'placement').trim().toLowerCase();
     const category = categoryAliases[requestedCategory] || requestedCategory;
     const sender = getSender(category);
@@ -910,6 +1176,7 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
   };
 
   const processQueue = async () => {
+    if (useMysqlEmailPersistence()) return processMysqlQueue();
     if (workerRunning) return;
     workerRunning = true;
     try {
@@ -1094,9 +1361,15 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
     sendMail,
     processQueue,
     startWorker,
-    refreshMailDashboard: mailReportService.refreshDashboard,
-    sendScheduledMailReport: mailReportService.sendScheduledReport,
-    startMailDashboardRefresh: mailReportService.startDashboardRefresh
+    refreshMailDashboard: (...args) => useMysqlEmailPersistence()
+      ? Promise.reject(new Error('The mail dashboard report has not been migrated to MySQL yet.'))
+      : mailReportService.refreshDashboard(...args),
+    sendScheduledMailReport: (...args) => useMysqlEmailPersistence()
+      ? Promise.reject(new Error('Scheduled mail reports have not been migrated to MySQL yet.'))
+      : mailReportService.sendScheduledReport(...args),
+    startMailDashboardRefresh: (...args) => useMysqlEmailPersistence()
+      ? null
+      : mailReportService.startDashboardRefresh(...args)
   };
 };
 

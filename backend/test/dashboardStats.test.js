@@ -27,6 +27,7 @@ test('dashboard helper counts unique students while counting only exact Placed s
 
   assert.deepEqual(calculateDashboardPlacementCounts(students, placements, getValue, canAccess), {
     totalStudents: 2,
+    placementPending: 0,
     placed: 2,
   });
 });
@@ -43,6 +44,7 @@ test('dashboard excludes placements outside the user’s branch and resolves an 
 
   assert.deepEqual(calculateDashboardPlacementCounts(students, placements, getValue, row => row.Branch === 'Kochi'), {
     totalStudents: 2,
+    placementPending: 0,
     placed: 0,
   });
 });
@@ -69,6 +71,7 @@ test('dashboard includes students marked placed in the student register even wit
 
   assert.deepEqual(calculateDashboardPlacementCounts(students, placements, getValue), {
     totalStudents: 2,
+    placementPending: 0,
     placed: 1,
   });
 });

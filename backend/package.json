@@ -6,7 +6,17 @@
   "scripts": {
     "build": "echo No build step required",
     "start": "node server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "db:check": "node scripts/check-mysql.js",
+    "db:check-placement-delete": "node scripts/check-mysql-placement-delete.js",
+    "db:check-placement-approval": "node scripts/check-mysql-placement-approval.js",
+    "db:check-student-applications": "node scripts/check-mysql-student-applications.js",
+    "db:check-tpo-auth": "node scripts/check-mysql-tpo-auth.js",
+    "db:check-admin-users": "node scripts/check-mysql-admin-users.js",
+    "db:check-email-store": "node scripts/check-mysql-email-store.js",
+    "db:check-support-issues": "node scripts/check-mysql-support-issues.js",
+    "db:check-events": "node scripts/check-mysql-events.js",
+    "db:check-academic-leave": "node scripts/check-mysql-academic-leave.js"
   },
   "keywords": [],
   "author": "",
@@ -21,6 +31,7 @@
     "google-spreadsheet": "^5.3.0",
     "googleapis": "^175.0.0",
     "multer": "^2.5.0",
+    "mysql2": "^3.24.6",
     "node-cron": "^4.6.0",
     "nodemailer": "^10.2.1"
   }

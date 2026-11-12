@@ -228,7 +228,7 @@ function VacancyCreateModal({ onClose, onCreated, currentOfficer, vacancyToEdit 
         <div className="modal-header" style={{ position: 'sticky', top: '-1px', zIndex: 1, background: '#111827', paddingTop: '2px' }}>
           <div>
             <h2>{vacancyToEdit ? 'Edit Vacancy' : 'Add Vacancy'}</h2>
-            <div className="modal-subtitle">{vacancyToEdit ? `Update ${vacancyToEdit.company || 'this opening'} in the NewsLetter sheet` : 'Create a hiring opening in the NewsLetter sheet'}</div>
+            <div className="modal-subtitle">{vacancyToEdit ? `Update ${vacancyToEdit.company || 'this opening'} in the placement portal` : 'Create a hiring opening in the placement portal'}</div>
           </div>
           <button type="button" className="close-btn" onClick={onClose} aria-label="Close vacancy form"><X size={24} /></button>
         </div>
