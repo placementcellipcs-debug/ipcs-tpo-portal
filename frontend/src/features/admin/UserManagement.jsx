@@ -61,10 +61,19 @@ function StaffDirectoryDetails({ user }) {
     ['Access type', user.access], ['Status', user.status], ['Mail eligible', user.mailEligible],
     ['Created at', user.createdAt], ['Updated at', user.updatedAt]
   ];
-  return <details open style={{ marginTop: 10, width: '100%', borderTop: '1px solid var(--card-border)', paddingTop: 8 }}>
-    <summary style={{ cursor: 'pointer', color: 'var(--accent-primary)', fontSize: '.78rem', fontWeight: 750 }}>Staff directory details · click to collapse</summary>
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: '8px 14px', marginTop: 10 }}>
-      {fields.map(([label, value]) => <div key={label} style={{ minWidth: 0 }}><small style={{ display: 'block', color: 'var(--text-muted)' }}>{label}</small><strong style={{ display: 'block', overflowWrap: 'anywhere', color: 'var(--text-main)', fontSize: '.78rem', marginTop: 2 }}>{String(value ?? '').trim() || '—'}</strong></div>)}
+  return <details style={{ marginTop: 10, width: '100%', minWidth: 0, borderTop: '1px solid var(--card-border)', paddingTop: 8 }}>
+    <summary style={{ cursor: 'pointer', color: 'var(--accent-primary)', fontSize: '.78rem', fontWeight: 750 }}>View staff directory details</summary>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 205px), 1fr))', gap: '11px 18px', marginTop: 12 }}>
+      {fields.map(([label, value]) => {
+        const cleanValue = String(value ?? '').trim();
+        const isProfilePhoto = label === 'Profile photo URL' && /^https?:\/\//i.test(cleanValue);
+        return <div key={label} style={{ minWidth: 0 }}>
+          <small style={{ display: 'block', color: 'var(--text-muted)' }}>{label}</small>
+          {isProfilePhoto
+            ? <a href={cleanValue} target="_blank" rel="noreferrer" title={cleanValue} style={{ display: 'inline-block', maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--accent-primary)', fontSize: '.78rem', marginTop: 3 }}>Open profile photo ↗</a>
+            : <strong title={cleanValue} style={{ display: 'block', overflowWrap: 'anywhere', color: 'var(--text-main)', fontSize: '.78rem', lineHeight: 1.45, marginTop: 3, ...(label === 'Description' ? { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : {}) }}>{cleanValue || '—'}</strong>}
+        </div>;
+      })}
     </div>
   </details>;
 }

@@ -338,6 +338,10 @@ export default function PlacedStudents() {
     
     return cMatch && sMatch && internationalMatch;
   });
+  const branchList = [...new Set(globallyFiltered.map(app => app.branch || 'Unknown'))].sort((a, b) => a.localeCompare(b));
+  const branchFilteredApps = branchFilter === 'All'
+    ? globallyFiltered
+    : globallyFiltered.filter(app => String(app.branch || 'Unknown').trim().toLowerCase() === branchFilter.trim().toLowerCase());
 
   const getMonthKey = app => {
     const date = parseDate(app.datePlaced || app.date);
@@ -358,7 +362,7 @@ export default function PlacedStudents() {
   const dateRangeLabel = `${rangeStart ? formatPortalDate(rangeStart) : 'First record'} – ${rangeEnd ? formatPortalDate(rangeEnd) : 'Latest record'}`;
   const periodTitle = dateRangeActive ? dateRangeLabel : formatMonthKey(selectedMonth);
   const monthCounts = new Map();
-  globallyFiltered.forEach(app => {
+  branchFilteredApps.forEach(app => {
     const key = getMonthKey(app);
     monthCounts.set(key, (monthCounts.get(key) || 0) + 1);
   });
@@ -368,19 +372,14 @@ export default function PlacedStudents() {
     return right.localeCompare(left);
   });
   const activeMonthApps = selectedMonth
-    ? selectedMonth === 'all' ? globallyFiltered : globallyFiltered.filter(app => getMonthKey(app) === selectedMonth)
+    ? selectedMonth === 'all' ? branchFilteredApps : branchFilteredApps.filter(app => getMonthKey(app) === selectedMonth)
     : dateRangeActive && dateRangeValid
-      ? globallyFiltered.filter(app => {
+      ? branchFilteredApps.filter(app => {
         const dateKey = getDateKey(app.datePlaced || app.date);
         return Boolean(dateKey) && (!rangeStart || dateKey >= rangeStart) && (!rangeEnd || dateKey <= rangeEnd);
       })
       : [];
-  const branchList = [...new Set(activeMonthApps.map(app => app.branch || 'Unknown'))].sort((a, b) => a.localeCompare(b));
-  const branchFilteredApps = branchFilter === 'All'
-    ? activeMonthApps
-    : activeMonthApps.filter(app => String(app.branch || 'Unknown').trim().toLowerCase() === branchFilter.trim().toLowerCase());
-
-  const filteredApps = branchFilteredApps.filter(a => {
+  const filteredApps = activeMonthApps.filter(a => {
     return searchQuery === '' || 
       (a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
       (a.company || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -595,6 +594,16 @@ export default function PlacedStudents() {
             </select>
           </div>
 
+          {(isAdmin || isTpo) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Branch:</span>
+              <select aria-label="Filter placed students by branch" className="sleek-select" style={{ minWidth: '160px' }} value={branchFilter} onChange={event => setBranchFilter(event.target.value)}>
+                <option value="All">All branches</option>
+                {branchList.map(branch => <option key={branch} value={branch}>{branch}</option>)}
+              </select>
+            </div>
+          )}
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
             <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 600 }}>Date range:</span>
             <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '0.78rem' }}>
@@ -609,10 +618,6 @@ export default function PlacedStudents() {
           {showPlacementRecords && (
             <>
               <input type="text" className="sleek-input" placeholder="Search student, roll, company, or location..." style={{ minWidth: '220px', flex: 1 }} value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} />
-              <select className="sleek-select" style={{ minWidth: '160px' }} value={branchFilter} onChange={e => setBranchFilter(e.target.value)}>
-                <option value="All">All branches</option>
-                {branchList.map(branch => <option key={branch} value={branch}>{branch}</option>)}
-              </select>
             <select className="sleek-select" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
               <option value="newest">Sort: Date Placed</option>
               <option value="az">Sort: Student A-Z</option>

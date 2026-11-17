@@ -977,10 +977,16 @@ exports.login = async (req, res) => {
         return res.status(401).json({ success: false, message: 'Invalid Login ID or Password.' });
       }
 
-      const sessionUser = { ...account.sessionUser, loginId: cleanInput };
+      const sessionUser = {
+        ...account.sessionUser,
+        loginId: cleanInput,
+        securitySessionId: randomUUID(),
+        sessionStartedAt: new Date().toISOString(),
+      };
       const accountVersion = getAccountVersion(account.authState);
       const sessionToken = createPortalSessionToken(sessionUser, accountVersion);
       await mysqlTpoAuth.recordSuccessfulLogin(account, { requestId: req.portalAuditRequestId });
+      void recordSecuritySessionStart(sessionUser, req).catch(error => console.warn('[SECURITY ACTIVITY] Could not record the session start:', error.message));
       req.auditActor = sessionUser;
       req.auditResult = 'Success';
       return res.json({ success: true, tpo: { ...sessionUser, sessionToken } });
@@ -1122,34 +1128,14 @@ exports.login = async (req, res) => {
       assignedCourse: course,
       accessType,
       empId: foundUser.empId || '',
-      target: foundUser.target || '0'
+      target: foundUser.target || '0',
+      securitySessionId: randomUUID(),
+      sessionStartedAt: new Date().toISOString(),
     };
     const sessionToken = createPortalSessionToken(sessionUser, accountVersion);
     req.auditActor = sessionUser;
 
-    (async () => {
-      try {
-        const sheet = doc.sheetsByIndex.find(s => s.title.replace(/\s/g, '').toLowerCase().includes('security_logs'));
-        if (sheet) {
-          const rawIp = req.ip || req.socket?.remoteAddress || 'Unknown IP';
-          const cleanIp = rawIp.replace('::ffff:', '').trim();
-          const uaInfo = parseUserAgent(req.headers['user-agent'] || '');
-
-          await sheet.addRow({
-            'TimeStamp': formatIndiaTimestamp(),
-            'UserName': userName,
-            'Email': cleanInput,
-            'Role': role,
-            'Branch': foundUser['sittingbranch'] || 'All Branches',
-            'IPAddress': cleanIp,
-            'Device': uaInfo.device,
-            'OS': uaInfo.os,
-            'Browser': uaInfo.browser,
-            'Status': 'Active'
-          });
-        }
-      } catch (logErr) {}
-    })();
+    void recordSecuritySessionStart(sessionUser, req).catch(error => console.warn('[SECURITY ACTIVITY] Could not record the session start:', error.message));
 
     req.auditResult = 'Success';
     return res.json({ 
@@ -1543,14 +1529,24 @@ exports.getStudents = async (req, res) => {
   };
   const placementHistoryFor = row => {
     if (!canViewStudentDirectoryDetails) return undefined;
-    const identity = getStudentKey(row);
-    const records = openingRecordsByStudent.get(identity)
-      || openingRecordsByStudent.get(`name:${normalizePlacementText(getValByHeader(row, ['name', 'studentname']))}`)
-      || new Map();
-    return [...records.entries()].flatMap(([openingKey, recordEntry]) => {
-      const record = recordEntry.row;
-      const statuses = recordEntry.statuses.map(normalizePlacementText);
-      if (!statuses.includes('placed')) return [];
+    const studentRoll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+    const studentName = normalizePlacementText(getValByHeader(row, ['name', 'studentname']));
+    const studentBranch = normalizePlacementText(getValByHeader(row, ['branch', 'sittingbranch']));
+    return placementLogRows.flatMap((record, index) => {
+      if (isTpoActionLog(record, getValByHeader) || normalizePlacementText(getValByHeader(record, ['status'])) !== 'placed') return [];
+      const recordRoll = normalizePlacementText(getValByHeader(record, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
+      const recordName = normalizePlacementText(getValByHeader(record, ['studentname', 'name']));
+      const recordBranch = normalizePlacementText(getValByHeader(record, ['branch', 'sittingbranch']));
+      let isSameStudent = Boolean(studentRoll && recordRoll && studentRoll === recordRoll);
+      if (!isSameStudent && studentName && recordName === studentName && (!studentRoll || !recordRoll)) {
+        const branchMatches = !studentBranch || !recordBranch || studentBranch === recordBranch;
+        const sameNameCandidates = (studentsByName.get(recordName) || []).filter(candidate => {
+          const candidateBranch = normalizePlacementText(getValByHeader(candidate, ['branch', 'sittingbranch']));
+          return !recordBranch || !candidateBranch || recordBranch === candidateBranch;
+        });
+        isSameStudent = branchMatches && (sameNameCandidates.length === 1 ? sameNameCandidates[0] === row : false);
+      }
+      if (!isSameStudent) return [];
 
       let history = [];
       try {
@@ -1564,7 +1560,7 @@ exports.getStudents = async (req, res) => {
         || placedEvent?.changedAt || placedEvent?.occurredAt || placedEvent?.date || placedEvent?.timestamp
         || getValByHeader(record, ['timestamp', 'date', 'time']) || '';
       return [{
-        id: openingKey,
+        id: `TPO_Log:${record.rowNumber || index + 2}`,
         company: getValByHeader(record, ['companyname', 'company']) || '',
         position: getValByHeader(record, ['position', 'role', 'jobtitle']) || '',
         placedAt,
@@ -10717,6 +10713,81 @@ exports.updateTrainerLog = async (req, res) => {
 // =========================================================
 // 🚨 SECURITY ACTIVITY LOGS (SUPER ADMIN ONLY)
 // =========================================================
+const securitySessionHeaders = ['Security Session ID', 'Session Started At', 'Last Activity At', 'Last Seen At', 'Active Seconds'];
+const findSecurityLogSheet = () => doc.sheetsByIndex.find(sheet => normalizePlacementText(sheet.title).includes('securitylogs')) || null;
+
+async function ensureSecuritySessionColumns(sheet) {
+  await sheet.loadHeaderRow();
+  const headers = [...(sheet.headerValues || [])];
+  const existing = new Set(headers.map(normalizePlacementText));
+  const missing = securitySessionHeaders.filter(header => !existing.has(normalizePlacementText(header)));
+  if (missing.length) await sheet.setHeaderRow([...headers, ...missing]);
+}
+
+async function recordSecuritySessionStart(user, req) {
+  if (!user?.securitySessionId) return;
+  await loadDocInfo();
+  const sheet = findSecurityLogSheet();
+  if (!sheet) return;
+  await ensureSecuritySessionColumns(sheet);
+  const headers = sheet.headerValues || [];
+  const rowData = {};
+  const set = (aliases, value) => {
+    const wanted = new Set(aliases.map(normalizePlacementText));
+    const header = headers.find(item => wanted.has(normalizePlacementText(item)));
+    if (header) rowData[header] = value ?? '';
+  };
+  const rawIp = req?.ip || req?.socket?.remoteAddress || 'Unknown IP';
+  const uaInfo = parseUserAgent(req?.headers?.['user-agent'] || '');
+  const startedAt = user.sessionStartedAt || new Date().toISOString();
+  set(['Timestamp', 'TimeStamp'], formatIndiaTimestamp());
+  set(['User Name', 'UserName', 'Name'], user.name || '');
+  set(['Email', 'Mail ID'], user.email || '');
+  set(['Role'], user.role || '');
+  set(['Branch'], user.sittingBranch || 'All Branches');
+  set(['IP Address', 'IPAddress', 'IP'], String(rawIp).replace('::ffff:', '').trim());
+  set(['Device'], uaInfo.device);
+  set(['OS'], uaInfo.os);
+  set(['Browser'], uaInfo.browser);
+  set(['Status'], 'Active');
+  set(['Security Session ID'], user.securitySessionId);
+  set(['Session Started At'], startedAt);
+  set(['Last Activity At'], startedAt);
+  set(['Last Seen At'], startedAt);
+  set(['Active Seconds'], 0);
+  const saved = await sheet.addRow(rowData);
+  const cache = getCache();
+  if (cache) cache.securityLogs = [...(cache.securityLogs || []), saved];
+}
+
+async function persistSecuritySessionActivity(user, activity = {}) {
+  const sessionId = String(user?.securitySessionId || '').trim();
+  if (!sessionId) return;
+  const cache = getCache();
+  const row = (cache?.securityLogs || []).find(item => getValByHeader(item, ['securitysessionid']) === sessionId);
+  if (!row) return;
+  const lastSeen = Date.parse(getValByHeader(row, ['lastseenat']) || '');
+  if (Number.isFinite(lastSeen) && Date.now() - lastSeen < 120_000) return;
+  const sheet = row._worksheet || findSecurityLogSheet();
+  if (!sheet) return;
+  const now = Date.now();
+  const start = Date.parse(user.sessionStartedAt || getValByHeader(row, ['sessionstartedat']) || '');
+  const maxSeconds = Number.isFinite(start) ? Math.max(0, Math.floor((now - start) / 1000)) : 0;
+  const previousSeconds = Math.max(0, Number(getValByHeader(row, ['activeseconds'])) || 0);
+  const requestedSeconds = Math.max(0, Number(activity.activeSeconds) || 0);
+  const activeSeconds = Math.min(maxSeconds, Math.max(previousSeconds, requestedSeconds));
+  const activityTime = Date.parse(activity.lastActivityAt || '');
+  const validActivityTime = Number.isFinite(activityTime) && activityTime <= now + 60_000 && (!Number.isFinite(start) || activityTime >= start - 60_000)
+    ? new Date(Math.min(activityTime, now)).toISOString()
+    : getValByHeader(row, ['lastactivityat']) || new Date(now).toISOString();
+  await updateCachedSheetRow(sheet, row, {
+    'Last Activity At': validActivityTime,
+    'Last Seen At': new Date(now).toISOString(),
+    'Active Seconds': activeSeconds,
+    Status: 'Active',
+  });
+}
+
 exports.getSecurityLogs = (req, res) => {
   try {
     const cache = getCache();
@@ -10734,7 +10805,12 @@ exports.getSecurityLogs = (req, res) => {
         device: getValByHeader(row, ['device']) || 'Desktop',
         os: getValByHeader(row, ['os']) || '',
         browser: getValByHeader(row, ['browser']) || '',
-        status: getValByHeader(row, ['status']) || 'Active'
+        status: getValByHeader(row, ['status']) || 'Active',
+        securitySessionId: getValByHeader(row, ['securitysessionid']) || '',
+        sessionStartedAt: getValByHeader(row, ['sessionstartedat']) || '',
+        lastActivityAt: getValByHeader(row, ['lastactivityat']) || '',
+        lastSeenAt: getValByHeader(row, ['lastseenat']) || '',
+        activeSeconds: getValByHeader(row, ['activeseconds']) || '',
       };
     });
 
@@ -10771,6 +10847,7 @@ exports.verifySession = async (req, res) => {
     }
     req.auditActor = checkedSession.user;
     req.auditResult = 'Success';
+    void persistSecuritySessionActivity(checkedSession.user, req.body).catch(error => console.warn('[SECURITY ACTIVITY] Could not update session duration:', error.message));
     const row = checkedSession.account.row;
     return res.json({
       valid: true,
@@ -10810,6 +10887,7 @@ exports.verifySession = async (req, res) => {
   }
   req.auditActor = user;
   req.auditResult = 'Success';
+  void persistSecuritySessionActivity(user, req.body).catch(error => console.warn('[SECURITY ACTIVITY] Could not update session duration:', error.message));
   const accountRow = getCurrentAccountRow(cleanEmail);
   return res.json({
     valid: true,

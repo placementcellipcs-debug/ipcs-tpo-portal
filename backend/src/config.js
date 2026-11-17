@@ -72,6 +72,110 @@ const spreadsheetGroupIds = {
 const learningUsesLegacySources = Boolean(legacySpreadsheetId) && configuredLearningSpreadsheetId === legacySpreadsheetId;
 
 const normalizeSheetTitle = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+const normalizePlacementCell = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+const sheetColumnName = index => {
+  let column = Number(index) + 1;
+  let name = '';
+  while (column > 0) {
+    const remainder = (column - 1) % 26;
+    name = String.fromCharCode(65 + remainder) + name;
+    column = Math.floor((column - 1) / 26);
+  }
+  return name;
+};
+
+async function syncPlacedStatusesToStudentDirectory(studentSheet, studentRows, placementRows) {
+  if (String(process.env.MYSQL_STUDENT_DIRECTORY_ENABLED || '').trim().toLowerCase() === 'true') return 0;
+  const headers = studentSheet?.headerValues || [];
+  const normalizedHeaders = headers.map(normalizePlacementCell);
+  const statusIndex = normalizedHeaders.findIndex(header => [
+    'placementstatus', 'placementstatuscurrent', 'studentplacementstatus', 'placementstatustpo'
+  ].includes(header));
+  if (statusIndex < 0) return 0;
+
+  const indexFor = aliases => {
+    const wanted = new Set(aliases.map(normalizePlacementCell));
+    return normalizedHeaders.findIndex(header => wanted.has(header));
+  };
+  const studentIndexes = {
+    roll: indexFor(['IPCS Roll Number', 'Roll Number', 'Roll No', 'Roll']),
+    name: indexFor(['Name', 'Student Name', 'Name of Student']),
+    branch: indexFor(['Branch', 'Branch Name', 'Sitting Branch']),
+    phone: indexFor(['Contact Number', 'Phone', 'Phone Number', 'Mobile Number', 'Student Phone']),
+    email: indexFor(['Mail ID', 'Email', 'Student Email']),
+  };
+  const studentValue = (row, field) => {
+    const index = studentIndexes[field];
+    return index >= 0 ? String(row?._rawData?.[index] ?? '').trim() : '';
+  };
+  const branchKey = value => normalizePlacementCell(value).replace(/branch/g, '');
+  const normalizePhone = value => String(value || '').replace(/\D/g, '');
+  const usable = value => value && !['na', 'none', 'null', 'unknown', 'notavailable', '0'].includes(normalizePlacementCell(value));
+  const rowsByField = field => {
+    const map = new Map();
+    for (const row of studentRows || []) {
+      const value = studentValue(row, field);
+      const key = field === 'phone' ? normalizePhone(value) : normalizePlacementCell(value);
+      if (key) map.set(key, [...(map.get(key) || []), row]);
+    }
+    return map;
+  };
+  const studentMaps = Object.fromEntries(['roll', 'phone', 'email'].map(field => [field, rowsByField(field)]));
+  const valuesFor = (row, aliases) => {
+    const rowHeaders = row?._worksheet?.headerValues || [];
+    const targetHeaders = new Set(aliases.map(normalizePlacementCell));
+    const index = rowHeaders.findIndex(header => targetHeaders.has(normalizePlacementCell(header)));
+    return index >= 0 ? String(row?._rawData?.[index] ?? '').trim() : '';
+  };
+  const queued = new Map();
+  const findUnique = rows => rows?.length === 1 ? rows[0] : null;
+
+  for (const log of placementRows || []) {
+    if (normalizePlacementCell(valuesFor(log, ['Status'])) !== 'placed') continue;
+    if (/^(yes|true|1)$/i.test(valuesFor(log, ['TPO Action Log']))) continue;
+    const roll = valuesFor(log, ['Roll Number', 'Roll No', 'IPCS Roll Number', 'Roll']);
+    const phone = valuesFor(log, ['Contact', 'Phone', 'Mobile Number']);
+    const email = valuesFor(log, ['Mail ID', 'Email', 'Student Email']);
+    const name = valuesFor(log, ['Student Name', 'Name']);
+    const branch = valuesFor(log, ['Branch', 'Sitting Branch']);
+    const logBranch = branchKey(branch);
+    const sameBranch = row => {
+      if (!logBranch) return true;
+      const studentBranch = branchKey(studentValue(row, 'branch'));
+      return !studentBranch || studentBranch === logBranch;
+    };
+    let match = null;
+    if (usable(roll)) match = findUnique(studentMaps.roll.get(normalizePlacementCell(roll)));
+    if (!match && usable(phone)) match = findUnique((studentMaps.phone.get(normalizePhone(phone)) || []).filter(sameBranch));
+    if (!match && usable(email)) match = findUnique((studentMaps.email.get(normalizePlacementCell(email)) || []).filter(sameBranch));
+    if (!match && usable(name)) {
+      const nameKey = normalizePlacementCell(name);
+      const nameMatches = (studentRows || []).filter(row => normalizePlacementCell(studentValue(row, 'name')) === nameKey && sameBranch(row));
+      match = findUnique(nameMatches);
+    }
+    if (!match || !Number.isInteger(Number(match.rowNumber))) continue;
+    if (normalizePlacementCell(match?._rawData?.[statusIndex]) === 'placed') continue;
+    queued.set(Number(match.rowNumber), match);
+  }
+
+  if (!queued.size) return 0;
+  const updates = [...queued.entries()].map(([rowNumber, row]) => ({
+    rowNumber,
+    row,
+    range: `'${String(studentSheet.title).replace(/'/g, "''")}'!${sheetColumnName(statusIndex)}${rowNumber}`,
+    value: 'Placed',
+  }));
+  await google.sheets({ version: 'v4', auth: serviceAccountAuth }).spreadsheets.values.batchUpdate({
+    spreadsheetId: getSpreadsheetIdForSheetName(studentSheet.title),
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data: updates.map(update => ({ range: update.range, values: [[update.value]] })),
+    },
+  });
+  updates.forEach(({ row, value }) => { row._rawData[statusIndex] = value; });
+  return updates.length;
+}
+
 const sheetGroups = {
   students: ['Data', 'Student_Diary', 'Leave_Applications'],
   placements: ['NewsLetter', 'Event', 'Drive_Registration', 'Opening_Applied', 'Clients', 'TPO_Log', 'Placed_Students', 'TPO_Stats', 'Corporate Training Inquiries', 'Hiring Inquiries'],
@@ -904,6 +1008,15 @@ async function performCacheRefresh() {
       cacheRefreshStatus: uniqueCacheFailedSheets.length ? 'partial' : 'success',
       cacheUpdatedAt: cacheRefreshAt
     };
+
+    if (cacheSheetHealth.students && cacheSheetHealth.tpoLogs) {
+      try {
+        const syncedStatuses = await syncPlacedStatusesToStudentDirectory(sheetsToFetch[0], stuRows || [], tpoLogRows || []);
+        if (syncedStatuses) console.log(`[PLACEMENT SYNC] Marked ${syncedStatuses} matching student row(s) as Placed in Data.`);
+      } catch (error) {
+        console.warn('[PLACEMENT SYNC] Could not copy placed statuses into the student Data sheet:', error.message);
+      }
+    }
     
     if (cacheFailedSheets.length) {
       console.warn(`⚠️ Cache refresh completed with ${cacheFailedSheets.length} unavailable sheet(s): ${[...new Set(cacheFailedSheets)].join(', ')}`);

@@ -9,6 +9,16 @@ import Layout from '../../layouts/Layout';
 import { API_BASE } from '../../services/apiConfig';
 import { formatPortalDateTime, parsePortalDateTime } from '../../utils/dateFormat';
 
+const formatActiveDuration = value => {
+  const seconds = Math.max(0, Math.floor(Number(value) || 0));
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const remainder = seconds % 60;
+  if (hours) return `${hours} hr ${minutes} min`;
+  if (minutes) return `${minutes} min ${remainder} sec`;
+  return `${remainder} sec`;
+};
+
 export default function SecurityActivity() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData') || '{}');
   const isSuperAdmin = tpoData?.accessType === 'superadmin';
@@ -39,15 +49,19 @@ export default function SecurityActivity() {
   }, [selectedUser]);
 
   useEffect(() => {
+    let active = true;
     const fetchLogs = async () => {
       try {
         const res = await axios.get(`${API_BASE}/api/admin/security-logs`);
-        if (res.data.success) {
+        if (active && res.data.success) {
           setLogs(res.data.logs || []);
         }
-      } catch (err) { console.error("Failed to load security logs", err); } finally { setLoading(false); }
+      } catch (err) { console.error("Failed to load security logs", err); } finally { if (active) setLoading(false); }
     };
-    if (isSuperAdmin) fetchLogs();
+    if (!isSuperAdmin) return () => { active = false; };
+    fetchLogs();
+    const refreshTimer = window.setInterval(fetchLogs, 120_000);
+    return () => { active = false; window.clearInterval(refreshTimer); };
   }, [isSuperAdmin]);
 
   if (!isSuperAdmin) {
@@ -87,11 +101,15 @@ export default function SecurityActivity() {
     return matchQuery && matchRole && matchDevice;
   });
 
-  const checkIsActive = (timestamp) => {
-    if (!timestamp) return false;
-    const logDate = parsePortalDateTime(timestamp);
-    if (!logDate) return true;
-    return (currentTime - logDate.getTime()) < (4 * 60 * 60 * 1000);
+  const getSessionPresence = log => {
+    const activityDate = parsePortalDateTime(log.lastActivityAt || log.timestamp);
+    const seenDate = parsePortalDateTime(log.lastSeenAt || log.timestamp);
+    const activityAge = activityDate ? currentTime - activityDate.getTime() : Infinity;
+    const seenAge = seenDate ? currentTime - seenDate.getTime() : Infinity;
+    if (activityAge <= 3 * 60 * 1000) return 'Active Now';
+    if (seenAge <= 7 * 60 * 1000) return 'Idle';
+    if (!log.lastSeenAt && activityAge < 4 * 60 * 60 * 1000) return 'Signed in';
+    return 'Offline';
   };
 
   return (
@@ -104,7 +122,7 @@ export default function SecurityActivity() {
               <ShieldCheck color="var(--accent-primary)" weight="fill" /> User Login & Security Activity
             </h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>
-              Live audit logging of internal staff authentications, hardware profiles, and IP networks.
+              Review staff sign-ins, devices, and time spent actively using the portal. Duration tracking starts with new sign-ins.
             </p>
           </div>
         </div>
@@ -148,18 +166,21 @@ export default function SecurityActivity() {
                 <th>User Identity</th>
                 <th>Role & Branch</th>
                 <th>Latest IP</th>
+                <th>Active duration</th>
                 <th>Current Status</th>
                 <th style={{ textAlign: 'center' }}>Action</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="var(--accent-primary)" /></td></tr>
+                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '3rem' }}><CircleNotch size={32} className="ph-spin" color="var(--accent-primary)" /></td></tr>
               ) : filteredUsers.length === 0 ? (
-                <tr><td colSpan="5" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No login activity matches the criteria.</td></tr>
+                <tr><td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: 'var(--text-muted)' }}>No login activity matches the criteria.</td></tr>
               ) : (
                 filteredUsers.map((user, i) => {
-                  const isActive = checkIsActive(user.timestamp);
+                  const presence = getSessionPresence(user);
+                  const isActive = presence === 'Active Now';
+                  const durationTracked = user.activeSeconds !== '' && user.activeSeconds !== null && user.activeSeconds !== undefined;
                   return (
                     <tr key={i}>
                       <td>
@@ -174,9 +195,13 @@ export default function SecurityActivity() {
                         <span style={{ color: 'var(--accent-primary)', fontFamily: 'monospace', fontSize: '0.9rem' }}>{user.ipAddress}</span>
                       </td>
                       <td>
-                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '4px 10px', borderRadius: '20px', background: isActive ? 'rgba(16, 185, 129, 0.1)' : 'rgba(148, 163, 184, 0.1)', color: isActive ? '#10b981' : '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold' }}>
-                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: isActive ? '#10b981' : '#94a3b8' }}></span>
-                          {isActive ? 'Active Now' : 'Offline'}
+                        <span className="primary-text" style={{ fontWeight: 700 }}>{durationTracked ? formatActiveDuration(user.activeSeconds) : 'Not tracked yet'}</span>
+                        {user.sessionStartedAt && <span className="sub-text">Since {formatPortalDateTime(user.sessionStartedAt, String(user.sessionStartedAt))}</span>}
+                      </td>
+                      <td>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '4px 10px', borderRadius: '20px', background: isActive ? 'rgba(16, 185, 129, 0.1)' : presence === 'Idle' ? 'rgba(245, 158, 11, 0.1)' : 'rgba(148, 163, 184, 0.1)', color: isActive ? '#10b981' : presence === 'Idle' ? '#f59e0b' : '#94a3b8', fontSize: '0.8rem', fontWeight: 'bold' }}>
+                          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: isActive ? '#10b981' : presence === 'Idle' ? '#f59e0b' : '#94a3b8' }}></span>
+                          {presence}
                         </div>
                       </td>
                       <td style={{ textAlign: 'center' }}>
@@ -214,8 +239,9 @@ export default function SecurityActivity() {
                       <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '4px' }}>IP Network: <span style={{ fontFamily: 'monospace', color: 'var(--accent-primary)' }}>{item.ipAddress}</span></div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold' }}>Session Recorded</div>
-                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>{formatPortalDateTime(item.timestamp, String(item.timestamp || ''))}</div>
+                      <div style={{ color: '#10b981', fontSize: '0.8rem', fontWeight: 'bold' }}>{item.activeSeconds !== '' && item.activeSeconds !== undefined ? `Active ${formatActiveDuration(item.activeSeconds)}` : 'Active time not tracked'}</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>Signed in {formatPortalDateTime(item.sessionStartedAt || item.timestamp, String(item.sessionStartedAt || item.timestamp || ''))}</div>
+                      {item.lastActivityAt && <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem', marginTop: '2px' }}>Last active {formatPortalDateTime(item.lastActivityAt, String(item.lastActivityAt))}</div>}
                     </div>
                   </div>
                 )) : <div style={{ padding: 22, color: '#94a3b8', textAlign: 'center' }}>No sign-in history is recorded for this account yet.</div>}

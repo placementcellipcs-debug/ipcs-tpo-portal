@@ -49,6 +49,12 @@ export default function Layout({ children }) {
     // Keep a signed-in workday session alive through a longer inactive period.
     const INACTIVITY_TIMEOUT = 12 * 60 * 60 * 1000;
     let lastActivity = Date.now();
+    let lastHeartbeatAt = Date.now();
+    const activityStorageKey = tpoData?.securitySessionId ? `ipcs:security-active-seconds:${tpoData.securitySessionId}` : '';
+    let activeSeconds = 0;
+    if (activityStorageKey) {
+      try { activeSeconds = Math.max(0, Number(localStorage.getItem(activityStorageKey)) || 0); } catch { /* Activity totals remain in memory if browser storage is unavailable. */ }
+    }
     const handleUserInteraction = () => { lastActivity = Date.now(); };
     const activityEvents = ['mousemove', 'keydown', 'click', 'scroll', 'touchstart'];
     activityEvents.forEach((evt) => window.addEventListener(evt, handleUserInteraction, { passive: true }));
@@ -64,11 +70,20 @@ export default function Layout({ children }) {
     }, 10000);
 
     const sessionHeartbeat = setInterval(async () => {
+      const heartbeatAt = Date.now();
+      const elapsedSeconds = Math.min(60, Math.max(0, Math.floor((heartbeatAt - lastHeartbeatAt) / 1000)));
+      lastHeartbeatAt = heartbeatAt;
+      if (heartbeatAt - lastActivity <= 90_000) activeSeconds += elapsedSeconds;
+      if (activityStorageKey) {
+        try { localStorage.setItem(activityStorageKey, String(activeSeconds)); } catch { /* Keep the session counter in memory. */ }
+      }
       try {
         if (!tpoData?.email || !tpoData?.sessionToken) return;
         const res = await axios.post(`${API_BASE}/api/auth/verify-session`, {
           email: tpoData.email,
-          sessionToken: tpoData.sessionToken
+          sessionToken: tpoData.sessionToken,
+          activeSeconds,
+          lastActivityAt: new Date(lastActivity).toISOString()
         });
         if (res.data?.valid === true && res.data.profile) {
           const next = {
