@@ -115,14 +115,14 @@ async function createEvent({ fields, actorEmail, requestId, connection = null })
       const metadata = JSON.stringify({ source: 'tpo_portal_mysql', externalEventId: eventId, fields });
       await conn.execute(
         `INSERT INTO drives (id, title, company_name, starts_at, location, status, created_by_user_id, source, source_record_key, metadata)
-         VALUES (?, ?, NULL, ?, ?, 'open', ?, 'tpo_portal_mysql', ?, CAST(? AS JSON))`,
+         VALUES (?, ?, NULL, ?, ?, 'open', ?, 'tpo_portal_mysql', ?, ?)`,
         [id, title.slice(0, 240), toUtcDateTime(field(fields, 'Date of the Event', 'Date', 'Event Date'), field(fields, 'Time of the Event', 'Time', 'Event Time')),
           field(fields, 'Event Happening in', 'Location', 'Venue').slice(0, 240) || null, actorId, `Event:${eventId}`,
           metadata],
       );
       await conn.execute(
         `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, request_id, details)
-         VALUES (?, ?, 'event_created', 'drive', ?, UTC_TIMESTAMP(), ?, CAST(? AS JSON))`,
+         VALUES (?, ?, 'event_created', 'drive', ?, UTC_TIMESTAMP(), ?, ?)`,
         [crypto.randomUUID(), actorId, id, text(requestId) || null, JSON.stringify({ eventId, title })],
       );
       const [[row]] = await conn.execute('SELECT id, title, company_name, starts_at, location, status, source, source_record_key, metadata, created_at, updated_at FROM drives WHERE id = ?', [id]);
@@ -186,13 +186,13 @@ async function updateEventStatus({ eventKey, status, reason, date, time, actor, 
       const updatedDate = status === 'Rescheduled' ? fields['Date of the Event'] : previousDate;
       const updatedTime = status === 'Rescheduled' ? fields['Time of the Event'] : previousTime;
       await conn.execute(
-        `UPDATE drives SET status = ?, starts_at = ?, metadata = CAST(? AS JSON) WHERE id = ?`,
+        `UPDATE drives SET status = ?, starts_at = ?, metadata = ? WHERE id = ?`,
         [dbStatus, status === 'Rescheduled' ? toUtcDateTime(fields['Date of the Event'], fields['Time of the Event']) : row.starts_at,
           JSON.stringify(metadata), row.id],
       );
       await conn.execute(
         `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, request_id, details)
-         VALUES (?, ?, ?, 'drive', ?, UTC_TIMESTAMP(), ?, CAST(? AS JSON))`,
+         VALUES (?, ?, ?, 'drive', ?, UTC_TIMESTAMP(), ?, ?)`,
         [crypto.randomUUID(), actorId, status === 'Cancelled' ? 'event_cancelled' : 'event_rescheduled', row.id, text(requestId) || null,
           JSON.stringify({ eventId: event.eventId, status, reason: fields.Status_Reason, previousDate, previousTime, date: updatedDate, time: updatedTime })],
       );
@@ -216,7 +216,7 @@ async function setMailStatus({ eventKey, status, error = '', sentAt = '', connec
     fields.Mail_Error = text(error);
     if (sentAt) fields.Mail_Sent_At = text(sentAt);
     metadata.fields = fields;
-    await conn.execute('UPDATE drives SET metadata = CAST(? AS JSON) WHERE id = ?', [JSON.stringify(metadata), row.id]);
+    await conn.execute('UPDATE drives SET metadata = ? WHERE id = ?', [JSON.stringify(metadata), row.id]);
     return true;
   });
 }

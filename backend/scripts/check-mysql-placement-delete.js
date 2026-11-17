@@ -62,7 +62,7 @@ async function main() {
       await connection.execute(
         `INSERT INTO job_applications
            (id, student_id, vacancy_id, owner_tpo_user_id, status, source, source_record_key, metadata)
-         VALUES (?, ?, ?, ?, 'placed', 'rollback_check', ?, CAST(? AS JSON))`,
+         VALUES (?, ?, ?, ?, 'placed', 'rollback_check', ?, ?)`,
         [applicationId, row.student_id, row.vacancy_id, row.actor_id,
           `placement-delete:${applicationId}`, JSON.stringify({ source: 'rollback_check' })],
       );
@@ -71,7 +71,7 @@ async function main() {
     await connection.execute(
       `INSERT INTO application_status_history
          (id, application_id, previous_status, new_status, note, actor_user_id, occurred_at, metadata)
-       VALUES (?, ?, 'applied', 'placed', 'Placement delete rollback check setup.', ?, UTC_TIMESTAMP(), CAST(? AS JSON))`,
+       VALUES (?, ?, 'applied', 'placed', 'Placement delete rollback check setup.', ?, UTC_TIMESTAMP(), ?)`,
       [crypto.randomUUID(), applicationId, row.actor_id, JSON.stringify({ source: 'rollback_check' })],
     );
 

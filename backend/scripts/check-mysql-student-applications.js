@@ -60,7 +60,7 @@ async function main() {
     );
     await connection.execute(
       `INSERT INTO job_applications (id, student_id, vacancy_id, owner_tpo_user_id, status, applied_at, source, source_record_key, metadata)
-       VALUES (?, ?, ?, ?, 'Applied', UTC_TIMESTAMP(), 'mysql_student_portal', ?, CAST(? AS JSON))`,
+       VALUES (?, ?, ?, ?, 'Applied', UTC_TIMESTAMP(), 'mysql_student_portal', ?, ?)`,
       [applicationId, studentId, vacancyId, ownerTpoId, `student:${studentId}:vacancy:${vacancyId}`, applicationMetadata],
     );
     await connection.execute(

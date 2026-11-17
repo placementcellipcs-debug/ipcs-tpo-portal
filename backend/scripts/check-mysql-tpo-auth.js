@@ -48,7 +48,7 @@ async function main() {
     await connection.execute(
       `INSERT INTO users (id, email, normalized_email, password_hash, role, full_name, phone,
                           status, metadata)
-       VALUES (?, ?, ?, ?, 'tpo', ?, '0000000000', 'active', CAST(? AS JSON))`,
+       VALUES (?, ?, ?, ?, 'tpo', ?, '0000000000', 'active', ?)`,
       [id, email, email, passwordHash, loginName, metadata],
     );
 

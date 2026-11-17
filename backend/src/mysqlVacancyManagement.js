@@ -212,14 +212,14 @@ async function createVacancy({ actor, input, logoUrl }) {
     await connection.execute(
       `INSERT INTO vacancies (id, job_code, title, company_name, company_website, location, description, qualification,
          employment_type, salary_text, apply_by, status, assigned_tpo_user_id, source, source_record_key, metadata)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 'mysql', ?, CAST(? AS JSON))`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'open', ?, 'mysql', ?, ?)`,
       [id, jobCode, text(input.position).slice(0, 240), text(input.companyName).slice(0, 240), text(input.companyWebsite) || null,
         text(input.location) || null, text(input.jobDescription) || null, text(input.qualification) || null, text(input.workMode) || null,
         text(input.salary) || null, parseDate(input.lastDate), user.id, jobCode, metadata],
     );
     await syncCompany(connection, user.id, fields);
     await connection.execute(
-      'INSERT INTO vacancy_edit_history (id, vacancy_id, actor_user_id, action, changes) VALUES (?, ?, ?, ?, CAST(? AS JSON))',
+      'INSERT INTO vacancy_edit_history (id, vacancy_id, actor_user_id, action, changes) VALUES (?, ?, ?, ?, ?)',
       [makeId(), id, user.id, 'created', JSON.stringify({ fields })],
     );
     await connection.commit();
@@ -249,7 +249,7 @@ async function updateVacancy({ actor, jobCode, input, logoUrl }) {
     const metadata = JSON.stringify({ ...parseJson(row.metadata), source: 'mysql', fields });
     await connection.execute(
       `UPDATE vacancies SET title = ?, company_name = ?, company_website = ?, location = ?, description = ?, qualification = ?,
-        employment_type = ?, salary_text = ?, apply_by = ?, metadata = CAST(? AS JSON) WHERE id = ?`,
+        employment_type = ?, salary_text = ?, apply_by = ?, metadata = ? WHERE id = ?`,
       [text(input.position).slice(0, 240), text(input.companyName).slice(0, 240), text(input.companyWebsite) || null,
         text(input.location) || null, text(input.jobDescription) || null, text(input.qualification) || null, text(input.workMode) || null,
         text(input.salary) || null, parseDate(input.lastDate), metadata, row.id],
@@ -257,7 +257,7 @@ async function updateVacancy({ actor, jobCode, input, logoUrl }) {
     await syncCompany(connection, user.id, fields);
     if (Object.keys(changes).length) {
       await connection.execute(
-        'INSERT INTO vacancy_edit_history (id, vacancy_id, actor_user_id, action, changes) VALUES (?, ?, ?, ?, CAST(? AS JSON))',
+        'INSERT INTO vacancy_edit_history (id, vacancy_id, actor_user_id, action, changes) VALUES (?, ?, ?, ?, ?)',
         [makeId(), row.id, user.id, 'updated', JSON.stringify(changes)],
       );
     }
@@ -299,11 +299,11 @@ async function requestVacancyDelete({ actor, jobCode, reason }) {
       `INSERT INTO tpo_delete_requests
        (id, request_code, status, record_type, target_id, target_summary, target_snapshot, reason,
         requested_by_user_id, requested_by_name, requested_by_email, requested_by_role)
-       VALUES (?, ?, 'pending', 'Vacancy', ?, ?, CAST(? AS JSON), ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, 'pending', 'Vacancy', ?, ?, ?, ?, ?, ?, ?, ?)`,
       [makeId(), requestId, jobCode, summary, JSON.stringify(snapshot), text(reason).slice(0, 500), user.id, user.full_name, user.email, user.role],
     );
     await connection.execute(
-      'INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, request_id, details) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS JSON))',
+      'INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, request_id, details) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [makeId(), user.id, 'deletion_requested', 'vacancy', row.id, requestId, JSON.stringify({ reason: text(reason).slice(0, 500), summary })],
     );
     await connection.commit();
@@ -369,7 +369,7 @@ async function reviewDeleteRequest({ actor, requestCode, decision, notes, enable
       );
       const entityType = normalize(request.record_type) === 'placed student' ? 'placed_student' : 'vacancy';
       await connection.execute(
-        'INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, request_id, details) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS JSON))',
+        'INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, request_id, details) VALUES (?, ?, ?, ?, ?, ?, ?)',
         [makeId(), reviewer.id, 'deletion_rejected', entityType, request.target_id, request.request_code, JSON.stringify({ summary: request.target_summary, notes: decisionNotes })],
       );
       if (previewOnly) {
@@ -411,18 +411,18 @@ async function reviewDeleteRequest({ actor, requestCode, decision, notes, enable
     }
     const metadata = parseJson(vacancy.metadata);
     metadata.deleted = { at: reviewedAt.toISOString(), requestId: request.request_code, by: reviewer.email };
-    await connection.execute("UPDATE vacancies SET status = 'deleted', metadata = CAST(? AS JSON) WHERE id = ?", [JSON.stringify(metadata), vacancy.id]);
+    await connection.execute("UPDATE vacancies SET status = 'deleted', metadata = ? WHERE id = ?", [JSON.stringify(metadata), vacancy.id]);
     await connection.execute(
       `UPDATE tpo_delete_requests SET status = 'approved', reviewed_by_user_id = ?, reviewed_by_name = ?, reviewed_by_email = ?,
         reviewed_at = ?, decision_notes = ?, execution_message = 'Approved opening was archived. Application history is preserved.' WHERE id = ?`,
       [reviewer.id, reviewedByName, reviewer.email, reviewedAt, decisionNotes, request.id],
     );
     await connection.execute(
-      'INSERT INTO vacancy_edit_history (id, vacancy_id, actor_user_id, action, changes) VALUES (?, ?, ?, ?, CAST(? AS JSON))',
+      'INSERT INTO vacancy_edit_history (id, vacancy_id, actor_user_id, action, changes) VALUES (?, ?, ?, ?, ?)',
       [makeId(), vacancy.id, reviewer.id, 'archived', JSON.stringify({ requestId: request.request_code, decisionNotes })],
     );
     await connection.execute(
-      'INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, request_id, details) VALUES (?, ?, ?, ?, ?, ?, CAST(? AS JSON))',
+      'INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, request_id, details) VALUES (?, ?, ?, ?, ?, ?, ?)',
       [makeId(), reviewer.id, 'deletion_approved_and_archived', 'vacancy', vacancy.id, request.request_code, JSON.stringify({ summary: request.target_summary, linkedApplicationCount: target.linkedApplicationCount || 0 })],
     );
     if (previewOnly) {

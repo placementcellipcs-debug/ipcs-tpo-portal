@@ -84,12 +84,12 @@ async function reviewLeaveRequest({ leaveId, status, notes = '', actor = {}, req
       const [actors] = await conn.execute('SELECT id FROM users WHERE normalized_email = ? LIMIT 1', [normalize(actor.email)]);
       const actorUserId = actors[0]?.id || null;
       await conn.execute(
-        'UPDATE student_leave_requests SET status = ?, metadata = CAST(? AS JSON) WHERE id = ?',
+        'UPDATE student_leave_requests SET status = ?, metadata = ? WHERE id = ?',
         [decision, JSON.stringify(metadata), requestKey],
       );
       await conn.execute(
         `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, request_id, details)
-         VALUES (?, ?, ?, 'student_leave_request', ?, UTC_TIMESTAMP(), ?, CAST(? AS JSON))`,
+         VALUES (?, ?, ?, 'student_leave_request', ?, UTC_TIMESTAMP(), ?, ?)`,
         [crypto.randomUUID(), actorUserId, decision === 'Approved' ? 'student_leave_request_approved' : 'student_leave_request_rejected',
           requestKey, text(requestId) || null, JSON.stringify({ status: decision, reviewer, notes: reviewNotes })],
       );

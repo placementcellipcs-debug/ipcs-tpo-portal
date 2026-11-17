@@ -49,7 +49,7 @@ async function updateIssue({ id, status, remarks, actorEmail, requestId, connect
     );
     await connection.execute(
       `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, request_id, details)
-       VALUES (?, ?, 'support_issue_updated', 'support_issue', ?, UTC_TIMESTAMP(), ?, CAST(? AS JSON))`,
+       VALUES (?, ?, 'support_issue_updated', 'support_issue', ?, UTC_TIMESTAMP(), ?, ?)`,
       [require('crypto').randomUUID(), actorId, issue.id, text(requestId) || null,
         JSON.stringify({ previousStatus: text(issue.status), newStatus: status, remarksChanged: text(issue.remarks) !== remarks })],
     );

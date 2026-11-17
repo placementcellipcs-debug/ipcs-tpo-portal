@@ -382,13 +382,13 @@ async function createPlacedStudentDeleteRequest({ user, rowNumber, expected = {}
       `INSERT INTO tpo_delete_requests
        (id, request_code, status, record_type, target_id, target_summary, target_snapshot, reason,
         requested_by_user_id, requested_by_name, requested_by_email, requested_by_role)
-       VALUES (?, ?, 'pending', 'Placed student', ?, ?, CAST(? AS JSON), ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, 'pending', 'Placed student', ?, ?, ?, ?, ?, ?, ?, ?)`,
       [crypto.randomUUID(), requestCode, targetId, summary, JSON.stringify(target), cleanReason.slice(0, 500),
         actor.id, actor.full_name, actor.normalized_email, actor.role],
     );
     await connection.execute(
       `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, request_id, details)
-       VALUES (?, ?, 'deletion_requested', 'placed_student', ?, ?, CAST(? AS JSON))`,
+       VALUES (?, ?, 'deletion_requested', 'placed_student', ?, ?, ?)`,
       [crypto.randomUUID(), actor.id, row.id, requestCode, JSON.stringify({ summary, reason: cleanReason.slice(0, 500) })],
     );
     await connection.commit();
@@ -454,7 +454,7 @@ async function archivePlacedStudent({ connection, actor, rowNumber, expected = {
     writeField(metadata.fields, ['Status'], 'Deleted');
     metadata.deleted = { at: deletedAt, requestId: requestId || null, by: text(actor?.email) };
     await connection.execute(
-      "UPDATE placement_tracker_records SET status = 'deleted', metadata = CAST(? AS JSON), updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+      "UPDATE placement_tracker_records SET status = 'deleted', metadata = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
       [JSON.stringify(metadata), targetRow.id],
     );
   };
@@ -486,11 +486,11 @@ async function archivePlacedStudent({ connection, actor, rowNumber, expected = {
       const restoredStatus = text(historyRows[0]?.previous_status) || 'applied';
       const metadata = parseJson(application.metadata);
       metadata.placementCorrection = { at: deletedAt, requestId: requestId || null, note: 'Placement record deleted after review.' };
-      await connection.execute('UPDATE job_applications SET status = ?, metadata = CAST(? AS JSON) WHERE id = ?',
+      await connection.execute('UPDATE job_applications SET status = ?, metadata = ? WHERE id = ?',
         [restoredStatus, JSON.stringify(metadata), application.id]);
       await connection.execute(
         `INSERT INTO application_status_history (id, application_id, previous_status, new_status, note, actor_user_id, metadata)
-         VALUES (?, ?, 'placed', ?, ?, ?, CAST(? AS JSON))`,
+         VALUES (?, ?, 'placed', ?, ?, ?, ?)`,
         [crypto.randomUUID(), application.id, restoredStatus, 'Placement record removed after review.', actor?.id || null,
           JSON.stringify({ requestId: requestId || null, source: 'placed_student_deletion' })],
       );
@@ -500,7 +500,7 @@ async function archivePlacedStudent({ connection, actor, rowNumber, expected = {
 
   await connection.execute(
     `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, request_id, details)
-     VALUES (?, ?, 'placed_student_archived', 'placed_student', ?, ?, CAST(? AS JSON))`,
+     VALUES (?, ?, 'placed_student_archived', 'placed_student', ?, ?, ?)`,
     [crypto.randomUUID(), actor?.id || null, row.id, requestId || null,
       JSON.stringify({ record, linkedOpeningRowArchived: Boolean(matching[0]), canonicalApplicationReverted })],
   );
@@ -655,18 +655,18 @@ async function updateApplication({ user, isAdmin, isTpo, body, previewOnly = fal
 
     if (kind.toLowerCase() === 'tracker') {
       await connection.execute(
-        `UPDATE placement_tracker_records SET status = ?, metadata = CAST(? AS JSON), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        `UPDATE placement_tracker_records SET status = ?, metadata = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [nextStatus, JSON.stringify(metadata), id],
       );
     } else {
       await connection.execute(
-        `UPDATE job_applications SET status = ?, metadata = CAST(? AS JSON), updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        `UPDATE job_applications SET status = ?, metadata = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [nextStatus, JSON.stringify(metadata), id],
       );
       await connection.execute(
         `INSERT INTO application_status_history
           (id, application_id, previous_status, new_status, note, actor_user_id, occurred_at, metadata)
-         VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), CAST(? AS JSON))`,
+         VALUES (?, ?, ?, ?, ?, ?, UTC_TIMESTAMP(), ?)`,
         [crypto.randomUUID(), id, previousStatus || null, nextStatus,
           nextRemarks || 'Application details updated.', actor?.id || null,
           JSON.stringify({ source: 'tpo_portal', interviewDate: historyEntry.interviewDate, interviewTime: historyEntry.interviewTime, interviewVenue: historyEntry.interviewVenue })],
@@ -674,7 +674,7 @@ async function updateApplication({ user, isAdmin, isTpo, body, previewOnly = fal
     }
     await connection.execute(
       `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, details)
-       VALUES (?, ?, 'placement_application_updated', ?, ?, UTC_TIMESTAMP(), CAST(? AS JSON))`,
+       VALUES (?, ?, 'placement_application_updated', ?, ?, UTC_TIMESTAMP(), ?)`,
       [crypto.randomUUID(), actor?.id || null, kind.toLowerCase() === 'tracker' ? 'placement_tracker_record' : 'job_application', id,
         JSON.stringify({ previousStatus, newStatus: nextStatus, changedFields: Object.keys(body).filter(key => !['recordId', 'fullApp', 'currentUserEmail', 'offerLetterFile'].includes(key)) })],
     );

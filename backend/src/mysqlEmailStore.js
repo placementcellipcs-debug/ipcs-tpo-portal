@@ -22,7 +22,7 @@ async function createOrReuseOutbox({
       `INSERT INTO email_outbox
         (id, idempotency_key, sender_key, email_category, encrypted_payload, context_json, status,
          attempts, available_at, related_entity_type, related_entity_id)
-       VALUES (?, ?, ?, ?, ?, CAST(? AS JSON), 'sending', 0, UTC_TIMESTAMP(), ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, 'sending', 0, UTC_TIMESTAMP(), ?, ?)
        ON DUPLICATE KEY UPDATE id = id`,
       [proposedId, idempotencyKey, senderKey, emailCategory, encryptedPayload, JSON.stringify(context || {}), relatedEntityType, relatedEntityId],
     );
@@ -38,7 +38,7 @@ async function createOrReuseOutbox({
     if (!created && row.status === 'failed') {
       await connection.execute(
         `UPDATE email_outbox
-            SET sender_key = ?, email_category = ?, encrypted_payload = ?, context_json = CAST(? AS JSON),
+            SET sender_key = ?, email_category = ?, encrypted_payload = ?, context_json = ?,
                 status = 'sending', attempts = 0, available_at = UTC_TIMESTAMP(), last_error = NULL,
                 sent_at = NULL, related_entity_type = ?, related_entity_id = ?
           WHERE id = ? AND status = 'failed'`,
@@ -97,7 +97,7 @@ async function recordAttempt({
     `INSERT INTO email_delivery_attempts
       (id, outbox_id, attempted_at, sender_key, sender_email, email_category, provider, result,
        recipient_count, remaining_quota, subject, provider_message_id, error_message, metadata)
-     VALUES (?, ?, UTC_TIMESTAMP(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON))`,
+     VALUES (?, ?, UTC_TIMESTAMP(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [makeId(), outboxId, senderKey, senderEmail, emailCategory, provider, result,
       recipientCount, remainingQuota === '' ? null : remainingQuota, subject, providerMessageId,
       errorMessage ? String(errorMessage).slice(0, 4000) : null, metadata ? JSON.stringify(metadata) : null],
@@ -131,7 +131,7 @@ async function appendMailLog({ name, email, type, status, subject, senderKey = n
   await mysqlPool.query(
     `INSERT INTO mail_logs
       (id, occurred_at, recipient_name, recipient_email, mail_type, subject, status, sender_key, provider, outbox_id, metadata)
-     VALUES (?, UTC_TIMESTAMP(), ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON))`,
+     VALUES (?, UTC_TIMESTAMP(), ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [makeId(), String(name || 'Unknown').slice(0, 200), String(email || 'Unknown').slice(0, 254),
       String(type || 'System Alert').slice(0, 100), String(subject || 'Notification').slice(0, 500),
       String(status || 'Unknown').slice(0, 120), senderKey, provider, outboxId,

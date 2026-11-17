@@ -67,7 +67,7 @@ async function main() {
       `INSERT INTO tpo_delete_requests
        (id, request_code, status, record_type, target_id, target_summary, target_snapshot, reason,
         requested_by_user_id, requested_by_name, requested_by_email, requested_by_role)
-       VALUES (?, ?, 'pending', 'Placed student', ?, 'Local rollback verification', CAST(? AS JSON),
+       VALUES (?, ?, 'pending', 'Placed student', ?, 'Local rollback verification', ?,
          'Local rollback verification only', ?, 'Local verification', 'local-check@example.invalid', 'tpo')`,
       [crypto.randomUUID(), requestCode, `LOCAL|${row.source_row_number}`, JSON.stringify(target), row.owner_id],
     );

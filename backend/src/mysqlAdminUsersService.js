@@ -277,7 +277,7 @@ async function actorIdFor(connection, actor) {
 async function writeAudit(connection, actor, action, entityId, details) {
   await connection.execute(
     `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, request_id, details)
-     VALUES (?, ?, ?, 'user', ?, UTC_TIMESTAMP(), ?, CAST(? AS JSON))`,
+     VALUES (?, ?, ?, 'user', ?, UTC_TIMESTAMP(), ?, ?)`,
     [crypto.randomUUID(), await actorIdFor(connection, actor), action, entityId, actor?.requestId || null, JSON.stringify(details || {})],
   );
 }
@@ -537,7 +537,7 @@ async function saveUser(input, { userId = null, actor, passwordHash = null, targ
       await connection.execute(
         `UPDATE users SET email = ?, normalized_email = ?, password_hash = COALESCE(?, password_hash), role = ?,
              full_name = ?, phone = ?, sitting_branch_id = ?, linkedin_url = ?, birthday = ?, position_title = ?,
-             description = ?, employee_id = ?, profile_photo_url = ?, status = ?, metadata = CAST(? AS JSON)
+             description = ?, employee_id = ?, profile_photo_url = ?, status = ?, metadata = ?
            WHERE id = ?`,
         [cleanEmail, normalizedEmail, passwordHash, role.toLocaleLowerCase('en-US').replace(/\s+/g, '_'), cleanName,
           phone, sittingBranchId, text(input?.linkedIn) || null, birthday, text(input?.position) || null,
@@ -549,7 +549,7 @@ async function saveUser(input, { userId = null, actor, passwordHash = null, targ
         `INSERT INTO users
           (id, email, normalized_email, password_hash, role, full_name, phone, sitting_branch_id, linkedin_url,
            birthday, position_title, description, employee_id, profile_photo_url, status, metadata)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CAST(? AS JSON))`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [newId, cleanEmail, normalizedEmail, passwordHash, role.toLocaleLowerCase('en-US').replace(/\s+/g, '_'), cleanName,
           phone, sittingBranchId, text(input?.linkedIn) || null, birthday, text(input?.position) || null,
           text(input?.description) || null, empId, profilePhoto, status, JSON.stringify(metadata)],
@@ -627,7 +627,7 @@ async function updateProfilePhoto(userId, photoUrl, { actor, connection: supplie
       : ['Profile_Photo_URL', 'Profile Photo', 'Profile Photo URL', 'Photo'];
     setField(metadata.fields, aliases, isContact ? 'Profile Photo' : 'Profile_Photo_URL', text(photoUrl));
     await connection.execute(
-      'UPDATE users SET profile_photo_url = ?, metadata = CAST(? AS JSON) WHERE id = ?',
+      'UPDATE users SET profile_photo_url = ?, metadata = ? WHERE id = ?',
       [text(photoUrl) || null, JSON.stringify(metadata), userId],
     );
     await writeAudit(connection, actor, text(photoUrl) ? 'staff.user.photo_updated' : 'staff.user.photo_removed', userId, {});
@@ -653,7 +653,7 @@ async function deactivateUser(userId, { actor, connection: suppliedConnection } 
     const isContact = accountSource(row) === 'shared_operations:Contact';
     setField(metadata.fields, ['Status', 'TPO Status'], 'Status', isContact ? 'InActive' : 'Inactive');
     await connection.execute(
-      'UPDATE users SET status = \'inactive\', metadata = CAST(? AS JSON) WHERE id = ?',
+      'UPDATE users SET status = \'inactive\', metadata = ? WHERE id = ?',
       [JSON.stringify(metadata), userId],
     );
     await writeAudit(connection, actor, 'staff.user.deactivated', userId, {});

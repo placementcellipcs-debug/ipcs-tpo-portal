@@ -29,7 +29,7 @@ const logEmailAuditEvent = event => {
     const details = JSON.stringify({ source: event?.source || '', resource: event?.resource || '', result: event?.result || '', details: event?.details || {} });
     void mysqlPool.query(
       `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, request_id, details)
-       VALUES (?, NULL, ?, ?, ?, UTC_TIMESTAMP(), ?, CAST(? AS JSON))`,
+       VALUES (?, NULL, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)`,
       [randomUUID(), String(event?.action || 'Email operation').slice(0, 120), String(event?.resource || 'Email').slice(0, 100),
         String(event?.details?.deliveryId || event?.details?.queueId || '').slice(0, 100) || null,
         String(event?.requestId || '').slice(0, 120) || null, details],

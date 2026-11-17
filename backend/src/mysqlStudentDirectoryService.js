@@ -250,13 +250,13 @@ async function updateStudentAccess({ studentId = '', rowNumber = 0, actor = {}, 
     const nextFields = { ...row.fields };
     for (const [aliases, value] of updates) putField(nextFields, aliases, value);
     await connection.execute(
-      'UPDATE student_profiles SET metadata = CAST(? AS JSON), updated_at = UTC_TIMESTAMP() WHERE id = ?',
+      'UPDATE student_profiles SET metadata = ?, updated_at = UTC_TIMESTAMP() WHERE id = ?',
       [JSON.stringify({ ...row.profileMetadata, fields: nextFields }), row.student_id],
     );
     await connection.execute(
       `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, request_id, details)
        VALUES (?, (SELECT id FROM users WHERE normalized_email = ? LIMIT 1), 'student_access.updated',
-               'student_profile', ?, UTC_TIMESTAMP(), ?, CAST(? AS JSON))`,
+               'student_profile', ?, UTC_TIMESTAMP(), ?, ?)`,
       [
         crypto.randomUUID(), normalized(actor.email), row.student_id, text(requestId) || null,
         JSON.stringify({ fields: updates.map(([aliases]) => aliases[0]), source: 'tpo_student_directory' }),
@@ -357,7 +357,7 @@ async function updateStudentProfileFields({ rowNumber = 0, actor = {}, changes =
       `UPDATE student_profiles
        SET roll_number = ?, normalized_roll_number = ?, personal_email = ?, phone = ?,
            resume_url = ?, profile_photo_url = ?, course_id = ?, branch_id = ?,
-           metadata = CAST(? AS JSON), updated_at = UTC_TIMESTAMP()
+           metadata = ?, updated_at = UTC_TIMESTAMP()
        WHERE id = ?`,
       [rollNumber, compact(rollNumber), personalEmail || null, phone || null, resumeUrl || null,
         profilePhotoUrl || null, courseId, branchId, JSON.stringify({ ...row.profileMetadata, fields: nextFields }), row.student_id],
@@ -368,7 +368,7 @@ async function updateStudentProfileFields({ rowNumber = 0, actor = {}, changes =
     await connection.execute(
       `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, request_id, details)
        VALUES (?, (SELECT id FROM users WHERE normalized_email = ? LIMIT 1), 'student_profile.details.approved',
-               'student_profile', ?, UTC_TIMESTAMP(), ?, CAST(? AS JSON))`,
+               'student_profile', ?, UTC_TIMESTAMP(), ?, ?)`,
       [crypto.randomUUID(), normalized(actor.email), row.student_id, text(requestId) || null,
         JSON.stringify({ changedFields: changedEntries.map(([header]) => header), source: 'tpo_student_directory_approval' })],
     );
