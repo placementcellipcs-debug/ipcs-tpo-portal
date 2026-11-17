@@ -34,7 +34,10 @@ export default function StudentEditApprovals() {
       if (!response.data?.success) throw new Error(response.data?.message || 'Could not load student detail requests.');
       setRequests(Array.isArray(response.data.requests) ? response.data.requests : []);
     } catch (error) {
-      setLoadError(error.response?.data?.message || error.message || 'Could not load student detail requests.');
+      const message = error.response?.status === 404
+        ? 'The connected TPO server does not have the student-approval API yet. Deploy the latest TPO backend and make sure this portal points to that server.'
+        : error.response?.data?.message || error.message || 'Could not load student detail requests.';
+      setLoadError(message);
     } finally {
       setLoading(false);
     }

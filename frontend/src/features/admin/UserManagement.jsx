@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { createPortal } from 'react-dom';
 import { 
-  Users, UserPlus, Trash, PencilSimple, CircleNotch, WarningCircle, X, Prohibit, Camera,
+  Users, UserPlus, Trash, PencilSimple, CircleNotch, WarningCircle, X, Prohibit, Camera, Eye, EyeSlash,
   CaretLeft, SquaresFour, List
 } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
@@ -100,12 +100,14 @@ export default function UserManagement() {
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState('');
   const [photoSaving, setPhotoSaving] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleteWorking, setDeleteWorking] = useState(false);
   const [toast, setToast] = useState(null);
 
   // 🚨 SECURITY CHECK: IS THIS GIFTY?
   const isGifty = String(tpoData?.email || '').toLowerCase().includes('gifty');
+  const isSuperAdmin = String(tpoData?.accessType || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'superadmin';
   
   const initialFormState = {
     userId: null, sheet: 'User', rowNumber: null, userName: '', email: '', contact: '', newPassword: '',
@@ -210,6 +212,7 @@ export default function UserManagement() {
     setFormData(initialFormState);
     setTargetTouched(false);
     setPhotoFile(null);
+    setShowNewPassword(false);
     setIsEditMode(false);
     setError('');
     setIsModalOpen(true);
@@ -251,6 +254,7 @@ export default function UserManagement() {
       updatedAt: user.updatedAt || ''
     });
     setPhotoFile(null);
+    setShowNewPassword(false);
     setIsEditMode(true);
     setError('');
     setIsModalOpen(true);
@@ -756,11 +760,18 @@ export default function UserManagement() {
                   <label>Contact Number</label>
                   <input type="text" name="contact" value={formData.contact} onChange={handleInputChange} className="sleek-input" />
                 </div>
-                <div className="form-group">
-                  <label>{isEditMode ? 'Set a new password (optional)' : 'Initial password'}</label>
-                  <input type="password" name="newPassword" value={formData.newPassword} onChange={handleInputChange} className="sleek-input" required={!isEditMode} minLength={12} maxLength={128} autoComplete="new-password" />
-                  <small style={{ display: 'block', color: 'var(--text-muted)', marginTop: '6px' }}>{isEditMode ? 'Leave empty to keep the current password.' : 'Use at least 12 characters. Only administrators can set or reset staff passwords.'}</small>
-                </div>
+                {(!isEditMode || isSuperAdmin) ? <div className="form-group">
+                  <label>{isEditMode ? 'Reset portal password (optional)' : 'Initial password'}</label>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input type={showNewPassword ? 'text' : 'password'} name="newPassword" value={formData.newPassword} onChange={handleInputChange} className="sleek-input" required={!isEditMode} minLength={12} maxLength={128} autoComplete="new-password" />
+                    <button type="button" onClick={() => setShowNewPassword(value => !value)} aria-label={showNewPassword ? 'Hide entered password' : 'Show entered password'} title={showNewPassword ? 'Hide entered password' : 'Show entered password'} style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minWidth: 42, border: '1px solid #334155', borderRadius: 9, background: '#0b1320', color: '#cbd5e1', cursor: 'pointer' }}>
+                      {showNewPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
+                  <small style={{ display: 'block', color: 'var(--text-muted)', marginTop: '6px' }}>{isEditMode ? 'Current passwords are stored securely and cannot be viewed. Enter a new password to reset it; leave blank to keep the existing password.' : 'Use at least 12 characters. The password is stored securely and cannot be viewed later.'}</small>
+                </div> : <div className="form-group" style={{ alignSelf: 'center', color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.5 }}>
+                  Password reset is available to Super Admin accounts. Current passwords cannot be viewed because they are stored securely.
+                </div>}
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>

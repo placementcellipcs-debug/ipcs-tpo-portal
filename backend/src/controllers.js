@@ -27,7 +27,7 @@ function parseUserAgent(ua = '') {
 }
 
 const { 
-  doc, drive, google, serviceAccountAuth, getCache, refreshCache, loadDocInfo, getSpreadsheetIdForSheetName, hasAccess, getFuzzyHeader,
+  doc, drive, google, serviceAccountAuth, getCache, refreshCache, waitForCacheReady, loadDocInfo, getSpreadsheetIdForSheetName, hasAccess, getFuzzyHeader,
   sendIPCSMail, uploadToDrive, syncPlacedStudent, rebuildPlacedStudentsFromTpoLogs,
   logPortalAuditEvent, flushPortalAuditEvents
 } = require('./config');
@@ -7867,7 +7867,7 @@ exports.submitCorporateTrainingInquiry = async (req, res) => {
     const sheet = await getCorporateTrainingInquirySheet();
     const inquiryId = `CT-${Date.now()}-${randomBytes(4).toString('hex').toUpperCase()}`;
     const submittedAt = formatIndiaTimestamp();
-    await sheet.addRow({
+    const savedRow = await sheet.addRow({
       'Inquiry ID': inquiryId,
       'Submitted At': submittedAt,
       Name: name,
@@ -7913,11 +7913,12 @@ exports.submitCorporateTrainingInquiry = async (req, res) => {
       console.error('Corporate training inquiry was stored, but its internal alert failed:', mailError.message);
     }
     try {
-      const storedRow = (await sheet.getRows()).find(item => getValByHeader(item, ['inquiryid']) === inquiryId);
-      if (storedRow) { storedRow.set('Internal Email Status', internalEmailStatus); await storedRow.save(); }
+      savedRow.set('Internal Email Status', internalEmailStatus);
+      await savedRow.save();
     } catch (statusError) {
       console.error('Could not update internal email status for corporate training inquiry:', statusError.message);
     }
+    upsertCorporateTrainingInquiryCache(sheet, savedRow);
     return res.status(201).json({ success: true, message: 'Your inquiry has been received by the IPCS Global team.' });
   } catch (err) {
     console.error('Corporate training inquiry could not be stored:', err.message);
@@ -7945,7 +7946,7 @@ const getCorporateTrainingInquirySheet = async () => {
     }
   }
 
-  await sheet.loadHeaderRow();
+  if (!Array.isArray(sheet.headerValues) || !sheet.headerValues.length) await sheet.loadHeaderRow();
   const normalizedHeaders = new Set((sheet.headerValues || []).map(value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '')));
   const missingHeaders = CORPORATE_TRAINING_INQUIRY_HEADERS.filter(value => !normalizedHeaders.has(value.toLowerCase().replace(/[^a-z0-9]/g, '')));
   if (missingHeaders.length) await sheet.setHeaderRow([...(sheet.headerValues || []), ...missingHeaders]);
@@ -7973,12 +7974,33 @@ const toCorporateTrainingInquiry = row => ({
   internalEmailStatus: getValByHeader(row, ['internalemailstatus']) || 'Unknown'
 });
 
+const upsertCorporateTrainingInquiryCache = (sheet, row) => {
+  const cache = getCache();
+  const rowNumber = Number(row?.rowNumber);
+  const headers = sheet?.headerValues || [];
+  if (!cache || !Number.isInteger(rowNumber) || rowNumber < 2 || !headers.length) return;
+  const values = typeof row?.toObject === 'function' ? row.toObject() : row || {};
+  const cachedRow = {
+    _worksheet: sheet,
+    _rawData: headers.map(header => String(values?.[header] ?? '')),
+    rowNumber
+  };
+  cache.corporateTrainingInquiries = [
+    ...(cache.corporateTrainingInquiries || []).filter(item => Number(item?.rowNumber) !== rowNumber),
+    cachedRow
+  ];
+};
+
 exports.getCorporateTrainingInquiries = async (_req, res) => {
   try {
-    const sheet = await getCorporateTrainingInquirySheet();
-    const rows = await sheet.getRows();
+    if (!getCache()?.cacheUpdatedAt) await waitForCacheReady();
+    const cache = getCache();
+    if (!Array.isArray(cache?.corporateTrainingInquiries)) {
+      return res.status(503).json({ success: false, inquiries: [], message: 'Corporate training inquiries are still syncing. Please retry shortly.' });
+    }
+    const rows = cache.corporateTrainingInquiries;
     const inquiries = rows.map(toCorporateTrainingInquiry).filter(inquiry => inquiry.inquiryId).reverse();
-    res.json({ success: true, inquiries });
+    return res.json({ success: true, inquiries });
   } catch (error) {
     console.error('Could not load corporate training inquiries:', error.message);
     res.status(503).json({ success: false, inquiries: [], message: 'Corporate training inquiries are temporarily unavailable.' });
@@ -8056,6 +8078,7 @@ exports.assignCorporateTrainingInquiry = async (req, res) => {
     row.set('Assigned By', String(req.portalUser?.name || req.portalUser?.email || 'IPCS Admin').slice(0, 120));
     row.set('Notification Status', 'Sending');
     await row.save();
+    upsertCorporateTrainingInquiryCache(sheet, row);
 
     const subjectBranch = branchName.replace(/[\r\n]+/g, ' ').slice(0, 100);
     try {
@@ -8080,11 +8103,15 @@ exports.assignCorporateTrainingInquiry = async (req, res) => {
       if (mailResult?.queued) {
         row.set('Notification Status', 'Queued');
         await row.save();
+        upsertCorporateTrainingInquiryCache(sheet, row);
         return res.json({ success: true, inquiry: toCorporateTrainingInquiry(row), queued: true, message: `Assigned to ${branchName}; the branch notification is queued for delivery.` });
       }
     } catch (mailError) {
       row.set('Notification Status', `${mailErrorStatus(mailError)}: ${mailError.message}`.slice(0, 500));
-      try { await row.save(); }
+      try {
+        await row.save();
+        upsertCorporateTrainingInquiryCache(sheet, row);
+      }
       catch (statusError) { console.error('Could not record failed branch notification status:', statusError.message); }
       return res.json({ success: true, inquiry: toCorporateTrainingInquiry(row), warning: `The inquiry was assigned, but the branch email could not be sent: ${mailError.message}` });
     }
@@ -8092,6 +8119,7 @@ exports.assignCorporateTrainingInquiry = async (req, res) => {
     row.set('Notification Sent At', formatIndiaTimestamp());
     try {
       await row.save();
+      upsertCorporateTrainingInquiryCache(sheet, row);
       return res.json({ success: true, inquiry: toCorporateTrainingInquiry(row), message: `Assigned to ${branchName}; the branch notification was sent.` });
     } catch (statusError) {
       console.error('The branch email was sent, but notification status could not be saved:', statusError.message);
@@ -9796,6 +9824,9 @@ exports.updateAdminUser = async (req, res) => {
     if (passwordToSet) {
       const passwordError = validatePassword(passwordToSet);
       if (passwordError) return res.status(400).json({ success: false, message: passwordError });
+      if (req.portalUser?.accessType !== 'superadmin') {
+        return res.status(403).json({ success: false, message: 'Only a Super Admin can reset another staff member’s password.' });
+      }
     }
     const cache = getCache();
     const duplicateEmail = [...(cache?.contacts || []), ...(cache?.users || [])].some(row => {

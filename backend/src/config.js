@@ -391,17 +391,6 @@ async function backupPlacedStudents(sheet, existingRows = []) {
   return existingRows.length;
 }
 
-const sheetColumnName = value => {
-  let column = Number(value) + 1;
-  let name = '';
-  while (column > 0) {
-    const remainder = (column - 1) % 26;
-    name = String.fromCharCode(65 + remainder) + name;
-    column = Math.floor((column - 1) / 26);
-  }
-  return name;
-};
-
 async function writePlacedStudentRow(sheet, rowNumber, rowData) {
   const headers = sheet.headerValues || [];
   const normalized = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -842,24 +831,25 @@ async function performCacheRefresh() {
       getSheetFuzzy("AptitudeQuestions"), getSheetFuzzy("AptitudeResults"), getSheetFuzzy("TalentinoQuestions"), getSheetFuzzy("TalentinoResults"),
       getSheetFuzzy("Courses"), getSheetFuzzy("DriveRegistration"), getSheetFuzzy("Contact"), getSheetFuzzy("User"), getSheetFuzzy("Branches"), getSheetFuzzy("Mail"),
       doc.sheetsByTitle['Trainer/TL_Log'] || getSheetFuzzy("TrainerTLLog"), getSheetFuzzy("security"), getSheetFuzzy("TPOStats"), placedStudentsSheet,
-      getSheetFuzzy("HiringInquiries"), getSheetFuzzy("StudentEditRequests"), getSheetFuzzy("TPODeleteRequests")
+      getSheetFuzzy("HiringInquiries"), getSheetFuzzy("StudentEditRequests"), getSheetFuzzy("TPODeleteRequests"),
+      getSheetFuzzy("CorporateTrainingInquiries")
     ];
 
     const cacheFields = [
       'students', 'applications', 'vacancies', 'events', 'issues', 'tSched', 'tAtt', 'clients', 'tpoLogs',
       'materials', 'techQuestions', 'techResults', 'aptQuestions', 'aptResults', 'talQuestions', 'talResults',
-      'coursesRows', 'drives', 'contacts', 'users', 'branches', 'mails', 'trainerLogs', 'securityLogs', 'tpoStats', 'placedStudents', 'hiringInquiries', 'studentEditRequests', 'tpoDeleteRequests'
+      'coursesRows', 'drives', 'contacts', 'users', 'branches', 'mails', 'trainerLogs', 'securityLogs', 'tpoStats', 'placedStudents', 'hiringInquiries', 'studentEditRequests', 'tpoDeleteRequests', 'corporateTrainingInquiries'
     ];
     const emptyCache = {
       students: [], applications: [], vacancies: [], events: [], issues: [], tSched: [], tAtt: [], clients: [],
       tpoLogs: [], materials: [], techQuestions: [], techResults: [], aptQuestions: [], aptResults: [],
       talQuestions: [], talResults: [], coursesRows: [], drives: [], contacts: [], users: [], branches: [],
       mails: [], trainerLogs: [], securityLogs: [], tpoStats: [], placedStudents: [], hiringInquiries: [],
-      studentEditRequests: [], tpoDeleteRequests: [], coursesDict: {}
+      studentEditRequests: [], tpoDeleteRequests: [], corporateTrainingInquiries: [], coursesDict: {}
     };
     const previousCache = globalCache || {};
     const cacheFailedSheets = [];
-    const optionalCacheFields = new Set(['hiringInquiries', 'studentEditRequests', 'tpoDeleteRequests']);
+    const optionalCacheFields = new Set(['hiringInquiries', 'studentEditRequests', 'tpoDeleteRequests', 'corporateTrainingInquiries']);
     const fetchedData = new Array(sheetsToFetch.length);
     const groupedIndexes = new Map();
     sheetsToFetch.forEach((sheet, index) => {
@@ -960,6 +950,7 @@ async function performCacheRefresh() {
     const hiringInquiryRows = fetchedData[26] || previousCache.hiringInquiries || [];
     const studentEditRequestRows = fetchedData[27] || previousCache.studentEditRequests || [];
     const tpoDeleteRequestRows = fetchedData[28] || previousCache.tpoDeleteRequests || [];
+    const corporateTrainingInquiryRows = fetchedData[29] || previousCache.corporateTrainingInquiries || [];
     // Keep timed cache refreshes read-only for Placed_Students. A full-sheet
     // clear/rebuild from one cached TPO_Log read could erase existing rows if
     // that source read is incomplete. Portal placement/status writes still
@@ -1005,6 +996,7 @@ async function performCacheRefresh() {
       hiringInquiries: hiringInquiryRows,
       studentEditRequests: studentEditRequestRows,
       tpoDeleteRequests: tpoDeleteRequestRows,
+      corporateTrainingInquiries: corporateTrainingInquiryRows,
       authCacheReady: true,
       authSheetsHealthy: globalCache.authSheetsHealthy,
       cacheSheetHealth,

@@ -122,7 +122,7 @@ export default function SecurityActivity() {
               <ShieldCheck color="var(--accent-primary)" weight="fill" /> User Login & Security Activity
             </h1>
             <p style={{ color: 'var(--text-muted)', margin: 0 }}>
-              Review staff sign-ins, devices, and time spent actively using the portal. Duration tracking starts with new sign-ins.
+              Review staff sign-ins, devices, and active portal time. Duration is recorded for sign-ins after tracking was enabled; earlier sessions cannot be reconstructed.
             </p>
           </div>
         </div>
