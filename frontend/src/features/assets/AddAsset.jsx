@@ -8,22 +8,25 @@ import Layout from '../../layouts/Layout';
 import DateInput from '../../components/DateInput';
 import { API_BASE } from '../../services/apiConfig';
 import AssetCategoryFields from './AssetCategoryFields';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 const emptyAsset = branch => ({
-  name: '', category: '', categoryId: '', subcategory: '', subcategoryId: '', assetType: '', assetTypeId: '', branch: branch || '', location: '',
-  condition: 'NEW', brand: '', model: '', purchaseDate: '', purchaseCost: '',
+  name: '', category: '', categoryId: '', subcategory: '', subcategoryId: '', assetType: '', assetTypeId: '', branch: branch || '', location: '', serialNumber: '',
+  condition: 'NEW', damageIssue: '', brand: '', model: '', purchaseDate: '', purchaseCost: '',
   vendor: '', invoice: '', warrantyEnd: '', trackingMode: 'INDIVIDUAL', quantity: '1'
 });
 const text = value => String(value || '').trim();
 
 export default function AddAsset() {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const editAssetId = searchParams.get('edit') || '';
   const [recordType, setRecordType] = useState(() => searchParams.get('type') === 'consumable' ? 'CONSUMABLE' : 'ASSET');
   let tpoData = {};
   try { tpoData = JSON.parse(localStorage.getItem('tpoData') || '{}'); } catch { /* The session guard handles invalid user data. */ }
 
   const [loading, setLoading] = useState(true);
+  const [editLoading, setEditLoading] = useState(Boolean(editAssetId));
   const [formLoadError, setFormLoadError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [notification, setNotification] = useState(null);
@@ -34,6 +37,7 @@ export default function AddAsset() {
   const [assetPhoto, setAssetPhoto] = useState(null);
   const [assetPhotoPreview, setAssetPhotoPreview] = useState('');
   const previewRef = useRef('');
+  const editFetchRef = useRef('');
   const [customLocation, setCustomLocation] = useState('');
   const [customLocationArea, setCustomLocationArea] = useState('Lab');
   const [stock, setStock] = useState({ name: '', category: '', categoryId: '', subcategory: '', subcategoryId: '', assetType: '', assetTypeId: '', branch: tpoData.sittingBranch || '', quantity: '0', minQuantity: '5' });
@@ -64,6 +68,38 @@ export default function AddAsset() {
 
   useEffect(() => { void loadFormData(); }, [loadFormData]);
   useEffect(() => () => { if (previewRef.current) URL.revokeObjectURL(previewRef.current); }, []);
+
+  useEffect(() => {
+    if (!editAssetId) {
+      editFetchRef.current = '';
+      setEditLoading(false);
+      return undefined;
+    }
+    if (editFetchRef.current === editAssetId) return undefined;
+    editFetchRef.current = editAssetId;
+    let active = true;
+    setEditLoading(true);
+    setFormLoadError('');
+    axios.get(`${API_BASE}/api/v1/assets/${encodeURIComponent(editAssetId)}/details`)
+      .then(response => {
+        if (!active || !response.data?.success) return;
+        const existing = response.data.asset || {};
+        if (String(existing.status || '').toUpperCase() !== 'AVAILABLE') {
+          setFormLoadError('Only available items can be edited. Return or resolve the item first.');
+          return;
+        }
+        setRecordType('ASSET');
+        setAsset(current => ({ ...current, ...existing, quantity: String(existing.quantity || 1) }));
+        setAssetPhotoPreview(existing.photoUrl || '');
+        setCustomFields((response.data.customSpecs || []).map(field => ({ name: field.name || '', value: field.value || '' })));
+        setShowSpecifications(Boolean(response.data.customSpecs?.length));
+      })
+      .catch(error => {
+        if (active) setFormLoadError(error.response?.data?.message || error.message || 'Asset details could not be loaded.');
+      })
+      .finally(() => { if (active) setEditLoading(false); });
+    return () => { active = false; };
+  }, [editAssetId]);
 
   const locationOptions = useMemo(() => {
     const branch = text(asset.branch).toLowerCase().replace(/\bbranch\b/g, '').trim();
@@ -128,6 +164,10 @@ export default function AddAsset() {
       setNotification({ type: 'error', text: 'Enter the new room or space name.' });
       return;
     }
+    if (!editAssetId && String(asset.condition).toUpperCase() === 'DAMAGED' && text(asset.damageIssue).length < 3) {
+      setNotification({ type: 'error', text: 'Describe the existing damage before registering this item.' });
+      return;
+    }
 
     setIsSubmitting(true);
     setNotification(null);
@@ -145,11 +185,18 @@ export default function AddAsset() {
       formData.append('userName', tpoData.name || '');
       formData.append('userEmail', tpoData.email || '');
       if (assetPhoto) formData.append('photo', assetPhoto);
-      const response = await axios.post(`${API_BASE}/api/v1/assets/add`, formData, { timeout: 60000 });
+    const response = editAssetId
+      ? await axios.put(`${API_BASE}/api/v1/assets/${encodeURIComponent(editAssetId)}`, formData, { timeout: 60000 })
+      : await axios.post(`${API_BASE}/api/v1/assets/add`, formData, { timeout: 60000 });
       if (!response.data?.success) throw new Error(response.data?.message || 'The server did not confirm that the asset was saved.');
+      const savedDescription = editAssetId
+        ? `${asset.name} · ${editAssetId} updated`
+        : String(asset.condition).toUpperCase() === 'DAMAGED'
+          ? `Damaged item registered · ${response.data.assetId}${response.data.maintenanceId ? ` · Maintenance ticket ${response.data.maintenanceId}` : ''}`
+          : `${asset.trackingMode === 'QUANTITY' ? `${quantity} units recorded` : 'Item registered'} · ${response.data.assetId}`;
       setNotification({
         type: response.data.warning ? 'warning' : 'success',
-        text: response.data.warning || `${asset.trackingMode === 'QUANTITY' ? `${quantity} units recorded` : 'Item registered'} · ${response.data.assetId}${response.data.locationCreated ? ` · ${finalLocation} added to this branch’s location list` : ''}`
+        text: response.data.warning || `${savedDescription}${response.data.locationCreated ? ` · ${finalLocation} added to this branch’s location list` : ''}`
       });
       if (response.data.locationName) {
         setDbData(current => ({
@@ -159,6 +206,10 @@ export default function AddAsset() {
             ? current.locations
             : [...current.locations, { branch: asset.branch, locationname: response.data.locationName, status: 'ACTIVE' }]
         }));
+      }
+      if (editAssetId) {
+        window.setTimeout(() => navigate('/assets/register'), 900);
+        return;
       }
       setAsset(emptyAsset(tpoData.sittingBranch));
       setCustomLocation('');
@@ -195,18 +246,18 @@ export default function AddAsset() {
       </div>}
 
       <header className="asset-register-hero">
-        <div><span className="asset-register-eyebrow">IPCS ASSET OPERATIONS · ONE REGISTER</span><h1>Register an item</h1><p>Use one place for tracked equipment and counted consumable stock.</p></div>
+        <div><span className="asset-register-eyebrow">IPCS ASSET OPERATIONS · ONE REGISTER</span><h1>{editAssetId ? 'Edit asset details' : 'Register an item'}</h1><p>{editAssetId ? `Update the record for ${editAssetId}. Changes are added to the audit history.` : 'Use one place for tracked equipment and counted consumable stock.'}</p></div>
         <Link to="/assets/register" className="asset-register-link">Open asset register <span aria-hidden="true">↗</span></Link>
       </header>
 
-      {loading ? <div className="asset-register-state"><CircleNotch size={28} className="ph-spin" /> Loading branch and category choices…</div>
+      {loading || editLoading ? <div className="asset-register-state"><CircleNotch size={28} className="ph-spin" /> {editAssetId ? 'Loading asset and branch details…' : 'Loading branch and category choices…'}</div>
         : formLoadError ? <div className="asset-register-state error" role="alert"><WarningCircle size={24} /><span>{formLoadError}</span><button type="button" onClick={() => void loadFormData()}>Retry</button></div>
           : <form className="asset-register-form" onSubmit={handleSubmit}>
             <section className="asset-register-card asset-track-card">
               <div className="asset-card-heading"><div><span>RECORD TYPE</span><h2>What are you adding?</h2><p>Equipment can be tracked one by one or as a group. Consumables are tracked by quantity.</p></div><Package size={24} /></div>
               <div className="asset-tracking-choice" role="group" aria-label="Choose what to register">
-                <button type="button" className={recordType === 'ASSET' ? 'selected' : ''} onClick={() => { setRecordType('ASSET'); setSearchParams({}); }}><span className="asset-choice-icon"><Cube size={22} weight="duotone" /></span><span><b>Equipment / asset</b><small>Furniture, devices, and reusable equipment.</small></span><i>{recordType === 'ASSET' ? 'Selected' : 'Tracked items'}</i></button>
-                <button type="button" className={`quantity${recordType === 'CONSUMABLE' ? ' selected' : ''}`} onClick={() => { setRecordType('CONSUMABLE'); setSearchParams({ type: 'consumable' }); }}><span className="asset-choice-icon"><Package size={22} weight="duotone" /></span><span><b>Consumable stock</b><small>Paper, stationery, cables, and other counted stock.</small></span><i>{recordType === 'CONSUMABLE' ? 'Selected' : 'Quantity only'}</i></button>
+                <button type="button" disabled={Boolean(editAssetId)} className={recordType === 'ASSET' ? 'selected' : ''} onClick={() => { setRecordType('ASSET'); setSearchParams({}); }}><span className="asset-choice-icon"><Cube size={22} weight="duotone" /></span><span><b>Equipment / asset</b><small>Furniture, devices, and reusable equipment.</small></span><i>{recordType === 'ASSET' ? 'Selected' : 'Tracked items'}</i></button>
+                <button type="button" disabled={Boolean(editAssetId)} className={`quantity${recordType === 'CONSUMABLE' ? ' selected' : ''}`} onClick={() => { setRecordType('CONSUMABLE'); setSearchParams({ type: 'consumable' }); }}><span className="asset-choice-icon"><Package size={22} weight="duotone" /></span><span><b>Consumable stock</b><small>Paper, stationery, cables, and other counted stock.</small></span><i>{recordType === 'CONSUMABLE' ? 'Selected' : 'Quantity only'}</i></button>
               </div>
             </section>
             {recordType === 'CONSUMABLE' ? <>
@@ -228,10 +279,10 @@ export default function AddAsset() {
             <section className="asset-register-card asset-track-card">
               <div className="asset-card-heading"><div><span>01 · TRACKING STYLE</span><h2>How should these assets be counted?</h2><p>This controls how the record behaves after it is saved.</p></div><Barcode size={24} /></div>
               <div className="asset-tracking-choice" role="radiogroup" aria-label="Asset tracking style">
-                <button type="button" role="radio" aria-checked={!isQuantity} className={!isQuantity ? 'selected' : ''} onClick={() => setTrackingMode('INDIVIDUAL')}>
+                <button type="button" disabled={Boolean(editAssetId)} role="radio" aria-checked={!isQuantity} className={!isQuantity ? 'selected' : ''} onClick={() => setTrackingMode('INDIVIDUAL')}>
                   <span className="asset-choice-icon"><Cube size={22} weight="duotone" /></span><span><b>Track each item</b><small>Use when pieces have their own identity, such as laptops, projectors, or cameras.</small></span><i>{!isQuantity ? 'Selected' : 'One ID per item'}</i>
                 </button>
-                <button type="button" role="radio" aria-checked={isQuantity} className={isQuantity ? 'selected quantity' : 'quantity'} onClick={() => setTrackingMode('QUANTITY')}>
+                <button type="button" disabled={Boolean(editAssetId)} role="radio" aria-checked={isQuantity} className={isQuantity ? 'selected quantity' : 'quantity'} onClick={() => setTrackingMode('QUANTITY')}>
                   <span className="asset-choice-icon"><Package size={22} weight="duotone" /></span><span><b>Track a quantity group</b><small>Use for identical items managed together, such as 20 chairs or 12 keyboards.</small></span><i>{isQuantity ? 'Selected' : 'One record + count'}</i>
                 </button>
               </div>
@@ -246,7 +297,7 @@ export default function AddAsset() {
                 onAssetTypeChange={(value, record) => setAsset(current => ({ ...current, assetType: value, assetTypeId: record?.assettypeid || record?.asset_type_id || '' }))} />
               <div className="asset-register-grid asset-register-grid-main">
                 <label><span className="asset-register-label">Asset name *</span><input value={asset.name} onChange={event => setField('name', event.target.value)} placeholder="e.g. Training room keyboard" required /></label>
-                {isQuantity && <label><span className="asset-register-label">Number of units *</span><input type="number" min="1" step="1" inputMode="numeric" value={asset.quantity} onChange={event => setField('quantity', event.target.value)} required /><small>Count the identical units in this group.</small></label>}
+                {isQuantity && <label><span className="asset-register-label">Number of units *</span><input type="number" min="1" step="1" inputMode="numeric" value={asset.quantity} onChange={event => setField('quantity', event.target.value)} required disabled={Boolean(editAssetId)} /><small>{editAssetId ? 'Change group quantities through inventory transactions so stock changes remain auditable.' : 'Count the identical units in this group.'}</small></label>}
                 <label><span className="asset-register-label">Brand <em>Optional</em></span><input value={asset.brand} onChange={event => setField('brand', event.target.value)} placeholder="e.g. Logitech" /></label>
                 <label><span className="asset-register-label">Model <em>Optional</em></span><input value={asset.model} onChange={event => setField('model', event.target.value)} placeholder="Model or variant" /></label>
               </div>
@@ -260,9 +311,9 @@ export default function AddAsset() {
             <section className="asset-register-card">
               <div className="asset-card-heading"><div><span>03 · BRANCH & LOCATION</span><h2>Where are they kept?</h2></div><MapPinLine size={24} /></div>
               <div className="asset-register-grid asset-register-grid-place">
-                <label><span className="asset-register-label">Branch *</span><select value={asset.branch} onChange={event => { setField('branch', event.target.value); setField('location', ''); setCustomLocation(''); }} required><option value="">Select branch</option>{dbData.branches.map(branch => <option key={branch} value={branch}>{branch}</option>)}</select></label>
-                <label><span className="asset-register-label">Physical location *</span><select value={asset.location} onChange={event => { setField('location', event.target.value); setCustomLocation(''); }} required><option value="">Select a room or area</option>{locationOptions.map(location => <option value={location} key={location}>{location}</option>)}<option value="__other__">Add a new room or space</option></select>{asset.location === '__other__' && <><input className="asset-other-location" value={customLocation} onChange={event => setCustomLocation(event.target.value)} placeholder="New room or space name" aria-label="New room or space name" required /><select className="asset-other-location" value={customLocationArea} onChange={event => setCustomLocationArea(event.target.value)} aria-label="New location type"><option value="Lab">Student lab</option><option value="Office">Staff office</option><option value="Storage">Storage / store room</option><option value="Other">Other space</option></select><small>This location will be saved to this branch’s suggestions when you register the item.</small></>}</label>
-                <label><span className="asset-register-label">Condition</span><select value={asset.condition} onChange={event => setField('condition', event.target.value)}><option value="NEW">New</option><option value="EXCELLENT">Excellent</option><option value="GOOD">Good</option><option value="FAIR">Fair</option></select></label>
+                <label><span className="asset-register-label">Branch *</span><select value={asset.branch} onChange={event => { setField('branch', event.target.value); setField('location', ''); setCustomLocation(''); }} required disabled={Boolean(editAssetId)}><option value="">Select branch</option>{dbData.branches.map(branch => <option key={branch} value={branch}>{branch}</option>)}</select>{editAssetId && <small>Branch moves go through the transfer approval workflow.</small>}</label>
+                <label><span className="asset-register-label">Physical location *</span><select value={asset.location} onChange={event => { setField('location', event.target.value); setCustomLocation(''); }} required><option value="">Select a room or area</option>{[...new Set([...locationOptions, ...(asset.location && asset.location !== '__other__' ? [asset.location] : [])])].map(location => <option value={location} key={location}>{location}</option>)}<option value="__other__">Add a new room or space</option></select>{asset.location === '__other__' && <><input className="asset-other-location" value={customLocation} onChange={event => setCustomLocation(event.target.value)} placeholder="New room or space name" aria-label="New room or space name" required /><select className="asset-other-location" value={customLocationArea} onChange={event => setCustomLocationArea(event.target.value)} aria-label="New location type"><option value="Lab">Student lab</option><option value="Office">Staff office</option><option value="Storage">Storage / store room</option><option value="Other">Other space</option></select><small>This location will be saved to this branch’s suggestions when you register the item.</small></>}</label>
+                <label><span className="asset-register-label">Condition</span><select value={asset.condition} onChange={event => setField('condition', event.target.value)}><option value="NEW">New</option><option value="EXCELLENT">Excellent</option><option value="GOOD">Good</option><option value="FAIR">Fair</option>{!editAssetId && <option value="DAMAGED">Damaged</option>}</select>{!editAssetId && asset.condition === 'DAMAGED' && <textarea className="asset-other-location" rows="3" value={asset.damageIssue} onChange={event => setField('damageIssue', event.target.value)} placeholder="Describe the damage. This will create an open maintenance ticket." aria-label="Damage description" required minLength={3} />}</label>
               </div>
             </section>
 
@@ -277,7 +328,7 @@ export default function AddAsset() {
               <div className="asset-register-photo"><div><ImageIcon size={20} /><span><b>Condition photo</b><small>Optional · attach a photo of the item or group.</small></span></div><label>{assetPhoto ? <CheckCircle size={17} /> : <UploadSimple size={17} />}{assetPhoto ? 'Change photo' : 'Add photo'}<input type="file" accept="image/*" capture="environment" onChange={event => setPhoto(event.target.files?.[0] || null)} /></label>{assetPhotoPreview && <img src={assetPhotoPreview} alt="Asset condition preview" />}</div>
             </details>
 
-            <footer className="asset-register-submit"><span>One registration flow for tracked equipment and quantity based stock.</span><button type="submit" disabled={isSubmitting}>{isSubmitting ? <><CircleNotch size={19} className="ph-spin" /> Saving record…</> : <><CheckCircle size={19} /> {isQuantity ? 'Save quantity group' : 'Register item'}</>}</button></footer>
+            <footer className="asset-register-submit"><span>{editAssetId ? 'Every change is added to the asset activity history.' : 'One registration flow for tracked equipment and quantity based stock.'}</span><button type="submit" disabled={isSubmitting}>{isSubmitting ? <><CircleNotch size={19} className="ph-spin" /> Saving record…</> : <><CheckCircle size={19} /> {editAssetId ? 'Save changes' : isQuantity ? 'Save quantity group' : 'Register item'}</>}</button></footer>
             </>}
           </form>}
     </main>

@@ -1,1 +1,0 @@
-import{t as e}from"./jsx-runtime-D65ibrDb.js";import t from"./AcademicWorkspace-qId2FcKi.js";var n=e();function r(){return(0,n.jsx)(t,{module:`sessions`})}export{r as default};

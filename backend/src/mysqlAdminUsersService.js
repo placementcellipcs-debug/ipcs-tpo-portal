@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const mysqlPool = require('./mysqlPool');
+const { isRegionalOrTerritoryTechnicalHead } = require('./rolePolicy');
 
 const STAFF_SOURCES = new Set(['shared_operations:Contact', 'shared_operations:User']);
 const text = value => String(value ?? '').normalize('NFKC').trim();
@@ -83,19 +84,21 @@ function accountShape(row, target) {
   const branchNames = parseList(metadata.rawAssignedBranches || fieldValue(fields, 'Assigned Branches', 'Assigned_Branches'));
   const courseNames = parseList(metadata.rawAssignedCourses || fieldValue(fields, 'Assigned Courses', 'Assigned_Courses', 'Assigned Course', 'Course'));
   const role = text(fieldValue(fields, 'Role', 'Portal Role') || row.role).replace(/_/g, ' ') || (isContact ? 'TPO' : 'Unassigned');
+  const needsCourseScope = isRegionalOrTerritoryTechnicalHead({ role });
   const status = text(fieldValue(fields, 'Status', 'TPO Status') || row.status).replace(/^./, char => char.toUpperCase());
   return {
     userId: String(row.id),
     sheet: isContact ? 'Contact' : 'User',
     rowNumber: Number(metadata.sourceRow) || undefined,
     userName: text(row.full_name || fieldValue(fields, 'TPO Name', 'Name', 'Username')),
+    directoryId: text(fieldValue(fields, 'User_ID', 'User ID', 'UserId')),
     contact: text(row.phone || fieldValue(fields, 'Contact Number', 'Contact_Number', 'Phone', 'Phone Number')),
     email: text(row.email || row.normalized_email || fieldValue(fields, 'Mail ID', 'Email', 'Mail')),
     loginId: text(fieldValue(fields, 'Login ID', 'Login_Id', 'User ID', 'Username')),
     sittingBranch: text(metadata.rawSittingBranch || fieldValue(fields, 'Sitting Branch', 'Sitting_Branch', 'Branch')),
     assignedBranches: branchNames.join(', '),
     role,
-    course: courseNames.length ? courseNames.join(', ') : 'All Courses',
+    course: courseNames.length ? courseNames.join(', ') : (needsCourseScope ? 'No course assigned' : 'All Courses'),
     access: text(fieldValue(fields, 'Access Type', 'Access_Type', 'Access')) || (isContact ? 'View & Edit' : 'View Only'),
     profilePhoto: text(row.profile_photo_url || fieldValue(fields, 'Profile Photo', 'Profile Photo URL', 'Profile_Photo_URL', 'Photo')),
     empId: text(row.employee_id || fieldValue(fields, 'Emp ID', 'Employee ID', 'Employee_ID')),
@@ -103,6 +106,15 @@ function accountShape(row, target) {
     birthday: formatBirthday(row.birthday || fieldValue(fields, 'BirthDay', 'Birthday', 'DOB', 'Date of Birth')),
     position: text(row.position_title || fieldValue(fields, 'Position', 'Designation')),
     description: text(row.description || fieldValue(fields, 'Description', 'Descripation', 'Bio', 'Profile Description')),
+    department: text(fieldValue(fields, 'Department')),
+    level: text(fieldValue(fields, 'Level')),
+    reportsToUserId: text(fieldValue(fields, 'Reports_To_User_ID', 'Reports To User ID')),
+    zone: text(fieldValue(fields, 'Zone')),
+    region: text(fieldValue(fields, 'Region')),
+    territory: text(fieldValue(fields, 'Territory')),
+    mailEligible: text(fieldValue(fields, 'Mail_Eligible', 'Mail Eligible')) || 'NO',
+    createdAt: text(fieldValue(fields, 'Created_At', 'Created At') || row.created_at),
+    updatedAt: text(fieldValue(fields, 'Updated_At', 'Updated At') || row.updated_at),
     status,
     target: target === null || target === undefined ? '' : String(target?.count ?? target),
     targetMonth: target?.month || '',
@@ -163,6 +175,21 @@ function fieldsForInput(input, { isContact, existingMetadata, status, profilePho
     setField(fields, ['Employee_ID', 'Employee ID', 'Emp ID'], 'Employee_ID', text(input.empId));
     setField(fields, ['Profile_Photo_URL', 'Profile Photo', 'Profile Photo URL', 'Photo'], 'Profile_Photo_URL', profilePhoto || '');
     setField(fields, ['Status'], 'Status', status === 'inactive' ? 'Inactive' : 'Active');
+    setField(fields, ['Linkedin', 'LinkedIn', 'Linkedin URL', 'LinkedIn URL'], 'Linkedin', text(input.linkedIn));
+    setField(fields, ['BirthDay', 'Birthday', 'DOB', 'Date of Birth'], 'BirthDay', text(input.birthday));
+    setField(fields, ['Position', 'Designation'], 'Position', text(input.position));
+    setField(fields, ['Description', 'Descripation', 'Bio', 'Profile Description'], 'Description', text(input.description));
+    const directoryId = text(input.directoryId) || text(fieldValue(fields, 'User_ID', 'User ID', 'UserId')) || `U${String(Date.now()).slice(-8)}`;
+    setField(fields, ['User_ID', 'User ID', 'UserId'], 'User_ID', directoryId);
+    setField(fields, ['Department'], 'Department', text(input.department));
+    setField(fields, ['Level'], 'Level', text(input.level));
+    setField(fields, ['Reports_To_User_ID', 'Reports To User ID'], 'Reports_To_User_ID', text(input.reportsToUserId));
+    setField(fields, ['Zone'], 'Zone', text(input.zone));
+    setField(fields, ['Region'], 'Region', text(input.region));
+    setField(fields, ['Territory'], 'Territory', text(input.territory));
+    setField(fields, ['Mail_Eligible', 'Mail Eligible'], 'Mail_Eligible', text(input.mailEligible) || 'NO');
+    if (!fieldValue(fields, 'Created_At', 'Created At')) setField(fields, ['Created_At', 'Created At'], 'Created_At', new Date().toISOString());
+    setField(fields, ['Updated_At', 'Updated At'], 'Updated_At', new Date().toISOString());
   }
   metadata.fields = fields;
   metadata.rawSittingBranch = text(input.sittingBranch) || null;
@@ -190,9 +217,33 @@ async function resolveOrCreateBranch(connection, name) {
 async function resolveCourse(connection, name) {
   const cleanName = text(name);
   const key = normalized(cleanName);
+  if (!key || ['n/a', 'na', '—', '–', '-'].includes(key)) return [];
+  // Staff scope is stored as course families (for example, Digital Marketing),
+  // while student_profiles may be linked to individual courses within a family.
+  // Resolve a selected family to all of its active courses so multi-course
+  // assignments apply consistently throughout the portal.
+  const [familyRows] = await connection.execute(
+    'SELECT id FROM courses WHERE LOWER(TRIM(category)) = ? AND active = TRUE ORDER BY normalized_name',
+    [key],
+  );
+  if (familyRows.length) return familyRows.map(row => row.id);
   const [rows] = await connection.execute('SELECT id FROM courses WHERE normalized_name = ? AND active = TRUE LIMIT 1', [key]);
   if (!rows[0]) throw Object.assign(new Error(`The course “${cleanName}” is not in the MySQL course catalog. Import or add it before assigning this account.`), { status: 400 });
-  return rows[0].id;
+  return [rows[0].id];
+}
+
+async function listAssignableCourses({ connection: suppliedConnection } = {}) {
+  const ownsConnection = !suppliedConnection;
+  const connection = suppliedConnection || await mysqlPool.getPool().getConnection();
+  try {
+    const [rows] = await connection.execute(
+      `SELECT DISTINCT CASE WHEN TRIM(COALESCE(category, '')) = '' THEN name ELSE TRIM(category) END AS course_name
+         FROM courses WHERE active = TRUE ORDER BY course_name`,
+    );
+    return rows.map(row => text(row.course_name)).filter(Boolean);
+  } finally {
+    if (ownsConnection) connection.release();
+  }
 }
 
 async function saveAssignments(connection, userId, input, isContact) {
@@ -204,7 +255,7 @@ async function saveAssignments(connection, userId, input, isContact) {
     branchIds.push(await resolveOrCreateBranch(connection, name));
   }
   const courseIds = [];
-  for (const name of courses) courseIds.push(await resolveCourse(connection, name));
+  for (const name of courses) courseIds.push(...await resolveCourse(connection, name));
 
   await connection.execute('DELETE FROM user_branch_assignments WHERE user_id = ?', [userId]);
   for (const branchId of [...new Set(branchIds)]) {
@@ -428,7 +479,14 @@ async function saveUser(input, { userId = null, actor, passwordHash = null, targ
     if (!role || role.length > 40) throw Object.assign(new Error('Choose a valid account role.'), { status: 400 });
     if (phone && phone.length > 40) throw Object.assign(new Error('Phone numbers must be 40 characters or fewer.'), { status: 400 });
     if (empId && empId.length > 100) throw Object.assign(new Error('Employee IDs must be 100 characters or fewer.'), { status: 400 });
+    if (text(input?.linkedIn).length > 500) throw Object.assign(new Error('LinkedIn URLs must be 500 characters or fewer.'), { status: 400 });
+    if (text(input?.position).length > 240) throw Object.assign(new Error('Position must be 240 characters or fewer.'), { status: 400 });
+    if (text(input?.description).length > 5000) throw Object.assign(new Error('Description must be 5,000 characters or fewer.'), { status: 400 });
     if (!passwordHash && !userId) throw Object.assign(new Error('An initial password is required.'), { status: 400 });
+    const selectedCourses = parseList(input?.course).filter(course => !/^(n\/?a|all courses?)$/i.test(course));
+    if (!isContact && isRegionalOrTerritoryTechnicalHead({ role }) && !selectedCourses.length) {
+      throw Object.assign(new Error('Assign at least one course to a Regional or Territory Technical Head.'), { status: 400 });
+    }
 
     let current = null;
     if (userId) {
@@ -440,7 +498,32 @@ async function saveUser(input, { userId = null, actor, passwordHash = null, targ
       }
     }
 
-    const metadata = fieldsForInput(input, {
+    let directoryId = '';
+    if (!isContact) {
+      const existingFields = current ? accountMetadata(current).fields : {};
+      const existingDirectoryId = text(fieldValue(existingFields, 'User_ID', 'User ID', 'UserId'));
+      directoryId = text(input?.directoryId) || existingDirectoryId;
+      const [directoryRows] = await connection.execute(
+        `SELECT id, metadata FROM users
+          WHERE JSON_UNQUOTE(JSON_EXTRACT(metadata, '$.source')) = ?`,
+        ['shared_operations:User'],
+      );
+      if (!directoryId) {
+        const highestId = directoryRows.reduce((highest, row) => {
+          const rawId = text(fieldValue(parseJson(row.metadata).fields, 'User_ID', 'User ID', 'UserId'));
+          const match = rawId.match(/^U(\d+)$/i);
+          return match ? Math.max(highest, Number(match[1])) : highest;
+        }, 0);
+        directoryId = `U${String(highestId + 1).padStart(3, '0')}`;
+      }
+      if (normalized(directoryId) !== normalized(existingDirectoryId)
+        && directoryRows.some(row => row.id !== userId
+          && normalized(fieldValue(parseJson(row.metadata).fields, 'User_ID', 'User ID', 'UserId')) === normalized(directoryId))) {
+        throw Object.assign(new Error('That User ID is already in use.'), { status: 409 });
+      }
+    }
+
+    const metadata = fieldsForInput(isContact ? input : { ...input, directoryId }, {
       isContact,
       existingMetadata: current ? accountMetadata(current) : null,
       status,
@@ -479,10 +562,41 @@ async function saveUser(input, { userId = null, actor, passwordHash = null, targ
       await saveMonthlyTarget(connection, newId, input.target, selectedTargetMonth, actor);
       targetMail = await targetEmailProgress(connection, selectedTargetMonth, actor);
     }
+    const previous = current ? accountShape(current, null) : null;
+    const courseText = isContact ? (previous?.course || 'TPO-managed')
+      : (parseList(input?.course).join(', ') || (isRegionalOrTerritoryTechnicalHead({ role }) ? 'No course assigned' : 'All Courses'));
+    const auditComparisons = [
+      ['name', previous?.userName, cleanName],
+      ['email', previous?.email, cleanEmail],
+      ['contact', previous?.contact, phone || ''],
+      ['role', previous?.role, role],
+      ['employeeId', previous?.empId, empId || ''],
+      ['department', previous?.department, text(input?.department)],
+      ['level', previous?.level, text(input?.level)],
+      ['reportsToUserId', previous?.reportsToUserId, text(input?.reportsToUserId)],
+      ['zone', previous?.zone, text(input?.zone)],
+      ['region', previous?.region, text(input?.region)],
+      ['territory', previous?.territory, text(input?.territory)],
+      ['sittingBranch', previous?.sittingBranch, text(input?.sittingBranch)],
+      ['assignedBranches', previous?.assignedBranches, parseList(input?.assignedBranches).join(', ')],
+      ...(!isContact ? [['assignedCourses', previous?.course, courseText]] : []),
+      ['access', previous?.access, text(input?.access) || 'View Only'],
+      ['status', normalized(previous?.status), status],
+      ['profilePhoto', previous?.profilePhoto, profilePhoto || current?.profile_photo_url || ''],
+      ['linkedIn', previous?.linkedIn, text(input?.linkedIn)],
+      ['birthday', previous?.birthday, formatBirthday(birthday)],
+      ['position', previous?.position, text(input?.position)],
+      ['description', previous?.description, text(input?.description)],
+      ['mailEligible', previous?.mailEligible, text(input?.mailEligible) || 'NO'],
+    ];
+    const changedFields = current
+      ? auditComparisons.filter(([, before, after]) => text(before) !== text(after)).map(([field]) => field)
+      : auditComparisons.filter(([, , after]) => text(after)).map(([field]) => field);
     await writeAudit(connection, actor, current ? 'staff.user.updated' : 'staff.user.created', newId, {
       source: metadata.source,
       role,
       status,
+      changedFields,
       targetMonth: isContact && text(input?.target) !== '' && (!current || targetChanged) ? selectedTargetMonth : null,
     });
     const user = await getUser(newId, { connection, month: selectedTargetMonth });
@@ -561,6 +675,7 @@ module.exports = {
   indiaMonth,
   isTpoRole,
   listPublicPlacementTeam,
+  listAssignableCourses,
   listUsers,
   parseBirthday,
   parseList,

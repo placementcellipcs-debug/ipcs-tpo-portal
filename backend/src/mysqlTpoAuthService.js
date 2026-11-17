@@ -69,6 +69,33 @@ function accountAuthState(row) {
     assignedBranches: normalized(assignedBranches),
     assignedCourses: normalized(assignedCourses),
     department: (sourceField(fields, 'Department') || '').toUpperCase(),
+    // The signed session contains a user profile as well as permissions. Hash
+    // the profile fields too, so edits made by an administrator invalidate a
+    // stale token instead of leaving old names, contact details, or photos in
+    // the portal until the seven-day token expires.
+    profile: {
+      name: clean(row.full_name) || sourceField(fields, 'TPO Name', 'Username', 'Name'),
+      phone: clean(row.phone) || sourceField(fields, 'Contact Number', 'Contact', 'Phone No.', 'Phone Number'),
+      employeeId: clean(row.employee_id) || sourceField(fields, 'Emp ID', 'Employee ID'),
+      photo: clean(row.profile_photo_url) || sourceField(fields, 'Profile Photo', 'Profile Photo URL', 'Photo'),
+      position: clean(row.position_title) || sourceField(fields, 'Position', 'Designation'),
+      description: clean(row.description) || sourceField(fields, 'Description', 'Descripation', 'Bio', 'Profile Description'),
+      linkedIn: clean(row.linkedin_url) || sourceField(fields, 'Linkedin', 'LinkedIn', 'LinkedIn URL'),
+      birthday: clean(row.birthday) || sourceField(fields, 'BirthDay', 'Birthday', 'DOB', 'Date of Birth'),
+      directoryId: sourceField(fields, 'User ID', 'User_Id', 'UserId'),
+      level: sourceField(fields, 'Level'),
+      reportsToUserId: sourceField(fields, 'Reports To User ID', 'Reports_To_User_ID'),
+      zone: sourceField(fields, 'Zone'),
+      region: sourceField(fields, 'Region'),
+      territory: sourceField(fields, 'Territory'),
+      mailEligible: sourceField(fields, 'Mail Eligible', 'Mail_Eligible'),
+      createdAt: sourceField(fields, 'Created At', 'Created_At'),
+      updatedAt: sourceField(fields, 'Updated At', 'Updated_At'),
+      accountFields: fields,
+      monthlyTarget: row.mysql_monthly_target === null || row.mysql_monthly_target === undefined
+        ? sourceField(fields, 'Target', 'Target of the Month')
+        : String(row.mysql_monthly_target),
+    },
   };
 }
 

@@ -13,15 +13,17 @@ const readUser = () => {
   try { return JSON.parse(localStorage.getItem('tpoData') || '{}'); } catch { return {}; }
 };
 const clean = value => String(value || '').trim().toLowerCase();
+const normalizedAccessType = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const branchKey = value => clean(value).replace(/\b(branch|office)\b/g, '').replace(/[^a-z0-9]/g, '');
 const isQuantityGroup = item => String(item?.trackingMode || 'INDIVIDUAL').toUpperCase() === 'QUANTITY';
+const assetStatus = item => String(item?.status || 'AVAILABLE').trim().toUpperCase().replace(/[\s-]+/g, '_');
 const unitCount = item => isQuantityGroup(item) ? Math.max(1, Number.parseInt(item.quantity, 10) || 1) : 1;
 const fileImage = value => {
   if (!value) return '';
   const match = String(value).match(/(?:file\/d\/|[?&]id=|\/d\/)([\w-]{20,})/);
   return match ? `https://drive.google.com/thumbnail?id=${match[1]}&sz=w900` : value;
 };
-const statusLabel = status => ({ AVAILABLE: 'Available', ASSIGNED: 'Assigned', UNDER_MAINTENANCE: 'Maintenance', TRANSFER_PENDING: 'In transit', DISPOSED: 'Retired' }[status] || status || 'Available');
+const statusLabel = status => ({ AVAILABLE: 'Available', ASSIGNED: 'Assigned', UNDER_MAINTENANCE: 'Maintenance', TRANSFER_PENDING: 'In transit', DISPOSED: 'Retired', ARCHIVED: 'Archived' }[String(status || '').toUpperCase()] || status || 'Available');
 
 function PhotoField({ label, value, onChange, required = false }) {
   return (
@@ -47,7 +49,7 @@ function Modal({ title, subtitle, onClose, children }) {
 export default function AssetList() {
   const user = useMemo(() => readUser(), []);
   const role = String(user.role || '').toUpperCase();
-  const isGlobalAdmin = String(user.accessType || '').toLowerCase() === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
+  const isGlobalAdmin = normalizedAccessType(user.accessType) === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
   const isBranchManager = role === 'BM' || role.includes('BRANCH MANAGER');
   const canManage = isGlobalAdmin || isBranchManager || role.includes('ASSET') || String(user.accessType || '').toLowerCase().includes('asset');
   const navigate = useNavigate();
@@ -70,6 +72,10 @@ export default function AssetList() {
   const [assignItem, setAssignItem] = useState(null);
   const [returnItem, setReturnItem] = useState(null);
   const [disposeItem, setDisposeItem] = useState(null);
+  const [damageItem, setDamageItem] = useState(null);
+  const [damageIssue, setDamageIssue] = useState('');
+  const [archiveItem, setArchiveItem] = useState(null);
+  const [archiveReason, setArchiveReason] = useState('');
   const [qrItem, setQrItem] = useState(null);
   const [busy, setBusy] = useState(false);
   const [assignForm, setAssignForm] = useState({ employeeName: '', employeeId: '', conditionOnIssue: 'GOOD', conditionOnReturn: 'GOOD', accessories: '', remarks: '', returnRemarks: '', photo: null, returnPhoto: null });
@@ -81,6 +87,7 @@ export default function AssetList() {
     setAssignItem(item);
   };
   const openReturn = item => {
+    setDetails(null);
     setReturnForm({ conditionOnReturn: 'GOOD', returnStatus: 'AVAILABLE', remarks: '', photo: null });
     setReturnItem(item);
   };
@@ -117,7 +124,8 @@ export default function AssetList() {
   }, [message]);
   useEffect(() => { setSearch(''); }, [location.pathname]);
 
-  const branchAssets = useMemo(() => assets.filter(asset => branchKey(asset.branch) === branchKey(selectedBranch)), [assets, selectedBranch]);
+  const activeAssets = useMemo(() => assets.filter(asset => !['DISPOSED', 'ARCHIVED'].includes(String(asset.status || '').trim().toUpperCase())), [assets]);
+  const branchAssets = useMemo(() => activeAssets.filter(asset => branchKey(asset.branch) === branchKey(selectedBranch)), [activeAssets, selectedBranch]);
   const spaces = useMemo(() => {
     const names = new Set(branchAssets.map(asset => asset.location?.trim() || 'Unassigned space'));
     dbData.locations.forEach(location => {
@@ -135,15 +143,15 @@ export default function AssetList() {
   const spaceAssets = branchAssets.filter(asset => (asset.location?.trim() || 'Unassigned space') === selectedSpace && matchesSearch(asset));
   const registryAssets = assets.filter(asset => {
     const status = String(asset.status || '').trim().toUpperCase();
-    const visibleInView = assetView === 'retired' ? status === 'DISPOSED'
+    const visibleInView = assetView === 'retired' ? ['DISPOSED', 'ARCHIVED'].includes(status)
       : assetView === 'assignments' ? !isQuantityGroup(asset) && ['AVAILABLE', 'ASSIGNED'].includes(status)
-        : status !== 'DISPOSED';
+        : !['DISPOSED', 'ARCHIVED'].includes(status);
     return visibleInView && matchesSearch(asset);
   }).sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
   const selectedBranchStats = {
     total: branchAssets.reduce((sum, item) => sum + unitCount(item), 0),
-    assigned: branchAssets.filter(item => item.status === 'ASSIGNED').reduce((sum, item) => sum + unitCount(item), 0),
-    available: branchAssets.filter(item => item.status === 'AVAILABLE').reduce((sum, item) => sum + unitCount(item), 0)
+    assigned: branchAssets.filter(item => assetStatus(item) === 'ASSIGNED').reduce((sum, item) => sum + unitCount(item), 0),
+    available: branchAssets.filter(item => assetStatus(item) === 'AVAILABLE').reduce((sum, item) => sum + unitCount(item), 0)
   };
   const showToast = text => { setMessage(text); };
 
@@ -258,6 +266,40 @@ export default function AssetList() {
     finally { setBusy(false); }
   };
 
+  const submitDamageReport = async event => {
+    event.preventDefault();
+    if (!damageItem || !damageIssue.trim()) return;
+    setBusy(true);
+    try {
+      const response = await axios.post(`${API_BASE}/api/v1/assets/${encodeURIComponent(damageItem.assetId)}/damage`, { issue: damageIssue.trim(), userName: user.name || '' });
+      if (!response.data?.success) throw new Error(response.data?.message || 'Could not record the damage report.');
+      setDamageItem(null);
+      setDamageIssue('');
+      setDetails(null);
+      showToast(response.data.warning ? `${response.data.message || 'Item marked damaged.'} ${response.data.warning}` : response.data.message || 'Item marked damaged and sent to maintenance.');
+      await loadData();
+    } catch (error) { showToast(error.response?.data?.message || error.message || 'Could not record the damage report.'); }
+    finally { setBusy(false); }
+  };
+
+  const submitArchive = async event => {
+    event.preventDefault();
+    if (!archiveItem || archiveReason.trim().length < 3) return;
+    setBusy(true);
+    try {
+      const response = await axios.post(`${API_BASE}/api/v1/assets/${encodeURIComponent(archiveItem.assetId)}/archive`, { reason: archiveReason.trim(), userName: user.name || '' });
+      if (!response.data?.success) throw new Error(response.data?.message || 'Could not archive this item.');
+      setArchiveItem(null);
+      setArchiveReason('');
+      setDetails(null);
+      showToast(response.data.warning ? `${response.data.message || 'Asset archived.'} ${response.data.warning}` : response.data.message || 'Asset archived. History is retained.');
+      await loadData();
+    } catch (error) { showToast(error.response?.data?.message || error.message || 'Could not archive this item.'); }
+    finally { setBusy(false); }
+  };
+
+  const openEdit = item => navigate(`/assets/add?edit=${encodeURIComponent(item.assetId)}`);
+
   const openBranch = branch => { selectedBranchRef.current = branch; setSelectedBranch(branch); setSelectedSpace(''); setSearch(''); };
   const itemPhoto = item => fileImage(item.photoUrl);
 
@@ -267,18 +309,19 @@ export default function AssetList() {
         {message && <div className="asset-toast" role="status">{message}<button type="button" onClick={() => setMessage('')} aria-label="Dismiss"><X size={16} /></button></div>}
         <section className="asset-overview-hero">
           <div className="asset-overview-icon"><Barcode size={25} weight="duotone" /></div>
-          <div className="asset-overview-copy"><span>IPCS · OPERATIONS</span><h1>Asset management</h1><p>Count identical stock together or track important equipment one item at a time.</p></div>
+          <div className="asset-overview-copy"><span>IPCS · OPERATIONS</span><h1>Asset management</h1><p>Use “Register an item” to add equipment or stock. For a new damaged item, choose Damaged under Condition and describe the issue. For an existing available item, choose Mark damaged in its row or Details. Both actions open a maintenance ticket and record the change in Activity history. Delete (archive) removes an available item from the active register while preserving its QR and audit history.</p></div>
           {canManage && <button type="button" className="asset-action-primary" onClick={() => navigate('/assets/add')}>Register an item <ArrowRight size={17} /></button>}
+          <div className="asset-overview-links"><button type="button" onClick={() => navigate('/assets/maintenance')}><Wrench size={16} /> Service tickets</button><button type="button" onClick={() => navigate('/assets/activity')}><ClockCounterClockwise size={16} /> Activity history</button></div>
         </section>
 
         <section className="asset-summary-strip" aria-label="Asset summary">
           <div><span>Physical units</span><strong>{assets.reduce((sum, item) => sum + unitCount(item), 0)}</strong></div>
           <div><span>Asset records</span><strong>{assets.length}</strong></div>
-          <div><span>Assigned units</span><strong>{assets.filter(item => item.status === 'ASSIGNED').reduce((sum, item) => sum + unitCount(item), 0)}</strong></div>
-          <div><span>Available units</span><strong>{assets.filter(item => item.status === 'AVAILABLE').reduce((sum, item) => sum + unitCount(item), 0)}</strong></div>
+          <div><span>Assigned units</span><strong>{assets.filter(item => assetStatus(item) === 'ASSIGNED').reduce((sum, item) => sum + unitCount(item), 0)}</strong></div>
+          <div><span>Available units</span><strong>{assets.filter(item => assetStatus(item) === 'AVAILABLE').reduce((sum, item) => sum + unitCount(item), 0)}</strong></div>
         </section>
 
-        <details className="asset-howto"><summary>How asset tracking works</summary><div><span><b>1 · Choose tracking style</b> Track one piece at a time when it needs its own ID, assignment, or history; use a quantity group for identical stock.</span><span><b>2 · Register</b> Give the record a category, branch, and location. Purchase details and photos can be added when available.</span><span><b>3 · Label the record</b> Every individual item and quantity group can have a QR label. A group label opens the shared group record.</span><span><b>4 · Follow the record</b> View history, condition, vendor, and warranty details; transfer, maintain, or retire it through the normal asset tools.</span></div></details>
+        <details className="asset-howto"><summary>How asset tracking works</summary><div><span><b>1 · Choose tracking style</b> Track one piece at a time when it needs its own ID, damage status, assignment, or history; use a quantity group for identical stock.</span><span><b>2 · Register</b> Give the record a category, branch, and location. Purchase details and photos can be added when available. If an item is already damaged, choose Damaged under Condition and describe the issue to open its maintenance ticket.</span><span><b>3 · Mark existing damage</b> Open an available individual item and choose Mark damaged in the row or Details. If damage happens while an item is assigned, record it when returning the item. For one damaged unit from a quantity group, register or split it as an individually tracked item first.</span><span><b>4 · Label the record</b> Every individual item and quantity group can have a QR label. A group label opens the shared group record.</span><span><b>5 · Follow the record</b> View history, condition, vendor, and warranty details; transfer, maintain, or retire it through the normal asset tools. Every edit, damage report, and archive appears in Activity history.</span></div></details>
 
         <div className="asset-workspace-layout">
         <section className="asset-module-content" aria-label={assetView === 'branches' ? 'Branch spaces and items' : assetView === 'assignments' ? 'Asset assignments' : assetView === 'retired' ? 'Retired assets' : 'Item register'}>
@@ -304,14 +347,14 @@ export default function AssetList() {
                 <td>{assetView === 'assignments' ? (String(item.status || '').toUpperCase() === 'ASSIGNED' ? item.assignedTo || item.employeeName || item.custodian || 'Assigned' : 'Ready to assign') : item.vendor || '—'}</td>
                 <td>{item.condition || 'GOOD'}</td>
                 <td><span className={`asset-status status-${String(item.status || 'AVAILABLE').toLowerCase()}`}>{statusLabel(item.status)}</span></td>
-                <td><div className="asset-row-actions"><button type="button" className="asset-register-open" onClick={() => openDetails(item)}>Details <ArrowRight size={15} /></button>{canManage && !isQuantityGroup(item) && String(item.status || '').toUpperCase() === 'AVAILABLE' && <button type="button" className="asset-register-open asset-assign-inline" onClick={() => openAssignment(item)}>Assign</button>}{canManage && !isQuantityGroup(item) && String(item.status || '').toUpperCase() === 'ASSIGNED' && <><button type="button" className="asset-register-open asset-assign-inline" onClick={() => openAssignment(item)}>Reassign</button><button type="button" className="asset-register-open asset-return-inline" onClick={() => openReturn(item)}>Return item</button></>}</div></td>
+                <td><div className="asset-row-actions"><button type="button" className="asset-register-open" onClick={() => openDetails(item)}>Details <ArrowRight size={15} /></button>{canManage && assetStatus(item) === 'AVAILABLE' && <><button type="button" className="asset-register-open" onClick={() => openEdit(item)}>Edit</button><button type="button" className="asset-register-open" title={isQuantityGroup(item) ? 'Quantity groups cannot report one damaged physical unit. Register each tracked unit separately.' : 'Report damage and create a maintenance ticket.'} onClick={() => { setDamageIssue(''); setDamageItem(item); }} disabled={isQuantityGroup(item)}>Mark damaged</button><button type="button" className="asset-register-open asset-return-inline" title="Delete from the active register by archiving; the record and history are retained." onClick={() => { setArchiveReason(''); setArchiveItem(item); }}>Delete</button></>}{canManage && !isQuantityGroup(item) && assetStatus(item) === 'AVAILABLE' && <button type="button" className="asset-register-open asset-assign-inline" onClick={() => openAssignment(item)}>Assign</button>}{canManage && !isQuantityGroup(item) && assetStatus(item) === 'ASSIGNED' && <><button type="button" className="asset-register-open asset-assign-inline" onClick={() => openAssignment(item)}>Reassign</button><button type="button" className="asset-register-open asset-return-inline" onClick={() => openReturn(item)}>Return item</button></>}</div></td>
               </tr>)}
             </tbody></table></div> : <div className="asset-state-card">{assetView === 'retired' ? 'No retired items match this search.' : assetView === 'assignments' && !search.trim() ? <><b>No individually tracked items are ready for assignment.</b><p>Only items registered one by one can be assigned to an employee. Quantity groups stay together as stock.</p>{canManage && <button type="button" className="asset-action-primary" onClick={() => navigate('/assets/add')}>Register an individual item <ArrowRight size={16} /></button>}</> : 'No items match this search.'}</div>}
           </section>
         ) : !selectedBranch ? (
           <section className="asset-branch-grid" aria-label="Branches">
             {dbData.branches.map(branch => {
-              const list = assets.filter(item => branchKey(item.branch) === branchKey(branch));
+              const list = activeAssets.filter(item => branchKey(item.branch) === branchKey(branch));
               const roomCount = new Set(list.map(item => item.location?.trim() || 'Unassigned space')).size;
               return (
                 <button className="asset-branch-card" type="button" key={branch} onClick={() => openBranch(branch)}>
@@ -354,9 +397,10 @@ export default function AssetList() {
                   <div className="asset-item-actions">
                     <button type="button" className="asset-icon-button" title="Item history and photos" onClick={() => openDetails(item)}><ImageIcon size={17} /></button>
                     <button type="button" className="asset-icon-button" title="Create, print, or download asset QR" onClick={() => void prepareQrLabel(item)}><QrCode size={17} /></button>
-                    {canManage && !isQuantityGroup(item) && item.status === 'AVAILABLE' && <button type="button" className="asset-small-action" onClick={() => openAssignment(item)}><UserCheck size={16} /> Assign</button>}
-                    {canManage && !isQuantityGroup(item) && item.status === 'ASSIGNED' && <><button type="button" className="asset-small-action" onClick={() => openAssignment(item)}><ArrowsLeftRight size={16} /> Reassign</button><button type="button" className="asset-small-action return-action" onClick={() => openReturn(item)}><ArrowLeft size={16} /> Return</button></>}
-                    {item.status === 'UNDER_MAINTENANCE' && <span className="asset-maintenance-tag"><Wrench size={14} /> Service</span>}
+                    {canManage && assetStatus(item) === 'AVAILABLE' && <><button type="button" className="asset-small-action" onClick={() => openEdit(item)}>Edit</button><button type="button" className="asset-small-action" title={isQuantityGroup(item) ? 'Quantity groups cannot report one damaged physical unit. Register each tracked unit separately.' : 'Report damage and create a maintenance ticket.'} onClick={() => { setDamageIssue(''); setDamageItem(item); }} disabled={isQuantityGroup(item)}>Mark damaged</button><button type="button" className="asset-small-action return-action" title="Delete from the active register by archiving; the record and history are retained." onClick={() => { setArchiveReason(''); setArchiveItem(item); }}>Delete</button></>}
+                    {canManage && !isQuantityGroup(item) && assetStatus(item) === 'AVAILABLE' && <button type="button" className="asset-small-action" onClick={() => openAssignment(item)}><UserCheck size={16} /> Assign</button>}
+                    {canManage && !isQuantityGroup(item) && assetStatus(item) === 'ASSIGNED' && <><button type="button" className="asset-small-action" onClick={() => openAssignment(item)}><ArrowsLeftRight size={16} /> Reassign</button><button type="button" className="asset-small-action return-action" onClick={() => openReturn(item)}><ArrowLeft size={16} /> Return</button></>}
+                    {assetStatus(item) === 'UNDER_MAINTENANCE' && <span className="asset-maintenance-tag"><Wrench size={14} /> Service</span>}
                   </div>
                 </article>
               ))}
@@ -405,7 +449,7 @@ export default function AssetList() {
               <h3>Specifications</h3>
               {detailData.loading ? <span className="asset-detail-loading"><CircleNotch size={18} className="ph-spin" /> Loading record…</span> : detailData.customSpecs.length ? <div className="asset-spec-grid">{detailData.customSpecs.map((spec, index) => <div key={`${spec.name}-${index}`}><span>{spec.name}</span><b>{spec.value || '—'}</b></div>)}</div> : <p className="asset-detail-empty">No additional technical specifications.</p>}
               <h3>Current custodian</h3>
-              {detailData.loading ? <span className="asset-detail-loading"><CircleNotch size={18} className="ph-spin" /> Loading record…</span> : (detailData.assignments.find(assignment => ['ACTIVE', 'ASSIGNED'].includes(String(assignment.status || '').toUpperCase())) || (details.status === 'ASSIGNED' ? detailData.assignments[0] : null)) ? (() => { const assigned = detailData.assignments.find(assignment => ['ACTIVE', 'ASSIGNED'].includes(String(assignment.status || '').toUpperCase())) || detailData.assignments[0]; return <div className="asset-current-holder"><b>{assigned.employeeName || 'Assigned user'}</b><span>{assigned.employeeId || 'Employee ID not recorded'} · Issued {formatPortalDateTime(assigned.assignedDate, String(assigned.assignedDate || 'date not recorded'))}</span></div>; })() : <p className="asset-detail-empty">This item is currently not assigned to a person.</p>}
+              {detailData.loading ? <span className="asset-detail-loading"><CircleNotch size={18} className="ph-spin" /> Loading record…</span> : (detailData.assignments.find(assignment => ['ACTIVE', 'ASSIGNED'].includes(String(assignment.status || '').toUpperCase())) || (assetStatus(details) === 'ASSIGNED' ? detailData.assignments[0] : null)) ? (() => { const assigned = detailData.assignments.find(assignment => ['ACTIVE', 'ASSIGNED'].includes(String(assignment.status || '').toUpperCase())) || detailData.assignments[0]; return <div className="asset-current-holder"><b>{assigned.employeeName || 'Assigned user'}</b><span>{assigned.employeeId || 'Employee ID not recorded'} · Issued {formatPortalDateTime(assigned.assignedDate, String(assigned.assignedDate || 'date not recorded'))}</span></div>; })() : <p className="asset-detail-empty">This item is currently not assigned to a person.</p>}
               </>}
               {detailTab === 'history' && <>
               <h3>Complete item history</h3>
@@ -414,13 +458,14 @@ export default function AssetList() {
               {detailData.loading ? <span className="asset-detail-loading"><CircleNotch size={18} className="ph-spin" /> Loading record…</span> : detailData.assignments.length ? <div className="asset-assignment-list">{detailData.assignments.map(assignment => <article key={assignment.assignmentId}><div><b>{assignment.employeeName || 'Unassigned'}</b><span>{assignment.assignmentId} · {assignment.status || '—'}{assignment.employeeId ? ` · ${assignment.employeeId}` : ''}</span>{assignment.accessories && <span>Accessories: {assignment.accessories}</span>}{assignment.remarks && <span>{assignment.remarks}</span>}</div><div><span>Issued {assignment.conditionOnIssue || '—'} · {formatPortalDateTime(assignment.assignedDate, String(assignment.assignedDate || '—'))}</span><span>Returned {assignment.conditionOnReturn || 'Pending'} · {formatPortalDateTime(assignment.returnedDate, String(assignment.returnedDate || '—'))}</span></div></article>)}</div> : <p className="asset-detail-empty">No assignment history.</p>}
               {detailData.disposals.length > 0 && <><h3>Disposal record</h3><div className="asset-disposal-records">{detailData.disposals.map(entry => <article key={entry.disposalId}><b>{entry.disposalId} · {entry.method}</b><span>{formatPortalDate(entry.date, String(entry.date || ''))} · {entry.reason}</span>{entry.value && <span>Recovered value: {entry.value}</span>}{entry.remarks && <small>{entry.remarks}</small>}</article>)}</div></>}
               </>}
-              {canManage && details.status === 'AVAILABLE' && <div className="asset-detail-actions"><button type="button" className="asset-dispose-button" onClick={() => { setDisposalForm({ reason: '', method: 'Recycling', value: '', remarks: '' }); setDisposeItem(details); }}>Dispose of this asset</button></div>}
+              {canManage && assetStatus(details) === 'AVAILABLE' && <div className="asset-detail-actions"><button type="button" className="asset-register-open" onClick={() => openEdit(details)}>Edit details</button>{!isQuantityGroup(details) && <button type="button" className="asset-register-open" onClick={() => { setDamageIssue(''); setDamageItem(details); }}>Report damage</button>}{isQuantityGroup(details) && <span className="asset-detail-note" style={{ color: '#9cb0c3', fontSize: '.75rem' }}>Track units individually to report one unit as damaged.</span>}<button type="button" className="asset-register-open asset-return-inline" title="Delete from the active register by archiving; the record and history are retained." onClick={() => { setArchiveReason(''); setArchiveItem(details); }}>Delete from active register</button><button type="button" className="asset-dispose-button" onClick={() => { setDisposalForm({ reason: '', method: 'Recycling', value: '', remarks: '' }); setDisposeItem(details); }}>Request retirement</button></div>}
+              {canManage && assetStatus(details) === 'ASSIGNED' && <div className="asset-detail-actions"><button type="button" className="asset-register-open asset-return-inline" onClick={() => openReturn(details)}>Return item · choose Damaged to create a service ticket</button></div>}
             </div>
           </Modal>
         )}
 
-        {assignItem && <Modal title={assignItem.status === 'ASSIGNED' ? 'Reassign this item' : 'Assign this item'} subtitle={`${assignItem.name} · ${assignItem.assetId}`} onClose={() => setAssignItem(null)}><form className="asset-form" onSubmit={submitHandover}>
-          {assignItem.status === 'ASSIGNED' && <>
+        {assignItem && <Modal title={assetStatus(assignItem) === 'ASSIGNED' ? 'Reassign this item' : 'Assign this item'} subtitle={`${assignItem.name} · ${assignItem.assetId}`} onClose={() => setAssignItem(null)}><form className="asset-form" onSubmit={submitHandover}>
+          {assetStatus(assignItem) === 'ASSIGNED' && <>
             <div className="asset-reassign-current"><span>CURRENT CUSTODY</span><b>{assignItem.assignedTo || assignItem.employeeName || assignItem.custodian || 'Current employee'}</b><small>The current handover is closed in the history before the new custody record is created.</small></div>
             <label>Condition returned<select value={assignForm.conditionOnReturn} onChange={event => setAssignForm({ ...assignForm, conditionOnReturn: event.target.value })}><option>EXCELLENT</option><option>GOOD</option><option>FAIR</option><option>DAMAGED</option></select></label>
             <label>Return notes<input value={assignForm.returnRemarks} onChange={event => setAssignForm({ ...assignForm, returnRemarks: event.target.value })} placeholder="Note wear, damage, or missing accessories" /></label>
@@ -433,12 +478,14 @@ export default function AssetList() {
           <label>Accessories<input value={assignForm.accessories} onChange={event => setAssignForm({ ...assignForm, accessories: event.target.value })} placeholder="Charger, bag…" /></label>
           <label>Handover notes<input value={assignForm.remarks} onChange={event => setAssignForm({ ...assignForm, remarks: event.target.value })} /></label>
           <PhotoField label="Photo at handover to new employee" value={assignForm.photo} onChange={photo => setAssignForm({ ...assignForm, photo })} />
-          <button className="asset-action-primary form-submit" type="submit" disabled={busy || (assignItem.status === 'ASSIGNED' && assignForm.conditionOnReturn === 'DAMAGED')}>{busy ? <CircleNotch size={18} className="ph-spin" /> : <UserCheck size={18} />} {assignItem.status === 'ASSIGNED' ? 'Record return & reassign' : 'Confirm handover'}</button>
+          <button className="asset-action-primary form-submit" type="submit" disabled={busy || (assetStatus(assignItem) === 'ASSIGNED' && assignForm.conditionOnReturn === 'DAMAGED')}>{busy ? <CircleNotch size={18} className="ph-spin" /> : <UserCheck size={18} />} {assetStatus(assignItem) === 'ASSIGNED' ? 'Record return & reassign' : 'Confirm handover'}</button>
         </form></Modal>}
 
-        {returnItem && <Modal title="Return this item" subtitle={`${returnItem.name} · ${returnItem.assetId}`} onClose={() => setReturnItem(null)}><form className="asset-form" onSubmit={submitReturn}><label>Condition on return<select value={returnForm.conditionOnReturn} onChange={event => setReturnForm({ ...returnForm, conditionOnReturn: event.target.value, returnStatus: event.target.value === 'DAMAGED' ? 'UNDER_MAINTENANCE' : returnForm.returnStatus })}><option>NEW</option><option>EXCELLENT</option><option>GOOD</option><option>FAIR</option><option>DAMAGED</option></select></label><label>Next status<select value={returnForm.returnStatus} onChange={event => setReturnForm({ ...returnForm, returnStatus: event.target.value })}><option value="AVAILABLE">Available</option><option value="UNDER_MAINTENANCE">Maintenance</option></select></label><label>Return notes<input value={returnForm.remarks} onChange={event => setReturnForm({ ...returnForm, remarks: event.target.value })} placeholder="Note visible damage or missing parts" /></label><PhotoField label="Add current return photo" value={returnForm.photo} onChange={photo => setReturnForm({ ...returnForm, photo })} required /><button className="asset-action-primary form-submit" type="submit" disabled={busy}>{busy ? <CircleNotch size={18} className="ph-spin" /> : <CheckCircle size={18} />} Record return</button></form></Modal>}
+        {returnItem && <Modal title="Return this item" subtitle={`${returnItem.name} · ${returnItem.assetId}`} onClose={() => setReturnItem(null)}><form className="asset-form" onSubmit={submitReturn}><label>Condition on return<select value={returnForm.conditionOnReturn} onChange={event => setReturnForm({ ...returnForm, conditionOnReturn: event.target.value, returnStatus: event.target.value === 'DAMAGED' ? 'UNDER_MAINTENANCE' : returnForm.returnStatus })}><option>NEW</option><option>EXCELLENT</option><option>GOOD</option><option>FAIR</option><option>DAMAGED</option></select></label><label>Next status<select value={returnForm.returnStatus} disabled={returnForm.conditionOnReturn === 'DAMAGED'} onChange={event => setReturnForm({ ...returnForm, returnStatus: event.target.value })}><option value="AVAILABLE">Available</option><option value="UNDER_MAINTENANCE">Maintenance</option></select>{returnForm.conditionOnReturn === 'DAMAGED' && <small>The item must go to maintenance while damaged.</small>}</label><label>Return notes<input value={returnForm.remarks} onChange={event => setReturnForm({ ...returnForm, remarks: event.target.value })} placeholder="Note visible damage or missing parts" /></label><PhotoField label="Add current return photo" value={returnForm.photo} onChange={photo => setReturnForm({ ...returnForm, photo })} required /><button className="asset-action-primary form-submit" type="submit" disabled={busy}>{busy ? <CircleNotch size={18} className="ph-spin" /> : <CheckCircle size={18} />} Record return</button></form></Modal>}
 
         {disposeItem && <Modal title="Request asset retirement" subtitle={`${disposeItem.name} · ${disposeItem.assetId}`} onClose={() => setDisposeItem(null)}><form className="asset-form" onSubmit={submitDisposal}><div className="asset-permanent-note">This request goes to Rakesh for review. The item stays active unless approved.</div><label>Reason for retirement<input value={disposalForm.reason} onChange={event => setDisposalForm({ ...disposalForm, reason: event.target.value })} placeholder="End of useful life, damaged beyond repair…" required /></label><label>Proposed disposal method<select value={disposalForm.method} onChange={event => setDisposalForm({ ...disposalForm, method: event.target.value })}><option>Recycling</option><option>Sale</option><option>Donation</option><option>Secure destruction</option><option>Other</option></select></label><label>Estimated recovery value<input type="number" min="0" step="0.01" value={disposalForm.value} onChange={event => setDisposalForm({ ...disposalForm, value: event.target.value })} placeholder="0" /></label><label>Request notes<textarea rows="3" value={disposalForm.remarks} onChange={event => setDisposalForm({ ...disposalForm, remarks: event.target.value })} placeholder="Add a reference number or supporting details" /></label><button className="asset-dispose-button form-submit" type="submit" disabled={busy}>{busy ? <CircleNotch size={18} className="ph-spin" /> : 'Send request to Rakesh'}</button></form></Modal>}
+        {damageItem && <Modal title="Report item damage" subtitle={`${damageItem.name} · ${damageItem.assetId}`} onClose={() => setDamageItem(null)}><form className="asset-form" onSubmit={submitDamageReport}><div className="asset-permanent-note">This marks the item as damaged, creates a maintenance ticket, and keeps the full history.</div><label>Describe the damage<textarea rows="4" minLength="3" value={damageIssue} onChange={event => setDamageIssue(event.target.value)} placeholder="Describe the damaged part and what needs repair" required /></label><button className="asset-action-primary form-submit" type="submit" disabled={busy || damageIssue.trim().length < 3}>{busy ? <CircleNotch size={18} className="ph-spin" /> : 'Mark damaged & send to maintenance'}</button></form></Modal>}
+        {archiveItem && <Modal title="Delete from active register" subtitle={`${archiveItem.name} · ${archiveItem.assetId}`} onClose={() => setArchiveItem(null)}><form className="asset-form" onSubmit={submitArchive}><div className="asset-permanent-note">This archives the item so it disappears from the active register. Its record, QR reference, and complete audit history remain available. For permanent retirement, use Request retirement and its approval workflow.</div><label>Reason for deletion<textarea rows="3" minLength={3} value={archiveReason} onChange={event => setArchiveReason(event.target.value)} placeholder="Duplicate record, entered in error, transferred out…" required /></label><button className="asset-dispose-button form-submit" type="submit" disabled={busy || archiveReason.trim().length < 3}>{busy ? <CircleNotch size={18} className="ph-spin" /> : 'Delete from active register'}</button></form></Modal>}
 
         {qrItem && <AssetQrLabelModal asset={qrItem} onClose={() => setQrItem(null)} />}
       </main>

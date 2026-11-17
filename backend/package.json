@@ -8,6 +8,7 @@
     "start": "node server.js",
     "test": "node --test",
     "db:check": "node scripts/check-mysql.js",
+    "db:check-assets": "node scripts/check-mysql-assets.js",
     "db:check-placement-delete": "node scripts/check-mysql-placement-delete.js",
     "db:check-placement-approval": "node scripts/check-mysql-placement-approval.js",
     "db:check-student-applications": "node scripts/check-mysql-student-applications.js",

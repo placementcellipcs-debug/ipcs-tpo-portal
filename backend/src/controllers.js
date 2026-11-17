@@ -48,6 +48,7 @@ const mysqlTpoAuth = require('./mysqlTpoAuthService');
 const mysqlAdminUsers = require('./mysqlAdminUsersService');
 const mysqlSupportIssues = require('./mysqlSupportIssueService');
 const mysqlEvents = require('./mysqlEventsService');
+const mysqlStudentDirectory = require('./mysqlStudentDirectoryService');
 
 const useMysqlTpoUserManagement = () => String(process.env.MYSQL_TPO_USER_MANAGEMENT_ENABLED || '').trim().toLowerCase() === 'true';
 const useMysqlTpoAuth = () => String(process.env.MYSQL_TPO_AUTH_ENABLED || '').trim().toLowerCase() === 'true' || useMysqlTpoUserManagement();
@@ -55,6 +56,7 @@ const useMysqlPlacementTracker = () => String(process.env.MYSQL_PLACEMENT_TRACKE
 const useMysqlVacancyManagement = () => String(process.env.MYSQL_VACANCY_MANAGEMENT_ENABLED || '').trim().toLowerCase() === 'true';
 const useMysqlSupportIssues = () => String(process.env.MYSQL_SUPPORT_ISSUES_ENABLED || '').trim().toLowerCase() === 'true';
 const useMysqlTpoEvents = () => String(process.env.MYSQL_TPO_EVENTS_ENABLED || '').trim().toLowerCase() === 'true';
+const useMysqlStudentDirectory = () => String(process.env.MYSQL_STUDENT_DIRECTORY_ENABLED || '').trim().toLowerCase() === 'true';
 
 const TPO_DELETE_REQUEST_SHEET = 'TPO_Delete_Requests';
 const TPO_DELETE_REQUEST_HEADERS = [
@@ -1418,8 +1420,22 @@ exports.getNotifications = (req, res) => {
 exports.getStudents = async (req, res) => {
   const { assignedBranchesArray, role, assignedCourse } = req.body;
   const placementUser = req.portalUser || { role, assignedBranchesArray, assignedCourse };
+  const directoryRole = String(placementUser?.role || '').toUpperCase();
+  const canViewStudentDirectoryDetails = String(placementUser?.accessType || '').toLowerCase() === 'superadmin'
+    || directoryRole.includes('ADMIN')
+    || ['GENERAL MANAGER', 'TECHNICAL HEAD', 'ZONAL PLACEMENT HEAD'].includes(directoryRole)
+    || isPlacementTrackerTpo(placementUser);
   let cache = getCache();
-  if (!cache) {
+  if (useMysqlStudentDirectory()) {
+    const data = await mysqlStudentDirectory.loadDirectoryRows();
+    const timestamp = new Date().toISOString();
+    cache = {
+      ...data,
+      cacheUpdatedAt: timestamp,
+      cacheSheetHealth: { students: true, tpoLogs: true },
+      cacheSheetUpdatedAt: { students: timestamp, tpoLogs: timestamp },
+    };
+  } else if (!cache) {
     await refreshCache();
     cache = getCache();
   }
@@ -1462,7 +1478,7 @@ exports.getStudents = async (req, res) => {
     const rawHistory = getValByHeader(row, ['statushistory']);
     let history = [];
     try { history = rawHistory ? JSON.parse(rawHistory) : []; } catch { history = []; }
-    const statuses = (Array.isArray(history) ? history : []).map(entry => String(entry?.status || ''));
+    const statuses = (Array.isArray(history) ? history : []).map(entry => String(entry?.status || entry?.new_status || entry?.newStatus || ''));
     const currentStatus = getValByHeader(row, ['status']);
     if (currentStatus && normalizePlacementText(currentStatus) !== normalizePlacementText(statuses[statuses.length - 1])) statuses.push(currentStatus);
     return statuses;
@@ -1525,6 +1541,36 @@ exports.getStudents = async (req, res) => {
     });
     return { openingsApplied: records.size, openingsAttended, interviewsAttended, interviewsNotAttended, offersRejected, notResponding };
   };
+  const placementHistoryFor = row => {
+    if (!canViewStudentDirectoryDetails) return undefined;
+    const identity = getStudentKey(row);
+    const records = openingRecordsByStudent.get(identity)
+      || openingRecordsByStudent.get(`name:${normalizePlacementText(getValByHeader(row, ['name', 'studentname']))}`)
+      || new Map();
+    return [...records.entries()].flatMap(([openingKey, recordEntry]) => {
+      const record = recordEntry.row;
+      const statuses = recordEntry.statuses.map(normalizePlacementText);
+      if (!statuses.includes('placed')) return [];
+
+      let history = [];
+      try {
+        const rawHistory = getValByHeader(record, ['statushistory']);
+        history = Array.isArray(rawHistory) ? rawHistory : rawHistory ? JSON.parse(rawHistory) : [];
+      } catch { history = []; }
+      const placedEvent = Array.isArray(history)
+        ? [...history].reverse().find(entry => normalizePlacementText(entry?.status || entry?.newStatus) === 'placed')
+        : null;
+      const placedAt = getValByHeader(record, ['dateplaced', 'placeddate', 'placementdate', 'placedat'])
+        || placedEvent?.changedAt || placedEvent?.occurredAt || placedEvent?.date || placedEvent?.timestamp
+        || getValByHeader(record, ['timestamp', 'date', 'time']) || '';
+      return [{
+        id: openingKey,
+        company: getValByHeader(record, ['companyname', 'company']) || '',
+        position: getValByHeader(record, ['position', 'role', 'jobtitle']) || '',
+        placedAt,
+      }];
+    }).sort((a, b) => String(b.placedAt || '').localeCompare(String(a.placedAt || '')));
+  };
 
   (cache.students || []).forEach(row => {
     const branch = getValByHeader(row, ['branch']) || 'Unknown';
@@ -1543,6 +1589,12 @@ exports.getStudents = async (req, res) => {
       const coursePercentage = getValByHeader(row, ['coursepercentage']) || '';
       const metrics = placementMetricsFor(row);
       const isPlacementNeeded = isPlacementEligiblePending(pStatus, coursePercentage);
+      const rawData = typeof row.toObject === 'function' ? row.toObject() : {};
+      if (!canViewStudentDirectoryDetails) {
+        Object.keys(rawData).forEach(key => {
+          if (/(?:talenzo|portal|user)?account.*creat|accountcreation/i.test(String(key).replace(/[^a-z0-9]/gi, ''))) delete rawData[key];
+        });
+      }
 
       if (pLower.includes('notresponding') || metrics.notResponding) stats.notResponding++;
       else if (pLower.includes('noneed')) stats.noNeed++;
@@ -1572,8 +1624,14 @@ exports.getStudents = async (req, res) => {
         coursePercentage,
         courseStatus: getValByHeader(row, ['coursestatus', 'status(currently']) || 'N/A',
         placementMetrics: metrics,
+        ...(canViewStudentDirectoryDetails ? {
+          accountCreatedAt: row.accountCreatedAt
+            || getValByHeader(row, ['talenzoaccountcreated', 'accountcreatedat', 'accountcreationdate', 'accountcreateddate', 'portalaccountcreatedat', 'useraccountcreatedat', 'timestamp'])
+            || '',
+          placementHistory: placementHistoryFor(row),
+        } : {}),
         hasResume: Boolean(getValByHeader(row, ['resume', 'cv']) && !/^n\/?a$/i.test(getValByHeader(row, ['resume', 'cv']))),
-        rawData: typeof row.toObject === 'function' ? row.toObject() : {}
+        rawData
       });
     }
   });
@@ -1582,8 +1640,9 @@ exports.getStudents = async (req, res) => {
     students: students.reverse(),
     stats,
     dataMeta: {
-      sourceSheet: 'Data',
-      placementStatusSourceSheet: 'TPO_Log',
+      source: useMysqlStudentDirectory() ? 'mysql' : 'google_sheets',
+      sourceSheet: useMysqlStudentDirectory() ? 'student_profiles' : 'Data',
+      placementStatusSourceSheet: useMysqlStudentDirectory() ? 'placement_tracker_records' : 'TPO_Log',
       placementStatusSourceRowCount: placementLogRows.length,
       sourceHealthy: cache.cacheSheetHealth?.students === true,
       placementStatusSourceHealthy: cache.cacheSheetHealth?.tpoLogs === true,
@@ -8702,8 +8761,11 @@ exports.submitMou = async (req, res) => {
 exports.getAdminUsers = async (req, res) => {
   try {
     if (useMysqlTpoUserManagement()) {
-      const users = await mysqlAdminUsers.listUsers({ month: req.query?.month });
-      return res.json({ success: true, users });
+      const [users, availableCourses] = await Promise.all([
+        mysqlAdminUsers.listUsers({ month: req.query?.month }),
+        mysqlAdminUsers.listAssignableCourses(),
+      ]);
+      return res.json({ success: true, users, availableCourses });
     }
     const cache = getCache();
     // Target rows are refreshed with the shared workbook cache and updated in
@@ -8787,15 +8849,31 @@ exports.getAdminUsers = async (req, res) => {
             course: getValByHeader(row, ['assigned_courses', 'assignedcourses', 'course']) || 'All Courses',
             access: getValByHeader(row, ['access_type', 'accesstype', 'access']) || 'View Only',
             profilePhoto: getValByHeader(row, ['profile_photo_url', 'profilephoto']) || '',
-            // 🚨 READ THE NEW FIELDS
+            directoryId: getValByHeader(row, ['user_id', 'userid', 'user id']) || '',
             empId: getValByHeader(row, ['empid', 'employeeid']) || '',
+            department: getValByHeader(row, ['department']) || '',
+            level: getValByHeader(row, ['level']) || '',
+            reportsToUserId: getValByHeader(row, ['reports_to_user_id', 'reportstouserid', 'reports to user id']) || '',
+            zone: getValByHeader(row, ['zone']) || '',
+            region: getValByHeader(row, ['region']) || '',
+            territory: getValByHeader(row, ['territory']) || '',
+            mailEligible: getValByHeader(row, ['mail_eligible', 'maileligible']) || 'NO',
+            linkedIn: getValByHeader(row, ['linkedin', 'linkedinurl', 'linkedinprofile']) || '',
+            birthday: getValByHeader(row, ['birthday', 'dob', 'dateofbirth']) || '',
+            position: getValByHeader(row, ['position', 'designation']) || '',
+            description: getValByHeader(row, ['description', 'descripation', 'bio', 'profiledescription', 'profilebio']) || '',
+            status: getValByHeader(row, ['status']) || 'Active',
+            createdAt: getValByHeader(row, ['created_at', 'createdat']) || '',
+            updatedAt: getValByHeader(row, ['updated_at', 'updatedat']) || '',
             ...monthlyTargetFor([name, email, getValByHeader(row, ['login_id', 'loginid', 'username']), getValByHeader(row, ['emp_id', 'empid', 'employeeid'])], getValByHeader(row, ['targetofthemonth', 'target']), getValByHeader(row, ['role']))
           });
         }
       });
     }
 
-    res.json({ success: true, users: allUsers.reverse() });
+    const availableCourses = [...new Set(allUsers.flatMap(user => String(user.course || '').split(/[,;|\n]+/).map(course => course.trim()))) ]
+      .filter(course => course && !/^all courses?$/i.test(course));
+    res.json({ success: true, users: allUsers.reverse(), availableCourses });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -8826,6 +8904,14 @@ const validateAdminTpoProfile = body => {
     return 'Choose Active or Inactive for the TPO account status.';
   }
   return '';
+};
+
+const validateAdminCourseScope = body => {
+  if (!isRegionalOrTerritoryTechnicalHead({ role: body?.role })) return '';
+  const selected = (Array.isArray(body?.course) ? body.course : String(body?.course || '').split(/[,;|\n]+/))
+    .map(value => String(value || '').trim())
+    .filter(value => value && !/^(n\/?a|none|all courses?|[—–-])$/i.test(value));
+  return selected.length ? '' : 'Select at least one assigned course for a Regional or Territory Technical Head.';
 };
 
 const getTargetStatsMonth = row => {
@@ -9075,6 +9161,8 @@ const sendMysqlTargetAssignmentMail = async targetMail => {
 
 exports.addAdminUser = async (req, res) => {
   try {
+    const courseScopeError = validateAdminCourseScope(req.body);
+    if (courseScopeError) return res.status(400).json({ success: false, message: courseScopeError });
     if (useMysqlTpoUserManagement()) {
       const { userName, email, target, role } = req.body;
       const cleanEmail = String(email || '').trim().toLowerCase();
@@ -9106,7 +9194,8 @@ exports.addAdminUser = async (req, res) => {
     const { userName, contact, email, sittingBranch, assignedBranches, role, course, access, empId, target, targetMonth, linkedIn, birthday, position, description } = req.body;
     const password = typeof req.body.newPassword === 'string' ? req.body.newPassword : req.body.password;
     const cleanEmail = String(email || '').trim().toLowerCase();
-    if (role === 'TPO') {
+    const isTpoAccount = isPlacementTrackerTpo({ role });
+    if (isTpoAccount) {
       const profileError = validateAdminTpoProfile(req.body);
       if (profileError) return res.status(400).json({ success: false, message: profileError });
     }
@@ -9127,7 +9216,7 @@ exports.addAdminUser = async (req, res) => {
       return res.status(409).json({ success: false, message: 'An account already uses this email address.' });
     }
 
-    const sheetName = role === 'TPO' ? "Contact" : "User";
+    const sheetName = isTpoAccount ? "Contact" : "User";
     const cachedRows = sheetName === 'Contact' ? (cache?.contacts || []) : (cache?.users || []);
     let s = cachedRows[0]?._worksheet || doc.sheetsByTitle[sheetName];
     if (!s) {
@@ -9141,13 +9230,13 @@ exports.addAdminUser = async (req, res) => {
     // Bulletproof Header Finder
     const getSafeH = (searchStrs) => {
       for (let str of searchStrs) {
-        const clean = str.toLowerCase().replace(/\s/g, '');
-        const exact = h.find(hd => hd.toLowerCase().replace(/\s/g, '') === clean);
+        const clean = str.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const exact = h.find(hd => hd.toLowerCase().replace(/[^a-z0-9]/g, '') === clean);
         if (exact) return exact;
       }
       for (let str of searchStrs) {
-        const clean = str.toLowerCase().replace(/\s/g, '');
-        const partial = h.find(hd => hd.toLowerCase().replace(/\s/g, '').includes(clean));
+        const clean = str.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const partial = h.find(hd => hd.toLowerCase().replace(/[^a-z0-9]/g, '').includes(clean));
         if (partial) return partial;
       }
       return null;
@@ -9155,7 +9244,7 @@ exports.addAdminUser = async (req, res) => {
 
     const newRow = {};
 
-    if (role === 'TPO') {
+    if (isTpoAccount) {
       const hName = getSafeH(['tponame', 'name']); if(hName) newRow[hName] = userName;
       const hPhone = getSafeH(['contactnumber', 'phone']); if(hPhone) newRow[hPhone] = contact;
       const hEmail = getSafeH(['mailid', 'email']); if(hEmail) newRow[hEmail] = email;
@@ -9177,8 +9266,30 @@ exports.addAdminUser = async (req, res) => {
       const hRole = getSafeH(['role']); if(hRole) newRow[hRole] = role;
       const hCourse = getSafeH(['assignedcourses', 'course']); if(hCourse) newRow[hCourse] = course;
       const hAccess = getSafeH(['accesstype', 'access']); if(hAccess) newRow[hAccess] = access;
-      const hStatus = getSafeH(['status']); if(hStatus) newRow[hStatus] = 'Active';
-      const hCreated = getSafeH(['createdat']); if(hCreated) newRow[hCreated] = formatIndiaTimestamp();
+      const hStatus = getSafeH(['status']); if(hStatus) newRow[hStatus] = /^inactive$/i.test(String(req.body.status || '')) ? 'Inactive' : 'Active';
+      const hCreated = getSafeH(['created_at', 'createdat']); if(hCreated) newRow[hCreated] = formatIndiaTimestamp();
+      const hUserId = getSafeH(['user_id', 'userid']);
+      if (hUserId) {
+        const requestedId = String(req.body.directoryId || '').trim();
+        const ids = cachedRows.map(row => String(getValByHeader(row, ['user_id', 'userid']) || '').trim());
+        const duplicateId = requestedId && ids.some(id => id.toLowerCase() === requestedId.toLowerCase());
+        if (duplicateId) return res.status(409).json({ success: false, message: 'That User ID is already in use.' });
+        const numericSuffixes = ids.map(id => id.match(/^U(\d+)$/i)).filter(Boolean).map(match => Number(match[1]));
+        newRow[hUserId] = requestedId || `U${String(Math.max(0, ...numericSuffixes) + 1).padStart(3, '0')}`;
+      }
+      const writeUserField = (aliases, value) => { const header = getSafeH(aliases); if (header && value !== undefined) newRow[header] = String(value ?? '').trim(); };
+      writeUserField(['department'], req.body.department);
+      writeUserField(['level'], req.body.level);
+      writeUserField(['reports_to_user_id', 'reportstouserid'], req.body.reportsToUserId);
+      writeUserField(['zone'], req.body.zone);
+      writeUserField(['region'], req.body.region);
+      writeUserField(['territory'], req.body.territory);
+      writeUserField(['mail_eligible', 'maileligible'], req.body.mailEligible || 'NO');
+      writeUserField(['linkedin', 'linkedinurl', 'linkedinprofile'], linkedIn);
+      writeUserField(['birthday', 'dob', 'dateofbirth'], birthday);
+      writeUserField(['position', 'designation'], position);
+      writeUserField(['description', 'descripation', 'bio', 'profiledescription', 'profilebio'], description);
+      writeUserField(['updated_at', 'updatedat'], formatIndiaTimestamp());
     }
 
     // 🚨 SAVE THE NEW FIELDS SAFELY
@@ -9204,6 +9315,8 @@ exports.addAdminUser = async (req, res) => {
 
 exports.updateAdminUser = async (req, res) => {
   try {
+    const courseScopeError = validateAdminCourseScope(req.body);
+    if (courseScopeError) return res.status(400).json({ success: false, message: courseScopeError });
     if (useMysqlTpoUserManagement()) {
       const { userName, email, target, role, userId } = req.body;
       const cleanEmail = String(email || '').trim().toLowerCase();
@@ -9256,6 +9369,9 @@ exports.updateAdminUser = async (req, res) => {
     const numericRowNumber = Number(rowNumber);
     if (!['Contact', 'User'].includes(cleanSheet) || !Number.isInteger(numericRowNumber) || numericRowNumber < 2) {
       return res.status(400).json({ success: false, message: 'Choose a valid employee account to update.' });
+    }
+    if ((cleanSheet === 'Contact') !== isPlacementTrackerTpo({ role })) {
+      return res.status(400).json({ success: false, message: 'This account cannot be moved between the TPO directory and the system-user directory. Keep the current account type.' });
     }
     if (cleanSheet === 'Contact') {
       const profileError = validateAdminTpoProfile(req.body);
@@ -9318,13 +9434,13 @@ exports.updateAdminUser = async (req, res) => {
       // Bulletproof Header Finder
       const getSafeH = (searchStrs) => {
         for (let str of searchStrs) {
-          const clean = str.toLowerCase().replace(/\s/g, '');
-          const exact = h.find(hd => hd.toLowerCase().replace(/\s/g, '') === clean);
+        const clean = str.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const exact = h.find(hd => hd.toLowerCase().replace(/[^a-z0-9]/g, '') === clean);
           if (exact) return exact;
         }
         for (let str of searchStrs) {
-          const clean = str.toLowerCase().replace(/\s/g, '');
-          const partial = h.find(hd => hd.toLowerCase().replace(/\s/g, '').includes(clean));
+        const clean = str.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const partial = h.find(hd => hd.toLowerCase().replace(/[^a-z0-9]/g, '').includes(clean));
           if (partial) return partial;
         }
         return null;
@@ -9353,7 +9469,28 @@ exports.updateAdminUser = async (req, res) => {
         const hRole = getSafeH(['role']); if(hRole) updateObj[hRole] = role;
         const hCourse = getSafeH(['assignedcourses', 'course']); if(hCourse) updateObj[hCourse] = course;
         const hAccess = getSafeH(['accesstype', 'access']); if(hAccess) updateObj[hAccess] = access;
-        const hUpdated = getSafeH(['updatedat']); if(hUpdated) updateObj[hUpdated] = formatIndiaTimestamp();
+        const hUpdated = getSafeH(['updated_at', 'updatedat']); if(hUpdated) updateObj[hUpdated] = formatIndiaTimestamp();
+        const hUserId = getSafeH(['user_id', 'userid']);
+        const requestedId = String(req.body.directoryId || '').trim();
+        if (hUserId && requestedId) {
+          const duplicateId = (cache?.users || []).some(row => Number(row.rowNumber) !== numericRowNumber
+            && String(getValByHeader(row, ['user_id', 'userid']) || '').trim().toLowerCase() === requestedId.toLowerCase());
+          if (duplicateId) return res.status(409).json({ success: false, message: 'That User ID is already in use.' });
+          updateObj[hUserId] = requestedId;
+        }
+        const writeUserField = (aliases, value) => { const header = getSafeH(aliases); if (header && value !== undefined) updateObj[header] = String(value ?? '').trim(); };
+        writeUserField(['department'], req.body.department);
+        writeUserField(['level'], req.body.level);
+        writeUserField(['reports_to_user_id', 'reportstouserid'], req.body.reportsToUserId);
+        writeUserField(['zone'], req.body.zone);
+        writeUserField(['region'], req.body.region);
+        writeUserField(['territory'], req.body.territory);
+        writeUserField(['mail_eligible', 'maileligible'], req.body.mailEligible);
+        writeUserField(['status'], req.body.status);
+        writeUserField(['linkedin', 'linkedinurl', 'linkedinprofile'], linkedIn);
+        writeUserField(['birthday', 'dob', 'dateofbirth'], birthday);
+        writeUserField(['position', 'designation'], position);
+        writeUserField(['description', 'descripation', 'bio', 'profiledescription', 'profilebio'], description);
       }
 
       // 🚨 UPDATE THE NEW FIELDS SAFELY

@@ -13,6 +13,7 @@ const { readPortalSessionIdentity } = require('./src/sessionTokens');
 // 🚨 IMPORT CONTROLLERS EXACTLY ONCE
 const controllers = require('./src/controllers');
 const assetControllers = require('./src/assetControllers');
+const mysqlAssetManagement = require('./src/mysqlAssetManagement');
 const careerHubControllers = require('./src/careerHubControllers');
 
 // 🚨 IMPORT CACHES EXACTLY ONCE
@@ -26,6 +27,14 @@ const {
   flushPortalAuditEvents
 } = require('./src/config');
 const { isAssetCacheReady } = require('./src/assetConfig');
+
+const isMysqlAssetManagementEnabled = () => mysqlAssetManagement.isMySqlMode();
+const assetController = (mysqlHandler, sheetHandler) => (req, res, next) => {
+  const handler = isMysqlAssetManagementEnabled()
+    ? (mysqlHandler || mysqlAssetManagement.controllers.unmigrated)
+    : (sheetHandler || mysqlAssetManagement.controllers.unmigrated);
+  return handler(req, res, next);
+};
 
 const app = express();
 const useMysqlTpoUserManagement = () => String(process.env.MYSQL_TPO_USER_MANAGEMENT_ENABLED || '').trim().toLowerCase() === 'true';
@@ -338,6 +347,7 @@ app.use('/api', async (req, res, next) => {
   // forms, inventory, or profile-related actions wait for the much larger
   // placement/learning cache to finish loading.
   if (req.path.startsWith('/v1/assets')) {
+    if (isMysqlAssetManagementEnabled()) return next();
     if (!isAssetCacheReady()) {
       req.auditReason = 'The asset cache is still warming up; the request was returned immediately.';
       req.auditDetails = { assetCacheReady: false };
@@ -527,7 +537,17 @@ app.use('/api', async (req, res, next) => {
 
 app.get('/api/career-hub', requireSession('portal'), careerHubControllers.getCareerFeed);
 app.get('/api/courses', requireSession('portal'), controllers.getCourses);
-app.use('/api/v1/assets', requireSession('assets'));
+app.use('/api/v1/assets', (req, res, next) => {
+  if (isMysqlAssetManagementEnabled()
+    && (String(process.env.MYSQL_ENABLED || '').trim().toLowerCase() !== 'true' || !useMysqlTpoAuth())) {
+    return res.status(503).json({
+      success: false,
+      code: 'ASSET_MYSQL_PREREQUISITES_MISSING',
+      message: 'MySQL asset mode requires the shared MySQL connection and MySQL staff sign-in to be enabled first.',
+    });
+  }
+  return next();
+}, requireSession('assets'));
 app.use('/api/design', requireSession('design'));
 app.use('/api/academic', requireSession('academic'));
 app.use('/api/tpo/students', requireSession('portal'));
@@ -676,46 +696,49 @@ app.post('/api/tpo/activity', requireSession('portal'), controllers.updateTpoAct
 // ---------------------------------------------------------
 // 🚨 ASSET MANAGEMENT (ERP) ROUTES
 // ---------------------------------------------------------
-app.get('/api/v1/assets/form-data', assetControllers.getRegistrationData);
-app.post('/api/v1/assets/add', requireSession('asset-operations'), upload.single('photo'), assetControllers.addAsset);
-app.get('/api/v1/assets', assetControllers.getAssets);
-app.get('/api/v1/assets/:assetId/details', assetControllers.getAssetDetails);
-app.post('/api/v1/assets/:assetId/qr-label', assetControllers.registerAssetQrLabel);
-app.get('/api/v1/assets/:assetId/qr-image', assetControllers.downloadAssetQrImage);
-app.post('/api/v1/assets/assign', requireSession('asset-operations'), upload.fields([{ name: 'photo', maxCount: 1 }, { name: 'returnPhoto', maxCount: 1 }]), assetControllers.assignAsset);
-app.post('/api/v1/assets/return', requireSession('asset-operations'), upload.single('photo'), assetControllers.returnAsset);
-app.get('/api/v1/assets/dashboard', assetControllers.getAssetDashboardStats);
-app.get('/api/v1/assets/activity', assetControllers.getAssetActivity);
-app.get('/api/v1/assets/notifications', assetControllers.getAssetNotifications);
-app.get('/api/v1/assets/approvals', assetControllers.getAssetApprovals);
-app.post('/api/v1/assets/approvals/:requestId/decision', requireSession('asset-operations'), assetControllers.decideAssetApproval);
+app.get('/api/v1/assets/form-data', assetController(mysqlAssetManagement.controllers.getRegistrationData, assetControllers.getRegistrationData));
+app.post('/api/v1/assets/add', requireSession('asset-operations'), upload.single('photo'), assetController(mysqlAssetManagement.controllers.addAsset, assetControllers.addAsset));
+app.put('/api/v1/assets/:assetId', requireSession('asset-operations'), upload.single('photo'), assetController(mysqlAssetManagement.controllers.updateAsset, assetControllers.updateAsset));
+app.post('/api/v1/assets/:assetId/damage', requireSession('asset-operations'), assetController(mysqlAssetManagement.controllers.markAssetDamaged, assetControllers.markAssetDamaged));
+app.post('/api/v1/assets/:assetId/archive', requireSession('asset-operations'), assetController(mysqlAssetManagement.controllers.archiveAsset, assetControllers.archiveAsset));
+app.get('/api/v1/assets', assetController(mysqlAssetManagement.controllers.getAssets, assetControllers.getAssets));
+app.get('/api/v1/assets/:assetId/details', assetController(mysqlAssetManagement.controllers.getAssetDetails, assetControllers.getAssetDetails));
+app.post('/api/v1/assets/:assetId/qr-label', assetController(mysqlAssetManagement.controllers.registerAssetQrLabel, assetControllers.registerAssetQrLabel));
+app.get('/api/v1/assets/:assetId/qr-image', assetController(mysqlAssetManagement.controllers.downloadAssetQrImage, assetControllers.downloadAssetQrImage));
+app.post('/api/v1/assets/assign', requireSession('asset-operations'), upload.fields([{ name: 'photo', maxCount: 1 }, { name: 'returnPhoto', maxCount: 1 }]), assetController(mysqlAssetManagement.controllers.assignAsset, assetControllers.assignAsset));
+app.post('/api/v1/assets/return', requireSession('asset-operations'), upload.single('photo'), assetController(mysqlAssetManagement.controllers.returnAsset, assetControllers.returnAsset));
+app.get('/api/v1/assets/dashboard', assetController(mysqlAssetManagement.controllers.getAssetDashboardStats, assetControllers.getAssetDashboardStats));
+app.get('/api/v1/assets/activity', assetController(mysqlAssetManagement.controllers.getAssetActivity, assetControllers.getAssetActivity));
+app.get('/api/v1/assets/notifications', assetController(mysqlAssetManagement.controllers.getAssetNotifications, assetControllers.getAssetNotifications));
+app.get('/api/v1/assets/approvals', assetController(mysqlAssetManagement.controllers.getAssetApprovals, assetControllers.getAssetApprovals));
+app.post('/api/v1/assets/approvals/:requestId/decision', requireSession('asset-operations'), assetController(mysqlAssetManagement.controllers.decideAssetApproval, assetControllers.decideAssetApproval));
 
 // 🚨 INVENTORY, TRANSFERS, AND MAINTENANCE ROUTES
-app.get('/api/v1/assets/inventory', assetControllers.getInventory);
-app.post('/api/v1/assets/inventory/add', requireSession('asset-operations'), assetControllers.addInventory);
-app.post('/api/v1/assets/inventory/stock', requireSession('asset-operations'), assetControllers.updateStock);
+app.get('/api/v1/assets/inventory', assetController(mysqlAssetManagement.controllers.getInventory, assetControllers.getInventory));
+app.post('/api/v1/assets/inventory/add', requireSession('asset-operations'), assetController(mysqlAssetManagement.controllers.addInventory, assetControllers.addInventory));
+app.post('/api/v1/assets/inventory/stock', requireSession('asset-operations'), assetController(mysqlAssetManagement.controllers.updateStock, assetControllers.updateStock));
 
-app.get('/api/v1/assets/transfers', assetControllers.getTransfers);
-app.post('/api/v1/assets/transfers/request', requireSession('asset-operations'), assetControllers.requestTransfer);
-app.post('/api/v1/assets/transfers/approve', requireSession('asset-operations'), assetControllers.approveTransfer);
-app.post('/api/v1/assets/transfers/reject', requireSession('asset-operations'), assetControllers.rejectTransfer);
-app.post('/api/v1/assets/transfers/receive', requireSession('asset-operations'), assetControllers.receiveTransfer);
-app.post('/api/v1/assets/notifications/summary', assetControllers.sendAssetSummaryEmail);
+app.get('/api/v1/assets/transfers', assetController(mysqlAssetManagement.controllers.getTransfers, assetControllers.getTransfers));
+app.post('/api/v1/assets/transfers/request', requireSession('asset-operations'), assetController(mysqlAssetManagement.controllers.requestTransfer, assetControllers.requestTransfer));
+app.post('/api/v1/assets/transfers/approve', requireSession('asset-operations'), assetController(mysqlAssetManagement.controllers.approveTransfer, assetControllers.approveTransfer));
+app.post('/api/v1/assets/transfers/reject', requireSession('asset-operations'), assetController(mysqlAssetManagement.controllers.rejectTransfer, assetControllers.rejectTransfer));
+app.post('/api/v1/assets/transfers/receive', requireSession('asset-operations'), assetController(mysqlAssetManagement.controllers.receiveTransfer, assetControllers.receiveTransfer));
+app.post('/api/v1/assets/notifications/summary', assetController(mysqlAssetManagement.controllers.sendAssetSummaryEmail, assetControllers.sendAssetSummaryEmail));
 
-app.get('/api/v1/assets/maintenance', assetControllers.getMaintenance);
-app.post('/api/v1/assets/maintenance/report', assetControllers.reportMaintenance);
-app.post('/api/v1/assets/maintenance/resolve', assetControllers.resolveMaintenance);
+app.get('/api/v1/assets/maintenance', assetController(mysqlAssetManagement.controllers.getMaintenance, assetControllers.getMaintenance));
+app.post('/api/v1/assets/maintenance/report', assetController(mysqlAssetManagement.controllers.reportMaintenance, assetControllers.reportMaintenance));
+app.post('/api/v1/assets/maintenance/resolve', assetController(mysqlAssetManagement.controllers.resolveMaintenance, assetControllers.resolveMaintenance));
 
 // 🚨 SYSTEM CONFIGURATION ROUTES (CATEGORIES, LOCATIONS, VENDORS)
-app.post('/api/v1/assets/config/category', requireSession('asset-admin'), assetControllers.addCategory);
-app.post('/api/v1/assets/config/subcategory', requireSession('asset-admin'), assetControllers.addSubcategory);
-app.post('/api/v1/assets/config/asset-type', requireSession('asset-admin'), assetControllers.addAssetType);
-app.post('/api/v1/assets/config/location', requireSession('asset-admin'), assetControllers.addLocation);
-app.post('/api/v1/assets/config/vendor', requireSession('asset-admin'), assetControllers.addVendor);
+app.post('/api/v1/assets/config/category', requireSession('asset-admin'), assetController(mysqlAssetManagement.controllers.addCategory, assetControllers.addCategory));
+app.post('/api/v1/assets/config/subcategory', requireSession('asset-admin'), assetController(mysqlAssetManagement.controllers.addSubcategory, assetControllers.addSubcategory));
+app.post('/api/v1/assets/config/asset-type', requireSession('asset-admin'), assetController(mysqlAssetManagement.controllers.addAssetType, assetControllers.addAssetType));
+app.post('/api/v1/assets/config/location', requireSession('asset-admin'), assetController(mysqlAssetManagement.controllers.addLocation, assetControllers.addLocation));
+app.post('/api/v1/assets/config/vendor', requireSession('asset-admin'), assetController(mysqlAssetManagement.controllers.addVendor, assetControllers.addVendor));
 
 // 🚨 ASSET DOCUMENTS & DISPOSAL
-app.post('/api/v1/assets/documents/upload', upload.single('file'), assetControllers.uploadAssetDocument);
-app.post('/api/v1/assets/dispose', requireSession('asset-operations'), assetControllers.disposeAsset);
+app.post('/api/v1/assets/documents/upload', upload.single('file'), assetController(mysqlAssetManagement.controllers.uploadAssetDocument, assetControllers.uploadAssetDocument));
+app.post('/api/v1/assets/dispose', requireSession('asset-operations'), assetController(mysqlAssetManagement.controllers.disposeAsset, assetControllers.disposeAsset));
 
 // ---------------------------------------------------------
 // CREATIVE & DESIGN MANAGEMENT 

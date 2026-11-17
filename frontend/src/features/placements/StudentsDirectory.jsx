@@ -31,6 +31,15 @@ const getStandardCourse = (c) => {
 
 const parseDate = dStr => parsePortalDateTime(dStr);
 const normalizeStatus = value => String(value || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '');
+const coursePercentageOption = value => {
+  const parsed = coursePercentageValue(value);
+  return `${Math.min(100, Math.max(1, Math.round(parsed || 50)))}% completed`;
+};
+const formatMonthYear = value => {
+  if (!value) return 'Not recorded';
+  const date = parseDate(value);
+  return date ? date.toLocaleDateString(undefined, { month: 'long', year: 'numeric' }) : String(value);
+};
 const coursePercentageNumber = student => {
   const raw = student?.coursePercentage ?? Object.entries(student?.rawData || {}).find(([key]) => normalizeStatus(key) === 'coursepercentage')?.[1] ?? '';
   return coursePercentageValue(raw);
@@ -141,6 +150,7 @@ export default function StudentsDirectory() {
   const canEditAll = isSuperAdmin || isTpo; 
   const canEditAcademic = canEditAll || isRth || isTth || isTrainer || isTechnicalLead;
   const canSave = canEditAll || canEditAcademic; 
+  const canViewStudentDirectoryDetails = isSuperAdmin || isTpo;
 
   useEffect(() => {
     let active = true;
@@ -237,7 +247,7 @@ export default function StudentsDirectory() {
     setLocalCourseStatus(normalizeStatus(storedCourseStatus).includes('complete') ? 'Completed Course' : 'Currently Studying');
 
     const cPercKey = Object.keys(student.rawData || {}).find(k => k.toLowerCase().replace(/\s/g, '') === 'coursepercentage');
-    setLocalCoursePercentage(student.coursePercentage || (cPercKey && student.rawData[cPercKey] && student.rawData[cPercKey] !== 'N/A' ? student.rawData[cPercKey] : '50% completed'));
+    setLocalCoursePercentage(coursePercentageOption(student.coursePercentage || (cPercKey && student.rawData[cPercKey] && student.rawData[cPercKey] !== 'N/A' ? student.rawData[cPercKey] : '50% completed')));
 
     setIsModalOpen(true);
   };
@@ -364,7 +374,7 @@ export default function StudentsDirectory() {
   const directorySearchMatches = globallyFiltered.filter(matchesDirectorySearch);
 
   const branchData = {};
-  globallyFiltered.forEach(s => {
+  (canViewStudentDirectoryDetails ? scopedStudents : globallyFiltered).forEach(s => {
     const b = s.branch || 'Unknown';
     branchData[b] = (branchData[b] || 0) + 1;
   });
@@ -401,7 +411,7 @@ export default function StudentsDirectory() {
         
         {!selectedBranch && (
           <div className="universal-kpi-bar" style={{ marginBottom: '2.5rem' }}>
-            <div className="kpi-card"><div><div className="kpi-val">{globallyFiltered.length}</div><div className="kpi-label">{isCourseSpecific ? `Assigned Students` : 'Filtered Students'}</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)' }}><UsersThree weight="fill"/></div></div>
+            <div className="kpi-card"><div><div className="kpi-val">{canViewStudentDirectoryDetails ? scopedStudents.length : globallyFiltered.length}</div><div className="kpi-label">{canViewStudentDirectoryDetails ? (isSuperAdmin ? 'Total Students' : 'Students in Assigned Branches') : (isCourseSpecific ? 'Assigned Students' : 'Filtered Students')}</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.1)', color: 'var(--accent-primary)' }}><UsersThree weight="fill"/></div></div>
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.activeVacancies}</div><div className="kpi-label">Active Vacancies</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.1)', color: '#a855f7' }}><Briefcase weight="fill"/></div></div>
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.pendingApps}</div><div className="kpi-label">Pending Apps</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}><Files weight="fill"/></div></div>
             <div className="kpi-card"><div><div className="kpi-val">{globalStats.placed}</div><div className="kpi-label">Total Hired</div></div><div className="kpi-icon" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}><Confetti weight="fill"/></div></div>
@@ -436,7 +446,8 @@ export default function StudentsDirectory() {
         />}
 
         {selectedBranch && (
-          <div className="universal-kpi-bar" style={{ marginBottom: '1.5rem', gridTemplateColumns: 'repeat(3, 1fr)' }}>
+          <div className="universal-kpi-bar" style={{ marginBottom: '1.5rem', gridTemplateColumns: canViewStudentDirectoryDetails ? 'repeat(auto-fit, minmax(180px, 1fr))' : 'repeat(3, 1fr)' }}>
+            {canViewStudentDirectoryDetails && <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{scopedStudents.filter(s => s.branch === selectedBranch).length}</div><div className="kpi-label">Students in this branch</div></div><div className="kpi-icon" style={{ background: 'rgba(56, 189, 248, 0.15)', color: 'var(--accent-primary)' }}><UsersThree weight="fill"/></div></div>}
             <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{branchStats.pending}</div><div className="kpi-label">Placement Pending</div></div><div className="kpi-icon" style={{ background: 'rgba(245, 158, 11, 0.15)', color: '#f59e0b' }}><ClockClockwise weight="fill"/></div></div>
             <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{branchStats.notResponding}</div><div className="kpi-label">Not Responding</div></div><div className="kpi-icon" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444' }}><UserMinus weight="fill"/></div></div>
             <div className="kpi-card" style={{ background: 'var(--bg-dark)' }}><div><div className="kpi-val">{branchStats.noNeed}</div><div className="kpi-label">Placement Not Needed</div></div><div className="kpi-icon" style={{ background: 'rgba(168, 85, 247, 0.15)', color: '#a855f7' }}><Prohibit weight="fill"/></div></div>
@@ -734,7 +745,13 @@ export default function StudentsDirectory() {
                      { label: 'Placement Status', val: directoryStatusLabel(selectedStudent) },
                      { label: 'IPCS Course Completed Date', val: getF(['coursecompleteddate', 'completeddate']) },
                      { label: 'Age', val: getF(['age', 'dob']) },
-                     { label: 'Gender', val: getF(['gender', 'sex']) }
+                      { label: 'Gender', val: getF(['gender', 'sex']) },
+                      ...(canViewStudentDirectoryDetails ? [{
+                        label: 'Talenzo Account Created',
+                        val: selectedStudent.accountCreatedAt
+                          ? (parseDate(selectedStudent.accountCreatedAt)?.toLocaleDateString(undefined, { dateStyle: 'medium' }) || selectedStudent.accountCreatedAt)
+                          : 'Not recorded'
+                      }] : [])
                    ].filter(f => f.val);
 
                    return specificFields.map((field, idx) => (
@@ -765,6 +782,25 @@ export default function StudentsDirectory() {
                    </div>
                  ))}
                </div>
+                {canViewStudentDirectoryDetails && (
+                  <div style={{ marginTop: '18px' }}>
+                    <h4 style={{ margin: '0 0 10px', color: '#e2e8f0', fontSize: '.9rem' }}>Placement history</h4>
+                    <div style={{ overflowX: 'auto', border: '1px solid #273449', borderRadius: '10px' }}>
+                      <table className="modern-table" style={{ width: '100%', minWidth: '520px' }}>
+                        <thead><tr><th>Company</th><th>Position</th><th>Placed month</th></tr></thead>
+                        <tbody>
+                          {selectedStudent.placementHistory?.length ? selectedStudent.placementHistory.map((placement, index) => (
+                            <tr key={`${placement.id || placement.company}-${index}`}>
+                              <td>{placement.company || '—'}</td>
+                              <td>{placement.position || '—'}</td>
+                              <td>{formatMonthYear(placement.placedAt)}</td>
+                            </tr>
+                          )) : <tr><td colSpan="3" style={{ color: '#94a3b8', textAlign: 'center' }}>No placed company records found.</td></tr>}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
              </section>
 
              {isBranchManager && (
@@ -844,10 +880,9 @@ export default function StudentsDirectory() {
                     <div className="control-box" style={{ background: '#0f1523', border: '1px solid #1e293b', padding: '1rem', borderRadius: '12px' }}>
                       <span className="control-title" style={{ display: 'block', fontWeight: 700, color: '#fff', marginBottom: '8px', fontSize: '0.9rem' }}>Course Percentage</span>
                       <select className="sleek-select" style={{ width: '100%', cursor: !canEditAcademic ? 'not-allowed' : 'pointer', opacity: !canEditAcademic ? 0.7 : 1, background: '#161e2e' }} value={localCoursePercentage} onChange={handleCoursePercentageChange} disabled={!canEditAcademic}>
-                        <option value="50% completed">50% completed</option>
-                        <option value="80% completed">80% completed</option>
-                        <option value="90% completed">90% completed</option>
-                        <option value="100% completed">100% completed</option>
+                        {Array.from({ length: 100 }, (_, index) => index + 1).map(percentage => (
+                          <option key={percentage} value={`${percentage}% completed`}>{percentage}% completed</option>
+                        ))}
                       </select>
                     </div>
 

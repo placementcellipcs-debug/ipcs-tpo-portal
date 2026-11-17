@@ -13,6 +13,7 @@ import { PortalConfirmDialog, PortalToast } from '../../components/PortalFeedbac
 const TILE_COLORS = ['#10b981', '#3b82f6', 'var(--accent-primary)', '#f59e0b', '#ec4899', '#0ea5e9', '#ef4444', '#f43f5e'];
 const currentIndiaMonth = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
 const isTpoRole = role => /\b(tpo|placement officer)\b/i.test(String(role || ''));
+const isCourseRestrictedRole = role => /regional technical head|territory technical head|\b(rth|tth)\b/i.test(String(role || ''));
 const birthdayInputValue = value => {
   const clean = String(value || '').trim();
   const dayFirst = clean.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
@@ -32,11 +33,48 @@ const ALL_BRANCHES = [
   "Bangalore", "Mysore", "Mangalore", "Pune", "Mumbai", "Ramwadi", 
   "Nagpur", "Kolkata", "Bhopal", "Ranchi", "Global"
 ];
+const ALL_COURSES = [
+  'BMS AND CCTV', 'Industrial Automation', 'Embedded and IoT',
+  'Digital Marketing', 'Information technology (IT)', 'N/A'
+];
+const ROLE_CHOICES = ['TPO', 'Branch Asset Manager', 'Regional Technical Head', 'Territory Technical Head', 'Regional Manager', 'Territory Manager', 'Branch Manager', 'Technical Lead', 'TRAINER', 'General Manager', 'Technical Head', 'Zonal Placement Head'];
+const ACCESS_CHOICES = ['View Only', 'View & Edit', 'SUPER ADMIN'];
+const accessChoiceValue = value => {
+  const key = String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (key === 'superadmin') return 'SUPER_ADMIN';
+  if (key === 'viewonly') return 'View Only';
+  if (key === 'viewedit') return 'View & Edit';
+  return String(value || 'View Only');
+};
+const courseValues = value => Array.isArray(value)
+  ? value.map(item => String(item || '').trim()).filter(item => item && !['all courses', 'no course assigned'].includes(item.toLowerCase())).map(item => item.toLowerCase() === 'n/a' ? 'N/A' : item)
+  : String(value || '').split(/[,;|\n]+/).map(item => item.trim()).filter(item => item && !['all courses', 'no course assigned'].includes(item.toLowerCase())).map(item => item.toLowerCase() === 'n/a' ? 'N/A' : item);
+const hasCourse = (value, course) => courseValues(value).some(item => item.toLowerCase() === course.toLowerCase());
+
+function StaffDirectoryDetails({ user }) {
+  const fields = [
+    ['User ID', user.directoryId], ['Employee ID', user.empId], ['Profile photo URL', user.profilePhoto], ['Department', user.department],
+    ['LinkedIn', user.linkedIn], ['Birthday', user.birthday], ['Position', user.position], ['Description', user.description],
+    ['Level', user.level], ['Reports to · User ID', user.reportsToUserId], ['Zone', user.zone],
+    ['Region', user.region], ['Territory', user.territory], ['Sitting branch', user.sittingBranch],
+    ['Assigned branches', user.assignedBranches], ['Assigned courses', user.course || 'All Courses'],
+    ['Access type', user.access], ['Status', user.status], ['Mail eligible', user.mailEligible],
+    ['Created at', user.createdAt], ['Updated at', user.updatedAt]
+  ];
+  return <details open style={{ marginTop: 10, width: '100%', borderTop: '1px solid var(--card-border)', paddingTop: 8 }}>
+    <summary style={{ cursor: 'pointer', color: 'var(--accent-primary)', fontSize: '.78rem', fontWeight: 750 }}>Staff directory details · click to collapse</summary>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: '8px 14px', marginTop: 10 }}>
+      {fields.map(([label, value]) => <div key={label} style={{ minWidth: 0 }}><small style={{ display: 'block', color: 'var(--text-muted)' }}>{label}</small><strong style={{ display: 'block', overflowWrap: 'anywhere', color: 'var(--text-main)', fontSize: '.78rem', marginTop: 2 }}>{String(value ?? '').trim() || '—'}</strong></div>)}
+    </div>
+  </details>;
+}
 
 export default function UserManagement() {
   const tpoData = JSON.parse(localStorage.getItem('tpoData'));
   const [users, setUsers] = useState([]);
+  const [availableCourses, setAvailableCourses] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showInactive, setShowInactive] = useState(false);
   
@@ -62,10 +100,12 @@ export default function UserManagement() {
   
   const initialFormState = {
     userId: null, sheet: 'User', rowNumber: null, userName: '', email: '', contact: '', newPassword: '',
-    role: 'Regional Technical Head', course: '', sittingBranch: '', 
+    directoryId: '', role: 'Regional Technical Head', course: [], sittingBranch: '',
     assignedBranches: [], access: 'View Only',
     empId: '', target: '', targetMonth: currentIndiaMonth(), profilePhoto: '',
-    linkedIn: '', birthday: '', position: '', description: '', status: 'Active'
+    linkedIn: '', birthday: '', position: '', description: '', status: 'Active',
+    department: '', level: '', reportsToUserId: '', zone: '', region: '', territory: '', mailEligible: 'NO',
+    createdAt: '', updatedAt: ''
   };
   const [formData, setFormData] = useState(initialFormState);
 
@@ -75,10 +115,14 @@ export default function UserManagement() {
       const res = await axios.get(`${API_BASE}/api/admin/users`, { params: { month } });
       if (res.data && res.data.success) {
         setUsers(res.data.users || []);
+        if (Array.isArray(res.data.availableCourses)) setAvailableCourses(res.data.availableCourses);
+        setLoadError('');
+      } else {
+        throw new Error(res.data?.message || 'The staff directory could not be loaded.');
       }
     } catch (err) {
       console.error("Failed to load users", err);
-      setUsers([]);
+      setLoadError(err.response?.data?.message || err.message || 'The staff directory could not be loaded.');
     } finally {
       setLoading(false);
     }
@@ -142,6 +186,17 @@ export default function UserManagement() {
     });
   };
 
+  const toggleCourseSelection = course => setFormData(current => {
+    const selected = courseValues(current.course);
+    if (course.toLowerCase() === 'n/a') return { ...current, course: hasCourse(selected, 'N/A') ? [] : ['N/A'] };
+    const withoutNotApplicable = selected.filter(item => item.toLowerCase() !== 'n/a');
+    const existing = withoutNotApplicable.find(item => item.toLowerCase() === course.toLowerCase());
+    return {
+      ...current,
+      course: existing ? withoutNotApplicable.filter(item => item.toLowerCase() !== course.toLowerCase()) : [...withoutNotApplicable, course]
+    };
+  });
+
   const openAddModal = () => {
     setFormData(initialFormState);
     setTargetTouched(false);
@@ -155,6 +210,7 @@ export default function UserManagement() {
     setTargetTouched(false);
     setFormData({
       userId: user.userId || null,
+      directoryId: user.directoryId || '',
       sheet: user.sheet,
       rowNumber: user.rowNumber,
       userName: user.userName,
@@ -162,10 +218,10 @@ export default function UserManagement() {
       contact: user.contact,
       newPassword: '',
       role: user.role,
-      course: user.course,
+      course: courseValues(user.course),
       sittingBranch: user.sittingBranch,
       assignedBranches: user.assignedBranches ? user.assignedBranches.split(',').map(b => b.trim()) : [],
-      access: user.access,
+      access: accessChoiceValue(user.access),
       empId: user.empId || '', 
       target: user.target || '',
       targetMonth: user.targetMonth || targetDisplayMonth || currentIndiaMonth(),
@@ -174,7 +230,16 @@ export default function UserManagement() {
       birthday: birthdayInputValue(user.birthday),
       position: user.position || '',
       description: user.description || '',
-      status: /^inactive$/i.test(String(user.status || '')) ? 'Inactive' : 'Active'
+      status: /^inactive$/i.test(String(user.status || '')) ? 'Inactive' : 'Active',
+      department: user.department || '',
+      level: user.level || '',
+      reportsToUserId: user.reportsToUserId || '',
+      zone: user.zone || '',
+      region: user.region || '',
+      territory: user.territory || '',
+      mailEligible: /^yes|true|1$/i.test(String(user.mailEligible || '')) ? 'YES' : 'NO',
+      createdAt: user.createdAt || '',
+      updatedAt: user.updatedAt || ''
     });
     setPhotoFile(null);
     setIsEditMode(true);
@@ -187,8 +252,17 @@ export default function UserManagement() {
     setIsSubmitting(true);
     setError('');
 
+    const selectedCourses = courseValues(formData.course);
+    if (!isTpoRole(formData.role) && isCourseRestrictedRole(formData.role)
+      && (!selectedCourses.length || selectedCourses.some(course => course.toLowerCase() === 'n/a'))) {
+      setError('Select at least one assigned course for a Regional or Territory Technical Head. You can select more than one.');
+      setIsSubmitting(false);
+      return;
+    }
+
     const payload = {
       ...formData,
+      course: selectedCourses.join(', '),
       assignedBranches: formData.assignedBranches.join(', '),
       birthday: birthdaySheetValue(formData.birthday),
       targetChanged: isEditMode ? targetTouched : String(formData.target ?? '').trim() !== ''
@@ -338,6 +412,10 @@ export default function UserManagement() {
     String(u.userName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
     String(u.email || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
+  const branchOptions = [...new Set([...ALL_BRANCHES, ...formData.assignedBranches])];
+  const courseOptions = [...new Map([...ALL_COURSES, ...availableCourses, ...courseValues(formData.course)].map(course => [course.toLowerCase(), course])).values()];
+  const selectAllCourses = () => setFormData(current => ({ ...current, course: courseOptions.filter(course => course.toLowerCase() !== 'n/a') }));
+  const clearCourseSelection = () => setFormData(current => ({ ...current, course: [] }));
 
   return (
     <Layout>
@@ -359,6 +437,8 @@ export default function UserManagement() {
 
             {loading ? (
               <div style={{ textAlign: 'center', marginTop: '3rem', color: 'var(--accent-primary)' }}><CircleNotch size={40} className="ph-spin" /><p>Fetching portal users...</p></div>
+            ) : loadError ? (
+              <div className="alert alert-error" role="alert" style={{ marginTop: 24 }}><WarningCircle size={20} /> {loadError}</div>
             ) : roleList.length === 0 ? (
               <div style={{ textAlign: 'center', padding: '2rem' }}>No other users exist in the system yet.</div>
             ) : (
@@ -400,6 +480,8 @@ export default function UserManagement() {
                 <UserPlus size={20} weight="bold" /> Add New User
               </button>
             </div>
+
+            {loadError && <div className="alert alert-error" role="alert" style={{ margin: '0 0 18px' }}><WarningCircle size={20} /> {loadError}</div>}
 
             <div className="header-controls">
               <div className="filter-group" style={{ position: 'relative', width: '300px' }}>
@@ -453,6 +535,7 @@ export default function UserManagement() {
                           ? <div className="sc-detail-row"><span>Employee ID / target · {targetDisplayMonth}</span><strong style={{ color: '#a855f7' }}>{user.empId || 'N/A'} / {user.target || '0'}</strong></div>
                           : user.empId && <div className="sc-detail-row"><span>Employee ID</span><strong style={{ color: '#a855f7' }}>{user.empId}</strong></div>}
                       </div>
+                      {!isTpoRole(user.role) && <StaffDirectoryDetails user={user} />}
                       
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', width: '100%' }}>
                         <button className="btn-secondary" style={{ padding: '0.5rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }} onClick={() => openEditModal(user)}>
@@ -499,9 +582,11 @@ export default function UserManagement() {
                               </div>
                               <div>
                                 <span className="primary-text" style={{ fontSize: '1rem' }}>{user.userName || 'Unnamed User'}</span>
-                                <span className="sub-text">{user.email || 'No Email'} • {user.contact || 'No Contact'}</span>
+                                <span className="sub-text">{user.email || 'No Email'} • {user.contact || 'No Contact'}{user.directoryId ? ` · ${user.directoryId}` : ''}</span>
+                                {user.department && <span className="sub-text">{user.department}{user.level ? ` · Level ${user.level}` : ''}{user.region ? ` · ${user.region}` : ''}</span>}
                               </div>
                             </div>
+                            {!isTpoRole(user.role) && <StaffDirectoryDetails user={user} />}
                           </td>
                           <td>
                             <span className={`badge ${accessLvl.includes('super') ? 'badge-blue' : accessLvl.includes('edit') ? 'badge-green' : ''}`} style={{ background: accessLvl.includes('view only') ? 'rgba(245, 158, 11, 0.15)' : '', color: accessLvl.includes('view only') ? '#f59e0b' : '', border: accessLvl.includes('view only') ? '1px solid #f59e0b' : '' }}>
@@ -567,12 +652,12 @@ export default function UserManagement() {
             <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
               <div style={{ overflowY: 'auto', overscrollBehavior: 'contain', scrollBehavior: 'smooth', scrollbarWidth: 'thin', scrollbarColor: '#475569 transparent', minHeight: 0, flex: 1, padding: '18px 24px' }}>
               
-              {isGifty && (
+              {(!isTpoRole(formData.role) || isGifty) && (
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px', padding: '15px', background: 'rgba(168, 85, 247, 0.05)', border: '1px solid rgba(168, 85, 247, 0.3)', borderRadius: '12px' }}>
-                  <div className="form-group">
+                  {!isTpoRole(formData.role) && <div className="form-group">
                     <label style={{ color: '#a855f7', fontWeight: 'bold' }}>Employee ID</label>
                     <input type="text" name="empId" value={formData.empId} onChange={handleInputChange} className="sleek-input" placeholder="e.g. IPCS-EMP-1024" />
-                  </div>
+                  </div>}
                   {String(formData.role || '').toLowerCase().includes('tpo') || String(formData.role || '').toLowerCase().includes('placement officer') ? <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                     <label style={{ color: '#a855f7', fontWeight: 'bold' }}>Placement target · choose month</label>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
@@ -616,7 +701,7 @@ export default function UserManagement() {
                 </section>
               )}
 
-              {isGifty && !isTpoRole(formData.role) && (
+              {!isTpoRole(formData.role) && (
                 <div className="form-group" style={{ maxWidth: 300, marginBottom: 18 }}>
                   <label>Account status</label>
                   <select name="status" value={formData.status} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }}>
@@ -673,7 +758,8 @@ export default function UserManagement() {
                 <div className="form-group">
                   <label>Account Role</label>
                   <select name="role" value={formData.role} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }} disabled={formData.sheet === 'Contact'}>
-                    <option value="TPO">Placement Officer (TPO)</option>
+                    {formData.role && !ROLE_CHOICES.some(role => role.toLowerCase() === formData.role.toLowerCase()) && <option value={formData.role}>{formData.role} · current role</option>}
+                    <option value="TPO" disabled={isEditMode && formData.sheet === 'User'}>Placement Officer (TPO){isEditMode && formData.sheet === 'User' ? ' · managed in the TPO directory' : ''}</option>
                     {/* 🚨 ADDED BRANCH ASSET MANAGER ROLE HERE */}
                     <option value="Branch Asset Manager">Branch Asset Manager (BAM)</option>
                     <option value="Regional Technical Head">Regional Technical Head (RTH)</option>
@@ -691,29 +777,46 @@ export default function UserManagement() {
                 <div className="form-group">
                   <label>Access Permissions</label>
                   <select name="access" value={formData.access} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }} disabled={formData.sheet === 'Contact'}>
+                    {formData.access && !ACCESS_CHOICES.some(access => access.toLowerCase().replace(/[^a-z0-9]/g, '') === formData.access.toLowerCase().replace(/[^a-z0-9]/g, '')) && <option value={formData.access}>{formData.access} · current access</option>}
                     <option value="View Only">View Only</option>
                     <option value="View & Edit">View & Edit</option>
-                    <option value="SUPER ADMIN">SUPER ADMIN</option>
+                    <option value="SUPER_ADMIN">SUPER ADMIN</option>
                   </select>
                 </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
                 <div className="form-group">
-                  <label>Assigned Course (Required for RTH & TTH)</label>
-                  <select name="course" value={formData.course} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }} disabled={formData.sheet === 'Contact'}>
-                    <option value="">-- All Courses --</option>
-                    <option value="BMS AND CCTV">BMS AND CCTV</option>
-                    <option value="Industrial Automation">Industrial Automation</option>
-                    <option value="Embedded and IoT">Embedded and IoT</option>
-                    <option value="Digital Marketing">Digital Marketing</option>
-                    <option value="Information technology (IT)">Information technology (IT)</option>
-                  </select>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 7 }}>
+                    <label style={{ margin: 0 }}>Assigned courses · select multiple</label>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button type="button" className="btn-secondary" disabled={formData.sheet === 'Contact'} onClick={selectAllCourses} style={{ padding: '5px 8px', fontSize: '.72rem' }}>Select all</button>
+                      <button type="button" className="btn-secondary" disabled={formData.sheet === 'Contact'} onClick={clearCourseSelection} style={{ padding: '5px 8px', fontSize: '.72rem' }}>Clear</button>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 7, padding: 10, border: '1px solid var(--card-border)', borderRadius: 10, background: 'var(--input-bg)', opacity: formData.sheet === 'Contact' ? 0.6 : 1 }}>
+                    {courseOptions.map(course => (
+                      <label key={course} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 8px', margin: 0, borderRadius: 7, background: hasCourse(formData.course, course) ? 'rgba(56,189,248,.12)' : 'transparent', color: 'var(--text-main)', fontWeight: 600, textTransform: 'none', cursor: formData.sheet === 'Contact' ? 'not-allowed' : 'pointer' }}>
+                        <input type="checkbox" checked={hasCourse(formData.course, course)} disabled={formData.sheet === 'Contact'} onChange={() => toggleCourseSelection(course)} style={{ width: 'auto' }} />
+                        {course === 'N/A' ? 'N/A — no course assignment' : course}
+                      </label>
+                    ))}
+                  </div>
+                  <small style={{ display: 'block', color: 'var(--text-muted)', marginTop: 5 }}>
+                    {formData.sheet === 'Contact'
+                      ? 'TPO course scope is managed through the placement team directory.'
+                      : isCourseRestrictedRole(formData.role)
+                        ? 'At least one course is required for this role. Select multiple course checkboxes when needed.'
+                        : courseValues(formData.course).length
+                          ? `Selected: ${courseValues(formData.course).join(' · ')}`
+                          : 'No selection means All Courses. Select multiple checkboxes to limit access to more than one course.'}
+                  </small>
                 </div>
                 <div className="form-group">
                   <label>Sitting Branch</label>
                   <select name="sittingBranch" value={formData.sittingBranch} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }}>
                     <option value="">-- Select Sitting Branch --</option>
+                    {!ALL_BRANCHES.some(branch => branch.toLowerCase() === formData.sittingBranch.toLowerCase()) && formData.sittingBranch && <option value={formData.sittingBranch}>{formData.sittingBranch} · current</option>}
                     {ALL_BRANCHES.map(b => <option key={b} value={b}>{b}</option>)}
                   </select>
                 </div>
@@ -733,7 +836,7 @@ export default function UserManagement() {
 
                 {isBranchDropdownOpen && (
                   <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: '8px', marginTop: '5px', zIndex: 10, maxHeight: '200px', overflowY: 'auto', padding: '10px', boxShadow: '0 10px 25px rgba(0,0,0,0.5)' }}>
-                    {ALL_BRANCHES.map(branch => (
+                    {branchOptions.map(branch => (
                       <label key={branch} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px', cursor: 'pointer', textTransform: 'none', color: 'var(--text-main)', fontWeight: 'normal', margin: 0, borderRadius: '4px' }}>
                         <input 
                           type="checkbox" 
@@ -748,6 +851,29 @@ export default function UserManagement() {
                   </div>
                 )}
               </div>
+
+              {!isTpoRole(formData.role) && formData.sheet !== 'Contact' && (
+                <section style={{ margin: '0 0 18px', padding: 15, borderRadius: 12, border: '1px solid rgba(168,85,247,.28)', background: 'rgba(168,85,247,.05)' }}>
+                  <h3 style={{ margin: '0 0 12px', color: '#c4a1ff', fontSize: '.95rem' }}>Staff profile and directory details</h3>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 12 }}>
+                    <label className="form-group">User ID <input name="directoryId" value={formData.directoryId} onChange={handleInputChange} className="sleek-input" placeholder="Generated automatically when blank" /></label>
+                    <label className="form-group">Department <input name="department" value={formData.department} onChange={handleInputChange} className="sleek-input" placeholder="Technical, Academic, Placement…" /></label>
+                    <label className="form-group">Level <input name="level" value={formData.level} onChange={handleInputChange} className="sleek-input" placeholder="e.g. 1, 2, 3" /></label>
+                    <label className="form-group">Reports to · User ID <input name="reportsToUserId" value={formData.reportsToUserId} onChange={handleInputChange} className="sleek-input" placeholder="Manager's User ID" /></label>
+                    <label className="form-group">Zone <input name="zone" value={formData.zone} onChange={handleInputChange} className="sleek-input" /></label>
+                    <label className="form-group">Region <input name="region" value={formData.region} onChange={handleInputChange} className="sleek-input" /></label>
+                    <label className="form-group">Territory <input name="territory" value={formData.territory} onChange={handleInputChange} className="sleek-input" /></label>
+                    <label className="form-group">Mail eligible <select name="mailEligible" value={formData.mailEligible} onChange={handleInputChange} className="sleek-select" style={{ width: '100%', background: 'var(--input-bg)' }}><option value="YES">Yes</option><option value="NO">No</option></select></label>
+                    <label className="form-group">LinkedIn <input name="linkedIn" value={formData.linkedIn} onChange={handleInputChange} className="sleek-input" placeholder="linkedin.com/in/…" /></label>
+                    <label className="form-group">Birthday <input type="date" name="birthday" value={formData.birthday} onChange={handleInputChange} className="sleek-input" /></label>
+                    <label className="form-group">Position <input name="position" value={formData.position} onChange={handleInputChange} className="sleek-input" placeholder="Team Lead, Trainer…" /></label>
+                    <label className="form-group" style={{ gridColumn: '1 / -1' }}>Description <textarea name="description" value={formData.description} onChange={handleInputChange} className="sleek-input" rows={4} maxLength={5000} placeholder="Professional profile or role description" style={{ resize: 'vertical', minHeight: 90 }} /></label>
+                    <label className="form-group">Created at <input value={formData.createdAt} readOnly className="sleek-input" placeholder="Set when the account is created" /></label>
+                    <label className="form-group">Updated at <input value={formData.updatedAt} readOnly className="sleek-input" placeholder="Set when the account is saved" /></label>
+                  </div>
+                  <small style={{ display: 'block', color: 'var(--text-muted)', marginTop: 8 }}>These directory fields are saved with the account used by the portal. Passwords are never shown; leave the password box blank to keep the current password.</small>
+                </section>
+              )}
 
               </div>
               <div style={{ position: 'sticky', bottom: 0, zIndex: 2, display: 'flex', justifyContent: 'flex-end', gap: '10px', padding: '14px 24px', borderTop: '1px solid #1e293b', background: '#121c2c', flexShrink: 0 }}>

@@ -1,6 +1,7 @@
 const getRole = user => String(user?.role || '').toUpperCase();
 const hasRoleToken = (role, token) => new RegExp(`(^|[^A-Z0-9])${token}([^A-Z0-9]|$)`).test(role);
-const isPortalAdmin = user => user?.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(getRole(user));
+const isPortalAdmin = user => String(user?.accessType || '').toLowerCase().replace(/[^a-z0-9]/g, '') === 'superadmin'
+  || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(getRole(user));
 const isBranchManager = role => role === 'BM' || role.includes('BRANCH MANAGER');
 
 const isTechnicalScoped = user => {

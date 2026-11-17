@@ -1,5 +1,7 @@
 const { assetDoc, getAssetCache, getAssetCacheUpdatedAt, isAssetCacheReady, refreshAssetCache } = require('./assetConfig');
-const { getCache, uploadToDrive, sendIPCSMail, logPortalAuditEvent } = require('./config');
+const { isPortalAdmin } = require('./rolePolicy');
+const { getCache, sendIPCSMail, logPortalAuditEvent } = require('./config');
+const { uploadToDrive } = require('./driveUploads');
 const { randomBytes } = require('crypto');
 const axios = require('axios');
 const { formatIndiaTimestamp } = require('./utils/dateTime');
@@ -115,7 +117,7 @@ const respondWhileAssetDataLoads = res => {
 
 async function appendAssetActivity(req, event) {
   const sheet = sheetByKey('assetactivitylog');
-  if (!sheet) return;
+  if (!sheet) return false;
   try {
     const headers = await ensureAssetHeaders(sheet, ['Event_ID', 'Timestamp', 'Actor_ID', 'Actor_Name', 'Actor_Email', 'Actor_Role', 'Branch', 'Action', 'Entity_Type', 'Entity_ID', 'Before_JSON', 'After_JSON', 'Source', 'Request_ID']);
     const actor = req.portalUser || {};
@@ -136,8 +138,35 @@ async function appendAssetActivity(req, event) {
       [getH(headers, 'Request_ID')]: req.portalAuditRequestId || ''
     });
     cacheAppendedRow('assetactivitylog', savedRow);
+    return true;
   } catch (error) {
     logPortalAuditEvent({ requestId: req.portalAuditRequestId, actorType: 'Bot', source: 'Automation', action: 'Asset activity record failed', resource: event.entityType || 'Asset', result: 'Warning', details: { action: event.action || '', entityId: event.entityId || '', error: String(error.message || error).slice(0, 300) } });
+    return false;
+  }
+}
+
+async function appendAssetHistory(req, event) {
+  const sheet = sheetByKey('history');
+  if (!sheet) return false;
+  try {
+    const headers = await ensureAssetHeaders(sheet, ['History_ID', 'Asset_ID', 'Action', 'Old_Value', 'New_Value', 'Performed_By', 'Branch', 'Timestamp', 'Remarks']);
+    const actor = req.portalUser || {};
+    const savedRow = await sheet.addRow({
+      [getH(headers, 'History_ID')]: `HIS-${randomBytes(8).toString('hex').toUpperCase()}`,
+      [getH(headers, 'Asset_ID')]: event.assetId || '',
+      [getH(headers, 'Action')]: event.action || '',
+      [getH(headers, 'Old_Value')]: JSON.stringify(event.before ?? {}),
+      [getH(headers, 'New_Value')]: JSON.stringify(event.after ?? {}),
+      [getH(headers, 'Performed_By')]: actor.name || req.body?.userName || '',
+      [getH(headers, 'Branch')]: event.branch || '',
+      [getH(headers, 'Timestamp')]: formatIndiaTimestamp(),
+      [getH(headers, 'Remarks')]: event.remarks || ''
+    });
+    cacheAppendedRow('history', savedRow);
+    return true;
+  } catch (error) {
+    logPortalAuditEvent({ requestId: req.portalAuditRequestId, actorType: 'Bot', source: 'Automation', action: 'Asset history record failed', resource: 'Asset_History', result: 'Warning', details: { assetId: event.assetId || '', action: event.action || '', error: String(error.message || error).slice(0, 300) } });
+    return false;
   }
 }
 
@@ -378,8 +407,7 @@ async function saveAssetPhoto(assetId, file, documentType, userName, fileUrl = '
 }
 const isAssetAdmin = req => {
   const user = req.portalUser || {};
-  const role = String(user.role || '').toUpperCase();
-  return user.accessType === 'superadmin' || ['SYSTEM ADMIN', 'GENERAL MANAGER', 'ZONAL PLACEMENT HEAD', 'TECHNICAL HEAD'].includes(role);
+  return isPortalAdmin(user);
 };
 const ASSET_APPROVER_EMAIL = 'rakesh@ipcsglobal.com';
 const isAssetApprover = req => String(req.portalUser?.email || '').trim().toLowerCase() === ASSET_APPROVER_EMAIL;
@@ -830,6 +858,9 @@ exports.addAsset = async (req, res) => {
     locationName = String(asset.location).trim();
 
     const trackingMode = String(asset.trackingMode || 'INDIVIDUAL').trim().toUpperCase() === 'QUANTITY' ? 'QUANTITY' : 'INDIVIDUAL';
+    const isDamagedOnArrival = String(asset.condition || '').trim().toUpperCase() === 'DAMAGED';
+    const initialStatus = isDamagedOnArrival ? 'UNDER_MAINTENANCE' : 'AVAILABLE';
+    if (isDamagedOnArrival && String(asset.damageIssue || '').trim().length < 3) return res.status(400).json({ success: false, message: 'Describe the damage before registering the item as damaged.' });
     const quantity = trackingMode === 'QUANTITY' ? Number(asset.quantity) : 1;
     if (trackingMode === 'QUANTITY' && (!Number.isSafeInteger(quantity) || quantity < 1)) {
       return res.status(400).json({ success: false, message: 'Quantity must be a whole number of at least 1.' });
@@ -839,8 +870,10 @@ exports.addAsset = async (req, res) => {
     const customSheet = sheetByKey('assetcustomdata');
     const historySheet = sheetByKey('history');
     const documentsSheet = sheetByKey('documents');
+    const maintenanceSheet = sheetByKey('maintenance');
 
     if (!assetSheet) return res.status(404).json({ success: false, message: "Asset sheet missing in database." });
+    if (isDamagedOnArrival && !maintenanceSheet) return res.status(503).json({ success: false, message: 'Maintenance register is unavailable. The damaged asset was not registered.' });
     if (req.file && !documentsSheet) return res.status(503).json({ success: false, message: 'Asset photo history is unavailable. No asset was registered.' });
     const assetHeaders = await ensureAssetHeaders(assetSheet, [
       'Asset_ID', 'Record_Type', 'Asset_Name', 'Category', 'Category_ID', 'Subcategory', 'Subcategory_ID', 'Asset_Type', 'Asset_Type_ID', 'Branch', 'Location',
@@ -934,7 +967,7 @@ exports.addAsset = async (req, res) => {
       [getH(aH, 'Asset_Type_ID')]: taxonomyValue(selectedAssetType, 'Asset_Type_ID'),
       [getH(aH, 'Branch')]: asset.branch,
       [getH(aH, 'Location')]: asset.location,
-      [getH(aH, 'Status')]: 'AVAILABLE',
+      [getH(aH, 'Status')]: initialStatus,
       [getH(aH, 'Condition')]: asset.condition,
       [getH(aH, 'Brand')]: asset.brand || '',
       [getH(aH, 'Model')]: asset.model || '',
@@ -950,6 +983,23 @@ exports.addAsset = async (req, res) => {
       [getH(aH, 'Quantity')]: quantity,
     });
     assetRecordSaved = true;
+
+    let initialMaintenanceId = '';
+    if (isDamagedOnArrival && maintenanceSheet) {
+      const maintenanceHeaders = await ensureAssetHeaders(maintenanceSheet, ['Maintenance_ID', 'Asset_ID', 'Issue', 'Reported_By', 'Status', 'Reported_Date', 'Previous_Status', 'Cost', 'Remarks', 'Completed_Date']);
+      initialMaintenanceId = `MNT-${randomBytes(7).toString('hex').toUpperCase()}`;
+      const savedTicket = await maintenanceSheet.addRow({
+        [getH(maintenanceHeaders, 'Maintenance_ID')]: initialMaintenanceId,
+        [getH(maintenanceHeaders, 'Asset_ID')]: assetId,
+        [getH(maintenanceHeaders, 'Issue')]: String(asset.damageIssue).trim(),
+        [getH(maintenanceHeaders, 'Reported_By')]: userName || req.portalUser?.name || '',
+        [getH(maintenanceHeaders, 'Status')]: 'OPEN',
+        [getH(maintenanceHeaders, 'Reported_Date')]: timestamp,
+        [getH(maintenanceHeaders, 'Previous_Status')]: 'AVAILABLE',
+        [getH(maintenanceHeaders, 'Remarks')]: 'Item was registered with existing damage.'
+      });
+      cacheAppendedRow('maintenance', savedTicket);
+    }
 
     if (req.file) await saveAssetPhoto(assetId, req.file, 'PHOTO_REGISTERED', userName, photoUrl);
 
@@ -971,21 +1021,21 @@ exports.addAsset = async (req, res) => {
       await historySheet.addRow({
          [getH(hH, 'History_ID')]: `HIS-${Date.now()}`,
          [getH(hH, 'Asset_ID')]: assetId,
-         [getH(hH, 'Action')]: 'ASSET_REGISTERED',
+         [getH(hH, 'Action')]: isDamagedOnArrival ? 'ASSET_REGISTERED_DAMAGED' : 'ASSET_REGISTERED',
          [getH(hH, 'Old_Value')]: '',
-         [getH(hH, 'New_Value')]: 'AVAILABLE',
+         [getH(hH, 'New_Value')]: initialStatus,
          [getH(hH, 'Performed_By')]: userName,
          [getH(hH, 'Branch')]: asset.branch,
          [getH(hH, 'Timestamp')]: timestamp,
          [getH(hH, 'Remarks')]: trackingMode === 'QUANTITY'
            ? `Initial quantity group registration · ${quantity} units`
-           : 'Initial Asset Registration'
+           : isDamagedOnArrival ? `Registered damaged · ${initialMaintenanceId} · ${String(asset.damageIssue).trim()}` : 'Initial Asset Registration'
       });
     }
 
     const followUpResults = await Promise.allSettled([
       appendAssetQrLabel({ assetId, createdBy: userName }),
-      appendAssetActivity(req, { action: 'ASSET_REGISTERED', entityType: trackingMode === 'QUANTITY' ? 'Asset quantity group' : 'Asset', entityId: assetId, branch: asset.branch, after: { name: asset.name, category: asset.category, status: 'AVAILABLE', trackingMode, quantity } })
+      appendAssetActivity(req, { action: isDamagedOnArrival ? 'ASSET_REGISTERED_DAMAGED' : 'ASSET_REGISTERED', entityType: trackingMode === 'QUANTITY' ? 'Asset quantity group' : 'Asset', entityId: assetId, branch: asset.branch, after: { name: asset.name, category: asset.category, status: initialStatus, condition: asset.condition, trackingMode, quantity, ...(initialMaintenanceId ? { maintenanceId: initialMaintenanceId, issue: String(asset.damageIssue).trim() } : {}) } })
     ]);
 
     const followUpFailed = followUpResults.some(result => result.status === 'rejected');
@@ -995,6 +1045,7 @@ exports.addAsset = async (req, res) => {
     res.status(201).json({
       success: true,
       assetId,
+      maintenanceId: initialMaintenanceId,
       photoUrl,
       locationName,
       locationCreated,
@@ -1018,6 +1069,228 @@ exports.addAsset = async (req, res) => {
 // =========================================================
 // 4. GET ALL ASSETS (WITH FILTERS & SEARCH)
 // =========================================================
+exports.updateAsset = async (req, res) => {
+  try {
+    if (respondWhileAssetDataLoads(res)) return;
+    const assetId = String(req.params?.assetId || '').trim();
+    const asset = parseJsonField(req.body?.asset, {});
+    const customFields = parseJsonField(req.body?.customFields, []);
+    if (!assetId || !asset?.name || !asset?.category || !asset?.subcategory || !asset?.assetType || !asset?.branch || !String(asset.location || '').trim()) {
+      return res.status(400).json({ success: false, message: 'Item name, classification, branch, and physical location are required.' });
+    }
+    if (!canAccessAssetBranch(req, asset.branch)) return res.status(403).json({ success: false, message: 'You cannot update an asset for that branch.' });
+    const assetSheet = sheetByKey('assets');
+    if (!assetSheet) return res.status(503).json({ success: false, message: 'The asset register is unavailable.' });
+    if (!sheetByKey('history') || !sheetByKey('assetactivitylog')) return res.status(503).json({ success: false, message: 'Asset history is unavailable. No changes were saved.' });
+    if (req.file && !sheetByKey('documents')) return res.status(503).json({ success: false, message: 'Asset photo history is unavailable. No changes were saved.' });
+    const headers = await ensureAssetHeaders(assetSheet, ['Asset_ID', 'Record_Type', 'Asset_Name', 'Category', 'Category_ID', 'Subcategory', 'Subcategory_ID', 'Asset_Type', 'Asset_Type_ID', 'Branch', 'Location', 'Status', 'Condition', 'Brand', 'Model', 'Purchase_Date', 'Purchase_Cost', 'Vendor', 'Invoice_Number', 'Warranty_End', 'Created_By', 'Timestamp', 'Updated_By', 'Updated_At', 'Tracking_Mode', 'Quantity', 'Serial_Number']);
+    const rows = await assetSheet.getRows();
+    const row = rows.find(item => String(item.get(getH(headers, 'Asset_ID')) || '').trim().toLowerCase() === assetId.toLowerCase());
+    if (!row) return res.status(404).json({ success: false, message: 'Asset not found.' });
+    const currentStatus = String(row.get(getH(headers, 'Status')) || 'AVAILABLE').trim().toUpperCase();
+    if (currentStatus !== 'AVAILABLE') return res.status(409).json({ success: false, message: 'Only available items can be edited. Return, resolve, or complete the current workflow first.' });
+    if (!['NEW', 'EXCELLENT', 'GOOD', 'FAIR'].includes(String(asset.condition || '').trim().toUpperCase())) {
+      return res.status(400).json({ success: false, message: 'Use the damage report action to mark an item damaged and open its maintenance ticket.' });
+    }
+    const currentBranch = String(row.get(getH(headers, 'Branch')) || '').trim();
+    if (normalize(currentBranch) !== normalize(asset.branch)) return res.status(409).json({ success: false, message: 'Branch changes must use the asset transfer workflow so approval and receipt are recorded.' });
+    if (!canAccessAssetBranch(req, currentBranch)) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
+
+    const taxonomyRows = (rows, fallback) => (rows?.length ? rows : fallback).map(item => item?.toObject?.() || item || {});
+    const value = (item, field) => {
+      const source = item?.toObject?.() || item || {};
+      const key = Object.keys(source).find(name => normalizeHeader(name) === normalizeHeader(field));
+      return key ? source[key] : '';
+    };
+    const categoryRows = taxonomyRows(getAssetCache()?.assetcategorymaster, assetTaxonomy.categoryRows);
+    const subcategoryRows = taxonomyRows(getAssetCache()?.assetsubcategorymaster, assetTaxonomy.subcategoryRows);
+    const typeRows = taxonomyRows(getAssetCache()?.assettypemaster, assetTaxonomy.assetTypeRows);
+    const category = categoryRows.find(item => asset.categoryId
+      ? normalize(value(item, 'Category_ID')) === normalize(asset.categoryId)
+      : normalize(value(item, 'Category_Name')) === normalize(asset.category));
+    const categoryId = value(category, 'Category_ID');
+    const subcategory = subcategoryRows.find(item => (asset.subcategoryId
+      ? normalize(value(item, 'Subcategory_ID')) === normalize(asset.subcategoryId)
+      : normalize(value(item, 'Subcategory_Name')) === normalize(asset.subcategory))
+      && normalize(value(item, 'Category_ID')) === normalize(categoryId));
+    const subcategoryId = value(subcategory, 'Subcategory_ID');
+    const assetType = typeRows.find(item => (asset.assetTypeId
+      ? normalize(value(item, 'Asset_Type_ID')) === normalize(asset.assetTypeId)
+      : normalize(value(item, 'Asset_Type_Name')) === normalize(asset.assetType))
+      && normalize(value(item, 'Subcategory_ID')) === normalize(subcategoryId));
+    if (!category || !subcategory || !assetType) return res.status(400).json({ success: false, message: 'Choose a valid category, subcategory, and item type from the classification list.' });
+    const typeClass = String(value(assetType, 'Type') || value(subcategory, 'Type') || value(category, 'Type') || 'ASSET').trim().toUpperCase();
+    if (typeClass === 'CONSUMABLE') return res.status(400).json({ success: false, message: 'Consumable records must be changed from inventory management.' });
+
+    let locationName = String(asset.location).trim();
+    let locationCreated = false;
+    if (asset.createLocation === true) {
+      const locationSheet = sheetByKey('locations');
+      const allowedAreas = new Set(['LAB', 'OFFICE', 'STORAGE', 'OTHER']);
+      const room = String(asset.locationRoom || '').trim();
+      const area = String(asset.locationArea || '').trim();
+      if (!locationSheet || !room || !allowedAreas.has(area.toUpperCase())) return res.status(400).json({ success: false, message: 'Enter a room name and choose a valid location type.' });
+      locationName = `${room} (${area})`;
+      const locationHeaders = await ensureAssetHeaders(locationSheet, ['Location_ID', 'Branch_ID', 'Branch', 'Building', 'Floor', 'Room', 'Area', 'Location_Name', 'Status', 'Created_At']);
+      const locationRows = getAssetCache()?.locations || [];
+      const exists = locationRows.some(item => normalize(rowValue(item, 'Branch') || rowValue(item, 'Branch_ID')) === normalize(asset.branch)
+        && normalize(rowValue(item, 'Location_Name') || `${rowValue(item, 'Room')}${rowValue(item, 'Area') ? ` (${rowValue(item, 'Area')})` : ''}`) === normalize(locationName)
+        && String(rowValue(item, 'Status') || '').trim().toUpperCase() !== 'INACTIVE');
+      if (!exists) {
+        const saved = await locationSheet.addRow({
+          [getH(locationHeaders, 'Location_ID')]: `LOC-${randomBytes(6).toString('hex').toUpperCase()}`,
+          [getH(locationHeaders, 'Branch_ID')]: asset.branch, [getH(locationHeaders, 'Branch')]: asset.branch,
+          [getH(locationHeaders, 'Building')]: 'Main', [getH(locationHeaders, 'Floor')]: '1',
+          [getH(locationHeaders, 'Room')]: room, [getH(locationHeaders, 'Area')]: area,
+          [getH(locationHeaders, 'Location_Name')]: locationName, [getH(locationHeaders, 'Status')]: 'ACTIVE',
+          [getH(locationHeaders, 'Created_At')]: formatIndiaTimestamp()
+        });
+        cacheAppendedRow('locations', saved);
+        locationCreated = true;
+      }
+    }
+
+    const photoUrl = req.file ? await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || '') : '';
+    const previous = {
+      name: row.get(getH(headers, 'Asset_Name')) || '', category: row.get(getH(headers, 'Category')) || '',
+      subcategory: row.get(getH(headers, 'Subcategory')) || '', assetType: row.get(getH(headers, 'Asset_Type')) || '',
+      branch: currentBranch, location: row.get(getH(headers, 'Location')) || '', condition: row.get(getH(headers, 'Condition')) || '',
+      brand: row.get(getH(headers, 'Brand')) || '', model: row.get(getH(headers, 'Model')) || '',
+      serialNumber: row.get(getH(headers, 'Serial_Number')) || '', vendor: row.get(getH(headers, 'Vendor')) || '',
+      invoice: row.get(getH(headers, 'Invoice_Number')) || '', purchaseDate: row.get(getH(headers, 'Purchase_Date')) || '',
+      purchaseCost: row.get(getH(headers, 'Purchase_Cost')) || '', warrantyEnd: row.get(getH(headers, 'Warranty_End')) || ''
+    };
+    const actorName = req.portalUser?.name || req.body?.userName || req.portalUser?.email || '';
+    const update = {
+      [getH(headers, 'Asset_Name')]: String(asset.name).trim(), [getH(headers, 'Category')]: asset.category,
+      [getH(headers, 'Category_ID')]: categoryId, [getH(headers, 'Subcategory')]: asset.subcategory,
+      [getH(headers, 'Subcategory_ID')]: subcategoryId, [getH(headers, 'Asset_Type')]: asset.assetType,
+      [getH(headers, 'Asset_Type_ID')]: value(assetType, 'Asset_Type_ID'), [getH(headers, 'Branch')]: asset.branch,
+      [getH(headers, 'Location')]: locationName, [getH(headers, 'Condition')]: asset.condition || 'GOOD',
+      [getH(headers, 'Brand')]: asset.brand || '', [getH(headers, 'Model')]: asset.model || '',
+      [getH(headers, 'Serial_Number')]: asset.serialNumber || '', [getH(headers, 'Purchase_Date')]: asset.purchaseDate || '',
+      [getH(headers, 'Purchase_Cost')]: asset.purchaseCost || '', [getH(headers, 'Vendor')]: asset.vendor || '',
+      [getH(headers, 'Invoice_Number')]: asset.invoice || '', [getH(headers, 'Warranty_End')]: asset.warrantyEnd || '',
+      [getH(headers, 'Updated_By')]: actorName, [getH(headers, 'Updated_At')]: formatIndiaTimestamp()
+    };
+    row.assign(update);
+    await row.save();
+
+    const customSheet = sheetByKey('assetcustomdata');
+    if (customSheet && String(row.get(getH(headers, 'Tracking_Mode')) || 'INDIVIDUAL').toUpperCase() !== 'QUANTITY') {
+      const customHeaders = await ensureAssetHeaders(customSheet, ['Field_ID', 'Asset_ID', 'Field_Name', 'Field_Value']);
+      const customRows = (await customSheet.getRows()).filter(item => String(item.get(getH(customHeaders, 'Asset_ID')) || '').trim().toLowerCase() === assetId.toLowerCase()).sort((a, b) => Number(a.rowNumber || 0) - Number(b.rowNumber || 0));
+      const fields = Array.isArray(customFields) ? customFields.filter(field => String(field?.name || '').trim() && String(field?.value || '').trim()) : [];
+      for (let index = 0; index < Math.max(customRows.length, fields.length); index += 1) {
+        const data = fields[index];
+        if (customRows[index]) {
+          customRows[index].assign({ [getH(customHeaders, 'Field_Name')]: data?.name || '', [getH(customHeaders, 'Field_Value')]: data?.value || '' });
+          await customRows[index].save();
+        } else if (data) {
+          const saved = await customSheet.addRow({ [getH(customHeaders, 'Field_ID')]: `${assetId}-F${index + 1}`, [getH(customHeaders, 'Asset_ID')]: assetId, [getH(customHeaders, 'Field_Name')]: data.name, [getH(customHeaders, 'Field_Value')]: data.value });
+          cacheAppendedRow('assetcustomdata', saved);
+        }
+      }
+    }
+    if (req.file) {
+      await saveAssetPhoto(assetId, req.file, 'PHOTO_UPDATED', actorName, photoUrl);
+    }
+    const after = { name: String(asset.name).trim(), category: asset.category, subcategory: asset.subcategory, assetType: asset.assetType, branch: asset.branch, location: locationName, condition: asset.condition || 'GOOD', brand: asset.brand || '', model: asset.model || '', serialNumber: asset.serialNumber || '', vendor: asset.vendor || '', invoice: asset.invoice || '', purchaseDate: asset.purchaseDate || '', purchaseCost: asset.purchaseCost || '', warrantyEnd: asset.warrantyEnd || '' };
+    const auditWrites = await Promise.all([
+      appendAssetHistory(req, { assetId, action: 'ASSET_UPDATED', before: previous, after, branch: asset.branch, remarks: locationCreated ? `Added location ${locationName}` : 'Asset details edited' }),
+      appendAssetActivity(req, { action: 'ASSET_UPDATED', entityType: 'Asset', entityId: assetId, branch: asset.branch, before: previous, after })
+    ]);
+    refreshAssetCache();
+    res.json({ success: true, assetId, locationName, locationCreated, message: 'Asset details updated.', ...(auditWrites.every(Boolean) ? {} : { warning: 'The item changed, but one audit history record could not be saved. Check Activity history before closing this task.' }) });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message || 'Asset could not be updated.' });
+  }
+};
+
+exports.markAssetDamaged = async (req, res) => {
+  try {
+    if (respondWhileAssetDataLoads(res)) return;
+    const assetId = String(req.params?.assetId || '').trim();
+    const issue = String(req.body?.issue || '').trim();
+    if (!assetId || issue.length < 3) return res.status(400).json({ success: false, message: 'Select the item and describe the damage.' });
+    const assetSheet = sheetByKey('assets');
+    const maintenanceSheet = sheetByKey('maintenance');
+    if (!assetSheet || !maintenanceSheet) return res.status(503).json({ success: false, message: 'Asset or maintenance register is unavailable.' });
+    if (!sheetByKey('history') || !sheetByKey('assetactivitylog')) return res.status(503).json({ success: false, message: 'Asset history is unavailable. Damage was not recorded.' });
+    const headers = await ensureAssetHeaders(assetSheet, ['Asset_ID', 'Branch', 'Status', 'Condition', 'Updated_By', 'Updated_At']);
+    const row = (await assetSheet.getRows()).find(item => String(item.get(getH(headers, 'Asset_ID')) || '').trim().toLowerCase() === assetId.toLowerCase());
+    if (!row) return res.status(404).json({ success: false, message: 'Asset not found.' });
+    const branch = row.get(getH(headers, 'Branch')) || '';
+    if (!canAccessAssetBranch(req, branch)) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
+    const previousStatus = String(row.get(getH(headers, 'Status')) || 'AVAILABLE').trim().toUpperCase();
+    const previousCondition = row.get(getH(headers, 'Condition')) || 'GOOD';
+    if (previousStatus !== 'AVAILABLE') return res.status(409).json({ success: false, message: 'Only available items can be marked damaged. Return an assigned item first.' });
+    const maintenanceHeaders = await ensureAssetHeaders(maintenanceSheet, ['Maintenance_ID', 'Asset_ID', 'Issue', 'Reported_By', 'Status', 'Reported_Date', 'Previous_Status', 'Cost', 'Remarks', 'Completed_Date']);
+    const openTicket = (await maintenanceSheet.getRows()).some(item => String(item.get(getH(maintenanceHeaders, 'Asset_ID')) || '').trim().toLowerCase() === assetId.toLowerCase() && String(item.get(getH(maintenanceHeaders, 'Status')) || '').toUpperCase() === 'OPEN');
+    if (openTicket) return res.status(409).json({ success: false, message: 'This item already has an open maintenance ticket.' });
+    const timestamp = formatIndiaTimestamp();
+    const maintenanceId = `MNT-${randomBytes(7).toString('hex').toUpperCase()}`;
+    const previousUpdatedBy = row.get(getH(headers, 'Updated_By')) || '';
+    const previousUpdatedAt = row.get(getH(headers, 'Updated_At')) || '';
+    const actorName = req.portalUser?.name || req.body?.userName || '';
+    row.assign({ [getH(headers, 'Status')]: 'UNDER_MAINTENANCE', [getH(headers, 'Condition')]: 'DAMAGED', [getH(headers, 'Updated_By')]: actorName, [getH(headers, 'Updated_At')]: timestamp });
+    await row.save();
+    let savedTicket;
+    try {
+      savedTicket = await maintenanceSheet.addRow({
+        [getH(maintenanceHeaders, 'Maintenance_ID')]: maintenanceId, [getH(maintenanceHeaders, 'Asset_ID')]: assetId,
+        [getH(maintenanceHeaders, 'Issue')]: issue, [getH(maintenanceHeaders, 'Reported_By')]: actorName,
+        [getH(maintenanceHeaders, 'Status')]: 'OPEN', [getH(maintenanceHeaders, 'Reported_Date')]: timestamp,
+        [getH(maintenanceHeaders, 'Previous_Status')]: previousStatus, [getH(maintenanceHeaders, 'Remarks')]: 'Marked damaged from the asset register.'
+      });
+    } catch (ticketError) {
+      row.assign({ [getH(headers, 'Status')]: previousStatus, [getH(headers, 'Condition')]: previousCondition, [getH(headers, 'Updated_By')]: previousUpdatedBy, [getH(headers, 'Updated_At')]: previousUpdatedAt });
+      await row.save();
+      throw ticketError;
+    }
+    cacheAppendedRow('maintenance', savedTicket);
+    const auditWrites = await Promise.all([
+      appendAssetHistory(req, { assetId, action: 'ASSET_MARKED_DAMAGED', before: { status: previousStatus, condition: previousCondition }, after: { status: 'UNDER_MAINTENANCE', condition: 'DAMAGED', maintenanceId, issue }, branch, remarks: issue }),
+      appendAssetActivity(req, { action: 'ASSET_MARKED_DAMAGED', entityType: 'Asset', entityId: assetId, branch, before: { status: previousStatus }, after: { status: 'UNDER_MAINTENANCE', condition: 'DAMAGED', maintenanceId, issue } })
+    ]);
+    refreshAssetCache();
+    res.status(201).json({ success: true, maintenanceId, message: 'Item marked damaged and sent to maintenance.', ...(auditWrites.every(Boolean) ? {} : { warning: 'The damage ticket was opened, but one audit history record could not be saved. Check Activity history.' }) });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message || 'Damage report could not be saved.' });
+  }
+};
+
+exports.archiveAsset = async (req, res) => {
+  try {
+    if (respondWhileAssetDataLoads(res)) return;
+    const assetId = String(req.params?.assetId || '').trim();
+    const reason = String(req.body?.reason || '').trim();
+    if (!assetId || reason.length < 3) return res.status(400).json({ success: false, message: 'Enter a reason before removing this item from the active register.' });
+    const assetSheet = sheetByKey('assets');
+    if (!assetSheet) return res.status(503).json({ success: false, message: 'The asset register is unavailable.' });
+    if (!sheetByKey('history') || !sheetByKey('assetactivitylog')) return res.status(503).json({ success: false, message: 'Asset history is unavailable. The item was not archived.' });
+    const headers = await ensureAssetHeaders(assetSheet, ['Asset_ID', 'Branch', 'Status', 'Updated_By', 'Updated_At']);
+    const row = (await assetSheet.getRows()).find(item => String(item.get(getH(headers, 'Asset_ID')) || '').trim().toLowerCase() === assetId.toLowerCase());
+    if (!row) return res.status(404).json({ success: false, message: 'Asset not found.' });
+    const branch = row.get(getH(headers, 'Branch')) || '';
+    if (!canAccessAssetBranch(req, branch)) return res.status(403).json({ success: false, message: 'This asset is outside your branch assignment.' });
+    const previousStatus = String(row.get(getH(headers, 'Status')) || 'AVAILABLE').trim().toUpperCase();
+    if (previousStatus !== 'AVAILABLE') return res.status(409).json({ success: false, message: 'Only available items can be archived. Return, resolve, or finish the pending workflow first.' });
+    const before = { status: previousStatus, condition: row.get(getH(headers, 'Condition')) || '' };
+    const actorName = req.portalUser?.name || req.body?.userName || req.portalUser?.email || '';
+    row.assign({ [getH(headers, 'Status')]: 'ARCHIVED', [getH(headers, 'Updated_By')]: actorName, [getH(headers, 'Updated_At')]: formatIndiaTimestamp() });
+    await row.save();
+    const auditWrites = await Promise.all([
+      appendAssetHistory(req, { assetId, action: 'ASSET_ARCHIVED', before, after: { status: 'ARCHIVED' }, branch, remarks: reason }),
+      appendAssetActivity(req, { action: 'ASSET_ARCHIVED', entityType: 'Asset', entityId: assetId, branch, before, after: { status: 'ARCHIVED', reason } })
+    ]);
+    refreshAssetCache();
+    res.json({ success: true, message: 'Asset archived. Its record and history remain available.', ...(auditWrites.every(Boolean) ? {} : { warning: 'The item was archived, but one audit history record could not be saved. Check Activity history.' }) });
+  } catch (err) {
+    res.status(err.status || 500).json({ success: false, message: err.message || 'Asset could not be archived.' });
+  }
+};
+
 exports.getAssets = async (req, res) => {
   try {
     if (respondWhileAssetDataLoads(res)) return;
@@ -1335,11 +1608,16 @@ exports.returnAsset = async (req, res) => {
     if (String(assetRow.get(getH(aH, 'Status')) || '').toUpperCase() !== 'ASSIGNED') {
       return res.status(409).json({ success: false, message: 'This asset does not have an active assignment to return.' });
     }
+    if (String(conditionOnReturn || '').trim().toUpperCase() === 'DAMAGED' && String(returnStatus || '').trim().toUpperCase() === 'AVAILABLE') {
+      return res.status(400).json({ success: false, message: 'A damaged item must be sent to maintenance when it is returned.' });
+    }
     if (req.file && !sheetByKey('documents')) return res.status(503).json({ success: false, message: 'Asset photo history is unavailable. No return was recorded.' });
     const returnPhotoUrl = req.file ? await uploadToDrive(req.file, process.env.DRIVE_FOLDER_ID || '') : '';
 
     const timestamp = formatIndiaTimestamp();
-    const targetStatus = returnStatus || (conditionOnReturn === 'DAMAGED' ? 'UNDER_MAINTENANCE' : 'AVAILABLE');
+    const targetStatus = String(conditionOnReturn || '').trim().toUpperCase() === 'DAMAGED'
+      ? 'UNDER_MAINTENANCE'
+      : returnStatus || 'AVAILABLE';
 
     // 2. Update 07_Assets
     assetRow.assign({

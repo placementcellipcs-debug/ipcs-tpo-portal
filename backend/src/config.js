@@ -4,7 +4,8 @@ const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
 const { google } = require('googleapis');
 const { randomUUID } = require('crypto');
-const axios = require('axios');
+const { uploadToDrive } = require('./driveUploads');
+const mysqlPool = require('./mysqlPool');
 const { formatIndiaTimestamp } = require('./utils/dateTime');
 const { createEmailService } = require('./emailService');
 const { createPortalAuditLogger } = require('./portalAuditLog');
@@ -20,6 +21,25 @@ const portalAuditLogger = createPortalAuditLogger({
   spreadsheetId: portalAuditSpreadsheetId
 });
 const logPortalAuditEvent = portalAuditLogger.log;
+const logEmailAuditEvent = event => {
+  const useMysql = String(process.env.MYSQL_EMAIL_ENABLED || '').trim().toLowerCase() === 'true'
+    && String(process.env.MYSQL_ENABLED || '').trim().toLowerCase() === 'true';
+  if (!useMysql) return portalAuditLogger.log(event);
+  try {
+    const details = JSON.stringify({ source: event?.source || '', resource: event?.resource || '', result: event?.result || '', details: event?.details || {} });
+    void mysqlPool.query(
+      `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, request_id, details)
+       VALUES (?, NULL, ?, ?, ?, UTC_TIMESTAMP(), ?, CAST(? AS JSON))`,
+      [randomUUID(), String(event?.action || 'Email operation').slice(0, 120), String(event?.resource || 'Email').slice(0, 100),
+        String(event?.details?.deliveryId || event?.details?.queueId || '').slice(0, 100) || null,
+        String(event?.requestId || '').slice(0, 120) || null, details],
+    ).catch(error => console.error('[MYSQL MAIL AUDIT] Could not save email audit event:', error.message));
+    return true;
+  } catch (error) {
+    console.error('[MYSQL MAIL AUDIT] Could not prepare email audit event:', error.message);
+    return false;
+  }
+};
 const logCacheAuditEvent = event => {
   try {
     return logPortalAuditEvent(event);
@@ -1124,7 +1144,7 @@ const emailService = createEmailService({
   formatIndiaTimestamp,
   sheetsApi: google.sheets({ version: 'v4', auth: serviceAccountAuth }),
   getSpreadsheetIdForSheetName,
-  logPortalAuditEvent: portalAuditLogger.log
+  logPortalAuditEvent: logEmailAuditEvent
 });
 
 async function sendIPCSMail(mailOptions, sendDetails) {
@@ -1132,17 +1152,6 @@ async function sendIPCSMail(mailOptions, sendDetails) {
   console.log(`[MAIL DISPATCH] Category: ${category} | Subject: ${mailOptions.subject || '(no subject)'}`);
   return emailService.sendMail(mailOptions, sendDetails || { category });
 }
-const APPS_SCRIPT_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyAJWuQlO7Ie3e-hsWkr965tZD3vfTBG5E9oBxFMleXBNi5ocSTnilPmFYzDXgQ-cOcbw/exec";
-async function uploadToDrive(file, folderId) {
-  try {
-    const base64Data = file.buffer.toString('base64');
-    const payload = { folderId: folderId, filename: `${Date.now()}_${file.originalname}`, mimeType: file.mimetype, data: base64Data };
-    const response = await axios.post(APPS_SCRIPT_WEB_APP_URL, payload);
-    if (response.data.success) return response.data.link; 
-    throw new Error(response.data.error);
-  } catch (err) { throw new Error(`Apps Script Error: ${err.message}`); }
-}
-
 module.exports = { 
   doc, drive, google, serviceAccountAuth, getCache, refreshCache, waitForCacheReady, loadDocInfo, hasAccess, getFuzzyHeader, syncPlacedStudent,
   getSpreadsheetIdForSheetName, getActiveSpreadsheetIds, ensureSpreadsheetDateFormats, rebuildPlacedStudentsFromTpoLogs,
