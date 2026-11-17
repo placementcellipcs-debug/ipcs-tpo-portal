@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Buildings, CheckCircle, CircleNotch, EnvelopeSimple, MagnifyingGlass, PaperPlaneTilt, WarningCircle } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
@@ -20,7 +20,7 @@ const emailStatus = status => {
 };
 
 export default function HiringInquiries() {
-  const user = readUser();
+  const user = useMemo(readUser, []);
   const [inquiries, setInquiries] = useState([]);
   const [tpos, setTpos] = useState([]);
   const [selections, setSelections] = useState({});
@@ -34,13 +34,23 @@ export default function HiringInquiries() {
     setLoading(true);
     setPageError('');
     try {
-      const [inquiryResponse, tpoResponse] = await Promise.all([
+      const [inquiryResult, tpoResult] = await Promise.allSettled([
         axios.get(`${API_BASE}/api/placement/hiring-inquiries`),
         axios.get(`${API_BASE}/api/placement/hiring-inquiries/tpos`)
       ]);
+      if (inquiryResult.status === 'rejected') throw inquiryResult.reason;
+      const inquiryResponse = inquiryResult.value;
+      if (inquiryResponse.data?.success === false) throw new Error(inquiryResponse.data?.message || 'Hiring inquiries could not be loaded.');
       const nextInquiries = inquiryResponse.data.inquiries || [];
       setInquiries(nextInquiries);
-      setTpos(tpoResponse.data.tpos || []);
+      if (tpoResult.status === 'fulfilled' && tpoResult.value.data?.success !== false) {
+        setTpos(tpoResult.value.data.tpos || []);
+      } else {
+        setTpos([]);
+        setPageError(tpoResult.status === 'rejected'
+          ? (tpoResult.reason.response?.data?.message || 'The active placement officer list is unavailable; inquiry records are still shown.')
+          : (tpoResult.value.data?.message || 'The active placement officer list is unavailable; inquiry records are still shown.'));
+      }
       setSelections(current => Object.fromEntries(nextInquiries.map(item => [item.inquiryId, current[item.inquiryId] ?? item.assignedTpo ?? ''])));
     } catch (error) {
       setPageError(error.response?.data?.message || 'Hiring inquiries could not be loaded. Please refresh and try again.');

@@ -8,6 +8,7 @@ import {
 import Layout from '../../layouts/Layout';
 import DateInput from '../../components/DateInput';
 import { formatPortalDate, formatPortalTime, parsePortalDateTime } from '../../utils/dateFormat';
+import { isPortalAdminAccount } from '../../utils/roleAccess';
 
 import { API_BASE } from '../../services/apiConfig';
 
@@ -31,7 +32,7 @@ export default function Events() {
   const eventRole = String(tpoData?.role || '').toUpperCase();
   const isDesigner = ['DESIGN', 'MEDIA', 'CREATIVE'].some(part => eventRole.includes(part));
   const isTpo = eventRole.includes('TPO') || eventRole.includes('PLACEMENT OFFICER');
-  const canManageEvents = tpoData?.accessType === 'superadmin' || eventRole.includes('TPO') || eventRole.includes('PLACEMENT OFFICER');
+  const canManageEvents = isPortalAdminAccount(tpoData) || eventRole.includes('TPO') || eventRole.includes('PLACEMENT OFFICER');
   const defaultTalentinoBranch = getFirstAssignedBranch(tpoData?.assignedBranchesArray);
   
   const [events, setEvents] = useState([]);

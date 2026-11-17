@@ -64,8 +64,16 @@ const TPO_DELETE_REQUEST_HEADERS = [
   'Requested By Role', 'Target ID', 'Target Row Number', 'Target Summary', 'Target Snapshot', 'Reason',
   'Reviewed By Name', 'Reviewed By Email', 'Reviewed At', 'Decision Notes', 'Execution Message'
 ];
+const STUDENT_EDIT_REQUEST_SHEET = 'Student_Edit_Requests';
+const STUDENT_EDIT_REQUEST_HEADERS = [
+  'Request ID', 'Status', 'Requested At', 'Requested By Name', 'Requested By Email', 'Requested By Role',
+  'Student Row Number', 'Student Roll Number', 'Student Name', 'Student Branch', 'Change Summary',
+  'Original Data JSON', 'Proposed Data JSON', 'Reviewed By Name', 'Reviewed By Email', 'Reviewed At',
+  'Decision Notes', 'Execution Message'
+];
 const TPO_DELETE_APPROVER_EMAIL = 'gifty@ipcsglobal.com';
 const tpoDeleteApprovalLocks = new Set();
+const studentEditApprovalLocks = new Set();
 
 const FOLDER_OFFER_LETTERS = '1184PpFnRndFM0pwIt1Qob_FHMs8hPjV5';
 const FOLDER_CLIENT_LOGOS = '11M8jGi1ISWP2mOpWRZncHhThHLoc7cDi'; 
@@ -1364,7 +1372,7 @@ exports.getDashboardStats = async (req, res) => {
   });
 };
 
-exports.getNotifications = (req, res) => {
+exports.getNotifications = async (req, res) => {
   const user = req.portalUser || {};
   const rows = (getCache()?.tpoLogs || []).map((row, index) => {
     const status = getValByHeader(row, ['status']).trim();
@@ -1395,12 +1403,72 @@ exports.getNotifications = (req, res) => {
       desc: `${name || 'A student'}'s status changed to ${status}${company ? ` at ${company}` : ''}.`,
       time: timestamp || 'Recently'
     };
-  }).filter(Boolean)
-    .sort((a, b) => b.sortOrder - a.sortOrder)
-    .slice(0, 20)
-    .map(({ sortOrder, ...notification }) => notification);
+  }).filter(Boolean);
 
-  res.json({ success: true, notifications: rows });
+  const requesterEmail = String(user.email || '').trim().toLowerCase();
+  const notificationTimestamp = value => {
+    const text = String(value || '').trim();
+    const dayFirst = text.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})(?:[, T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    if (dayFirst) return new Date(Number(dayFirst[3]), Number(dayFirst[2]) - 1, Number(dayFirst[1]), Number(dayFirst[4] || 0), Number(dayFirst[5] || 0), Number(dayFirst[6] || 0)).getTime();
+    const parsed = Date.parse(text);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const addDecisionNotifications = (requests, kind) => (requests || []).forEach((request, index) => {
+    const requestedByEmail = String(getValByHeader(request, ['requestedbyemail']) || '').trim().toLowerCase();
+    const status = String(getValByHeader(request, ['status']) || '').trim();
+    if (!requesterEmail || requestedByEmail !== requesterEmail || !['approved', 'rejected'].includes(status.toLowerCase())) return;
+    const requestId = String(getValByHeader(request, ['requestid']) || `row-${request.rowNumber || index}`).trim();
+    const summary = String(getValByHeader(request, ['changesummary', 'targetsummary']) || 'your request').trim();
+    const recordType = String(getValByHeader(request, ['recordtype']) || '').trim();
+    const notes = String(getValByHeader(request, ['decisionnotes', 'executionmessage']) || '').trim();
+    const time = String(getValByHeader(request, ['reviewedat']) || getValByHeader(request, ['requestedat']) || 'Recently').trim();
+    const isApproved = status.toLowerCase() === 'approved';
+    const isStudentEdit = kind === 'student-edit';
+    rows.push({
+      id: `${kind}:${requestId}:${status.toLowerCase()}`,
+      sortOrder: notificationTimestamp(time) || Number(request.rowNumber) || index,
+      type: 'approval',
+      decision: isApproved ? 'Approved' : 'Rejected',
+      title: isStudentEdit
+        ? `Student detail edit ${isApproved ? 'approved' : 'rejected'}`
+        : `${recordType || 'Record'} deletion ${isApproved ? 'approved' : 'rejected'}`,
+      desc: `${summary}${notes ? ` · ${notes}` : ''}`,
+      time
+    });
+  });
+  const cache = getCache() || {};
+  addDecisionNotifications(cache.studentEditRequests, 'student-edit');
+  addDecisionNotifications(cache.tpoDeleteRequests, 'tpo-delete');
+
+  if (useMysqlVacancyManagement() || useMysqlPlacementTracker()) {
+    try {
+      const result = await mysqlVacancyManagement.listDeleteRequests(user, {
+        includeVacancies: useMysqlVacancyManagement(),
+        includePlacements: useMysqlPlacementTracker(),
+      });
+      (result.requests || []).forEach((request, index) => {
+        const requestedByEmail = String(request.requestedByEmail || '').trim().toLowerCase();
+        const status = String(request.status || '').trim();
+        if (!requesterEmail || requesterEmail !== requestedByEmail || !['approved', 'rejected'].includes(status.toLowerCase())) return;
+        const isApproved = status.toLowerCase() === 'approved';
+        const requestId = String(request.requestId || `mysql-row-${index}`);
+        rows.push({
+          id: `mysql-tpo-delete:${requestId}:${status.toLowerCase()}`,
+          sortOrder: notificationTimestamp(request.reviewedAt || request.requestedAt || '') || index,
+          type: 'approval',
+          decision: isApproved ? 'Approved' : 'Rejected',
+          title: `${request.recordType || 'Record'} deletion ${isApproved ? 'approved' : 'rejected'}`,
+          desc: `${request.summary || 'Your deletion request'}${request.decisionNotes ? ` · ${request.decisionNotes}` : ''}`,
+          time: request.reviewedAt || request.requestedAt || 'Recently'
+        });
+      });
+    } catch (error) {
+      console.warn('Could not add MySQL deletion decisions to TPO notifications:', error.message);
+    }
+  }
+
+  rows.sort((a, b) => b.sortOrder - a.sortOrder);
+  res.json({ success: true, notifications: rows.slice(0, 20).map(({ sortOrder, ...notification }) => notification) });
 };
 
 exports.getStudents = async (req, res) => {
@@ -1926,6 +1994,35 @@ const ensurePlacementHeaders = async (sheet, titles) => {
   return [...(sheet.headerValues || [])];
 };
 
+const cachedRequestRow = (sheet, rowNumber, values) => {
+  const headers = sheet?.headerValues || [];
+  const rawData = headers.map(header => String(values?.[header] ?? ''));
+  return {
+    _worksheet: sheet,
+    _rawData: rawData,
+    rowNumber: Number(rowNumber),
+    get(header) {
+      const index = headers.indexOf(header);
+      return index < 0 ? undefined : rawData[index] ?? '';
+    },
+    toObject() { return Object.fromEntries(headers.map((header, index) => [header, rawData[index] ?? '']).filter(([header]) => Boolean(header))); }
+  };
+};
+
+const upsertRequestCacheRow = (field, sheet, rowNumber, values) => {
+  const cache = getCache();
+  if (!cache || !sheet || !Number.isInteger(Number(rowNumber))) return;
+  const rows = Array.isArray(cache[field]) ? cache[field] : [];
+  const existing = rows.find(item => Number(item?.rowNumber) === Number(rowNumber));
+  const next = cachedRequestRow(sheet, rowNumber, values);
+  if (existing) {
+    existing._worksheet = sheet;
+    existing._rawData = next._rawData;
+  } else {
+    cache[field] = [...rows, next];
+  }
+};
+
 const findPlacementHeader = (headers, aliases) => {
   const normalized = (headers || []).map(header => ({ header, key: normalizePlacementHeader(header) }));
   for (const alias of aliases) {
@@ -1983,6 +2080,45 @@ const ensureTpoDeleteRequestSheet = async () => {
   return sheet;
 };
 
+const ensureStudentEditRequestSheet = async () => {
+  await loadDocInfo();
+  let sheet = doc.sheetsByTitle[STUDENT_EDIT_REQUEST_SHEET];
+  if (!sheet) sheet = await doc.addSheet({ title: STUDENT_EDIT_REQUEST_SHEET, headerValues: STUDENT_EDIT_REQUEST_HEADERS });
+  await ensurePlacementHeaders(sheet, STUDENT_EDIT_REQUEST_HEADERS);
+  return sheet;
+};
+
+const serializeStudentEditRequest = row => {
+  const get = name => String(row.get(name) ?? '').trim();
+  const parseObject = value => {
+    try {
+      const parsed = JSON.parse(value || '{}');
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch { return {}; }
+  };
+  return {
+    requestId: get('Request ID'),
+    status: get('Status'),
+    requestedAt: get('Requested At'),
+    requestedByName: get('Requested By Name'),
+    requestedByEmail: get('Requested By Email'),
+    requestedByRole: get('Requested By Role'),
+    studentRowNumber: Number(get('Student Row Number')),
+    studentRollNumber: get('Student Roll Number'),
+    studentName: get('Student Name'),
+    studentBranch: get('Student Branch'),
+    changeSummary: get('Change Summary'),
+    originalData: parseObject(get('Original Data JSON')),
+    proposedData: parseObject(get('Proposed Data JSON')),
+    reviewedByName: get('Reviewed By Name'),
+    reviewedByEmail: get('Reviewed By Email'),
+    reviewedAt: get('Reviewed At'),
+    decisionNotes: get('Decision Notes'),
+    executionMessage: get('Execution Message'),
+    rowNumber: Number(row.rowNumber)
+  };
+};
+
 const createTpoDeleteRequest = async ({ requester, recordType, targetId, targetRowNumber = '', summary, snapshot, reason }) => {
   const sheet = await ensureTpoDeleteRequestSheet();
   const requestId = `DEL-${randomBytes(12).toString('hex').toUpperCase()}`;
@@ -2007,7 +2143,8 @@ const createTpoDeleteRequest = async ({ requester, recordType, targetId, targetR
     'Decision Notes': '',
     'Execution Message': ''
   };
-  await sheet.addRow(values);
+  const savedRow = await sheet.addRow(values);
+  upsertRequestCacheRow('tpoDeleteRequests', sheet, Number(savedRow?.rowNumber), values);
   logPortalAuditEvent({
     requestId,
     actor: { name: requester?.name, email: requester?.email, role: requester?.role },
@@ -5134,6 +5271,269 @@ exports.deletePlacedStudent = async (req, res) => {
   }
 };
 
+exports.submitStudentEditRequest = async (req, res) => {
+  const requester = req.portalUser || {};
+  if (!isPlacementTrackerTpo(requester)) {
+    return res.status(403).json({ success: false, message: 'Only TPOs can request full student detail changes.' });
+  }
+  const rowNumber = Number(req.body?.rowNumber);
+  const submittedChanges = req.body?.changes;
+  if (!Number.isInteger(rowNumber) || rowNumber < 2 || !submittedChanges || typeof submittedChanges !== 'object' || Array.isArray(submittedChanges)) {
+    return res.status(400).json({ success: false, message: 'Choose a student and provide the proposed detail changes.' });
+  }
+
+  try {
+    await loadDocInfo();
+    const mysqlDirectoryEnabled = useMysqlStudentDirectory();
+    const studentSheet = doc.sheetsByTitle.Data;
+    const cache = getCache() || {};
+    let student = null;
+    if (mysqlDirectoryEnabled) {
+      const directory = await mysqlStudentDirectory.loadDirectoryRows();
+      student = (directory.students || []).find(row => Number(row.rowNumber) === rowNumber) || null;
+    } else {
+      const cacheAgeMs = Date.now() - Date.parse(cache.cacheUpdatedAt || '');
+      if (cache.cacheSheetHealth?.students !== true || !Number.isFinite(cacheAgeMs) || cacheAgeMs > 5 * 60 * 1000) {
+        return res.status(503).json({ success: false, message: 'The student register is refreshing. Reload the directory and try again shortly.' });
+      }
+      student = (cache.students || []).find(row => Number(row.rowNumber) === rowNumber) || null;
+    }
+    if (!student || !studentSheet) return res.status(404).json({ success: false, message: 'The selected student could not be found. Reload the directory and try again.' });
+    const branch = getValByHeader(student, ['branch', 'branchname', 'sittingbranch']);
+    if (!hasPlacementBranchAccess(branch, requester)) {
+      return res.status(403).json({ success: false, message: 'This student is outside your assigned branches.' });
+    }
+
+    if (!Array.isArray(studentSheet.headerValues) || !studentSheet.headerValues.length) await studentSheet.loadHeaderRow();
+    const headers = studentSheet.headerValues || [];
+    if (!headers.length || !Array.isArray(student._rawData)) {
+      return res.status(503).json({ success: false, message: 'Student details are not ready for editing. Reload the directory and try again.' });
+    }
+    const mysqlStudentFields = mysqlDirectoryEnabled && typeof student.toObject === 'function' ? student.toObject() : null;
+    const mysqlStudentFieldKeys = new Map(Object.keys(mysqlStudentFields || {}).map(key => [normalizePlacementHeader(key), key]));
+    const headerByKey = new Map(headers.map(header => [normalizePlacementHeader(header), header]).filter(([key, header]) => key && header));
+    const originalData = {};
+    const proposedData = {};
+    for (const [submittedHeader, submittedValue] of Object.entries(submittedChanges).slice(0, 100)) {
+      const header = headerByKey.get(normalizePlacementHeader(submittedHeader));
+      if (!header) return res.status(400).json({ success: false, message: `The student register does not contain the “${submittedHeader}” field.` });
+      const columnIndex = headers.indexOf(header);
+      const mysqlFieldKey = mysqlStudentFieldKeys.get(normalizePlacementHeader(submittedHeader))
+        || mysqlStudentFieldKeys.get(normalizePlacementHeader(header));
+      const oldValue = mysqlDirectoryEnabled
+        ? String(mysqlFieldKey ? mysqlStudentFields[mysqlFieldKey] ?? '' : '')
+        : String(student._rawData[columnIndex] ?? '');
+      const proposedValue = String(submittedValue ?? '').slice(0, 10000);
+      if (oldValue === proposedValue) continue;
+      originalData[header] = oldValue;
+      proposedData[header] = proposedValue;
+    }
+    const changedHeaders = Object.keys(proposedData);
+    if (!changedHeaders.length) return res.status(400).json({ success: false, message: 'No student detail changes were made.' });
+    const serializedSize = Buffer.byteLength(JSON.stringify(proposedData), 'utf8') + Buffer.byteLength(JSON.stringify(originalData), 'utf8');
+    if (serializedSize > 180000) return res.status(413).json({ success: false, message: 'The requested changes are too large to review. Please shorten the long text fields.' });
+
+    const pendingRequest = (cache.studentEditRequests || []).find(row =>
+      Number(getValByHeader(row, ['studentrownumber'])) === rowNumber
+      && ['pending', 'processing'].includes(String(getValByHeader(row, ['status']) || '').trim().toLowerCase())
+    );
+    if (pendingRequest) return res.status(409).json({ success: false, message: 'This student already has a pending detail change request. Gifty must review it before another one is submitted.' });
+
+    const sheet = await ensureStudentEditRequestSheet();
+    const requestId = `STU-EDIT-${randomBytes(10).toString('hex').toUpperCase()}`;
+    const studentName = getValByHeader(student, ['name', 'studentname']);
+    const rollNumber = getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']);
+    const summary = `${changedHeaders.length} field${changedHeaders.length === 1 ? '' : 's'}: ${changedHeaders.slice(0, 5).join(', ')}${changedHeaders.length > 5 ? ` +${changedHeaders.length - 5} more` : ''}`;
+    const values = {
+      'Request ID': requestId,
+      Status: 'Pending',
+      'Requested At': formatIndiaTimestamp(),
+      'Requested By Name': safeSheetText(requester.name, 160),
+      'Requested By Email': safeSheetText(requester.email, 254),
+      'Requested By Role': safeSheetText(requester.role, 100),
+      'Student Row Number': rowNumber,
+      'Student Roll Number': safeSheetText(rollNumber, 100),
+      'Student Name': safeSheetText(studentName, 200),
+      'Student Branch': safeSheetText(branch, 200),
+      'Change Summary': safeSheetText(summary, 500),
+      'Original Data JSON': JSON.stringify(originalData),
+      'Proposed Data JSON': JSON.stringify(proposedData),
+      'Reviewed By Name': '',
+      'Reviewed By Email': '',
+      'Reviewed At': '',
+      'Decision Notes': '',
+      'Execution Message': ''
+    };
+    const savedRow = await sheet.addRow(values);
+    upsertRequestCacheRow('studentEditRequests', sheet, Number(savedRow?.rowNumber), values);
+    logPortalAuditEvent({
+      requestId,
+      actor: requester,
+      actorType: 'Human',
+      source: 'Student detail approval workflow',
+      action: 'Student detail change requested',
+      resource: 'Student',
+      result: 'Pending',
+      details: { requestId, rowNumber, rollNumber, studentName, changedHeaders }
+    });
+    return res.json({ success: true, requestId, status: 'Pending', message: 'Your student detail changes were sent to Gifty for approval. The student record has not changed yet.' });
+  } catch (error) {
+    console.error('Could not submit student detail change request:', error.message);
+    return res.status(500).json({ success: false, message: `The student detail request could not be saved: ${error.message}` });
+  }
+};
+
+exports.getStudentEditRequests = async (req, res) => {
+  if (!isTpoDeleteApprover(req.portalUser || {})) {
+    return res.status(403).json({ success: false, message: 'Only gifty@ipcsglobal.com can review student detail changes.' });
+  }
+  try {
+    const sheet = await ensureStudentEditRequestSheet();
+    const rows = await sheet.getRows();
+    const requests = rows.map(serializeStudentEditRequest).sort((left, right) => Number(right.rowNumber) - Number(left.rowNumber));
+    return res.json({ success: true, requests });
+  } catch (error) {
+    console.error('Could not load student detail change requests:', error.message);
+    return res.status(503).json({ success: false, message: `Student detail requests could not be loaded: ${error.message}` });
+  }
+};
+
+exports.reviewStudentEditRequest = async (req, res) => {
+  const reviewer = req.portalUser || {};
+  if (!isTpoDeleteApprover(reviewer)) {
+    return res.status(403).json({ success: false, message: 'Only gifty@ipcsglobal.com can approve or reject student detail changes.' });
+  }
+  const requestId = String(req.params.requestId || '').trim();
+  const decision = String(req.body?.decision || '').trim().toLowerCase();
+  const decisionNotes = String(req.body?.notes || '').trim().slice(0, 1000);
+  if (!requestId || !['approve', 'reject'].includes(decision)) {
+    return res.status(400).json({ success: false, message: 'Choose a student detail request and approve or reject it.' });
+  }
+  if (decision === 'reject' && !decisionNotes) return res.status(400).json({ success: false, message: 'Add a short reason before rejecting this request.' });
+  if (studentEditApprovalLocks.has(requestId)) return res.status(409).json({ success: false, message: 'This request is already being reviewed. Refresh the list in a moment.' });
+
+  studentEditApprovalLocks.add(requestId);
+  let requestRow = null;
+  let requestSheet = null;
+  let studentChangesApplied = false;
+  let studentDatabaseApplied = false;
+  try {
+    requestSheet = await ensureStudentEditRequestSheet();
+    const requests = await requestSheet.getRows();
+    requestRow = requests.find(row => String(row.get('Request ID') || '').trim() === requestId);
+    if (!requestRow) return res.status(404).json({ success: false, message: 'The student detail request was not found.' });
+    const currentStatus = String(requestRow.get('Status') || '').trim().toLowerCase();
+    if (!['pending', 'processing'].includes(currentStatus)) {
+      return res.status(409).json({ success: false, message: `This request is already ${currentStatus || 'processed'}.` });
+    }
+    if (decision === 'reject' && currentStatus !== 'pending') {
+      return res.status(409).json({ success: false, message: 'This request is already being applied. Refresh the list before taking another action.' });
+    }
+
+    const reviewedAt = formatIndiaTimestamp();
+    const reviewerFields = {
+      'Reviewed By Name': safeSheetText(reviewer.name, 160),
+      'Reviewed By Email': TPO_DELETE_APPROVER_EMAIL,
+      'Reviewed At': reviewedAt,
+      'Decision Notes': safeSheetText(decisionNotes, 1000)
+    };
+    if (decision === 'reject') {
+      requestRow.assign({ ...reviewerFields, Status: 'Rejected', 'Execution Message': 'No student details were changed.' });
+      await requestRow.save();
+      upsertRequestCacheRow('studentEditRequests', requestSheet, Number(requestRow.rowNumber), requestRow.toObject());
+      logPortalAuditEvent({ requestId, actor: reviewer, actorType: 'Human', source: 'Student detail approval workflow', action: 'Student detail request rejected', resource: 'Student', result: 'Rejected', details: { requestId, notes: decisionNotes } });
+      return res.json({ success: true, status: 'Rejected', message: 'Request rejected. No student details were changed.' });
+    }
+
+    const request = serializeStudentEditRequest(requestRow);
+    const studentRowNumber = Number(request.studentRowNumber);
+    if (!Number.isInteger(studentRowNumber) || studentRowNumber < 2) throw new Error('The saved student row number is invalid. No changes were applied.');
+    const studentSheet = doc.sheetsByTitle.Data;
+    if (!studentSheet) throw new Error('The student register is unavailable. No changes were applied.');
+    const studentCache = getCache();
+    if (!Array.isArray(studentSheet.headerValues) || !studentSheet.headerValues.length) await studentSheet.loadHeaderRow();
+    const headers = studentSheet.headerValues || [];
+    const headerMap = new Map(headers.map((header, index) => [normalizePlacementHeader(header), index]));
+    const changedFields = Object.keys(request.proposedData || {});
+    if (!changedFields.length) throw new Error('This request contains no proposed changes.');
+    const fieldIndexes = changedFields.map(header => ({
+      header: headers[headerMap.get(normalizePlacementHeader(header))],
+      index: headerMap.get(normalizePlacementHeader(header))
+    }));
+    if (fieldIndexes.some(field => !field.header || !Number.isInteger(field.index))) throw new Error('One or more requested student fields no longer exist in the register. No changes were applied.');
+
+    requestRow.assign({ ...reviewerFields, Status: 'Processing', 'Execution Message': 'Approval recorded; checking that the student row has not changed.' });
+    await requestRow.save();
+    upsertRequestCacheRow('studentEditRequests', requestSheet, Number(requestRow.rowNumber), requestRow.toObject());
+
+    const liveResponse = await google.sheets({ version: 'v4', auth: serviceAccountAuth }).spreadsheets.values.get({
+      spreadsheetId: getSpreadsheetIdForSheetName(studentSheet.title),
+      range: `'${String(studentSheet.title).replace(/'/g, "''")}'!A${studentRowNumber}:ZZ${studentRowNumber}`
+    });
+    const liveValues = liveResponse.data.values?.[0] || [];
+    if (!liveValues.length) throw new Error('The student row is missing from the live register. No changes were applied.');
+
+    const alreadyApplied = fieldIndexes.every(({ index, header }) => String(liveValues[index] ?? '') === String(request.proposedData[header] ?? ''));
+    if (alreadyApplied) studentChangesApplied = true;
+    if (!alreadyApplied) {
+      const conflicts = fieldIndexes.filter(({ index, header }) => String(liveValues[index] ?? '') !== String(request.originalData[header] ?? ''));
+      if (conflicts.length) {
+        const conflictMessage = `The student record changed after this request was submitted (${conflicts.map(field => field.header).join(', ')}). Reload the directory and submit a fresh request.`;
+        requestRow.assign({ Status: 'Pending', 'Execution Message': safeSheetText(conflictMessage, 1000) });
+        await requestRow.save();
+        upsertRequestCacheRow('studentEditRequests', requestSheet, Number(requestRow.rowNumber), requestRow.toObject());
+        return res.status(409).json({ success: false, message: conflictMessage });
+      }
+    }
+
+    if (useMysqlStudentDirectory()) {
+      await mysqlStudentDirectory.updateStudentProfileFields({
+        rowNumber: studentRowNumber,
+        actor: reviewer,
+        changes: request.proposedData,
+        requestId
+      });
+      studentDatabaseApplied = true;
+    }
+
+    if (!alreadyApplied) {
+      const updates = fieldIndexes.map(({ header }) => ({
+        range: `'${String(studentSheet.title).replace(/'/g, "''")}'!${placementColumnName(headerMap.get(normalizePlacementHeader(header)))}${studentRowNumber}`,
+        values: [[String(request.proposedData[header] ?? '')]]
+      }));
+      await google.sheets({ version: 'v4', auth: serviceAccountAuth }).spreadsheets.values.batchUpdate({
+        spreadsheetId: getSpreadsheetIdForSheetName(studentSheet.title),
+        requestBody: { valueInputOption: 'RAW', data: updates }
+      });
+      studentChangesApplied = true;
+    }
+    const cachedStudent = (studentCache?.students || []).find(row => Number(row.rowNumber) === studentRowNumber);
+    if (cachedStudent?._rawData) fieldIndexes.forEach(({ header, index }) => { cachedStudent._rawData[index] = String(request.proposedData[header] ?? ''); });
+
+    requestRow.assign({ ...reviewerFields, Status: 'Approved', 'Execution Message': 'Student register updated successfully.' });
+    await requestRow.save();
+    upsertRequestCacheRow('studentEditRequests', requestSheet, Number(requestRow.rowNumber), requestRow.toObject());
+    logPortalAuditEvent({ requestId, actor: reviewer, actorType: 'Human', source: 'Student detail approval workflow', action: 'Student detail request approved', resource: 'Student', result: 'Success', details: { requestId, rowNumber: studentRowNumber, changedHeaders: changedFields, requester: request.requestedByEmail } });
+    return res.json({ success: true, status: 'Approved', message: 'Student details were approved and updated in the register.' });
+  } catch (error) {
+    console.error('Student detail approval failed:', error.message);
+    if (requestRow && String(requestRow.get('Status') || '').trim().toLowerCase() === 'processing') {
+      try {
+        requestRow.assign({ Status: studentChangesApplied || studentDatabaseApplied ? 'Processing' : 'Pending', 'Execution Message': safeSheetText(studentChangesApplied || studentDatabaseApplied
+          ? 'The student details were applied. Refresh and approve again to finish recording this decision.'
+          : error.message || 'The student details could not be updated.', 1000) });
+        await requestRow.save();
+        upsertRequestCacheRow('studentEditRequests', requestSheet, Number(requestRow.rowNumber), requestRow.toObject());
+      } catch (ledgerError) {
+        console.error('Could not reset failed student detail review to Pending:', ledgerError.message);
+      }
+    }
+    return res.status(409).json({ success: false, message: error.message || 'The student details could not be updated.' });
+  } finally {
+    studentEditApprovalLocks.delete(requestId);
+  }
+};
+
 exports.getTpoDeleteRequests = async (req, res) => {
   const user = req.portalUser || {};
   const isApprover = isTpoDeleteApprover(user);
@@ -5214,6 +5614,7 @@ exports.reviewTpoDeleteRequest = async (req, res) => {
     if (decision === 'reject') {
       row.assign({ ...reviewerFields, Status: 'Rejected', 'Execution Message': 'No data was deleted.' });
       await row.save();
+      upsertRequestCacheRow('tpoDeleteRequests', sheet, Number(row.rowNumber), row.toObject());
       logPortalAuditEvent({
         requestId,
         actor: reviewer,
@@ -5230,6 +5631,7 @@ exports.reviewTpoDeleteRequest = async (req, res) => {
     tpoDeleteApprovalLocks.add(requestId);
     row.assign({ ...reviewerFields, Status: 'Processing', 'Execution Message': 'Approval recorded; verifying the live record before deletion.' });
     await row.save();
+    upsertRequestCacheRow('tpoDeleteRequests', sheet, Number(row.rowNumber), row.toObject());
     const request = serializeTpoDeleteRequest(row);
     const target = request.target || {};
     let executionResult = null;
@@ -5254,6 +5656,7 @@ exports.reviewTpoDeleteRequest = async (req, res) => {
 
     row.assign({ Status: 'Approved', ...reviewerFields, 'Execution Message': executionResult.message || 'Approved deletion completed.' });
     await row.save();
+    upsertRequestCacheRow('tpoDeleteRequests', sheet, Number(row.rowNumber), row.toObject());
     logPortalAuditEvent({
       requestId,
       actor: reviewer,
@@ -5274,6 +5677,7 @@ exports.reviewTpoDeleteRequest = async (req, res) => {
       if (row && String(row.get('Status') || '').trim().toLowerCase() === 'processing') {
         row.assign({ Status: 'Failed', 'Execution Message': safeSheetText(error.message || 'Deletion failed; the live row was not confirmed deleted.', 1000) });
         await row.save();
+        upsertRequestCacheRow('tpoDeleteRequests', sheet, Number(row.rowNumber), row.toObject());
       }
     } catch (ledgerError) {
       console.error('Could not record failed TPO deletion review:', ledgerError.message);
@@ -7749,8 +8153,8 @@ const sanitizeHiringWebsite = value => {
   }
 };
 
-const getHiringTpoOptions = () => {
-  const contacts = getCache()?.contacts || [];
+const getHiringTpoOptions = (contactRows = getCache()?.contacts || []) => {
+  const contacts = contactRows;
   const seen = new Set();
   return contacts.map(row => ({
     name: getValByHeader(row, ['tponame', 'name', 'placementofficer']).trim(),
@@ -7858,21 +8262,27 @@ exports.submitHiringInquiry = async (req, res) => {
   }
 };
 
-exports.getHiringInquiryTpos = (_req, res) => {
-  res.json({ success: true, tpos: getHiringTpoOptions() });
-};
-
-exports.getHiringInquiries = (_req, res) => {
+exports.getHiringInquiryTpos = async (_req, res) => {
   try {
     const cache = getCache();
-    if (!cache?.cacheUpdatedAt || !Array.isArray(cache.hiringInquiries)) {
-      void refreshCache();
-      return res.status(503).json({ success: false, inquiries: [], message: 'Hiring inquiries are loading. Please refresh in a moment.' });
+    let contacts = cache?.contacts || [];
+    if (!cache?.cacheUpdatedAt || cache.cacheSheetHealth?.contacts !== true) {
+      await loadDocInfo();
+      const contactSheet = doc.sheetsByTitle.Contact;
+      if (contactSheet) contacts = await contactSheet.getRows();
     }
-    if (cache.cacheSheetHealth?.hiringInquiries === false && cache.hiringInquiries.length === 0) {
-      return res.status(503).json({ success: false, inquiries: [], message: 'Hiring inquiries are temporarily unavailable.' });
-    }
-    const inquiries = cache.hiringInquiries.map(toHiringInquiry).filter(item => item.inquiryId).reverse();
+    return res.json({ success: true, tpos: getHiringTpoOptions(contacts) });
+  } catch (error) {
+    console.error('Could not load hiring inquiry TPO options:', error.message);
+    return res.status(503).json({ success: false, tpos: [], message: 'The active placement officer list is temporarily unavailable.' });
+  }
+};
+
+exports.getHiringInquiries = async (_req, res) => {
+  try {
+    const sheet = await getHiringInquirySheet();
+    const rows = await sheet.getRows();
+    const inquiries = rows.map(toHiringInquiry).filter(item => item.inquiryId).reverse();
     return res.json({ success: true, inquiries });
   } catch (error) {
     console.error('Could not load hiring inquiries:', error.message);

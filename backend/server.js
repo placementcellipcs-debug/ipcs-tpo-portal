@@ -571,6 +571,7 @@ app.post('/api/tpo/dashboard-stats', controllers.getDashboardStats);
 app.get('/api/tpo/notifications', requireSession('portal'), controllers.getNotifications);
 app.post('/api/tpo/students', controllers.getStudents);
 app.post('/api/tpo/students/lookup', controllers.lookupTpoStudent);
+app.post('/api/tpo/students/edit-requests', controllers.submitStudentEditRequest);
 app.post('/api/tpo/students/update-student', controllers.updateStudent);
 app.post('/api/tpo/applications', controllers.getApplications);
 app.post('/api/tpo/applications/update', upload.single('offerLetterFile'), controllers.updateApplication);
@@ -600,6 +601,8 @@ app.post('/api/tpo/placed-students/classification-suggestion', controllers.getPl
 app.post('/api/tpo/placed-students/delete', requireSession('portal'), controllers.deletePlacedStudent);
 app.get('/api/tpo/delete-requests', requireSession('portal'), controllers.getTpoDeleteRequests);
 app.post('/api/tpo/delete-requests/:requestId/review', requireSession('portal'), controllers.reviewTpoDeleteRequest);
+app.get('/api/admin/student-edit-requests', requireSession('portal'), controllers.getStudentEditRequests);
+app.post('/api/admin/student-edit-requests/:requestId/review', requireSession('portal'), controllers.reviewStudentEditRequest);
 app.post('/api/tpo/talentino', controllers.getTalentino);
 app.post('/api/tpo/clients', controllers.getClients);
 app.get('/api/public/partners', controllers.getPublicPartners);

@@ -104,6 +104,10 @@ export default function StudentsDirectory() {
 
   const [selectedStudent, setSelectedStudent] = useState(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isFullEditRequestOpen, setIsFullEditRequestOpen] = useState(false);
+  const [fullEditValues, setFullEditValues] = useState({});
+  const [submittingFullEditRequest, setSubmittingFullEditRequest] = useState(false);
+  const [fullEditRequestResult, setFullEditRequestResult] = useState(null);
   const [savingStatus, setSavingStatus] = useState(false);
   const [internationalPromptOpen, setInternationalPromptOpen] = useState(false);
   
@@ -125,6 +129,17 @@ export default function StudentsDirectory() {
       window.removeEventListener('keydown', closeOnEscape);
     };
   }, [isModalOpen]);
+
+  useEffect(() => {
+    const handleApprovalNotification = event => {
+      const notification = event.detail || {};
+      if (notification.type === 'approval' && notification.decision === 'Approved' && String(notification.id || '').startsWith('student-edit:')) {
+        setReloadKey(key => key + 1);
+      }
+    };
+    window.addEventListener('ipcs:approval-notification', handleApprovalNotification);
+    return () => window.removeEventListener('ipcs:approval-notification', handleApprovalNotification);
+  }, []);
 
   const upperRole = (tpoData?.role || '').toUpperCase();
   const isSuperAdmin = tpoData?.accessType === 'superadmin' || upperRole.includes('ADMIN') || upperRole.includes('GENERAL MANAGER') || upperRole.includes('ZONAL PLACEMENT HEAD') || upperRole === 'TECHNICAL HEAD';
@@ -151,6 +166,7 @@ export default function StudentsDirectory() {
   const canEditAcademic = canEditAll || isRth || isTth || isTrainer || isTechnicalLead;
   const canSave = canEditAll || canEditAcademic; 
   const canViewStudentDirectoryDetails = isSuperAdmin || isTpo;
+  const fullEditHasChanges = Boolean(selectedStudent && Object.entries(fullEditValues).some(([header, value]) => String(value ?? '') !== String(selectedStudent.rawData?.[header] ?? '')));
 
   useEffect(() => {
     let active = true;
@@ -189,6 +205,9 @@ export default function StudentsDirectory() {
         setDataMeta(stuRes.data.dataMeta || null);
         const loadedStudents = stuRes.data.students || [];
         setRawStudents(loadedStudents);
+        setSelectedStudent(current => current
+          ? loadedStudents.find(student => student.rowIdx === current.rowIdx) || current
+          : current);
         if (isDirectBranchRole && loadedStudents.length) {
           const directBranch = loadedStudents.find(student => hasAssignedBranch(student.branch))?.branch;
           if (directBranch) setSelectedBranch(directBranch);
@@ -250,6 +269,31 @@ export default function StudentsDirectory() {
     setLocalCoursePercentage(coursePercentageOption(student.coursePercentage || (cPercKey && student.rawData[cPercKey] && student.rawData[cPercKey] !== 'N/A' ? student.rawData[cPercKey] : '50% completed')));
 
     setIsModalOpen(true);
+  };
+
+  const openFullEditRequest = () => {
+    const values = Object.fromEntries(Object.entries(selectedStudent?.rawData || {}).map(([header, value]) => [header, String(value ?? '')]));
+    setFullEditValues(values);
+    setFullEditRequestResult(null);
+    setIsFullEditRequestOpen(true);
+  };
+
+  const submitFullEditRequest = async () => {
+    if (!selectedStudent || submittingFullEditRequest || fullEditRequestResult?.success) return;
+    setSubmittingFullEditRequest(true);
+    setFullEditRequestResult(null);
+    try {
+      const response = await axios.post(`${API_BASE}/api/tpo/students/edit-requests`, {
+        rowNumber: selectedStudent.rowIdx,
+        changes: fullEditValues
+      }, { timeout: 30000 });
+      if (!response.data?.success) throw new Error(response.data?.message || 'Your request could not be submitted.');
+      setFullEditRequestResult({ success: true, message: response.data.message, requestId: response.data.requestId });
+    } catch (error) {
+      setFullEditRequestResult({ success: false, message: error.response?.data?.message || error.message || 'Your request could not be submitted.' });
+    } finally {
+      setSubmittingFullEditRequest(false);
+    }
   };
 
   const handleCoursePercentageChange = (e) => {
@@ -711,6 +755,7 @@ export default function StudentsDirectory() {
                     <GraduationCap size={18} weight="fill" /> Certificate
                   </button>
                 )}
+                {isTpo && <button type="button" onClick={openFullEditRequest} style={{ border: '1px solid rgba(45,212,191,.45)', background: 'rgba(13,148,136,.16)', color: '#99f6e4', borderRadius: 9, padding: '8px 12px', fontWeight: 800, cursor: 'pointer' }}><PencilSimple size={16} weight="bold" /> Request full detail edit</button>}
                 <X size={28} style={{ cursor: 'pointer', color: 'var(--text-muted)', marginLeft: 'auto' }} onClick={() => setIsModalOpen(false)} />
               </div>
             </div>
@@ -934,6 +979,54 @@ export default function StudentsDirectory() {
           </div>
         </div>
       </div>
+      ), document.body)}
+      {isFullEditRequestOpen && selectedStudent && createPortal((
+        <div role="presentation" onClick={event => { if (event.target === event.currentTarget) setIsFullEditRequestOpen(false); }} onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setIsFullEditRequestOpen(false); } }} style={{ position: 'fixed', inset: 0, zIndex: 100001, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16, background: 'rgba(2,6,23,.82)', backdropFilter: 'blur(8px)' }}>
+          <section role="dialog" aria-modal="true" aria-labelledby="student-edit-request-title" style={{ width: 'min(920px, 100%)', maxHeight: 'min(92dvh, 920px)', overflow: 'auto', background: 'linear-gradient(150deg, #111c2f, #0b1220 78%)', border: '1px solid rgba(94,234,212,.25)', borderRadius: 20, boxShadow: '0 28px 90px rgba(0,0,0,.55)', color: '#e2e8f0' }}>
+            <div style={{ position: 'sticky', top: 0, zIndex: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 14, padding: '20px 24px', borderBottom: '1px solid rgba(148,163,184,.16)', background: '#101a2b' }}>
+              <div>
+                <div style={{ color: '#5eead4', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: 1.4 }}>Approval required · Gifty</div>
+                <h2 id="student-edit-request-title" style={{ margin: '7px 0 5px', fontSize: 23, color: '#f8fafc' }}>Request student detail edit</h2>
+                <p style={{ margin: 0, color: '#94a3b8', fontSize: 13 }}>{selectedStudent.name} · {selectedStudent.roll || 'No roll number'} · {selectedStudent.branch}</p>
+              </div>
+              <button type="button" aria-label="Close edit request" onClick={() => setIsFullEditRequestOpen(false)} style={{ border: '1px solid #334155', background: 'transparent', color: '#cbd5e1', borderRadius: 9, width: 38, height: 38, cursor: 'pointer', fontSize: 22 }}>×</button>
+            </div>
+            {fullEditRequestResult?.success ? (
+              <div style={{ padding: 24 }}>
+                <div style={{ border: '1px solid rgba(52,211,153,.35)', background: 'rgba(6,95,70,.2)', color: '#a7f3d0', borderRadius: 14, padding: 18, lineHeight: 1.6 }}>
+                  <strong>Request sent to Gifty for review.</strong><br />The student record remains unchanged until she approves it.
+                  {fullEditRequestResult.requestId && <div style={{ marginTop: 8, color: '#cbd5e1', fontSize: 12 }}>Request ID: {fullEditRequestResult.requestId}</div>}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 18 }}><button type="button" onClick={() => setIsFullEditRequestOpen(false)} style={{ border: 0, borderRadius: 10, background: '#14b8a6', color: '#042f2e', padding: '10px 18px', fontWeight: 800, cursor: 'pointer' }}>Done</button></div>
+              </div>
+            ) : (
+              <div style={{ padding: 24 }}>
+                <div style={{ border: '1px solid rgba(96,165,250,.2)', background: 'rgba(30,64,175,.12)', color: '#bfdbfe', borderRadius: 12, padding: '11px 14px', marginBottom: 18, fontSize: 13, lineHeight: 1.5 }}>
+                  Edit the student fields below. Only changed fields will be sent. Gifty will see the old and proposed values; nothing is written to the student register before approval.
+                </div>
+                {fullEditRequestResult?.message && <div role="alert" style={{ border: '1px solid rgba(248,113,113,.35)', background: 'rgba(127,29,29,.2)', color: '#fecaca', borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 13 }}>{fullEditRequestResult.message}</div>}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 14 }}>
+                  {Object.entries(fullEditValues).filter(([header]) => String(header || '').trim()).map(([header, value]) => {
+                    const longText = String(value || '').length > 130 || /(description|remarks|address|requirement|objective|comment|notes|about)/i.test(header);
+                    const fieldStyle = { width: '100%', boxSizing: 'border-box', border: '1px solid #334155', borderRadius: 9, background: '#080f1d', color: '#f8fafc', padding: '10px 12px', font: 'inherit', outlineColor: '#2dd4bf' };
+                    return <label key={header} style={{ display: 'grid', alignContent: 'start', gap: 7, color: '#aebbd0', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '.04em' }}>
+                      {header}
+                      {longText
+                        ? <textarea rows={4} value={value} onChange={event => setFullEditValues(current => ({ ...current, [header]: event.target.value }))} style={{ ...fieldStyle, resize: 'vertical', minHeight: 96, textTransform: 'none', letterSpacing: 'normal', fontSize: 13, fontWeight: 500 }} />
+                        : <input value={value} onChange={event => setFullEditValues(current => ({ ...current, [header]: event.target.value }))} style={{ ...fieldStyle, textTransform: 'none', letterSpacing: 'normal', fontSize: 13, fontWeight: 500 }} />}
+                    </label>;
+                  })}
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 22, paddingTop: 16, borderTop: '1px solid rgba(148,163,184,.14)' }}>
+                  <button type="button" onClick={() => setIsFullEditRequestOpen(false)} style={{ border: '1px solid #334155', borderRadius: 10, background: 'rgba(15,23,42,.8)', color: '#cbd5e1', padding: '10px 16px', fontWeight: 700, cursor: 'pointer' }}>Cancel</button>
+                  <button type="button" onClick={() => void submitFullEditRequest()} disabled={submittingFullEditRequest || !fullEditHasChanges} style={{ border: 0, borderRadius: 10, background: submittingFullEditRequest || !fullEditHasChanges ? '#155e59' : 'linear-gradient(100deg,#14b8a6,#0ea5e9)', color: '#042f2e', padding: '10px 17px', fontWeight: 900, cursor: submittingFullEditRequest ? 'wait' : !fullEditHasChanges ? 'not-allowed' : 'pointer', opacity: fullEditHasChanges ? 1 : 0.65, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                    {submittingFullEditRequest ? <CircleNotch size={17} className="ph-spin" /> : <FloppyDisk size={17} weight="bold" />} Send request to Gifty
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
       ), document.body)}
       <InternationalPlacementPrompt
         open={internationalPromptOpen}

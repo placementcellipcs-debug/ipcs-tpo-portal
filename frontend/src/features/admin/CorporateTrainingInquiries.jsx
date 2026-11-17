@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { Buildings, CheckCircle, CircleNotch, EnvelopeSimple, GraduationCap, MagnifyingGlass, PaperPlaneTilt, WarningCircle } from '@phosphor-icons/react';
 import Layout from '../../layouts/Layout';
@@ -22,7 +22,7 @@ const notificationLabel = status => {
 };
 
 export default function CorporateTrainingInquiries() {
-  const user = readUser();
+  const user = useMemo(readUser, []);
   const [inquiries, setInquiries] = useState([]);
   const [branches, setBranches] = useState([]);
   const [branchSelections, setBranchSelections] = useState({});
@@ -36,12 +36,22 @@ export default function CorporateTrainingInquiries() {
     setLoading(true);
     setPageError('');
     try {
-      const [inquiryResponse, branchResponse] = await Promise.all([
+      const [inquiryResult, branchResult] = await Promise.allSettled([
         axios.get(`${API_BASE}/api/admin/corporate-training-inquiries`),
         axios.get(`${API_BASE}/api/admin/branches`)
       ]);
+      if (inquiryResult.status === 'rejected') throw inquiryResult.reason;
+      const inquiryResponse = inquiryResult.value;
+      if (inquiryResponse.data?.success === false) throw new Error(inquiryResponse.data?.message || 'Corporate training inquiries could not be loaded.');
       setInquiries(inquiryResponse.data.inquiries || []);
-      setBranches((branchResponse.data.branches || []).filter(item => item.branch));
+      if (branchResult.status === 'fulfilled' && branchResult.value.data?.success !== false) {
+        setBranches((branchResult.value.data.branches || []).filter(item => item.branch));
+      } else {
+        setBranches([]);
+        setPageError(branchResult.status === 'rejected'
+          ? (branchResult.reason.response?.data?.message || 'Branch options are unavailable; inquiry records are still shown.')
+          : (branchResult.value.data?.message || 'Branch options are unavailable; inquiry records are still shown.'));
+      }
     } catch (error) {
       setPageError(error.response?.data?.message || 'Corporate training inquiries could not be loaded. Please try again.');
     } finally {

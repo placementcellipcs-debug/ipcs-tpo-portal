@@ -1,17 +1,17 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useLocation, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import { 
   Bell, X, SquaresFour, Trophy, ListChecks, ShieldCheck,
   UserCheck, Gear, Users, Briefcase, Files, CalendarStar, ChartBar, Handshake,
   Book, FileText, Bookmarks, IdentificationCard, CaretLeft, MapPin, ClipboardText,
-  WarningCircle, Package,
+  WarningCircle, Package, CheckCircle, XCircle, PencilSimple,
   Headset, SignOut,
   PaintBrush, CaretDown, Brain, Newspaper, GraduationCap
 } from '@phosphor-icons/react';
 import { API_BASE } from '../services/apiConfig';
 import { applyAppearance, readAppearance } from '../services/appearance';
-import { formatPortalDateTime } from '../utils/dateFormat';
+import { formatPortalDateTime, parsePortalDateTime } from '../utils/dateFormat';
 import { isAcademicTrainerAccount, isPortalAdminAccount } from '../utils/roleAccess';
 import AssetPortalShell from '../features/assets/AssetPortalShell';
 import MediaPortalShell from '../features/media/MediaPortalShell';
@@ -33,6 +33,8 @@ export default function Layout({ children }) {
   const [imgError, setImgError] = useState(false);
   const [talenzoLogoError, setTalenzoLogoError] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [approvalToast, setApprovalToast] = useState(null);
+  const approvalToastTimer = useRef(null);
   const [adminNavSections, setAdminNavSections] = useState(() => {
     try { return JSON.parse(localStorage.getItem('ipcs-admin-nav-sections-v2') || '{}'); }
     catch { return {}; }
@@ -127,7 +129,11 @@ export default function Layout({ children }) {
         if (!active) return;
         const rows = Array.isArray(response.data?.notifications) ? response.data.notifications : [];
         setNotifications(rows.map((notification, index) => {
-          const palette = notification.type === 'placement'
+          const palette = notification.type === 'approval'
+            ? notification.decision === 'Rejected'
+              ? { icon: <XCircle size={18} weight="bold" />, color: '#f87171', bg: 'rgba(248, 113, 113, 0.12)' }
+              : { icon: <CheckCircle size={18} weight="bold" />, color: '#34d399', bg: 'rgba(52, 211, 153, 0.12)' }
+            : notification.type === 'placement'
             ? { icon: <Trophy size={18} weight="bold" />, color: '#10b981', bg: 'rgba(16, 185, 129, 0.1)' }
             : notification.type === 'interview'
               ? { icon: <CalendarStar size={18} weight="bold" />, color: '#a855f7', bg: 'rgba(168, 85, 247, 0.1)' }
@@ -141,12 +147,50 @@ export default function Layout({ children }) {
             time: formatPortalDateTime(notification.time, 'Recently')
           };
         }));
+        const decisionRows = rows.filter(notification => notification.type === 'approval' && notification.id);
+        if (decisionRows.length) {
+          const storageKey = `ipcs:approval-notifications:${String(tpoData.email || '').trim().toLowerCase()}`;
+          let storedIds = [];
+          let storageExists = false;
+          try {
+            const saved = window.localStorage.getItem(storageKey);
+            storageExists = saved !== null;
+            storedIds = saved ? JSON.parse(saved) : [];
+            if (!Array.isArray(storedIds)) storedIds = [];
+          } catch { storedIds = []; }
+          const newDecisions = decisionRows.filter(notification => !storedIds.includes(notification.id));
+          const recentDecisions = newDecisions.filter(notification => {
+            const occurredAt = parsePortalDateTime(notification.time);
+            return occurredAt && Date.now() - occurredAt.getTime() <= 3 * 24 * 60 * 60 * 1000;
+          });
+          const notice = (storageExists ? newDecisions : recentDecisions)[0];
+          if (notice) {
+            setApprovalToast(notice);
+            window.dispatchEvent(new CustomEvent('ipcs:approval-notification', { detail: notice }));
+          }
+          // Show one decision at a time. Leave other recent decisions unseen so
+          // the next poll can display their own popup instead of losing them.
+          const expiredFirstRunIds = storageExists ? [] : newDecisions
+            .filter(notification => !recentDecisions.includes(notification))
+            .map(notification => notification.id);
+          const nextIds = [...new Set([...storedIds, ...expiredFirstRunIds, ...(notice ? [notice.id] : [])])].slice(-100);
+          try { window.localStorage.setItem(storageKey, JSON.stringify(nextIds)); } catch { /* The in-app list remains available when browser storage is blocked. */ }
+        }
       })
       .catch(error => console.warn('Could not load activity notifications:', error.response?.data?.message || error.message));
     loadNotifications();
     const notificationRefresh = window.setInterval(loadNotifications, 60_000);
     return () => { active = false; window.clearInterval(notificationRefresh); };
   }, [tpoData]);
+
+  useEffect(() => {
+    if (!approvalToast) return undefined;
+    if (approvalToastTimer.current) window.clearTimeout(approvalToastTimer.current);
+    approvalToastTimer.current = window.setTimeout(() => setApprovalToast(null), 9000);
+    return () => {
+      if (approvalToastTimer.current) window.clearTimeout(approvalToastTimer.current);
+    };
+  }, [approvalToast]);
 
   if (!tpoData) return <div style={{ minHeight: '100vh', background: '#020617' }}>{children}</div>;
 
@@ -280,6 +324,18 @@ export default function Layout({ children }) {
           </div>
         </header>
 
+        {approvalToast && (
+          <div role="status" aria-live="polite" style={{ position: 'fixed', top: 82, right: 24, zIndex: 100000, width: 'min(420px, calc(100vw - 32px))', padding: '15px 16px', borderRadius: 15, border: `1px solid ${approvalToast.decision === 'Rejected' ? 'rgba(248,113,113,.42)' : 'rgba(52,211,153,.4)'}`, background: 'linear-gradient(135deg, rgba(15,23,42,.98), rgba(8,15,28,.98))', boxShadow: '0 18px 50px rgba(0,0,0,.45)', color: '#e2e8f0', display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            <div style={{ color: approvalToast.decision === 'Rejected' ? '#f87171' : '#34d399', flexShrink: 0, paddingTop: 2 }}>{approvalToast.decision === 'Rejected' ? <XCircle size={22} weight="fill" /> : <CheckCircle size={22} weight="fill" />}</div>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <strong style={{ display: 'block', color: '#f8fafc', fontSize: 14, marginBottom: 4 }}>{approvalToast.title}</strong>
+              <span style={{ display: 'block', color: '#aebbd0', fontSize: 13, lineHeight: 1.45 }}>{approvalToast.desc}</span>
+              <span style={{ display: 'block', color: '#64748b', fontSize: 11, marginTop: 7 }}>{formatPortalDateTime(approvalToast.time, 'Just now')}</span>
+            </div>
+            <button type="button" aria-label="Dismiss notification" onClick={() => setApprovalToast(null)} style={{ border: 0, background: 'transparent', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: 18 }}>×</button>
+          </div>
+        )}
+
         <div className="page-container" style={{ padding: '20px 30px', position: 'relative' }} onClick={() => setIsNotifOpen(false)}>
           {!location.pathname.startsWith('/assets') && !['/dashboard', '/trainer', '/academic'].includes(location.pathname) && location.pathname !== '/media/dashboard' && !location.pathname.includes('/academic/') && (
             <div style={{ marginBottom: '25px' }}>
@@ -329,6 +385,7 @@ export default function Layout({ children }) {
                 {showStudentApps && <div className={`pd-nav-item ${isActive('/applications') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/applications')}><ListChecks size={22} weight={isActive('/applications') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Student Apps</span></div>}
                 {isHiringInboxOwner && <div className={`pd-nav-item ${isActive('/hiring-inquiries') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/hiring-inquiries')}><Briefcase size={22} weight={isActive('/hiring-inquiries') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Hire from us requests</span></div>}
                 {isHiringInboxOwner && <div className={`pd-nav-item ${isActive('/delete-approvals') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/delete-approvals')}><ShieldCheck size={22} weight={isActive('/delete-approvals') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Delete record approvals</span></div>}
+                {isHiringInboxOwner && <div className={`pd-nav-item ${isActive('/student-edit-approvals') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/student-edit-approvals')}><PencilSimple size={22} weight={isActive('/student-edit-approvals') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Student detail approvals</span></div>}
                 <div className={`pd-nav-item ${isActive('/vacancies') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/vacancies')}><Briefcase size={22} weight={isActive('/vacancies') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Vacancies</span></div>
                 {canViewPlacementDrives && (!isTpo || isSuperAdmin) && <div className={`pd-nav-item ${isActive('/placement-drives') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/placement-drives')}><IdentificationCard size={22} weight={isActive('/placement-drives') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Placement Drives</span></div>}
                 {canViewClients && <div className={`pd-nav-item ${isActive('/clients') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/clients')}><Handshake size={22} weight={isActive('/clients') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Clients & Partners</span></div>}
@@ -337,7 +394,7 @@ export default function Layout({ children }) {
                 {/* 🚨 ACADEMIC & OPS (RESTORED) */}
                 {navSectionHeading('ops', 'Academic & Ops', { marginTop: '15px' })}
                 <div className="pd-nav-section-content" hidden={!isAdminSectionOpen('ops')}>
-                <div className={`pd-nav-item ${isActive('/events') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} weight={isActive('/events') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Events</span></div>
+                {!isSuperAdmin && <div className={`pd-nav-item ${isActive('/events') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/events')}><CalendarStar size={22} weight={isActive('/events') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Events</span></div>}
                 <div className={`pd-nav-item ${isActive('/talentino') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/talentino')}><UserCheck size={22} weight={isActive('/talentino') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Talentino</span></div>
                 {isAcademicTrainer && <div className={`pd-nav-item ${isActive('/academic') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/academic')}><GraduationCap size={22} weight={isActive('/academic') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Training &amp; Academics</span></div>}
                 {showStudyMaterials && <div className={`pd-nav-item ${isActive('/study-materials') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/study-materials')}><Book size={22} weight={isActive('/study-materials') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Study Materials</span></div>}
@@ -369,6 +426,9 @@ export default function Layout({ children }) {
                 </div>
                 <div className={`pd-nav-item ${isActive('/admin/corporate-training') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/admin/corporate-training')}>
                   <GraduationCap size={22} weight={isActive('/admin/corporate-training') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Corporate Training</span>
+                </div>
+                <div className={`pd-nav-item ${isActive('/events') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/events')}>
+                  <CalendarStar size={22} weight={isActive('/events') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Events</span>
                 </div>
                 <div className={`pd-nav-item ${isActive('/courses') === 'var(--accent-primary)' ? 'active' : ''}`} onClick={() => handleNav('/courses')}>
                   <Bookmarks size={22} weight={isActive('/courses') === 'var(--accent-primary)' ? 'fill' : 'regular'} /> <span>Manage Courses</span>

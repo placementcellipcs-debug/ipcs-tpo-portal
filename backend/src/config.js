@@ -188,7 +188,7 @@ const sheetGroups = {
   ],
   operations: [
     'Issues', 'Contact', 'User', 'Branches', 'Mail', 'EmailQueue', 'EmailQuotaUsage', 'MailDeliveryAttempts', 'Mail_Usage_Dashboard', 'Mail_Usage_History', 'Security_Logs',
-    'Auth_Sessions', 'Password_Reset_Tokens', 'Trainer/TL_Log', 'Placement_Audit_Log', 'TPO_Delete_Requests'
+    'Auth_Sessions', 'Password_Reset_Tokens', 'Trainer/TL_Log', 'Placement_Audit_Log', 'TPO_Delete_Requests', 'Student_Edit_Requests'
   ],
 };
 const sheetGroupByNormalizedTitle = new Map(
@@ -842,23 +842,24 @@ async function performCacheRefresh() {
       getSheetFuzzy("AptitudeQuestions"), getSheetFuzzy("AptitudeResults"), getSheetFuzzy("TalentinoQuestions"), getSheetFuzzy("TalentinoResults"),
       getSheetFuzzy("Courses"), getSheetFuzzy("DriveRegistration"), getSheetFuzzy("Contact"), getSheetFuzzy("User"), getSheetFuzzy("Branches"), getSheetFuzzy("Mail"),
       doc.sheetsByTitle['Trainer/TL_Log'] || getSheetFuzzy("TrainerTLLog"), getSheetFuzzy("security"), getSheetFuzzy("TPOStats"), placedStudentsSheet,
-      getSheetFuzzy("HiringInquiries")
+      getSheetFuzzy("HiringInquiries"), getSheetFuzzy("StudentEditRequests"), getSheetFuzzy("TPODeleteRequests")
     ];
 
     const cacheFields = [
       'students', 'applications', 'vacancies', 'events', 'issues', 'tSched', 'tAtt', 'clients', 'tpoLogs',
       'materials', 'techQuestions', 'techResults', 'aptQuestions', 'aptResults', 'talQuestions', 'talResults',
-      'coursesRows', 'drives', 'contacts', 'users', 'branches', 'mails', 'trainerLogs', 'securityLogs', 'tpoStats', 'placedStudents', 'hiringInquiries'
+      'coursesRows', 'drives', 'contacts', 'users', 'branches', 'mails', 'trainerLogs', 'securityLogs', 'tpoStats', 'placedStudents', 'hiringInquiries', 'studentEditRequests', 'tpoDeleteRequests'
     ];
     const emptyCache = {
       students: [], applications: [], vacancies: [], events: [], issues: [], tSched: [], tAtt: [], clients: [],
       tpoLogs: [], materials: [], techQuestions: [], techResults: [], aptQuestions: [], aptResults: [],
       talQuestions: [], talResults: [], coursesRows: [], drives: [], contacts: [], users: [], branches: [],
-      mails: [], trainerLogs: [], securityLogs: [], tpoStats: [], placedStudents: [], hiringInquiries: [], coursesDict: {}
+      mails: [], trainerLogs: [], securityLogs: [], tpoStats: [], placedStudents: [], hiringInquiries: [],
+      studentEditRequests: [], tpoDeleteRequests: [], coursesDict: {}
     };
     const previousCache = globalCache || {};
     const cacheFailedSheets = [];
-    const optionalCacheFields = new Set(['hiringInquiries']);
+    const optionalCacheFields = new Set(['hiringInquiries', 'studentEditRequests', 'tpoDeleteRequests']);
     const fetchedData = new Array(sheetsToFetch.length);
     const groupedIndexes = new Map();
     sheetsToFetch.forEach((sheet, index) => {
@@ -957,6 +958,8 @@ async function performCacheRefresh() {
     const tpoStatsRows = fetchedData[24] || [];
     const placedStudentsRows = fetchedData[25] || [];
     const hiringInquiryRows = fetchedData[26] || previousCache.hiringInquiries || [];
+    const studentEditRequestRows = fetchedData[27] || previousCache.studentEditRequests || [];
+    const tpoDeleteRequestRows = fetchedData[28] || previousCache.tpoDeleteRequests || [];
     // Keep timed cache refreshes read-only for Placed_Students. A full-sheet
     // clear/rebuild from one cached TPO_Log read could erase existing rows if
     // that source read is incomplete. Portal placement/status writes still
@@ -1000,6 +1003,8 @@ async function performCacheRefresh() {
       tpoStats: tpoStatsRows,
       placedStudents: placedStudentsRows,
       hiringInquiries: hiringInquiryRows,
+      studentEditRequests: studentEditRequestRows,
+      tpoDeleteRequests: tpoDeleteRequestRows,
       authCacheReady: true,
       authSheetsHealthy: globalCache.authSheetsHealthy,
       cacheSheetHealth,

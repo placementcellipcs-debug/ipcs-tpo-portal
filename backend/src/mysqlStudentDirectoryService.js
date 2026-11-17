@@ -193,8 +193,9 @@ async function findStudent({ studentId = '', rowNumber = 0, connection: supplied
   try {
     const [rows] = studentId
       ? await connection.execute(
-        `SELECT sp.id AS student_id, sp.roll_number, sp.personal_email,
-                sp.phone AS profile_phone, sp.status AS student_status, sp.metadata,
+        `SELECT sp.id AS student_id, sp.user_id, sp.roll_number, sp.normalized_roll_number,
+                sp.personal_email, sp.phone AS profile_phone, sp.resume_url, sp.profile_photo_url,
+                sp.course_id, sp.branch_id, sp.status AS student_status, sp.metadata,
                 u.email, u.full_name, u.phone AS user_phone,
                 c.name AS course_name, b.name AS branch_name
          FROM student_profiles sp
@@ -204,8 +205,9 @@ async function findStudent({ studentId = '', rowNumber = 0, connection: supplied
          WHERE sp.id = ? LIMIT 1`, [studentId],
       )
       : await connection.execute(
-        `SELECT sp.id AS student_id, sp.roll_number, sp.personal_email,
-                sp.phone AS profile_phone, sp.status AS student_status, sp.metadata,
+        `SELECT sp.id AS student_id, sp.user_id, sp.roll_number, sp.normalized_roll_number,
+                sp.personal_email, sp.phone AS profile_phone, sp.resume_url, sp.profile_photo_url,
+                sp.course_id, sp.branch_id, sp.status AS student_status, sp.metadata,
                 u.email, u.full_name, u.phone AS user_phone,
                 c.name AS course_name, b.name AS branch_name
          FROM student_profiles sp
@@ -273,4 +275,111 @@ async function updateStudentAccess({ studentId = '', rowNumber = 0, actor = {}, 
   }
 }
 
-module.exports = { findStudent, loadDirectoryRows, lookupStudent, rowFromFields, updateStudentAccess };
+async function updateStudentProfileFields({ rowNumber = 0, actor = {}, changes = {}, requestId = '' }) {
+  const connection = await mysqlPool.getPool().getConnection();
+  try {
+    await connection.beginTransaction();
+    const row = await findStudent({ rowNumber, connection });
+    if (!row) {
+      const error = new Error('The student could not be found in the shared MySQL directory. Refresh the student directory and try again.');
+      error.status = 404;
+      throw error;
+    }
+
+    const nextFields = { ...row.fields };
+    const changedEntries = Object.entries(changes || {});
+    const valueFor = aliases => {
+      const wanted = new Set(aliases.map(compact));
+      const entry = changedEntries.find(([header]) => wanted.has(compact(header)));
+      return entry ? text(entry[1]) : undefined;
+    };
+    for (const [header, value] of changedEntries) {
+      const fieldKey = compact(header);
+      const aliases = fieldKey === 'name' || fieldKey === 'studentname' || fieldKey === 'nameofstudent' ? ['Name', 'Student Name']
+        : ['mailid', 'email', 'emailid', 'studentemail'].includes(fieldKey) ? ['Mail ID', 'Email', 'Email ID', 'Student Email']
+          : ['contactnumber', 'phoneno', 'phone', 'phonenumber', 'mobilenumber', 'studentphone'].includes(fieldKey) ? ['Contact Number', 'Phone No.', 'Phone', 'Phone Number', 'Mobile Number', 'Student Phone']
+            : ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll'].includes(fieldKey) ? ['IPCS Roll Number', 'Roll Number', 'Roll No']
+              : fieldKey === 'course' || fieldKey === 'program' ? ['Course', 'Program']
+                : fieldKey === 'branch' || fieldKey === 'sittingbranch' ? ['Branch', 'Sitting Branch']
+                  : fieldKey === 'resume' || fieldKey === 'resumelink' ? ['Resume', 'Resume Link']
+                    : fieldKey === 'profilephoto' || fieldKey === 'photo' ? ['Profile Photo', 'Photo']
+                      : [header];
+      putField(nextFields, aliases, value);
+    }
+
+    let courseId = row.course_id || null;
+    const courseName = valueFor(['Course', 'Program']);
+    if (courseName !== undefined) {
+      if (!courseName) {
+        const error = new Error('A student must remain assigned to a course in the MySQL directory. Choose an existing course.');
+        error.status = 409;
+        throw error;
+      }
+      const [courses] = await connection.execute('SELECT id FROM courses WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1', [courseName]);
+      if (!courses.length) {
+        const error = new Error(`The course “${courseName}” does not exist in MySQL. Choose an existing course.`);
+        error.status = 409;
+        throw error;
+      }
+      courseId = courses[0].id;
+    }
+
+    let branchId = row.branch_id || null;
+    const branchName = valueFor(['Branch', 'Sitting Branch']);
+    if (branchName !== undefined) {
+      if (!branchName) {
+        const error = new Error('A student must remain assigned to a branch in the MySQL directory. Choose an existing branch.');
+        error.status = 409;
+        throw error;
+      }
+      const [branches] = await connection.execute('SELECT id FROM branches WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) LIMIT 1', [branchName]);
+      if (!branches.length) {
+        const error = new Error(`The branch “${branchName}” does not exist in MySQL. Choose an existing branch.`);
+        error.status = 409;
+        throw error;
+      }
+      branchId = branches[0].id;
+    }
+
+    const nextName = valueFor(['Name', 'Student Name', 'Name of Student']);
+    const nextEmail = valueFor(['Mail ID', 'Email', 'Email ID', 'Student Email']);
+    const nextPhone = valueFor(['Contact Number', 'Phone No.', 'Phone', 'Phone Number', 'Mobile Number', 'Student Phone']);
+    const nextRoll = valueFor(['IPCS Roll Number', 'Roll Number', 'Roll No', 'Roll']);
+    const nextResume = valueFor(['Resume', 'Resume Link']);
+    const nextPhoto = valueFor(['Profile Photo', 'Photo']);
+    const rollNumber = nextRoll === undefined ? row.roll_number : nextRoll;
+    const personalEmail = nextEmail === undefined ? row.personal_email : nextEmail;
+    const phone = nextPhone === undefined ? row.profile_phone : nextPhone;
+    const resumeUrl = nextResume === undefined ? row.resume_url : nextResume;
+    const profilePhotoUrl = nextPhoto === undefined ? row.profile_photo_url : nextPhoto;
+
+    await connection.execute(
+      `UPDATE student_profiles
+       SET roll_number = ?, normalized_roll_number = ?, personal_email = ?, phone = ?,
+           resume_url = ?, profile_photo_url = ?, course_id = ?, branch_id = ?,
+           metadata = CAST(? AS JSON), updated_at = UTC_TIMESTAMP()
+       WHERE id = ?`,
+      [rollNumber, compact(rollNumber), personalEmail || null, phone || null, resumeUrl || null,
+        profilePhotoUrl || null, courseId, branchId, JSON.stringify({ ...row.profileMetadata, fields: nextFields }), row.student_id],
+    );
+    if (nextName !== undefined && row.user_id) {
+      await connection.execute('UPDATE users SET full_name = ? WHERE id = ?', [nextName, row.user_id]);
+    }
+    await connection.execute(
+      `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, request_id, details)
+       VALUES (?, (SELECT id FROM users WHERE normalized_email = ? LIMIT 1), 'student_profile.details.approved',
+               'student_profile', ?, UTC_TIMESTAMP(), ?, CAST(? AS JSON))`,
+      [crypto.randomUUID(), normalized(actor.email), row.student_id, text(requestId) || null,
+        JSON.stringify({ changedFields: changedEntries.map(([header]) => header), source: 'tpo_student_directory_approval' })],
+    );
+    await connection.commit();
+    return { studentId: row.student_id, fields: nextFields };
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+module.exports = { findStudent, loadDirectoryRows, lookupStudent, rowFromFields, updateStudentAccess, updateStudentProfileFields };
