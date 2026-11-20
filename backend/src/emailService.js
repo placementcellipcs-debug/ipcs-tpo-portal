@@ -82,6 +82,9 @@ const createEmailService = ({ doc, drive, loadDocInfo, refreshCache, formatIndia
 
   const useMysqlEmailPersistence = () => {
     const enabled = String(process.env.MYSQL_EMAIL_ENABLED || '').trim().toLowerCase() === 'true';
+    if (mysqlPool.isEnabled() && !enabled) {
+      throw new Error('MYSQL_ENABLED is active but MYSQL_EMAIL_ENABLED is not. Email queue, quota, and delivery history will not fall back to Google Sheets.');
+    }
     if (enabled && !mysqlPool.isEnabled()) {
       throw new Error('MYSQL_EMAIL_ENABLED requires MYSQL_ENABLED=true and a working shared MySQL connection.');
     }

@@ -282,7 +282,14 @@ async function requestVacancyDelete({ actor, jobCode, reason }) {
     if (pending.length) throw Object.assign(new Error(`A deletion request is already pending (${pending[0].request_code}).`), { status: 409 });
     const [applicationCounts] = await connection.execute(
       `SELECT (SELECT COUNT(*) FROM job_applications WHERE vacancy_id = ?) +
-              (SELECT COUNT(*) FROM placement_tracker_records WHERE job_code = ? AND source_tab = 'Opening_Applied') AS total`,
+              (SELECT COUNT(*) FROM placement_tracker_records tr
+               WHERE tr.job_code = ? AND tr.source_tab = 'Opening_Applied'
+                 AND LOWER(COALESCE(tr.status, '')) <> 'deleted'
+                 AND NOT EXISTS (
+                   SELECT 1 FROM job_applications legacy
+                   WHERE legacy.source = 'legacy_opening_applied'
+                     AND legacy.student_id = tr.student_id AND legacy.vacancy_id = tr.vacancy_id
+                 )) AS total`,
       [row.id, jobCode],
     );
     const requestId = `DEL-${crypto.randomBytes(12).toString('hex').toUpperCase()}`;

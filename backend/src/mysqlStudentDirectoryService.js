@@ -11,10 +11,21 @@ function parseJson(value) {
   try { return JSON.parse(value); } catch { return {}; }
 }
 
+function sourceFields(row) {
+  const data = parseJson(row.row_data_json);
+  const fields = data.fields && typeof data.fields === 'object' ? data.fields : {};
+  return Object.fromEntries(Object.entries(fields).filter(([key]) => !/password|secret|token/i.test(key)));
+}
+
 function putField(fields, aliases, value) {
   const wanted = new Set(aliases.map(compact));
   const existing = Object.keys(fields).find(key => wanted.has(compact(key)));
   fields[existing || aliases[0]] = value ?? '';
+}
+
+function putFieldIfMissing(fields, aliases, value) {
+  const wanted = new Set(aliases.map(compact));
+  if (!Object.keys(fields).some(key => wanted.has(compact(key)))) putField(fields, aliases, value);
 }
 
 function rowFromFields(fields, rowNumber, studentId = '') {
@@ -32,15 +43,18 @@ function rowFromFields(fields, rowNumber, studentId = '') {
 function profileFields(row) {
   const metadata = parseJson(row.metadata);
   const fields = { ...(metadata.fields || {}) };
-  putField(fields, ['Name', 'Student Name'], row.full_name);
-  putField(fields, ['Mail ID', 'Email'], row.personal_email || row.email);
-  putField(fields, ['Phone No.', 'Contact Number', 'Phone'], row.profile_phone || row.user_phone);
-  putField(fields, ['IPCS Roll Number', 'Roll Number', 'Roll No'], row.roll_number);
-  putField(fields, ['Course', 'Program'], row.course_name);
-  putField(fields, ['Branch', 'Sitting Branch'], row.branch_name);
-  putField(fields, ['Profile Photo', 'Photo'], row.profile_photo_url || '');
-  putField(fields, ['Resume', 'Resume Link'], row.resume_url || '');
-  putField(fields, ['Status'], row.student_status || 'active');
+  // The source-cell values in metadata remain the directory display values.
+  // Normalized columns are fallbacks only; writing their trimmed/normalized
+  // forms over source text would silently lose spaces and original casing.
+  putFieldIfMissing(fields, ['Name', 'Student Name'], row.full_name);
+  putFieldIfMissing(fields, ['Mail ID', 'Email'], row.personal_email || row.email);
+  putFieldIfMissing(fields, ['Phone No.', 'Contact Number', 'Phone'], row.profile_phone || row.user_phone);
+  putFieldIfMissing(fields, ['IPCS Roll Number', 'Roll Number', 'Roll No'], row.roll_number);
+  putFieldIfMissing(fields, ['Course', 'Program'], row.course_name);
+  putFieldIfMissing(fields, ['Branch', 'Sitting Branch'], row.branch_name);
+  putFieldIfMissing(fields, ['Profile Photo', 'Photo'], row.profile_photo_url || '');
+  putFieldIfMissing(fields, ['Resume', 'Resume Link'], row.resume_url || '');
+  putFieldIfMissing(fields, ['Status'], row.student_status || 'active');
   return { fields, metadata };
 }
 
@@ -102,6 +116,28 @@ async function loadDirectoryRows({ connection: suppliedConnection = null } = {})
       return student;
     });
 
+    const profileSourceRows = new Set(profileRows.map(record => Number(parseJson(record.metadata).sourceRow)).filter(Number.isInteger));
+    const [sourceRows] = await connection.execute(
+      `SELECT sheet_row_number, row_data_json
+       FROM source_sheet_records
+       WHERE source_key = 'shared_student_data' AND tab_name = 'Data'
+       ORDER BY sheet_row_number`,
+    );
+    const [sourceOverrides] = await connection.execute(
+      `SELECT source_row_number, fields_json
+       FROM student_directory_source_overrides
+       WHERE source_key = 'shared_student_data' AND source_tab = 'Data'`,
+    );
+    const overridesByRow = new Map(sourceOverrides.map(row => [Number(row.source_row_number), parseJson(row.fields_json)]));
+    sourceRows.forEach(sourceRow => {
+      const rowNumber = Number(sourceRow.sheet_row_number);
+      if (profileSourceRows.has(rowNumber)) return;
+      const fields = { ...sourceFields(sourceRow), ...(overridesByRow.get(rowNumber) || {}) };
+      const row = rowFromFields(fields, rowNumber, `SOURCE-ROW-${rowNumber}`);
+      row.sourceRecordOnly = true;
+      students.push(row);
+    });
+
     const [trackerRows] = await connection.execute(
       `SELECT id, source_tab, source_row_number, student_id, roll_number, student_name,
               job_code, company_name, position_title, status, occurred_at, metadata
@@ -109,6 +145,12 @@ async function loadDirectoryRows({ connection: suppliedConnection = null } = {})
        WHERE source_key = 'shared_placement'
          AND source_tab IN ('Opening_Applied', 'TPO_Log')
          AND LOWER(COALESCE(status, '')) <> 'deleted'
+         AND (source_tab <> 'Opening_Applied' OR NOT EXISTS (
+           SELECT 1 FROM job_applications legacy
+           WHERE legacy.source = 'legacy_opening_applied'
+             AND legacy.student_id = placement_tracker_records.student_id
+             AND legacy.vacancy_id = placement_tracker_records.vacancy_id
+         ))
        ORDER BY occurred_at, source_row_number`,
     );
     const applications = trackerRows
@@ -132,15 +174,27 @@ async function loadDirectoryRows({ connection: suppliedConnection = null } = {})
        WHERE LOWER(COALESCE(ja.status, '')) <> 'deleted'
        ORDER BY ja.applied_at, ja.id`,
     );
+    const applicationIds = applicationRows.map(row => row.id);
+    const [historyRows] = applicationIds.length ? await connection.query(
+      `SELECT h.application_id, h.new_status, h.note, h.occurred_at,
+              COALESCE(actor.full_name, JSON_UNQUOTE(JSON_EXTRACT(h.metadata, '$.changedBy'))) AS changed_by
+       FROM application_status_history h
+       LEFT JOIN users actor ON actor.id = h.actor_user_id
+       WHERE h.application_id IN (${applicationIds.map(() => '?').join(',')})
+       ORDER BY h.application_id, h.occurred_at, h.history_sequence`,
+      applicationIds,
+    ) : [[]];
+    const historyByApplication = new Map();
+    for (const history of historyRows) {
+      const events = historyByApplication.get(history.application_id) || [];
+      events.push(history);
+      historyByApplication.set(history.application_id, events);
+    }
     for (const row of applicationRows) {
-      const [history] = await connection.execute(
-        `SELECT h.new_status, h.note, h.occurred_at, actor.full_name AS changed_by
-         FROM application_status_history h
-         LEFT JOIN users actor ON actor.id = h.actor_user_id
-         WHERE h.application_id = ? ORDER BY h.occurred_at, h.history_sequence`,
-        [row.id],
-      );
-      applications.push(rowFromFields(applicationFields(row, history), 1000000 + applications.length));
+      applications.push(rowFromFields(
+        applicationFields(row, historyByApplication.get(row.id) || []),
+        1000000 + applications.length,
+      ));
     }
     return { students, applications, tpoLogs };
   } finally {
@@ -187,7 +241,7 @@ async function lookupStudent({ email = '', phone = '', connection: suppliedConne
   }
 }
 
-async function findStudent({ studentId = '', rowNumber = 0, connection: suppliedConnection = null } = {}) {
+async function findStudent({ studentId = '', rowNumber = 0, connection: suppliedConnection = null, forUpdate = false } = {}) {
   const ownsConnection = !suppliedConnection;
   const connection = suppliedConnection || await mysqlPool.getPool().getConnection();
   try {
@@ -202,7 +256,7 @@ async function findStudent({ studentId = '', rowNumber = 0, connection: supplied
          LEFT JOIN users u ON u.id = sp.user_id
          LEFT JOIN courses c ON c.id = sp.course_id
          LEFT JOIN branches b ON b.id = sp.branch_id
-         WHERE sp.id = ? LIMIT 1`, [studentId],
+         WHERE sp.id = ? LIMIT 1${forUpdate ? ' FOR UPDATE' : ''}`, [studentId],
       )
       : await connection.execute(
         `SELECT sp.id AS student_id, sp.user_id, sp.roll_number, sp.normalized_roll_number,
@@ -215,7 +269,7 @@ async function findStudent({ studentId = '', rowNumber = 0, connection: supplied
          LEFT JOIN courses c ON c.id = sp.course_id
          LEFT JOIN branches b ON b.id = sp.branch_id
          WHERE CAST(JSON_UNQUOTE(JSON_EXTRACT(sp.metadata, '$.sourceRow')) AS UNSIGNED) = ?
-         LIMIT 2`, [Number(rowNumber)],
+         LIMIT 2${forUpdate ? ' FOR UPDATE' : ''}`, [Number(rowNumber)],
       );
     if (rows.length > 1) {
       const error = new Error('More than one student profile matches this legacy record number. Refresh and select the student again.');
@@ -275,11 +329,12 @@ async function updateStudentAccess({ studentId = '', rowNumber = 0, actor = {}, 
   }
 }
 
-async function updateStudentProfileFields({ rowNumber = 0, actor = {}, changes = {}, requestId = '' }) {
-  const connection = await mysqlPool.getPool().getConnection();
+async function updateStudentProfileFields({ rowNumber = 0, studentId = '', actor = {}, changes = {}, requestId = '', connection: suppliedConnection = null, forUpdate = false }) {
+  const ownsConnection = !suppliedConnection;
+  const connection = suppliedConnection || await mysqlPool.getPool().getConnection();
   try {
-    await connection.beginTransaction();
-    const row = await findStudent({ rowNumber, connection });
+    if (ownsConnection) await connection.beginTransaction();
+    const row = await findStudent({ studentId, rowNumber, connection, forUpdate });
     if (!row) {
       const error = new Error('The student could not be found in the shared MySQL directory. Refresh the student directory and try again.');
       error.status = 404;
@@ -372,8 +427,99 @@ async function updateStudentProfileFields({ rowNumber = 0, actor = {}, changes =
       [crypto.randomUUID(), normalized(actor.email), row.student_id, text(requestId) || null,
         JSON.stringify({ changedFields: changedEntries.map(([header]) => header), source: 'tpo_student_directory_approval' })],
     );
-    await connection.commit();
+    if (ownsConnection) await connection.commit();
     return { studentId: row.student_id, fields: nextFields };
+  } catch (error) {
+    if (ownsConnection) await connection.rollback().catch(() => {});
+    throw error;
+  } finally {
+    if (ownsConnection) connection.release();
+  }
+}
+
+function requestShape(row) {
+  const json = value => {
+    if (value && typeof value === 'object') return value;
+    try { return JSON.parse(value || '{}'); } catch { return {}; }
+  };
+  return {
+    requestId: row.request_id,
+    status: row.status,
+    requestedAt: row.requested_at,
+    requestedByName: row.requested_by_name,
+    requestedByEmail: row.requested_by_email,
+    requestedByRole: row.requested_by_role || '',
+    studentRowNumber: Number(row.source_row_number),
+    studentRollNumber: row.student_roll_number || '',
+    studentName: row.student_name,
+    studentBranch: row.student_branch || '',
+    changeSummary: row.change_summary,
+    originalData: json(row.original_data_json),
+    proposedData: json(row.proposed_data_json),
+    reviewedByName: row.reviewed_by_name || '',
+    reviewedByEmail: row.reviewed_by_email || '',
+    reviewedAt: row.reviewed_at || '',
+    decisionNotes: row.decision_notes || '',
+    executionMessage: row.execution_message || '',
+    rowNumber: Number(row.source_row_number),
+  };
+}
+
+async function createStudentEditRequest({ sourceRowNumber, requester, studentRollNumber = '', studentName, studentBranch = '', changeSummary, originalData, proposedData }) {
+  const connection = await mysqlPool.getPool().getConnection();
+  const requestId = `STU-EDIT-${crypto.randomBytes(10).toString('hex').toUpperCase()}`;
+  try {
+    await connection.beginTransaction();
+    const student = await findStudent({ rowNumber: sourceRowNumber, connection, forUpdate: true });
+    const [sourceRows] = student ? [[]] : await connection.execute(
+      `SELECT sheet_row_number FROM source_sheet_records
+       WHERE source_key = 'shared_student_data' AND tab_name = 'Data' AND sheet_row_number = ? LIMIT 1 FOR UPDATE`,
+      [Number(sourceRowNumber)],
+    );
+    if (!student && !sourceRows.length) {
+      const error = new Error('The selected student no longer exists in the shared database. Reload the directory and try again.');
+      error.status = 404;
+      throw error;
+    }
+    const requesterEmail = normalized(requester?.email);
+    const [users] = await connection.execute('SELECT id FROM users WHERE normalized_email = ? LIMIT 1', [requesterEmail]);
+    if (!users.length) {
+      const error = new Error('Your staff account is not linked to the shared database yet. Contact the portal administrator.');
+      error.status = 409;
+      throw error;
+    }
+    const [pending] = await connection.execute(
+      `SELECT request_id FROM student_profile_change_requests
+       WHERE LOWER(status) IN ('pending', 'processing')
+         AND ((student_profile_id = ? AND ? IS NOT NULL)
+           OR (student_profile_id IS NULL AND source_row_number = ?))
+       LIMIT 1`,
+      [student?.student_id || null, student?.student_id || null, Number(sourceRowNumber)],
+    );
+    if (pending.length) {
+      const error = new Error('This student already has a pending detail change request. Gifty must review it before another one is submitted.');
+      error.status = 409;
+      throw error;
+    }
+    await connection.execute(
+      `INSERT INTO student_profile_change_requests
+        (request_id, student_profile_id, source_row_number, student_roll_number, student_name, student_branch,
+         requested_by_user_id, requested_by_name, requested_by_email, requested_by_role, change_summary,
+         original_data_json, proposed_data_json, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending')`,
+      [requestId, student?.student_id || null, Number(sourceRowNumber), text(studentRollNumber).slice(0, 160) || null,
+        text(studentName).slice(0, 200), text(studentBranch).slice(0, 160) || null, users[0].id,
+        text(requester?.name).slice(0, 160), text(requester?.email).slice(0, 254), text(requester?.role).slice(0, 100),
+        text(changeSummary).slice(0, 500), JSON.stringify(originalData || {}), JSON.stringify(proposedData || {})],
+    );
+    await connection.execute(
+      `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, request_id, details)
+       VALUES (?, ?, 'student_profile.details.requested', 'student_profile', ?, UTC_TIMESTAMP(), ?, ?)`,
+      [crypto.randomUUID(), users[0].id, student?.student_id || `source-row:${Number(sourceRowNumber)}`, requestId,
+        JSON.stringify({ changedFields: Object.keys(proposedData || {}), studentRowNumber: Number(sourceRowNumber) })],
+    );
+    await connection.commit();
+    return { requestId, status: 'Pending' };
   } catch (error) {
     await connection.rollback().catch(() => {});
     throw error;
@@ -382,4 +528,174 @@ async function updateStudentProfileFields({ rowNumber = 0, actor = {}, changes =
   }
 }
 
-module.exports = { findStudent, loadDirectoryRows, lookupStudent, rowFromFields, updateStudentAccess, updateStudentProfileFields };
+async function listStudentEditRequests(status = '') {
+  const filter = text(status);
+  const params = [];
+  let where = '';
+  if (filter && filter.toLowerCase() !== 'all') {
+    where = 'WHERE LOWER(r.status) = LOWER(?)';
+    params.push(filter);
+  }
+  const [rows] = await mysqlPool.query(
+    `SELECT r.* FROM student_profile_change_requests r ${where}
+     ORDER BY r.requested_at DESC, r.request_id DESC LIMIT 1000`, params,
+  );
+  return rows.map(requestShape);
+}
+
+async function reviewStudentEditRequest({ requestId, decision, reviewer, decisionNotes = '' }) {
+  const connection = await mysqlPool.getPool().getConnection();
+  try {
+    await connection.beginTransaction();
+    const [requests] = await connection.execute(
+      'SELECT * FROM student_profile_change_requests WHERE request_id = ? FOR UPDATE', [text(requestId)],
+    );
+    if (!requests.length) {
+      const error = new Error('The student detail request was not found.');
+      error.status = 404;
+      throw error;
+    }
+    const request = requestShape(requests[0]);
+    if (request.status.toLowerCase() !== 'pending') {
+      const error = new Error(`This request is already ${request.status.toLowerCase() || 'processed'}.`);
+      error.status = 409;
+      throw error;
+    }
+    const reviewerEmail = normalized(reviewer?.email);
+    const [reviewers] = await connection.execute('SELECT id FROM users WHERE normalized_email = ? LIMIT 1', [reviewerEmail]);
+    if (!reviewers.length) {
+      const error = new Error('The reviewer account is not linked to the shared database.');
+      error.status = 409;
+      throw error;
+    }
+    const reviewerId = reviewers[0].id;
+    let notificationTitle;
+    let notificationMessage;
+    let executionMessage;
+    if (decision === 'approve') {
+      let currentFields;
+      if (requests[0].student_profile_id) {
+        const student = await findStudent({ studentId: requests[0].student_profile_id, connection, forUpdate: true });
+        if (!student) {
+          const error = new Error('The student record is missing from the shared database.');
+          error.status = 409;
+          throw error;
+        }
+        currentFields = student.fields;
+      } else {
+        const [sourceRows] = await connection.execute(
+          `SELECT sheet_row_number, row_data_json
+           FROM source_sheet_records
+           WHERE source_key = 'shared_student_data' AND tab_name = 'Data' AND sheet_row_number = ?
+           LIMIT 1 FOR UPDATE`,
+          [request.studentRowNumber],
+        );
+        if (!sourceRows.length) {
+          const error = new Error('The original student source record is missing from MySQL.');
+          error.status = 409;
+          throw error;
+        }
+        const [overrides] = await connection.execute(
+          `SELECT fields_json FROM student_directory_source_overrides
+           WHERE source_key = 'shared_student_data' AND source_tab = 'Data' AND source_row_number = ? FOR UPDATE`,
+          [request.studentRowNumber],
+        );
+        currentFields = { ...sourceFields(sourceRows[0]), ...(overrides.length ? parseJson(overrides[0].fields_json) : {}) };
+      }
+      const currentByName = new Map(Object.entries(currentFields).map(([key, value]) => [compact(key), String(value ?? '')]));
+      const conflictFields = Object.entries(request.proposedData).filter(([header, value]) => {
+        const key = compact(header);
+        const current = currentByName.get(key) ?? '';
+        const original = String(request.originalData[header] ?? '');
+        return current !== original && current !== String(value ?? '');
+      }).map(([header]) => header);
+      if (conflictFields.length) {
+        const error = new Error(`The student record changed after this request was submitted (${conflictFields.join(', ')}). Reload and submit a fresh request.`);
+        error.status = 409;
+        throw error;
+      }
+      if (requests[0].student_profile_id) {
+        await updateStudentProfileFields({
+          studentId: requests[0].student_profile_id, actor: reviewer, changes: request.proposedData,
+          requestId, connection,
+        });
+      } else {
+        const nextFields = { ...currentFields, ...request.proposedData };
+        await connection.execute(
+          `INSERT INTO student_directory_source_overrides
+            (source_key, source_tab, source_row_number, fields_json, updated_by_user_id)
+           VALUES ('shared_student_data', 'Data', ?, ?, ?)
+           ON DUPLICATE KEY UPDATE fields_json = VALUES(fields_json), updated_by_user_id = VALUES(updated_by_user_id), updated_at = UTC_TIMESTAMP()`,
+          [request.studentRowNumber, JSON.stringify(nextFields), reviewerId],
+        );
+      }
+      notificationTitle = 'Student detail edit approved';
+      notificationMessage = `${request.changeSummary}. Gifty approved the changes.`;
+      executionMessage = 'Student details updated successfully in MySQL.';
+    } else {
+      notificationTitle = 'Student detail edit rejected';
+      notificationMessage = `${request.changeSummary}. Gifty rejected the changes${decisionNotes ? `: ${decisionNotes}` : '.'}`;
+      executionMessage = 'No student details were changed.';
+    }
+    await connection.execute(
+      `UPDATE student_profile_change_requests
+       SET status = ?, reviewed_by_user_id = ?, reviewed_by_name = ?, reviewed_by_email = ?,
+           reviewed_at = UTC_TIMESTAMP(), decision_notes = ?, execution_message = ?
+       WHERE request_id = ?`,
+      [decision === 'approve' ? 'Approved' : 'Rejected', reviewerId, text(reviewer?.name).slice(0, 160),
+        reviewerEmail, text(decisionNotes).slice(0, 1000) || null, executionMessage, requestId],
+    );
+    if (requests[0].requested_by_user_id) {
+      await connection.execute(
+        `INSERT INTO portal_notifications (id, user_id, notification_type, title, message, data_json)
+         VALUES (?, ?, 'student_profile_change_decision', ?, ?, ?)`,
+        [crypto.randomUUID(), requests[0].requested_by_user_id, notificationTitle, notificationMessage,
+          JSON.stringify({ requestId, decision: decision === 'approve' ? 'Approved' : 'Rejected', studentRowNumber: request.studentRowNumber })],
+      );
+    }
+    await connection.execute(
+      `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, request_id, details)
+       VALUES (?, ?, ?, 'student_profile_change_request', ?, UTC_TIMESTAMP(), ?, ?)`,
+      [crypto.randomUUID(), reviewerId, `student_profile.details.${decision === 'approve' ? 'approved' : 'rejected'}`,
+        requestId, requestId, JSON.stringify({ studentProfileId: requests[0].student_profile_id, notes: text(decisionNotes).slice(0, 1000) })],
+    );
+    await connection.commit();
+    return { requestId, status: decision === 'approve' ? 'Approved' : 'Rejected', executionMessage };
+  } catch (error) {
+    await connection.rollback().catch(() => {});
+    throw error;
+  } finally {
+    connection.release();
+  }
+}
+
+async function listPortalNotifications(email, limit = 20) {
+  const normalizedEmail = normalized(email);
+  const safeLimit = Math.max(1, Math.min(50, Number(limit) || 20));
+  const [rows] = await mysqlPool.query(
+    `SELECT n.id, n.notification_type, n.title, n.message, n.data_json, n.created_at
+     FROM portal_notifications n
+     JOIN users u ON u.id = n.user_id
+     WHERE u.normalized_email = ?
+     ORDER BY n.created_at DESC LIMIT ${safeLimit}`,
+    [normalizedEmail],
+  );
+  return rows.map(row => {
+    const data = parseJson(row.data_json);
+    const decision = String(data.decision || '').trim();
+    return {
+      id: `student-edit:${data.requestId || row.id}:${decision.toLowerCase()}`,
+      type: 'approval',
+      decision,
+      title: row.title,
+      desc: row.message,
+      time: row.created_at,
+    };
+  });
+}
+
+module.exports = {
+  createStudentEditRequest, findStudent, listPortalNotifications, listStudentEditRequests,
+  loadDirectoryRows, lookupStudent, reviewStudentEditRequest, rowFromFields,
+  updateStudentAccess, updateStudentProfileFields,
+};

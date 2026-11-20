@@ -4,6 +4,7 @@ const mysqlPool = require('./mysqlPool');
 const { isPortalAdmin } = require('./rolePolicy');
 const { uploadToDrive } = require('./driveUploads');
 const { sendIPCSMail } = require('./config');
+const { isMysqlFeatureEnabled } = require('./mysqlFeatureFlags');
 
 const text = value => String(value ?? '').trim();
 const normalized = value => text(value).toLocaleLowerCase('en-US').replace(/[^a-z0-9]/g, '');
@@ -30,7 +31,7 @@ const dateOnly = value => {
   return result;
 };
 const dateValue = value => value instanceof Date ? value.toISOString().slice(0, 10) : text(value).slice(0, 10);
-const isMySqlMode = () => String(process.env.MYSQL_ASSET_MANAGEMENT_ENABLED || '').trim().toLowerCase() === 'true';
+const isMySqlMode = () => isMysqlFeatureEnabled('MYSQL_ASSET_MANAGEMENT_ENABLED');
 const dbError = (message, status = 400) => Object.assign(new Error(message), { status });
 
 function canSeeAll(req) {

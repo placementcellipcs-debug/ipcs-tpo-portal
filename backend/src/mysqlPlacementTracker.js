@@ -145,6 +145,11 @@ async function listApplications({ user, isAdmin, isTpo, connection: suppliedConn
        LEFT JOIN users owner ON owner.id = tr.owner_tpo_user_id
        LEFT JOIN users vacancy_owner ON vacancy_owner.id = v.assigned_tpo_user_id
        WHERE tr.source_tab = 'Opening_Applied' AND LOWER(COALESCE(tr.status, '')) <> 'deleted'
+         AND NOT EXISTS (
+           SELECT 1 FROM job_applications legacy
+           WHERE legacy.source = 'legacy_opening_applied'
+             AND legacy.student_id = tr.student_id AND legacy.vacancy_id = tr.vacancy_id
+         )
        ORDER BY tr.occurred_at DESC, tr.source_row_number DESC`,
     );
     const [applicationRows] = await connection.execute(
@@ -168,7 +173,7 @@ async function listApplications({ user, isAdmin, isTpo, connection: suppliedConn
     const historyIds = applicationRows.map(row => row.id);
     const [historyRows] = historyIds.length ? await connection.query(
       `SELECT h.application_id, h.previous_status, h.new_status, h.note, h.occurred_at,
-              actor.full_name AS changed_by
+              COALESCE(actor.full_name, JSON_UNQUOTE(JSON_EXTRACT(h.metadata, '$.changedBy'))) AS changed_by
        FROM application_status_history h
        LEFT JOIN users actor ON actor.id = h.actor_user_id
        WHERE h.application_id IN (${historyIds.map(() => '?').join(',')})

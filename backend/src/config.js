@@ -9,37 +9,68 @@ const mysqlPool = require('./mysqlPool');
 const { formatIndiaTimestamp } = require('./utils/dateTime');
 const { createEmailService } = require('./emailService');
 const { createPortalAuditLogger } = require('./portalAuditLog');
+const { isMysqlFeatureEnabled } = require('./mysqlFeatureFlags');
+const { assertGoogleSheetsWriteAllowed, guardGoogleSheetsClient, guardGoogleSpreadsheet } = require('./mysqlSheetsWriteGuard');
 
 const serviceAccountAuth = new JWT({
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
   key: process.env.GOOGLE_PRIVATE_KEY ? process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n') : '',
   scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'],
 });
+const googleSheetsFactory = google.sheets.bind(google);
+google.sheets = (...args) => guardGoogleSheetsClient(googleSheetsFactory(...args));
+
+const recordMysqlAuditEvent = event => {
+  try {
+    const actor = event?.actor || {};
+    const details = JSON.stringify({
+      actorType: event?.actorType || (actor.email ? 'Human' : actor.name ? 'Unverified' : 'Public visitor'),
+      actorName: event?.actorName || actor.name || '',
+      actorEmail: event?.actorEmail || actor.email || '',
+      actorRole: event?.actorRole || actor.role || '',
+      source: event?.source || 'API',
+      method: event?.method || '',
+      route: event?.route || '',
+      result: event?.result || 'Recorded',
+      httpStatus: event?.httpStatus ?? null,
+      durationMs: event?.durationMs ?? null,
+      details: event?.details || {},
+    });
+    void mysqlPool.query(
+      `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, request_id, details)
+       VALUES (?, NULL, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)`,
+      [
+        randomUUID(),
+        String(event?.action || 'Portal action').slice(0, 180),
+        String(event?.resource || 'Portal').slice(0, 100),
+        String(event?.entityId || '').slice(0, 100) || null,
+        String(event?.requestId || '').slice(0, 120) || null,
+        details,
+      ],
+    ).catch(error => console.error('[MYSQL PORTAL AUDIT] Could not save audit event:', error.message));
+    return true;
+  } catch (error) {
+    console.error('[MYSQL PORTAL AUDIT] Could not prepare audit event:', error.message);
+    return false;
+  }
+};
+const logPortalAuditEvent = event => mysqlPool.isEnabled()
+  ? recordMysqlAuditEvent(event)
+  : portalAuditLogger.log(event);
+const flushPortalAuditEvents = () => mysqlPool.isEnabled()
+  ? Promise.resolve(true)
+  : portalAuditLogger.flush();
+
 const portalAuditSpreadsheetId = String(process.env.PORTAL_AUDIT_SPREADSHEET_ID || '11FH7p5rYIc0EmKvT6fd0PIIoc2ns8Vj-EjksX1BLZ-w').trim();
 const portalAuditLogger = createPortalAuditLogger({
   sheetsApi: google.sheets({ version: 'v4', auth: serviceAccountAuth }),
   spreadsheetId: portalAuditSpreadsheetId
 });
-const logPortalAuditEvent = portalAuditLogger.log;
-const logEmailAuditEvent = event => {
-  const useMysql = String(process.env.MYSQL_EMAIL_ENABLED || '').trim().toLowerCase() === 'true'
-    && String(process.env.MYSQL_ENABLED || '').trim().toLowerCase() === 'true';
-  if (!useMysql) return portalAuditLogger.log(event);
-  try {
-    const details = JSON.stringify({ source: event?.source || '', resource: event?.resource || '', result: event?.result || '', details: event?.details || {} });
-    void mysqlPool.query(
-      `INSERT INTO audit_events (id, actor_user_id, action, entity_type, entity_id, occurred_at, request_id, details)
-       VALUES (?, NULL, ?, ?, ?, UTC_TIMESTAMP(), ?, ?)`,
-      [randomUUID(), String(event?.action || 'Email operation').slice(0, 120), String(event?.resource || 'Email').slice(0, 100),
-        String(event?.details?.deliveryId || event?.details?.queueId || '').slice(0, 100) || null,
-        String(event?.requestId || '').slice(0, 120) || null, details],
-    ).catch(error => console.error('[MYSQL MAIL AUDIT] Could not save email audit event:', error.message));
-    return true;
-  } catch (error) {
-    console.error('[MYSQL MAIL AUDIT] Could not prepare email audit event:', error.message);
-    return false;
-  }
-};
+const logEmailAuditEvent = event => logPortalAuditEvent({
+  ...event,
+  action: event?.action || 'Email operation',
+  resource: event?.resource || 'Email',
+});
 const logCacheAuditEvent = event => {
   try {
     return logPortalAuditEvent(event);
@@ -85,7 +116,7 @@ const sheetColumnName = index => {
 };
 
 async function syncPlacedStatusesToStudentDirectory(studentSheet, studentRows, placementRows) {
-  if (String(process.env.MYSQL_STUDENT_DIRECTORY_ENABLED || '').trim().toLowerCase() === 'true') return 0;
+  if (isMysqlFeatureEnabled('MYSQL_STUDENT_DIRECTORY_ENABLED')) return 0;
   const headers = studentSheet?.headerValues || [];
   const normalizedHeaders = headers.map(normalizePlacementCell);
   const statusIndex = normalizedHeaders.findIndex(header => [
@@ -209,7 +240,7 @@ const getDocument = spreadsheetId => {
   if (!spreadsheetId) return null;
   let spreadsheet = documentsById.get(spreadsheetId);
   if (!spreadsheet) {
-    spreadsheet = new GoogleSpreadsheet(spreadsheetId, serviceAccountAuth);
+    spreadsheet = guardGoogleSpreadsheet(new GoogleSpreadsheet(spreadsheetId, serviceAccountAuth));
     documentsById.set(spreadsheetId, spreadsheet);
   }
   return spreadsheet;
@@ -260,6 +291,7 @@ const doc = {
     .filter(spreadsheet => !spreadsheet?._rawProperties)
     .map(spreadsheet => spreadsheet.loadInfo())),
   addSheet: async options => {
+    assertGoogleSheetsWriteAllowed();
     const spreadsheet = getPreferredDocumentForSheet(options?.title);
     if (!spreadsheet) throw new Error('No Google Sheets document is configured. Set the spreadsheet IDs in the backend environment.');
     const sheet = await spreadsheet.addSheet(options);
@@ -1265,7 +1297,7 @@ async function sendIPCSMail(mailOptions, sendDetails) {
 module.exports = { 
   doc, drive, google, serviceAccountAuth, getCache, refreshCache, waitForCacheReady, loadDocInfo, hasAccess, getFuzzyHeader, syncPlacedStudent,
   getSpreadsheetIdForSheetName, getActiveSpreadsheetIds, ensureSpreadsheetDateFormats, rebuildPlacedStudentsFromTpoLogs,
-  logPortalAuditEvent: portalAuditLogger.log, flushPortalAuditEvents: portalAuditLogger.flush,
+  logPortalAuditEvent, flushPortalAuditEvents,
   sendIPCSMail, startEmailWorker: emailService.startWorker, processEmailQueue: emailService.processQueue,
   startMailDashboardRefresh: emailService.startMailDashboardRefresh,
   refreshMailDashboard: emailService.refreshMailDashboard,

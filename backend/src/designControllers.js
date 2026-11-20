@@ -1,6 +1,7 @@
 const { JWT } = require('google-auth-library');
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { getCache, uploadToDrive, doc: mainDoc } = require('./config');
+const { guardGoogleSpreadsheet } = require('./mysqlSheetsWriteGuard');
 const { formatIndiaTimestamp } = require('./utils/dateTime');
 
 // Authenticate specifically for the new Design Spreadsheet
@@ -10,8 +11,13 @@ const serviceAccountAuth = new JWT({
   scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'],
 });
 
-// The New Design Sheet ID
-const designDoc = new GoogleSpreadsheet('149BVIP9GDXjPx3QYWE_b_6Wt4-J4Slu0kfYWWubu8sI', serviceAccountAuth);
+// The legacy workbook is only a migration source; after cutover the MySQL
+// workspace service owns these records. Keep the ID configurable so the
+// read-only one-time importer uses the same source as the TPO backend.
+const designSpreadsheetId = String(
+  process.env.DESIGN_SPREADSHEET_ID || '149BVIP9GDXjPx3QYWE_b_6Wt4-J4Slu0kfYWWubu8sI'
+).trim();
+const designDoc = guardGoogleSpreadsheet(new GoogleSpreadsheet(designSpreadsheetId, serviceAccountAuth));
 let isDesignDocLoaded = false;
 
 async function loadDesignDoc() {

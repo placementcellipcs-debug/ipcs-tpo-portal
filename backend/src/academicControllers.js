@@ -3,8 +3,10 @@ const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { formatIndiaTimestamp } = require('./utils/dateTime');
 const { createHash } = require('crypto');
 const mysqlAcademicLeave = require('./mysqlAcademicLeaveService');
+const { guardGoogleSpreadsheet } = require('./mysqlSheetsWriteGuard');
+const { isMysqlFeatureEnabled } = require('./mysqlFeatureFlags');
 
-const usesMysqlAcademicLeave = () => String(process.env.MYSQL_STUDENT_LEAVE_ENABLED || '').trim().toLowerCase() === 'true';
+const usesMysqlAcademicLeave = () => isMysqlFeatureEnabled('MYSQL_STUDENT_LEAVE_ENABLED');
 
 let loadPromise;
 let cachedData;
@@ -371,7 +373,7 @@ async function getAttendanceWorkbook(branch) {
   const spreadsheetId = getAttendanceSpreadsheetId(branch);
   if (!spreadsheetId) return null;
   if (!attendanceWorkbooks.has(spreadsheetId)) {
-    const workbook = new GoogleSpreadsheet(spreadsheetId, serviceAccountAuth);
+    const workbook = guardGoogleSpreadsheet(new GoogleSpreadsheet(spreadsheetId, serviceAccountAuth));
     const promise = workbook.loadInfo().then(() => workbook).catch(error => {
       attendanceWorkbooks.delete(spreadsheetId);
       throw error;

@@ -15,9 +15,11 @@
     "db:check-tpo-auth": "node scripts/check-mysql-tpo-auth.js",
     "db:check-admin-users": "node scripts/check-mysql-admin-users.js",
     "db:check-email-store": "node scripts/check-mysql-email-store.js",
+    "db:check-email-history": "node scripts/check-mysql-email-history.js",
     "db:check-support-issues": "node scripts/check-mysql-support-issues.js",
     "db:check-events": "node scripts/check-mysql-events.js",
-    "db:check-academic-leave": "node scripts/check-mysql-academic-leave.js"
+    "db:check-academic-leave": "node scripts/check-mysql-academic-leave.js",
+    "db:check-legacy-applications": "node scripts/check-mysql-legacy-applications.js"
   },
   "keywords": [],
   "author": "",

@@ -5,6 +5,8 @@ const { google } = require('googleapis');
 const { randomUUID } = require('crypto');
 const { logPortalAuditEvent } = require('./config');
 const assetTaxonomy = require('./assetTaxonomy');
+const { isMysqlFeatureEnabled } = require('./mysqlFeatureFlags');
+const { guardGoogleSpreadsheet } = require('./mysqlSheetsWriteGuard');
 
 const serviceAccountAuth = new JWT({
   email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
@@ -13,8 +15,8 @@ const serviceAccountAuth = new JWT({
 });
 
 const legacyAssetSpreadsheetId = process.env.ASSET_LEGACY_SPREADSHEET_ID || '17tEo324Xyfc3ku98hmsnKZDry4OgCt_hnUlK8hGtVXA';
-const assetDoc = new GoogleSpreadsheet(process.env.ASSET_SPREADSHEET_ID || '1rSinOxDvXjYlkJJUeqdLngP_iUGCa1I0vduOf8DtJFE', serviceAccountAuth);
-const legacyAssetDoc = new GoogleSpreadsheet(legacyAssetSpreadsheetId, serviceAccountAuth);
+const assetDoc = guardGoogleSpreadsheet(new GoogleSpreadsheet(process.env.ASSET_SPREADSHEET_ID || '1rSinOxDvXjYlkJJUeqdLngP_iUGCa1I0vduOf8DtJFE', serviceAccountAuth));
+const legacyAssetDoc = guardGoogleSpreadsheet(new GoogleSpreadsheet(legacyAssetSpreadsheetId, serviceAccountAuth));
 
 const assetRegisterHeaders = [
   'Asset_ID', 'Record_Type', 'Asset_Name', 'Category_ID', 'Category', 'Subcategory_ID', 'Subcategory', 'Asset_Type_ID', 'Asset_Type',
@@ -702,7 +704,7 @@ function rowsFromValues(sheet, values) {
 async function refreshAssetCache() {
   // During the staged database cutover, never initialize a Sheets refresh if
   // the asset module is explicitly running from MySQL.
-  if (String(process.env.MYSQL_ASSET_MANAGEMENT_ENABLED || '').trim().toLowerCase() === 'true') return;
+  if (isMysqlFeatureEnabled('MYSQL_ASSET_MANAGEMENT_ENABLED')) return;
   if (isFetching) {
     refreshRequested = true;
     logPortalAuditEvent({ actorType: 'Bot', source: 'Automation', action: 'Asset cache refresh coalesced', resource: 'Asset Google Sheets cache', result: 'Skipped', details: { reason: 'A refresh is already in progress.' } });
@@ -832,7 +834,7 @@ async function refreshAssetCache() {
 
 // Start after the placement cache's initial load has begun when Sheets remain
 // the configured asset source. MySQL mode must not poll the old workbook.
-if (String(process.env.MYSQL_ASSET_MANAGEMENT_ENABLED || '').trim().toLowerCase() !== 'true') {
+if (!isMysqlFeatureEnabled('MYSQL_ASSET_MANAGEMENT_ENABLED')) {
   setTimeout(refreshAssetCache, 15000);
   // Writes through the portal update the in-memory cache immediately; the poll
   // only needs to pick up edits made directly in Google Sheets.

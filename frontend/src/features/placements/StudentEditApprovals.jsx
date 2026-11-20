@@ -69,7 +69,7 @@ export default function StudentEditApprovals() {
       if (!response.data?.success) throw new Error(response.data?.message || 'The request could not be reviewed.');
       setReviewDialog(null);
       setReviewNotes('');
-      setToast({ type: 'success', title: isApprove ? 'Student details approved' : 'Request rejected', message: isApprove ? `${request.studentName || 'The student'}’s approved details have been updated in the student register.` : `${request.studentName || 'The student'}’s details were not changed.` });
+      setToast({ type: 'success', title: isApprove ? 'Student details approved' : 'Request rejected', message: isApprove ? `${request.studentName || 'The student'}’s approved details have been updated.` : `${request.studentName || 'The student'}’s details were not changed.` });
       await loadRequests();
     } catch (error) {
       setToast({ type: 'error', title: 'Review failed', message: error.response?.data?.message || error.message || 'The request could not be reviewed.' });

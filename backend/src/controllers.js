@@ -46,17 +46,23 @@ const mysqlPlacementTracker = require('./mysqlPlacementTracker');
 const mysqlVacancyManagement = require('./mysqlVacancyManagement');
 const mysqlTpoAuth = require('./mysqlTpoAuthService');
 const mysqlAdminUsers = require('./mysqlAdminUsersService');
+const mysqlBranches = require('./mysqlBranchService');
 const mysqlSupportIssues = require('./mysqlSupportIssueService');
 const mysqlEvents = require('./mysqlEventsService');
 const mysqlStudentDirectory = require('./mysqlStudentDirectoryService');
+const mysqlAssessmentAdmin = require('./mysqlAssessmentAdminService');
+const mysqlPortalInquiries = require('./mysqlInquiryService');
+const { isMysqlFeatureEnabled } = require('./mysqlFeatureFlags');
 
-const useMysqlTpoUserManagement = () => String(process.env.MYSQL_TPO_USER_MANAGEMENT_ENABLED || '').trim().toLowerCase() === 'true';
-const useMysqlTpoAuth = () => String(process.env.MYSQL_TPO_AUTH_ENABLED || '').trim().toLowerCase() === 'true' || useMysqlTpoUserManagement();
-const useMysqlPlacementTracker = () => String(process.env.MYSQL_PLACEMENT_TRACKER_ENABLED || '').trim().toLowerCase() === 'true';
-const useMysqlVacancyManagement = () => String(process.env.MYSQL_VACANCY_MANAGEMENT_ENABLED || '').trim().toLowerCase() === 'true';
-const useMysqlSupportIssues = () => String(process.env.MYSQL_SUPPORT_ISSUES_ENABLED || '').trim().toLowerCase() === 'true';
-const useMysqlTpoEvents = () => String(process.env.MYSQL_TPO_EVENTS_ENABLED || '').trim().toLowerCase() === 'true';
-const useMysqlStudentDirectory = () => String(process.env.MYSQL_STUDENT_DIRECTORY_ENABLED || '').trim().toLowerCase() === 'true';
+const useMysqlTpoUserManagement = () => isMysqlFeatureEnabled('MYSQL_TPO_USER_MANAGEMENT_ENABLED');
+const useMysqlTpoAuth = () => isMysqlFeatureEnabled('MYSQL_TPO_AUTH_ENABLED') || useMysqlTpoUserManagement();
+const useMysqlPlacementTracker = () => isMysqlFeatureEnabled('MYSQL_PLACEMENT_TRACKER_ENABLED');
+const useMysqlVacancyManagement = () => isMysqlFeatureEnabled('MYSQL_VACANCY_MANAGEMENT_ENABLED');
+const useMysqlSupportIssues = () => isMysqlFeatureEnabled('MYSQL_SUPPORT_ISSUES_ENABLED');
+const useMysqlTpoEvents = () => isMysqlFeatureEnabled('MYSQL_TPO_EVENTS_ENABLED');
+const useMysqlStudentDirectory = () => isMysqlFeatureEnabled('MYSQL_STUDENT_DIRECTORY_ENABLED');
+const useMysqlAssessments = () => isMysqlFeatureEnabled('MYSQL_ASSESSMENTS_ENABLED');
+const useMysqlPortalInquiries = () => isMysqlFeatureEnabled('MYSQL_PUBLIC_INQUIRIES_ENABLED');
 
 const TPO_DELETE_REQUEST_SHEET = 'TPO_Delete_Requests';
 const TPO_DELETE_REQUEST_HEADERS = [
@@ -714,19 +720,38 @@ const sendCompanyOpeningDailyReport = async ({ reportDate, openingRows, cache })
 };
 
 const sendMailAndLog = async (mailOptions, logDetails) => {
+  const mysqlBackendActive = String(process.env.MYSQL_ENABLED || '').trim().toLowerCase() === 'true';
   try {
     const result = await sendIPCSMail(mailOptions, {
       category: logDetails?.category || 'placement',
       queueContext: logDetails?.queueContext,
       logDetails
     });
-    await logMailToSheet(logDetails?.name, logDetails?.email, logDetails?.type, mailOptions.subject, result?.queued ? `Queued: ${result.queueId}` : 'Success');
+    if (!mysqlBackendActive) {
+      await logMailToSheet(logDetails?.name, logDetails?.email, logDetails?.type, mailOptions.subject, result?.queued ? `Queued: ${result.queueId}` : 'Success');
+    }
     return result || { queued: false };
   } catch (err) {
-    await logMailToSheet(logDetails?.name, logDetails?.email, logDetails?.type, mailOptions.subject, `${mailErrorStatus(err)}: ${err.message}`);
+    if (!mysqlBackendActive) {
+      await logMailToSheet(logDetails?.name, logDetails?.email, logDetails?.type, mailOptions.subject, `${mailErrorStatus(err)}: ${err.message}`);
+    }
     console.error("Mail Dispatch Error:", err);
     throw err;
   }
+};
+
+const sendMysqlInquiryMail = async (mailOptions, { category, name, email, type, inquiryId }) => {
+  if (String(process.env.MYSQL_ENABLED || '').trim().toLowerCase() !== 'true'
+    || String(process.env.MYSQL_EMAIL_ENABLED || '').trim().toLowerCase() !== 'true') {
+    throw new Error('MySQL email delivery is not enabled. Set MYSQL_ENABLED=true and MYSQL_EMAIL_ENABLED=true; no Google Sheets mail fallback was attempted.');
+  }
+  return sendIPCSMail(mailOptions, {
+    category,
+    logDetails: { name, email, type },
+    relatedEntityType: 'portal_inquiry',
+    relatedEntityId: inquiryId,
+    idempotencyKey: `portal-inquiry:${type}:${inquiryId}:${String(email || '').trim().toLowerCase()}:${String(mailOptions.subject || '').slice(0, 80)}`,
+  });
 };
 
 const sendEventMail = async (mailOptions, logDetails) => {
@@ -1440,6 +1465,18 @@ exports.getNotifications = async (req, res) => {
   addDecisionNotifications(cache.studentEditRequests, 'student-edit');
   addDecisionNotifications(cache.tpoDeleteRequests, 'tpo-delete');
 
+  if (useMysqlStudentDirectory()) {
+    try {
+      const mysqlNotifications = await mysqlStudentDirectory.listPortalNotifications(requesterEmail);
+      rows.push(...mysqlNotifications.map((notification, index) => ({
+        ...notification,
+        sortOrder: notificationTimestamp(notification.time) || index,
+      })));
+    } catch (error) {
+      console.warn('Could not add MySQL student detail decisions to TPO notifications:', error.message);
+    }
+  }
+
   if (useMysqlVacancyManagement() || useMysqlPlacementTracker()) {
     try {
       const result = await mysqlVacancyManagement.listDeleteRequests(user, {
@@ -1499,13 +1536,19 @@ exports.getStudents = async (req, res) => {
   const canonicalTpoLogs = placementLogRows.filter(row => !/^(yes|true|1)$/i.test(getValByHeader(row, ['tpoactionlog'])));
   const placedRolls = new Set();
   const placedNameBranches = new Set();
+  const studentRollCounts = new Map();
+  (cache.students || []).forEach(row => {
+    const roll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
+    if (roll) studentRollCounts.set(roll, (studentRollCounts.get(roll) || 0) + 1);
+  });
+  const ambiguousStudentRolls = new Set([...studentRollCounts].filter(([, count]) => count > 1).map(([roll]) => roll));
   placementLogRows.forEach(log => {
     if (isTpoActionLog(log, getValByHeader)) return;
     if (normalizePlacementText(getValByHeader(log, ['status'])) !== 'placed') return;
     const roll = normalizePlacementText(getValByHeader(log, ['rollnumber', 'rollno', 'ipcsrollnumber', 'roll']));
     const name = normalizePlacementText(getValByHeader(log, ['studentname', 'name']));
     const branch = normalizePlacementText(getValByHeader(log, ['branch', 'sittingbranch']));
-    if (roll) placedRolls.add(roll);
+    if (roll && !ambiguousStudentRolls.has(roll)) placedRolls.add(roll);
     else if (name && branch) placedNameBranches.add(`${name}|${branch}`);
   });
   const studentsByName = new Map();
@@ -1514,9 +1557,10 @@ exports.getStudents = async (req, res) => {
     const key = normalizePlacementText(getValByHeader(row, ['name', 'studentname']));
     if (key) studentsByName.set(key, [...(studentsByName.get(key) || []), row]);
     const roll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
-    if (roll && !studentsByRoll.has(roll)) studentsByRoll.set(roll, row);
+    if (roll && !ambiguousStudentRolls.has(roll) && !studentsByRoll.has(roll)) studentsByRoll.set(roll, row);
   });
   const getStudentKey = row => {
+    if (row?.sourceRecordOnly) return `source-row:${row.rowNumber}`;
     const roll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
     return roll || `name:${normalizePlacementText(getValByHeader(row, ['name', 'studentname', 'candidate']))}`;
   };
@@ -1597,6 +1641,7 @@ exports.getStudents = async (req, res) => {
   };
   const placementHistoryFor = row => {
     if (!canViewStudentDirectoryDetails) return undefined;
+    if (row?.sourceRecordOnly) return [];
     const studentRoll = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
     const studentName = normalizePlacementText(getValByHeader(row, ['name', 'studentname']));
     const studentBranch = normalizePlacementText(getValByHeader(row, ['branch', 'sittingbranch']));
@@ -1646,8 +1691,8 @@ exports.getStudents = async (req, res) => {
       let pStatus = (getValByHeader(row, ['placementstat', 'placementstatus']) || '').toString().trim();
       const rollKey = normalizePlacementText(getValByHeader(row, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']));
       const nameKey = normalizePlacementText(getValByHeader(row, ['name', 'studentname']));
-      const logHasPlacedStatus = (rollKey && placedRolls.has(rollKey))
-        || (nameKey && placedNameBranches.has(`${nameKey}|${normalizePlacementText(branch)}`));
+      const logHasPlacedStatus = (rollKey && !ambiguousStudentRolls.has(rollKey) && placedRolls.has(rollKey))
+        || (!rollKey && nameKey && placedNameBranches.has(`${nameKey}|${normalizePlacementText(branch)}`));
       if (logHasPlacedStatus) pStatus = 'Placed';
       const pLower = normalizePlacementText(pStatus);
       const coursePercentage = getValByHeader(row, ['coursepercentage']) || '';
@@ -1679,6 +1724,7 @@ exports.getStudents = async (req, res) => {
         qual: getValByHeader(row, ['qualification', 'qual']) || '', 
         stream: getValByHeader(row, ['stream']) || '', 
         status: getValByHeader(row, ['coursestatus', 'status(currently']) || 'N/A', 
+        sourceRecordOnly: Boolean(row.sourceRecordOnly),
         resume: getValByHeader(row, ['resume', 'cv']) || '', 
         certificate: getValByHeader(row, ['certificate']) || '',
         vacOpen: getValByHeader(row, ['vacancyopen', 'vaccancyopen', 'vacancyaccess', 'placementportalaccess']) || 'No', 
@@ -5282,6 +5328,46 @@ exports.submitStudentEditRequest = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Choose a student and provide the proposed detail changes.' });
   }
 
+  if (useMysqlStudentDirectory()) {
+    try {
+      const directory = await mysqlStudentDirectory.loadDirectoryRows();
+      const student = (directory.students || []).find(row => Number(row.rowNumber) === rowNumber);
+      if (!student) return res.status(404).json({ success: false, message: 'The selected student could not be found. Reload the directory and try again.' });
+      const fields = typeof student.toObject === 'function' ? student.toObject() : {};
+      const branch = getValByHeader(student, ['branch', 'branchname', 'sittingbranch']);
+      if (!hasPlacementBranchAccess(branch, requester)) {
+        return res.status(403).json({ success: false, message: 'This student is outside your assigned branches.' });
+      }
+      const fieldByKey = new Map(Object.keys(fields).map(header => [normalizePlacementHeader(header), header]));
+      const originalData = {};
+      const proposedData = {};
+      for (const [submittedHeader, submittedValue] of Object.entries(submittedChanges).slice(0, 100)) {
+        const header = fieldByKey.get(normalizePlacementHeader(submittedHeader));
+        if (!header) return res.status(400).json({ success: false, message: `The student register does not contain the “${submittedHeader}” field.` });
+        const oldValue = String(fields[header] ?? '');
+        const proposedValue = String(submittedValue ?? '').slice(0, 10000);
+        if (oldValue === proposedValue) continue;
+        originalData[header] = oldValue;
+        proposedData[header] = proposedValue;
+      }
+      const changedHeaders = Object.keys(proposedData);
+      if (!changedHeaders.length) return res.status(400).json({ success: false, message: 'No student detail changes were made.' });
+      const serializedSize = Buffer.byteLength(JSON.stringify(proposedData), 'utf8') + Buffer.byteLength(JSON.stringify(originalData), 'utf8');
+      if (serializedSize > 180000) return res.status(413).json({ success: false, message: 'The requested changes are too large to review. Please shorten the long text fields.' });
+      const studentName = getValByHeader(student, ['name', 'studentname']);
+      const rollNumber = getValByHeader(student, ['ipcsrollnumber', 'rollnumber', 'rollno', 'roll']);
+      const summary = `${changedHeaders.length} field${changedHeaders.length === 1 ? '' : 's'}: ${changedHeaders.slice(0, 5).join(', ')}${changedHeaders.length > 5 ? ` +${changedHeaders.length - 5} more` : ''}`;
+      const request = await mysqlStudentDirectory.createStudentEditRequest({
+        sourceRowNumber: rowNumber, requester, studentRollNumber: rollNumber,
+        studentName, studentBranch: branch, changeSummary: summary, originalData, proposedData,
+      });
+      return res.json({ success: true, ...request, message: 'Your student detail changes were sent to Gifty for approval. The student record has not changed yet.' });
+    } catch (error) {
+      console.error('Could not submit MySQL student detail change request:', error.message);
+      return res.status(error.status || 500).json({ success: false, message: error.message || 'The student detail request could not be saved.' });
+    }
+  }
+
   try {
     await loadDocInfo();
     const mysqlDirectoryEnabled = useMysqlStudentDirectory();
@@ -5387,6 +5473,15 @@ exports.getStudentEditRequests = async (req, res) => {
   if (!isTpoDeleteApprover(req.portalUser || {})) {
     return res.status(403).json({ success: false, message: 'Only gifty@ipcsglobal.com can review student detail changes.' });
   }
+  if (useMysqlStudentDirectory()) {
+    try {
+      const requests = await mysqlStudentDirectory.listStudentEditRequests(req.query?.status || '');
+      return res.json({ success: true, requests });
+    } catch (error) {
+      console.error('Could not load MySQL student detail change requests:', error.message);
+      return res.status(503).json({ success: false, message: 'Student detail requests could not be loaded from MySQL.' });
+    }
+  }
   try {
     const sheet = await ensureStudentEditRequestSheet();
     const rows = await sheet.getRows();
@@ -5410,6 +5505,17 @@ exports.reviewStudentEditRequest = async (req, res) => {
     return res.status(400).json({ success: false, message: 'Choose a student detail request and approve or reject it.' });
   }
   if (decision === 'reject' && !decisionNotes) return res.status(400).json({ success: false, message: 'Add a short reason before rejecting this request.' });
+  if (useMysqlStudentDirectory()) {
+    try {
+      const result = await mysqlStudentDirectory.reviewStudentEditRequest({ requestId, decision, reviewer, decisionNotes });
+      return res.json({ success: true, ...result, message: decision === 'approve'
+        ? 'Student details were approved and updated in MySQL.'
+        : 'Request rejected. No student details were changed.' });
+    } catch (error) {
+      console.error('MySQL student detail approval failed:', error.message);
+      return res.status(error.status || 409).json({ success: false, message: error.message || 'The student details could not be reviewed.' });
+    }
+  }
   if (studentEditApprovalLocks.has(requestId)) return res.status(409).json({ success: false, message: 'This request is already being reviewed. Refresh the list in a moment.' });
 
   studentEditApprovalLocks.add(requestId);
@@ -7864,6 +7970,42 @@ exports.submitCorporateTrainingInquiry = async (req, res) => {
     </div>`;
 
   try {
+    if (useMysqlPortalInquiries()) {
+      const inquiryId = `CT-${Date.now()}-${randomBytes(4).toString('hex').toUpperCase()}`;
+      const submittedAt = formatIndiaTimestamp();
+      const fields = {
+        'Inquiry ID': inquiryId, 'Submitted At': submittedAt, Name: name, Company: company, Email: email,
+        Phone: phone, Location: location, 'Training Area': trainingArea, 'Team Size': teamSize, Message: message,
+        Status: 'New', 'Assigned Branch': '', 'Assigned Branch Email': '', 'Assigned At': '', 'Assigned By': '',
+        'Notification Status': 'Not sent', 'Notification Sent At': '', 'Internal Email Status': 'Pending',
+      };
+      const saved = await mysqlPortalInquiries.createInquiry({ type: 'corporate_training', inquiryId, submittedAt, fields });
+      let internalEmailStatus = 'Sent';
+      try {
+        const mailResult = await sendMysqlInquiryMail({
+          from: `"IPCS Global Corporate Training" <${senderEmail}>`, to: recipient, replyTo: email,
+          subject: `Corporate Training Inquiry · ${safeCompanySubject}`, html,
+        }, {
+          category: 'company', name: `${name} · ${company}`, email, type: 'Corporate Training Inquiry', inquiryId: saved.id,
+        });
+        if (mailResult?.queued) internalEmailStatus = 'Queued';
+      } catch (mailError) {
+        internalEmailStatus = `${mailErrorStatus(mailError)}: ${mailError.message}`.slice(0, 500);
+        console.error('Corporate training inquiry was stored in MySQL, but its internal alert failed:', mailError.message);
+      }
+      try {
+        await mysqlPortalInquiries.updateInquiry('corporate_training', inquiryId, { 'Internal Email Status': internalEmailStatus });
+      } catch (statusError) {
+        console.error('Corporate training inquiry was saved in MySQL, but its email status could not be updated:', statusError.message);
+        return res.status(201).json({ success: true, message: 'Your inquiry has been received by the IPCS Global team.', warning: 'Your request was saved; refresh later to confirm the notification status.' });
+      }
+      return res.status(201).json({
+        success: true,
+        message: 'Your inquiry has been received by the IPCS Global team.',
+        ...(!['Sent', 'Queued'].includes(internalEmailStatus) ? { warning: 'Your inquiry was saved, but the notification email could not be sent.' } : {}),
+      });
+    }
+
     const sheet = await getCorporateTrainingInquirySheet();
     const inquiryId = `CT-${Date.now()}-${randomBytes(4).toString('hex').toUpperCase()}`;
     const submittedAt = formatIndiaTimestamp();
@@ -7993,6 +8135,10 @@ const upsertCorporateTrainingInquiryCache = (sheet, row) => {
 
 exports.getCorporateTrainingInquiries = async (_req, res) => {
   try {
+    if (useMysqlPortalInquiries()) {
+      const rows = await mysqlPortalInquiries.listInquiries('corporate_training');
+      return res.json({ success: true, inquiries: rows.map(toCorporateTrainingInquiry).filter(inquiry => inquiry.inquiryId) });
+    }
     if (!getCache()?.cacheUpdatedAt) await waitForCacheReady();
     const cache = getCache();
     if (!Array.isArray(cache?.corporateTrainingInquiries)) {
@@ -8041,6 +8187,69 @@ exports.assignCorporateTrainingInquiry = async (req, res) => {
   if (!inquiryId || !branchName) return res.status(400).json({ success: false, message: 'Choose a branch for this inquiry.' });
 
   try {
+    if (useMysqlPortalInquiries()) {
+      const branch = await mysqlPortalInquiries.resolveBranch(branchName);
+      if (!branch) return res.status(400).json({ success: false, message: 'Choose a branch from the active MySQL branch list.' });
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(branch.email || '')) {
+        return res.status(400).json({ success: false, message: `No email is configured for ${branch.name}. Add a branch email or assign an active branch manager/TPO first.` });
+      }
+      const record = await mysqlPortalInquiries.getInquiry('corporate_training', inquiryId);
+      if (!record) return res.status(404).json({ success: false, message: 'This corporate training inquiry could not be found.' });
+      const inquiry = toCorporateTrainingInquiry(record.row);
+      const sameBranch = normalizePlacementText(inquiry.assignedBranch) === normalizePlacementText(branch.name);
+      if (sameBranch && inquiry.notificationStatus === 'Sent' && inquiry.assignedBranchEmail.toLowerCase() === branch.email.toLowerCase()) {
+        return res.json({ success: true, alreadyAssigned: true, inquiry, message: 'This inquiry is already assigned and the branch has been notified.' });
+      }
+      if (sameBranch && String(inquiry.notificationStatus || '').toLowerCase() === 'sending') {
+        const timestamp = String(inquiry.assignedAt || '').match(/^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})$/);
+        const assignedAtMs = timestamp
+          ? Date.UTC(Number(timestamp[3]), Number(timestamp[2]) - 1, Number(timestamp[1]), Number(timestamp[4]), Number(timestamp[5]), Number(timestamp[6])) - 5.5 * 60 * 60 * 1000
+          : 0;
+        if (assignedAtMs && Date.now() - assignedAtMs < 5 * 60 * 1000) {
+          return res.status(409).json({ success: false, message: 'The branch notification is already being processed. Refresh before retrying.' });
+        }
+      }
+
+      const assignedAt = formatIndiaTimestamp();
+      const assignedBy = String(req.portalUser?.name || req.portalUser?.email || 'IPCS Admin').slice(0, 120);
+      const sending = await mysqlPortalInquiries.updateInquiry('corporate_training', inquiryId, {
+        Status: 'Assigned', 'Assigned Branch': branch.name, 'Assigned Branch Email': branch.email,
+        'Assigned At': assignedAt, 'Assigned By': assignedBy, 'Notification Status': 'Sending',
+      }, { actor: { email: req.portalUser?.email, requestId: req.requestId } });
+      let mailResult;
+      try {
+        mailResult = await sendMysqlInquiryMail({
+          from: `"IPCS Global Corporate Training" <${process.env.EMAIL_USER || 'placementcell.ipcs@gmail.com'}>`,
+          to: branch.email, cc: ['ajith@ipcsglobal.com', 'rakesh@ipcsglobal.com', 'gifty@ipcsglobal.com'],
+          replyTo: inquiry.email, subject: `Corporate Training Inquiry Assigned · ${branch.name.replace(/[\r\n]+/g, ' ').slice(0, 100)}`,
+          html: buildCorporateTrainingAssignmentEmail(inquiry, branch.name),
+        }, {
+          category: 'company', name: `${branch.name} · ${inquiry.company}`, email: branch.email,
+          type: 'Corporate Training Assignment', inquiryId: sending.id,
+        });
+      } catch (mailError) {
+        const status = `${mailErrorStatus(mailError)}: ${mailError.message}`.slice(0, 500);
+        try {
+          const updated = await mysqlPortalInquiries.updateInquiry('corporate_training', inquiryId, { 'Notification Status': status });
+          return res.json({ success: true, inquiry: toCorporateTrainingInquiry(updated.row), warning: `The inquiry was assigned, but the branch email could not be sent: ${mailError.message}` });
+        } catch (statusError) {
+          console.error('Could not save the corporate training email failure status:', statusError.message);
+          return res.json({ success: true, inquiry: { ...inquiry, status: 'Assigned', assignedBranch: branch.name, assignedBranchEmail: branch.email, assignedAt, assignedBy, notificationStatus: status }, warning: 'The inquiry was assigned, but the email could not be sent and its final status could not be saved.' });
+        }
+      }
+      const status = mailResult?.queued ? 'Queued' : 'Sent';
+      try {
+        const updated = await mysqlPortalInquiries.updateInquiry('corporate_training', inquiryId, {
+          'Notification Status': status,
+          ...(status === 'Sent' ? { 'Notification Sent At': formatIndiaTimestamp() } : {}),
+        });
+        return res.json({ success: true, inquiry: toCorporateTrainingInquiry(updated.row), queued: status === 'Queued', message: `Assigned to ${branch.name}; the branch notification ${status === 'Queued' ? 'is queued for delivery' : 'was sent'}.` });
+      } catch (statusError) {
+        console.error('The corporate training notification was accepted, but MySQL status could not be updated:', statusError.message);
+        return res.json({ success: true, inquiry: { ...inquiry, status: 'Assigned', assignedBranch: branch.name, assignedBranchEmail: branch.email, assignedAt, assignedBy, notificationStatus: status }, queued: status === 'Queued', warning: 'The email was sent or queued, but its status could not be saved. Refresh before retrying.' });
+      }
+    }
+
     const cache = getCache();
     await loadDocInfo();
     const branchSheet = doc.sheetsByTitle['Branches'];
@@ -8248,6 +8457,46 @@ exports.submitHiringInquiry = async (req, res) => {
       <p style="margin:22px 0 0;color:#718197;font-size:12px">Reply to this email to contact ${escape(fields.contactPerson)} directly.</p></div></div>`;
 
   try {
+    if (useMysqlPortalInquiries()) {
+      const recordFields = {
+        'Inquiry ID': inquiryId, 'Submitted At': submittedAt, Company: fields.company, Website: fields.website,
+        'Contact Person': fields.contactPerson, Email: fields.email, Phone: fields.phone, Location: fields.location,
+        Position: fields.position, 'Course / Skills': fields.courseSkills, 'Opening Count': fields.openingCount,
+        'Work Mode': fields.workMode, 'Last Date': fields.lastDate, Qualification: fields.qualification,
+        Experience: fields.experience, Salary: fields.salary, 'Gender Preference': fields.genderPreference,
+        'Job Description': fields.jobDescription, Notes: fields.notes, Status: 'New', 'Assigned TPO': '',
+        'Assigned TPO Email': '', 'Assigned At': '', 'Assigned By': '', 'Notification Status': 'Not assigned',
+        'Notification Sent At': '', 'Internal Email Status': 'Pending',
+      };
+      const saved = await mysqlPortalInquiries.createInquiry({ type: 'hiring', inquiryId, submittedAt, fields: recordFields });
+      let internalEmailStatus = 'Sent';
+      try {
+        const mailResult = await sendMysqlInquiryMail({
+          to: 'gifty@ipcsglobal.com', replyTo: fields.email,
+          subject: `New hiring inquiry · ${safeCompany} · ${cleanHiringSubjectPart(fields.position)}`,
+          html: emailHtml,
+        }, {
+          category: 'placement', name: `${fields.company} · ${fields.contactPerson}`,
+          email: 'gifty@ipcsglobal.com', type: 'Hiring Inquiry', inquiryId: saved.id,
+        });
+        if (mailResult?.queued) internalEmailStatus = 'Queued';
+      } catch (mailError) {
+        internalEmailStatus = `${mailErrorStatus(mailError)}: ${mailError.message}`.slice(0, 500);
+        console.error('Hiring inquiry was stored in MySQL, but its Gifty notification failed:', mailError.message);
+      }
+      try {
+        await mysqlPortalInquiries.updateInquiry('hiring', inquiryId, { 'Internal Email Status': internalEmailStatus });
+      } catch (statusError) {
+        console.error('Hiring inquiry was saved in MySQL, but its email status could not be updated:', statusError.message);
+        return res.status(201).json({ success: true, message: 'Your hiring request has been received by the IPCS Global placement team.', warning: 'Your request was saved; refresh later to confirm the notification status.' });
+      }
+      return res.status(201).json({
+        success: true,
+        message: 'Your hiring request has been received by the IPCS Global placement team.',
+        ...(!['Sent', 'Queued'].includes(internalEmailStatus) ? { warning: 'Your request was saved, but the notification email could not be sent.' } : {}),
+      });
+    }
+
     const sheet = await getHiringInquirySheet();
     await sheet.addRow({
       'Inquiry ID': inquiryId, 'Submitted At': submittedAt, Company: fields.company, Website: fields.website,
@@ -8292,6 +8541,14 @@ exports.submitHiringInquiry = async (req, res) => {
 
 exports.getHiringInquiryTpos = async (_req, res) => {
   try {
+    if (useMysqlPortalInquiries()) {
+      const team = await mysqlAdminUsers.listPublicPlacementTeam();
+      const tpos = team.map(member => ({
+        name: String(member.name || '').trim(), email: String(member.email || '').trim(),
+        branches: String(member.branches || '').trim(), status: 'active',
+      })).filter(member => member.name && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(member.email));
+      return res.json({ success: true, tpos });
+    }
     const cache = getCache();
     let contacts = cache?.contacts || [];
     if (!cache?.cacheUpdatedAt || cache.cacheSheetHealth?.contacts !== true) {
@@ -8308,6 +8565,10 @@ exports.getHiringInquiryTpos = async (_req, res) => {
 
 exports.getHiringInquiries = async (_req, res) => {
   try {
+    if (useMysqlPortalInquiries()) {
+      const rows = await mysqlPortalInquiries.listInquiries('hiring');
+      return res.json({ success: true, inquiries: rows.map(toHiringInquiry).filter(item => item.inquiryId) });
+    }
     const sheet = await getHiringInquirySheet();
     const rows = await sheet.getRows();
     const inquiries = rows.map(toHiringInquiry).filter(item => item.inquiryId).reverse();
@@ -8337,6 +8598,67 @@ exports.assignHiringInquiry = async (req, res) => {
   const tpoName = String(req.body?.tpoName || '').trim();
   if (!inquiryId || !tpoName) return res.status(400).json({ success: false, message: 'Choose a placement officer.' });
   try {
+    if (useMysqlPortalInquiries()) {
+      const team = await mysqlAdminUsers.listPublicPlacementTeam();
+      const tpo = team.find(member => String(member.name || '').trim().toLocaleLowerCase('en-US') === tpoName.toLocaleLowerCase('en-US'));
+      if (!tpo || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(tpo.email || ''))) {
+        return res.status(400).json({ success: false, message: 'Choose a TPO from the active MySQL placement team.' });
+      }
+      const record = await mysqlPortalInquiries.getInquiry('hiring', inquiryId);
+      if (!record) return res.status(404).json({ success: false, message: 'This hiring inquiry could not be found.' });
+      const inquiry = toHiringInquiry(record.row);
+      if (inquiry.assignedTpo === tpo.name && inquiry.notificationStatus === 'Sent'
+        && inquiry.assignedTpoEmail.toLowerCase() === String(tpo.email).toLowerCase()) {
+        return res.json({ success: true, alreadyAssigned: true, inquiry, message: `This inquiry is already assigned to ${tpo.name}.` });
+      }
+      if (inquiry.assignedTpo === tpo.name && String(inquiry.notificationStatus || '').toLowerCase() === 'sending') {
+        const timestamp = String(inquiry.assignedAt || '').match(/^(\d{2})\/(\d{2})\/(\d{4}) (\d{2}):(\d{2}):(\d{2})$/);
+        const assignedAtMs = timestamp
+          ? Date.UTC(Number(timestamp[3]), Number(timestamp[2]) - 1, Number(timestamp[1]), Number(timestamp[4]), Number(timestamp[5]), Number(timestamp[6])) - 5.5 * 60 * 60 * 1000
+          : 0;
+        if (assignedAtMs && Date.now() - assignedAtMs < 5 * 60 * 1000) {
+          return res.status(409).json({ success: false, message: 'The assignment email is already being processed. Refresh before retrying.' });
+        }
+      }
+      const assignedAt = formatIndiaTimestamp();
+      const assignedBy = String(req.portalUser?.name || req.portalUser?.email || 'Gifty').slice(0, 120);
+      const sending = await mysqlPortalInquiries.updateInquiry('hiring', inquiryId, {
+        Status: 'Assigned', 'Assigned TPO': tpo.name, 'Assigned TPO Email': tpo.email,
+        'Assigned At': assignedAt, 'Assigned By': assignedBy, 'Notification Status': 'Sending',
+      }, { actor: { email: req.portalUser?.email, requestId: req.requestId } });
+      let mailResult;
+      try {
+        mailResult = await sendMysqlInquiryMail({
+          to: tpo.email, cc: 'gifty@ipcsglobal.com', replyTo: inquiry.email,
+          subject: `Hiring request assigned · ${cleanHiringSubjectPart(inquiry.company)} · ${cleanHiringSubjectPart(inquiry.position)}`,
+          html: buildHiringAssignmentEmail(inquiry),
+        }, {
+          category: 'company', name: `${tpo.name} · ${inquiry.company}`, email: tpo.email,
+          type: 'Hiring Inquiry Assignment', inquiryId: sending.id,
+        });
+      } catch (mailError) {
+        const status = `${mailErrorStatus(mailError)}: ${mailError.message}`.slice(0, 500);
+        try {
+          const updated = await mysqlPortalInquiries.updateInquiry('hiring', inquiryId, { 'Notification Status': status });
+          return res.json({ success: true, inquiry: toHiringInquiry(updated.row), warning: `The inquiry was assigned, but the email could not be sent: ${mailError.message}` });
+        } catch (statusError) {
+          console.error('Could not save the hiring assignment email failure status:', statusError.message);
+          return res.json({ success: true, inquiry: { ...inquiry, status: 'Assigned', assignedTpo: tpo.name, assignedTpoEmail: tpo.email, assignedAt, assignedBy, notificationStatus: status }, warning: 'The inquiry was assigned, but the email could not be sent and its final status could not be saved.' });
+        }
+      }
+      const status = mailResult?.queued ? 'Queued' : 'Sent';
+      try {
+        const updated = await mysqlPortalInquiries.updateInquiry('hiring', inquiryId, {
+          'Notification Status': status,
+          ...(status === 'Sent' ? { 'Notification Sent At': formatIndiaTimestamp() } : {}),
+        });
+        return res.json({ success: true, inquiry: toHiringInquiry(updated.row), queued: status === 'Queued', message: `Assigned to ${tpo.name}; ${status === 'Queued' ? 'the email is queued for delivery' : 'the company and opening details were emailed'}.` });
+      } catch (statusError) {
+        console.error('The hiring assignment email was accepted, but MySQL status could not be updated:', statusError.message);
+        return res.json({ success: true, inquiry: { ...inquiry, status: 'Assigned', assignedTpo: tpo.name, assignedTpoEmail: tpo.email, assignedAt, assignedBy, notificationStatus: status }, queued: status === 'Queued', warning: 'The email was sent or queued, but its status could not be saved. Refresh before retrying.' });
+      }
+    }
+
     const tpo = getHiringTpoOptions().find(item => item.name.toLowerCase() === tpoName.toLowerCase());
     if (!tpo) return res.status(400).json({ success: false, message: 'Choose a TPO from the active placement contact list.' });
     const sheet = await getHiringInquirySheet();
@@ -10436,8 +10758,12 @@ exports.deleteCourse = async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-exports.getAptQuestions = (req, res) => {
+exports.getAptQuestions = async (req, res) => {
   try {
+    if (useMysqlAssessments()) {
+      const questions = await mysqlAssessmentAdmin.listQuestions('aptitude');
+      return res.json({ success: true, questions });
+    }
     let questions = getCache().aptQuestions.map(row => {
       return { id: getValByHeader(row, ['qid']) || '', category: getValByHeader(row, ['category']) || '', question: getValByHeader(row, ['question']) || '', optA: getValByHeader(row, ['optiona']) || '', optB: getValByHeader(row, ['optionb']) || '', optC: getValByHeader(row, ['optionc']) || '', optD: getValByHeader(row, ['optiond']) || '', correct: getValByHeader(row, ['correctoption']) || '', explanation: getValByHeader(row, ['explanation']) || '', status: getValByHeader(row, ['status']) || 'Active', level: getValByHeader(row, ['level']) || 'Easy' };
     });
@@ -10445,9 +10771,13 @@ exports.getAptQuestions = (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-exports.getAptResults = (req, res) => {
+exports.getAptResults = async (req, res) => {
   try {
     const user = req.portalUser;
+    if (useMysqlAssessments()) {
+      const results = await mysqlAssessmentAdmin.listResults('aptitude', user, isLearningAdmin, userHasBranch);
+      return res.json({ success: true, results });
+    }
     let results = (getCache().aptResults || []).map(row => {
       return { timestamp: getValByHeader(row, ['timestamp']) || '', rollNo: getValByHeader(row, ['rollno']) || '', name: getValByHeader(row, ['name']) || '', email: getValByHeader(row, ['email', 'mailid']) || '', branch: getValByHeader(row, ['branch']) || '', score: getValByHeader(row, ['score']) || '', total: getValByHeader(row, ['total', 'totalquestions']) || '', percentage: getValByHeader(row, ['percentage']) || '', timeTaken: getValByHeader(row, ['timetaken']) || '', categoryBreakdown: getValByHeader(row, ['categorybreakdown']) || '' };
     }).filter(result => isLearningAdmin(user) || userHasBranch(user, result.branch));
@@ -10458,6 +10788,10 @@ exports.getAptResults = (req, res) => {
 exports.addAptQuestion = async (req, res) => {
   try {
     const { id, category, question, optA, optB, optC, optD, correct, explanation, status, level } = req.body;
+    if (useMysqlAssessments()) {
+      await mysqlAssessmentAdmin.saveQuestion('aptitude', { id, category, question, optA, optB, optC, optD, correct, explanation, status, level }, req.portalUser, 'add');
+      return res.json({ success: true, message: 'Question added' });
+    }
     const sheet = doc.sheetsByTitle["Aptitude_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const h = sheet.headerValues;
@@ -10469,6 +10803,10 @@ exports.addAptQuestion = async (req, res) => {
 exports.updateAptQuestion = async (req, res) => {
   try {
     const { id, category, question, optA, optB, optC, optD, correct, explanation, status, level } = req.body;
+    if (useMysqlAssessments()) {
+      await mysqlAssessmentAdmin.saveQuestion('aptitude', { id, category, question, optA, optB, optC, optD, correct, explanation, status, level }, req.portalUser, 'update');
+      return res.json({ success: true, message: 'Aptitude question updated successfully!' });
+    }
     const sheet = doc.sheetsByTitle["Aptitude_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const rows = await sheet.getRows();
@@ -10486,6 +10824,10 @@ exports.updateAptQuestion = async (req, res) => {
 exports.deleteAptQuestion = async (req, res) => {
   try {
     const { id } = req.body;
+    if (useMysqlAssessments()) {
+      await mysqlAssessmentAdmin.saveQuestion('aptitude', { id }, req.portalUser, 'delete');
+      return res.json({ success: true, message: 'Question deleted' });
+    }
     const sheet = doc.sheetsByTitle["Aptitude_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const rows = await sheet.getRows();
@@ -10498,8 +10840,12 @@ exports.deleteAptQuestion = async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-exports.getTalExamQuestions = (req, res) => {
+exports.getTalExamQuestions = async (req, res) => {
   try {
+    if (useMysqlAssessments()) {
+      const questions = await mysqlAssessmentAdmin.listQuestions('talentino');
+      return res.json({ success: true, questions });
+    }
     let questions = getCache().talQuestions.map(row => {
       return { id: getValByHeader(row, ['questionid']) || '', testNumber: getValByHeader(row, ['textnumber', 'testnumber']) || '', question: getValByHeader(row, ['question']) || '', optA: getValByHeader(row, ['optiona']) || '', optB: getValByHeader(row, ['optionb']) || '', optC: getValByHeader(row, ['optionc']) || '', optD: getValByHeader(row, ['optiond']) || '', correct: getValByHeader(row, ['correctoption']) || '', explanation: getValByHeader(row, ['explanation']) || '', status: getValByHeader(row, ['status']) || 'Active' };
     });
@@ -10507,9 +10853,13 @@ exports.getTalExamQuestions = (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-exports.getTalExamResults = (req, res) => {
+exports.getTalExamResults = async (req, res) => {
   try {
     const user = req.portalUser;
+    if (useMysqlAssessments()) {
+      const results = await mysqlAssessmentAdmin.listResults('talentino', user, isLearningAdmin, userHasBranch);
+      return res.json({ success: true, results });
+    }
     let results = (getCache().talResults || []).map(row => {
       return { timestamp: getValByHeader(row, ['timestamp']) || '', rollNo: getValByHeader(row, ['rollno']) || '', name: getValByHeader(row, ['name']) || '', email: getValByHeader(row, ['mailid', 'email']) || '', branch: getValByHeader(row, ['branch']) || '', testNumber: getValByHeader(row, ['testnumbercompleted']) || '', score: getValByHeader(row, ['score']) || '', total: getValByHeader(row, ['totalquestions']) || '', percentage: getValByHeader(row, ['percentage']) || '', timeTaken: getValByHeader(row, ['timetaken']) || '' };
     }).filter(result => isLearningAdmin(user) || userHasBranch(user, result.branch));
@@ -10520,6 +10870,10 @@ exports.getTalExamResults = (req, res) => {
 exports.addTalExamQuestion = async (req, res) => {
   try {
     const { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
+    if (useMysqlAssessments()) {
+      await mysqlAssessmentAdmin.saveQuestion('talentino', { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status }, req.portalUser, 'add');
+      return res.json({ success: true, message: 'Question added' });
+    }
     const sheet = doc.sheetsByTitle["Talentino_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const h = sheet.headerValues;
@@ -10531,6 +10885,10 @@ exports.addTalExamQuestion = async (req, res) => {
 exports.updateTalExamQuestion = async (req, res) => {
   try {
     const { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status } = req.body;
+    if (useMysqlAssessments()) {
+      await mysqlAssessmentAdmin.saveQuestion('talentino', { id, testNumber, question, optA, optB, optC, optD, correct, explanation, status }, req.portalUser, 'update');
+      return res.json({ success: true, message: 'Talentino question updated successfully!' });
+    }
     const sheet = doc.sheetsByTitle["Talentino_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const rows = await sheet.getRows();
@@ -10548,6 +10906,10 @@ exports.updateTalExamQuestion = async (req, res) => {
 exports.deleteTalExamQuestion = async (req, res) => {
   try {
     const { id } = req.body;
+    if (useMysqlAssessments()) {
+      await mysqlAssessmentAdmin.saveQuestion('talentino', { id }, req.portalUser, 'delete');
+      return res.json({ success: true, message: 'Question deleted' });
+    }
     const sheet = doc.sheetsByTitle["Talentino_Questions"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const rows = await sheet.getRows();
@@ -10948,8 +11310,12 @@ exports.updateDriveStatus = async (req, res) => {
   } catch(err) { res.status(500).json({ success: false, message: err.message }); }
 };
 
-exports.getBranches = (req, res) => {
+exports.getBranches = async (req, res) => {
   try {
+    if (useMysqlTpoUserManagement()) {
+      const branches = await mysqlBranches.listBranches();
+      return res.json({ success: true, branches });
+    }
     const cache = getCache();
     if (!cache || !cache.branches) return res.json({ success: true, branches: [] });
 
@@ -10995,6 +11361,12 @@ exports.getBranches = (req, res) => {
 exports.addBranch = async (req, res) => {
   try {
     const { no, region, branch, email, latitude, longitude } = req.body;
+    if (useMysqlTpoUserManagement()) {
+      const created = await mysqlBranches.addBranch({ no, region, branch, email, latitude, longitude }, {
+        name: req.portalUser?.name, email: req.portalUser?.email, requestId: req.requestId,
+      });
+      return res.json({ success: true, branch: created, message: 'Branch saved in MySQL.' });
+    }
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return res.status(400).json({ success: false, message: 'Enter a valid branch email address.' });
     if (latitude !== '' && latitude !== undefined && (!Number.isFinite(Number(latitude)) || Number(latitude) < -90 || Number(latitude) > 90)) return res.status(400).json({ success: false, message: 'Latitude must be between -90 and 90.' });
     if (longitude !== '' && longitude !== undefined && (!Number.isFinite(Number(longitude)) || Number(longitude) < -180 || Number(longitude) > 180)) return res.status(400).json({ success: false, message: 'Longitude must be between -180 and 180.' });
@@ -11024,12 +11396,18 @@ exports.addBranch = async (req, res) => {
     };
     await sheet.addRow(newRow);
     refreshCache(); res.json({ success: true, message: "Branch saved" });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
 };
 
 exports.updateBranch = async (req, res) => {
   try {
     const { oldBranch, no, region, branch, email, latitude, longitude } = req.body;
+    if (useMysqlTpoUserManagement()) {
+      const updated = await mysqlBranches.updateBranch(oldBranch, { no, region, branch, email, latitude, longitude }, {
+        name: req.portalUser?.name, email: req.portalUser?.email, requestId: req.requestId,
+      });
+      return res.json({ success: true, branch: updated, message: 'Branch updated in MySQL.' });
+    }
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) return res.status(400).json({ success: false, message: 'Enter a valid branch email address.' });
     if (latitude !== '' && latitude !== undefined && (!Number.isFinite(Number(latitude)) || Number(latitude) < -90 || Number(latitude) > 90)) return res.status(400).json({ success: false, message: 'Latitude must be between -90 and 90.' });
     if (longitude !== '' && longitude !== undefined && (!Number.isFinite(Number(longitude)) || Number(longitude) < -180 || Number(longitude) > 180)) return res.status(400).json({ success: false, message: 'Longitude must be between -180 and 180.' });
@@ -11061,19 +11439,25 @@ exports.updateBranch = async (req, res) => {
       rowToUpdate.set(header(['email', 'branchemail', 'mailid']), email || '');
       await rowToUpdate.save(); refreshCache(); res.json({ success: true, message: "Branch updated" });
     } else { res.status(404).json({ success: false, message: "Branch not found" }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
 };
 
 exports.deleteBranch = async (req, res) => {
   try {
     const { branch } = req.body;
+    if (useMysqlTpoUserManagement()) {
+      await mysqlBranches.deleteBranch(branch, {
+        name: req.portalUser?.name, email: req.portalUser?.email, requestId: req.requestId,
+      });
+      return res.json({ success: true, message: 'Branch deleted from MySQL.' });
+    }
     const sheet = doc.sheetsByTitle["Branches"];
     if (!sheet) return res.status(404).json({ success: false, message: "Sheet not found" });
     const rows = await sheet.getRows();
     const rowToDelete = rows.find(r => r._rawData[2] === branch);
     if (rowToDelete) { await rowToDelete.delete(); refreshCache(); res.json({ success: true, message: "Branch deleted" }); } 
     else { res.status(404).json({ success: false, message: "Branch not found" }); }
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  } catch (err) { res.status(err.status || 500).json({ success: false, message: err.message }); }
 };
 
 // =========================================================
